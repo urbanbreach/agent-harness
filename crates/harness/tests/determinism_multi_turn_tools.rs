@@ -4,6 +4,11 @@ use std::process::Command;
 
 use sha2::{Digest, Sha256};
 
+#[path = "common/repo_root.rs"]
+mod repo_root;
+
+use repo_root::repo_root;
+
 #[test]
 fn deterministic_multi_turn_tools_twice_produces_identical_sha256_digest() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
@@ -23,10 +28,7 @@ fn deterministic_multi_turn_tools_twice_produces_identical_sha256_digest() {
 }
 
 fn run_scenario(session_dir: &Path, out_path: &Path) {
-    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("repo root from harness crate path");
+    let repo_root = repo_root();
 
     let status = Command::new("cargo")
         .arg("run")
@@ -42,7 +44,7 @@ fn run_scenario(session_dir: &Path, out_path: &Path) {
         .arg("--out")
         .arg(out_path)
         .env("HARNESS_DETERMINISTIC", "1")
-        .current_dir(repo_root)
+        .current_dir(&repo_root)
         .status()
         .expect("spawn harness run command");
 

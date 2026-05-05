@@ -5,14 +5,19 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+use event_log::{read_events, wait_for_succeeded_tool_call_finish};
 use harness_core::agent::AgentProfile;
 use harness_core::clock::FakeClock;
 use harness_core::config::{McpConfig, PermissionMode, ShellAllowlist};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, CoordinatorHandle};
-use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1, ToolCallStatus};
+use harness_core::event::{ActorKind, EventActor, EventV1, ToolCallStatus};
 use harness_core::perm::PermissionPolicy;
 use harness_core::redact::DefaultRedactor;
 use harness_tools::{coordinator_registry_with_mcp_and_editing, EditingToolSurfaceConfig};
+
+#[allow(dead_code)]
+#[path = "common/event_log.rs"]
+mod event_log;
 
 #[tokio::test]
 async fn native_edit_create_routes_through_hashline_and_emits_edit_events() {
@@ -58,7 +63,8 @@ async fn native_edit_create_routes_through_hashline_and_emits_edit_events() {
         .await
         .expect("request tool call");
 
-    wait_for_tool_call_finished(&run.events_path, &tool_call_id, Duration::from_secs(2)).await;
+    wait_for_succeeded_tool_call_finish(&run.events_path, &tool_call_id, Duration::from_secs(2))
+        .await;
     handle.stop_run().await.expect("stop run");
 
     assert_eq!(
@@ -441,39 +447,4 @@ fn worker_actor(agent_id: &str) -> EventActor {
 
 fn supervisor_actor() -> EventActor {
     EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string()))
-}
-
-fn read_events(events_path: &Path) -> Vec<EventEnvelopeV1> {
-    let body = fs::read_to_string(events_path).expect("read events");
-    body.lines()
-        .map(|line| serde_json::from_str::<EventEnvelopeV1>(line).expect("parse event"))
-        .collect()
-}
-
-async fn wait_for_tool_call_finished(events_path: &Path, tool_call_id: &str, timeout: Duration) {
-    let deadline = tokio::time::Instant::now() + timeout;
-
-    loop {
-        if events_path.exists()
-            && read_events(events_path).iter().any(|event| {
-                matches!(
-                    &event.payload,
-                    EventV1::ToolCallFinished(data)
-                        if data.tool_call_id == tool_call_id
-                            && data.status == ToolCallStatus::Succeeded
-                )
-            })
-        {
-            return;
-        }
-
-        if tokio::time::Instant::now() >= deadline {
-            panic!(
-                "timed out waiting for ToolCallFinished for {tool_call_id} in {}",
-                events_path.display()
-            );
-        }
-
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
 }

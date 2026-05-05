@@ -1,16 +1,11 @@
 use std::collections::BTreeSet;
-use std::path::PathBuf;
 
 use harness_core::config::{harness_schema_pretty_json, harness_tui_schema_pretty_json};
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("workspace root")
-        .parent()
-        .expect("repo root")
-        .to_path_buf()
-}
+#[path = "common/repo_root.rs"]
+mod repo_root;
+
+use repo_root::repo_root;
 
 fn documented_table_keys(doc: &str, heading: &str) -> BTreeSet<String> {
     let mut section = doc

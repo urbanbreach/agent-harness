@@ -3,7 +3,6 @@ use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
 
 use async_trait::async_trait;
 use harness_core::agent::{
@@ -25,6 +24,10 @@ use harness_core::redact::DefaultRedactor;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
 use serde::Deserialize;
 use serde_json::{json, Value};
+
+mod common;
+
+use common::{load_events, wait_for_tool_call_finish};
 
 struct DelegatingAliasTaskTool;
 struct ReplayGuardTool;
@@ -646,27 +649,4 @@ fn write_events(run_dir: &Path, events: &[EventEnvelopeV1]) {
         body.push('\n');
     }
     fs::write(run_dir.join("events.jsonl"), body).expect("write events");
-}
-
-fn load_events(path: &Path) -> Vec<EventEnvelopeV1> {
-    let body = fs::read_to_string(path).expect("read events");
-    body.lines()
-        .map(|line| serde_json::from_str::<EventEnvelopeV1>(line).expect("parse event"))
-        .collect()
-}
-
-async fn wait_for_tool_call_finish(events_path: &Path, tool_call_id: &str) {
-    for _ in 0..40 {
-        if load_events(events_path).iter().any(|event| {
-            matches!(
-                &event.payload,
-                EventV1::ToolCallFinished(payload) if payload.tool_call_id == tool_call_id
-            )
-        }) {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-
-    panic!("timed out waiting for tool call {tool_call_id} to finish");
 }

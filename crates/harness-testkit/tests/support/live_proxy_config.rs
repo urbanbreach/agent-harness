@@ -494,12 +494,11 @@ pub(crate) fn resolve_live_prompt_request(repo_root: &Path) -> Result<LivePrompt
     let provider = provider_from_config(&config, &provider_name)?;
     let primary_model = resolve_trimmed_env_var("HARNESS_LIVE_PROXY_MODEL")
         .unwrap_or_else(|| first_model_from_provider(provider))?;
-    let default_variant =
-        if source_config_path == repo_root.join("configs").join("harness.example.jsonc") {
-            resolve_live_proxy_variant(&config, &provider_name, &primary_model)
-        } else {
-            None
-        };
+    let default_variant = if source_config_path == default_live_proxy_config_path(repo_root) {
+        resolve_live_proxy_variant(&config, &provider_name, &primary_model)
+    } else {
+        None
+    };
     let primary_variant = resolve_trimmed_env_var("HARNESS_LIVE_PROXY_VARIANT")
         .transpose()?
         .or(default_variant);
@@ -555,6 +554,10 @@ pub(crate) fn resolve_live_vision_proxy_config_for_run(
     )
 }
 
+pub(crate) fn default_live_proxy_config_path(repo_root: &Path) -> PathBuf {
+    repo_root.join("configs").join("harness.example.jsonc")
+}
+
 pub(crate) fn resolve_live_proxy_config_path(
     repo_root: &Path,
     override_path: Option<&Path>,
@@ -567,7 +570,7 @@ pub(crate) fn resolve_live_proxy_config_path(
                 repo_root.join(path)
             }
         })
-        .unwrap_or_else(|| repo_root.join("configs").join("harness.example.jsonc"));
+        .unwrap_or_else(|| default_live_proxy_config_path(repo_root));
     if config_path.exists() {
         Ok(config_path)
     } else {
@@ -608,13 +611,13 @@ pub(crate) fn prepare_prompt_run_config_with_contract(
     profile_name: &str,
     contract: PreparedLiveConfigContract,
 ) -> Result<PromptRunConfig, String> {
-    if provider_name.trim().is_empty() {
+    if trimmed_non_empty(provider_name).is_none() {
         return Err("provider name cannot be empty".to_string());
     }
-    if profile_name.trim().is_empty() {
+    if trimmed_non_empty(profile_name).is_none() {
         return Err("profile name cannot be empty".to_string());
     }
-    if selected_model.trim().is_empty() {
+    if trimmed_non_empty(selected_model).is_none() {
         return Err("selected model cannot be empty".to_string());
     }
 
@@ -1081,12 +1084,9 @@ fn ensure_profile_variant(
         .and_then(Value::as_object_mut)
         .ok_or_else(|| format!("agent `{profile_name}` must be an object"))?;
 
-    match selected_variant {
-        Some(variant) if !variant.trim().is_empty() => {
-            profile.insert(
-                "variant".to_string(),
-                Value::String(variant.trim().to_string()),
-            );
+    match selected_variant.and_then(trimmed_non_empty) {
+        Some(variant) => {
+            profile.insert("variant".to_string(), Value::String(variant.to_string()));
         }
         _ => {
             profile.remove("variant");
@@ -1141,10 +1141,7 @@ fn ensure_provider_model_variant(
     model_id: &str,
     selected_variant: Option<&str>,
 ) -> Result<(), String> {
-    let Some(selected_variant) = selected_variant
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    else {
+    let Some(selected_variant) = selected_variant.and_then(trimmed_non_empty) else {
         return Ok(());
     };
 
@@ -1398,7 +1395,11 @@ pub(crate) fn resolve_env_reference_value(value: &str) -> Result<String, String>
 fn resolve_trimmed_env_var(name: &str) -> Option<Result<String, String>> {
     env::var(name)
         .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
+        .and_then(|value| trimmed_non_empty(&value).map(str::to_string))
         .map(Ok)
+}
+
+fn trimmed_non_empty(value: &str) -> Option<&str> {
+    let trimmed = value.trim();
+    (!trimmed.is_empty()).then_some(trimmed)
 }

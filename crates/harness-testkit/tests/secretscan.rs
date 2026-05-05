@@ -5,6 +5,11 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+#[path = "support/repo_root.rs"]
+mod repo_root;
+
+use repo_root::repo_root;
+
 mod secretscan {
     use super::*;
 
@@ -29,15 +34,6 @@ mod secretscan {
             format_findings(&repo_root, &findings)
         );
     }
-}
-
-fn repo_root() -> PathBuf {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest_dir
-        .parent()
-        .and_then(Path::parent)
-        .map(Path::to_path_buf)
-        .expect("harness-testkit should live under <repo>/crates/harness-testkit")
 }
 
 fn pty_temp_session_dirs() -> Vec<PathBuf> {

@@ -9,6 +9,9 @@ use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResul
 use serde_json::json;
 use similar::TextDiff;
 
+use crate::fs_walk::workspace_relative_display;
+use crate::workspace_paths::canonical_workspace_root;
+
 pub struct HashlineApplyTool;
 
 #[async_trait]
@@ -222,10 +225,7 @@ pub(crate) fn resolve_workspace_target_path(
     ctx: &ToolContext,
     file_path: &str,
 ) -> Result<PathBuf, ToolError> {
-    let workspace = ctx
-        .workspace_root
-        .canonicalize()
-        .map_err(|err| ToolError::Execution(format!("failed to resolve workspace root: {err}")))?;
+    let workspace = canonical_workspace_root(ctx)?;
     let input = Path::new(file_path);
     let relative = if input.is_absolute() {
         input
@@ -272,6 +272,13 @@ pub(crate) fn validate_workspace_move_target(
 ) -> Result<(), ToolError> {
     let from_resolved_path = resolve_workspace_target_path(ctx, from_path)?;
     let to_resolved_path = resolve_workspace_target_path(ctx, to_path)?;
+    validate_resolved_workspace_move_target(&from_resolved_path, &to_resolved_path)
+}
+
+fn validate_resolved_workspace_move_target(
+    from_resolved_path: &Path,
+    to_resolved_path: &Path,
+) -> Result<(), ToolError> {
     if from_resolved_path == to_resolved_path {
         return Err(ToolError::InvalidArguments(
             "move source and destination must differ".to_string(),
@@ -400,7 +407,7 @@ fn move_workspace_file(
 ) -> Result<ToolResult, ToolError> {
     let from_resolved_path = resolve_workspace_target_path(ctx, from_path)?;
     let to_resolved_path = resolve_workspace_target_path(ctx, to_path)?;
-    validate_workspace_move_target(ctx, from_path, to_path)?;
+    validate_resolved_workspace_move_target(&from_resolved_path, &to_resolved_path)?;
 
     let source = std::fs::read_to_string(&from_resolved_path)
         .map_err(|err| ToolError::Execution(format!("failed to read file for move: {err}")))?;
@@ -422,8 +429,9 @@ fn move_workspace_file(
     }
 
     let artifact = write_diff_artifact(ctx, edit_id, &diff)?;
-    let from_display_path = workspace_relative_display(ctx, &from_resolved_path)?;
-    let to_display_path = workspace_relative_display(ctx, &to_resolved_path)?;
+    let workspace = canonical_workspace_root(ctx)?;
+    let from_display_path = workspace_relative_display(&workspace, &from_resolved_path)?;
+    let to_display_path = workspace_relative_display(&workspace, &to_resolved_path)?;
     Ok(ToolResult {
         display_text: format!(
             "applied hashline edit {} to {}",
@@ -452,7 +460,8 @@ fn build_hashline_tool_result(
     diff: &str,
 ) -> Result<ToolResult, ToolError> {
     let artifact = write_diff_artifact(ctx, edit_id, diff)?;
-    let display_path = workspace_relative_display(ctx, resolved_path)?;
+    let workspace = canonical_workspace_root(ctx)?;
+    let display_path = workspace_relative_display(&workspace, resolved_path)?;
     Ok(ToolResult {
         display_text: format!(
             "applied hashline edit {} to {}",
@@ -484,33 +493,6 @@ fn write_diff_artifact(
 
 fn line_count(content: &str) -> u32 {
     content.lines().count() as u32
-}
-
-fn workspace_relative_display(
-    ctx: &ToolContext,
-    resolved_path: &Path,
-) -> Result<String, ToolError> {
-    let workspace = ctx
-        .workspace_root
-        .canonicalize()
-        .map_err(|err| ToolError::Execution(format!("failed to resolve workspace root: {err}")))?;
-    let relative =
-        resolved_path
-            .strip_prefix(&workspace)
-            .map_err(|_| ToolError::PathEscapesWorkspace {
-                workspace_root: workspace.display().to_string(),
-                path: resolved_path.display().to_string(),
-            })?;
-
-    if relative.as_os_str().is_empty() {
-        return Ok(".".to_string());
-    }
-
-    Ok(relative
-        .iter()
-        .map(|segment| segment.to_string_lossy().to_string())
-        .collect::<Vec<_>>()
-        .join("/"))
 }
 
 fn write_atomic(path: &Path, content: &str) -> Result<(), ToolError> {

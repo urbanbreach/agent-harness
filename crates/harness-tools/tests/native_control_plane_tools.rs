@@ -7,11 +7,17 @@ use harness_core::agent::AgentProfile;
 use harness_core::clock::RealClock;
 use harness_core::config::{PermissionMode, ShellAllowlist};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, RunInfo};
-use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1};
+use harness_core::event::{ActorKind, EventActor};
 use harness_core::perm::PermissionPolicy;
 use harness_core::redact::DefaultRedactor;
 use harness_tools::coordinator_registry;
 use serde_json::json;
+
+use event_log::read_events;
+
+#[allow(dead_code)]
+#[path = "common/event_log.rs"]
+mod event_log;
 
 fn actor(agent_id: &str) -> EventActor {
     EventActor::new(ActorKind::Worker, Some(agent_id.to_string()))
@@ -77,14 +83,6 @@ fn todo_state_file(run: &RunInfo) -> PathBuf {
         .expect("run root")
         .join("control-plane")
         .join("todos.json")
-}
-
-fn read_events(path: &Path) -> Vec<EventEnvelopeV1> {
-    fs::read_to_string(path)
-        .expect("read events")
-        .lines()
-        .map(|line| serde_json::from_str(line).expect("parse event"))
-        .collect()
 }
 
 #[tokio::test]

@@ -17,6 +17,7 @@ use harness_providers::{
 };
 use harness_tools::coordinator_registry;
 use serde_json::{json, Value};
+use uuid::Uuid;
 
 static WORKSPACE_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -39,6 +40,15 @@ impl ScenarioName {
     pub fn interactive_permissions(self) -> bool {
         matches!(self, Self::GoldenPathInteractive)
     }
+}
+
+pub fn deterministic_run_id(seed: u64, scenario: ScenarioName) -> String {
+    let namespace = Uuid::new_v5(
+        &Uuid::NAMESPACE_OID,
+        format!("harness-seed:{seed}").as_bytes(),
+    );
+    let run_uuid = Uuid::new_v5(&namespace, scenario.as_str().as_bytes());
+    format!("run_{}", run_uuid.simple())
 }
 
 pub fn create_workspace(

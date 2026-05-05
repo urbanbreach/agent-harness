@@ -11,9 +11,9 @@ use tokio_stream::wrappers::{errors::BroadcastStreamRecvError, BroadcastStream};
 use tokio_stream::{Stream, StreamExt};
 
 use crate::event::{EventActor, EventEnvelopeV1, EventV1};
+use crate::path_display::display_path;
+use crate::session_paths::{EVENTS_FILE_NAME, WRITER_LOCK_FILE_NAME};
 
-const EVENTS_FILE_NAME: &str = "events.jsonl";
-const WRITER_LOCK_FILE_NAME: &str = ".writer.lock";
 const SUBSCRIBER_BUFFER: usize = 1024;
 
 pub type EventStream = Pin<Box<dyn Stream<Item = Result<EventEnvelopeV1, EventStoreError>> + Send>>;
@@ -430,10 +430,6 @@ fn broadcast_stream(
 
 fn lock_state<T>(mutex: &Mutex<T>) -> Result<MutexGuard<'_, T>, EventStoreError> {
     mutex.lock().map_err(|_| EventStoreError::LockPoisoned)
-}
-
-fn display_path(path: &Path) -> String {
-    path.display().to_string()
 }
 
 struct ScanResult {

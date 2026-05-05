@@ -8,14 +8,13 @@ use std::sync::mpsc as std_mpsc;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::OnceLock;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use clap::Args;
 use harness_core::agent::{AgentModelSettings, AgentProfile};
-use harness_core::clock::{Clock, FakeClock, RealClock};
+use harness_core::clock::{Clock, Determinism, FakeClock, RealClock};
 use harness_core::config::{
-    configured_model_catalog, load_resolved_config, resolve_profile_model_metadata, HarnessConfig,
-    ShellAllowlist,
+    configured_model_catalog, resolve_profile_model_metadata, HarnessConfig, ShellAllowlist,
 };
 use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle,
@@ -23,9 +22,7 @@ use harness_core::coord::{
 };
 use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1, ToolCallStatus};
 use harness_core::perm::PermissionDecision;
-use harness_core::proj::{
-    inspect_resume_plan, RecordedRuntimeContext, ResumePlan, RunMetadata, SessionModeSource,
-};
+use harness_core::proj::{inspect_resume_plan, RecordedRuntimeContext, SessionModeSource};
 use harness_core::redact::DefaultRedactor;
 use harness_core::session_lineage::{
     materialize_child_session, ChildSessionMaterializationRequest,
@@ -38,29 +35,34 @@ use harness_tui::app::{
     ModelOption, SessionHistoryEntry,
 };
 use harness_tui::{
-    close_preserved_terminal_session, load_events_from_run_dir, run_tui_with_options,
-    set_pending_replay_launch_metadata, LiveUpdate, OperatorNoticeLevel, TuiMode, TuiOptions,
-    UiIntent,
+    close_preserved_terminal_session, run_tui_with_options, set_pending_replay_launch_metadata,
+    LiveUpdate, OperatorNoticeLevel, TuiMode, TuiOptions, UiIntent,
 };
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
+use crate::cli_config::{apply_runtime_metadata, load_optional_config_with_digest};
 use serde::{Deserialize, Serialize};
 
 use crate::bootstrap;
+use crate::cli_io::{
+    load_events_from_run_dir, load_run_metadata, wait_for_permission_id, wait_for_tool_finished,
+    ToolFinishTerminalEvents, DEFAULT_EVENT_WAIT_TIMEOUT,
+};
+use crate::defaults::{
+    DEFAULT_INTERACTIVE_RUN_NAME, DEFAULT_MOCK_PROFILE, DEFAULT_SESSION_DIR,
+    RESUME_UNAVAILABLE_FALLBACK_REASON,
+};
 use crate::logging;
-use crate::replay::inspect_session_catalog;
+use crate::recovery::{latest_run_name, select_resume_agent_id};
+use crate::replay::{inspect_session_catalog, normalize_lineage_entry};
 use crate::scenarios::{
-    create_workspace, default_permission_policy, golden_path_edit_args, golden_path_profiles,
-    golden_path_provider, supervisor_actor, worker_actor, ScenarioName,
+    create_workspace, default_permission_policy, deterministic_run_id, golden_path_edit_args,
+    golden_path_profiles, golden_path_provider, supervisor_actor, worker_actor, ScenarioName,
 };
 
-const DEFAULT_SESSION_DIR: &str = ".agent-harness/sessions";
-const DEFAULT_MOCK_PROFILE: &str = "worker";
 const MODEL_SELECTION_STATE_FILE: &str = "model.json";
-const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
-const EVENT_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct PersistedModelSelection {
@@ -429,12 +431,12 @@ fn resolve_live_settings(
     let loaded = if cmd.mock || cmd.scenario.is_some() {
         None
     } else {
-        load_resolved_config(config_path.as_deref()).map_err(|err| err.to_string())?
+        load_optional_config_with_digest(config_path.as_deref())?
     };
 
     if let Some(loaded) = loaded {
         let config = loaded.config;
-        config_digest = config_digest_for_paths(&loaded.paths)?;
+        config_digest = loaded.digest;
         config_default_profile = bootstrap::interactive_profile_name(&config);
         agent_profiles = bootstrap::interactive_agent_profiles(&config)?;
         shell_allowlist = config.permissions.shell_allowlist.clone();
@@ -451,9 +453,7 @@ fn resolve_live_settings(
         .clone()
         .or(global_session_dir)
         .unwrap_or(config_session_dir);
-    let deterministic = cmd.deterministic
-        || config_deterministic
-        || matches!(std::env::var("HARNESS_DETERMINISTIC").as_deref(), Ok("1"));
+    let deterministic = cmd.deterministic || Determinism::enabled(config_deterministic);
     let default_profile = cmd.profile.clone().unwrap_or(config_default_profile);
     let launch_mode_label = if live_config.is_some() {
         None
@@ -479,19 +479,6 @@ fn resolve_live_settings(
         launch_metadata,
         launch_mode_label,
     })
-}
-
-fn config_digest_for_paths(paths: &[PathBuf]) -> Result<String, String> {
-    let mut hasher = blake3::Hasher::new();
-    for path in paths {
-        hasher.update(path.to_string_lossy().as_bytes());
-        hasher.update(&[0]);
-        let config_bytes = fs::read(path)
-            .map_err(|err| format!("failed to read config file {}: {err}", path.display()))?;
-        hasher.update(&config_bytes);
-        hasher.update(&[0xff]);
-    }
-    Ok(hasher.finalize().to_hex().to_string())
 }
 
 fn model_selection_state_path() -> Option<PathBuf> {
@@ -530,13 +517,17 @@ fn load_persisted_model_selection_from_path(path: &Path) -> Option<PersistedMode
 
 fn persisted_model_selection_valid(selection: &PersistedModelSelection) -> bool {
     selection.schema_version == 1
-        && !selection.profile.trim().is_empty()
-        && !selection.provider.trim().is_empty()
-        && !selection.model.trim().is_empty()
+        && model_selection_value_present(&selection.profile)
+        && model_selection_value_present(&selection.provider)
+        && model_selection_value_present(&selection.model)
         && selection
             .variant
             .as_deref()
-            .is_none_or(|variant| !variant.trim().is_empty())
+            .is_none_or(model_selection_value_present)
+}
+
+fn model_selection_value_present(value: &str) -> bool {
+    !value.trim().is_empty()
 }
 
 fn save_persisted_model_selection(launch_metadata: &LaunchMetadata) -> Result<(), String> {
@@ -873,6 +864,25 @@ fn record_launch_selection(selection: &LaunchSelection, launch_metadata: &Launch
     *recover_mutex_lock(selection) = launch_metadata.clone();
 }
 
+fn handle_model_switch_intent(
+    intent: &UiIntent,
+    launch_selection: &LaunchSelection,
+    persist_model_selection: bool,
+) -> bool {
+    let UiIntent::SwitchModel {
+        launch_metadata, ..
+    } = intent
+    else {
+        return false;
+    };
+
+    record_launch_selection(launch_selection, launch_metadata);
+    if persist_model_selection {
+        persist_launch_selection_for_exit(&recover_mutex_lock(launch_selection));
+    }
+    true
+}
+
 fn scenario_launch_metadata() -> LaunchMetadata {
     LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Demo")
 }
@@ -1121,28 +1131,6 @@ fn load_live_session_history_entries(
     load_startup_session_history_entries(session_dir)
 }
 
-fn normalize_lineage_entry(
-    mut entry: crate::replay::SessionInspectionEntry,
-) -> crate::replay::SessionInspectionEntry {
-    if let Some(parent_run_id) = harness_lineage_parent_run_id(&entry.run_dir) {
-        entry.catalog.parent_session_id = Some(parent_run_id);
-    }
-    entry
-}
-
-fn harness_lineage_parent_run_id(run_dir: &Path) -> Option<String> {
-    let body = fs::read_to_string(run_dir.join("meta.json")).ok()?;
-    let value = serde_json::from_str::<serde_json::Value>(&body).ok()?;
-    let lineage = value.get("harness_lineage")?;
-    lineage
-        .get("harness_source_run_id")
-        .or_else(|| lineage.get("parent_run_id"))
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-}
-
 fn startup_session_history_entry_visible(entry: &crate::replay::SessionInspectionEntry) -> bool {
     !matches!(
         entry.catalog.mode_source,
@@ -1160,14 +1148,7 @@ async fn run_startup_launcher(
     let selected_intent = Arc::new(Mutex::new(None::<UiIntent>));
     let selected_intent_sink = Arc::clone(&selected_intent);
     let on_ui_intent = Arc::new(move |intent: UiIntent| {
-        if let UiIntent::SwitchModel {
-            launch_metadata, ..
-        } = &intent
-        {
-            record_launch_selection(&launch_selection, launch_metadata);
-            if persist_model_selection {
-                persist_launch_selection_for_exit(&launch_metadata.clone().without_mode_label());
-            }
+        if handle_model_switch_intent(&intent, &launch_selection, persist_model_selection) {
             return;
         }
 
@@ -1265,7 +1246,7 @@ async fn run_continue_session_bootstrap(
     if !resume_plan.is_resumable {
         let reason = resume_plan
             .resume_disabled_reason
-            .unwrap_or_else(|| "resume unavailable without reason".to_string());
+            .unwrap_or_else(|| RESUME_UNAVAILABLE_FALLBACK_REASON.to_string());
         return Err(format!(
             "continue session is disabled for {run_id}: {reason}"
         ));
@@ -1273,7 +1254,8 @@ async fn run_continue_session_bootstrap(
 
     let historical_events = load_events_from_run_dir(&run_dir).map_err(|err| err.to_string())?;
     let resume_agent_id = select_resume_agent_id(&resume_plan, &historical_events, &run_id)?;
-    let run_name = latest_run_name(&historical_events).unwrap_or_else(|| "interactive".to_string());
+    let run_name = latest_run_name(&historical_events)
+        .unwrap_or_else(|| DEFAULT_INTERACTIVE_RUN_NAME.to_string());
 
     let clock: Arc<dyn Clock + Send + Sync> = if settings.deterministic {
         Arc::new(FakeClock::new())
@@ -1285,10 +1267,11 @@ async fn run_continue_session_bootstrap(
         .coordinator_config(settings, demo_mode)
         .await?;
     profile_handoff("continue_bootstrap.coordinator_ready");
-    coordinator_config.deterministic_store = settings.deterministic;
-    coordinator_config.hook_runtime_config.suppress_execution = settings.deterministic;
-    coordinator_config.config_digest = settings.config_digest.clone();
-    coordinator_config.harness_version = env!("CARGO_PKG_VERSION").to_string();
+    apply_runtime_metadata(
+        &mut coordinator_config,
+        settings.deterministic,
+        &settings.config_digest,
+    );
 
     let coordinator = spawn_coordinator(
         coordinator_config,
@@ -1452,12 +1435,6 @@ fn new_live_tui_options(
     }
 }
 
-fn load_run_metadata(run_dir: &Path) -> Option<RunMetadata> {
-    let meta_path = run_dir.join("meta.json");
-    let body = fs::read_to_string(meta_path).ok()?;
-    serde_json::from_str(&body).ok()
-}
-
 fn load_recorded_runtime_context(run_dir: &Path) -> Option<RecordedRuntimeContext> {
     load_run_metadata(run_dir).and_then(|metadata| metadata.recorded_runtime_context)
 }
@@ -1475,7 +1452,7 @@ fn launch_metadata_from_recorded_runtime_context(
         variant: recorded_runtime_context.variant.clone(),
         variant_display_label: recorded_runtime_context.variant_display_label.clone(),
         display_label: Some(recorded_runtime_context.display_label.clone())
-            .filter(|value| !value.trim().is_empty()),
+            .filter(|value| model_selection_value_present(value)),
         token_window_label: recorded_runtime_context.token_window_label.clone(),
         context_window_tokens: recorded_runtime_context.context_window_tokens,
         max_input_tokens: recorded_runtime_context.max_input_tokens,
@@ -1542,15 +1519,7 @@ fn build_live_ui_intent_router(
     let selected_workflow = Arc::new(Mutex::new(None::<InteractiveWorkflow>));
     let selected_workflow_sink = Arc::clone(&selected_workflow);
     let on_ui_intent = Arc::new(move |intent: UiIntent| {
-        if let UiIntent::SwitchModel {
-            launch_metadata, ..
-        } = &intent
-        {
-            record_launch_selection(&launch_selection, launch_metadata);
-            if persist_model_selection {
-                persist_launch_selection_for_exit(&launch_metadata.clone().without_mode_label());
-            }
-        }
+        handle_model_switch_intent(&intent, &launch_selection, persist_model_selection);
         if let Some(workflow) = live_workflow_from_intent(&intent) {
             capture_first_workflow(&selected_workflow_sink, workflow);
         }
@@ -1620,77 +1589,6 @@ async fn stop_live_source_run(coordinator: &CoordinatorHandle) -> Result<(), Str
         }
     }
     Ok(())
-}
-
-fn latest_run_name(events: &[EventEnvelopeV1]) -> Option<String> {
-    events.iter().rev().find_map(|event| {
-        if let EventV1::RunStarted(data) = &event.payload {
-            Some(data.run_name.clone())
-        } else {
-            None
-        }
-    })
-}
-
-fn select_resume_agent_id(
-    resume_plan: &ResumePlan,
-    historical_events: &[EventEnvelopeV1],
-    run_id: &str,
-) -> Result<String, String> {
-    if resume_plan.known_agents.is_empty() {
-        return Err(format!(
-            "continue session requires at least one agent binding for {run_id}"
-        ));
-    }
-
-    most_recent_conversational_agent_id(historical_events, &resume_plan.known_agents)
-        .or_else(|| most_recent_known_agent_spawn_id(historical_events, &resume_plan.known_agents))
-        .ok_or_else(|| {
-            format!(
-                "continue session requires a deterministically targetable conversational agent for {run_id}"
-            )
-        })
-}
-
-fn most_recent_conversational_agent_id(
-    historical_events: &[EventEnvelopeV1],
-    known_agents: &BTreeMap<String, String>,
-) -> Option<String> {
-    historical_events.iter().rev().find_map(|event| {
-        let conversational_payload = matches!(
-            &event.payload,
-            EventV1::ProviderRequestStarted(_)
-                | EventV1::ProviderStreamDelta(_)
-                | EventV1::ProviderRequestFinished(_)
-                | EventV1::AssistantMessageFinished(_)
-                | EventV1::TaskCompleted(_)
-                | EventV1::TaskCancelled(_)
-        );
-        if !conversational_payload || event.actor.kind != ActorKind::Worker {
-            return None;
-        }
-
-        event
-            .actor
-            .agent_id
-            .as_ref()
-            .filter(|agent_id| known_agents.contains_key(*agent_id))
-            .cloned()
-    })
-}
-
-fn most_recent_known_agent_spawn_id(
-    historical_events: &[EventEnvelopeV1],
-    known_agents: &BTreeMap<String, String>,
-) -> Option<String> {
-    historical_events.iter().rev().find_map(|event| {
-        let EventV1::AgentSpawned(data) = &event.payload else {
-            return None;
-        };
-        known_agents
-            .contains_key(&data.agent_id)
-            .then(|| data.agent_id.clone())
-    })
 }
 
 fn latest_request_id_for_agent(
@@ -1967,11 +1865,12 @@ async fn bootstrap_new_live_runtime(
         .coordinator_config(settings, demo_mode)
         .await?;
     profile_handoff("new_live.coordinator_ready");
-    coordinator_config.deterministic_store = settings.deterministic;
-    coordinator_config.hook_runtime_config.suppress_execution = settings.deterministic;
     coordinator_config.run_id_override = Some(run_id_override);
-    coordinator_config.config_digest = settings.config_digest.clone();
-    coordinator_config.harness_version = env!("CARGO_PKG_VERSION").to_string();
+    apply_runtime_metadata(
+        &mut coordinator_config,
+        settings.deterministic,
+        &settings.config_digest,
+    );
 
     let coordinator = spawn_coordinator(
         coordinator_config,
@@ -2070,16 +1969,17 @@ async fn run_live_mode(
     };
 
     let mut coordinator_config = CoordinatorConfig::new(settings.session_dir.clone());
-    coordinator_config.deterministic_store = settings.deterministic;
-    coordinator_config.hook_runtime_config.suppress_execution = settings.deterministic;
     coordinator_config.permission_policy = default_permission_policy();
     coordinator_config.tool_registry =
         Arc::new(coordinator_registry(settings.shell_allowlist.clone()));
     coordinator_config.provider = Arc::new(golden_path_provider());
     coordinator_config.agent_profiles = golden_path_profiles();
     coordinator_config.run_id_override = deterministic_run_id;
-    coordinator_config.config_digest = settings.config_digest.clone();
-    coordinator_config.harness_version = env!("CARGO_PKG_VERSION").to_string();
+    apply_runtime_metadata(
+        &mut coordinator_config,
+        settings.deterministic,
+        &settings.config_digest,
+    );
 
     let coordinator = spawn_coordinator(
         coordinator_config,
@@ -2219,7 +2119,8 @@ async fn run_scenario_runner(
 
     if !scenario.interactive_permissions() {
         let permission_id =
-            wait_for_permission_id(&run.events_path, &tool_call_id, WAIT_TIMEOUT).await?;
+            wait_for_permission_id(&run.events_path, &tool_call_id, DEFAULT_EVENT_WAIT_TIMEOUT)
+                .await?;
         coordinator
             .resolve_permission(permission_id, PermissionDecision::Allow, None)
             .await
@@ -2232,8 +2133,9 @@ async fn run_scenario_runner(
         if scenario.interactive_permissions() {
             None
         } else {
-            Some(WAIT_TIMEOUT)
+            Some(DEFAULT_EVENT_WAIT_TIMEOUT)
         },
+        ToolFinishTerminalEvents::Error,
     )
     .await?;
 
@@ -2632,100 +2534,6 @@ fn has_terminal_event(events: &[EventEnvelopeV1]) -> bool {
     })
 }
 
-async fn wait_for_permission_id(
-    events_path: &Path,
-    tool_call_id: &str,
-    timeout: Duration,
-) -> Result<String, String> {
-    let deadline = Instant::now() + timeout;
-    loop {
-        let events = load_events(events_path)?;
-        if let Some(permission_id) = events.into_iter().find_map(|event| match event.payload {
-            EventV1::PermissionRequested(data)
-                if data.tool_call_id.as_deref() == Some(tool_call_id) =>
-            {
-                Some(data.permission_id)
-            }
-            _ => None,
-        }) {
-            return Ok(permission_id);
-        }
-
-        if Instant::now() >= deadline {
-            return Err(format!(
-                "timed out waiting for PermissionRequested for {tool_call_id}"
-            ));
-        }
-
-        tokio::time::sleep(EVENT_WAIT_POLL_INTERVAL).await;
-    }
-}
-
-async fn wait_for_tool_finished(
-    events_path: &Path,
-    tool_call_id: &str,
-    timeout: Option<Duration>,
-) -> Result<ToolCallStatus, String> {
-    let deadline = timeout.map(|wait| Instant::now() + wait);
-    loop {
-        let events = load_events(events_path)?;
-
-        if let Some(status) = events.iter().find_map(|event| match &event.payload {
-            EventV1::ToolCallFinished(data) if data.tool_call_id == tool_call_id => {
-                Some(data.status)
-            }
-            _ => None,
-        }) {
-            return Ok(status);
-        }
-
-        if let Some(run_error) = events.iter().find_map(|event| match &event.payload {
-            EventV1::RunFailed(data) => Some(data.error.clone()),
-            _ => None,
-        }) {
-            return Err(format!(
-                "run failed before ToolCallFinished for {tool_call_id}: {run_error}"
-            ));
-        }
-
-        if events
-            .iter()
-            .any(|event| matches!(&event.payload, EventV1::RunFinished(_)))
-        {
-            return Err(format!(
-                "run finished before ToolCallFinished for {tool_call_id}"
-            ));
-        }
-
-        if let Some(deadline) = deadline {
-            if Instant::now() >= deadline {
-                return Err(format!(
-                    "timed out waiting for ToolCallFinished for {tool_call_id}"
-                ));
-            }
-        }
-
-        tokio::time::sleep(EVENT_WAIT_POLL_INTERVAL).await;
-    }
-}
-
-fn load_events(path: &Path) -> Result<Vec<EventEnvelopeV1>, String> {
-    let body = fs::read_to_string(path)
-        .map_err(|err| format!("failed to read events file {}: {err}", path.display()))?;
-    body.lines()
-        .map(|line| serde_json::from_str::<EventEnvelopeV1>(line).map_err(|err| err.to_string()))
-        .collect()
-}
-
-fn deterministic_run_id(seed: u64, scenario: ScenarioName) -> String {
-    let namespace = Uuid::new_v5(
-        &Uuid::NAMESPACE_OID,
-        format!("harness-seed:{seed}").as_bytes(),
-    );
-    let run_uuid = Uuid::new_v5(&namespace, scenario.as_str().as_bytes());
-    format!("run_{}", run_uuid.simple())
-}
-
 fn unique_interactive_run_id() -> String {
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -2736,62 +2544,6 @@ fn unique_interactive_run_id() -> String {
         format!("interactive:{}:{}", std::process::id(), stamp).as_bytes(),
     );
     format!("run_{}", namespace.simple())
-}
-
-#[cfg(test)]
-pub(crate) fn assert_startup_command_workflow_maps_model_and_session_intents_correctly() {
-    let launch_selection = Arc::new(Mutex::new(
-        LaunchMetadata::from_model_ref("deep", "default:gpt-5.4").with_available_models(vec![
-            ModelOption::from_model_ref("deep", "default:gpt-5.4"),
-            ModelOption::from_model_ref("ops", "anthropic:claude-3.7"),
-        ]),
-    ));
-    let switched_metadata = LaunchMetadata::from_model_ref("ops", "anthropic:claude-3.7")
-        .with_available_models(
-            recover_mutex_lock(&launch_selection)
-                .available_models()
-                .to_vec(),
-        )
-        .with_mode_label("Continued");
-
-    record_launch_selection(&launch_selection, &switched_metadata);
-
-    let recorded = recover_mutex_lock(&launch_selection).clone();
-    assert_eq!(recorded.profile(), "ops");
-    assert_eq!(recorded.provider(), "anthropic");
-    assert_eq!(recorded.model(), Some("claude-3.7"));
-    assert_eq!(recorded.mode_label(), None);
-    assert_eq!(recorded.available_models().len(), 2);
-
-    let continue_run_dir = PathBuf::from("/tmp/sessions/run_continue");
-    assert_eq!(
-        map_startup_intent_to_workflow(Some(UiIntent::ContinueSession {
-            run_id: "run_continue".to_string(),
-            run_dir: continue_run_dir.clone(),
-        })),
-        InteractiveWorkflow::Continue {
-            run_id: "run_continue".to_string(),
-            run_dir: continue_run_dir,
-        }
-    );
-
-    let replay_run_dir = PathBuf::from("/tmp/sessions/run_replay");
-    assert_eq!(
-        live_workflow_from_intent(&UiIntent::ReplaySession {
-            run_id: "run_replay".to_string(),
-            run_dir: replay_run_dir.clone(),
-        }),
-        Some(InteractiveWorkflow::Replay {
-            run_dir: replay_run_dir,
-        })
-    );
-
-    assert!(forward_intent_to_live_run(&UiIntent::SwitchModel {
-        profile: "ops".to_string(),
-        launch_metadata: switched_metadata,
-    }));
-    assert!(forward_intent_to_live_run(&UiIntent::CompactSession));
-    assert_eq!(live_workflow_from_intent(&UiIntent::CompactSession), None);
 }
 
 #[cfg(test)]
@@ -2806,6 +2558,7 @@ pub(crate) fn replay_launch_metadata_for_test(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::recovery::most_recent_conversational_agent_id;
     use harness_core::config::load_config_from_str;
     use harness_core::event::{
         AgentSpawnedEvent, ProviderRequestFinishedEvent, ProviderRequestStartedEvent,
@@ -3033,6 +2786,21 @@ mod tests {
                 run_dir: run_dir.clone(),
             })),
             InteractiveWorkflow::Replay { run_dir }
+        );
+    }
+
+    #[test]
+    fn tui_startup_continue_session_uses_continue_workflow() {
+        let run_dir = PathBuf::from("/tmp/sessions/run_continue");
+        assert_eq!(
+            map_startup_intent_to_workflow(Some(UiIntent::ContinueSession {
+                run_id: "run_continue".to_string(),
+                run_dir: run_dir.clone(),
+            })),
+            InteractiveWorkflow::Continue {
+                run_id: "run_continue".to_string(),
+                run_dir,
+            }
         );
     }
 
@@ -3418,6 +3186,35 @@ mod tests {
 
         assert!(recover_mutex_lock(&selected_workflow).is_none());
         assert_eq!(intent_rx.try_recv().ok(), Some(UiIntent::CompactSession));
+    }
+
+    #[test]
+    fn live_ui_router_records_model_switch_without_switching_workflow() {
+        let (intent_tx, mut intent_rx) = mpsc::unbounded_channel::<UiIntent>();
+        let launch_selection = Arc::new(Mutex::new(LaunchMetadata::default()));
+        let (selected_workflow, sink) =
+            build_live_ui_intent_router(intent_tx, Arc::clone(&launch_selection), false);
+        let launch_metadata =
+            LaunchMetadata::from_model_ref("ops", "anthropic:claude-3.7").with_mode_label("Live");
+
+        sink(UiIntent::SwitchModel {
+            profile: "ops".to_string(),
+            launch_metadata: launch_metadata.clone(),
+        });
+
+        assert!(recover_mutex_lock(&selected_workflow).is_none());
+        assert_eq!(
+            intent_rx.try_recv().ok(),
+            Some(UiIntent::SwitchModel {
+                profile: "ops".to_string(),
+                launch_metadata,
+            })
+        );
+        let recorded = recover_mutex_lock(&launch_selection).clone();
+        assert_eq!(recorded.profile(), "ops");
+        assert_eq!(recorded.provider(), "anthropic");
+        assert_eq!(recorded.model(), Some("claude-3.7"));
+        assert_eq!(recorded.mode_label(), None);
     }
 
     #[test]
@@ -3893,8 +3690,7 @@ mod tests {
 
     #[test]
     fn shipped_example_config_does_not_synthesize_unconfigured_model_variant() {
-        let config_path =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs/harness.example.jsonc");
+        let config_path = crate::cli_config::shipped_example_config_path();
         let config = harness_core::config::load_config_from_file(&config_path)
             .expect("shipped example config should parse with discovered prompts");
 

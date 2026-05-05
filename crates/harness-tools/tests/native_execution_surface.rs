@@ -1,40 +1,22 @@
 use std::fs;
 use std::path::Path;
-use std::sync::Arc;
 
 use harness_core::agent::{build_provider_tool_defs, AgentProfile};
-use harness_core::clock::RealClock;
 use harness_core::config::ShellAllowlist;
-use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
 use harness_core::edit::hashline::compute_line_hash;
-use harness_core::event::{ActorKind, EventActor};
-use harness_core::redact::DefaultRedactor;
 use harness_core::tool::ToolContext;
 use harness_tools::{coordinator_registry, coordinator_registry_with_internal_hashline_tools};
 use serde_json::json;
 
-fn test_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
-    let coordinator = spawn_coordinator(
-        CoordinatorConfig::default(),
-        Arc::new(RealClock::new()),
-        Arc::new(DefaultRedactor::default()),
-    );
-    ToolContext {
-        run_id: "run-native-surface-tests".to_string(),
-        workspace_root: workspace_root.to_path_buf(),
-        artifacts_dir: workspace_root.join("artifacts"),
-        actor: EventActor::new(ActorKind::Worker, Some("worker-1".to_string())),
-        category: Some("deep".to_string()),
-        tool_call_id: tool_call_id.to_string(),
-        coordinator,
-    }
-}
+#[path = "common/tool_context.rs"]
+mod tool_context;
+#[path = "common/workspace.rs"]
+mod workspace;
 
-fn setup_workspace() -> tempfile::TempDir {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
-    let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
-    temp_dir
+use workspace::setup_workspace;
+
+fn test_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
+    tool_context::test_context(workspace_root, "run-native-surface-tests", tool_call_id)
 }
 
 #[tokio::test]

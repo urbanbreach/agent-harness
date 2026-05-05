@@ -7,13 +7,11 @@ use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResul
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
-use walkdir::{DirEntry, WalkDir};
 
-use crate::hashline_apply::resolve_workspace_target_path;
+use crate::fs_walk::{collect_workspace_files, resolve_search_base, SKIPPED_WORKSPACE_DIRS};
+use crate::limit_summary::summarize_limit;
 
-const DEFAULT_LIMIT: usize = 100;
-const SKIPPED_DIR_NAMES: &[&str] = &[".git", "target"];
-const SKIPPED_RELATIVE_DIRS: &[&str] = &[".agent-harness/sessions"];
+pub(crate) const DEFAULT_GLOB_LIMIT: usize = 100;
 
 pub(crate) struct FsGlobTool;
 
@@ -61,16 +59,16 @@ impl Tool for FsGlobTool {
         let args: FsGlobArgs = serde_json::from_value(args_json)
             .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
 
-        let base_path = args.path.as_deref().unwrap_or(".");
-        let workspace_root = ctx.resolve_workspace_path(Path::new("."))?;
-        let resolved_base = resolve_workspace_target_path(&ctx, base_path)?;
+        let (workspace_root, resolved_base, display_path) =
+            resolve_search_base(&ctx, args.path.as_deref())?;
         if !resolved_base.is_dir() {
             return Err(ToolError::InvalidArguments(
                 "path must resolve to a directory".to_string(),
             ));
         }
-        let display_path = workspace_relative_display(&workspace_root, &resolved_base)?;
-        let limit = args.limit.map_or(DEFAULT_LIMIT, |value| value as usize);
+        let limit = args
+            .limit
+            .map_or(DEFAULT_GLOB_LIMIT, |value| value as usize);
 
         let matches = collect_glob_matches(&workspace_root, &resolved_base, &args.pattern, limit)?;
 
@@ -85,7 +83,7 @@ impl Tool for FsGlobTool {
                 "returned_count": matches.returned_count,
                 "truncated_count": matches.truncated_count,
                 "truncated": matches.is_truncated,
-                "skipped_dirs": [".git", "target", ".agent-harness/sessions"],
+                "skipped_dirs": SKIPPED_WORKSPACE_DIRS,
             })),
             artifacts: Vec::new(),
         })
@@ -103,93 +101,26 @@ fn collect_glob_matches(
         .compile_matcher();
 
     let mut matched_paths = BTreeSet::new();
-    for entry in WalkDir::new(base_dir)
-        .follow_links(false)
-        .into_iter()
-        .filter_entry(|entry| !should_skip_entry(workspace_root, entry))
-    {
-        let entry = entry.map_err(|err| {
-            ToolError::Execution(format!("failed to traverse directory tree: {err}"))
-        })?;
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        let relative = entry.path().strip_prefix(workspace_root).map_err(|_| {
-            ToolError::Execution(format!(
-                "failed to compute workspace-relative path for {}",
-                entry.path().display()
-            ))
-        })?;
-        let relative = normalize_relative_path(relative);
-        if matcher.is_match(&relative) {
-            matched_paths.insert(relative);
+    for file in collect_workspace_files(workspace_root, base_dir)? {
+        if matcher.is_match(&file.relative_path) {
+            matched_paths.insert(file.relative_path);
         }
     }
 
     let total_count = matched_paths.len();
-    let capped_limit = limit.min(total_count);
+    let limit_summary = summarize_limit(total_count, limit);
     let paths = matched_paths
         .into_iter()
-        .take(capped_limit)
+        .take(limit_summary.returned_count)
         .collect::<Vec<_>>();
-    let truncated_count = total_count.saturating_sub(capped_limit);
-    let returned_count = paths.len();
 
     Ok(GlobMatches {
-        returned_count,
-        is_truncated: truncated_count > 0,
+        returned_count: limit_summary.returned_count,
+        is_truncated: limit_summary.is_truncated,
         paths,
         total_count,
-        truncated_count,
+        truncated_count: limit_summary.truncated_count,
     })
-}
-
-fn should_skip_entry(workspace_root: &Path, entry: &DirEntry) -> bool {
-    if entry.depth() == 0 {
-        return false;
-    }
-
-    let path = entry.path();
-    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-        return false;
-    };
-
-    if entry.file_type().is_dir() && SKIPPED_DIR_NAMES.contains(&name) {
-        return true;
-    }
-
-    let Ok(relative) = path.strip_prefix(workspace_root) else {
-        return false;
-    };
-    let relative = normalize_relative_path(relative);
-
-    SKIPPED_RELATIVE_DIRS
-        .iter()
-        .any(|prefix| relative == *prefix || relative.starts_with(&format!("{prefix}/")))
-}
-
-fn normalize_relative_path(path: &Path) -> String {
-    if path.as_os_str().is_empty() {
-        return ".".to_string();
-    }
-
-    path.iter()
-        .map(|segment| segment.to_string_lossy().to_string())
-        .collect::<Vec<_>>()
-        .join("/")
-}
-
-fn workspace_relative_display(
-    workspace_root: &Path,
-    resolved_path: &Path,
-) -> Result<String, ToolError> {
-    let relative = resolved_path.strip_prefix(workspace_root).map_err(|_| {
-        ToolError::PathEscapesWorkspace {
-            workspace_root: workspace_root.display().to_string(),
-            path: resolved_path.display().to_string(),
-        }
-    })?;
-    Ok(normalize_relative_path(relative))
 }
 
 #[cfg(test)]

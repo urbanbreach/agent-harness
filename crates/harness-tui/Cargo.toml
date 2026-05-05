@@ -9,8 +9,6 @@ anyhow = "1.0"
 ratatui.workspace = true
 crossterm = { workspace = true, features = ["event-stream"] }
 harness-core = { path = "../harness-core" }
-futures = "0.3.32"
-futures-util = "0.3.32"
 imara-diff = "0.2"
 serde.workspace = true
 serde_json.workspace = true

@@ -7,12 +7,16 @@ use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Args;
-use harness_core::event::{EventEnvelopeV1, EventV1};
+use harness_core::event::{EventEnvelopeV1, EventV1, RunStartedEvent};
 use harness_core::proj::{
     project_resume_plan, project_run_summary, project_session_catalog_entry,
     ChildSessionTerminalState, RunStatus, SessionCatalogEntry, SessionCatalogMetadata,
 };
 use serde::Serialize;
+
+use crate::cli_io::{load_events_from_run_dir, EVENTS_FILE_NAME, META_FILE_NAME};
+use crate::cli_labels::provider_model_label;
+use crate::defaults::RESUME_UNAVAILABLE_FALLBACK_REASON;
 
 #[derive(Debug, Args, Clone)]
 pub struct ReplayCommand {
@@ -108,6 +112,16 @@ pub struct SessionInspectionEntry {
     pub child_session_count: usize,
 }
 
+impl SessionInspectionEntry {
+    pub(crate) fn sort_by_updated_desc(entries: &mut [Self]) {
+        entries.sort_by_key(|entry| (Reverse(entry.sort_unix_ms), entry.run_dir.clone()));
+    }
+
+    pub(crate) fn sort_by_updated_asc(entries: &mut [Self]) {
+        entries.sort_by_key(|entry| (entry.sort_unix_ms, entry.run_dir.clone()));
+    }
+}
+
 pub fn execute(command: ReplayCommand) -> ExitCode {
     match summarize_session(&command.session) {
         Ok(summary) => {
@@ -132,7 +146,7 @@ pub fn execute(command: ReplayCommand) -> ExitCode {
 }
 
 pub fn summarize_session(run_dir: &Path) -> Result<ReplaySummary, String> {
-    let events = load_events(run_dir)?;
+    let events = load_events_from_run_dir(run_dir)?;
     if events.is_empty() {
         return Err(format!("no events found in {}", run_dir.display()));
     }
@@ -141,10 +155,7 @@ pub fn summarize_session(run_dir: &Path) -> Result<ReplaySummary, String> {
     let run_id = events[0].run_id.clone();
     let catalog = project_session_catalog_entry(events.iter(), &run_id, None, None, None)
         .map_err(|err| err.to_string())?;
-    let run_name = events.iter().find_map(|event| match &event.payload {
-        EventV1::RunStarted(data) => Some(data.run_name.clone()),
-        _ => None,
-    });
+    let run_name = run_started_event(&events).map(|data| data.run_name.clone());
     let (artifacts, child_sessions) = summarize_recovery_story(run_dir, &events, &run_id);
 
     Ok(ReplaySummary {
@@ -179,13 +190,33 @@ pub fn inspect_session_catalog(session_dir: &Path) -> Result<Vec<SessionInspecti
 
     let mut entries = read_dir
         .filter_map(|entry| entry.ok().map(|item| item.path()))
-        .filter(|path| path.is_dir() && path.join("events.jsonl").exists())
+        .filter(|path| path.is_dir() && path.join(EVENTS_FILE_NAME).exists())
         .map(|run_dir| inspect_single_session(&run_dir))
         .collect::<Vec<_>>();
 
-    entries.sort_by_key(|entry| (Reverse(entry.sort_unix_ms), entry.run_dir.clone()));
+    SessionInspectionEntry::sort_by_updated_desc(&mut entries);
 
     Ok(entries)
+}
+
+pub(crate) fn normalize_lineage_entry(mut entry: SessionInspectionEntry) -> SessionInspectionEntry {
+    if let Some(parent_run_id) = harness_lineage_parent_run_id(&entry.run_dir) {
+        entry.catalog.parent_session_id = Some(parent_run_id);
+    }
+    entry
+}
+
+fn harness_lineage_parent_run_id(run_dir: &Path) -> Option<String> {
+    let body = fs::read_to_string(run_dir.join(META_FILE_NAME)).ok()?;
+    let value = serde_json::from_str::<serde_json::Value>(&body).ok()?;
+    let lineage = value.get("harness_lineage")?;
+    lineage
+        .get("harness_source_run_id")
+        .or_else(|| lineage.get("parent_run_id"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
 
 fn inspect_single_session(run_dir: &Path) -> SessionInspectionEntry {
@@ -199,7 +230,7 @@ fn inspect_single_session(run_dir: &Path) -> SessionInspectionEntry {
     let (meta, _meta_error) = load_meta_lossy(run_dir);
 
     let modified = run_dir
-        .join("events.jsonl")
+        .join(EVENTS_FILE_NAME)
         .metadata()
         .ok()
         .and_then(|it| it.modified().ok());
@@ -233,16 +264,10 @@ fn inspect_single_session(run_dir: &Path) -> SessionInspectionEntry {
                 .first()
                 .map(|event| event.run_id.clone())
                 .unwrap_or_else(|| run_id_fallback.to_string()),
-            run_name: events.iter().find_map(|event| match &event.payload {
-                EventV1::RunStarted(data) => Some(data.run_name.clone()),
-                _ => None,
-            }),
+            run_name: run_started_event(&events).map(|data| data.run_name.clone()),
             status: None,
             last_updated_at,
-            workspace_root: events.iter().find_map(|event| match &event.payload {
-                EventV1::RunStarted(data) => Some(data.workspace_root.clone()),
-                _ => None,
-            }),
+            workspace_root: run_started_event(&events).map(|data| data.workspace_root.clone()),
             profile_preset: None,
             provider_model: None,
             mode_source: harness_core::proj::SessionModeSource::Unknown,
@@ -264,6 +289,13 @@ fn inspect_single_session(run_dir: &Path) -> SessionInspectionEntry {
         artifact_count,
         child_session_count,
     }
+}
+
+fn run_started_event(events: &[EventEnvelopeV1]) -> Option<&RunStartedEvent> {
+    events.iter().find_map(|event| match &event.payload {
+        EventV1::RunStarted(data) => Some(data),
+        _ => None,
+    })
 }
 
 fn summarize_recovery_counts(
@@ -395,32 +427,27 @@ fn artifact_inventory(
                 payload.tool_call_id.clone(),
                 Some(payload.digest.clone()),
             ))
-            .or_insert_with(|| ReplayArtifactSummary {
-                path: payload.path.clone(),
-                digest: Some(payload.digest.clone()),
-                bytes: Some(payload.bytes),
-                tool_call_id: payload.tool_call_id.clone(),
-                tool_id: discovery.and_then(|it| it.tool_id.clone()),
-                effective_tool_id: discovery.and_then(|it| it.effective_tool_id.clone()),
-                canonical_tool_id: discovery
-                    .and_then(|it| it.canonical_tool_id.clone())
-                    .or_else(|| {
-                        payload
-                            .tool_metadata
-                            .as_ref()
-                            .and_then(|metadata| metadata.canonical_tool_id.clone())
-                    }),
-                alias_source_tool_id: discovery
-                    .and_then(|it| it.alias_source_tool_id.clone())
-                    .or_else(|| {
-                        payload
-                            .tool_metadata
-                            .as_ref()
-                            .and_then(|metadata| metadata.alias_source_tool_id.clone())
-                    }),
-                child_session_id: discovery.and_then(|it| it.child_session_id.clone()),
-                present_on_disk: run_dir.join(&payload.path).exists(),
+            .or_insert_with(|| {
+                artifact_summary(
+                    payload.path.clone(),
+                    Some(payload.digest.clone()),
+                    Some(payload.bytes),
+                    payload.tool_call_id.clone(),
+                    run_dir.join(&payload.path).exists(),
+                )
             });
+        fill_missing_artifact_identity(
+            entry,
+            discovery,
+            payload
+                .tool_metadata
+                .as_ref()
+                .and_then(|metadata| metadata.canonical_tool_id.as_deref()),
+            payload
+                .tool_metadata
+                .as_ref()
+                .and_then(|metadata| metadata.alias_source_tool_id.as_deref()),
+        );
         if entry.digest.is_none() {
             entry.digest = Some(payload.digest.clone());
         }
@@ -429,35 +456,6 @@ fn artifact_inventory(
         }
         if entry.tool_call_id.is_none() {
             entry.tool_call_id = payload.tool_call_id.clone();
-        }
-        if entry.tool_id.is_none() {
-            entry.tool_id = discovery.and_then(|it| it.tool_id.clone());
-        }
-        if entry.effective_tool_id.is_none() {
-            entry.effective_tool_id = discovery.and_then(|it| it.effective_tool_id.clone());
-        }
-        if entry.canonical_tool_id.is_none() {
-            entry.canonical_tool_id = discovery
-                .and_then(|it| it.canonical_tool_id.clone())
-                .or_else(|| {
-                    payload
-                        .tool_metadata
-                        .as_ref()
-                        .and_then(|metadata| metadata.canonical_tool_id.clone())
-                });
-        }
-        if entry.alias_source_tool_id.is_none() {
-            entry.alias_source_tool_id = discovery
-                .and_then(|it| it.alias_source_tool_id.clone())
-                .or_else(|| {
-                    payload
-                        .tool_metadata
-                        .as_ref()
-                        .and_then(|metadata| metadata.alias_source_tool_id.clone())
-                });
-        }
-        if entry.child_session_id.is_none() {
-            entry.child_session_id = discovery.and_then(|it| it.child_session_id.clone());
         }
         entry.present_on_disk |= run_dir.join(&payload.path).exists();
     }
@@ -475,46 +473,26 @@ fn artifact_inventory(
                         Some(tool_call_id.clone()),
                         artifact_ref.digest.clone(),
                     ))
-                    .or_insert_with(|| ReplayArtifactSummary {
-                        path: artifact_ref.path.clone(),
-                        digest: artifact_ref.digest.clone(),
-                        bytes: None,
-                        tool_call_id: Some(tool_call_id.clone()),
-                        tool_id: discovery.and_then(|it| it.tool_id.clone()),
-                        effective_tool_id: discovery.and_then(|it| it.effective_tool_id.clone()),
-                        canonical_tool_id: discovery
-                            .and_then(|it| it.canonical_tool_id.clone())
-                            .or_else(|| metadata.canonical_tool_id.clone()),
-                        alias_source_tool_id: discovery
-                            .and_then(|it| it.alias_source_tool_id.clone())
-                            .or_else(|| metadata.alias_source_tool_id.clone()),
-                        child_session_id: discovery.and_then(|it| it.child_session_id.clone()),
-                        present_on_disk: run_dir.join(&artifact_ref.path).exists(),
+                    .or_insert_with(|| {
+                        artifact_summary(
+                            artifact_ref.path.clone(),
+                            artifact_ref.digest.clone(),
+                            None,
+                            Some(tool_call_id.clone()),
+                            run_dir.join(&artifact_ref.path).exists(),
+                        )
                     });
+                fill_missing_artifact_identity(
+                    entry,
+                    discovery,
+                    metadata.canonical_tool_id.as_deref(),
+                    metadata.alias_source_tool_id.as_deref(),
+                );
                 if entry.digest.is_none() {
                     entry.digest = artifact_ref.digest.clone();
                 }
                 if entry.tool_call_id.is_none() {
                     entry.tool_call_id = Some(tool_call_id.clone());
-                }
-                if entry.tool_id.is_none() {
-                    entry.tool_id = discovery.and_then(|it| it.tool_id.clone());
-                }
-                if entry.effective_tool_id.is_none() {
-                    entry.effective_tool_id = discovery.and_then(|it| it.effective_tool_id.clone());
-                }
-                if entry.canonical_tool_id.is_none() {
-                    entry.canonical_tool_id = discovery
-                        .and_then(|it| it.canonical_tool_id.clone())
-                        .or_else(|| metadata.canonical_tool_id.clone());
-                }
-                if entry.alias_source_tool_id.is_none() {
-                    entry.alias_source_tool_id = discovery
-                        .and_then(|it| it.alias_source_tool_id.clone())
-                        .or_else(|| metadata.alias_source_tool_id.clone());
-                }
-                if entry.child_session_id.is_none() {
-                    entry.child_session_id = discovery.and_then(|it| it.child_session_id.clone());
                 }
                 entry.present_on_disk |= run_dir.join(&artifact_ref.path).exists();
             }
@@ -537,23 +515,60 @@ fn artifact_inventory(
         if !matched {
             by_key.insert(
                 (path.clone(), None, None),
-                ReplayArtifactSummary {
-                    path,
-                    digest: None,
-                    bytes: Some(bytes),
-                    tool_call_id: None,
-                    tool_id: None,
-                    effective_tool_id: None,
-                    canonical_tool_id: None,
-                    alias_source_tool_id: None,
-                    child_session_id: None,
-                    present_on_disk: true,
-                },
+                artifact_summary(path, None, Some(bytes), None, true),
             );
         }
     }
 
     by_key.into_values().collect()
+}
+
+fn artifact_summary(
+    path: String,
+    digest: Option<String>,
+    bytes: Option<u64>,
+    tool_call_id: Option<String>,
+    present_on_disk: bool,
+) -> ReplayArtifactSummary {
+    ReplayArtifactSummary {
+        path,
+        digest,
+        bytes,
+        tool_call_id,
+        tool_id: None,
+        effective_tool_id: None,
+        canonical_tool_id: None,
+        alias_source_tool_id: None,
+        child_session_id: None,
+        present_on_disk,
+    }
+}
+
+fn fill_missing_artifact_identity(
+    entry: &mut ReplayArtifactSummary,
+    discovery: Option<&ToolCallDiscovery>,
+    canonical_tool_id_fallback: Option<&str>,
+    alias_source_tool_id_fallback: Option<&str>,
+) {
+    if entry.tool_id.is_none() {
+        entry.tool_id = discovery.and_then(|it| it.tool_id.clone());
+    }
+    if entry.effective_tool_id.is_none() {
+        entry.effective_tool_id = discovery.and_then(|it| it.effective_tool_id.clone());
+    }
+    if entry.canonical_tool_id.is_none() {
+        entry.canonical_tool_id = discovery
+            .and_then(|it| it.canonical_tool_id.clone())
+            .or_else(|| canonical_tool_id_fallback.map(str::to_string));
+    }
+    if entry.alias_source_tool_id.is_none() {
+        entry.alias_source_tool_id = discovery
+            .and_then(|it| it.alias_source_tool_id.clone())
+            .or_else(|| alias_source_tool_id_fallback.map(str::to_string));
+    }
+    if entry.child_session_id.is_none() {
+        entry.child_session_id = discovery.and_then(|it| it.child_session_id.clone());
+    }
 }
 
 fn tool_call_discovery_lookup(
@@ -639,10 +654,8 @@ fn collect_artifact_files(
             continue;
         }
 
-        let relative = path
-            .strip_prefix(run_dir)
-            .map(normalize_path)
-            .unwrap_or_else(|_| normalize_path(&path));
+        let relative_path = path.strip_prefix(run_dir).unwrap_or(&path);
+        let relative = relative_path.to_string_lossy().replace('\\', "/");
         let bytes = path
             .metadata()
             .ok()
@@ -652,21 +665,8 @@ fn collect_artifact_files(
     }
 }
 
-fn load_events(run_dir: &Path) -> Result<Vec<EventEnvelopeV1>, String> {
-    let events_path = run_dir.join("events.jsonl");
-    let text = fs::read_to_string(&events_path).map_err(|err| {
-        format!(
-            "failed to read events file {}: {err}",
-            events_path.display()
-        )
-    })?;
-    text.lines()
-        .map(|line| serde_json::from_str::<EventEnvelopeV1>(line).map_err(|err| err.to_string()))
-        .collect()
-}
-
 fn load_events_lossy(run_dir: &Path) -> (Vec<EventEnvelopeV1>, Option<String>) {
-    let events_path = run_dir.join("events.jsonl");
+    let events_path = run_dir.join(EVENTS_FILE_NAME);
     let text = match fs::read_to_string(&events_path) {
         Ok(text) => text,
         Err(err) => {
@@ -699,7 +699,7 @@ fn load_events_lossy(run_dir: &Path) -> (Vec<EventEnvelopeV1>, Option<String>) {
 fn load_meta_lossy(
     run_dir: &Path,
 ) -> (Option<SessionCatalogMetadataWithCreatedAt>, Option<String>) {
-    let meta_path = run_dir.join("meta.json");
+    let meta_path = run_dir.join(META_FILE_NAME);
     if !meta_path.exists() {
         return (None, None);
     }
@@ -754,6 +754,8 @@ fn parse_unix_ms_from_string_timestamp(value: &str) -> Option<u128> {
 }
 
 pub(crate) fn print_human_summary(summary: &ReplaySummary) {
+    let session_path = sanitize_human_text(&summary.session_path.display().to_string());
+
     println!("run_id: {}", sanitize_human_text(&summary.run_id));
     println!(
         "run_name: {}",
@@ -763,10 +765,7 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary) {
             .map(sanitize_human_text)
             .unwrap_or_else(|| "<unknown>".to_string())
     );
-    println!(
-        "session_path: {}",
-        sanitize_human_text(&summary.session_path.display().to_string())
-    );
+    println!("session_path: {session_path}");
     println!("status: {:?}", summary.status);
     println!(
         "workspace_root: {}",
@@ -804,15 +803,9 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary) {
         println!("last_error: {}", sanitize_human_text(last_error));
     }
     println!("next_steps:");
-    println!(
-        "  replay_tui: harness tui --replay {}",
-        sanitize_human_text(&summary.session_path.display().to_string())
-    );
+    println!("  replay_tui: harness tui --replay {session_path}");
     if summary.is_resumable {
-        println!(
-            "  continue_tui: harness tui --continue {}",
-            sanitize_human_text(&summary.session_path.display().to_string())
-        );
+        println!("  continue_tui: harness tui --continue {session_path}");
     } else {
         println!(
             "  continue_tui: unavailable ({})",
@@ -820,7 +813,7 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary) {
                 .resume_disabled_reason
                 .as_deref()
                 .map(sanitize_human_text)
-                .unwrap_or_else(|| "resume unavailable without reason".to_string())
+                .unwrap_or_else(|| RESUME_UNAVAILABLE_FALLBACK_REASON.to_string())
         );
     }
     println!("counts:");
@@ -969,21 +962,8 @@ fn push_sanitized_detail(details: &mut Vec<String>, key: &str, value: Option<&st
     }
 }
 
-fn provider_model_label(provider: Option<&str>, model: Option<&str>) -> Option<String> {
-    match (provider, model) {
-        (Some(provider), Some(model)) => Some(format!("{provider}/{model}")),
-        (Some(provider), None) => Some(format!("{provider}/<unavailable>")),
-        (None, Some(model)) => Some(format!("<unavailable>/{model}")),
-        (None, None) => None,
-    }
-}
-
 fn short_digest(digest: &str) -> String {
     digest.chars().take(12).collect()
-}
-
-fn normalize_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
 }
 
 fn is_false(value: &bool) -> bool {

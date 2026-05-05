@@ -19,6 +19,7 @@ use super::*;
 use crate::app::OperatorSidebarSection;
 #[cfg(test)]
 use crate::app::{ActiveContextUsage, ActivityUsage, OrchestrationTaskRow, OrchestrationTaskState};
+use crate::text::{has_trimmed_content, trimmed_json_nested_string_field};
 use crate::theme::DIFF_SIDE_BY_SIDE_MIN_WIDTH;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1905,7 +1906,7 @@ fn build_operator_sidebar_content(app: &AppState, theme: &Theme) -> Text<'static
 }
 
 fn build_operator_rail_title_text(title: Option<&str>, theme: &Theme, width: u16) -> Text<'static> {
-    let Some(title) = title.filter(|title| !title.trim().is_empty()) else {
+    let Some(title) = title.filter(|title| has_trimmed_content(title)) else {
         return Text::from(Vec::<Line<'static>>::new());
     };
 
@@ -2342,7 +2343,7 @@ fn todo_json_from_artifacts(
 fn operator_sidebar_mcp_items(app: &AppState) -> Vec<OperatorRailItem> {
     let mut items = BTreeMap::new();
     if let Some(integrations) = harness_core::config::registered_integrations_config() {
-        if !integrations.remote_search.endpoint.trim().is_empty() {
+        if has_trimmed_content(&integrations.remote_search.endpoint) {
             items.insert("websearch".to_string(), RuntimeHealthState::Unhealthy);
         }
         for (name, server) in &integrations.mcp.servers {
@@ -2456,99 +2457,13 @@ fn runtime_mcp_server_name(tool_call: &crate::app::ToolCallEntry) -> Option<Stri
 fn runtime_lsp_server_name(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
     match tool_call.effective_tool_id() {
         "lsp" | "lsp.rename" | "code.lsp" | "code.lsp.rename" => {
-            json_nested_string_field(tool_call.output_json.as_ref(), &["server", "name"])
-                .or_else(|| infer_lsp_server_name_from_args(&tool_call.args_summary))
+            trimmed_json_nested_string_field(tool_call.output_json.as_ref(), &["server", "name"])
+                .or_else(|| ui_lsp::server_name_from_args(&tool_call.args_summary))
                 .map(|name| sanitize_operator_sidebar_line(&name))
                 .filter(|name| !name.is_empty())
         }
         _ => None,
     }
-}
-
-fn json_nested_string_field(value: Option<&serde_json::Value>, path: &[&str]) -> Option<String> {
-    let mut current = value?;
-    for key in path {
-        current = current.get(*key)?;
-    }
-    current
-        .as_str()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-}
-
-fn infer_lsp_server_name_from_args(args_summary: &str) -> Option<String> {
-    let args = serde_json::from_str::<serde_json::Value>(args_summary).ok()?;
-    let path = ["path", "filePath"]
-        .iter()
-        .find_map(|key| args.get(*key))
-        .and_then(serde_json::Value::as_str)?;
-    infer_lsp_server_name_for_path(path)
-}
-
-fn infer_lsp_server_name_for_path(path: &str) -> Option<String> {
-    let extension = format!(
-        ".{}",
-        Path::new(path)
-            .extension()
-            .and_then(|value| value.to_str())?
-            .to_ascii_lowercase()
-    );
-    let config = harness_core::config::registered_lsp_config();
-    if config.disabled {
-        return None;
-    }
-
-    let mut specs = BTreeMap::from([
-        ("go".to_string(), (false, vec![".go".to_string()])),
-        (
-            "json".to_string(),
-            (false, vec![".json".to_string(), ".jsonc".to_string()]),
-        ),
-        (
-            "python".to_string(),
-            (false, vec![".py".to_string(), ".pyi".to_string()]),
-        ),
-        ("rust".to_string(), (false, vec![".rs".to_string()])),
-        (
-            "typescript".to_string(),
-            (
-                false,
-                vec![
-                    ".ts".to_string(),
-                    ".tsx".to_string(),
-                    ".js".to_string(),
-                    ".jsx".to_string(),
-                    ".mjs".to_string(),
-                    ".cjs".to_string(),
-                    ".mts".to_string(),
-                    ".cts".to_string(),
-                ],
-            ),
-        ),
-        (
-            "yaml".to_string(),
-            (false, vec![".yaml".to_string(), ".yml".to_string()]),
-        ),
-    ]);
-
-    for (name, server) in config.servers {
-        if let Some((disabled, extensions)) = specs.get_mut(&name) {
-            *disabled = server.disabled;
-            if let Some(custom_extensions) = server.extensions {
-                *extensions = custom_extensions;
-            }
-        } else if let Some(extensions) = server.extensions {
-            specs.insert(name, (server.disabled, extensions));
-        }
-    }
-
-    specs
-        .into_iter()
-        .find_map(|(name, (disabled, extensions))| {
-            (!disabled && extensions.iter().any(|candidate| candidate == &extension))
-                .then_some(name)
-        })
 }
 
 fn operator_sidebar_modified_file_rows(app: &AppState) -> Vec<OperatorRailItem> {

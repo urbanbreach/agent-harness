@@ -3,20 +3,27 @@ use std::fs;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
+use event_log::{find_finished, read_events, wait_for_request_terminal, wait_for_tool_call_finish};
 use harness_core::agent::AgentProfile;
 use harness_core::clock::RealClock;
 use harness_core::config::{PermissionMode, ShellAllowlist};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, CoordinatorHandle, RunInfo};
 use harness_core::event::{
-    ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionDecision as EventPermissionDecision,
-    ToolCallFinishedEvent, ToolCallStatus,
+    ActorKind, EventActor, EventV1, PermissionDecision as EventPermissionDecision, ToolCallStatus,
 };
 use harness_core::perm::PermissionPolicy;
 use harness_core::redact::DefaultRedactor;
 use harness_tools::coordinator_registry;
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
-use tokio::time::{sleep, Duration, Instant};
+
+#[path = "common/env_guard.rs"]
+mod env_guard;
+#[allow(dead_code)]
+#[path = "common/event_log.rs"]
+mod event_log;
+
+use env_guard::EnvGuard;
 
 fn worker_actor(agent_id: &str) -> EventActor {
     EventActor::new(ActorKind::Worker, Some(agent_id.to_string()))
@@ -53,36 +60,6 @@ fn env_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
-struct ScopedEnvVar {
-    key: &'static str,
-    previous: Option<String>,
-}
-
-impl ScopedEnvVar {
-    fn set(key: &'static str, value: &str) -> Self {
-        let previous = std::env::var(key).ok();
-        std::env::set_var(key, value);
-        Self { key, previous }
-    }
-}
-
-impl Drop for ScopedEnvVar {
-    fn drop(&mut self) {
-        match &self.previous {
-            Some(value) => std::env::set_var(self.key, value),
-            None => std::env::remove_var(self.key),
-        }
-    }
-}
-
-fn read_events(path: &Path) -> Vec<EventEnvelopeV1> {
-    fs::read_to_string(path)
-        .expect("read events")
-        .lines()
-        .map(|line| serde_json::from_str(line).expect("parse event"))
-        .collect()
-}
-
 fn write_fixture(workspace: &Path) {
     fs::write(workspace.join("fixture.txt"), "alpha\nbeta\n").expect("fixture file");
 }
@@ -93,59 +70,6 @@ fn write_numbered_fixture(workspace: &Path) {
         .collect::<Vec<_>>()
         .join("\n");
     fs::write(workspace.join("fixture.txt"), format!("{fixture_body}\n")).expect("fixture file");
-}
-
-async fn wait_for_tool_call_finish(path: &Path, tool_call_id: &str) {
-    let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        if read_events(path).iter().any(|event| {
-            matches!(
-                &event.payload,
-                EventV1::ToolCallFinished(payload) if payload.tool_call_id == tool_call_id
-            )
-        }) {
-            return;
-        }
-
-        assert!(
-            Instant::now() < deadline,
-            "timed out waiting for tool call {tool_call_id}"
-        );
-        sleep(Duration::from_millis(20)).await;
-    }
-}
-
-async fn wait_for_request_terminal(path: &Path, request_id: &str) {
-    let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        if read_events(path).iter().any(|event| {
-            event.correlation_id.as_deref() == Some(request_id)
-                && matches!(
-                    &event.payload,
-                    EventV1::TaskCompleted(_) | EventV1::TaskCancelled(_)
-                )
-        }) {
-            return;
-        }
-
-        assert!(
-            Instant::now() < deadline,
-            "timed out waiting for request {request_id} terminal event"
-        );
-        sleep(Duration::from_millis(20)).await;
-    }
-}
-
-fn find_finished(events: &[EventEnvelopeV1], tool_call_id: &str) -> ToolCallFinishedEvent {
-    events
-        .iter()
-        .find_map(|event| match &event.payload {
-            EventV1::ToolCallFinished(payload) if payload.tool_call_id == tool_call_id => {
-                Some(payload.clone())
-            }
-            _ => None,
-        })
-        .expect("tool call finished event")
 }
 
 async fn spawn_run(workspace: &Path) -> (CoordinatorHandle, RunInfo, String) {
@@ -184,7 +108,7 @@ async fn spawn_run(workspace: &Path) -> (CoordinatorHandle, RunInfo, String) {
 #[tokio::test]
 async fn native_plan_exit_switches_to_build_agent_after_approval() {
     let _guard = env_lock().lock().await;
-    let _answers = ScopedEnvVar::set("HARNESS_QUESTION_ANSWERS", r#"[["Yes"]]"#);
+    let _answers = EnvGuard::set(&[("HARNESS_QUESTION_ANSWERS", Some(r#"[["Yes"]]"#))]);
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let workspace = temp_dir.path().join("workspace");
     fs::create_dir_all(&workspace).expect("workspace");

@@ -27,6 +27,8 @@ use crate::theme::Theme;
 mod ui_chrome;
 #[path = "ui_lifecycle.rs"]
 mod ui_lifecycle;
+#[path = "ui_lsp.rs"]
+mod ui_lsp;
 #[path = "ui_overlays.rs"]
 mod ui_overlays;
 #[path = "ui_secondary.rs"]
@@ -37,8 +39,8 @@ mod ui_terminal;
 mod ui_transcript;
 
 use ui_chrome::{
-    chromeless_shell_section, compact_inline_payload, display_width, elevated_card_surface,
-    interruptive_modal_block, muted_meta_style, panel_block, panel_style, render_footer,
+    compact_inline_payload, display_width, elevated_card_surface, interruptive_modal_block,
+    live_transcript_shell_section, muted_meta_style, panel_block, panel_style, render_footer,
     render_header, render_unified_bottom_dock, runtime_state_color, status_badge,
     subdued_payload_style, take_width_prefix, transcript_prefix_style, truncate_plain_text,
     ChromeFrame,
@@ -461,7 +463,7 @@ fn render_replay_session_surface(
         return;
     };
 
-    frame.render_widget(chromeless_shell_section(theme), plan.shell);
+    frame.render_widget(live_transcript_shell_section(theme), plan.shell);
     render_transcript_pane(frame, app, transcript_area, theme);
     if let Some(terminal_panel) = plan.terminal_panel {
         render_terminal_panel(frame, app, terminal_panel, theme);
@@ -500,7 +502,7 @@ fn render_startup_session_surface(
         return;
     };
 
-    frame.render_widget(chromeless_shell_section(theme), plan.shell);
+    frame.render_widget(live_transcript_shell_section(theme), plan.shell);
     render_transcript_pane(frame, app, transcript_area, theme);
     render_unified_bottom_dock(frame, app, dock, theme);
 }
@@ -513,7 +515,7 @@ fn render_live_run_shell(frame: &mut Frame, app: &AppState, theme: &Theme, plan:
         return;
     };
 
-    frame.render_widget(chromeless_shell_section(theme), plan.shell);
+    frame.render_widget(live_transcript_shell_section(theme), plan.shell);
     render_transcript_pane(frame, app, transcript_area, theme);
     if let Some(terminal_panel) = plan.terminal_panel {
         render_terminal_panel(frame, app, terminal_panel, theme);

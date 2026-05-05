@@ -433,36 +433,35 @@ fn discover_tui_config_env_path() -> Option<PathBuf> {
 }
 
 fn discover_project_runtime_config_paths(start: &Path) -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-
-    for base in project_config_search_bases(start) {
-        for relative in [
-            Path::new("harness.jsonc"),
-            Path::new("harness.json"),
-            Path::new(".agent-harness/harness.jsonc"),
-            Path::new(".agent-harness/harness.json"),
-        ] {
-            let candidate = base.join(relative);
-            if candidate.exists() {
-                paths.push(candidate);
-            }
-        }
-    }
-
-    paths
+    discover_existing_project_config_paths(
+        start,
+        &[
+            "harness.jsonc",
+            "harness.json",
+            ".agent-harness/harness.jsonc",
+            ".agent-harness/harness.json",
+        ],
+    )
 }
 
 fn discover_project_tui_config_paths(start: &Path) -> Vec<PathBuf> {
+    discover_existing_project_config_paths(
+        start,
+        &[
+            "tui.jsonc",
+            "tui.json",
+            ".agent-harness/tui.jsonc",
+            ".agent-harness/tui.json",
+        ],
+    )
+}
+
+fn discover_existing_project_config_paths(start: &Path, relative_paths: &[&str]) -> Vec<PathBuf> {
     let mut paths = Vec::new();
 
     for base in project_config_search_bases(start) {
-        for relative in [
-            Path::new("tui.jsonc"),
-            Path::new("tui.json"),
-            Path::new(".agent-harness/tui.jsonc"),
-            Path::new(".agent-harness/tui.json"),
-        ] {
-            let candidate = base.join(relative);
+        for relative_path in relative_paths {
+            let candidate = base.join(relative_path);
             if candidate.exists() {
                 paths.push(candidate);
             }

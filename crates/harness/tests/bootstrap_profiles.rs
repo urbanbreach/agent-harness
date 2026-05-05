@@ -11,6 +11,10 @@ use tempfile::tempdir;
 #[path = "../src/bootstrap.rs"]
 mod bootstrap;
 
+#[allow(dead_code)]
+#[path = "../src/cli_config.rs"]
+mod cli_config;
+
 static DISCOVERY_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 struct CurrentDirGuard {

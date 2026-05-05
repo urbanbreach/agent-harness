@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::env;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -9,11 +8,17 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
+use crate::env_vars::first_env_value;
+use crate::http_client;
+use crate::text::has_trimmed_content;
+
 const DEFAULT_GITHUB_API_BASE_URL: &str = "https://api.github.com";
 const GITHUB_API_VERSION: &str = "2022-11-28";
 const HARNESS_GITHUB_API_BASE_URL_ENV_VARS: &[&str] = &["HARNESS_GITHUB_API_BASE_URL"];
 const GITHUB_TOKEN_ENV_VARS: &[&str] = &["HARNESS_GITHUB_TOKEN", "GITHUB_TOKEN", "GH_TOKEN"];
 const GITHUB_REPOSITORY_ENV_VARS: &[&str] = &["HARNESS_GITHUB_REPOSITORY", "GITHUB_REPOSITORY"];
+const DEFAULT_LIST_PER_PAGE: u8 = 20;
+const MAX_LIST_PER_PAGE: u8 = 100;
 const USER_AGENT: &str = concat!("agent-harness/", env!("CARGO_PKG_VERSION"));
 
 pub(crate) struct GitHubExecutor {
@@ -25,10 +30,10 @@ pub(crate) struct GitHubExecutor {
 impl GitHubExecutor {
     pub(crate) fn new() -> Self {
         Self {
-            client: build_http_client(),
-            api_base_url: env_value(HARNESS_GITHUB_API_BASE_URL_ENV_VARS)
+            client: http_client::default_client("GitHub client should build"),
+            api_base_url: first_env_value(HARNESS_GITHUB_API_BASE_URL_ENV_VARS)
                 .unwrap_or_else(|| DEFAULT_GITHUB_API_BASE_URL.to_string()),
-            auth_token: env_value(GITHUB_TOKEN_ENV_VARS),
+            auth_token: first_env_value(GITHUB_TOKEN_ENV_VARS),
         }
     }
 
@@ -61,10 +66,7 @@ impl GitHubExecutor {
                         "state",
                         Some(args.state.unwrap_or(GitHubListState::Open).as_api_value()),
                     ),
-                    (
-                        "per_page",
-                        Some(args.per_page.unwrap_or(20).clamp(1, 100).to_string()),
-                    ),
+                    ("per_page", Some(list_per_page_param(args.per_page))),
                 ]);
                 let issues = self
                     .send_json_request(
@@ -192,10 +194,7 @@ impl GitHubExecutor {
                         "state",
                         Some(args.state.unwrap_or(GitHubListState::Open).as_api_value()),
                     ),
-                    (
-                        "per_page",
-                        Some(args.per_page.unwrap_or(20).clamp(1, 100).to_string()),
-                    ),
+                    ("per_page", Some(list_per_page_param(args.per_page))),
                 ]);
                 let pull_requests = self
                     .send_json_request(
@@ -266,7 +265,7 @@ impl GitHubExecutor {
                 payload.insert("title".to_string(), Value::String(title));
                 payload.insert("head".to_string(), Value::String(head));
                 payload.insert("base".to_string(), Value::String(base));
-                if let Some(body) = args.body.filter(|value| !value.trim().is_empty()) {
+                if let Some(body) = args.body.filter(|value| has_trimmed_content(value)) {
                     payload.insert("body".to_string(), Value::String(body));
                 }
                 if let Some(draft) = args.draft {
@@ -321,7 +320,7 @@ impl GitHubExecutor {
         if let Some(token) = self
             .auth_token
             .as_deref()
-            .filter(|value| !value.trim().is_empty())
+            .filter(|value| has_trimmed_content(value))
         {
             request = request.bearer_auth(token);
         } else if require_auth {
@@ -476,8 +475,8 @@ struct RepoRef {
 impl RepoRef {
     fn resolve(owner: Option<&str>, repo: Option<&str>) -> Result<Self, ToolError> {
         match (
-            owner.filter(|value| !value.trim().is_empty()),
-            repo.filter(|value| !value.trim().is_empty()),
+            owner.filter(|value| has_trimmed_content(value)),
+            repo.filter(|value| has_trimmed_content(value)),
         ) {
             (Some(owner), Some(repo)) => Ok(Self {
                 owner: owner.to_string(),
@@ -496,7 +495,7 @@ impl RepoRef {
 }
 
 fn repository_from_env() -> Result<RepoRef, ToolError> {
-    let repository = env_value(GITHUB_REPOSITORY_ENV_VARS).ok_or_else(|| {
+    let repository = first_env_value(GITHUB_REPOSITORY_ENV_VARS).ok_or_else(|| {
         ToolError::InvalidArguments(
             "owner/repo not provided and no HARNESS_GITHUB_REPOSITORY or GITHUB_REPOSITORY is set"
                 .to_string(),
@@ -507,7 +506,7 @@ fn repository_from_env() -> Result<RepoRef, ToolError> {
             "repository must be in owner/repo form, got {repository:?}"
         ))
     })?;
-    if owner.trim().is_empty() || repo.trim().is_empty() {
+    if !has_trimmed_content(owner) || !has_trimmed_content(repo) {
         return Err(ToolError::InvalidArguments(format!(
             "repository must be in owner/repo form, got {repository:?}"
         )));
@@ -534,7 +533,7 @@ fn required_non_empty(value: Option<String>, field: &str) -> Result<String, Tool
     let value = value.ok_or_else(|| {
         ToolError::InvalidArguments(format!("{field} is required for this operation"))
     })?;
-    if value.trim().is_empty() {
+    if !has_trimmed_content(&value) {
         return Err(ToolError::InvalidArguments(format!(
             "{field} must not be empty"
         )));
@@ -542,8 +541,11 @@ fn required_non_empty(value: Option<String>, field: &str) -> Result<String, Tool
     Ok(value)
 }
 
-fn env_value(keys: &[&str]) -> Option<String> {
-    keys.iter().find_map(|key| env::var(key).ok())
+fn list_per_page_param(per_page: Option<u8>) -> String {
+    per_page
+        .unwrap_or(DEFAULT_LIST_PER_PAGE)
+        .clamp(1, MAX_LIST_PER_PAGE)
+        .to_string()
 }
 
 fn query_map<const N: usize>(
@@ -669,12 +671,6 @@ fn render_body(body: Option<&str>) -> String {
     } else {
         format!("Body:\n{}", body)
     }
-}
-
-fn build_http_client() -> reqwest::Client {
-    reqwest::Client::builder()
-        .build()
-        .expect("GitHub client should build")
 }
 
 #[async_trait]

@@ -12,13 +12,22 @@ use harness_core::config::{
     ShellAllowlist, SkillsConfig, ToolFailureMode,
 };
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, RunInfo};
-use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1};
+use harness_core::event::{ActorKind, EventActor};
 use harness_core::perm::{PermissionDecision, PermissionPolicy};
 use harness_core::redact::DefaultRedactor;
 use harness_core::tool::ToolContext;
 use harness_tools::coordinator_registry;
 use serde_json::json;
-use tokio::time::{sleep, Duration, Instant};
+use tokio::time::Duration;
+
+#[path = "common/env_guard.rs"]
+mod env_guard;
+#[path = "common/question_events.rs"]
+mod question_events;
+#[path = "common/repo_root.rs"]
+mod repo_root;
+
+use env_guard::EnvGuard;
 
 static SKILL_DISCOVERY_ENV_LOCK: Mutex<()> = Mutex::new(());
 
@@ -52,28 +61,6 @@ impl Drop for EnvTestContext {
     }
 }
 
-struct ScopedEnvVar {
-    key: &'static str,
-    previous: Option<OsString>,
-}
-
-impl ScopedEnvVar {
-    fn set(key: &'static str, value: &str) -> Self {
-        let previous = env::var_os(key);
-        env::set_var(key, value);
-        Self { key, previous }
-    }
-}
-
-impl Drop for ScopedEnvVar {
-    fn drop(&mut self) {
-        match &self.previous {
-            Some(value) => env::set_var(self.key, value),
-            None => env::remove_var(self.key),
-        }
-    }
-}
-
 fn tool_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
     let coordinator = spawn_coordinator(
         CoordinatorConfig::default(),
@@ -90,14 +77,6 @@ fn tool_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
         tool_call_id: tool_call_id.to_string(),
         coordinator,
     }
-}
-
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .canonicalize()
-        .expect("canonical repo root")
 }
 
 struct CurrentDirGuard {
@@ -191,42 +170,6 @@ async fn spawn_worker_run(
         .await
         .expect("spawn worker");
     (handle, run, worker_id)
-}
-
-fn read_events(path: &Path) -> Vec<EventEnvelopeV1> {
-    fs::read_to_string(path)
-        .expect("read events")
-        .lines()
-        .map(|line| serde_json::from_str(line).expect("parse event"))
-        .collect()
-}
-
-async fn wait_for_question_permission(path: &Path, previous: Option<&str>) -> String {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        if let Some(permission_id) =
-            read_events(path)
-                .into_iter()
-                .rev()
-                .find_map(|event| match event.payload {
-                    EventV1::PermissionRequested(data)
-                        if data.kind == "question"
-                            && previous.is_none_or(|value| value != data.permission_id) =>
-                    {
-                        Some(data.permission_id)
-                    }
-                    _ => None,
-                })
-        {
-            return permission_id;
-        }
-
-        assert!(
-            Instant::now() < deadline,
-            "timed out waiting for question permission"
-        );
-        sleep(Duration::from_millis(20)).await;
-    }
 }
 
 fn harness_config_with_skills(skills: SkillsConfig) -> HarnessConfig {
@@ -457,7 +400,7 @@ async fn skill_load_hides_denied_or_invalid_skills() {
         .to_string()
         .contains("Skill \"internal-secret\" not found"));
 
-    let _answers = ScopedEnvVar::set("HARNESS_QUESTION_ANSWERS", r#"[["Yes"]]"#);
+    let _answers = EnvGuard::set(&[("HARNESS_QUESTION_ANSWERS", Some(r#"[["Yes"]]"#))]);
     let approved = skill_tool
         .call(
             tool_context(&repo, "toolcall-ask-skill"),
@@ -492,7 +435,7 @@ fn skill_permissions_hide_denied_and_reject_invalid_frontmatter() {
 )]
 async fn shipped_starter_skill_pack_is_discoverable_from_repo_checkout() {
     let _guard = SKILL_DISCOVERY_ENV_LOCK.lock().expect("env test lock");
-    let repo = repo_root();
+    let repo = repo_root::repo_root();
     let _cwd = CurrentDirGuard::set(&repo);
     let registry = coordinator_registry(ShellAllowlist::default());
     let skill_tool = registry.get("skill").expect("skill tool");
@@ -524,7 +467,7 @@ async fn shipped_starter_skill_pack_is_discoverable_from_repo_checkout() {
 )]
 async fn codex_skill_pack_is_discoverable_from_repo_checkout() {
     let _guard = SKILL_DISCOVERY_ENV_LOCK.lock().expect("env test lock");
-    let repo = repo_root();
+    let repo = repo_root::repo_root();
     let _cwd = CurrentDirGuard::set(&repo);
     let registry = coordinator_registry(ShellAllowlist::default());
     let skill_tool = registry.get("skill").expect("skill tool");
@@ -556,7 +499,7 @@ async fn codex_skill_pack_is_discoverable_from_repo_checkout() {
 )]
 async fn skill_load_reports_agent_hint_for_build() {
     let _guard = SKILL_DISCOVERY_ENV_LOCK.lock().expect("env test lock");
-    let repo = repo_root();
+    let repo = repo_root::repo_root();
     let _cwd = CurrentDirGuard::set(&repo);
     let registry = coordinator_registry(ShellAllowlist::default());
     let skill_tool = registry.get("skill").expect("skill tool");
@@ -648,7 +591,7 @@ async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
             .to_string()))
     );
 
-    let _answers = ScopedEnvVar::set("HARNESS_QUESTION_ANSWERS", r#"[["Yes"]]"#);
+    let _answers = EnvGuard::set(&[("HARNESS_QUESTION_ANSWERS", Some(r#"[["Yes"]]"#))]);
     let gated = skill_tool
         .call(
             tool_context(&repo, "toolcall-custom-ask"),
@@ -727,7 +670,12 @@ async fn skill_load_ask_permissions_use_question_approval_flow() {
                 .await
         })
     };
-    let permission_id = wait_for_question_permission(&run.events_path, None).await;
+    let permission_id = question_events::wait_for_question_permission(
+        &run.events_path,
+        None,
+        Duration::from_secs(5),
+    )
+    .await;
     handle
         .resolve_permission(
             permission_id,

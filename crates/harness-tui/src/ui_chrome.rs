@@ -9,6 +9,7 @@ use crate::layout::{
     pad_rect, permission_dock_layout, ControlDockLayout, FrameLayoutPlan, SessionFooterMode,
     SessionHeaderMode,
 };
+use crate::text::has_trimmed_content;
 use crate::theme::{ChromeMode, DividerIntensity};
 
 use super::ui_overlays::{
@@ -504,10 +505,6 @@ pub(super) fn live_transcript_shell_surface(theme: &Theme) -> Color {
     semantic_surface(theme, ChromeMode::Chromeless)
 }
 
-pub(super) fn chromeless_shell_surface(theme: &Theme) -> Color {
-    live_transcript_shell_surface(theme)
-}
-
 pub(super) fn live_anchor_panel_surface(theme: &Theme) -> Color {
     semantic_surface(theme, ChromeMode::Divided)
 }
@@ -525,7 +522,7 @@ pub(super) fn control_dock_surface(
     variant: crate::view_model::ControlDockVariant,
 ) -> Color {
     match variant {
-        crate::view_model::ControlDockVariant::Startup => chromeless_shell_surface(theme),
+        crate::view_model::ControlDockVariant::Startup => live_transcript_shell_surface(theme),
         crate::view_model::ControlDockVariant::Live => live_control_dock_surface(theme),
         crate::view_model::ControlDockVariant::ReplayReadOnly => live_control_dock_surface(theme),
     }
@@ -619,23 +616,8 @@ pub(super) fn modal_card<'a>(
     )
 }
 
-#[allow(dead_code)]
-pub(super) fn elevated_card_block<'a>(
-    title: impl Into<Line<'a>>,
-    surface: Color,
-    border: Color,
-    title_color: Color,
-) -> Block<'a> {
-    modal_card_surface_block(title, surface, border, title_color, ChromeFrame::Frame)
-}
-
 pub(super) fn live_transcript_shell_section(theme: &Theme) -> Block<'static> {
     open_canvas(theme)
-}
-
-#[allow(dead_code)]
-pub(super) fn live_control_dock_section(theme: &Theme) -> Block<'static> {
-    control_dock_section(theme, crate::view_model::ControlDockVariant::Live)
 }
 
 pub(super) fn control_dock_section(
@@ -643,28 +625,6 @@ pub(super) fn control_dock_section(
     variant: crate::view_model::ControlDockVariant,
 ) -> Block<'static> {
     unified_bottom_dock(theme, variant)
-}
-
-pub(super) fn chromeless_shell_section(theme: &Theme) -> Block<'static> {
-    live_transcript_shell_section(theme)
-}
-
-#[allow(dead_code)]
-pub(super) fn divided_shell_section<'a>(
-    _theme: &Theme,
-    title: impl Into<Line<'a>>,
-    divider: DividerIntensity,
-    frame: ChromeFrame,
-    surface: Color,
-) -> Block<'a> {
-    divided_surface_block(
-        _theme,
-        title,
-        divider,
-        frame,
-        surface,
-        _theme.text.secondary,
-    )
 }
 
 pub(super) fn secondary_pane_block<'a>(
@@ -801,78 +761,7 @@ fn tool_status_summary(
 }
 
 pub(super) fn compact_inline_payload(payload: &str, max_chars: usize) -> Option<String> {
-    let trimmed = payload.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    let collapsed = match serde_json::from_str::<serde_json::Value>(trimmed) {
-        Ok(value) => compact_inline_json_value(&value),
-        Err(_) => trimmed.split_whitespace().collect::<Vec<_>>().join(" "),
-    };
-    if collapsed.chars().count() <= max_chars {
-        return Some(collapsed);
-    }
-
-    let truncated = collapsed
-        .chars()
-        .take(max_chars.saturating_sub(1))
-        .collect::<String>();
-    Some(format!("{truncated}…"))
-}
-
-fn compact_inline_json_value(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::Object(map) => {
-            if map.is_empty() {
-                return "{}".to_string();
-            }
-
-            let mut parts = Vec::new();
-            for (key, value) in map.iter().take(4) {
-                parts.push(format!("{key}={}", compact_inline_json_leaf(value)));
-            }
-            if map.len() > 4 {
-                parts.push("…".to_string());
-            }
-            parts.join(", ")
-        }
-        serde_json::Value::Array(items) => {
-            if items.is_empty() {
-                return "[]".to_string();
-            }
-
-            let mut parts = items
-                .iter()
-                .take(4)
-                .map(compact_inline_json_leaf)
-                .collect::<Vec<_>>();
-            if items.len() > 4 {
-                parts.push("…".to_string());
-            }
-            format!("[{}]", parts.join(", "))
-        }
-        _ => compact_inline_json_leaf(value),
-    }
-}
-
-fn compact_inline_json_leaf(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::String(text) => text.split_whitespace().collect::<Vec<_>>().join(" "),
-        serde_json::Value::Number(number) => number.to_string(),
-        serde_json::Value::Bool(flag) => flag.to_string(),
-        serde_json::Value::Null => "null".to_string(),
-        serde_json::Value::Array(items) => format!(
-            "[{} item{}]",
-            items.len(),
-            if items.len() == 1 { "" } else { "s" }
-        ),
-        serde_json::Value::Object(fields) => format!(
-            "{{{} field{}}}",
-            fields.len(),
-            if fields.len() == 1 { "" } else { "s" }
-        ),
-    }
+    crate::text_compact::compact_payload(payload, 4, max_chars)
 }
 
 pub(super) fn tool_status_tokens(
@@ -1856,7 +1745,7 @@ fn composer_metadata_candidates(
         .current_model_reasoning_label()
         .map(str::to_string)
         .or_else(|| {
-            (!dock.runtime_badge.trim().is_empty()
+            (has_trimmed_content(&dock.runtime_badge)
                 && dock.runtime_kind != RuntimeStateKind::Ready
                 && dock.runtime_kind != RuntimeStateKind::Success)
                 .then(|| dock.runtime_badge.to_ascii_lowercase())

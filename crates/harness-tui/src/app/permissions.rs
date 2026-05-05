@@ -115,6 +115,18 @@ pub(crate) enum PermissionModalStage {
 }
 
 impl AppState {
+    fn permission_modal_is_active(&self, permission_id: &str) -> bool {
+        self.permission_modal_permission_id.as_deref() == Some(permission_id)
+    }
+
+    fn question_answer_is_active(&self, permission_id: &str) -> bool {
+        self.question_answer_permission_id.as_deref() == Some(permission_id)
+    }
+
+    pub(super) fn submitted_permission_is_active(&self, permission_id: &str) -> bool {
+        self.submitted_permission_id.as_deref() == Some(permission_id)
+    }
+
     pub fn active_permission(&self) -> Option<(String, String)> {
         self.projection
             .pending_permissions
@@ -177,14 +189,14 @@ impl AppState {
     }
 
     pub fn permission_submission_pending(&self, permission_id: &str) -> bool {
-        self.submitted_permission_id.as_deref() == Some(permission_id)
+        self.submitted_permission_is_active(permission_id)
     }
 
     pub(crate) fn permission_modal_selection(
         &self,
         permission_id: &str,
     ) -> PermissionModalSelection {
-        if self.permission_modal_permission_id.as_deref() == Some(permission_id) {
+        if self.permission_modal_is_active(permission_id) {
             self.permission_modal_selection
         } else {
             PermissionModalSelection::AllowOnce
@@ -192,7 +204,7 @@ impl AppState {
     }
 
     pub(crate) fn permission_modal_stage(&self, permission_id: &str) -> PermissionModalStage {
-        if self.permission_modal_permission_id.as_deref() == Some(permission_id) {
+        if self.permission_modal_is_active(permission_id) {
             self.permission_modal_stage
         } else {
             PermissionModalStage::Decision
@@ -203,7 +215,7 @@ impl AppState {
         &self,
         permission_id: &str,
     ) -> PermissionConfirmSelection {
-        if self.permission_modal_permission_id.as_deref() == Some(permission_id) {
+        if self.permission_modal_is_active(permission_id) {
             self.permission_modal_confirm_selection
         } else {
             PermissionConfirmSelection::Confirm
@@ -211,7 +223,7 @@ impl AppState {
     }
 
     pub(crate) fn question_prompt_tab(&self, permission_id: &str) -> usize {
-        if self.question_answer_permission_id.as_deref() == Some(permission_id) {
+        if self.question_answer_is_active(permission_id) {
             self.question_prompt_tab
         } else {
             0
@@ -219,7 +231,7 @@ impl AppState {
     }
 
     pub(crate) fn question_prompt_selection(&self, permission_id: &str) -> usize {
-        if self.question_answer_permission_id.as_deref() == Some(permission_id) {
+        if self.question_answer_is_active(permission_id) {
             self.question_prompt_selection
         } else {
             0
@@ -227,12 +239,11 @@ impl AppState {
     }
 
     pub(crate) fn question_prompt_editing(&self, permission_id: &str) -> bool {
-        self.question_answer_permission_id.as_deref() == Some(permission_id)
-            && self.question_prompt_editing
+        self.question_answer_is_active(permission_id) && self.question_prompt_editing
     }
 
     pub(crate) fn question_prompt_answers(&self, permission_id: &str) -> Vec<Vec<String>> {
-        if self.question_answer_permission_id.as_deref() == Some(permission_id) {
+        if self.question_answer_is_active(permission_id) {
             self.question_prompt_answers.clone()
         } else {
             Vec::new()
@@ -240,7 +251,7 @@ impl AppState {
     }
 
     pub(crate) fn question_prompt_custom(&self, permission_id: &str, index: usize) -> Option<&str> {
-        if self.question_answer_permission_id.as_deref() != Some(permission_id) {
+        if !self.question_answer_is_active(permission_id) {
             return None;
         }
 
@@ -279,7 +290,7 @@ impl AppState {
     }
 
     pub(super) fn clear_permission_modal_selection(&mut self, permission_id: &str) {
-        if self.permission_modal_permission_id.as_deref() == Some(permission_id) {
+        if self.permission_modal_is_active(permission_id) {
             self.permission_modal_permission_id = None;
             self.permission_modal_stage = PermissionModalStage::Decision;
             self.permission_modal_selection = PermissionModalSelection::AllowOnce;
@@ -672,7 +683,7 @@ impl AppState {
         permission_id: &str,
         prompts: &[QuestionPromptView],
     ) {
-        if self.question_answer_permission_id.as_deref() == Some(permission_id) {
+        if self.question_answer_is_active(permission_id) {
             return;
         }
 
@@ -916,7 +927,7 @@ impl AppState {
     }
 
     pub(crate) fn question_answer_preview(&self, permission_id: &str) -> String {
-        if self.question_answer_permission_id.as_deref() != Some(permission_id) {
+        if !self.question_answer_is_active(permission_id) {
             return String::new();
         }
 
@@ -939,13 +950,13 @@ impl AppState {
     }
 
     pub(crate) fn question_answer_error(&self, permission_id: &str) -> Option<&str> {
-        (self.question_answer_permission_id.as_deref() == Some(permission_id))
+        self.question_answer_is_active(permission_id)
             .then_some(self.question_answer_error.as_deref())
             .flatten()
     }
 
     pub(super) fn clear_question_answer_state(&mut self, permission_id: &str) {
-        if self.question_answer_permission_id.as_deref() != Some(permission_id) {
+        if !self.question_answer_is_active(permission_id) {
             return;
         }
 
@@ -967,7 +978,7 @@ impl AppState {
         reason: Option<String>,
         grant_scope: Option<PermissionGrantScope>,
     ) {
-        if self.submitted_permission_id.as_deref() == Some(permission_id.as_str()) {
+        if self.submitted_permission_is_active(&permission_id) {
             return;
         }
 

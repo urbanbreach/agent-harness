@@ -13,6 +13,7 @@ use super::{
     OrchestrationOwnerLabels, OrchestrationSummary, OrchestrationTaskRow, OrchestrationTaskState,
     ToolCallDisplayStatus, ToolCallEntry, TOOL_OUTPUT_DISPLAY_MAX_CHARS,
 };
+use crate::text::non_empty_preserved_string;
 use crate::view_model;
 
 #[derive(Default)]
@@ -795,11 +796,12 @@ impl SessionProjection {
                             if should_mark_done {
                                 entry.status = ActivityStatus::Done;
                             }
-                            if should_mark_done
-                                && entry.transcript_text.is_empty()
-                                && !data.result_summary.trim().is_empty()
-                            {
-                                entry.transcript_text = data.result_summary.clone();
+                            if should_mark_done && entry.transcript_text.is_empty() {
+                                if let Some(result_summary) =
+                                    non_empty_preserved_string(&data.result_summary)
+                                {
+                                    entry.transcript_text = result_summary;
+                                }
                             }
                             entry.last_seq = event.seq;
                         }
@@ -846,7 +848,7 @@ impl SessionProjection {
                 let should_mark_error = self.is_turn_level_task_cancellation(&data.task_id, data);
                 self.update_orchestration_task(event, &data.task_id, |row| {
                     row.state = OrchestrationTaskState::Cancelled;
-                    row.warning = (!data.reason.trim().is_empty()).then(|| data.reason.clone());
+                    row.warning = non_empty_preserved_string(&data.reason);
                 });
 
                 if should_mark_error {
@@ -854,8 +856,7 @@ impl SessionProjection {
                         if let Some(index) = self.activity_index_for_request(request_id) {
                             if let Some(entry) = self.activities.get_mut(index) {
                                 entry.status = ActivityStatus::Error;
-                                entry.error_message =
-                                    (!data.reason.trim().is_empty()).then(|| data.reason.clone());
+                                entry.error_message = non_empty_preserved_string(&data.reason);
                                 mark_activity_event(entry, event.seq, event.mono_ms);
                             }
                         }

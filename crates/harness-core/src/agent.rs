@@ -18,10 +18,13 @@ use crate::conversation::{
     ConversationAssistantMessage, ConversationCheckpointMessage, ConversationMessage,
     ConversationToolResultMessage, ConversationUserMessage,
 };
+use crate::digest::{digest12, digest12_json};
 use crate::event::{
     EventArtifactRef, ProviderAssistantMessageMetadata, ProviderRequestFinishedMetadata,
     ProviderRequestStartedMetadata, ProviderThinkingMetadata,
 };
+use crate::provider_args::provider_tool_arguments_json;
+use crate::text::{non_empty_trimmed, truncate_with_ellipsis};
 use crate::tool::{
     build_tool_function_name_mapping, sanitize_tool_function_name, ToolRegistry, ToolResult,
 };
@@ -396,8 +399,8 @@ impl ProviderContext {
     pub fn is_empty(&self) -> bool {
         self.compacted_summary
             .as_deref()
-            .map(str::trim)
-            .is_none_or(str::is_empty)
+            .and_then(non_empty_trimmed)
+            .is_none()
             && self.preserved_turns.is_empty()
     }
 }
@@ -701,7 +704,7 @@ where
         tool_choice: None,
     });
     let completion_request = provider_boundary.request;
-    let request_digest = digest12_completion_request(&completion_request);
+    let request_digest = digest12_json(&completion_request);
 
     let mut stream = provider.stream_completion(completion_request).await;
     let (provider_start_metadata, mut pending_event) =
@@ -711,7 +714,7 @@ where
             request_id: request_id.clone(),
             provider_id: model.provider_id,
             model_id: model.model_id,
-            prompt_summary: truncate_summary(&request.prompt, 256),
+            prompt_summary: truncate_with_ellipsis(&request.prompt, 256),
             request_digest,
             metadata: Some(provider_request_started_metadata(
                 &request_id,
@@ -882,7 +885,7 @@ where
         tool_choice: (!tool_defs.is_empty()).then_some(ToolChoice::Auto),
     });
     let completion_request = provider_boundary.request;
-    let request_digest = digest12_completion_request(&completion_request);
+    let request_digest = digest12_json(&completion_request);
 
     let mut stream = provider.stream_completion(completion_request).await;
     let (provider_start_metadata, mut pending_event) =
@@ -898,7 +901,7 @@ where
             request_id: provider_request_id.clone(),
             provider_id: model.provider_id.clone(),
             model_id: model.model_id.clone(),
-            prompt_summary: truncate_summary(prompt_summary, 256),
+            prompt_summary: truncate_with_ellipsis(prompt_summary, 256),
             request_digest,
             metadata: Some(started_metadata.clone()),
         },
@@ -1268,14 +1271,6 @@ fn provider_function_name_for_tool_id(
         .unwrap_or_else(|| sanitize_tool_function_name(tool_id))
 }
 
-fn provider_tool_arguments_json(args_summary: &str) -> String {
-    if serde_json::from_str::<Value>(args_summary).is_ok() {
-        args_summary.to_string()
-    } else {
-        "{}".to_string()
-    }
-}
-
 fn project_provider_context_for_prompt(
     prior_context: &ProviderContext,
     prompt: &str,
@@ -1284,8 +1279,8 @@ fn project_provider_context_for_prompt(
         prior_context
             .compacted_summary
             .as_deref()
-            .map(str::trim)
-            .is_some_and(|summary| !summary.is_empty()),
+            .and_then(non_empty_trimmed)
+            .is_some(),
     );
     let mut messages = Vec::with_capacity(
         1 + summary_message_count + prior_context.preserved_turns.len().saturating_mul(3),
@@ -1294,8 +1289,7 @@ fn project_provider_context_for_prompt(
     if let Some(summary) = prior_context
         .compacted_summary
         .as_deref()
-        .map(str::trim)
-        .filter(|summary| !summary.is_empty())
+        .and_then(non_empty_trimmed)
     {
         let checkpoint = prior_context.checkpoint.as_ref();
         messages.push(ConversationMessage::Checkpoint(
@@ -1380,12 +1374,7 @@ fn provider_turn_assistant_projection_text(turn: &ProviderConversationTurn) -> S
         format!("Status: {}", turn.status.marker_label()),
         format!("Stage: {stage}"),
     ];
-    if let Some(reason) = turn
-        .failure_reason
-        .as_deref()
-        .map(str::trim)
-        .filter(|reason| !reason.is_empty())
-    {
+    if let Some(reason) = turn.failure_reason.as_deref().and_then(non_empty_trimmed) {
         lines.push(format!(
             "Reason: {}",
             truncate_provider_turn_failure_reason(reason)
@@ -1401,24 +1390,14 @@ fn provider_turn_assistant_projection_text(turn: &ProviderConversationTurn) -> S
 }
 
 fn truncate_provider_turn_failure_reason(reason: &str) -> String {
-    if reason.chars().count() <= PROVIDER_TURN_FAILURE_REASON_MAX_CHARS {
-        return reason.to_string();
-    }
-
-    let mut truncated = reason
-        .chars()
-        .take(PROVIDER_TURN_FAILURE_REASON_MAX_CHARS)
-        .collect::<String>();
-    truncated.push('…');
-    truncated
+    truncate_with_ellipsis(reason, PROVIDER_TURN_FAILURE_REASON_MAX_CHARS)
 }
 
 fn tool_result_message_content(tool_result: &ConversationToolResultMessage) -> String {
     if let Some(output_summary) = tool_result
         .output_summary
         .as_deref()
-        .map(str::trim)
-        .filter(|summary| !summary.is_empty())
+        .and_then(non_empty_trimmed)
     {
         return output_summary.to_string();
     }
@@ -1445,7 +1424,7 @@ fn parse_tool_intents(
     let mut intents = Vec::with_capacity(tool_calls.len());
 
     for tool_call in tool_calls {
-        if tool_call.tool_call_id.trim().is_empty() {
+        if non_empty_trimmed(&tool_call.tool_call_id).is_none() {
             return Err(format!(
                 "provider emitted empty tool_call_id for `{}`",
                 tool_call.function_name
@@ -1528,14 +1507,14 @@ fn provider_request_started_metadata(
             metadata
                 .provider_session_id
                 .as_deref()
-                .and_then(non_empty_str)
+                .and_then(non_empty_trimmed)
                 .map(str::to_string)
         }),
         provider_cache_id: provider_metadata.and_then(|metadata| {
             metadata
                 .provider_cache_id
                 .as_deref()
-                .and_then(non_empty_str)
+                .and_then(non_empty_trimmed)
                 .map(str::to_string)
         }),
     }
@@ -1553,7 +1532,7 @@ fn provider_finished_metadata(
         metadata
             .assistant_message_id
             .as_deref()
-            .and_then(non_empty_str)
+            .and_then(non_empty_trimmed)
             .map(str::to_string)
     });
     let assistant_message = (!output.is_empty()
@@ -1583,21 +1562,21 @@ fn provider_finished_metadata(
             metadata
                 .provider_response_id
                 .as_deref()
-                .and_then(non_empty_str)
+                .and_then(non_empty_trimmed)
                 .map(str::to_string)
         }),
         provider_session_id: provider_metadata.and_then(|metadata| {
             metadata
                 .provider_session_id
                 .as_deref()
-                .and_then(non_empty_str)
+                .and_then(non_empty_trimmed)
                 .map(str::to_string)
         }),
         provider_cache_id: provider_metadata.and_then(|metadata| {
             metadata
                 .provider_cache_id
                 .as_deref()
-                .and_then(non_empty_str)
+                .and_then(non_empty_trimmed)
                 .map(str::to_string)
         }),
         provider_stop_reason: provider_metadata
@@ -1605,7 +1584,7 @@ fn provider_finished_metadata(
                 metadata
                     .provider_stop_reason
                     .as_deref()
-                    .and_then(non_empty_str)
+                    .and_then(non_empty_trimmed)
                     .map(str::to_string)
             })
             .or_else(|| Some(stop_reason.to_string())),
@@ -1623,17 +1602,17 @@ fn provider_thinking_metadata(
         summary: thinking
             .summary
             .as_deref()
-            .and_then(non_empty_str)
+            .and_then(non_empty_trimmed)
             .map(str::to_string),
         summary_digest: thinking
             .summary_digest
             .as_deref()
-            .and_then(non_empty_str)
+            .and_then(non_empty_trimmed)
             .map(str::to_string),
         signature: thinking
             .signature
             .as_deref()
-            .and_then(non_empty_str)
+            .and_then(non_empty_trimmed)
             .map(str::to_string),
     };
 
@@ -1641,11 +1620,6 @@ fn provider_thinking_metadata(
         || metadata.summary_digest.is_some()
         || metadata.signature.is_some())
     .then_some(metadata)
-}
-
-fn non_empty_str(value: &str) -> Option<&str> {
-    let trimmed = value.trim();
-    (!trimmed.is_empty()).then_some(trimmed)
 }
 
 pub fn build_provider_tool_defs(
@@ -1697,7 +1671,7 @@ fn validate_provider_parameters_schema(parameters: &serde_json::Value) -> Result
 }
 
 pub(crate) fn tool_result_to_message_content(result: &ToolResult) -> String {
-    if !result.display_text.trim().is_empty() {
+    if non_empty_trimmed(&result.display_text).is_some() {
         return result.display_text.clone();
     }
 
@@ -1763,25 +1737,6 @@ pub fn default_model_settings_for_profile(profile_name: &str) -> AgentModelSetti
             .as_ref()
             .map(|_| "auto".to_string()),
     }
-}
-
-fn truncate_summary(text: &str, max_chars: usize) -> String {
-    if text.chars().count() <= max_chars {
-        return text.to_string();
-    }
-
-    let mut summary: String = text.chars().take(max_chars).collect();
-    summary.push('…');
-    summary
-}
-
-fn digest12_completion_request(request: &CompletionRequest) -> String {
-    let bytes = serde_json::to_vec(request).unwrap_or_else(|_| b"null".to_vec());
-    digest12(&bytes)
-}
-
-fn digest12(bytes: &[u8]) -> String {
-    blake3::hash(bytes).to_hex().chars().take(12).collect()
 }
 
 struct NullProvider;

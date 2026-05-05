@@ -11,9 +11,10 @@ use harness_core::config::{
 use serde_json::Value;
 use tempfile::tempdir;
 
-fn repo_root() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
-}
+#[path = "common/repo_root.rs"]
+mod repo_root;
+
+use repo_root::repo_root;
 
 fn openai_api_key_env_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();

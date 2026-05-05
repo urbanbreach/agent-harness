@@ -12,6 +12,8 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use walkdir::{DirEntry, WalkDir};
 
+use crate::workspace_paths::{file_path_from_uri, file_uri_from_path};
+
 const DEFAULT_LSP_BOOT_DELAY_MS: u64 = 150;
 const DEFAULT_LSP_RETRY_ATTEMPTS: usize = 8;
 
@@ -259,6 +261,46 @@ pub(crate) struct LspRenameResponse {
     pub(crate) diagnostics: Vec<LspDiagnosticReport>,
 }
 
+pub(crate) fn format_diagnostics(reports: &[LspDiagnosticReport]) -> String {
+    reports
+        .iter()
+        .flat_map(|report| {
+            report.diagnostics.iter().map(|diagnostic| {
+                let line = diagnostic
+                    .get("range")
+                    .and_then(|range| range.get("start"))
+                    .and_then(|start| start.get("line"))
+                    .and_then(Value::as_u64)
+                    .map(|line| line + 1)
+                    .unwrap_or(1);
+                let character = diagnostic
+                    .get("range")
+                    .and_then(|range| range.get("start"))
+                    .and_then(|start| start.get("character"))
+                    .and_then(Value::as_u64)
+                    .map(|character| character + 1)
+                    .unwrap_or(1);
+                let severity = match diagnostic.get("severity").and_then(Value::as_u64) {
+                    Some(1) => "Error",
+                    Some(2) => "Warning",
+                    Some(3) => "Information",
+                    Some(4) => "Hint",
+                    _ => "Diagnostic",
+                };
+                let message = diagnostic
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .unwrap_or("<missing message>");
+                format!(
+                    "{}:{}:{} {} {}",
+                    report.file_path, line, character, severity, message
+                )
+            })
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 pub(crate) fn execute_lsp_operation(
     request: &LspOperationRequest<'_>,
 ) -> Result<LspOperationResponse, ToolError> {
@@ -283,7 +325,7 @@ pub(crate) fn execute_lsp_operation(
                 &mut session,
                 "textDocument/diagnostic",
                 json!({
-                    "textDocument": { "uri": path_to_uri(&file_path) },
+                    "textDocument": { "uri": file_uri_from_path(&file_path) },
                 }),
             )?;
             let diagnostics = vec![session.diagnostics_for(&file_path)];
@@ -339,7 +381,7 @@ pub(crate) fn execute_lsp_operation(
             &mut session,
             "textDocument/documentSymbol",
             json!({
-                "textDocument": { "uri": path_to_uri(&file_path) },
+                "textDocument": { "uri": file_uri_from_path(&file_path) },
             }),
         ),
         LspOperation::WorkspaceSymbol => request_with_retry(
@@ -422,7 +464,7 @@ fn position_request_params(
         ))
     })?;
     Ok(json!({
-        "textDocument": { "uri": path_to_uri(file_path) },
+        "textDocument": { "uri": file_uri_from_path(file_path) },
         "position": {
             "line": position.line(),
             "character": position.character(),
@@ -509,7 +551,7 @@ pub(crate) fn execute_lsp_rename(
     } = start_lsp_session(request.file_path, request.workspace_root)?;
 
     let position = json!({
-        "textDocument": { "uri": path_to_uri(&file_path) },
+        "textDocument": { "uri": file_uri_from_path(&file_path) },
         "position": {
             "line": request.position.line(),
             "character": request.position.character(),
@@ -854,16 +896,8 @@ fn project_root(file_path: &Path, workspace_root: &Path, markers: &[&str]) -> Pa
     workspace_root
 }
 
-fn path_to_uri(path: &Path) -> String {
-    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    reqwest::Url::from_file_path(&canonical)
-        .expect("valid file url")
-        .to_string()
-}
-
 fn uri_to_workspace_path(uri: &str, root: &Path) -> Option<PathBuf> {
-    let url = reqwest::Url::parse(uri).ok()?;
-    let path = url.to_file_path().ok()?;
+    let path = file_path_from_uri(uri)?;
     path.starts_with(root).then_some(path)
 }
 
@@ -933,10 +967,10 @@ impl LspSession {
 
         let mut params = json!({
             "processId": std::process::id(),
-            "rootUri": path_to_uri(root),
+            "rootUri": file_uri_from_path(root),
             "workspaceFolders": [{
                 "name": "workspace",
-                "uri": path_to_uri(root),
+                "uri": file_uri_from_path(root),
             }],
             "capabilities": {
                 "window": { "workDoneProgress": true },
@@ -986,7 +1020,7 @@ impl LspSession {
             "textDocument/didOpen",
             json!({
                 "textDocument": {
-                    "uri": path_to_uri(file_path),
+                    "uri": file_uri_from_path(file_path),
                     "languageId": language_id(file_path, server_name),
                     "version": 0,
                     "text": text,
@@ -1111,7 +1145,7 @@ impl LspSession {
             "workspace/configuration" => json!([{}]),
             "workspace/workspaceFolders" => json!([{
                 "name": "workspace",
-                "uri": path_to_uri(&self.root),
+                "uri": file_uri_from_path(&self.root),
             }]),
             _ => Value::Null,
         };
@@ -1241,19 +1275,18 @@ fn lsp_value_is_empty(value: &Value) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        path_to_uri, server_for_path, LspOperation, LspPosition, SUPPORTED_LSP_OPERATION_NAMES,
-    };
+    use super::{server_for_path, LspOperation, LspPosition, SUPPORTED_LSP_OPERATION_NAMES};
+    use crate::workspace_paths::file_uri_from_path;
     use harness_core::config::LspConfig;
     use harness_core::tool::ToolError;
     use std::fs;
 
     #[test]
-    fn path_to_uri_percent_encodes_spaces() {
+    fn file_uri_from_path_percent_encodes_spaces() {
         let tempdir = tempfile::tempdir().expect("tempdir");
         let path = tempdir.path().join("space file.rs");
         fs::write(&path, "fn demo() {}\n").expect("write source file");
-        let uri = path_to_uri(&path);
+        let uri = file_uri_from_path(&path);
         assert!(uri.starts_with("file://"));
         assert!(uri.contains("space%20file.rs"));
     }

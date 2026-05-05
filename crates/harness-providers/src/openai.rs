@@ -154,11 +154,7 @@ impl OpenAiCompatibleProvider {
 fn format_non_success_status_message(status: u16, body: Option<&str>, api_key: &str) -> String {
     let detail = body
         .and_then(extract_provider_error_detail)
-        .or_else(|| {
-            body.map(str::trim)
-                .filter(|body| !body.is_empty())
-                .map(str::to_string)
-        })
+        .or_else(|| body.and_then(non_empty_string).map(str::to_string))
         .map(|body| sanitize_provider_error_detail(&body, api_key))
         .filter(|body| !body.is_empty());
 
@@ -198,64 +194,47 @@ where
     tools.map(|tools| tools.into_iter().map(Into::into).collect())
 }
 
-fn openai_role(role: &MessageRole) -> String {
-    role_to_openai(role).to_string()
-}
-
 #[async_trait]
 impl Provider for OpenAiCompatibleProvider {
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
-        let strategy = match self.api_mode {
-            OpenAiApiMode::ChatCompletions => RequestStrategy::ChatCompletions,
-            OpenAiApiMode::Responses => RequestStrategy::Responses,
-            OpenAiApiMode::Auto => RequestStrategy::Auto,
+        let response_result = match self.api_mode {
+            OpenAiApiMode::ChatCompletions => {
+                let chat_request = OpenAiChatCompletionsRequest::from(req);
+                self.send_chat_request(&chat_request)
+                    .await
+                    .map(|response| (OpenAiApiMode::ChatCompletions, response))
+            }
+            OpenAiApiMode::Responses => {
+                let responses_request = OpenAiResponsesRequest::from(req);
+                self.send_responses_request(&responses_request)
+                    .await
+                    .map(|response| (OpenAiApiMode::Responses, response))
+            }
+            OpenAiApiMode::Auto => {
+                let responses_request = OpenAiResponsesRequest::from(req.clone());
+                match self.send_responses_request(&responses_request).await {
+                    Ok(response)
+                        if matches!(response.status().as_u16(), 404 | 405)
+                            || (response.status().as_u16() == 400
+                                && self.is_loopback_base_url()) =>
+                    {
+                        let chat_request = OpenAiChatCompletionsRequest::from(req);
+                        self.send_chat_request(&chat_request)
+                            .await
+                            .map(|fallback_response| {
+                                (OpenAiApiMode::ChatCompletions, fallback_response)
+                            })
+                    }
+                    Ok(response) => Ok((OpenAiApiMode::Responses, response)),
+                    Err(message) => Err(message),
+                }
+            }
         };
 
-        let (mode, response) = match strategy {
-            RequestStrategy::ChatCompletions => {
-                let chat_request = OpenAiChatCompletionsRequest::from(req);
-                match self.send_chat_request(&chat_request).await {
-                    Ok(response) => (OpenAiApiMode::ChatCompletions, response),
-                    Err(message) => {
-                        return Box::pin(stream::iter(vec![ProviderStreamEvent::Error { message }]))
-                    }
-                }
-            }
-            RequestStrategy::Responses => {
-                let responses_request = OpenAiResponsesRequest::from(req);
-                match self.send_responses_request(&responses_request).await {
-                    Ok(response) => (OpenAiApiMode::Responses, response),
-                    Err(message) => {
-                        return Box::pin(stream::iter(vec![ProviderStreamEvent::Error { message }]))
-                    }
-                }
-            }
-            RequestStrategy::Auto => {
-                let responses_request = OpenAiResponsesRequest::from(req.clone());
-                let response = match self.send_responses_request(&responses_request).await {
-                    Ok(response) => response,
-                    Err(message) => {
-                        return Box::pin(stream::iter(vec![ProviderStreamEvent::Error { message }]))
-                    }
-                };
-
-                if matches!(response.status().as_u16(), 404 | 405)
-                    || (response.status().as_u16() == 400 && self.is_loopback_base_url())
-                {
-                    let chat_request = OpenAiChatCompletionsRequest::from(req);
-                    match self.send_chat_request(&chat_request).await {
-                        Ok(fallback_response) => {
-                            (OpenAiApiMode::ChatCompletions, fallback_response)
-                        }
-                        Err(message) => {
-                            return Box::pin(stream::iter(vec![ProviderStreamEvent::Error {
-                                message,
-                            }]))
-                        }
-                    }
-                } else {
-                    (OpenAiApiMode::Responses, response)
-                }
+        let (mode, response) = match response_result {
+            Ok(response) => response,
+            Err(message) => {
+                return Box::pin(stream::iter(vec![ProviderStreamEvent::Error { message }]))
             }
         };
 
@@ -308,13 +287,6 @@ fn format_transport_error(err: reqwest::Error) -> String {
     )
 }
 
-#[derive(Debug, Clone, Copy)]
-enum RequestStrategy {
-    ChatCompletions,
-    Responses,
-    Auto,
-}
-
 fn warn_stream_send_failure(context: &str) {
     tracing::warn!(
         context,
@@ -363,8 +335,7 @@ fn first_header_value(headers: &HeaderMap, names: &[&'static str]) -> Option<Str
         headers
             .get(*name)
             .and_then(|value| value.to_str().ok())
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
+            .and_then(non_empty_string)
             .map(str::to_string)
     })
 }
@@ -386,15 +357,7 @@ fn provider_stream_finished_metadata_from_start(
 fn non_empty_finished_metadata(
     metadata: ProviderStreamFinishedMetadata,
 ) -> Option<ProviderStreamFinishedMetadata> {
-    (metadata.provider_response_id.is_some()
-        || metadata.provider_session_id.is_some()
-        || metadata.provider_cache_id.is_some()
-        || metadata.provider_stop_reason.is_some()
-        || metadata.cache_read_tokens.is_some()
-        || metadata.cache_write_tokens.is_some()
-        || metadata.assistant_message_id.is_some()
-        || metadata.thinking.is_some())
-    .then_some(metadata)
+    (metadata != ProviderStreamFinishedMetadata::default()).then_some(metadata)
 }
 
 async fn consume_chat_sse_stream(
@@ -472,7 +435,11 @@ async fn consume_chat_sse_stream(
             }
         };
 
-        if let Some(id) = chunk.id.as_deref().filter(|id| !id.trim().is_empty()) {
+        if let Some(id) = chunk
+            .id
+            .as_deref()
+            .filter(|id| non_empty_string(id).is_some())
+        {
             finished_metadata
                 .provider_response_id
                 .get_or_insert_with(|| id.to_string());
@@ -1076,7 +1043,7 @@ async fn emit_responses_tool_call_complete(
 }
 
 fn normalize_responses_arguments_json(arguments_json: String) -> String {
-    if arguments_json.trim().is_empty() {
+    if non_empty_string(&arguments_json).is_none() {
         "{}".to_string()
     } else {
         arguments_json
@@ -1219,7 +1186,7 @@ impl From<CompletionMessage> for OpenAiChatMessage {
             });
 
         Self {
-            role: openai_role(&role),
+            role: role_to_openai(&role).to_string(),
             content,
             name,
             tool_call_id,
@@ -1383,12 +1350,12 @@ impl OpenAiResponsesInputItem {
             .is_some_and(|tool_calls| !tool_calls.is_empty());
         let omit_assistant_message = matches!(role, MessageRole::Assistant)
             && has_assistant_tool_calls
-            && content.trim().is_empty();
+            && non_empty_string(&content).is_none();
 
         let mut items = Vec::new();
         if !omit_assistant_message {
             items.push(Self::Message {
-                role: openai_role(&role),
+                role: role_to_openai(&role).to_string(),
                 content: vec![OpenAiResponsesContentItem {
                     item_type: item_type.to_string(),
                     text: content,
@@ -1448,7 +1415,9 @@ impl From<ToolDef> for OpenAiResponsesTool {
         Self {
             kind: "function",
             name: tool.function_name,
-            description: tool.description.filter(|value| !value.trim().is_empty()),
+            description: tool
+                .description
+                .filter(|value| non_empty_string(value).is_some()),
             parameters: tool.parameters,
         }
     }

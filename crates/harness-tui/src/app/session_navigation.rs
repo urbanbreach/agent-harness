@@ -1,22 +1,24 @@
 use std::collections::BTreeSet;
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_core::agent::AgentModelRef;
 use harness_core::config::{registered_profile_model_metadata, ResolvedProfileModelMetadata};
-use harness_core::event::{EventEnvelopeV1, EventV1};
+use harness_core::event::{first_lineage_parent_session_id, EventEnvelopeV1, EventV1};
 use harness_core::proj::{
-    inspect_resume_plan, RunMetadata, SessionCatalogEntry, SessionModeSource,
+    inspect_resume_plan, load_run_metadata, SessionCatalogEntry, SessionModeSource,
 };
 use harness_core::session_lineage::{latest_clone_stable_prefix, StableSessionPrefix};
 
 use super::{
-    json_string_field, set_pending_live_launch_metadata, set_pending_live_prompt_draft, AppState,
-    Focus, PermissionConfirmSelection, PermissionModalSelection, PermissionModalStage,
-    PostRunHandoffAction, ReviewSurface, StartupLauncherAction, Tab, UiIntent, SLASH_COMMANDS,
+    json_string_field, set_pending_live_launch_metadata, set_pending_live_prompt_draft,
+    ActivityEntry, AppState, Focus, PermissionConfirmSelection, PermissionModalSelection,
+    PermissionModalStage, PostRunHandoffAction, ReviewSurface, StartupLauncherAction, Tab,
+    UiIntent, SLASH_COMMANDS,
 };
 use crate::keybindings::Action;
+use crate::text::{has_trimmed_content, non_empty_trimmed};
+use crate::time_format::iso_timestamp_minute;
 
 const SLASH_COMMAND_RESULT_LIMIT: usize = 10;
 
@@ -130,7 +132,7 @@ fn lineage_label(child_session_count: usize, parent_session_id: Option<&str>) ->
     }
     if let Some(parent_session_id) = parent_session_id
         .map(str::trim)
-        .filter(|value| !value.is_empty())
+        .filter(|value| has_trimmed_content(value))
     {
         parts.push(format!("parent {parent_session_id}"));
     }
@@ -140,6 +142,31 @@ fn lineage_label(child_session_count: usize, parent_session_id: Option<&str>) ->
     } else {
         parts.join(" · ")
     }
+}
+
+fn non_empty_option(value: &Option<String>) -> Option<&str> {
+    value.as_deref().filter(|value| has_trimmed_content(value))
+}
+
+fn non_empty_str(value: &str) -> Option<&str> {
+    has_trimmed_content(value).then_some(value)
+}
+
+fn activity_provider_model(activity: &ActivityEntry) -> Option<(&str, &str)> {
+    Some((
+        non_empty_str(&activity.provider_id)?,
+        non_empty_str(&activity.model_id)?,
+    ))
+}
+
+macro_rules! model_option_label_accessors {
+    ($($name:ident),+ $(,)?) => {
+        $(
+            pub fn $name(&self) -> Option<&str> {
+                non_empty_option(&self.$name)
+            }
+        )+
+    };
 }
 
 pub(crate) fn session_history_artifact_label(entry: &SessionHistoryEntry) -> String {
@@ -180,13 +207,15 @@ const fn session_history_action_sort_bucket(
 }
 
 fn format_session_history_timestamp(timestamp: &str) -> String {
-    let trimmed = timestamp.trim();
-    if trimmed.len() >= 16 && trimmed.as_bytes().get(10) == Some(&b'T') {
-        format!("updated {}", trimmed[..16].replace('T', " "))
-    } else if trimmed.is_empty() {
-        "updated <unavailable>".to_string()
+    if let Some(minute) = iso_timestamp_minute(timestamp) {
+        format!("updated {}", minute.replace('T', " "))
     } else {
-        format!("updated {trimmed}")
+        let trimmed = timestamp.trim();
+        if trimmed.is_empty() {
+            "updated <unavailable>".to_string()
+        } else {
+            format!("updated {trimmed}")
+        }
     }
 }
 
@@ -242,7 +271,7 @@ impl LaunchMetadata {
     ) -> Self {
         let profile = profile.into();
         let provider = provider.into();
-        let model = model.filter(|value| !value.trim().is_empty());
+        let model = model.filter(|value| non_empty_str(value).is_some());
         let mut metadata = Self {
             profile: Some(profile.clone()),
             profile_description: None,
@@ -316,105 +345,63 @@ impl LaunchMetadata {
     }
 
     pub fn profile(&self) -> &str {
-        self.profile
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or("default")
+        non_empty_option(&self.profile).unwrap_or("default")
     }
 
     pub(super) fn configured_profile(&self) -> Option<&str> {
-        self.profile
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
+        non_empty_option(&self.profile)
     }
 
     pub fn provider(&self) -> &str {
-        self.provider
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or("local")
+        non_empty_option(&self.provider).unwrap_or("local")
     }
 
     pub fn profile_description(&self) -> Option<&str> {
-        self.profile_description
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
+        non_empty_option(&self.profile_description)
     }
 
     pub fn provider_display_label(&self) -> Option<&str> {
-        self.provider_display_label
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-            .or_else(|| {
-                self.matching_available_model()
-                    .and_then(|option| option.provider_display_label())
-            })
+        self.fallback_model_option_label(
+            &self.provider_display_label,
+            ModelOption::provider_display_label,
+        )
     }
 
     pub fn provider_backend_label(&self) -> Option<&str> {
-        self.provider_backend_label
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-            .or_else(|| {
-                self.matching_available_model()
-                    .and_then(|option| option.provider_backend_label())
-            })
+        self.fallback_model_option_label(
+            &self.provider_backend_label,
+            ModelOption::provider_backend_label,
+        )
     }
 
     pub fn model_display_label(&self) -> Option<&str> {
-        self.model_display_label
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-            .or_else(|| {
-                self.matching_available_model()
-                    .and_then(|option| option.model_display_label())
-            })
+        self.fallback_model_option_label(
+            &self.model_display_label,
+            ModelOption::model_display_label,
+        )
     }
 
     pub fn model(&self) -> Option<&str> {
-        self.model
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
+        non_empty_option(&self.model)
     }
 
     pub fn variant(&self) -> Option<&str> {
-        self.variant
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-            .or_else(|| {
-                self.matching_available_model()
-                    .and_then(|option| option.variant())
-            })
+        self.fallback_model_option_label(&self.variant, ModelOption::variant)
     }
 
     pub fn variant_display_label(&self) -> Option<&str> {
-        self.variant_display_label
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-            .or_else(|| {
-                self.matching_available_model()
-                    .and_then(|option| option.variant_display_label())
-            })
+        self.fallback_model_option_label(
+            &self.variant_display_label,
+            ModelOption::variant_display_label,
+        )
     }
 
     pub fn display_label(&self) -> Option<&str> {
-        self.display_label
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-            .or_else(|| {
-                self.matching_available_model()
-                    .and_then(|option| option.display_label())
-            })
+        self.fallback_model_option_label(&self.display_label, ModelOption::display_label)
     }
 
     pub fn token_window_label(&self) -> Option<&str> {
-        self.token_window_label
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-            .or_else(|| {
-                self.matching_available_model()
-                    .and_then(|option| option.token_window_label())
-            })
+        self.fallback_model_option_label(&self.token_window_label, ModelOption::token_window_label)
     }
 
     pub fn context_window_tokens(&self) -> Option<u32> {
@@ -439,49 +426,23 @@ impl LaunchMetadata {
     }
 
     pub fn description(&self) -> Option<&str> {
-        self.description
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-            .or_else(|| {
-                self.matching_available_model()
-                    .and_then(|option| option.description())
-            })
+        self.fallback_model_option_label(&self.description, ModelOption::description)
     }
 
     pub fn reasoning_effort(&self) -> Option<&str> {
-        self.reasoning_effort
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-            .or_else(|| {
-                self.matching_available_model()
-                    .and_then(|option| option.reasoning_effort())
-            })
+        self.fallback_model_option_label(&self.reasoning_effort, ModelOption::reasoning_effort)
     }
 
     pub fn text_verbosity(&self) -> Option<&str> {
-        self.text_verbosity
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-            .or_else(|| {
-                self.matching_available_model()
-                    .and_then(|option| option.text_verbosity())
-            })
+        self.fallback_model_option_label(&self.text_verbosity, ModelOption::text_verbosity)
     }
 
     pub fn recommended_for(&self) -> Option<&str> {
-        self.recommended_for
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-            .or_else(|| {
-                self.matching_available_model()
-                    .and_then(|option| option.recommended_for())
-            })
+        self.fallback_model_option_label(&self.recommended_for, ModelOption::recommended_for)
     }
 
     pub fn mode_label(&self) -> Option<&str> {
-        self.mode_label
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
+        non_empty_option(&self.mode_label)
     }
 
     pub fn available_models(&self) -> &[ModelOption] {
@@ -543,10 +504,7 @@ impl LaunchMetadata {
         let profile = self.profile();
         let provider = self.provider();
         let model = self.model();
-        let variant = self
-            .variant
-            .as_deref()
-            .filter(|value| !value.trim().is_empty());
+        let variant = non_empty_option(&self.variant);
 
         let mut exact_profile_matches = self.available_models.iter().filter(|option| {
             option.profile == profile
@@ -585,6 +543,14 @@ impl LaunchMetadata {
         });
         let first = matches.next()?;
         matches.next().is_none().then_some(first)
+    }
+
+    fn fallback_model_option_label<'a>(
+        &'a self,
+        local: &'a Option<String>,
+        available: for<'model> fn(&'model ModelOption) -> Option<&'model str>,
+    ) -> Option<&'a str> {
+        non_empty_option(local).or_else(|| self.matching_available_model().and_then(available))
     }
 }
 
@@ -666,76 +632,22 @@ impl ModelOption {
     }
 
     pub fn variant(&self) -> Option<&str> {
-        self.variant
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
+        non_empty_option(&self.variant)
     }
 
-    pub fn provider_display_label(&self) -> Option<&str> {
-        self.provider_display_label
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-    }
-
-    pub fn provider_backend_label(&self) -> Option<&str> {
-        self.provider_backend_label
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-    }
-
-    pub fn model_display_label(&self) -> Option<&str> {
-        self.model_display_label
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-    }
-
-    pub fn variant_display_label(&self) -> Option<&str> {
-        self.variant_display_label
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-    }
-
-    pub fn display_label(&self) -> Option<&str> {
-        self.display_label
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-    }
-
-    pub fn token_window_label(&self) -> Option<&str> {
-        self.token_window_label
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-    }
-
-    pub fn description(&self) -> Option<&str> {
-        self.description
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-    }
-
-    pub fn profile_description(&self) -> Option<&str> {
-        self.profile_description
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-    }
-
-    pub fn reasoning_effort(&self) -> Option<&str> {
-        self.reasoning_effort
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-    }
-
-    pub fn text_verbosity(&self) -> Option<&str> {
-        self.text_verbosity
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-    }
-
-    pub fn recommended_for(&self) -> Option<&str> {
-        self.recommended_for
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-    }
+    model_option_label_accessors!(
+        provider_display_label,
+        provider_backend_label,
+        model_display_label,
+        variant_display_label,
+        display_label,
+        token_window_label,
+        description,
+        profile_description,
+        reasoning_effort,
+        text_verbosity,
+        recommended_for,
+    );
 
     fn apply_registered_metadata(&mut self) {
         let Some(metadata) = metadata_for_profile_identity(
@@ -922,7 +834,7 @@ impl AppState {
     }
 
     fn post_run_reopen_target(&self) -> Option<(&str, &PathBuf)> {
-        let run_id = self.run_id().filter(|run_id| !run_id.trim().is_empty())?;
+        let run_id = self.run_id().and_then(non_empty_str)?;
         let session_path = self.session_path.as_ref()?;
         Some((run_id, session_path))
     }
@@ -964,10 +876,7 @@ impl AppState {
         } else {
             self.activities
                 .back()
-                .and_then(|activity| {
-                    (!activity.provider_id.trim().is_empty())
-                        .then_some(activity.provider_id.as_str())
-                })
+                .and_then(|activity| non_empty_str(&activity.provider_id))
                 .filter(|value| !Self::launch_value_is_unknown(value))
                 .unwrap_or("local")
         }
@@ -977,9 +886,9 @@ impl AppState {
         self.launch_metadata
             .model()
             .or_else(|| {
-                self.activities.back().and_then(|activity| {
-                    (!activity.model_id.trim().is_empty()).then_some(activity.model_id.as_str())
-                })
+                self.activities
+                    .back()
+                    .and_then(|activity| non_empty_str(&activity.model_id))
             })
             .filter(|value| !Self::launch_value_is_unknown(value))
             .unwrap_or("-")
@@ -1021,11 +930,11 @@ impl AppState {
             self.activities
                 .back()
                 .and_then(|activity| {
-                    (!activity.model_id.trim().is_empty()).then(|| {
+                    non_empty_str(&activity.model_id).map(|model_id| {
                         LaunchMetadata::new(
                             self.active_profile(),
                             self.active_provider(),
-                            Some(activity.model_id.clone()),
+                            Some(model_id.to_string()),
                         )
                         .context_window_tokens()
                     })
@@ -1268,9 +1177,10 @@ impl AppState {
         !self.replay_mode
             && (!self.launch_metadata.available_models().is_empty()
                 || self.launch_metadata.model().is_some()
-                || self.activities.iter().any(|activity| {
-                    !activity.provider_id.trim().is_empty() && !activity.model_id.trim().is_empty()
-                }))
+                || self
+                    .activities
+                    .iter()
+                    .any(|activity| activity_provider_model(activity).is_some()))
     }
 
     fn restore_slash_draft(&mut self, preserved_draft: Option<String>) {
@@ -2079,8 +1989,7 @@ impl AppState {
             .as_deref()
             .and_then(Path::file_name)
             .and_then(|value| value.to_str())
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
+            .and_then(non_empty_trimmed)
     }
 
     pub(super) fn child_session_ids(&self) -> Vec<String> {
@@ -2092,8 +2001,7 @@ impl AppState {
                     .lineage
                     .as_ref()
                     .and_then(|lineage| lineage.child_session_id.as_deref())
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
+                    .and_then(non_empty_trimmed)
                     .map(str::to_string)
                     .or_else(|| {
                         json_string_field(
@@ -2112,7 +2020,7 @@ impl AppState {
     }
 
     pub(super) fn current_parent_session_id(&self) -> Option<String> {
-        parent_session_id_from_events(&self.events)
+        first_lineage_parent_session_id(&self.events).map(str::to_string)
     }
 
     fn build_launch_metadata_for_option(&self, selected_model: &ModelOption) -> LaunchMetadata {
@@ -2439,13 +2347,13 @@ impl AppState {
 
         if options.is_empty() {
             for activity in &self.activities {
-                if !activity.provider_id.trim().is_empty() && !activity.model_id.trim().is_empty() {
+                if let Some((provider, model)) = activity_provider_model(activity) {
                     let option = ModelOption {
                         profile: self.launch_metadata.profile().to_string(),
-                        provider: activity.provider_id.clone(),
+                        provider: provider.to_string(),
                         provider_display_label: None,
                         provider_backend_label: None,
-                        model: activity.model_id.clone(),
+                        model: model.to_string(),
                         model_display_label: None,
                         variant: None,
                         variant_display_label: None,
@@ -2999,56 +2907,6 @@ fn sibling_session_id(
     session_ids.get(next_index).cloned()
 }
 
-fn lineage_parent_session_id_from_event(event: &EventEnvelopeV1) -> Option<String> {
-    let parent_session_id = match &event.payload {
-        EventV1::ToolCallRequested(payload) => payload
-            .metadata
-            .as_ref()
-            .and_then(|metadata| metadata.lineage.as_ref())
-            .and_then(|lineage| lineage.parent_session_id.as_deref()),
-        EventV1::ToolCallFinished(payload) => payload
-            .metadata
-            .as_ref()
-            .and_then(|metadata| metadata.lineage.as_ref())
-            .and_then(|lineage| lineage.parent_session_id.as_deref()),
-        EventV1::TaskCompleted(payload) => payload
-            .metadata
-            .as_ref()
-            .and_then(|metadata| metadata.lineage.as_ref())
-            .and_then(|lineage| lineage.parent_session_id.as_deref()),
-        _ => None,
-    }?;
-
-    let parent_session_id = parent_session_id.trim();
-    (!parent_session_id.is_empty()).then(|| parent_session_id.to_string())
-}
-
-fn parent_session_id_from_events(events: &[EventEnvelopeV1]) -> Option<String> {
-    events.iter().find_map(lineage_parent_session_id_from_event)
-}
-
-fn load_session_events(session_path: &Path) -> Result<Vec<EventEnvelopeV1>, String> {
-    let events_path = session_path.join("events.jsonl");
-    let body = fs::read_to_string(&events_path)
-        .map_err(|err| format!("failed to read {}: {err}", events_path.display()))?;
-    let mut events = Vec::new();
-    for (line_number, line) in body.lines().enumerate() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let event = serde_json::from_str(trimmed).map_err(|err| {
-            format!(
-                "failed to parse {} line {}: {err}",
-                events_path.display(),
-                line_number + 1
-            )
-        })?;
-        events.push(event);
-    }
-    Ok(events)
-}
-
 fn infer_launch_metadata_from_events(
     events: &[EventEnvelopeV1],
     fallback: &LaunchMetadata,
@@ -3088,7 +2946,7 @@ fn replay_launch_metadata_from_session(
     events: &[EventEnvelopeV1],
     fallback: &LaunchMetadata,
 ) -> LaunchMetadata {
-    load_replay_run_metadata(session_path)
+    load_run_metadata(session_path)
         .and_then(|metadata| {
             metadata
                 .recorded_runtime_context
@@ -3096,12 +2954,6 @@ fn replay_launch_metadata_from_session(
                 .map(|context| launch_metadata_from_recorded_runtime_context(context, fallback))
         })
         .unwrap_or_else(|| infer_launch_metadata_from_events(events, fallback))
-}
-
-fn load_replay_run_metadata(session_path: &Path) -> Option<RunMetadata> {
-    let meta_path = session_path.join("meta.json");
-    let body = fs::read_to_string(meta_path).ok()?;
-    serde_json::from_str(&body).ok()
 }
 
 fn launch_metadata_from_recorded_runtime_context(
@@ -3118,7 +2970,7 @@ fn launch_metadata_from_recorded_runtime_context(
         variant: recorded_runtime_context.variant.clone(),
         variant_display_label: recorded_runtime_context.variant_display_label.clone(),
         display_label: Some(recorded_runtime_context.display_label.clone())
-            .filter(|value| !value.trim().is_empty()),
+            .filter(|value| non_empty_str(value).is_some()),
         token_window_label: recorded_runtime_context.token_window_label.clone(),
         context_window_tokens: recorded_runtime_context.context_window_tokens,
         max_input_tokens: recorded_runtime_context.max_input_tokens,
@@ -3140,7 +2992,7 @@ fn session_navigation_snapshot_from_path(
     session_path: &Path,
     fallback_launch_metadata: &LaunchMetadata,
 ) -> Result<SessionNavigationSnapshot, String> {
-    let events = load_session_events(session_path)?;
+    let events = crate::event_log::load_session_events(session_path)?;
     let launch_metadata =
         replay_launch_metadata_from_session(session_path, &events, fallback_launch_metadata);
     let replay = AppState::new_replay(session_path.to_path_buf(), events.clone());

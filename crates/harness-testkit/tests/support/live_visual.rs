@@ -7,6 +7,8 @@ use std::time::SystemTime;
 use time::{macros::format_description, OffsetDateTime};
 use vt100::Parser as VtParser;
 
+use super::focus_region::anchored_region as anchored_focus_region;
+use super::repo_root::repo_root;
 use super::visual_renderer::{
     extract_region_pixels, extract_region_render_state, render_parser_to_image,
     TerminalRenderConfig,
@@ -210,12 +212,7 @@ impl LiveVisualRun {
         run_id: &str,
         options: LiveVisualRunOptions,
     ) -> Result<Self, String> {
-        if test_name.trim().is_empty() {
-            return Err("live visual test name cannot be empty".to_string());
-        }
-        if run_id.trim().is_empty() {
-            return Err("live visual run id cannot be empty".to_string());
-        }
+        validate_live_visual_identity(test_name, run_id)?;
 
         let test_root = root.join(&options.artifact_namespace).join(test_name);
         fs::create_dir_all(&test_root).map_err(|err| {
@@ -509,12 +506,7 @@ impl VisualManifest {
         run_id: &str,
         run_metadata: Value,
     ) -> Result<Self, String> {
-        if test_name.trim().is_empty() {
-            return Err("live visual test name cannot be empty".to_string());
-        }
-        if run_id.trim().is_empty() {
-            return Err("live visual run id cannot be empty".to_string());
-        }
+        validate_live_visual_identity(test_name, run_id)?;
 
         fs::create_dir_all(&output_dir).map_err(|err| {
             format!(
@@ -607,6 +599,16 @@ impl VisualManifest {
             )
         })
     }
+}
+
+fn validate_live_visual_identity(test_name: &str, run_id: &str) -> Result<(), String> {
+    if test_name.trim().is_empty() {
+        return Err("live visual test name cannot be empty".to_string());
+    }
+    if run_id.trim().is_empty() {
+        return Err("live visual run id cannot be empty".to_string());
+    }
+    Ok(())
 }
 
 fn load_existing_entries(manifest_json_path: &Path) -> Result<Vec<VisualManifestEntry>, String> {
@@ -875,15 +877,6 @@ fn resolve_artifact_root(dir: impl Into<PathBuf>) -> PathBuf {
     }
 }
 
-fn repo_root() -> PathBuf {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest_dir
-        .parent()
-        .and_then(Path::parent)
-        .map(Path::to_path_buf)
-        .expect("harness-testkit should live under <repo>/crates/harness-testkit")
-}
-
 fn find_marker_cell(screen: &vt100::Screen, marker: &str) -> Option<(u16, u16)> {
     let (rows, cols) = screen.size();
 
@@ -916,18 +909,14 @@ fn anchored_region(
     bounds: (u16, u16),
     focus: &FocusCapture,
 ) -> (u16, u16, u16, u16) {
-    let (anchor_row, anchor_col) = anchor;
-    let (rows, cols) = bounds;
-    let row_start = anchor_row.saturating_sub(focus.top_padding_cells);
-    let col_start = anchor_col.saturating_sub(focus.left_padding_cells);
-
-    let max_height = rows.saturating_sub(row_start).max(1);
-    let max_width = cols.saturating_sub(col_start).max(1);
-
-    let height = focus.height_cells.min(max_height).max(1);
-    let width = focus.width_cells.min(max_width).max(1);
-
-    (row_start, col_start, height, width)
+    anchored_focus_region(
+        anchor,
+        bounds,
+        focus.width_cells,
+        focus.height_cells,
+        focus.top_padding_cells,
+        focus.left_padding_cells,
+    )
 }
 
 fn live_visual_render_config() -> TerminalRenderConfig {

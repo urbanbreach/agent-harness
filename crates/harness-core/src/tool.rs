@@ -10,6 +10,7 @@ use thiserror::Error;
 
 use crate::coord::CoordinatorHandle;
 use crate::event::{ActorKind, EventActor};
+use crate::session_paths::ARTIFACTS_DIR_NAME;
 
 pub type ToolId = String;
 
@@ -197,7 +198,7 @@ impl ArtifactStore {
         })?;
 
         let digest = blake3::hash(contents.as_bytes()).to_hex().to_string();
-        let rel_path = Path::new("artifacts")
+        let rel_path = Path::new(ARTIFACTS_DIR_NAME)
             .join(relative)
             .to_string_lossy()
             .to_string();
@@ -357,6 +358,10 @@ pub fn sanitize_tool_function_name(tool_id: &str) -> String {
     function_name
 }
 
+pub fn sanitize_mcp_tool_segment(name: &str) -> String {
+    sanitize_tool_function_name(name).replace('-', "_")
+}
+
 pub fn build_tool_function_name_mapping<I, S>(tool_ids: I) -> ToolFunctionNameMapping
 where
     I: IntoIterator<Item = S>,
@@ -466,8 +471,9 @@ pub fn actor_capabilities(actor_kind: ActorKind) -> BTreeSet<ToolCapability> {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_tool_function_name_mapping, canonical_tool_id_for, sanitize_tool_function_name,
-        ArtifactStore, ArtifactStoreError, ToolCapability, ToolContext, ToolError, ToolRegistry,
+        build_tool_function_name_mapping, canonical_tool_id_for, sanitize_mcp_tool_segment,
+        sanitize_tool_function_name, ArtifactStore, ArtifactStoreError, ToolCapability,
+        ToolContext, ToolError, ToolRegistry,
     };
     use crate::clock::RealClock;
     use crate::coord::{spawn_coordinator, CoordinatorConfig};
@@ -596,6 +602,13 @@ mod tests {
         );
         assert_eq!(sanitize_tool_function_name("1shell.run"), "t_1shell_run");
         assert_eq!(sanitize_tool_function_name(""), "t_");
+    }
+
+    #[test]
+    fn sanitize_mcp_tool_segment_matches_first_class_tool_id_policy() {
+        assert_eq!(sanitize_mcp_tool_segment("tool.call"), "tool_call");
+        assert_eq!(sanitize_mcp_tool_segment("tools-list"), "tools_list");
+        assert_eq!(sanitize_mcp_tool_segment("1server/tool"), "t_1server_tool");
     }
 
     #[test]

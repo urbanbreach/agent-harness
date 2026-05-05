@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
+use super::json_file::read_required_json;
 use crate::{DEFAULT_LIVE_PROXY_VARIANT, LIVE_CHAT_TODO_CONTENT};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,12 +98,9 @@ impl ToolFlowEvidence {
         let mut saw_edit_rejected = false;
 
         for (idx, line) in events_body.lines().enumerate() {
-            if line.trim().is_empty() {
+            let Some(event) = parse_event_line(line, idx + 1)? else {
                 continue;
-            }
-
-            let event: Value = serde_json::from_str(line)
-                .map_err(|err| format!("events line {} is invalid JSON: {err}", idx + 1))?;
+            };
             let event_type = event
                 .get("payload")
                 .and_then(|payload| payload.get("event_type"))
@@ -375,13 +373,6 @@ pub(crate) fn resolve_tagged_run_dir(
     }
 }
 
-pub(crate) fn read_required_json(path: &Path) -> Result<Value, String> {
-    let body = fs::read_to_string(path)
-        .map_err(|err| format!("failed to read JSON artifact {}: {err}", path.display()))?;
-    serde_json::from_str(&body)
-        .map_err(|err| format!("failed to parse JSON artifact {}: {err}", path.display()))
-}
-
 pub(crate) fn assert_requested_tool_args(
     events_body: &str,
     expected_tool_id: &str,
@@ -431,11 +422,9 @@ pub(crate) fn assert_requested_tool_sequence(
     let mut finished = BTreeMap::<String, String>::new();
 
     for (idx, line) in events_body.lines().enumerate() {
-        if line.trim().is_empty() {
+        let Some(event) = parse_event_line(line, idx + 1)? else {
             continue;
-        }
-        let event: Value = serde_json::from_str(line)
-            .map_err(|err| format!("events line {} is invalid JSON: {err}", idx + 1))?;
+        };
         let event_type = event
             .get("payload")
             .and_then(|payload| payload.get("event_type"))
@@ -611,11 +600,9 @@ pub(crate) fn first_requested_tool_call_id(
     expected_tool_id: &str,
 ) -> Result<Option<String>, String> {
     for (idx, line) in events_body.lines().enumerate() {
-        if line.trim().is_empty() {
+        let Some(event) = parse_event_line(line, idx + 1)? else {
             continue;
-        }
-        let event: Value = serde_json::from_str(line)
-            .map_err(|err| format!("events line {} is invalid JSON: {err}", idx + 1))?;
+        };
         let event_type = event
             .get("payload")
             .and_then(|payload| payload.get("event_type"))
@@ -645,11 +632,10 @@ pub(crate) fn first_requested_tool_args(
     expected_tool_id: &str,
 ) -> Result<Option<Value>, String> {
     for (idx, line) in events_body.lines().enumerate() {
-        if line.trim().is_empty() {
+        let line_number = idx + 1;
+        let Some(event) = parse_event_line(line, line_number)? else {
             continue;
-        }
-        let event: Value = serde_json::from_str(line)
-            .map_err(|err| format!("events line {} is invalid JSON: {err}", idx + 1))?;
+        };
         let event_type = event
             .get("payload")
             .and_then(|payload| payload.get("event_type"))
@@ -670,7 +656,7 @@ pub(crate) fn first_requested_tool_args(
             let args = serde_json::from_str(args_summary).map_err(|err| {
                 format!(
                     "failed to parse args_summary for `{expected_tool_id}` on line {}: {err}",
-                    idx + 1
+                    line_number
                 )
             })?;
             return Ok(Some(args));
@@ -690,11 +676,9 @@ pub(crate) fn first_tool_call_output_summary(
     };
 
     for (idx, line) in events_body.lines().enumerate() {
-        if line.trim().is_empty() {
+        let Some(event) = parse_event_line(line, idx + 1)? else {
             continue;
-        }
-        let event: Value = serde_json::from_str(line)
-            .map_err(|err| format!("events line {} is invalid JSON: {err}", idx + 1))?;
+        };
         let event_type = event
             .get("payload")
             .and_then(|payload| payload.get("event_type"))
@@ -718,6 +702,16 @@ pub(crate) fn first_tool_call_output_summary(
     }
 
     Ok(None)
+}
+
+fn parse_event_line(line: &str, line_number: usize) -> Result<Option<Value>, String> {
+    if line.trim().is_empty() {
+        return Ok(None);
+    }
+
+    serde_json::from_str(line)
+        .map(Some)
+        .map_err(|err| format!("events line {line_number} is invalid JSON: {err}"))
 }
 
 fn required_str<'a>(

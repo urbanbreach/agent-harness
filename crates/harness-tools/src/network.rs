@@ -1,12 +1,19 @@
-use std::env;
 use std::fs;
 use std::time::Duration;
 
+use harness_core::config::{
+    DEFAULT_REMOTE_SEARCH_ENDPOINT, DEFAULT_REMOTE_SEARCH_MAX_RETRIES,
+    DEFAULT_REMOTE_SEARCH_RETRY_BACKOFF_MS, DEFAULT_REMOTE_SEARCH_TIMEOUT_SECS,
+};
 use harness_core::tool::{ArtifactRef, ToolContext, ToolError, ToolResult};
 use regex::Regex;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
+
+use crate::env_vars::{first_env_entry, first_non_empty_env_value};
+use crate::http_client;
+use crate::text::trimmed_non_empty;
 
 const DEFAULT_WEBSEARCH_LIMIT: usize = 8;
 const DEFAULT_WEB_TIMEOUT_SECS: u64 = 30;
@@ -15,7 +22,6 @@ const DEFAULT_CODE_SEARCH_TOKENS: u32 = 5_000;
 const MIN_CODE_SEARCH_TOKENS: u32 = 1_000;
 const MAX_CODE_SEARCH_TOKENS: u32 = 50_000;
 const MAX_FETCH_BYTES: usize = 5 * 1024 * 1024;
-const EXA_API_URL: &str = "https://mcp.exa.ai/mcp";
 const EXA_WEB_SEARCH_TOOL_NAME: &str = "web_search_exa";
 const EXA_CODE_SEARCH_TOOL_NAME: &str = "web_search_exa";
 const CODE_SEARCH_TIMEOUT_MESSAGE: &str = "Code search request timed out";
@@ -24,8 +30,6 @@ const HARNESS_WEBFETCH_USER_AGENT: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36";
 const HARNESS_WEBFETCH_FALLBACK_USER_AGENT: &str = "agent-harness";
 const HARNESS_WEBFETCH_ACCEPT_LANGUAGE: &str = "en-US,en;q=0.9";
-const DEFAULT_REMOTE_SEARCH_MAX_RETRIES: u32 = 1;
-const DEFAULT_REMOTE_SEARCH_RETRY_BACKOFF_MS: u64 = 250;
 const MAX_REMOTE_SEARCH_RETRY_BACKOFF_MS: u64 = 5_000;
 const REMOTE_SEARCH_ENDPOINT_ENV_VARS: &[&str] =
     &["HARNESS_REMOTE_SEARCH_ENDPOINT", "HARNESS_EXA_MCP_ENDPOINT"];
@@ -47,7 +51,7 @@ pub(crate) struct NetworkExecutor {
 
 impl NetworkExecutor {
     pub(crate) fn new() -> Self {
-        let client = build_http_client();
+        let client = http_client::redirect_limited_client(10, "http client");
         Self {
             remote_search: RemoteSearchClient::from_env(client.clone()),
             client,
@@ -292,7 +296,7 @@ struct RemoteSearchTextResult {
 
 impl RemoteSearchTextResult {
     fn is_empty(&self) -> bool {
-        self.text.trim().is_empty()
+        trimmed_non_empty(&self.text).is_none()
     }
 }
 
@@ -522,17 +526,17 @@ struct RemoteSearchConfig {
 
 impl RemoteSearchConfig {
     fn from_env() -> Result<Self, String> {
-        let endpoint = read_env_value(REMOTE_SEARCH_ENDPOINT_ENV_VARS)
-            .unwrap_or_else(|| EXA_API_URL.to_string());
+        let endpoint = first_non_empty_env_value(REMOTE_SEARCH_ENDPOINT_ENV_VARS)
+            .unwrap_or_else(|| DEFAULT_REMOTE_SEARCH_ENDPOINT.to_string());
         let endpoint = parse_remote_search_endpoint(&endpoint)?;
-        let auth_token = read_env_value(REMOTE_SEARCH_AUTH_TOKEN_ENV_VARS);
+        let auth_token = first_non_empty_env_value(REMOTE_SEARCH_AUTH_TOKEN_ENV_VARS);
         let require_auth = read_bool_env(REMOTE_SEARCH_REQUIRE_AUTH_ENV_VARS)?.unwrap_or(false);
-        let timeout_secs = read_u64_env(REMOTE_SEARCH_TIMEOUT_SECS_ENV_VARS)?
-            .unwrap_or(DEFAULT_WEB_TIMEOUT_SECS)
+        let timeout_secs = read_parsed_env::<u64>(REMOTE_SEARCH_TIMEOUT_SECS_ENV_VARS)?
+            .unwrap_or(DEFAULT_REMOTE_SEARCH_TIMEOUT_SECS)
             .clamp(1, MAX_WEB_TIMEOUT_SECS);
-        let max_retries = read_u32_env(REMOTE_SEARCH_MAX_RETRIES_ENV_VARS)?
+        let max_retries = read_parsed_env::<u32>(REMOTE_SEARCH_MAX_RETRIES_ENV_VARS)?
             .unwrap_or(DEFAULT_REMOTE_SEARCH_MAX_RETRIES);
-        let retry_backoff_ms = read_u64_env(REMOTE_SEARCH_RETRY_BACKOFF_MS_ENV_VARS)?
+        let retry_backoff_ms = read_parsed_env::<u64>(REMOTE_SEARCH_RETRY_BACKOFF_MS_ENV_VARS)?
             .unwrap_or(DEFAULT_REMOTE_SEARCH_RETRY_BACKOFF_MS)
             .min(MAX_REMOTE_SEARCH_RETRY_BACKOFF_MS);
 
@@ -585,13 +589,6 @@ pub(crate) struct WebSearchRequest {
 pub(crate) struct CodeSearchRequest {
     pub(crate) query: String,
     pub(crate) tokens_num: Option<u32>,
-}
-
-fn build_http_client() -> reqwest::Client {
-    reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::limited(10))
-        .build()
-        .expect("http client")
 }
 
 fn accept_header(format: WebFetchFormat) -> &'static str {
@@ -709,11 +706,7 @@ fn media_type(content_type: &str) -> String {
 }
 
 fn display_content_type<'a>(content_type: &'a str, mime: &'a str) -> &'a str {
-    if content_type.trim().is_empty() {
-        mime
-    } else {
-        content_type
-    }
+    trimmed_non_empty(content_type).map_or(mime, |_| content_type)
 }
 
 fn render_textual_content(format: WebFetchFormat, mime: &str, text: &str) -> String {
@@ -780,13 +773,7 @@ fn html_to_text(html: &str) -> String {
     let without_tags = Regex::new(r"<[^>]+>")
         .expect("html tag regex")
         .replace_all(html, " ");
-    let decoded = without_tags
-        .replace("&nbsp;", " ")
-        .replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&#x27;", "'")
-        .replace("&quot;", "\"");
+    let decoded = decode_basic_html_entities(&without_tags);
     Regex::new(r"\s+")
         .expect("whitespace regex")
         .replace_all(decoded.trim(), " ")
@@ -827,13 +814,7 @@ fn html_to_markdown(html: &str) -> String {
         .expect("html tag regex")
         .replace_all(&markdown, " ")
         .into_owned();
-    let decoded = markdown
-        .replace("&nbsp;", " ")
-        .replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&#x27;", "'")
-        .replace("&quot;", "\"");
+    let decoded = decode_basic_html_entities(&markdown);
     let collapsed_spaces = Regex::new(r"[ \t]+")
         .expect("markdown whitespace regex")
         .replace_all(decoded.trim(), " ")
@@ -844,20 +825,17 @@ fn html_to_markdown(html: &str) -> String {
         .to_string()
 }
 
-fn read_env_value(keys: &[&str]) -> Option<String> {
-    keys.iter().find_map(|key| {
-        env::var(key)
-            .ok()
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-    })
+fn decode_basic_html_entities(text: &str) -> String {
+    text.replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&#x27;", "'")
+        .replace("&quot;", "\"")
 }
 
 fn read_bool_env(keys: &[&str]) -> Result<Option<bool>, String> {
-    let Some((key, value)) = keys
-        .iter()
-        .find_map(|key| env::var(key).ok().map(|value| (*key, value)))
-    else {
+    let Some((key, value)) = first_env_entry(keys) else {
         return Ok(None);
     };
     match value.trim().to_ascii_lowercase().as_str() {
@@ -869,30 +847,17 @@ fn read_bool_env(keys: &[&str]) -> Result<Option<bool>, String> {
     }
 }
 
-fn read_u64_env(keys: &[&str]) -> Result<Option<u64>, String> {
-    let Some((key, value)) = keys
-        .iter()
-        .find_map(|key| env::var(key).ok().map(|value| (*key, value)))
-    else {
+fn read_parsed_env<T>(keys: &[&str]) -> Result<Option<T>, String>
+where
+    T: std::str::FromStr,
+    T::Err: std::fmt::Display,
+{
+    let Some((key, value)) = first_env_entry(keys) else {
         return Ok(None);
     };
     value
         .trim()
-        .parse::<u64>()
-        .map(Some)
-        .map_err(|err| format!("invalid integer value in {key}: {err}"))
-}
-
-fn read_u32_env(keys: &[&str]) -> Result<Option<u32>, String> {
-    let Some((key, value)) = keys
-        .iter()
-        .find_map(|key| env::var(key).ok().map(|value| (*key, value)))
-    else {
-        return Ok(None);
-    };
-    value
-        .trim()
-        .parse::<u32>()
+        .parse::<T>()
         .map(Some)
         .map_err(|err| format!("invalid integer value in {key}: {err}"))
 }
@@ -922,12 +887,7 @@ fn remote_search_retry_delay(retry_after_secs: Option<u64>, retry_backoff_ms: u6
 }
 
 fn backend_error_suffix(body: &str) -> String {
-    let trimmed = body.trim();
-    if trimmed.is_empty() {
-        String::new()
-    } else {
-        format!(": {trimmed}")
-    }
+    trimmed_non_empty(body).map_or_else(String::new, |trimmed| format!(": {trimmed}"))
 }
 
 fn normalize_code_search_error(error: ToolError) -> ToolError {
@@ -976,8 +936,7 @@ fn extract_text_result(content: &[Value]) -> Option<String> {
     content.iter().find_map(|item| {
         item["text"]
             .as_str()
-            .map(str::trim)
-            .filter(|text| !text.is_empty())
+            .and_then(trimmed_non_empty)
             .map(ToOwned::to_owned)
     })
 }

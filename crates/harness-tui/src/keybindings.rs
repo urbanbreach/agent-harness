@@ -368,38 +368,31 @@ impl Action {
     }
 
     pub fn palette_command_label(command: &str) -> &'static str {
-        Self::grouped_palette_commands()
-            .iter()
-            .find_map(|palette_command| {
-                (palette_command.id == command).then_some(palette_command.label)
-            })
+        Self::palette_command(command)
+            .map(|palette_command| palette_command.label)
             .unwrap_or("")
     }
 
     pub fn palette_command_description(command: &str) -> &'static str {
-        Self::grouped_palette_commands()
-            .iter()
-            .find_map(|palette_command| {
-                (palette_command.id == command).then_some(palette_command.description)
-            })
+        Self::palette_command(command)
+            .map(|palette_command| palette_command.description)
             .unwrap_or("")
     }
 
     pub fn palette_command_shortcut(command: &str) -> &'static str {
-        Self::grouped_palette_commands()
-            .iter()
-            .find_map(|palette_command| {
-                (palette_command.id == command).then_some(palette_command.shortcut)
-            })
+        Self::palette_command(command)
+            .map(|palette_command| palette_command.shortcut)
             .unwrap_or("")
     }
 
     pub fn palette_command_section(command: &str) -> Option<PaletteCommandSection> {
+        Self::palette_command(command).map(|palette_command| palette_command.section)
+    }
+
+    fn palette_command(command: &str) -> Option<&'static PaletteCommand> {
         Self::grouped_palette_commands()
             .iter()
-            .find_map(|palette_command| {
-                (palette_command.id == command).then_some(palette_command.section)
-            })
+            .find(|palette_command| palette_command.id == command)
     }
 
     pub fn grouped_palette_commands_for_overlay() -> &'static [PaletteCommand] {
@@ -472,25 +465,18 @@ impl FromStr for KeyBinding {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.trim();
 
-        // Handle Ctrl+ prefix
-        if s.starts_with("ctrl+") || s.starts_with("Ctrl+") {
-            let key_part = &s[5..];
-            let code = parse_key_code(key_part)?;
-            return Ok(KeyBinding::new(code, KeyModifiers::CONTROL));
-        }
-
-        // Handle Shift+ prefix
-        if s.starts_with("shift+") || s.starts_with("Shift+") {
-            let key_part = &s[6..];
-            let code = parse_key_code(key_part)?;
-            return Ok(KeyBinding::new(code, KeyModifiers::SHIFT));
-        }
-
-        // Handle Alt+ prefix
-        if s.starts_with("alt+") || s.starts_with("Alt+") {
-            let key_part = &s[4..];
-            let code = parse_key_code(key_part)?;
-            return Ok(KeyBinding::new(code, KeyModifiers::ALT));
+        for (prefix, modifiers) in [
+            ("ctrl+", KeyModifiers::CONTROL),
+            ("Ctrl+", KeyModifiers::CONTROL),
+            ("shift+", KeyModifiers::SHIFT),
+            ("Shift+", KeyModifiers::SHIFT),
+            ("alt+", KeyModifiers::ALT),
+            ("Alt+", KeyModifiers::ALT),
+        ] {
+            if let Some(key_part) = s.strip_prefix(prefix) {
+                let code = parse_key_code(key_part)?;
+                return Ok(KeyBinding::new(code, modifiers));
+            }
         }
 
         // Single key (no modifiers)

@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::io::{BufRead, BufReader};
+use std::io::{self, BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -34,6 +34,8 @@ use crate::conversation::{
     ConversationAssistantMessage, ConversationMessage, ConversationToolCall,
     ConversationToolResultMessage, ConversationUserMessage,
 };
+use crate::counter_id::parse_prefixed_counter;
+use crate::digest::{digest12, digest12_json};
 use crate::edit::hashline::HashlinePatch;
 use crate::event::{
     ActorKind, AgentSpawnedEvent, ArtifactWrittenEvent, CompactionAppliedEvent,
@@ -49,6 +51,7 @@ use crate::event::{
     TaskScheduledEvent, TaskTerminalScope, ToolCallFinishedEvent, ToolCallMetadata,
     ToolCallStartedEvent, ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent,
 };
+use crate::path_selector::workspace_relative_path_from_maybe_absolute;
 use crate::perm::{
     permission_kind_for_tool, permission_kind_for_tool_call, PermissionDecision, PermissionGrant,
     PermissionGrantMatcher, PermissionGrantRequest, PermissionGrantScope, PermissionGrantSet,
@@ -56,13 +59,17 @@ use crate::perm::{
     PolicyDecision,
 };
 use crate::proj::{inspect_resume_plan, RecordedRuntimeContext, RunMetadata};
+use crate::provider_args::provider_tool_arguments_json;
+use crate::question_answers::{validate_question_answers, QuestionAnswerPrompt};
 use crate::redact::Redactor;
 use crate::sched::{
     ConcurrencyKey, ScheduleDecision, Scheduler, SchedulerLimits, TaskProgressSnapshot,
 };
+use crate::session_paths::{ARTIFACTS_DIR_NAME, EVENTS_FILE_NAME, META_FILE_NAME};
 use crate::store::{EventEnvelopeWithoutSeqV1, EventStore, EventStoreError, JsonlFileEventStore};
+use crate::text::{non_empty_trimmed, truncate_with_ellipsis};
 use crate::tool::{
-    canonical_tool_id_for, sanitize_tool_function_name, ToolContext, ToolRegistry, ToolResult,
+    canonical_tool_id_for, sanitize_mcp_tool_segment, ToolContext, ToolRegistry, ToolResult,
 };
 use harness_providers::{
     AssistantToolCall, CompletionMessage, CompletionRequest, MessageRole, Provider,
@@ -1242,7 +1249,7 @@ impl Coordinator {
         };
 
         let run_dir = self.config.session_dir.join(&run_id);
-        let artifacts_dir = run_dir.join("artifacts");
+        let artifacts_dir = run_dir.join(ARTIFACTS_DIR_NAME);
         fs::create_dir_all(&artifacts_dir).map_err(|source| {
             CoordinatorError::CreateSessionDirectory {
                 path: artifacts_dir.display().to_string(),
@@ -1383,8 +1390,7 @@ impl Coordinator {
         let workspace_root = resume_plan
             .workspace_root
             .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
+            .and_then(non_empty_trimmed)
             .map(PathBuf::from)
             .ok_or_else(|| CoordinatorError::ResumeRestoreFailed {
                 run_id: run_id.clone(),
@@ -1430,8 +1436,7 @@ impl Coordinator {
                 .child_sessions
                 .get(agent_id)
                 .and_then(|child| child.parent_session_id.as_deref())
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
+                .and_then(non_empty_trimmed)
                 .map(str::to_string);
 
             if let Some(parent_agent_id) = parent_agent_id.as_ref() {
@@ -1464,7 +1469,7 @@ impl Coordinator {
             "permission id",
         )?;
 
-        let artifacts_dir = run_dir.join("artifacts");
+        let artifacts_dir = run_dir.join(ARTIFACTS_DIR_NAME);
         fs::create_dir_all(&artifacts_dir).map_err(|source| {
             CoordinatorError::CreateSessionDirectory {
                 path: artifacts_dir.display().to_string(),
@@ -4508,7 +4513,7 @@ fn truncated_failure_reason(reason: &str) -> Option<String> {
     if reason.is_empty() {
         None
     } else {
-        Some(truncate_chars(
+        Some(truncate_with_ellipsis(
             reason,
             PROVIDER_CONTEXT_COMPACTION_TURN_EXCERPT_MAX_CHARS,
         ))
@@ -4745,6 +4750,23 @@ struct QuestionOptionSpec {
     label: String,
     #[serde(rename = "description")]
     _description: String,
+}
+
+impl QuestionAnswerPrompt for QuestionPromptSpec {
+    fn header(&self) -> &str {
+        &self.header
+    }
+
+    fn multiple(&self) -> bool {
+        self.multiple.unwrap_or(false)
+    }
+
+    fn canonical_option_label<'a>(&'a self, answer: &str) -> Option<&'a str> {
+        self.options
+            .iter()
+            .find(|option| option.label.eq_ignore_ascii_case(answer))
+            .map(|option| option.label.as_str())
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -5220,23 +5242,19 @@ fn hook_environment(
 }
 
 fn summarize_hook_output(stdout: &str, stderr: &str) -> String {
-    let combined = if stderr.trim().is_empty() {
-        stdout.trim()
-    } else if stdout.trim().is_empty() {
-        stderr.trim()
+    let stdout = non_empty_trimmed(stdout);
+    let stderr = non_empty_trimmed(stderr);
+    let combined = if stderr.is_none() {
+        stdout
+    } else if stdout.is_none() {
+        stderr
     } else {
-        "stdout/stderr captured"
+        Some("stdout/stderr captured")
     };
 
-    let mut summary = combined.chars().take(160).collect::<String>();
-    if combined.chars().count() > 160 {
-        summary.push('…');
-    }
-    if summary.is_empty() {
-        "no output".to_string()
-    } else {
-        summary
-    }
+    combined
+        .map(|output| truncate_with_ellipsis(output, 160))
+        .unwrap_or_else(|| "no output".to_string())
 }
 
 async fn start_tool_call_execution<C, R>(
@@ -6574,8 +6592,8 @@ fn completion_messages_to_conversation_messages(
                         tool_call_id,
                         tool_id,
                         status: provider_tool_message_status(&message.content),
-                        output_summary: (!message.content.trim().is_empty())
-                            .then(|| message.content.clone()),
+                        output_summary: non_empty_trimmed(&message.content)
+                            .map(|_| message.content.clone()),
                         output_digest: (!message.content.is_empty())
                             .then(|| digest12(message.content.as_bytes())),
                         output_json: None,
@@ -6826,7 +6844,7 @@ where
 }
 
 fn parse_question_answers_reason(reason: Option<&str>) -> Result<Vec<Vec<String>>, String> {
-    let Some(reason) = reason.map(str::trim).filter(|reason| !reason.is_empty()) else {
+    let Some(reason) = reason.and_then(non_empty_trimmed) else {
         return Err("question answers were not provided".to_string());
     };
 
@@ -6856,64 +6874,6 @@ fn validate_question_prompts(
     }
 
     Ok(prompts)
-}
-
-fn validate_question_answers(
-    prompts: &[QuestionPromptSpec],
-    answers: Vec<Vec<String>>,
-) -> Result<Vec<Vec<String>>, String> {
-    if answers.len() != prompts.len() {
-        return Err(format!(
-            "Expected {} answer group(s) for {} question(s); received {}.",
-            prompts.len(),
-            prompts.len(),
-            answers.len()
-        ));
-    }
-
-    prompts
-        .iter()
-        .zip(answers)
-        .enumerate()
-        .map(|(index, (prompt, answers))| normalize_question_answers(index, prompt, answers))
-        .collect()
-}
-
-fn normalize_question_answers(
-    index: usize,
-    prompt: &QuestionPromptSpec,
-    answers: Vec<String>,
-) -> Result<Vec<String>, String> {
-    let answers = answers
-        .into_iter()
-        .map(|answer| answer.trim().to_string())
-        .filter(|answer| !answer.is_empty())
-        .collect::<Vec<_>>();
-    if answers.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    if !prompt.multiple.unwrap_or(false) && answers.len() != 1 {
-        return Err(format!(
-            "Question {} ({}) accepts only one answer.",
-            index + 1,
-            prompt.header
-        ));
-    }
-
-    Ok(answers
-        .into_iter()
-        .map(|answer| canonicalize_question_answer(prompt, answer))
-        .collect())
-}
-
-fn canonicalize_question_answer(prompt: &QuestionPromptSpec, answer: String) -> String {
-    prompt
-        .options
-        .iter()
-        .find(|option| option.label.eq_ignore_ascii_case(&answer))
-        .map(|option| option.label.clone())
-        .unwrap_or(answer)
 }
 
 fn question_request_timeout_ms(permission_policy: &PermissionPolicy) -> u64 {
@@ -7335,7 +7295,7 @@ fn write_run_metadata(
         recorded_runtime_context: run_state.recorded_runtime_context.clone(),
     };
 
-    let meta_path = run_state.info.run_dir.join("meta.json");
+    let meta_path = run_state.info.run_dir.join(META_FILE_NAME);
     let body = serde_json::to_string_pretty(&metadata)?;
     fs::write(&meta_path, body).map_err(|source| CoordinatorError::WriteRunMetadata {
         path: meta_path.display().to_string(),
@@ -7378,7 +7338,11 @@ impl CompactionSummaryDecision {
         split_prefix_summary: Option<SplitPrefixSummaryDecision>,
     ) -> Self {
         Self {
-            summary: (!summary.trim().is_empty()).then_some(summary),
+            summary: if non_empty_trimmed(&summary).is_some() {
+                Some(summary)
+            } else {
+                None
+            },
             source: SummarySourceRequest::Model {
                 model_ref,
                 deterministic_fallback,
@@ -7783,9 +7747,10 @@ fn build_provider_context_checkpoint(
     let summary = summary_decision
         .summary
         .as_deref()
-        .map(str::trim)
-        .filter(|summary| !summary.is_empty())
-        .map(|summary| truncate_chars(summary, PROVIDER_CONTEXT_COMPACTION_SUMMARY_MAX_CHARS))
+        .and_then(non_empty_trimmed)
+        .map(|summary| {
+            truncate_with_ellipsis(summary, PROVIDER_CONTEXT_COMPACTION_SUMMARY_MAX_CHARS)
+        })
         .unwrap_or_else(|| {
             build_provider_context_summary(
                 context.compacted_summary.as_deref(),
@@ -7797,9 +7762,7 @@ fn build_provider_context_checkpoint(
                 compaction_config,
             )
         });
-    if summary.trim().is_empty() {
-        return None;
-    }
+    non_empty_trimmed(&summary)?;
     let summary_tokens_estimate = approximate_text_tokens(&summary);
     let preserved_tokens_estimate = preserved_tokens_estimate(&plan.recent_turns);
     let tokens_after_estimate = summary_tokens_estimate.saturating_add(preserved_tokens_estimate);
@@ -8384,37 +8347,11 @@ fn read_historical_events_until(
     let mut expected_seq = 1_u64;
     let mut events = Vec::new();
     for (line_number, line) in BufReader::new(file).lines().enumerate() {
-        let line = line.map_err(|source| CoordinatorError::ResumeRestoreFailed {
-            run_id: run_id.to_string(),
-            reason: format!(
-                "failed to read historical event line {} in {}: {source}",
-                line_number + 1,
-                events_path.display()
-            ),
-        })?;
-        if line.trim().is_empty() {
+        let Some(event) = parse_historical_event_line(run_id, events_path, line_number, line)?
+        else {
             continue;
-        }
-        let event: EventEnvelopeV1 = serde_json::from_str(&line).map_err(|source| {
-            CoordinatorError::ResumeRestoreFailed {
-                run_id: run_id.to_string(),
-                reason: format!(
-                    "invalid historical event line {} in {}: {source}",
-                    line_number + 1,
-                    events_path.display()
-                ),
-            }
-        })?;
-        if event.seq != expected_seq {
-            return Err(CoordinatorError::ResumeRestoreFailed {
-                run_id: run_id.to_string(),
-                reason: format!(
-                    "historical sequence mismatch at {}: expected {expected_seq}, got {}",
-                    events_path.display(),
-                    event.seq
-                ),
-            });
-        }
+        };
+        validate_historical_event_seq(run_id, events_path, &event, expected_seq)?;
         expected_seq = expected_seq.saturating_add(1);
         if event.seq > through_seq {
             break;
@@ -8422,6 +8359,54 @@ fn read_historical_events_until(
         events.push(event);
     }
     Ok(events)
+}
+
+fn parse_historical_event_line(
+    run_id: &str,
+    events_path: &Path,
+    line_number: usize,
+    line: io::Result<String>,
+) -> Result<Option<EventEnvelopeV1>, CoordinatorError> {
+    let line = line.map_err(|source| CoordinatorError::ResumeRestoreFailed {
+        run_id: run_id.to_string(),
+        reason: format!(
+            "failed to read historical event line {} in {}: {source}",
+            line_number + 1,
+            events_path.display()
+        ),
+    })?;
+    if line.trim().is_empty() {
+        return Ok(None);
+    }
+    serde_json::from_str(&line)
+        .map(Some)
+        .map_err(|source| CoordinatorError::ResumeRestoreFailed {
+            run_id: run_id.to_string(),
+            reason: format!(
+                "invalid historical event line {} in {}: {source}",
+                line_number + 1,
+                events_path.display()
+            ),
+        })
+}
+
+fn validate_historical_event_seq(
+    run_id: &str,
+    events_path: &Path,
+    event: &EventEnvelopeV1,
+    expected_seq: u64,
+) -> Result<(), CoordinatorError> {
+    if event.seq == expected_seq {
+        return Ok(());
+    }
+    Err(CoordinatorError::ResumeRestoreFailed {
+        run_id: run_id.to_string(),
+        reason: format!(
+            "historical sequence mismatch at {}: expected {expected_seq}, got {}",
+            events_path.display(),
+            event.seq
+        ),
+    })
 }
 
 fn event_belongs_to_compacted_request(
@@ -8495,8 +8480,7 @@ fn collect_direct_path_fields(value: &Value, paths: &mut Vec<String>) {
         if let Some(path) = value
             .get(key)
             .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
+            .and_then(non_empty_trimmed)
         {
             paths.push(path.to_string());
         }
@@ -8513,8 +8497,7 @@ fn extract_artifact_workspace_paths(
             .metadata
             .get(key)
             .map(String::as_str)
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
+            .and_then(non_empty_trimmed)
         {
             paths.push(path.to_string());
         }
@@ -8541,7 +8524,9 @@ fn add_file_operation_fact(
     summary: Option<String>,
     redactor: &(impl Redactor + ?Sized),
 ) {
-    let Some(path) = workspace_relative_selector_path(workspace_root, Path::new(raw_path)) else {
+    let Some(path) =
+        workspace_relative_path_from_maybe_absolute(workspace_root, Path::new(raw_path))
+    else {
         return;
     };
     let path = redactor.redact_text(&path);
@@ -8692,7 +8677,11 @@ fn sanitize_provider_turn_failure_metadata(
     if let Some(reason) = turn.failure_reason.take() {
         let redacted = redactor.redact_text(&reason);
         let summarized = summarize_compaction_text(&redacted);
-        turn.failure_reason = (!summarized.trim().is_empty()).then_some(summarized);
+        turn.failure_reason = if non_empty_trimmed(&summarized).is_some() {
+            Some(summarized)
+        } else {
+            None
+        };
     }
 }
 
@@ -8806,9 +8795,7 @@ fn build_provider_compaction_summary_source(
             .or_else(|| Some(metadata.model.clone())),
         reasoning_effort: metadata.reasoning_effort.clone(),
         text_verbosity: metadata.text_verbosity.clone(),
-        previous_summary_used: existing_summary
-            .map(str::trim)
-            .is_some_and(|summary| !summary.is_empty()),
+        previous_summary_used: existing_summary.and_then(non_empty_trimmed).is_some(),
         model_backed,
         deterministic_fallback,
         summary_contract_version: Some(PROVIDER_CONTEXT_SUMMARY_CONTRACT_VERSION),
@@ -8824,8 +8811,7 @@ fn compaction_summary_override_from_hooks(batch: &HookExecutionBatch) -> Option<
         let summary = execution.output_summary.as_deref()?.trim();
         summary
             .strip_prefix("compaction_summary:")
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
+            .and_then(non_empty_trimmed)
             .map(ToOwned::to_owned)
     })
 }
@@ -8837,8 +8823,7 @@ fn compaction_summary_model_ref(
     config
         .model_ref
         .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+        .and_then(non_empty_trimmed)
         .unwrap_or(trigger.model_ref.as_str())
         .to_string()
 }
@@ -9109,8 +9094,7 @@ fn build_model_compaction_prompt(
         .collect::<Vec<_>>()
         .join("\n");
     let prior = existing_summary
-        .map(str::trim)
-        .filter(|summary| !summary.is_empty())
+        .and_then(non_empty_trimmed)
         .unwrap_or("(none)");
     let required_headings = provider_context_summary_required_headings(config).join(", ");
     let split_prefix_summary = plan
@@ -9226,10 +9210,7 @@ fn build_legacy_provider_context_summary(
     lines.push(String::new());
 
     lines.push(headings[1].to_string());
-    if let Some(existing_summary) = existing_summary
-        .map(str::trim)
-        .filter(|summary| !summary.is_empty())
-    {
+    if let Some(existing_summary) = existing_summary.and_then(non_empty_trimmed) {
         lines.push("- Preserve still-relevant constraints, decisions, files, and next steps from the previous checkpoint summary.".to_string());
         lines.push(format!(
             "- Prior checkpoint constraints/context carried forward: {}",
@@ -9269,10 +9250,7 @@ fn build_legacy_provider_context_summary(
             "- Split prefix summary: {split_prefix_summary}; the provider-visible suffix follows this checkpoint as recent context."
         ));
     }
-    if let Some(existing_summary) = existing_summary
-        .map(str::trim)
-        .filter(|summary| !summary.is_empty())
-    {
+    if let Some(existing_summary) = existing_summary.and_then(non_empty_trimmed) {
         lines.push(format!(
             "- Prior checkpoint decisions/context were rolled into this structured summary: {}",
             summarize_compaction_text(existing_summary)
@@ -9371,7 +9349,7 @@ fn build_legacy_provider_context_summary(
         lines.extend(artifact_lines.into_iter().take(12));
     }
 
-    truncate_chars(
+    truncate_with_ellipsis(
         &lines.join("\n"),
         PROVIDER_CONTEXT_COMPACTION_SUMMARY_MAX_CHARS,
     )
@@ -9396,10 +9374,7 @@ fn build_harness_provider_context_summary(
     lines.push(String::new());
 
     lines.push(headings[1].to_string());
-    if let Some(existing_summary) = existing_summary
-        .map(str::trim)
-        .filter(|summary| !summary.is_empty())
-    {
+    if let Some(existing_summary) = existing_summary.and_then(non_empty_trimmed) {
         lines.push("- Preserve still-relevant constraints, decisions, files, and next steps from the previous checkpoint summary.".to_string());
         lines.push(format!(
             "- Prior checkpoint constraints/context carried forward: {}",
@@ -9433,10 +9408,7 @@ fn build_harness_provider_context_summary(
             "- Split prefix summary: {split_prefix_summary}; the provider-visible suffix follows this checkpoint as recent context."
         ));
     }
-    if let Some(existing_summary) = existing_summary
-        .map(str::trim)
-        .filter(|summary| !summary.is_empty())
-    {
+    if let Some(existing_summary) = existing_summary.and_then(non_empty_trimmed) {
         lines.push(format!(
             "- Prior checkpoint decisions/context were rolled into this structured summary: {}",
             summarize_compaction_text(existing_summary)
@@ -9528,7 +9500,7 @@ fn build_harness_provider_context_summary(
     lines.push("- This summary is deterministic and lossy; verify details against artifacts or the event log when precision matters.".to_string());
     append_operational_memory_section(&mut lines, facts);
 
-    truncate_chars(
+    truncate_with_ellipsis(
         &lines.join("\n"),
         PROVIDER_CONTEXT_COMPACTION_SUMMARY_MAX_CHARS,
     )
@@ -9643,20 +9615,10 @@ fn file_operation_fact_line(fact: &ProviderFileOperationFact) -> String {
 
 fn summarize_compaction_text(text: &str) -> String {
     let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    truncate_chars(
+    truncate_with_ellipsis(
         &normalized,
         PROVIDER_CONTEXT_COMPACTION_TURN_EXCERPT_MAX_CHARS,
     )
-}
-
-fn truncate_chars(text: &str, max_chars: usize) -> String {
-    if text.chars().count() <= max_chars {
-        return text.to_string();
-    }
-
-    let mut truncated = text.chars().take(max_chars).collect::<String>();
-    truncated.push('…');
-    truncated
 }
 
 fn approximate_turn_tokens(turn: &ProviderConversationTurn) -> u32 {
@@ -9812,40 +9774,11 @@ fn collect_historical_agent_turns_until(
     let mut turns = Vec::new();
 
     for (line_number, line) in BufReader::new(file).lines().enumerate() {
-        let line = line.map_err(|source| CoordinatorError::ResumeRestoreFailed {
-            run_id: run_id.to_string(),
-            reason: format!(
-                "failed to read historical event line {} in {}: {source}",
-                line_number + 1,
-                events_path.display()
-            ),
-        })?;
-
-        if line.trim().is_empty() {
+        let Some(event) = parse_historical_event_line(run_id, events_path, line_number, line)?
+        else {
             continue;
-        }
-
-        let event: EventEnvelopeV1 = serde_json::from_str(&line).map_err(|source| {
-            CoordinatorError::ResumeRestoreFailed {
-                run_id: run_id.to_string(),
-                reason: format!(
-                    "invalid historical event line {} in {}: {source}",
-                    line_number + 1,
-                    events_path.display()
-                ),
-            }
-        })?;
-
-        if event.seq != expected_seq {
-            return Err(CoordinatorError::ResumeRestoreFailed {
-                run_id: run_id.to_string(),
-                reason: format!(
-                    "historical sequence mismatch at {}: expected {expected_seq}, got {}",
-                    events_path.display(),
-                    event.seq
-                ),
-            });
-        }
+        };
+        validate_historical_event_seq(run_id, events_path, &event, expected_seq)?;
         expected_seq = expected_seq.saturating_add(1);
 
         if event.seq > through_seq {
@@ -10253,34 +10186,13 @@ fn workspace_path_selector_paths(workspace_root: &Path, args_json: &Value) -> Ve
     ] {
         if let Some(raw_path) = args_json.get(key).and_then(Value::as_str) {
             if let Some(path) =
-                workspace_relative_selector_path(workspace_root, Path::new(raw_path))
+                workspace_relative_path_from_maybe_absolute(workspace_root, Path::new(raw_path))
             {
                 paths.insert(path);
             }
         }
     }
     paths.into_iter().collect()
-}
-
-fn workspace_relative_selector_path(workspace_root: &Path, path: &Path) -> Option<String> {
-    let relative = if path.is_absolute() {
-        path.strip_prefix(workspace_root).ok()?
-    } else {
-        path
-    };
-
-    let mut parts = Vec::new();
-    for component in relative.components() {
-        match component {
-            std::path::Component::Normal(value) => parts.push(value.to_string_lossy().to_string()),
-            std::path::Component::CurDir => {}
-            std::path::Component::ParentDir
-            | std::path::Component::RootDir
-            | std::path::Component::Prefix(_) => return None,
-        }
-    }
-
-    (!parts.is_empty()).then(|| parts.join("/"))
 }
 
 fn tool_request_correlation_id(run_state: &RunState, actor: &EventActor) -> Option<String> {
@@ -10317,8 +10229,6 @@ fn hashline_edit_metadata(
             .get("path")
             .or_else(|| args_json.get("filePath"))
             .and_then(Value::as_str)?;
-        let canonical_request = serde_json::to_vec(args_json).unwrap_or_else(|_| b"null".to_vec());
-
         let (edit_id, summary) = (
             edit_id_from_native_edit_args(args_json, tool_call_id),
             "rewrite file through native edit tool".to_string(),
@@ -10328,18 +10238,18 @@ fn hashline_edit_metadata(
             edit_id,
             path: path.to_string(),
             summary,
-            patch_digest: digest12(&canonical_request),
+            patch_digest: digest12_json(args_json),
         });
     }
 
     let patch: HashlinePatch = serde_json::from_value(args_json.clone()).ok()?;
-    let canonical_patch = serde_json::to_vec(&patch).unwrap_or_else(|_| b"null".to_vec());
+    let patch_digest = digest12_json(&patch);
 
     Some(HashlineEditMetadata {
         edit_id: patch.edit_id,
         path: patch.path,
         summary: format!("apply hashline patch with {} op(s)", patch.ops.len()),
-        patch_digest: digest12(&canonical_patch),
+        patch_digest,
     })
 }
 
@@ -10348,8 +10258,7 @@ fn edit_id_from_native_edit_args(args_json: &Value, tool_call_id: &str) -> Strin
         .get("editId")
         .or_else(|| args_json.get("edit_id"))
         .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+        .and_then(non_empty_trimmed)
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| format!("edit-{tool_call_id}"))
 }
@@ -10395,16 +10304,14 @@ fn applied_tool_edit_metadata(
     if let Some(edit_id) = structured
         .and_then(|value| value.get("edit_id"))
         .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+        .and_then(non_empty_trimmed)
     {
         metadata.edit_id = edit_id.to_string();
     }
     if let Some(path) = structured
         .and_then(|value| value.get("path"))
         .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+        .and_then(non_empty_trimmed)
     {
         metadata.path = path.to_string();
     }
@@ -10458,8 +10365,7 @@ fn effective_mcp_tool_id(tool_id: &str, args_json: &Value) -> Option<String> {
         let remote_tool_name = args_json
             .get("tool")
             .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())?;
+            .and_then(non_empty_trimmed)?;
         if let Some(tool_id) =
             registered_mcp_server_first_class_tool_id(server_id, remote_tool_name)
         {
@@ -10472,10 +10378,6 @@ fn effective_mcp_tool_id(tool_id: &str, args_json: &Value) -> Option<String> {
     }
 
     Some(tool_id.to_string())
-}
-
-fn sanitize_mcp_tool_segment(name: &str) -> String {
-    sanitize_tool_function_name(name).replace('-', "_")
 }
 
 fn tool_call_metadata(
@@ -10685,8 +10587,7 @@ fn extract_object_string(object: &serde_json::Map<String, Value>, keys: &[&str])
         if let Some(value) = object
             .get(*key)
             .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
+            .and_then(non_empty_trimmed)
             .map(ToOwned::to_owned)
         {
             return Some(value);
@@ -10785,14 +10686,6 @@ struct HistoricalCompletedAgentTurn {
     artifact_refs: Vec<EventArtifactRef>,
 }
 
-fn provider_tool_arguments_json(args_summary: &str) -> String {
-    if serde_json::from_str::<Value>(args_summary).is_ok() {
-        args_summary.to_string()
-    } else {
-        "{}".to_string()
-    }
-}
-
 fn historical_conversation_messages_for_completed_turn(
     user_prompt: &str,
     assistant_response: &str,
@@ -10840,11 +10733,7 @@ fn restore_historical_user_prompt(
         return Ok(user_text);
     }
 
-    let Some(prompt_summary) = prompt_summary
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    else {
+    let Some(prompt_summary) = prompt_summary.as_deref().and_then(non_empty_trimmed) else {
         return Err(CoordinatorError::ResumeRestoreFailed {
             run_id: run_id.to_string(),
             reason: format!("missing user message for completed request `{request_id}`"),
@@ -10868,58 +10757,8 @@ fn restore_provider_context_from_history(
     run_id: &str,
 ) -> Result<BTreeMap<String, ProviderContext>, CoordinatorError> {
     let run_dir = session_dir.join(run_id);
-    let events_path = run_dir.join("events.jsonl");
-    let file =
-        fs::File::open(&events_path).map_err(|source| CoordinatorError::ResumeRestoreFailed {
-            run_id: run_id.to_string(),
-            reason: format!(
-                "failed to open historical events {}: {source}",
-                events_path.display()
-            ),
-        })?;
-
-    let mut expected_seq = 1_u64;
-    let mut historical_events = Vec::new();
-
-    for (line_number, line) in BufReader::new(file).lines().enumerate() {
-        let line = line.map_err(|source| CoordinatorError::ResumeRestoreFailed {
-            run_id: run_id.to_string(),
-            reason: format!(
-                "failed to read historical event line {} in {}: {source}",
-                line_number + 1,
-                events_path.display()
-            ),
-        })?;
-
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        let event: EventEnvelopeV1 = serde_json::from_str(&line).map_err(|source| {
-            CoordinatorError::ResumeRestoreFailed {
-                run_id: run_id.to_string(),
-                reason: format!(
-                    "invalid historical event line {} in {}: {source}",
-                    line_number + 1,
-                    events_path.display()
-                ),
-            }
-        })?;
-
-        if event.seq != expected_seq {
-            return Err(CoordinatorError::ResumeRestoreFailed {
-                run_id: run_id.to_string(),
-                reason: format!(
-                    "historical sequence mismatch at {}: expected {expected_seq}, got {}",
-                    events_path.display(),
-                    event.seq
-                ),
-            });
-        }
-        expected_seq = expected_seq.saturating_add(1);
-
-        historical_events.push(event);
-    }
+    let events_path = run_dir.join(EVENTS_FILE_NAME);
+    let historical_events = read_historical_events_until(run_id, &events_path, u64::MAX)?;
 
     let applied_checkpoints = discover_applied_checkpoints(run_id, &run_dir, &historical_events)?;
     let checkpoint_boundaries = applied_checkpoints
@@ -11011,8 +10850,7 @@ fn restore_provider_context_from_history(
                 let request_id = event
                     .correlation_id
                     .as_deref()
-                    .map(str::trim)
-                    .filter(|request_id| !request_id.is_empty())
+                    .and_then(non_empty_trimmed)
                     .unwrap_or(&payload.request_id);
                 let request = requests.entry(request_id.to_string()).or_default();
                 request.first_seq.get_or_insert(event.seq);
@@ -11034,11 +10872,7 @@ fn restore_provider_context_from_history(
                 ));
                 request.active_assistant_message_index =
                     Some(request.messages.len().saturating_sub(1));
-                if let Some(agent_id) = event
-                    .actor
-                    .agent_id
-                    .as_deref()
-                    .filter(|value| !value.trim().is_empty())
+                if let Some(agent_id) = event.actor.agent_id.as_deref().and_then(non_empty_trimmed)
                 {
                     request.agent_id = Some(agent_id.to_string());
                 }
@@ -11050,8 +10884,7 @@ fn restore_provider_context_from_history(
                 let request_id = event
                     .correlation_id
                     .as_deref()
-                    .map(str::trim)
-                    .filter(|request_id| !request_id.is_empty())
+                    .and_then(non_empty_trimmed)
                     .unwrap_or(&payload.request_id);
                 let request = requests.entry(request_id.to_string()).or_default();
                 request.assistant_output.push_str(&payload.delta);
@@ -11071,8 +10904,7 @@ fn restore_provider_context_from_history(
                 let request_id = event
                     .correlation_id
                     .as_deref()
-                    .map(str::trim)
-                    .filter(|request_id| !request_id.is_empty())
+                    .and_then(non_empty_trimmed)
                     .unwrap_or(&payload.request_id);
                 let request = requests.entry(request_id.to_string()).or_default();
                 request.first_seq.get_or_insert(event.seq);
@@ -11222,7 +11054,7 @@ fn restore_provider_context_from_history(
                     .actor
                     .agent_id
                     .as_deref()
-                    .filter(|value| !value.trim().is_empty())
+                    .and_then(non_empty_trimmed)
                     .map(str::to_string)
                 else {
                     return Err(CoordinatorError::ResumeRestoreFailed {
@@ -11314,7 +11146,7 @@ fn restore_provider_context_from_history(
                     .actor
                     .agent_id
                     .as_deref()
-                    .filter(|value| !value.trim().is_empty())
+                    .and_then(non_empty_trimmed)
                     .map(str::to_string)
                     .or(agent_id_from_task)
                     .or_else(|| request_state.agent_id.clone())
@@ -11559,15 +11391,6 @@ fn historical_cancelled_turn_status_stage(
     )
 }
 
-fn parse_prefixed_counter(id: &str, expected_prefix: &str) -> Option<u64> {
-    let tail = id.strip_prefix(expected_prefix)?;
-    if tail.is_empty() {
-        return None;
-    }
-
-    tail.parse::<u64>().ok()
-}
-
 fn checked_next_counter(
     value: u64,
     run_id: &str,
@@ -11607,9 +11430,4 @@ fn system_actor() -> EventActor {
 
 fn agent_actor(agent_id: &str) -> EventActor {
     EventActor::new(ActorKind::Worker, Some(agent_id.to_string()))
-}
-
-fn digest12(bytes: &[u8]) -> String {
-    let digest = blake3::hash(bytes);
-    digest.to_hex().chars().take(12).collect()
 }

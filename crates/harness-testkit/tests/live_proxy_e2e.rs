@@ -10,6 +10,7 @@ use time::{macros::format_description, OffsetDateTime};
 mod support;
 
 use serde_json::{json, Value};
+use support::harness_bin::{repo_root, resolve_harness_bin};
 use support::live_events::{
     assert_event_log_contains, assert_question_state_matches, assert_requested_tool_args,
     assert_requested_tool_sequence, assert_run_records_live_runtime_context,
@@ -21,7 +22,7 @@ use support::live_provider_parity::{
     collect_provider_turn_observation, provider_turn_summary,
 };
 use support::live_proxy_config::{
-    load_json5_config, prepare_live_prompt_chat_tool_run_config,
+    default_live_proxy_config_path, load_json5_config, prepare_live_prompt_chat_tool_run_config,
     prepare_live_prompt_native_tool_flow_run_config, prepare_live_prompt_run_config,
     prepare_live_tool_flow_run_config, prepare_prompt_run_config, provider_api_mode,
     provider_from_config, resolve_env_reference_value, resolve_live_prompt_request,
@@ -41,6 +42,7 @@ use support::live_visual::{
     CHECKPOINT_FILE_WRITE_FINISHED, CHECKPOINT_HASHLINE_SCAN_FINISHED,
     CHECKPOINT_PERMISSION_REQUESTED, CHECKPOINT_RUN_FINISHED, CHECKPOINT_STARTUP,
 };
+use support::temp_path::{create_unique_temp_dir as unique_temp_dir, unique_temp_file};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -137,10 +139,18 @@ struct LiveVisionCheckpointContract {
     expected_markers: &'static [&'static str],
 }
 
+fn live_proxy_enabled() -> bool {
+    env::var("HARNESS_LIVE_PROXY").as_deref() == Ok("1")
+}
+
+fn linux_live_proxy_enabled() -> bool {
+    cfg!(target_os = "linux") && live_proxy_enabled()
+}
+
 #[test]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
 fn live_proxy_prompt_responses_smoke() {
-    if env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
+    if !live_proxy_enabled() {
         return;
     }
 
@@ -195,7 +205,7 @@ fn live_proxy_prompt_responses_smoke() {
 #[test]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
 fn live_proxy_prompt_parity_signoff() {
-    if env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
+    if !live_proxy_enabled() {
         return;
     }
 
@@ -210,7 +220,7 @@ fn live_proxy_prompt_parity_signoff() {
 #[test]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
 fn live_proxy_preflight() {
-    if env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
+    if !live_proxy_enabled() {
         return;
     }
 
@@ -222,7 +232,7 @@ fn live_proxy_preflight() {
 #[test]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
 fn live_proxy_e2e_tui_prompt_responses_smoke() {
-    if !cfg!(target_os = "linux") || env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
+    if !linux_live_proxy_enabled() {
         return;
     }
 
@@ -245,7 +255,7 @@ fn live_proxy_e2e_tui_prompt_responses_smoke() {
 #[test]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
 fn live_proxy_e2e_tui_parity_signoff() {
-    if !cfg!(target_os = "linux") || env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
+    if !linux_live_proxy_enabled() {
         return;
     }
 
@@ -260,7 +270,7 @@ fn live_proxy_e2e_tui_parity_signoff() {
 #[test]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
 fn live_proxy_e2e_tui_tool_flow() {
-    if !cfg!(target_os = "linux") || env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
+    if !linux_live_proxy_enabled() {
         return;
     }
 
@@ -295,7 +305,7 @@ fn live_proxy_e2e_tui_tool_flow() {
 #[test]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
 fn live_proxy_prompt_chat_tool_flow() {
-    if env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
+    if !live_proxy_enabled() {
         return;
     }
 
@@ -412,7 +422,7 @@ fn live_proxy_prompt_chat_tool_flow() {
 #[test]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
 fn live_proxy_prompt_native_tool_flow() {
-    if env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
+    if !live_proxy_enabled() {
         return;
     }
 
@@ -541,7 +551,7 @@ fn run_live_proxy_tui_tool_flow_once(
 #[tokio::test(flavor = "current_thread")]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
 async fn live_proxy_e2e_visual_verifier() {
-    if !cfg!(target_os = "linux") || env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
+    if !linux_live_proxy_enabled() {
         return;
     }
 
@@ -893,7 +903,7 @@ fn prepare_prompt_run_config_rejects_chat_completions_mode() {
 #[test]
 fn prepare_live_prompt_run_config_applies_low_variant_when_available() {
     let request = LivePromptRequest {
-        source_config_path: repo_root().join("configs").join("harness.example.jsonc"),
+        source_config_path: default_live_proxy_config_path(&repo_root()),
         provider_name: DEFAULT_LIVE_PROXY_PROVIDER.to_string(),
         primary_model: DEFAULT_LIVE_PROXY_MODEL.to_string(),
         primary_variant: Some(DEFAULT_LIVE_PROXY_VARIANT.to_string()),
@@ -1259,7 +1269,7 @@ fn prepare_live_prompt_chat_tool_run_config_builds_restricted_agents() {
 
 #[test]
 fn example_config_keeps_minimal_surface_and_live_helper_prepares_runtime_profile() {
-    let config_path = repo_root().join("configs").join("harness.example.jsonc");
+    let config_path = default_live_proxy_config_path(&repo_root());
     let config = load_json5_config(&config_path).expect("load shipped example config");
 
     let default_provider = config
@@ -1813,7 +1823,7 @@ fn resolve_live_request_prefers_low_variant_for_documented_signoff_model() {
         .lock()
         .expect("live proxy env test lock should not be poisoned");
 
-    let source_config_path = repo_root().join("configs").join("harness.example.jsonc");
+    let source_config_path = default_live_proxy_config_path(&repo_root());
     with_live_proxy_env(
         &[
             (
@@ -1926,10 +1936,7 @@ fn resolve_live_proxy_config_path_resolves_relative_override_from_repo_root() {
     )
     .expect("resolve relative live proxy config override");
 
-    assert_eq!(
-        resolved,
-        repo_root.join("configs").join("harness.example.jsonc")
-    );
+    assert_eq!(resolved, default_live_proxy_config_path(&repo_root));
 }
 
 #[test]
@@ -2054,7 +2061,7 @@ fn live_tui_smoke_helpers_reuse_cliproxy_config_and_endpoint_rules() {
 #[test]
 fn prepared_live_config_synthesizes_profile_from_minimal_example() {
     let repo_root = repo_root();
-    let source_config_path = repo_root.join("configs").join("harness.example.jsonc");
+    let source_config_path = default_live_proxy_config_path(&repo_root);
 
     let run_config = prepare_prompt_run_config(
         &source_config_path,
@@ -3163,97 +3170,4 @@ fn deterministic_chat_sse_fixture() -> String {
         "data: [DONE]\n\n"
     )
     .to_string()
-}
-
-fn resolve_harness_bin() -> PathBuf {
-    static HARNESS_BIN_CACHE: OnceLock<PathBuf> = OnceLock::new();
-    HARNESS_BIN_CACHE
-        .get_or_init(|| {
-            if let Ok(path) = env::var("HARNESS_BIN") {
-                let harness_bin = PathBuf::from(path);
-                assert!(
-                    harness_bin.exists(),
-                    "HARNESS_BIN points to missing path: {}",
-                    harness_bin.display()
-                );
-                return harness_bin;
-            }
-
-            if let Some(path) = option_env!("CARGO_BIN_EXE_harness") {
-                let harness_bin = PathBuf::from(path);
-                if harness_bin.exists() {
-                    return harness_bin;
-                }
-            }
-
-            let repo = repo_root();
-            let harness_bin = repo
-                .join("target")
-                .join("debug")
-                .join(binary_name("harness"));
-            let status = Command::new("cargo")
-                .arg("build")
-                .arg("-p")
-                .arg("harness")
-                .current_dir(&repo)
-                .status()
-                .expect("spawn cargo build -p harness");
-            assert!(
-                status.success(),
-                "cargo build -p harness failed with status {status}"
-            );
-            assert!(
-                harness_bin.exists(),
-                "expected harness binary at {}",
-                harness_bin.display()
-            );
-            harness_bin
-        })
-        .clone()
-}
-
-fn repo_root() -> PathBuf {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest_dir
-        .parent()
-        .and_then(Path::parent)
-        .map(Path::to_path_buf)
-        .expect("harness-testkit should live under <repo>/crates/harness-testkit")
-}
-
-fn unique_temp_file(prefix: &str, ext: &str) -> PathBuf {
-    let base = env::temp_dir().join("harness-testkit");
-    fs::create_dir_all(&base).expect("create base temp dir");
-
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("system clock before unix epoch")
-        .as_nanos();
-
-    base.join(format!("{prefix}-{}-{nanos}.{ext}", std::process::id()))
-}
-
-fn unique_temp_dir(prefix: &str) -> PathBuf {
-    let base = env::temp_dir().join("harness-testkit");
-    fs::create_dir_all(&base).expect("create base temp dir");
-
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("system clock before unix epoch")
-        .as_nanos();
-
-    let dir = base.join(format!("{prefix}-{}-{nanos}", std::process::id()));
-    fs::create_dir_all(&dir)
-        .unwrap_or_else(|err| panic!("failed creating temp dir {}: {err}", dir.display()));
-    dir
-}
-
-#[cfg(target_os = "windows")]
-fn binary_name(name: &str) -> String {
-    format!("{name}.exe")
-}
-
-#[cfg(not(target_os = "windows"))]
-fn binary_name(name: &str) -> String {
-    name.to_string()
 }

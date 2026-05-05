@@ -4,6 +4,8 @@ use std::path::Path;
 use harness_core::proj::RunStatus;
 
 use super::*;
+use crate::text::{has_trimmed_content, trimmed_json_nested_string_field};
+use crate::time_format::short_time_or_trimmed;
 
 pub(super) fn render_overlays(
     frame: &mut Frame,
@@ -453,11 +455,11 @@ fn status_dialog_lsp_rows(app: &AppState) -> Vec<StatusDialogRow> {
 }
 
 fn status_dialog_lsp_server_name(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
-    json_nested_status_dialog_field(tool_call.output_json.as_ref(), &["server", "id"])
+    trimmed_json_nested_string_field(tool_call.output_json.as_ref(), &["server", "id"])
         .or_else(|| {
-            json_nested_status_dialog_field(tool_call.output_json.as_ref(), &["server", "name"])
+            trimmed_json_nested_string_field(tool_call.output_json.as_ref(), &["server", "name"])
         })
-        .or_else(|| infer_status_dialog_lsp_server_name_from_args(&tool_call.args_summary))
+        .or_else(|| ui_lsp::server_name_from_args(&tool_call.args_summary))
         .map(|name| sanitize_status_dialog_text(&name))
         .filter(|name| !name.is_empty())
 }
@@ -466,108 +468,11 @@ fn status_dialog_lsp_root(
     tool_call: &crate::app::ToolCallEntry,
     session_path: Option<&Path>,
 ) -> Option<String> {
-    json_nested_status_dialog_field(tool_call.output_json.as_ref(), &["server", "root"])
-        .or_else(|| path_root_from_lsp_args(&tool_call.args_summary))
+    trimmed_json_nested_string_field(tool_call.output_json.as_ref(), &["server", "root"])
+        .or_else(|| ui_lsp::path_root_from_args(&tool_call.args_summary))
         .or_else(|| session_path.and_then(Path::to_str).map(str::to_string))
         .map(|root| sanitize_status_dialog_text(&root))
         .filter(|root| !root.is_empty())
-}
-
-fn json_nested_status_dialog_field(
-    value: Option<&serde_json::Value>,
-    path: &[&str],
-) -> Option<String> {
-    let mut current = value?;
-    for key in path {
-        current = current.get(*key)?;
-    }
-    current
-        .as_str()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-}
-
-fn infer_status_dialog_lsp_server_name_from_args(args_summary: &str) -> Option<String> {
-    let path = path_from_lsp_args(args_summary)?;
-    let extension = format!(
-        ".{}",
-        Path::new(&path)
-            .extension()
-            .and_then(|value| value.to_str())?
-            .to_ascii_lowercase()
-    );
-    let config = harness_core::config::registered_lsp_config();
-    let mut specs = BTreeMap::from([
-        ("go".to_string(), (false, vec![".go".to_string()])),
-        (
-            "json".to_string(),
-            (false, vec![".json".to_string(), ".jsonc".to_string()]),
-        ),
-        (
-            "python".to_string(),
-            (false, vec![".py".to_string(), ".pyi".to_string()]),
-        ),
-        ("rust".to_string(), (false, vec![".rs".to_string()])),
-        (
-            "typescript".to_string(),
-            (
-                false,
-                vec![
-                    ".ts".to_string(),
-                    ".tsx".to_string(),
-                    ".js".to_string(),
-                    ".jsx".to_string(),
-                    ".mjs".to_string(),
-                    ".cjs".to_string(),
-                    ".mts".to_string(),
-                    ".cts".to_string(),
-                ],
-            ),
-        ),
-        (
-            "yaml".to_string(),
-            (false, vec![".yaml".to_string(), ".yml".to_string()]),
-        ),
-    ]);
-
-    for (name, server) in config.servers {
-        if let Some((disabled, extensions)) = specs.get_mut(&name) {
-            *disabled = server.disabled;
-            if let Some(custom_extensions) = server.extensions {
-                *extensions = custom_extensions;
-            }
-        } else if let Some(extensions) = server.extensions {
-            specs.insert(name, (server.disabled, extensions));
-        }
-    }
-
-    specs
-        .into_iter()
-        .find_map(|(name, (disabled, extensions))| {
-            (!disabled && extensions.iter().any(|candidate| candidate == &extension))
-                .then_some(name)
-        })
-}
-
-fn path_root_from_lsp_args(args_summary: &str) -> Option<String> {
-    let path = path_from_lsp_args(args_summary)?;
-    Path::new(&path)
-        .parent()
-        .and_then(Path::to_str)
-        .map(str::to_string)
-        .filter(|root| !root.trim().is_empty())
-}
-
-fn path_from_lsp_args(args_summary: &str) -> Option<String> {
-    let args = serde_json::from_str::<serde_json::Value>(args_summary).ok()?;
-    ["path", "filePath"]
-        .iter()
-        .find_map(|key| args.get(*key))
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|path| !path.is_empty())
-        .map(str::to_string)
 }
 
 fn sanitize_status_dialog_text(value: &str) -> String {
@@ -1129,7 +1034,7 @@ fn fork_selector_row(
     } else {
         row.timestamp
             .as_deref()
-            .map(format_overlay_timestamp)
+            .map(short_time_or_trimmed)
             .unwrap_or_else(|| status.to_string())
     };
 
@@ -1158,15 +1063,6 @@ fn fork_selector_row(
         Span::styled(meta, meta_style),
         Span::styled(" ".repeat(RIGHT_PADDING), row_style),
     ])
-}
-
-fn format_overlay_timestamp(timestamp: &str) -> String {
-    let trimmed = timestamp.trim();
-    if trimmed.len() >= 16 && trimmed.as_bytes().get(10) == Some(&b'T') {
-        trimmed[11..16].to_string()
-    } else {
-        trimmed.to_string()
-    }
 }
 
 fn split_title_meta_row(
@@ -1432,7 +1328,7 @@ fn render_model_switcher_list(frame: &mut Frame, app: &AppState, theme: &Theme, 
                         option,
                         app,
                         is_selected,
-                        !app.palette_input.trim().is_empty(),
+                        has_trimmed_content(&app.palette_input),
                         theme,
                         row_area.width,
                     )),
@@ -1541,7 +1437,7 @@ enum ModelSwitcherRow {
 }
 
 fn model_switcher_rows(app: &AppState) -> Vec<ModelSwitcherRow> {
-    if app.palette_input.trim().is_empty() {
+    if !has_trimmed_content(&app.palette_input) {
         let mut rows = Vec::new();
         let mut previous_category: Option<String> = None;
         for (filtered_index, option_index) in app.model_filtered.iter().copied().enumerate() {

@@ -1,7 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 
 use async_trait::async_trait;
 use harness_core::clock::FakeClock;
@@ -17,6 +16,9 @@ use harness_core::redact::DefaultRedactor;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
 use serde::Deserialize;
 use serde_json::{json, Value};
+
+mod common;
+use common::{load_events, wait_for_tool_call_finish};
 
 struct SpawnMetadataTool {
     id: &'static str,
@@ -539,29 +541,4 @@ fn find_finished(events: &[EventEnvelopeV1], tool_call_id: &str) -> ToolCallFini
             _ => None,
         })
         .expect("tool call finished event")
-}
-
-fn load_events(path: &Path) -> Vec<EventEnvelopeV1> {
-    fs::read_to_string(path)
-        .expect("read events")
-        .lines()
-        .map(|line| serde_json::from_str::<EventEnvelopeV1>(line).expect("parse event"))
-        .collect()
-}
-
-async fn wait_for_tool_call_finish(events_path: &Path, tool_call_id: &str) {
-    for _ in 0..40 {
-        if load_events(events_path).iter().any(|event| {
-            matches!(
-                &event.payload,
-                EventV1::ToolCallFinished(payload) if payload.tool_call_id == tool_call_id
-            )
-        }) {
-            return;
-        }
-
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-
-    panic!("timed out waiting for tool call {tool_call_id}");
 }

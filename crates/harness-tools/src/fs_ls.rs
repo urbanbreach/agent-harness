@@ -6,6 +6,8 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::limit_summary::summarize_limit;
+
 const DEFAULT_LIMIT: usize = 2000;
 
 pub(crate) struct FsLsTool;
@@ -104,19 +106,23 @@ fn list_directory_entries(directory: &Path, limit: usize) -> Result<ListResult, 
     entries.sort();
 
     let total_count = entries.len();
-    let capped_limit = limit.min(total_count);
-    let mut returned_entries = entries.into_iter().take(capped_limit).collect::<Vec<_>>();
-    let truncated_count = total_count.saturating_sub(capped_limit);
-    let is_truncated = truncated_count > 0;
-    if is_truncated {
-        returned_entries.push(format!("... (truncated, {truncated_count} more)"));
+    let limit_summary = summarize_limit(total_count, limit);
+    let mut returned_entries = entries
+        .into_iter()
+        .take(limit_summary.returned_count)
+        .collect::<Vec<_>>();
+    if limit_summary.is_truncated {
+        returned_entries.push(format!(
+            "... (truncated, {} more)",
+            limit_summary.truncated_count
+        ));
     }
 
     Ok(ListResult {
         total_count,
-        returned_count: capped_limit,
-        truncated_count,
-        is_truncated,
+        returned_count: limit_summary.returned_count,
+        truncated_count: limit_summary.truncated_count,
+        is_truncated: limit_summary.is_truncated,
         entries: returned_entries,
     })
 }

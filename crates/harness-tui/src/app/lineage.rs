@@ -8,6 +8,7 @@ use harness_core::session_lineage::{
 };
 
 use super::AppState;
+use crate::text::non_empty_trimmed;
 use crate::view_model::{
     ForkSelectorRowViewModel, ForkSelectorViewModel, LineageBrowserRowViewModel,
     LineageBrowserViewModel,
@@ -133,29 +134,7 @@ impl LineageBrowserState {
     }
 
     pub fn move_selection(&mut self, delta: isize) {
-        let len = self.visible.len();
-        if len == 0 {
-            self.selected = 0;
-            return;
-        }
-
-        if delta == -1 {
-            self.selected = if self.selected == 0 {
-                len - 1
-            } else {
-                self.selected - 1
-            };
-            return;
-        }
-
-        if delta == 1 {
-            self.selected = (self.selected + 1) % len;
-            return;
-        }
-
-        let current = self.selected.min(len.saturating_sub(1)) as isize;
-        let next = (current + delta).clamp(0, len.saturating_sub(1) as isize);
-        self.selected = usize::try_from(next).unwrap_or(0);
+        self.selected = moved_selection_index(self.selected, self.visible.len(), delta);
     }
 
     pub fn toggle_selected_fold(&mut self, filter_input: &str) {
@@ -297,29 +276,7 @@ impl ForkSelectorState {
     }
 
     pub fn move_selection(&mut self, delta: isize) {
-        let len = self.filtered.len();
-        if len == 0 {
-            self.selected = 0;
-            return;
-        }
-
-        if delta == -1 {
-            self.selected = if self.selected == 0 {
-                len - 1
-            } else {
-                self.selected - 1
-            };
-            return;
-        }
-
-        if delta == 1 {
-            self.selected = (self.selected + 1) % len;
-            return;
-        }
-
-        let current = self.selected.min(len.saturating_sub(1)) as isize;
-        let next = (current + delta).clamp(0, len.saturating_sub(1) as isize);
-        self.selected = usize::try_from(next).unwrap_or(0);
+        self.selected = moved_selection_index(self.selected, self.filtered.len(), delta);
     }
 
     pub fn confirm_selected(&mut self) -> Option<StableSessionPrefix> {
@@ -605,6 +562,24 @@ fn normalized_filter(value: &str) -> String {
     value.trim().to_ascii_lowercase()
 }
 
+fn moved_selection_index(selected: usize, len: usize, delta: isize) -> usize {
+    if len == 0 {
+        return 0;
+    }
+
+    if delta == -1 {
+        return if selected == 0 { len - 1 } else { selected - 1 };
+    }
+
+    if delta == 1 {
+        return (selected + 1) % len;
+    }
+
+    let current = selected.min(len.saturating_sub(1)) as isize;
+    let next = (current + delta).clamp(0, len.saturating_sub(1) as isize);
+    usize::try_from(next).unwrap_or(0)
+}
+
 fn lineage_node_matches(node: &LineageBrowserNode, input: &str) -> bool {
     if input.is_empty() {
         return true;
@@ -656,8 +631,7 @@ fn lineage_row_title(catalog: &SessionCatalogEntry) -> String {
     catalog
         .run_name
         .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+        .and_then(non_empty_trimmed)
         .unwrap_or(catalog.run_id.as_str())
         .to_string()
 }

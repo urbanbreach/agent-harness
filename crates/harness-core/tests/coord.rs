@@ -45,6 +45,9 @@ use serde_json::json;
 use tokio::sync::Notify;
 use tokio_stream::StreamExt;
 
+mod common;
+use common::load_events;
+
 struct TestShellTool;
 
 #[async_trait]
@@ -9579,11 +9582,4 @@ impl Provider for PromptScriptedProvider {
         });
         Box::pin(stream)
     }
-}
-
-fn load_events(events_path: &Path) -> Vec<EventEnvelopeV1> {
-    let body = fs::read_to_string(events_path).expect("read events file");
-    body.lines()
-        .map(|line| serde_json::from_str::<EventEnvelopeV1>(line).expect("parse event jsonl line"))
-        .collect()
 }

@@ -7,8 +7,10 @@ use thiserror::Error;
 use harness_providers::CompletionUsage;
 
 use crate::clock::Clock;
+use crate::digest::digest12_json;
 use crate::perm::PermissionGrant;
 use crate::redact::{redact_value, Redactor};
+use crate::text::truncate_with_ellipsis;
 
 pub const SCHEMA_VERSION: u16 = 1;
 const DEFAULT_EVENT_ID_PREFIX: &str = "evt";
@@ -31,6 +33,20 @@ pub struct EventEnvelopeV1 {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream_key: Option<String>,
     pub payload: EventV1,
+}
+
+impl EventEnvelopeV1 {
+    pub fn lineage_parent_session_id(&self) -> Option<&str> {
+        self.payload.lineage_parent_session_id()
+    }
+}
+
+pub fn first_lineage_parent_session_id<'a>(
+    events: impl IntoIterator<Item = &'a EventEnvelopeV1>,
+) -> Option<&'a str> {
+    events
+        .into_iter()
+        .find_map(EventEnvelopeV1::lineage_parent_session_id)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -113,6 +129,27 @@ pub enum EventV1 {
     ArtifactWritten(ArtifactWrittenEvent),
     PolicyViolationDetected(PolicyViolationDetectedEvent),
     UiIntentReceived(UiIntentReceivedEvent),
+}
+
+impl EventV1 {
+    pub fn lineage_parent_session_id(&self) -> Option<&str> {
+        match self {
+            Self::TaskCompleted(payload) => payload
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.lineage.as_ref()),
+            Self::ToolCallRequested(payload) => payload
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.lineage.as_ref()),
+            Self::ToolCallFinished(payload) => payload
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.lineage.as_ref()),
+            _ => None,
+        }
+        .and_then(TaskLineageMetadata::non_empty_parent_session_id)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -205,6 +242,13 @@ pub struct TaskLineageMetadata {
     pub child_provider_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub child_model_id: Option<String>,
+}
+
+impl TaskLineageMetadata {
+    pub fn non_empty_parent_session_id(&self) -> Option<&str> {
+        let parent_session_id = self.parent_session_id.as_deref()?.trim();
+        (!parent_session_id.is_empty()).then_some(parent_session_id)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -854,7 +898,7 @@ impl<'a, C: Clock + ?Sized, R: Redactor + ?Sized> EventBuilder<'a, C, R> {
     fn summarize_and_redact(&self, value: &Value) -> String {
         let redacted = redact_value(self.redactor, value);
         let as_text = serde_json::to_string(&redacted).unwrap_or_else(|_| "null".to_string());
-        truncate_summary(&as_text, MAX_SUMMARY_CHARS)
+        truncate_with_ellipsis(&as_text, MAX_SUMMARY_CHARS)
     }
 
     fn redact_envelope(
@@ -871,21 +915,9 @@ fn default_event_id(seq: u64) -> String {
     format!("{DEFAULT_EVENT_ID_PREFIX}-{seq:020}")
 }
 
-fn truncate_summary(summary: &str, max_chars: usize) -> String {
-    if summary.chars().count() <= max_chars {
-        return summary.to_string();
-    }
-
-    let mut truncated: String = summary.chars().take(max_chars).collect();
-    truncated.push('…');
-    truncated
-}
-
 fn value_digest(value: &Value) -> String {
     let canonical = canonicalize_json(value);
-    let canonical_bytes = serde_json::to_vec(&canonical).unwrap_or_else(|_| b"null".to_vec());
-    let digest = blake3::hash(&canonical_bytes);
-    digest.to_hex().chars().take(12).collect()
+    digest12_json(&canonical)
 }
 
 fn canonicalize_json(value: &Value) -> Value {

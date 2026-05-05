@@ -9,6 +9,13 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
+use crate::text::non_empty_trimmed;
+
+pub const DEFAULT_REMOTE_SEARCH_ENDPOINT: &str = "https://mcp.exa.ai/mcp";
+pub const DEFAULT_REMOTE_SEARCH_TIMEOUT_SECS: u64 = 30;
+pub const DEFAULT_REMOTE_SEARCH_MAX_RETRIES: u32 = 1;
+pub const DEFAULT_REMOTE_SEARCH_RETRY_BACKOFF_MS: u64 = 250;
+
 mod discovery;
 mod loader;
 mod public;
@@ -245,6 +252,10 @@ fn default_ui_child_session_navigation_enabled() -> bool {
     true
 }
 
+fn is_blank_config_value(value: &str) -> bool {
+    non_empty_trimmed(value).is_none()
+}
+
 impl HarnessConfig {
     pub fn apply_session_dir_override(&mut self, session_dir: Option<PathBuf>) {
         if let Some(path) = session_dir {
@@ -287,7 +298,7 @@ impl HarnessConfig {
         }
 
         for profile_name in self.model_profiles.keys() {
-            if profile_name.trim().is_empty() {
+            if is_blank_config_value(profile_name) {
                 return Err(ConfigError::InvalidReference(
                     "model_profile contains an empty profile name; use explicit names like `fast` or `reasoning`"
                         .to_string(),
@@ -324,7 +335,7 @@ impl HarnessConfig {
 
     fn validate_mcp_servers(&self) -> Result<(), ConfigError> {
         for (server_name, server) in &self.integrations.mcp.servers {
-            if server_name.trim().is_empty() {
+            if is_blank_config_value(server_name) {
                 return Err(ConfigError::InvalidReference(
                     "integrations.mcp.servers contains an empty server name; use explicit ids like `docs-rs` or `gh_grep`"
                         .to_string(),
@@ -352,7 +363,7 @@ impl HarnessConfig {
                             "integrations.mcp.servers.{server_name} must include at least one stdio command token"
                         )));
                     }
-                    if command.iter().any(|token| token.trim().is_empty()) {
+                    if command.iter().any(|token| is_blank_config_value(token)) {
                         return Err(ConfigError::InvalidReference(format!(
                             "integrations.mcp.servers.{server_name} contains an empty stdio command token"
                         )));
@@ -370,7 +381,7 @@ impl HarnessConfig {
                         }
                     }
                     for key in env.keys() {
-                        if key.trim().is_empty() {
+                        if is_blank_config_value(key) {
                             return Err(ConfigError::InvalidReference(format!(
                                 "integrations.mcp.servers.{server_name} contains an empty environment variable name"
                             )));
@@ -383,7 +394,7 @@ impl HarnessConfig {
                     timeout_secs,
                     ..
                 } => {
-                    if endpoint.trim().is_empty() {
+                    if is_blank_config_value(endpoint) {
                         return Err(ConfigError::InvalidReference(format!(
                             "integrations.mcp.servers.{server_name} must set a non-empty HTTP endpoint"
                         )));
@@ -394,7 +405,7 @@ impl HarnessConfig {
                         )));
                     }
                     for key in headers.keys() {
-                        if key.trim().is_empty() {
+                        if is_blank_config_value(key) {
                             return Err(ConfigError::InvalidReference(format!(
                                 "integrations.mcp.servers.{server_name} contains an empty HTTP header name"
                             )));
@@ -409,7 +420,7 @@ impl HarnessConfig {
 
     fn validate_hook_definitions(&self) -> Result<(), ConfigError> {
         for (index, hook) in self.hooks.lifecycle.iter().enumerate() {
-            if hook.id.as_deref().is_some_and(|id| id.trim().is_empty()) {
+            if hook.id.as_deref().is_some_and(is_blank_config_value) {
                 return Err(ConfigError::InvalidReference(format!(
                     "hooks.lifecycle[{index}] for event `{}` must set a non-empty `id` when provided",
                     hook.event.as_str()
@@ -423,7 +434,11 @@ impl HarnessConfig {
                 )));
             }
 
-            if hook.command.iter().any(|token| token.trim().is_empty()) {
+            if hook
+                .command
+                .iter()
+                .any(|token| is_blank_config_value(token))
+            {
                 return Err(ConfigError::InvalidReference(format!(
                     "hooks.lifecycle[{index}] for event `{}` contains an empty command token; remove blank values",
                     hook.event.as_str()
@@ -439,7 +454,7 @@ impl HarnessConfig {
 
             if let Some(cwd) = hook.cwd.as_deref() {
                 let cwd_path = Path::new(cwd);
-                if cwd.trim().is_empty() {
+                if is_blank_config_value(cwd) {
                     return Err(ConfigError::InvalidReference(format!(
                         "hooks.lifecycle[{index}] for event `{}` must set `cwd` to a non-empty relative path when provided",
                         hook.event.as_str()
@@ -459,7 +474,7 @@ impl HarnessConfig {
             }
 
             for key in hook.env.keys() {
-                if key.trim().is_empty() {
+                if is_blank_config_value(key) {
                     return Err(ConfigError::InvalidReference(format!(
                         "hooks.lifecycle[{index}] for event `{}` contains an empty environment variable name",
                         hook.event.as_str()
@@ -481,7 +496,7 @@ impl HarnessConfig {
         }
 
         for pattern in self.skills.permissions.keys() {
-            if pattern.trim().is_empty() {
+            if is_blank_config_value(pattern) {
                 return Err(ConfigError::InvalidReference(
                     "skills.permissions contains an empty pattern key; use explicit patterns like `*` or `internal-*`"
                         .to_string(),
@@ -494,7 +509,7 @@ impl HarnessConfig {
 
     fn validate_lsp_overrides(&self) -> Result<(), ConfigError> {
         for (server_name, server) in &self.lsp.servers {
-            if server_name.trim().is_empty() {
+            if is_blank_config_value(server_name) {
                 return Err(ConfigError::InvalidReference(
                     "lsp.servers contains an empty server key; use a stable id like `rust` or `typescript`"
                         .to_string(),
@@ -520,7 +535,7 @@ impl HarnessConfig {
                     )));
                 }
 
-                if command.iter().any(|token| token.trim().is_empty()) {
+                if command.iter().any(|token| is_blank_config_value(token)) {
                     return Err(ConfigError::InvalidReference(format!(
                         "lsp.servers.`{server_name}` contains an empty command token; remove blank values"
                     )));
@@ -544,7 +559,7 @@ impl HarnessConfig {
             }
 
             for key in server.env.keys() {
-                if key.trim().is_empty() {
+                if is_blank_config_value(key) {
                     return Err(ConfigError::InvalidReference(format!(
                         "lsp.servers.`{server_name}` contains an empty `env` key; use non-empty environment variable names"
                     )));
@@ -1670,19 +1685,19 @@ fn default_background_task_message_staleness_timeout_ms() -> u64 {
 }
 
 fn default_remote_search_endpoint() -> String {
-    "https://mcp.exa.ai/mcp".to_string()
+    DEFAULT_REMOTE_SEARCH_ENDPOINT.to_string()
 }
 
 fn default_remote_search_timeout_secs() -> u64 {
-    30
+    DEFAULT_REMOTE_SEARCH_TIMEOUT_SECS
 }
 
 fn default_remote_search_max_retries() -> u32 {
-    1
+    DEFAULT_REMOTE_SEARCH_MAX_RETRIES
 }
 
 fn default_remote_search_retry_backoff_ms() -> u64 {
-    250
+    DEFAULT_REMOTE_SEARCH_RETRY_BACKOFF_MS
 }
 
 fn default_mcp_timeout_secs() -> u64 {
@@ -2446,20 +2461,7 @@ fn merge_map_alias(
     target_path: &str,
     alias_path: &str,
 ) -> Result<(), ConfigError> {
-    if alias.is_empty() {
-        return Ok(());
-    }
-    if target.is_empty() {
-        *target = alias;
-        return Ok(());
-    }
-    if *target == alias {
-        return Ok(());
-    }
-
-    Err(ConfigError::InvalidReference(format!(
-        "{target_path} conflicts with {alias_path}; use one value"
-    )))
+    merge_alias_value(target, alias, BTreeMap::is_empty, target_path, alias_path)
 }
 
 fn merge_vec_alias(
@@ -2468,10 +2470,23 @@ fn merge_vec_alias(
     target_path: &str,
     alias_path: &str,
 ) -> Result<(), ConfigError> {
-    if alias.is_empty() {
+    merge_alias_value(target, alias, Vec::is_empty, target_path, alias_path)
+}
+
+fn merge_alias_value<T>(
+    target: &mut T,
+    alias: T,
+    is_empty: impl Fn(&T) -> bool,
+    target_path: &str,
+    alias_path: &str,
+) -> Result<(), ConfigError>
+where
+    T: PartialEq,
+{
+    if is_empty(&alias) {
         return Ok(());
     }
-    if target.is_empty() {
+    if is_empty(target) {
         *target = alias;
         return Ok(());
     }
@@ -2491,8 +2506,7 @@ trait StringAliasTarget {
 
 impl StringAliasTarget for String {
     fn current_value(&self) -> Option<&str> {
-        let trimmed = self.trim();
-        (!trimmed.is_empty()).then_some(trimmed)
+        non_empty_trimmed(self)
     }
 
     fn set_value(&mut self, value: String) {
@@ -2502,9 +2516,7 @@ impl StringAliasTarget for String {
 
 impl StringAliasTarget for Option<String> {
     fn current_value(&self) -> Option<&str> {
-        self.as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
+        self.as_deref().and_then(non_empty_trimmed)
     }
 
     fn set_value(&mut self, value: String) {
@@ -2599,10 +2611,27 @@ fn is_builtin_lsp_server(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{ffi::OsString, sync::Mutex};
+    use std::{
+        ffi::{OsStr, OsString},
+        sync::Mutex,
+    };
 
     static CONFIG_DISCOVERY_TEST_LOCK: Mutex<()> = Mutex::new(());
     static CONFIG_ENV_TEST_LOCK: Mutex<()> = Mutex::new(());
+    const DISCOVERY_ENV_VARS: &[&str] = &[
+        "XDG_CONFIG_HOME",
+        "HOME",
+        "HARNESS_CONFIG",
+        "HARNESS_CONFIG_CONTENT",
+        "HARNESS_TUI_CONFIG",
+    ];
+
+    fn set_env_var(name: &str, value: Option<&OsStr>) {
+        match value {
+            Some(value) => env::set_var(name, value),
+            None => env::remove_var(name),
+        }
+    }
 
     #[allow(unsafe_code)]
     fn with_env_var_state<T>(name: &str, value: Option<&str>, run: impl FnOnce() -> T) -> T {
@@ -2611,56 +2640,42 @@ mod tests {
             .expect("config env test lock should not be poisoned");
         let previous = env::var_os(name);
 
-        match value {
-            Some(value) => unsafe { env::set_var(name, value) },
-            None => unsafe { env::remove_var(name) },
-        }
+        set_env_var(name, value.map(OsStr::new));
 
         let result = run();
 
-        match previous {
-            Some(value) => unsafe { env::set_var(name, value) },
-            None => unsafe { env::remove_var(name) },
-        }
+        set_env_var(name, previous.as_deref());
 
         result
     }
 
     struct DiscoveryTestContext {
         previous_cwd: PathBuf,
-        previous_xdg_config_home: Option<OsString>,
-        previous_home: Option<OsString>,
-        previous_harness_config: Option<OsString>,
-        previous_harness_config_content: Option<OsString>,
-        previous_harness_tui_config: Option<OsString>,
+        previous_env: Vec<(&'static str, Option<OsString>)>,
     }
 
     impl DiscoveryTestContext {
         fn new(cwd: &Path, xdg_config_home: Option<&Path>) -> Self {
             let previous_cwd = env::current_dir().expect("capture current dir");
-            let previous_xdg_config_home = env::var_os("XDG_CONFIG_HOME");
-            let previous_home = env::var_os("HOME");
-            let previous_harness_config = env::var_os("HARNESS_CONFIG");
-            let previous_harness_config_content = env::var_os("HARNESS_CONFIG_CONTENT");
-            let previous_harness_tui_config = env::var_os("HARNESS_TUI_CONFIG");
+            let previous_env = DISCOVERY_ENV_VARS
+                .iter()
+                .map(|name| (*name, env::var_os(name)))
+                .collect();
 
             env::set_current_dir(cwd).expect("set test current dir");
-            match xdg_config_home {
-                Some(path) => env::set_var("XDG_CONFIG_HOME", path),
-                None => env::remove_var("XDG_CONFIG_HOME"),
+            set_env_var("XDG_CONFIG_HOME", xdg_config_home.map(Path::as_os_str));
+            set_env_var("HOME", Some(cwd.as_os_str()));
+            for name in [
+                "HARNESS_CONFIG",
+                "HARNESS_CONFIG_CONTENT",
+                "HARNESS_TUI_CONFIG",
+            ] {
+                set_env_var(name, None);
             }
-            env::set_var("HOME", cwd);
-            env::remove_var("HARNESS_CONFIG");
-            env::remove_var("HARNESS_CONFIG_CONTENT");
-            env::remove_var("HARNESS_TUI_CONFIG");
 
             Self {
                 previous_cwd,
-                previous_xdg_config_home,
-                previous_home,
-                previous_harness_config,
-                previous_harness_config_content,
-                previous_harness_tui_config,
+                previous_env,
             }
         }
     }
@@ -2668,25 +2683,8 @@ mod tests {
     impl Drop for DiscoveryTestContext {
         fn drop(&mut self) {
             let _ = env::set_current_dir(&self.previous_cwd);
-            match &self.previous_xdg_config_home {
-                Some(value) => env::set_var("XDG_CONFIG_HOME", value),
-                None => env::remove_var("XDG_CONFIG_HOME"),
-            }
-            match &self.previous_home {
-                Some(value) => env::set_var("HOME", value),
-                None => env::remove_var("HOME"),
-            }
-            match &self.previous_harness_config {
-                Some(value) => env::set_var("HARNESS_CONFIG", value),
-                None => env::remove_var("HARNESS_CONFIG"),
-            }
-            match &self.previous_harness_config_content {
-                Some(value) => env::set_var("HARNESS_CONFIG_CONTENT", value),
-                None => env::remove_var("HARNESS_CONFIG_CONTENT"),
-            }
-            match &self.previous_harness_tui_config {
-                Some(value) => env::set_var("HARNESS_TUI_CONFIG", value),
-                None => env::remove_var("HARNESS_TUI_CONFIG"),
+            for (name, value) in self.previous_env.drain(..).rev() {
+                set_env_var(name, value.as_deref());
             }
         }
     }
@@ -4654,21 +4652,20 @@ mod tests {
 
     #[test]
     fn empty_env_var_uses_default_fallback() {
-        let cfg = config_fixture(
-            &deep_profile(r#"tools: ["fs.read"],"#),
-            "${HARNESS_CONFIG_TEST_API_KEY_EMPTY:-fallback-key}",
-            None,
-            None,
-        );
+        with_env_var_state("HARNESS_CONFIG_TEST_API_KEY_EMPTY", Some(""), || {
+            let cfg = config_fixture(
+                &deep_profile(r#"tools: ["fs.read"],"#),
+                "${HARNESS_CONFIG_TEST_API_KEY_EMPTY:-fallback-key}",
+                None,
+                None,
+            );
 
-        env::set_var("HARNESS_CONFIG_TEST_API_KEY_EMPTY", "");
-
-        let parsed = load_config_from_str(&cfg)
-            .expect("config with empty env reference should use fallback value");
-        let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
-        assert_eq!(provider.api_key, "fallback-key");
-
-        env::remove_var("HARNESS_CONFIG_TEST_API_KEY_EMPTY");
+            let parsed = load_config_from_str(&cfg)
+                .expect("config with empty env reference should use fallback value");
+            let ProviderConfig::OpenAiCompatible(provider) =
+                parsed.providers.get("default").unwrap();
+            assert_eq!(provider.api_key, "fallback-key");
+        });
     }
 
     #[test]

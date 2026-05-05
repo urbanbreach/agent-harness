@@ -20,12 +20,11 @@ use crate::event::{
     ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionDecision, PermissionResolvedEvent,
     RunFinishedEvent, TaskCancelledEvent, SCHEMA_VERSION,
 };
+use crate::path_display::display_path;
 use crate::proj::{RunStatus, SessionCatalogEntry};
-
-const EVENTS_FILE_NAME: &str = "events.jsonl";
-const META_FILE_NAME: &str = "meta.json";
-const WRITER_LOCK_FILE_NAME: &str = ".writer.lock";
-const ARTIFACTS_DIR_NAME: &str = "artifacts";
+use crate::session_paths::{
+    ARTIFACTS_DIR_NAME, EVENTS_FILE_NAME, META_FILE_NAME, WRITER_LOCK_FILE_NAME,
+};
 const CHILD_RUN_ID_PREFIX: &str = "run_harness_child";
 
 static CHILD_RUN_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -1026,10 +1025,6 @@ fn run_dir_name(path: &Path) -> Option<String> {
         .map(str::to_string)
 }
 
-fn display_path(path: &Path) -> String {
-    path.display().to_string()
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ArtifactCopySpec {
     digest: Option<String>,
@@ -1215,9 +1210,9 @@ pub fn project_lineage_tree(
     }
 
     for children in children_by_parent.values_mut() {
-        children.sort_by(|left, right| compare_entries(&entries[left], &entries[right]));
+        sort_ids_by_entry_order(&entries, children);
     }
-    roots.sort_by(|left, right| compare_entries(&entries[left], &entries[right]));
+    sort_ids_by_entry_order(&entries, &mut roots);
 
     SessionLineageTree {
         roots: roots
@@ -1528,8 +1523,12 @@ fn parent_chain_reaches(
 
 fn sorted_ids(entries: &BTreeMap<String, SessionCatalogEntry>) -> Vec<String> {
     let mut ids = entries.keys().cloned().collect::<Vec<_>>();
-    ids.sort_by(|left, right| compare_entries(&entries[left], &entries[right]));
+    sort_ids_by_entry_order(entries, &mut ids);
     ids
+}
+
+fn sort_ids_by_entry_order(entries: &BTreeMap<String, SessionCatalogEntry>, ids: &mut [String]) {
+    ids.sort_by(|left, right| compare_entries(&entries[left], &entries[right]));
 }
 
 fn compare_entries(left: &SessionCatalogEntry, right: &SessionCatalogEntry) -> Ordering {

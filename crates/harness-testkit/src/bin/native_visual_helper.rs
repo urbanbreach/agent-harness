@@ -261,11 +261,13 @@ impl Args {
         if metadata_out.as_os_str().is_empty() {
             return Err("--metadata-out cannot be empty".to_string());
         }
-        if window_id.trim().is_empty() {
-            return Err("--window-id cannot be empty".to_string());
-        }
-        if window_title.trim().is_empty() {
-            return Err("--window-title cannot be empty".to_string());
+        for (flag, value) in [
+            ("--window-id", window_id.as_str()),
+            ("--window-title", window_title.as_str()),
+        ] {
+            if value.trim().is_empty() {
+                return Err(format!("{flag} cannot be empty"));
+            }
         }
         Ok(Self {
             output,
@@ -273,5 +275,61 @@ impl Args {
             window_id,
             window_title,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Args;
+
+    fn parse_args(args: &[&str]) -> Result<Args, String> {
+        Args::parse(args.iter().map(|value| value.to_string()))
+    }
+
+    #[test]
+    fn args_parse_rejects_empty_required_text_values() {
+        let err = parse_args(&[
+            "--output",
+            "capture.png",
+            "--metadata-out",
+            "capture.json",
+            "--window-id",
+            "  ",
+            "--window-title",
+            "title",
+        ])
+        .expect_err("blank window id should be rejected");
+        assert_eq!(err, "--window-id cannot be empty");
+
+        let err = parse_args(&[
+            "--output",
+            "capture.png",
+            "--metadata-out",
+            "capture.json",
+            "--window-id",
+            "0x123",
+            "--window-title",
+            "\t",
+        ])
+        .expect_err("blank window title should be rejected");
+        assert_eq!(err, "--window-title cannot be empty");
+    }
+
+    #[test]
+    fn args_parse_preserves_non_empty_required_text_values() {
+        let args = parse_args(&[
+            "--output",
+            "capture.png",
+            "--metadata-out",
+            "capture.json",
+            "--window-id",
+            " 0x123 ",
+            "--window-title",
+            " title ",
+        ])
+        .expect("non-empty values should parse");
+
+        assert_eq!(args.window_id, " 0x123 ");
+        assert_eq!(args.window_title, " title ");
     }
 }

@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use harness_core::tool::{ToolContext, ToolError, ToolResult};
 use schemars::JsonSchema;
@@ -6,9 +6,10 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::lsp_support::{
-    execute_lsp_operation, LspDiagnosticReport, LspOperation, LspOperationInput,
+    execute_lsp_operation, format_diagnostics, LspOperation, LspOperationInput,
     LspOperationInputKind, LspOperationRequest, LspOperationResponse, LspPosition,
 };
+use crate::workspace_paths::resolve_existing_path;
 
 pub(crate) struct CodeLspExecutor;
 
@@ -307,119 +308,6 @@ fn render_diagnostics_only_display_text(
     } else {
         Ok(format!("Diagnostics for {target}:\n{diagnostics}"))
     }
-}
-
-pub(crate) fn format_diagnostics(reports: &[LspDiagnosticReport]) -> String {
-    reports
-        .iter()
-        .flat_map(|report| {
-            report.diagnostics.iter().map(|diagnostic| {
-                let line = diagnostic
-                    .get("range")
-                    .and_then(|range| range.get("start"))
-                    .and_then(|start| start.get("line"))
-                    .and_then(Value::as_u64)
-                    .map(|line| line + 1)
-                    .unwrap_or(1);
-                let character = diagnostic
-                    .get("range")
-                    .and_then(|range| range.get("start"))
-                    .and_then(|start| start.get("character"))
-                    .and_then(Value::as_u64)
-                    .map(|character| character + 1)
-                    .unwrap_or(1);
-                let severity = match diagnostic.get("severity").and_then(Value::as_u64) {
-                    Some(1) => "Error",
-                    Some(2) => "Warning",
-                    Some(3) => "Information",
-                    Some(4) => "Hint",
-                    _ => "Diagnostic",
-                };
-                let message = diagnostic
-                    .get("message")
-                    .and_then(Value::as_str)
-                    .unwrap_or("<missing message>");
-                format!(
-                    "{}:{}:{} {} {}",
-                    report.file_path, line, character, severity, message
-                )
-            })
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-pub(crate) fn resolve_existing_path(ctx: &ToolContext, input: &str) -> Result<PathBuf, ToolError> {
-    let workspace = canonical_workspace_root(ctx)?;
-    let candidate = normalize_workspace_target_path(&workspace, Path::new(input))?;
-    let canonical = if candidate == workspace {
-        workspace.clone()
-    } else {
-        candidate
-            .canonicalize()
-            .map_err(|err| ToolError::Execution(format!("failed to resolve path: {err}")))?
-    };
-    ensure_within_workspace_path(&workspace, &canonical)?;
-    Ok(canonical)
-}
-
-pub(crate) fn canonical_workspace_root(ctx: &ToolContext) -> Result<PathBuf, ToolError> {
-    ctx.workspace_root
-        .canonicalize()
-        .map_err(|err| ToolError::Execution(format!("failed to resolve workspace root: {err}")))
-}
-
-pub(crate) fn ensure_within_workspace_path(
-    workspace: &Path,
-    candidate: &Path,
-) -> Result<(), ToolError> {
-    if candidate.starts_with(workspace) {
-        Ok(())
-    } else {
-        Err(ToolError::PathEscapesWorkspace {
-            workspace_root: workspace.display().to_string(),
-            path: candidate.display().to_string(),
-        })
-    }
-}
-
-pub(crate) fn normalize_workspace_target_path(
-    workspace: &Path,
-    input: &Path,
-) -> Result<PathBuf, ToolError> {
-    let relative = if input.is_absolute() {
-        input
-            .strip_prefix(workspace)
-            .map_err(|_| ToolError::PathEscapesWorkspace {
-                workspace_root: workspace.display().to_string(),
-                path: input.display().to_string(),
-            })?
-    } else {
-        input
-    };
-
-    let mut normalized = workspace.to_path_buf();
-    for component in relative.components() {
-        match component {
-            std::path::Component::CurDir => {}
-            std::path::Component::Normal(segment) => normalized.push(segment),
-            std::path::Component::ParentDir => {
-                if normalized == workspace {
-                    return Err(ToolError::PathEscapesWorkspace {
-                        workspace_root: workspace.display().to_string(),
-                        path: input.display().to_string(),
-                    });
-                }
-                normalized.pop();
-            }
-            std::path::Component::Prefix(_) | std::path::Component::RootDir => {
-                return Err(ToolError::InvalidArguments(
-                    "path must be workspace-relative or inside the workspace".to_string(),
-                ));
-            }
-        }
-    }
-    Ok(normalized)
 }
 
 #[cfg(test)]

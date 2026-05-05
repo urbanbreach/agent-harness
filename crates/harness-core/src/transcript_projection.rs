@@ -9,6 +9,7 @@ use crate::event::{
     ProviderAssistantMessageMetadata, TaskLineageMetadata, TaskScheduleState, ToolCallMetadata,
     ToolCallStatus,
 };
+use crate::text::non_empty_trimmed;
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum TranscriptProjectionError {
@@ -1291,8 +1292,7 @@ fn provider_turn_request_id(event: &EventEnvelopeV1, provider_request_id: &str) 
     event
         .correlation_id
         .as_deref()
-        .map(str::trim)
-        .filter(|request_id| !request_id.is_empty())
+        .and_then(non_empty_trimmed)
         .unwrap_or(provider_request_id)
         .to_string()
 }

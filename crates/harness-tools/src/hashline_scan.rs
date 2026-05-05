@@ -8,10 +8,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use crate::read_window::{normalize_read_offset, READ_DEFAULT_LIMIT, READ_DEFAULT_OFFSET};
 use crate::workspace_edit::record_file_hashline_read;
-
-const DEFAULT_START_LINE: u32 = 1;
-const DEFAULT_LIMIT: u32 = 2000;
 
 pub(crate) struct HashlineScanTool;
 
@@ -67,8 +65,8 @@ impl Tool for HashlineScanTool {
         let source = std::fs::read_to_string(&resolved_path)
             .map_err(|err| ToolError::Execution(format!("failed to read target file: {err}")))?;
 
-        let start_line = args.start_line.unwrap_or(DEFAULT_START_LINE).max(1);
-        let limit = args.limit.unwrap_or(DEFAULT_LIMIT);
+        let start_line = normalize_read_offset(args.start_line.unwrap_or(READ_DEFAULT_OFFSET));
+        let limit = args.limit.unwrap_or(READ_DEFAULT_LIMIT);
         let anchors = scan_line_anchors(&source, start_line, limit);
 
         let structured_json = json!({

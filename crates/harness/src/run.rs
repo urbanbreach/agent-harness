@@ -1,29 +1,30 @@
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 use clap::Args;
-use harness_core::clock::{Clock, FakeClock, RealClock};
-use harness_core::config::{load_resolved_config, HarnessConfig, ShellAllowlist};
+use harness_core::clock::{Clock, Determinism, FakeClock, RealClock};
+use harness_core::config::{HarnessConfig, ShellAllowlist};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
-use harness_core::event::{EventEnvelopeV1, EventV1, ToolCallStatus};
+use harness_core::event::ToolCallStatus;
 use harness_core::perm::PermissionDecision;
 use harness_core::redact::DefaultRedactor;
 use harness_tools::coordinator_registry;
-use uuid::Uuid;
 
+use crate::cli_config::{apply_runtime_metadata, load_optional_config_with_digest};
 use crate::logging;
 use crate::scenarios::{
-    create_workspace, default_permission_policy, golden_path_edit_args, golden_path_profiles,
-    golden_path_provider, supervisor_actor, worker_actor, ScenarioName,
+    create_workspace, default_permission_policy, deterministic_run_id, golden_path_edit_args,
+    golden_path_profiles, golden_path_provider, supervisor_actor, worker_actor, ScenarioName,
 };
 
-const DEFAULT_SESSION_DIR: &str = ".agent-harness/sessions";
-const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
-const EVENT_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(50);
+use crate::cli_io::{
+    copy_events_file, wait_for_permission_id, wait_for_tool_finished, ToolFinishTerminalEvents,
+    DEFAULT_EVENT_WAIT_TIMEOUT,
+};
+use crate::defaults::DEFAULT_SESSION_DIR;
 
 #[derive(Debug, Args, Clone)]
 pub struct RunCommand {
@@ -116,11 +117,9 @@ fn resolve_settings(
     let mut config_digest = "none".to_string();
     let mut loaded_config = None;
 
-    if let Some(loaded) =
-        load_resolved_config(config_path.as_deref()).map_err(|err| err.to_string())?
-    {
+    if let Some(loaded) = load_optional_config_with_digest(config_path.as_deref())? {
         let config = loaded.config;
-        config_digest = config_digest_for_paths(&loaded.paths)?;
+        config_digest = loaded.digest;
         shell_allowlist = config.permissions.shell_allowlist.clone();
         config_session_dir = config.paths.session_dir.clone();
         config_deterministic = config.deterministic.enabled;
@@ -133,9 +132,7 @@ fn resolve_settings(
         .clone()
         .or(global_session_dir)
         .unwrap_or(config_session_dir);
-    let deterministic = cmd.deterministic
-        || config_deterministic
-        || matches!(std::env::var("HARNESS_DETERMINISTIC").as_deref(), Ok("1"));
+    let deterministic = cmd.deterministic || Determinism::enabled(config_deterministic);
 
     Ok(RunSettings {
         config: loaded_config,
@@ -145,19 +142,6 @@ fn resolve_settings(
         seed: config_seed,
         config_digest,
     })
-}
-
-fn config_digest_for_paths(paths: &[PathBuf]) -> Result<String, String> {
-    let mut hasher = blake3::Hasher::new();
-    for path in paths {
-        hasher.update(path.to_string_lossy().as_bytes());
-        hasher.update(&[0]);
-        let config_bytes = fs::read(path)
-            .map_err(|err| format!("failed to read config file {}: {err}", path.display()))?;
-        hasher.update(&config_bytes);
-        hasher.update(&[0xff]);
-    }
-    Ok(hasher.finalize().to_hex().to_string())
 }
 
 struct RunOutcome {
@@ -194,16 +178,17 @@ async fn run_once(cmd: &RunCommand, settings: &RunSettings) -> Result<RunOutcome
     };
 
     let mut coordinator_config = CoordinatorConfig::new(settings.session_dir.clone());
-    coordinator_config.deterministic_store = settings.deterministic;
-    coordinator_config.hook_runtime_config.suppress_execution = settings.deterministic;
     coordinator_config.permission_policy = default_permission_policy();
     coordinator_config.tool_registry =
         Arc::new(coordinator_registry(settings.shell_allowlist.clone()));
     coordinator_config.provider = Arc::new(golden_path_provider());
     coordinator_config.agent_profiles = golden_path_profiles();
     coordinator_config.run_id_override = deterministic_run_id;
-    coordinator_config.config_digest = settings.config_digest.clone();
-    coordinator_config.harness_version = env!("CARGO_PKG_VERSION").to_string();
+    apply_runtime_metadata(
+        &mut coordinator_config,
+        settings.deterministic,
+        &settings.config_digest,
+    );
 
     let coordinator = spawn_coordinator(
         coordinator_config,
@@ -241,7 +226,7 @@ async fn run_once(cmd: &RunCommand, settings: &RunSettings) -> Result<RunOutcome
         .map_err(|err| err.to_string())?;
 
     let permission_id =
-        wait_for_permission_id(&run.events_path, &tool_call_id, WAIT_TIMEOUT).await?;
+        wait_for_permission_id(&run.events_path, &tool_call_id, DEFAULT_EVENT_WAIT_TIMEOUT).await?;
     let decision = if cmd.scenario.interactive_permissions() {
         interactive_permission_decision(&permission_id)?
     } else {
@@ -253,7 +238,13 @@ async fn run_once(cmd: &RunCommand, settings: &RunSettings) -> Result<RunOutcome
         .await
         .map_err(|err| err.to_string())?;
 
-    let tool_status = wait_for_tool_finished(&run.events_path, &tool_call_id, WAIT_TIMEOUT).await?;
+    let tool_status = wait_for_tool_finished(
+        &run.events_path,
+        &tool_call_id,
+        Some(DEFAULT_EVENT_WAIT_TIMEOUT),
+        ToolFinishTerminalEvents::Ignore,
+    )
+    .await?;
     if tool_status != ToolCallStatus::Succeeded {
         return Err(format!("tool call did not succeed: {tool_status:?}"));
     }
@@ -284,103 +275,12 @@ fn interactive_permission_decision(permission_id: &str) -> Result<PermissionDeci
     }
 }
 
-async fn wait_for_permission_id(
-    events_path: &Path,
-    tool_call_id: &str,
-    timeout: Duration,
-) -> Result<String, String> {
-    let deadline = Instant::now() + timeout;
-    loop {
-        let events = load_events(events_path)?;
-        if let Some(permission_id) = events.into_iter().find_map(|event| match event.payload {
-            EventV1::PermissionRequested(data)
-                if data.tool_call_id.as_deref() == Some(tool_call_id) =>
-            {
-                Some(data.permission_id)
-            }
-            _ => None,
-        }) {
-            return Ok(permission_id);
-        }
-
-        if Instant::now() >= deadline {
-            return Err(format!(
-                "timed out waiting for PermissionRequested for {tool_call_id}"
-            ));
-        }
-
-        tokio::time::sleep(EVENT_WAIT_POLL_INTERVAL).await;
-    }
-}
-
-async fn wait_for_tool_finished(
-    events_path: &Path,
-    tool_call_id: &str,
-    timeout: Duration,
-) -> Result<ToolCallStatus, String> {
-    let deadline = Instant::now() + timeout;
-    loop {
-        let events = load_events(events_path)?;
-        if let Some(status) = events.into_iter().find_map(|event| match event.payload {
-            EventV1::ToolCallFinished(data) if data.tool_call_id == tool_call_id => {
-                Some(data.status)
-            }
-            _ => None,
-        }) {
-            return Ok(status);
-        }
-
-        if Instant::now() >= deadline {
-            return Err(format!(
-                "timed out waiting for ToolCallFinished for {tool_call_id}"
-            ));
-        }
-
-        tokio::time::sleep(EVENT_WAIT_POLL_INTERVAL).await;
-    }
-}
-
-fn load_events(path: &Path) -> Result<Vec<EventEnvelopeV1>, String> {
-    let body = fs::read_to_string(path)
-        .map_err(|err| format!("failed to read events file {}: {err}", path.display()))?;
-    body.lines()
-        .map(|line| serde_json::from_str::<EventEnvelopeV1>(line).map_err(|err| err.to_string()))
-        .collect()
-}
-
-fn copy_events_file(from: &Path, to: &Path) -> Result<(), String> {
-    if let Some(parent) = to.parent() {
-        fs::create_dir_all(parent).map_err(|err| {
-            format!(
-                "failed to create output directory {}: {err}",
-                parent.display()
-            )
-        })?;
-    }
-    fs::copy(from, to).map_err(|err| {
-        format!(
-            "failed to copy events file from {} to {}: {err}",
-            from.display(),
-            to.display()
-        )
-    })?;
-    Ok(())
-}
-
-fn deterministic_run_id(seed: u64, scenario: ScenarioName) -> String {
-    let namespace = Uuid::new_v5(
-        &Uuid::NAMESPACE_OID,
-        format!("harness-seed:{seed}").as_bytes(),
-    );
-    let run_uuid = Uuid::new_v5(&namespace, scenario.as_str().as_bytes());
-    format!("run_{}", run_uuid.simple())
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{deterministic_run_id, load_events, run_once, RunCommand, RunSettings};
+    use super::{run_once, RunCommand, RunSettings};
+    use crate::cli_io::load_events_file;
     use crate::replay::summarize_session;
-    use crate::scenarios::ScenarioName;
+    use crate::scenarios::{deterministic_run_id, ScenarioName};
     use harness_core::config::ShellAllowlist;
     use harness_core::event::EventV1;
     use harness_core::proj::RunStatus;
@@ -518,7 +418,7 @@ mod tests {
         let run = run_once(&command, &settings)
             .await
             .expect("deterministic golden path run");
-        let events = load_events(&run.events_path).expect("load events");
+        let events = load_events_file(&run.events_path).expect("load events");
 
         let (diff_path, diff_digest) = events
             .iter()

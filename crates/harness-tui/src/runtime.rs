@@ -1,5 +1,4 @@
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -18,6 +17,7 @@ use crate::app::{
     UiIntent,
 };
 use crate::event::{self, poll};
+use crate::event_log;
 use crate::ui;
 
 const ACTIVE_POLL_INTERVAL: Duration = Duration::from_millis(100);
@@ -245,7 +245,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
 
             if app.take_reload_requested() {
                 if let Some(run_dir) = app.session_path.clone() {
-                    match load_events_from_run_dir(&run_dir) {
+                    match event_log::load_events_from_run_dir(&run_dir) {
                         Ok(events) => {
                             app.replace_events(events);
                             app.set_status_banner(None);
@@ -453,22 +453,6 @@ pub fn run_tui() -> Result<()> {
         keybindings: None,
         preserve_terminal_on_exit: false,
     })
-}
-
-pub fn load_events_from_run_dir(run_dir: &Path) -> Result<Vec<EventEnvelopeV1>> {
-    load_events_from_path(&run_dir.join("events.jsonl"))
-}
-
-fn load_events_from_path(path: &Path) -> Result<Vec<EventEnvelopeV1>> {
-    let body = fs::read_to_string(path)
-        .with_context(|| format!("failed to read events file {}", path.display()))?;
-
-    body.lines()
-        .map(|line| {
-            serde_json::from_str::<EventEnvelopeV1>(line)
-                .with_context(|| format!("failed to parse JSONL event from {}", path.display()))
-        })
-        .collect()
 }
 
 fn poll_timeout(

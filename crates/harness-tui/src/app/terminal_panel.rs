@@ -2,6 +2,8 @@ use serde_json::Value;
 
 use harness_core::event::{EventV1, ToolCallMetadata};
 
+use crate::text::{non_empty_trimmed, trimmed_json_string_field};
+
 use super::{AppState, Focus, ToolCallDisplayStatus, ToolCallEntry};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -149,8 +151,8 @@ fn terminal_panel_entry_from_tool_call(tool_call: &ToolCallEntry) -> Option<Term
         command,
         cwd,
         status: tool_call.status.into(),
-        stdout: non_empty(stdout),
-        stderr: non_empty(stderr),
+        stdout: stdout.filter(|value| !value.is_empty()),
+        stderr: stderr.filter(|value| !value.is_empty()),
         exit_code: shell_output_i64(tool_call, "status"),
         success: shell_output_bool(tool_call, "success"),
         duration_ms: tool_call.duration_ms(),
@@ -184,28 +186,28 @@ fn tool_metadata_canonical(metadata: &Option<ToolCallMetadata>) -> Option<&str> 
 }
 
 fn shell_command(tool_call: &ToolCallEntry) -> Option<String> {
-    shell_json_string(tool_call.output_json.as_ref(), &["command"])
+    trimmed_json_string_field(tool_call.output_json.as_ref(), &["command"])
         .or_else(|| shell_json_command_from_cmd(tool_call.output_json.as_ref()))
         .or_else(|| {
             serde_json::from_str::<Value>(&tool_call.args_summary)
                 .ok()
                 .and_then(|value| {
-                    shell_json_string(Some(&value), &["command"])
+                    trimmed_json_string_field(Some(&value), &["command"])
                         .or_else(|| shell_json_command_from_cmd(Some(&value)))
                 })
         })
 }
 
 fn shell_cwd(tool_call: &ToolCallEntry) -> Option<String> {
-    shell_json_string(tool_call.output_json.as_ref(), &["workdir", "cwd"]).or_else(|| {
+    trimmed_json_string_field(tool_call.output_json.as_ref(), &["workdir", "cwd"]).or_else(|| {
         serde_json::from_str::<Value>(&tool_call.args_summary)
             .ok()
-            .and_then(|value| shell_json_string(Some(&value), &["workdir", "cwd"]))
+            .and_then(|value| trimmed_json_string_field(Some(&value), &["workdir", "cwd"]))
     })
 }
 
 fn shell_json_command_from_cmd(value: Option<&Value>) -> Option<String> {
-    let cmd = shell_json_string(value, &["cmd"])?;
+    let cmd = trimmed_json_string_field(value, &["cmd"])?;
     let args = value
         .and_then(|value| value.get("args"))
         .and_then(Value::as_array)
@@ -249,8 +251,7 @@ fn shell_output_artifact(tool_call: &ToolCallEntry) -> Option<String> {
         .and_then(|value| value.get("output_artifact"))
         .and_then(|artifact| artifact.get("path"))
         .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+        .and_then(non_empty_trimmed)
         .map(str::to_string)
         .or_else(|| {
             tool_call
@@ -258,18 +259,4 @@ fn shell_output_artifact(tool_call: &ToolCallEntry) -> Option<String> {
                 .first()
                 .map(|artifact| artifact.path.clone())
         })
-}
-
-fn shell_json_string(value: Option<&Value>, keys: &[&str]) -> Option<String> {
-    let value = value?;
-    keys.iter()
-        .filter_map(|key| value.get(*key))
-        .find_map(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-}
-
-fn non_empty(value: Option<String>) -> Option<String> {
-    value.filter(|value| !value.is_empty())
 }

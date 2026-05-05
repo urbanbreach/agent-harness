@@ -7,6 +7,12 @@ use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+#[path = "support/binary_name.rs"]
+mod binary_name;
+#[path = "support/focus_region.rs"]
+mod focus_region;
+#[path = "support/harness_bin.rs"]
+mod harness_bin;
 #[path = "support/live_visual.rs"]
 #[allow(dead_code)]
 mod live_visual;
@@ -16,10 +22,16 @@ mod markers;
 #[path = "support/native_visual.rs"]
 #[allow(dead_code)]
 mod native_visual;
+#[path = "support/repo_root.rs"]
+mod repo_root;
+#[path = "support/temp_path.rs"]
+#[allow(dead_code)]
+mod temp_path;
 #[path = "support/visual_renderer.rs"]
 #[allow(dead_code)]
 mod visual_renderer;
 
+use harness_bin::{repo_root, resolve_harness_bin};
 use live_visual::{
     ExternalPngCheckpointSpec, FocusCapture, LiveVisualRun, LiveVisualRunOptions,
     CHECKPOINT_DRAFT_VISIBLE, CHECKPOINT_RUN_FINISHED, CHECKPOINT_STARTUP,
@@ -34,10 +46,11 @@ use markers::{
     STARTUP_REPLAY_HISTORY_MARKER,
 };
 use native_visual::{
-    default_native_visual_run_metadata, require_native_visual_availability,
+    default_native_visual_run_metadata, require_native_visual_availability, shell_escape_text,
     write_native_visual_summary, write_solid_png, GhosttyNativeHarness, NativeVisualAvailability,
     NativeVisualGrid,
 };
+use temp_path::create_unique_temp_dir as unique_temp_dir;
 
 const NATIVE_VISUAL_TEST_NAME: &str = "native_visual_ghostty_smoke";
 const NATIVE_VISUAL_STARTUP_MATRIX_TEST_NAME: &str = "native_visual_startup_geometry_matrix";
@@ -1718,74 +1731,6 @@ fn write_managed_session_driver(test_binary: &Path, test_name: &str) -> Result<P
     Ok(script_path)
 }
 
-fn resolve_harness_bin() -> PathBuf {
-    static HARNESS_BIN_CACHE: OnceLock<PathBuf> = OnceLock::new();
-    HARNESS_BIN_CACHE
-        .get_or_init(|| {
-            if let Ok(path) = env::var("HARNESS_BIN") {
-                let harness_bin = PathBuf::from(path);
-                assert!(
-                    harness_bin.exists(),
-                    "HARNESS_BIN points to missing path: {}",
-                    harness_bin.display()
-                );
-                return harness_bin;
-            }
-
-            if let Some(path) = option_env!("CARGO_BIN_EXE_harness") {
-                let harness_bin = PathBuf::from(path);
-                if harness_bin.exists() {
-                    return harness_bin;
-                }
-            }
-
-            let repo = repo_root();
-            let harness_bin = repo
-                .join("target")
-                .join("debug")
-                .join(binary_name("harness"));
-            let status = Command::new("cargo")
-                .arg("build")
-                .arg("-p")
-                .arg("harness")
-                .current_dir(&repo)
-                .status()
-                .expect("spawn cargo build -p harness");
-            assert!(
-                status.success(),
-                "cargo build -p harness failed with status {status}"
-            );
-            assert!(
-                harness_bin.exists(),
-                "expected harness binary at {}",
-                harness_bin.display()
-            );
-            harness_bin
-        })
-        .clone()
-}
-
-fn repo_root() -> PathBuf {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest_dir
-        .parent()
-        .and_then(Path::parent)
-        .map(Path::to_path_buf)
-        .expect("harness-testkit should live under <repo>/crates/harness-testkit")
-}
-
-fn unique_temp_dir(prefix: &str) -> PathBuf {
-    let base = env::temp_dir().join("harness-testkit");
-    fs::create_dir_all(&base).expect("create base temp dir");
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before unix epoch")
-        .as_nanos();
-    let dir = base.join(format!("{prefix}-{}-{nanos}", std::process::id()));
-    fs::create_dir_all(&dir).expect("create unique temp dir");
-    dir
-}
-
 fn run_id() -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -2724,18 +2669,6 @@ fn session_event_with_ts(
     })
 }
 
-fn binary_name(name: &str) -> String {
-    if cfg!(windows) {
-        format!("{name}.exe")
-    } else {
-        name.to_string()
-    }
-}
-
-fn shell_escape_text(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\\''"))
-}
-
 #[derive(Debug, Clone, Default)]
 struct ParentGraphicalSessionEnv {
     display: Option<String>,
@@ -2853,15 +2786,17 @@ fn read_process_environment(process_name: &str) -> Result<ParentGraphicalSession
 fn non_empty_env(key: &str) -> Option<String> {
     env::var(key)
         .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
+        .and_then(|value| trimmed_non_empty_string(&value))
 }
 
 fn env_token_value(line: &str, key: &str) -> Option<String> {
     let prefix = format!("{key}=");
     line.split_whitespace()
         .find_map(|token| token.strip_prefix(&prefix))
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
+        .and_then(trimmed_non_empty_string)
+}
+
+fn trimmed_non_empty_string(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
 }

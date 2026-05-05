@@ -19,6 +19,10 @@ use harness_core::proj::{
 };
 use harness_core::redact::DefaultRedactor;
 
+mod common;
+
+use common::load_events;
+
 const PROFILE_NAME: &str = "task1_deep";
 const MODEL_REF: &str = "default:gpt-5.4-mini";
 
@@ -269,13 +273,6 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
 
 fn supervisor_actor() -> EventActor {
     EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string()))
-}
-
-fn load_events(path: &Path) -> Vec<EventEnvelopeV1> {
-    let body = fs::read_to_string(path).expect("read events");
-    body.lines()
-        .map(|line| serde_json::from_str::<EventEnvelopeV1>(line).expect("parse event"))
-        .collect()
 }
 
 fn envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {

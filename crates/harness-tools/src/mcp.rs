@@ -6,7 +6,10 @@ use harness_core::config::{
     set_registered_mcp_server_connection_states, set_registered_mcp_server_first_class_tool_ids,
     McpConfig, McpServerConfig, McpServerConnectionState,
 };
-use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
+use harness_core::tool::{
+    sanitize_mcp_tool_segment, Tool, ToolCapability, ToolContext, ToolError, ToolRegistry,
+    ToolResult,
+};
 use reqwest::StatusCode;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -14,6 +17,9 @@ use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::time::timeout;
+
+use crate::http_client;
+use crate::text::{has_trimmed_content, trimmed_non_empty};
 
 const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
 const MCP_SESSION_ID_HEADER: &str = "mcp-session-id";
@@ -26,7 +32,7 @@ pub(crate) fn register_mcp_tools(registry: &mut ToolRegistry, config: McpConfig)
         return;
     }
 
-    let http_client = build_http_client();
+    let http_client = http_client::default_client_or_fallback();
     let mut connection_states = BTreeMap::new();
     let mut first_class_tool_ids = BTreeMap::new();
     for (server_id, server_config) in config.servers {
@@ -57,12 +63,6 @@ pub(crate) fn register_mcp_tools(registry: &mut ToolRegistry, config: McpConfig)
 
     set_registered_mcp_server_connection_states(connection_states);
     set_registered_mcp_server_first_class_tool_ids(first_class_tool_ids);
-}
-
-fn build_http_client() -> reqwest::Client {
-    reqwest::Client::builder()
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new())
 }
 
 fn discover_first_class_tools(
@@ -140,11 +140,6 @@ fn normalize_provider_parameters_schema(schema: Option<Value>) -> Value {
         .entry("additionalProperties".to_string())
         .or_insert(Value::Bool(true));
     Value::Object(object)
-}
-
-fn sanitize_mcp_tool_segment(name: &str) -> String {
-    let sanitized = harness_core::tool::sanitize_tool_function_name(name);
-    sanitized.replace('-', "_")
 }
 
 fn reserved_mcp_tool_segments() -> BTreeSet<String> {
@@ -438,8 +433,7 @@ impl McpServerExecutor {
                 let description = item
                     .get("description")
                     .and_then(Value::as_str)
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
+                    .and_then(trimmed_non_empty)
                     .unwrap_or("No description");
                 format!("{name} — {description}")
             },
@@ -527,8 +521,7 @@ impl McpServerExecutor {
             let Some(remote_tool_name) = item
                 .get("name")
                 .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|name| !name.is_empty())
+                .and_then(trimmed_non_empty)
             else {
                 continue;
             };
@@ -536,8 +529,7 @@ impl McpServerExecutor {
             let description = item
                 .get("description")
                 .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
+                .and_then(trimmed_non_empty)
                 .map(ToString::to_string)
                 .unwrap_or_else(|| {
                     format!(
@@ -608,7 +600,7 @@ impl McpServerExecutor {
                 let name = item
                     .get("name")
                     .and_then(Value::as_str)
-                    .filter(|value| !value.trim().is_empty());
+                    .filter(|value| has_trimmed_content(value));
                 match name {
                     Some(name) => format!("{uri} — {name}"),
                     None => uri.to_string(),
@@ -670,8 +662,7 @@ impl McpServerExecutor {
                 let description = item
                     .get("description")
                     .and_then(Value::as_str)
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
+                    .and_then(trimmed_non_empty)
                     .unwrap_or("No description");
                 format!("{name} — {description}")
             },
@@ -1098,7 +1089,7 @@ impl StdioMcpSession {
                 ));
             }
 
-            if line.trim().is_empty() {
+            if !has_trimmed_content(&line) {
                 continue;
             }
 
@@ -1312,7 +1303,7 @@ impl HttpMcpSession {
         let body = response.text().await.map_err(|err| {
             ToolError::Execution(format!("failed to read MCP HTTP response body: {err}"))
         })?;
-        if body.trim().is_empty() {
+        if !has_trimmed_content(&body) {
             return Ok(Value::Null);
         }
         serde_json::from_str(&body)
@@ -1522,7 +1513,7 @@ fn render_prompt_messages(messages: &[Value]) -> String {
                 .get("content")
                 .and_then(Value::as_array)
                 .map(|entries| render_content_entries(Some(entries)).join("\n"))
-                .filter(|text| !text.trim().is_empty())
+                .filter(|text| has_trimmed_content(text))
                 .unwrap_or_else(|| compact_json(message));
             format!("{role}: {content}")
         })
@@ -1600,10 +1591,7 @@ fn normalize_mcp_error_message(message: &str) -> String {
 }
 
 fn extract_upstream_error_detail(body: &str) -> Option<String> {
-    let trimmed = body.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
+    let trimmed = trimmed_non_empty(body)?;
 
     let value: Value = serde_json::from_str(trimmed).ok()?;
     if let Some(error) = value.get("error") {
@@ -1666,17 +1654,17 @@ fn retry_after_hint(headers: &reqwest::header::HeaderMap) -> Option<String> {
     headers
         .get(reqwest::header::RETRY_AFTER)
         .and_then(|value| value.to_str().ok())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+        .and_then(trimmed_non_empty)
         .map(ToString::to_string)
 }
 
 fn truncated_snippet(value: &str, max_chars: usize) -> String {
-    let truncated = value.chars().take(max_chars).collect::<String>();
-    if truncated.chars().count() == value.chars().count() {
-        truncated
-    } else {
+    let mut chars = value.chars();
+    let truncated = chars.by_ref().take(max_chars).collect::<String>();
+    if chars.next().is_some() {
         format!("{truncated}…")
+    } else {
+        truncated
     }
 }
 

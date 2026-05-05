@@ -5,47 +5,23 @@ use std::sync::Arc;
 use harness_core::clock::RealClock;
 use harness_core::config::PermissionMode;
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, CoordinatorHandle};
-use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1};
+use harness_core::event::{ActorKind, EventActor, EventV1};
 use harness_core::perm::{PermissionDecision, PermissionPolicy};
 use harness_core::redact::DefaultRedactor;
 use harness_core::tool::{ToolContext, ToolError};
 use harness_tools::coordinator_registry;
 use serde_json::{json, Value};
-use tokio::time::{sleep, timeout, Duration, Instant};
+use tokio::time::{timeout, Duration};
+
+#[path = "common/question_events.rs"]
+mod question_events;
 
 fn actor() -> EventActor {
     EventActor::new(ActorKind::Worker, Some("agent-worker".to_string()))
 }
 
-fn read_events(path: &Path) -> Vec<EventEnvelopeV1> {
-    fs::read_to_string(path)
-        .expect("read events")
-        .lines()
-        .map(|line| serde_json::from_str(line).expect("parse event"))
-        .collect()
-}
-
 async fn wait_for_question_permission(path: &Path) -> String {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        if let Some(permission_id) =
-            read_events(path)
-                .into_iter()
-                .find_map(|event| match event.payload {
-                    EventV1::PermissionRequested(data) if data.kind == "question" => {
-                        Some(data.permission_id)
-                    }
-                    _ => None,
-                })
-        {
-            return permission_id;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "timed out waiting for question permission"
-        );
-        sleep(Duration::from_millis(20)).await;
-    }
+    question_events::wait_for_question_permission(path, None, Duration::from_secs(5)).await
 }
 
 fn question_tool_context(
@@ -644,14 +620,16 @@ async fn native_question_tool_rejects_or_times_out_cleanly() {
         reject_err,
         ToolError::Execution(message) if message == "question rejected by user"
     ));
-    assert!(read_events(&reject_run.events_path).iter().any(|event| {
-        matches!(
-            &event.payload,
-            EventV1::PermissionResolved(data)
-                if data.permission_id == reject_permission_id
-                    && data.reason.is_none()
-        )
-    }));
+    assert!(question_events::read_events(&reject_run.events_path)
+        .iter()
+        .any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::PermissionResolved(data)
+                    if data.permission_id == reject_permission_id
+                        && data.reason.is_none()
+            )
+        }));
     reject_coordinator
         .stop_run()
         .await
@@ -701,13 +679,15 @@ async fn native_question_tool_rejects_or_times_out_cleanly() {
         timeout_err,
         ToolError::Execution(message) if message == "question timed out awaiting user input"
     ));
-    assert!(read_events(&timeout_run.events_path).iter().any(|event| {
-        matches!(
-            &event.payload,
-            EventV1::PermissionResolved(data)
-                if data.reason.as_deref() == Some("permission request timed out")
-        )
-    }));
+    assert!(question_events::read_events(&timeout_run.events_path)
+        .iter()
+        .any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::PermissionResolved(data)
+                    if data.reason.as_deref() == Some("permission request timed out")
+            )
+        }));
     timeout_coordinator
         .stop_run()
         .await

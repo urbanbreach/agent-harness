@@ -9,9 +9,11 @@ use std::process::{Child, Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use super::binary_name::binary_name;
 use super::live_visual::{
     ExternalPngCheckpointSpec, FocusCapture, LiveVisualCheckpoint, LiveVisualRun,
 };
+use super::repo_root::repo_root;
 
 const DEFAULT_FONT_FAMILY: &str = "DejaVu Sans Mono";
 const DEFAULT_FONT_SIZE: &str = "12";
@@ -125,14 +127,10 @@ impl GhosttyNativeHarness {
             "spawn isolated tmux session",
         )?;
 
-        let font_family = env::var("HARNESS_NATIVE_VISUAL_FONT_FAMILY")
-            .ok()
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| DEFAULT_FONT_FAMILY.to_string());
-        let font_size = env::var("HARNESS_NATIVE_VISUAL_FONT_SIZE")
-            .ok()
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| DEFAULT_FONT_SIZE.to_string());
+        let font_family =
+            native_visual_env_or_default("HARNESS_NATIVE_VISUAL_FONT_FAMILY", DEFAULT_FONT_FAMILY);
+        let font_size =
+            native_visual_env_or_default("HARNESS_NATIVE_VISUAL_FONT_SIZE", DEFAULT_FONT_SIZE);
         let ghostty_version = read_first_line(run_command_output(
             Command::new("ghostty").arg("--version"),
             "read Ghostty version",
@@ -500,14 +498,10 @@ pub(crate) fn default_native_visual_run_metadata(
             .ok()
             .map(|path| path.display().to_string()),
         "terminal": {
-            "font_family": env::var("HARNESS_NATIVE_VISUAL_FONT_FAMILY")
-                .ok()
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| DEFAULT_FONT_FAMILY.to_string()),
-            "font_size": env::var("HARNESS_NATIVE_VISUAL_FONT_SIZE")
-                .ok()
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| DEFAULT_FONT_SIZE.to_string()),
+            "font_family":
+                native_visual_env_or_default("HARNESS_NATIVE_VISUAL_FONT_FAMILY", DEFAULT_FONT_FAMILY),
+            "font_size":
+                native_visual_env_or_default("HARNESS_NATIVE_VISUAL_FONT_SIZE", DEFAULT_FONT_SIZE),
             "rows": grid.rows,
             "cols": grid.cols,
         }
@@ -523,7 +517,7 @@ pub(crate) fn require_native_visual_availability() -> Result<NativeVisualAvailab
     }
     if env::var("DISPLAY")
         .ok()
-        .is_none_or(|value| value.trim().is_empty())
+        .is_none_or(|value| !trim_non_empty(&value))
     {
         return Err(
             "HARNESS_NATIVE_VISUAL=1 was requested but no X11/XWayland DISPLAY is available"
@@ -612,7 +606,7 @@ fn ensure_native_visual_prereqs() -> Result<(), String> {
 
     if env::var("DISPLAY")
         .ok()
-        .is_none_or(|value| value.trim().is_empty())
+        .is_none_or(|value| !trim_non_empty(&value))
     {
         return Err("native visual lane requires an X11/XWayland DISPLAY".to_string());
     }
@@ -671,7 +665,7 @@ fn shell_escape(path: &Path) -> String {
     shell_escape_text(&path.to_string_lossy())
 }
 
-fn shell_escape_text(value: &str) -> String {
+pub(crate) fn shell_escape_text(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
@@ -836,16 +830,27 @@ fn unique_temp_dir(prefix: &str) -> PathBuf {
 fn detect_display_protocol() -> String {
     let has_display = env::var("DISPLAY")
         .ok()
-        .is_some_and(|value| !value.trim().is_empty());
+        .is_some_and(|value| trim_non_empty(&value));
     let has_wayland = env::var("WAYLAND_DISPLAY")
         .ok()
-        .is_some_and(|value| !value.trim().is_empty());
+        .is_some_and(|value| trim_non_empty(&value));
     match (has_display, has_wayland) {
         (true, true) => "xwayland".to_string(),
         (true, false) => "x11".to_string(),
         (false, true) => "wayland".to_string(),
         (false, false) => "headless".to_string(),
     }
+}
+
+fn trim_non_empty(value: &str) -> bool {
+    !value.trim().is_empty()
+}
+
+fn native_visual_env_or_default(key: &str, default: &str) -> String {
+    env::var(key)
+        .ok()
+        .filter(|value| trim_non_empty(value))
+        .unwrap_or_else(|| default.to_string())
 }
 
 fn native_visual_capture_helper_path() -> Result<PathBuf, String> {
@@ -873,15 +878,12 @@ fn resolve_bundled_native_visual_capture_helper() -> Result<PathBuf, String> {
             return Ok(helper);
         }
     }
-    let crate_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let helper = crate_root
-        .join("..")
-        .join("..")
+    let workspace_root = repo_root();
+    let helper = workspace_root
         .join("target")
         .join("debug")
         .join(binary_name("native_visual_helper"));
     if !helper.exists() {
-        let workspace_root = crate_root.join("..").join("..");
         run_command(
             Command::new("cargo")
                 .arg("build")
@@ -958,14 +960,6 @@ fn validate_executable_file(path: &Path, label: &str) -> Result<(), String> {
         return Err(format!("{label} {} is not executable", path.display()));
     }
     Ok(())
-}
-
-fn binary_name(name: &str) -> String {
-    if cfg!(windows) {
-        format!("{name}.exe")
-    } else {
-        name.to_string()
-    }
 }
 
 fn merge_metadata(metadata: Option<Value>, additions: Value) -> Value {

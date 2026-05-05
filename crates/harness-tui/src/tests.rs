@@ -5,6 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use super::app::{ActivityEntry, ActivityStatus, AppState, ToolCallDisplayStatus};
+use super::event_log::load_events_from_run_dir;
 use super::lib_tests::{
     key_with_modifiers, render_live_buffer, render_live_cells, render_live_lines,
     row_text_and_palette, transcript_code_block_app, transcript_diff_block_app,

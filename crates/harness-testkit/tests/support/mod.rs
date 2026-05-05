@@ -1,3 +1,7 @@
+pub(crate) mod binary_name;
+pub(crate) mod focus_region;
+pub(crate) mod harness_bin;
+pub(crate) mod json_file;
 pub(crate) mod live_events;
 pub(crate) mod live_provider_parity;
 pub(crate) mod live_proxy_config;
@@ -5,4 +9,6 @@ pub(crate) mod live_proxy_tui;
 pub(crate) mod live_vision;
 pub(crate) mod live_visual;
 pub(crate) mod pty_process;
+pub(crate) mod repo_root;
+pub(crate) mod temp_path;
 pub(crate) mod visual_renderer;

@@ -243,7 +243,6 @@ fn auto_mcp_tool_ids(tool_registry: &ToolRegistry) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use harness_core::config::{load_config_from_file, load_config_from_str};
-    use std::path::PathBuf;
 
     use super::*;
 
@@ -487,8 +486,7 @@ mod tests {
 
     #[test]
     fn shipped_example_config_seeds_build_and_plan() {
-        let config_path =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs/harness.example.jsonc");
+        let config_path = crate::cli_config::shipped_example_config_path();
         let cfg = load_config_from_file(&config_path).expect("shipped example config should parse");
 
         assert!(cfg.agents.contains_key("build"));

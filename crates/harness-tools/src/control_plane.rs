@@ -2,15 +2,18 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use harness_core::config::{registered_skills_config, PermissionMode};
+use harness_core::question_answers::{validate_question_answers, QuestionAnswerPrompt};
 use harness_core::tool::{ToolContext, ToolError, ToolResult};
 use schemars::JsonSchema;
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
 
+use crate::question_env::read_question_answers_from_env;
+use crate::text::has_trimmed_content;
+
 const TODO_STATE_FILE: &str = "control-plane/todos.json";
 const QUESTION_STATE_DIR: &str = "control-plane/questions";
-const QUESTION_ANSWERS_ENV_VAR: &str = "HARNESS_QUESTION_ANSWERS";
 const SKILL_LOAD_CONFIRM_YES: &str = "Yes";
 const SKILL_LOAD_CONFIRM_NO: &str = "No";
 const TODO_STATUSES: &[&str] = &["pending", "in_progress", "completed", "cancelled"];
@@ -222,6 +225,23 @@ pub(crate) struct QuestionOption {
     pub(crate) description: String,
 }
 
+impl QuestionAnswerPrompt for QuestionPrompt {
+    fn header(&self) -> &str {
+        &self.header
+    }
+
+    fn multiple(&self) -> bool {
+        self.multiple.unwrap_or(false)
+    }
+
+    fn canonical_option_label<'a>(&'a self, answer: &str) -> Option<&'a str> {
+        self.options
+            .iter()
+            .find(|option| option.label.eq_ignore_ascii_case(answer))
+            .map(|option| option.label.as_str())
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct QuestionPromptCompat {
@@ -356,7 +376,7 @@ impl<'de> Deserialize<'de> for QuestionPrompt {
         let header = compat
             .header
             .or(compat.title)
-            .filter(|value| !value.trim().is_empty())
+            .filter(|value| has_trimmed_content(value))
             .unwrap_or_else(|| question.clone());
 
         Ok(Self {
@@ -605,16 +625,6 @@ fn question_state_path(ctx: &ToolContext) -> Result<PathBuf, ToolError> {
     })
 }
 
-fn read_question_answers_from_env() -> Result<Option<Vec<Vec<String>>>, ToolError> {
-    std::env::var(QUESTION_ANSWERS_ENV_VAR)
-        .ok()
-        .map(|value| serde_json::from_str::<Vec<Vec<String>>>(&value))
-        .transpose()
-        .map_err(|err| {
-            ToolError::Execution(format!("failed to parse {QUESTION_ANSWERS_ENV_VAR}: {err}"))
-        })
-}
-
 fn validate_question_prompts(questions: &[QuestionPrompt]) -> Result<(), String> {
     if questions.is_empty() {
         return Err("at least one question is required".to_string());
@@ -655,64 +665,6 @@ fn known_agent_name(name: &str) -> Option<&'static str> {
         "plan" => Some("plan"),
         _ => None,
     }
-}
-
-fn validate_question_answers(
-    questions: &[QuestionPrompt],
-    answers: Vec<Vec<String>>,
-) -> Result<Vec<Vec<String>>, String> {
-    if answers.len() != questions.len() {
-        return Err(format!(
-            "Expected {} answer group(s) for {} question(s); received {}.",
-            questions.len(),
-            questions.len(),
-            answers.len()
-        ));
-    }
-
-    questions
-        .iter()
-        .zip(answers)
-        .enumerate()
-        .map(|(index, (question, answers))| normalize_question_answers(index, question, answers))
-        .collect()
-}
-
-fn normalize_question_answers(
-    index: usize,
-    question: &QuestionPrompt,
-    answers: Vec<String>,
-) -> Result<Vec<String>, String> {
-    let answers = answers
-        .into_iter()
-        .map(|answer| answer.trim().to_string())
-        .filter(|answer| !answer.is_empty())
-        .collect::<Vec<_>>();
-    if answers.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    if !question.multiple.unwrap_or(false) && answers.len() != 1 {
-        return Err(format!(
-            "Question {} ({}) accepts only one answer.",
-            index + 1,
-            question.header
-        ));
-    }
-
-    Ok(answers
-        .into_iter()
-        .map(|answer| canonicalize_question_answer(question, answer))
-        .collect())
-}
-
-fn canonicalize_question_answer(question: &QuestionPrompt, answer: String) -> String {
-    question
-        .options
-        .iter()
-        .find(|option| option.label.eq_ignore_ascii_case(&answer))
-        .map(|option| option.label.clone())
-        .unwrap_or(answer)
 }
 
 fn skill_load_confirmation_question(skill_name: &str) -> QuestionPrompt {
@@ -1021,7 +973,7 @@ fn parse_frontmatter_fields(lines: &[&str]) -> Result<SkillFrontmatter, String> 
 
     while index < lines.len() {
         let line = lines[index];
-        if line.trim().is_empty() {
+        if !has_trimmed_content(line) {
             index += 1;
             continue;
         }
@@ -1103,7 +1055,7 @@ fn parse_metadata_field(lines: &[&str], index: usize, raw_value: &str) -> Result
     let mut cursor = index + 1;
     while cursor < lines.len() {
         let line = lines[cursor];
-        if line.trim().is_empty() {
+        if !has_trimmed_content(line) {
             cursor += 1;
             continue;
         }
@@ -1117,7 +1069,7 @@ fn parse_metadata_field(lines: &[&str], index: usize, raw_value: &str) -> Result
         let (key, raw_nested_value) = trimmed.split_once(':').ok_or_else(|| {
             format!("frontmatter `metadata` entry `{trimmed}` must use `key: value` syntax")
         })?;
-        if key.trim().is_empty() {
+        if !has_trimmed_content(key) {
             return Err("frontmatter `metadata` keys must not be empty".to_string());
         }
 
@@ -1152,7 +1104,7 @@ fn skip_unknown_field(lines: &[&str], index: usize, raw_value: &str) -> Result<u
             let mut cursor = index + 1;
             while cursor < lines.len() {
                 let line = lines[cursor];
-                if line.trim().is_empty() {
+                if !has_trimmed_content(line) {
                     cursor += 1;
                     continue;
                 }
@@ -1178,7 +1130,7 @@ fn collect_block_scalar(
 
     while cursor < lines.len() {
         let line = lines[cursor];
-        if line.trim().is_empty() {
+        if !has_trimmed_content(line) {
             values.push(String::new());
             cursor += 1;
             continue;
@@ -1201,13 +1153,7 @@ fn collect_block_scalar(
 }
 
 fn next_line_is_indented(lines: &[&str], start_index: usize) -> Result<bool, String> {
-    for line in &lines[start_index..] {
-        if line.trim().is_empty() {
-            continue;
-        }
-        return Ok(leading_indent(line)? > 0);
-    }
-    Ok(false)
+    Ok(next_non_empty_line_indent(lines, start_index)?.is_some_and(|indent| indent > 0))
 }
 
 fn next_line_has_deeper_indent(
@@ -1215,13 +1161,18 @@ fn next_line_has_deeper_indent(
     start_index: usize,
     current_indent: usize,
 ) -> Result<bool, String> {
+    Ok(next_non_empty_line_indent(lines, start_index)?
+        .is_some_and(|indent| indent > current_indent))
+}
+
+fn next_non_empty_line_indent(lines: &[&str], start_index: usize) -> Result<Option<usize>, String> {
     for line in &lines[start_index..] {
-        if line.trim().is_empty() {
+        if !has_trimmed_content(line) {
             continue;
         }
-        return Ok(leading_indent(line)? > current_indent);
+        return leading_indent(line).map(Some);
     }
-    Ok(false)
+    Ok(None)
 }
 
 fn leading_indent(line: &str) -> Result<usize, String> {

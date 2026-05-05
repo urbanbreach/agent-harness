@@ -337,19 +337,7 @@ fn public_edit_selector(selector: &str) -> Result<PermissionSelector, ConfigErro
 }
 
 fn normalize_public_workspace_selector(selector: &str) -> Option<String> {
-    let path = Path::new(selector.trim());
-    if path.is_absolute() {
-        return None;
-    }
-    let mut parts = Vec::new();
-    for component in path.components() {
-        match component {
-            Component::Normal(value) => parts.push(value.to_string_lossy().to_string()),
-            Component::CurDir => {}
-            Component::ParentDir | Component::RootDir | Component::Prefix(_) => return None,
-        }
-    }
-    (!parts.is_empty()).then(|| parts.join("/"))
+    crate::path_selector::normalize_workspace_relative_path(Path::new(selector.trim()))
 }
 
 fn default_internal_integrations_config() -> IntegrationsConfig {

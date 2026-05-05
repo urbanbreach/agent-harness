@@ -15,6 +15,11 @@ use harness_core::event::{
 };
 use tempfile::tempdir;
 
+#[path = "common/repo_root.rs"]
+mod repo_root;
+
+use repo_root::repo_root;
+
 fn envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
     EventEnvelopeV1 {
         schema_version: SCHEMA_VERSION,
@@ -1300,7 +1305,7 @@ fn sessions_lineage_help_is_harness_branded() {
         }
     }
 
-    let repo_root = workspace_root();
+    let repo_root = repo_root();
     let scan_output = Command::new("python3")
         .arg(repo_root.join("scripts/check-forbidden-branding.py"))
         .output()
@@ -1419,15 +1424,6 @@ fn assert_harness_branded(context: &str, text: &str, forbidden_terms: &[String])
         lower.contains("harness"),
         "{context} should use harness branding"
     );
-}
-
-fn workspace_root() -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("workspace root")
-        .parent()
-        .expect("repo root")
-        .to_path_buf()
 }
 
 #[test]

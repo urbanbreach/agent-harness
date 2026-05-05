@@ -6,6 +6,7 @@ use std::sync::Mutex;
 use std::sync::OnceLock;
 
 use super::LaunchMetadata;
+use crate::text::has_trimmed_content;
 
 #[cfg(not(test))]
 static PENDING_LIVE_LAUNCH_METADATA: OnceLock<Mutex<Option<LaunchMetadata>>> = OnceLock::new();
@@ -141,9 +142,7 @@ impl PendingLiveState {
                 return None;
             }
 
-            let draft = std::env::var(PENDING_LIVE_PROMPT_DRAFT_ENV)
-                .ok()
-                .filter(|value| !value.trim().is_empty());
+            let draft = non_empty_prompt(std::env::var(PENDING_LIVE_PROMPT_DRAFT_ENV).ok());
             let auto_submit = std::env::var(PENDING_LIVE_PROMPT_AUTO_SUBMIT_ENV)
                 .ok()
                 .map(|value| matches!(value.trim(), "1" | "true" | "TRUE" | "yes" | "YES"))
@@ -168,15 +167,19 @@ pub(super) fn take_pending_live_launch_metadata() -> Option<LaunchMetadata> {
 }
 
 pub fn set_pending_live_prompt_draft(draft: Option<String>) {
-    PendingLiveState::set_prompt(draft.filter(|value| !value.trim().is_empty()), false);
+    PendingLiveState::set_prompt(non_empty_prompt(draft), false);
 }
 
 pub fn set_pending_live_prompt_auto_submit(prompt: Option<String>) {
-    let prompt = prompt.filter(|value| !value.trim().is_empty());
+    let prompt = non_empty_prompt(prompt);
     let should_auto_submit = prompt.is_some();
     PendingLiveState::set_prompt(prompt, should_auto_submit);
 }
 
 pub(super) fn take_pending_live_prompt() -> Option<PendingLivePrompt> {
     PendingLiveState::take_prompt()
+}
+
+fn non_empty_prompt(prompt: Option<String>) -> Option<String> {
+    prompt.filter(|value| has_trimmed_content(value))
 }

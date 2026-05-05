@@ -10,11 +10,16 @@ use harness_core::clock::RealClock;
 use harness_core::config::{load_config_from_file, McpConfig, PermissionMode};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
 use harness_core::edit::hashline::compute_line_hash;
-use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1};
+use harness_core::event::{ActorKind, EventActor};
 use harness_core::perm::{PermissionDecision, PermissionPolicy};
 use harness_core::redact::DefaultRedactor;
 use harness_tools::{coordinator_registry_with_mcp_and_editing, EditingToolSurfaceConfig};
-use tokio::time::{sleep, Duration, Instant};
+use tokio::time::Duration;
+
+#[path = "common/question_events.rs"]
+mod question_events;
+#[path = "common/repo_root.rs"]
+mod repo_root;
 
 const SURFACE_LIVE_PROFILE: &str = "surface_live";
 
@@ -44,9 +49,7 @@ fn surface_live_toolset() -> Vec<String> {
 }
 
 fn example_config_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
+    repo_root::repo_root()
         .join("configs")
         .join("harness.example.jsonc")
 }
@@ -68,36 +71,6 @@ fn spawn_test_http_server() -> String {
         }
     });
     format!("http://{addr}")
-}
-
-fn read_events(path: &std::path::Path) -> Vec<EventEnvelopeV1> {
-    fs::read_to_string(path)
-        .expect("read events")
-        .lines()
-        .map(|line| serde_json::from_str(line).expect("parse event"))
-        .collect()
-}
-
-async fn wait_for_question_permission(path: &std::path::Path) -> String {
-    let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        if let Some(permission_id) =
-            read_events(path)
-                .into_iter()
-                .find_map(|event| match event.payload {
-                    EventV1::PermissionRequested(data) if data.kind == "question" => {
-                        Some(data.permission_id)
-                    }
-                    _ => None,
-                })
-        {
-            return permission_id;
-        }
-        if Instant::now() >= deadline {
-            panic!("timed out waiting for question permission");
-        }
-        sleep(Duration::from_millis(20)).await;
-    }
 }
 
 fn example_profiles(
@@ -484,7 +457,12 @@ async fn single_surface_tools_execute_under_example_config() {
                 .await
         })
     };
-    let question_permission_id = wait_for_question_permission(&run.events_path).await;
+    let question_permission_id = question_events::wait_for_question_permission(
+        &run.events_path,
+        None,
+        Duration::from_secs(10),
+    )
+    .await;
     handle
         .resolve_permission(
             question_permission_id,

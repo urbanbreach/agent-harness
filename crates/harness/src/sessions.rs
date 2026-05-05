@@ -1,4 +1,3 @@
-use std::cmp::Reverse;
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -11,18 +10,17 @@ use harness_core::session_lineage::{
     validate_fork_stable_prefix, ChildSessionMaterializationRequest,
     ChildSessionMaterializationSourceKind, SessionLineageNode, StableSessionPrefix,
 };
-use harness_tui::load_events_from_run_dir;
 use serde::Serialize;
 use serde_json::json;
 
+use crate::cli_io::{load_events_from_run_dir, load_run_metadata};
+use crate::defaults::DEFAULT_SESSION_DIR;
 use crate::recovery::{inspect_session_recovery, resolve_session_run_dir, SessionRecoverySummary};
 use crate::replay::{
-    inspect_session_catalog, print_human_summary, summarize_session, ReplayCommand, ReplaySummary,
-    SessionInspectionEntry,
+    inspect_session_catalog, normalize_lineage_entry, print_human_summary, summarize_session,
+    ReplayCommand, ReplaySummary, SessionInspectionEntry,
 };
 use crate::tui::TuiCommand;
-
-const DEFAULT_SESSION_DIR: &str = ".agent-harness/sessions";
 
 #[derive(Debug, Subcommand, Clone)]
 pub enum SessionsCommand {
@@ -128,10 +126,10 @@ impl SessionListSort {
     fn sort_entries(self, entries: &mut [SessionInspectionEntry]) {
         match self {
             Self::UpdatedDesc => {
-                entries.sort_by_key(|entry| (Reverse(entry.sort_unix_ms), entry.run_dir.clone()));
+                SessionInspectionEntry::sort_by_updated_desc(entries);
             }
             Self::UpdatedAsc => {
-                entries.sort_by_key(|entry| (entry.sort_unix_ms, entry.run_dir.clone()));
+                SessionInspectionEntry::sort_by_updated_asc(entries);
             }
             Self::RunIdAsc => {
                 entries.sort_by(|left, right| {
@@ -436,7 +434,7 @@ fn render_human_session_table(entries: &[SessionInspectionEntry]) -> String {
 }
 
 fn reopen_session(command: ReopenCommand, global_session_dir: Option<PathBuf>) -> ExitCode {
-    let session_dir = global_session_dir.unwrap_or_else(|| PathBuf::from(DEFAULT_SESSION_DIR));
+    let session_dir = session_dir(global_session_dir);
     let run_dir = match resolve_session_run_dir(&command.session, &session_dir) {
         Ok(run_dir) => run_dir,
         Err(err) => {
@@ -904,26 +902,6 @@ fn collect_tree_rows(
         .collect()
 }
 
-fn normalize_lineage_entry(mut entry: SessionInspectionEntry) -> SessionInspectionEntry {
-    if let Some(parent_run_id) = harness_lineage_parent_run_id(&entry.run_dir) {
-        entry.catalog.parent_session_id = Some(parent_run_id);
-    }
-    entry
-}
-
-fn harness_lineage_parent_run_id(run_dir: &Path) -> Option<String> {
-    let body = fs::read_to_string(run_dir.join("meta.json")).ok()?;
-    let value = serde_json::from_str::<serde_json::Value>(&body).ok()?;
-    let lineage = value.get("harness_lineage")?;
-    lineage
-        .get("harness_source_run_id")
-        .or_else(|| lineage.get("parent_run_id"))
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-}
-
 fn flatten_from_node(
     node: &SessionLineageNode,
     root_run_id: &str,
@@ -950,23 +928,21 @@ fn flatten_node_into(
 }
 
 fn tree_row_matches_filter(row: &SessionTreeRow, filter: &str) -> bool {
-    row.catalog.run_id.to_ascii_lowercase().contains(filter)
-        || row
-            .catalog
-            .run_name
-            .as_deref()
-            .is_some_and(|value| value.to_ascii_lowercase().contains(filter))
-        || row
-            .catalog
-            .parent_session_id
-            .as_deref()
-            .is_some_and(|value| value.to_ascii_lowercase().contains(filter))
-        || row
-            .run_dir
-            .display()
-            .to_string()
-            .to_ascii_lowercase()
-            .contains(filter)
+    contains_normalized_filter(&row.catalog.run_id, filter)
+        || optional_text_contains_normalized_filter(row.catalog.run_name.as_deref(), filter)
+        || optional_text_contains_normalized_filter(
+            row.catalog.parent_session_id.as_deref(),
+            filter,
+        )
+        || contains_normalized_filter(&row.run_dir.display().to_string(), filter)
+}
+
+fn optional_text_contains_normalized_filter(value: Option<&str>, filter: &str) -> bool {
+    value.is_some_and(|value| contains_normalized_filter(value, filter))
+}
+
+fn contains_normalized_filter(value: &str, filter: &str) -> bool {
+    value.to_ascii_lowercase().contains(filter)
 }
 
 fn render_human_session_tree(
@@ -1005,12 +981,6 @@ fn render_human_session_tree(
 
 fn run_dir_name(path: &Path) -> Option<&str> {
     path.file_name().and_then(|name| name.to_str())
-}
-
-fn load_run_metadata(run_dir: &Path) -> Option<RunMetadata> {
-    let meta_path = run_dir.join("meta.json");
-    let body = fs::read_to_string(meta_path).ok()?;
-    serde_json::from_str(&body).ok()
 }
 
 fn write_json_output<T: Serialize>(value: &T, output: Option<PathBuf>) -> ExitCode {
@@ -1083,10 +1053,7 @@ fn print_recovery_summary(summary: &SessionRecoverySummary) {
         summary.provider_model.as_deref().unwrap_or("<unavailable>")
     );
     println!("mode: {}", mode_source_label(summary.mode));
-    println!(
-        "resumable: {}",
-        if summary.resumable { "yes" } else { "no" }
-    );
+    println!("resumable: {}", resumable_label(summary.resumable));
     if let Some(reason) = &summary.resume_disabled_reason {
         println!("resume_disabled_reason: {reason}");
     }
@@ -1343,6 +1310,36 @@ mod tests {
                 }
             ])
         );
+    }
+
+    #[test]
+    fn tree_row_filter_matches_all_searchable_fields_case_insensitively() {
+        let mut row = SessionTreeRow {
+            depth: 0,
+            run_dir: PathBuf::from("/tmp/Session-Path"),
+            catalog: sample_entry(
+                "RUN-ABC",
+                42,
+                Some(RunStatus::Finished),
+                Some("worker"),
+                SessionModeSource::InteractiveLive,
+                true,
+                0,
+                0,
+                Some("PARENT-ABC"),
+            )
+            .catalog,
+        };
+        row.catalog.run_name = Some("Named Session".to_string());
+
+        for filter in ["run-abc", "named", "parent-abc", "session-path"] {
+            assert!(
+                tree_row_matches_filter(&row, filter),
+                "filter `{filter}` should match the tree row"
+            );
+        }
+
+        assert!(!tree_row_matches_filter(&row, "missing"));
     }
 
     #[test]

@@ -1118,8 +1118,6 @@ dependencies = [
  "crossterm",
  "font8x8",
  "fontdue",
- "futures",
- "futures-util",
  "harness-core",
  "image",
  "imara-diff",

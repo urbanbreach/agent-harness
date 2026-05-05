@@ -8,6 +8,7 @@ use crate::agent::{
     ProviderContextCheckpoint, ProviderConversationTurn, ProviderConversationTurnStatus,
 };
 use crate::event::{EventArtifactRef, EventEnvelopeV1, EventV1, ToolCallMetadata, ToolCallStatus};
+use crate::text::non_empty_trimmed;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ConversationProjectionError {
@@ -160,7 +161,7 @@ pub fn project_conversation(
 
     for checkpoint in checkpoint_refs {
         projection.checkpoints.push(checkpoint.metadata());
-        if !checkpoint.summary.trim().is_empty() {
+        if non_empty_trimmed(&checkpoint.summary).is_some() {
             projection.messages.push(ConversationMessage::Checkpoint(
                 ConversationCheckpointMessage {
                     checkpoint_id: checkpoint.checkpoint_id.clone(),
@@ -449,7 +450,7 @@ fn checkpoint_turn_assistant_text(turn: &ConversationCheckpointTurn) -> String {
         text.push_str("\nReason: ");
         text.push_str(reason);
     }
-    if !turn.assistant_response.trim().is_empty() {
+    if non_empty_trimmed(&turn.assistant_response).is_some() {
         text.push_str("\nPartial response:\n");
         text.push_str(&turn.assistant_response);
     }
@@ -460,8 +461,7 @@ fn provider_turn_request_id(event: &EventEnvelopeV1, provider_request_id: &str) 
     event
         .correlation_id
         .as_deref()
-        .map(str::trim)
-        .filter(|request_id| !request_id.is_empty())
+        .and_then(non_empty_trimmed)
         .unwrap_or(provider_request_id)
         .to_string()
 }

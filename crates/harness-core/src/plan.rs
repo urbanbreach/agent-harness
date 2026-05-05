@@ -16,20 +16,17 @@ pub fn plan_file_display_path(run_id: &str) -> String {
 }
 
 fn sanitize_plan_slug(value: &str) -> String {
-    let mut slug = value
-        .trim()
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') {
-                ch
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>();
-    while slug.contains("--") {
-        slug = slug.replace("--", "-");
-    }
+    let slug = value.trim().chars().fold(String::new(), |mut slug, ch| {
+        let normalized = if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') {
+            ch
+        } else {
+            '-'
+        };
+        if normalized != '-' || !slug.ends_with('-') {
+            slug.push(normalized);
+        }
+        slug
+    });
     let slug = slug.trim_matches('-');
     if slug.is_empty() {
         "plan".to_string()
@@ -46,6 +43,10 @@ mod tests {
     fn plan_file_path_is_workspace_relative_and_sanitized() {
         assert_eq!(
             plan_file_display_path("run/with spaces"),
+            ".agent-harness/plans/run-with-spaces.md"
+        );
+        assert_eq!(
+            plan_file_display_path(" run//with   spaces "),
             ".agent-harness/plans/run-with-spaces.md"
         );
         assert_eq!(

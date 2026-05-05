@@ -4,6 +4,7 @@ use crate::app::{
     ActivityEntry, ActivityStatus, Focus, LifecycleShellState, RuntimeState, RuntimeStateKind,
     ToolCallDisplayStatus,
 };
+use crate::text::non_empty_preserved_string;
 use crate::Action;
 use harness_core::proj::RunStatus;
 
@@ -318,8 +319,7 @@ pub(crate) fn runtime_state(input: RuntimeStateInput<'_>) -> RuntimeState {
                     cancelled.task_scope,
                     Some(harness_core::event::TaskTerminalScope::ToolCall)
                 ) {
-                    let detail =
-                        (!cancelled.reason.trim().is_empty()).then(|| cancelled.reason.clone());
+                    let detail = non_empty_preserved_string(&cancelled.reason);
                     let summary = detail
                         .as_deref()
                         .map(|reason| {
@@ -562,14 +562,14 @@ fn post_run_runtime_state(last_event: Option<&EventV1>) -> RuntimeState {
         Some(EventV1::RunFailed(data)) => RuntimeState {
             kind: RuntimeStateKind::Failure,
             summary: "run failed · inspect transcript · session shell preserved".to_string(),
-            detail: (!data.error.trim().is_empty()).then(|| data.error.clone()),
+            detail: non_empty_preserved_string(&data.error),
             composer_disabled: true,
             composer_hint: POST_RUN_FAILURE_COMPOSER_HINT.to_string(),
         },
         Some(EventV1::RunFinished(data)) => RuntimeState {
             kind: RuntimeStateKind::Success,
             summary: "run finished · session shell preserved".to_string(),
-            detail: (!data.summary.trim().is_empty()).then(|| data.summary.clone()),
+            detail: non_empty_preserved_string(&data.summary),
             composer_disabled: true,
             composer_hint: POST_RUN_COMPOSER_HINT.to_string(),
         },

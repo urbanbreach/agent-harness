@@ -18,6 +18,9 @@ use harness_core::session_lineage::{
     ChildSessionMaterializationSourceKind,
 };
 
+mod common;
+use common::load_events;
+
 #[test]
 fn session_lineage_materializes_child_atomically() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
@@ -653,11 +656,7 @@ fn write_source_events(source_run_dir: &Path, events: &[EventEnvelopeV1]) {
 }
 
 fn read_events(run_dir: &Path) -> Vec<EventEnvelopeV1> {
-    fs::read_to_string(run_dir.join("events.jsonl"))
-        .expect("read events")
-        .lines()
-        .map(|line| serde_json::from_str(line).expect("parse event"))
-        .collect()
+    load_events(&run_dir.join("events.jsonl"))
 }
 
 fn source_prefix_digest(events: &[EventEnvelopeV1]) -> String {

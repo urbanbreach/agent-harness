@@ -6,6 +6,8 @@ use base64::Engine as _;
 use reqwest::{Client, StatusCode};
 use serde_json::{json, Value};
 
+use super::json_file::read_required_json;
+
 const RESPONSES_ENDPOINT_SUFFIX: &str = "/responses";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,24 +25,17 @@ impl LiveVisionProxyConfig {
         api_key: String,
         model_id: String,
     ) -> Result<Self, String> {
-        if provider_name.trim().is_empty() {
-            return Err("live vision provider name cannot be empty".to_string());
-        }
-        if base_url.trim().is_empty() {
-            return Err("live vision base URL cannot be empty".to_string());
-        }
-        if api_key.trim().is_empty() {
-            return Err("live vision API key cannot be empty".to_string());
-        }
-        if model_id.trim().is_empty() {
-            return Err("live vision model ID cannot be empty".to_string());
-        }
+        let provider_name =
+            required_trimmed(&provider_name, "live vision provider name cannot be empty")?;
+        required_trimmed(&base_url, "live vision base URL cannot be empty")?;
+        let api_key = required_trimmed(&api_key, "live vision API key cannot be empty")?;
+        let model_id = required_trimmed(&model_id, "live vision model ID cannot be empty")?;
 
         Ok(Self {
-            provider_name: provider_name.trim().to_string(),
+            provider_name: provider_name.to_string(),
             base_url: base_url.trim_end_matches('/').to_string(),
-            api_key: api_key.trim().to_string(),
-            model_id: model_id.trim().to_string(),
+            api_key: api_key.to_string(),
+            model_id: model_id.to_string(),
         })
     }
 
@@ -119,9 +114,7 @@ pub(crate) async fn verify_checkpoint(
     png_path: &Path,
     expected_markers: &[&str],
 ) -> Result<LiveVisionVerdict, String> {
-    if checkpoint_id.trim().is_empty() {
-        return Err("live vision checkpoint ID cannot be empty".to_string());
-    }
+    required_trimmed(checkpoint_id, "live vision checkpoint ID cannot be empty")?;
 
     let png_bytes = fs::read(png_path).map_err(|err| {
         format!(
@@ -340,21 +333,21 @@ fn required_non_empty_string(value: &Value, field: &str) -> Result<String, Strin
         format!("live vision verifier verdict missing non-empty string field `{field}`")
     })?;
 
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return Err(format!(
-            "live vision verifier verdict missing non-empty string field `{field}`"
-        ));
-    }
+    let trimmed = required_trimmed(
+        text,
+        format!("live vision verifier verdict missing non-empty string field `{field}`"),
+    )?;
 
     Ok(trimmed.to_string())
 }
 
-fn read_required_json(path: &Path) -> Result<Value, String> {
-    let body = fs::read_to_string(path)
-        .map_err(|err| format!("failed to read JSON artifact {}: {err}", path.display()))?;
-    serde_json::from_str(&body)
-        .map_err(|err| format!("failed to parse JSON artifact {}: {err}", path.display()))
+fn required_trimmed(value: &str, error: impl Into<String>) -> Result<&str, String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        Err(error.into())
+    } else {
+        Ok(trimmed)
+    }
 }
 
 fn required_string_array(value: &Value, field: &str) -> Result<Vec<String>, String> {

@@ -2,6 +2,7 @@ use std::process::Command;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
+use cli_io::load_events_from_run_dir;
 use harness_core::agent::AgentProfile;
 use harness_core::clock::FakeClock;
 use harness_core::config::{load_config_from_file, ToolFailureMode};
@@ -16,7 +17,7 @@ use harness_tui::app::{
     set_pending_live_launch_metadata, set_pending_live_prompt_draft, AppState, LaunchMetadata,
     RuntimeStateKind,
 };
-use harness_tui::{load_events_from_run_dir, Action};
+use harness_tui::Action;
 use tempfile::tempdir;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -25,8 +26,23 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 #[path = "../src/bootstrap.rs"]
 mod bootstrap;
 #[allow(dead_code)]
+#[path = "../src/cli_config.rs"]
+mod cli_config;
+#[allow(dead_code)]
+#[path = "../src/cli_io.rs"]
+mod cli_io;
+#[allow(dead_code)]
+#[path = "../src/cli_labels.rs"]
+mod cli_labels;
+#[allow(dead_code)]
+#[path = "../src/defaults.rs"]
+mod defaults;
+#[allow(dead_code)]
 #[path = "../src/logging.rs"]
 mod logging;
+#[allow(dead_code)]
+#[path = "../src/recovery.rs"]
+mod recovery;
 #[allow(dead_code)]
 #[path = "../src/replay.rs"]
 mod replay;

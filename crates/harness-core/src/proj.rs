@@ -8,17 +8,18 @@ use thiserror::Error;
 
 use crate::agent::AgentModelRef;
 use crate::config::{registered_profile_model_metadata, ResolvedProfileModelMetadata};
+use crate::counter_id::parse_prefixed_counter;
 use crate::event::{
-    EventArtifactRef, EventEnvelopeV1, EventV1, ExecutionTimingMetadata, HookExecutionMetadata,
-    ProviderAssistantMessageMetadata, ProviderRequestFinishedMetadata,
-    ProviderRequestStartedMetadata, ResolvedToolIdentity, TaskCompletionMetadata,
-    TaskLineageMetadata, TaskScheduleState, ToolCallLifecycleState, ToolCallMetadata,
-    ToolCallStatus,
+    first_lineage_parent_session_id, EventArtifactRef, EventEnvelopeV1, EventV1,
+    ExecutionTimingMetadata, HookExecutionMetadata, ProviderAssistantMessageMetadata,
+    ProviderRequestFinishedMetadata, ProviderRequestStartedMetadata, ResolvedToolIdentity,
+    TaskCompletionMetadata, TaskLineageMetadata, TaskScheduleState, ToolCallLifecycleState,
+    ToolCallMetadata, ToolCallStatus,
 };
 use crate::perm::PermissionGrantSet;
+use crate::session_paths::{EVENTS_FILE_NAME, META_FILE_NAME};
+use crate::text::non_empty_trimmed;
 
-const EVENTS_FILE_NAME: &str = "events.jsonl";
-const META_FILE_NAME: &str = "meta.json";
 const REQUEST_ID_PREFIX: &str = "req_";
 const TASK_ID_PREFIX: &str = "task_";
 const TOOL_CALL_ID_PREFIX: &str = "toolcall_";
@@ -389,38 +390,6 @@ fn resume_plan_child_session_count(plan: &ResumePlan) -> usize {
         .count()
 }
 
-fn lineage_parent_session_id(lineage: Option<&TaskLineageMetadata>) -> Option<String> {
-    lineage
-        .and_then(|lineage| lineage.parent_session_id.as_deref())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-}
-
-fn parent_session_id_from_events(events: &[&EventEnvelopeV1]) -> Option<String> {
-    events.iter().find_map(|event| match &event.payload {
-        EventV1::TaskCompleted(payload) => lineage_parent_session_id(
-            payload
-                .metadata
-                .as_ref()
-                .and_then(|metadata| metadata.lineage.as_ref()),
-        ),
-        EventV1::ToolCallRequested(payload) => lineage_parent_session_id(
-            payload
-                .metadata
-                .as_ref()
-                .and_then(|metadata| metadata.lineage.as_ref()),
-        ),
-        EventV1::ToolCallFinished(payload) => lineage_parent_session_id(
-            payload
-                .metadata
-                .as_ref()
-                .and_then(|metadata| metadata.lineage.as_ref()),
-        ),
-        _ => None,
-    })
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct RunCounts {
     pub total_events: u64,
@@ -527,7 +496,7 @@ pub fn inspect_resume_plan(run_dir: &Path) -> ResumePlan {
         Ok(events) => events,
         Err(reason) => return ResumePlan::blocked(fallback_run_id, reason),
     };
-    let metadata = read_run_metadata_for_resume_inspection(run_dir);
+    let metadata = load_run_metadata(run_dir);
 
     match project_resume_plan(events.iter(), &fallback_run_id) {
         Ok(mut plan) => {
@@ -541,7 +510,7 @@ pub fn inspect_resume_plan(run_dir: &Path) -> ResumePlan {
     }
 }
 
-fn read_run_metadata_for_resume_inspection(run_dir: &Path) -> Option<RunMetadata> {
+pub fn load_run_metadata(run_dir: &Path) -> Option<RunMetadata> {
     let body = fs::read_to_string(run_dir.join(META_FILE_NAME)).ok()?;
     serde_json::from_str(&body).ok()
 }
@@ -1340,7 +1309,7 @@ fn fallback_run_id_from_path(run_dir: &Path) -> String {
     run_dir
         .file_name()
         .and_then(|value| value.to_str())
-        .filter(|value| !value.trim().is_empty())
+        .and_then(non_empty_trimmed)
         .unwrap_or("<unknown-run>")
         .to_string()
 }
@@ -1362,27 +1331,11 @@ fn update_id_watermark(
     Ok(())
 }
 
-fn parse_prefixed_counter(id: &str, expected_prefix: &str) -> Option<u64> {
-    let tail = id.strip_prefix(expected_prefix)?;
-    if tail.is_empty() {
-        return None;
-    }
-    tail.parse::<u64>().ok()
-}
-
 fn parse_provider_model_queue_key(queue_key: &str) -> Option<(String, String)> {
     let tail = queue_key.strip_prefix("provider_model:")?;
     let mut parts = tail.splitn(2, ':');
-    let provider_id = parts
-        .next()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())?
-        .to_string();
-    let model_id = parts
-        .next()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())?
-        .to_string();
+    let provider_id = non_empty_trimmed(parts.next()?)?.to_string();
+    let model_id = non_empty_trimmed(parts.next()?)?.to_string();
     Some((provider_id, model_id))
 }
 
@@ -1496,11 +1449,7 @@ fn resume_plan_disabled_reason(
     if !tasks_in_flight.is_empty() {
         return Some("tasks are still in flight".to_string());
     }
-    if workspace_root
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .is_none()
-    {
+    if workspace_root.and_then(non_empty_trimmed).is_none() {
         return Some("workspace root is unavailable".to_string());
     }
     if known_profiles.is_empty() {
@@ -1579,7 +1528,8 @@ pub fn project_session_catalog_entry<'a>(
     let status = resume_plan.run_status();
     let artifact_count = resume_plan_artifact_count(&resume_plan);
     let child_session_count = resume_plan_child_session_count(&resume_plan);
-    let parent_session_id = parent_session_id_from_events(&collected);
+    let parent_session_id =
+        first_lineage_parent_session_id(collected.iter().copied()).map(str::to_string);
 
     let resume_disabled_reason = resume_disabled_reason(
         mode_source,

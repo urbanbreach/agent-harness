@@ -49,12 +49,12 @@ impl MockProvider {
         let path = path.as_ref();
         let mut entries = fs::read_dir(path)
             .map_err(|source| MockProviderError::ReadFixtureDir {
-                path: display_path(path),
+                path: path.display().to_string(),
                 source,
             })?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|source| MockProviderError::ReadFixtureDir {
-                path: display_path(path),
+                path: path.display().to_string(),
                 source,
             })?;
 
@@ -69,13 +69,13 @@ impl MockProvider {
 
             let body = fs::read_to_string(&entry_path).map_err(|source| {
                 MockProviderError::ReadFixtureFile {
-                    path: display_path(&entry_path),
+                    path: entry_path.display().to_string(),
                     source,
                 }
             })?;
             let fixture: MockProviderFixture =
                 serde_json::from_str(&body).map_err(|source| MockProviderError::ParseFixture {
-                    path: display_path(&entry_path),
+                    path: entry_path.display().to_string(),
                     source,
                 })?;
 
@@ -129,10 +129,6 @@ fn canonicalize_json(value: &Value) -> Value {
         Value::Array(items) => Value::Array(items.iter().map(canonicalize_json).collect()),
         _ => value.clone(),
     }
-}
-
-fn display_path(path: &Path) -> String {
-    path.display().to_string()
 }
 
 #[derive(Debug, Deserialize)]

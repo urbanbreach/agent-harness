@@ -12,6 +12,10 @@ use harness_core::config::{
 };
 
 mod bootstrap;
+mod cli_config;
+mod cli_io;
+mod cli_labels;
+mod defaults;
 mod logging;
 mod models;
 mod prompt;
@@ -168,10 +172,4 @@ fn main() -> ExitCode {
             }
         },
     }
-}
-
-#[cfg(test)]
-#[test]
-fn startup_command_workflow_maps_model_and_session_intents_correctly() {
-    tui::assert_startup_command_workflow_maps_model_and_session_intents_correctly();
 }

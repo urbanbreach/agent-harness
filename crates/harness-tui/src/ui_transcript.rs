@@ -9,7 +9,12 @@ use syntect::parsing::SyntaxSet;
 
 use super::*;
 
+use crate::text::{
+    has_trimmed_content, non_empty_trimmed, replace_control_chars_except_tabs,
+    trimmed_json_string_field,
+};
 use crate::theme::DIFF_SIDE_BY_SIDE_MIN_WIDTH;
+use crate::time_format::short_time_or_trimmed;
 
 use super::ui_secondary::{
     format_detail_payload, render_structured_diff_lines, render_structured_diff_lines_with_options,
@@ -1547,7 +1552,7 @@ fn build_transcript_sections(app: &AppState) -> Vec<TranscriptSection> {
                         .as_deref(),
                 )
                 .flatten()
-                .map(format_transcript_timestamp);
+                .map(short_time_or_trimmed);
         }
     }
 
@@ -1599,7 +1604,7 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
                 queued: queued_user_message,
             });
 
-    let thinking = (thinking_visible && !activity.thinking_text.trim().is_empty()).then(|| {
+    let thinking = (thinking_visible && activity_has_thinking_text(activity)).then(|| {
         TranscriptLabeledTextSection {
             label: THINKING_TRACE_LABEL,
             text: activity.thinking_text.clone(),
@@ -1659,7 +1664,7 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
         footer_timestamp: (is_latest && timestamps_visible)
             .then_some(activity.user_timestamp.as_deref())
             .flatten()
-            .map(format_transcript_timestamp),
+            .map(short_time_or_trimmed),
         animation_phase: app.transcript_animation_phase(),
         header: TranscriptTurnHeader {
             status: activity.status,
@@ -1726,7 +1731,7 @@ fn sync_reasoning_parts_with_activity(
         return;
     }
 
-    if activity.thinking_text.trim().is_empty() {
+    if !activity_has_thinking_text(activity) {
         parts.retain(|part| !matches!(part, TranscriptAssistantPart::Reasoning(_)));
         return;
     }
@@ -1894,7 +1899,7 @@ fn build_ordered_assistant_parts_from_events(
                 );
                 if crate::app::task_completed_updates_assistant_transcript(data)
                     && !saw_body_event
-                    && !data.result_summary.trim().is_empty()
+                    && has_trimmed_content(&data.result_summary)
                 {
                     saw_body_event = true;
                     push_sequenced_text_part(
@@ -1947,7 +1952,7 @@ fn build_ordered_assistant_parts_from_events(
         &mut saw_body_event,
     );
 
-    if !saw_reasoning_event && !saw_body_event && !activity.thinking_text.trim().is_empty() {
+    if !saw_reasoning_event && !saw_body_event && activity_has_thinking_text(activity) {
         parts.push(SequencedTranscriptAssistantPart {
             seq: activity.first_seq,
             index: next_index,
@@ -2000,9 +2005,8 @@ fn flush_pending_pre_tool_stream(
         return;
     }
 
-    let treat_as_reasoning = thinking_visible
-        && !activity.thinking_text.trim().is_empty()
-        && activity.thinking_text == text;
+    let treat_as_reasoning =
+        thinking_visible && activity_has_thinking_text(activity) && activity.thinking_text == text;
 
     if treat_as_reasoning {
         *saw_reasoning_event = true;
@@ -2029,6 +2033,10 @@ fn flush_pending_pre_tool_stream(
 enum TranscriptAssistantTextKind {
     Reasoning,
     Body,
+}
+
+fn activity_has_thinking_text(activity: &ActivityEntry) -> bool {
+    has_trimmed_content(&activity.thinking_text)
 }
 
 fn push_sequenced_text_part(
@@ -2443,7 +2451,7 @@ fn build_transcript_tool_call_section(
             generic_tool_visual_style(tool_call, generic_output_visible),
             true,
         ),
-        _ if display_tool_id.starts_with("mcp.") => (
+        _ if is_mcp_tool_id(display_tool_id) => (
             mcp_tool_title(tool_call, display_tool_id),
             Some("⚙"),
             generic_tool_visual_style(tool_call, generic_output_visible),
@@ -3305,8 +3313,7 @@ fn tool_call_diff_artifacts(
             let fallback_path = edit
                 .get("path")
                 .and_then(serde_json::Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
+                .and_then(non_empty_trimmed)
                 .map(str::to_string);
             diffs.push((diff_rel_path.to_string(), fallback_path));
         }
@@ -3428,7 +3435,7 @@ fn mcp_display_name(tool_call: &crate::app::ToolCallEntry, display_tool_id: &str
 
     let fallback = mcp_tool_suffix(display_tool_id)
         .map(|suffix| suffix.replace('.', "_"))
-        .or_else(|| display_tool_id.strip_prefix("mcp.").map(str::to_string))
+        .or_else(|| mcp_tool_id_body(display_tool_id).map(str::to_string))
         .unwrap_or_else(|| display_tool_id.to_string());
     server
         .map(|server| format!("{server}_{fallback}"))
@@ -3437,19 +3444,26 @@ fn mcp_display_name(tool_call: &crate::app::ToolCallEntry, display_tool_id: &str
 
 fn mcp_server_name(tool_call: &crate::app::ToolCallEntry, display_tool_id: &str) -> Option<String> {
     tool_json_nested_string(tool_call.output_json.as_ref(), &["server", "id"]).or_else(|| {
-        display_tool_id
-            .strip_prefix("mcp.")
-            .and_then(|value| value.split_once('.'))
+        mcp_tool_id_parts(display_tool_id)
             .map(|(server, _)| collapse_inline_whitespace(server))
             .filter(|server| !server.is_empty())
     })
 }
 
 fn mcp_tool_suffix(display_tool_id: &str) -> Option<&str> {
-    display_tool_id
-        .strip_prefix("mcp.")
-        .and_then(|value| value.split_once('.'))
-        .map(|(_, suffix)| suffix)
+    mcp_tool_id_parts(display_tool_id).map(|(_, suffix)| suffix)
+}
+
+fn is_mcp_tool_id(tool_id: &str) -> bool {
+    mcp_tool_id_body(tool_id).is_some()
+}
+
+fn mcp_tool_id_body(tool_id: &str) -> Option<&str> {
+    tool_id.strip_prefix("mcp.")
+}
+
+fn mcp_tool_id_parts(tool_id: &str) -> Option<(&str, &str)> {
+    mcp_tool_id_body(tool_id)?.split_once('.')
 }
 
 fn mcp_remote_tool_name(
@@ -3624,8 +3638,7 @@ fn agent_spawn_result_summary(
 ) -> Option<String> {
     task_row
         .and_then(|row| row.result_summary.as_deref())
-        .map(collapse_inline_whitespace)
-        .filter(|value| !value.is_empty())
+        .and_then(collapsed_inline_non_empty)
         .or_else(|| tool_json_string(tool_call.output_json.as_ref(), &["result_summary"]))
         .or_else(|| {
             (tool_call.status == ToolCallDisplayStatus::Failed)
@@ -3657,8 +3670,7 @@ fn tool_json_string(output_json: Option<&serde_json::Value>, keys: &[&str]) -> O
         object
             .get(*key)
             .and_then(serde_json::Value::as_str)
-            .map(collapse_inline_whitespace)
-            .filter(|value| !value.is_empty())
+            .and_then(collapsed_inline_non_empty)
     })
 }
 
@@ -3670,10 +3682,7 @@ fn tool_json_nested_string(
     for key in path {
         current = current.get(*key)?;
     }
-    current
-        .as_str()
-        .map(collapse_inline_whitespace)
-        .filter(|value| !value.is_empty())
+    current.as_str().and_then(collapsed_inline_non_empty)
 }
 
 fn push_tool_identity_block(
@@ -3728,20 +3737,20 @@ fn tool_call_has_transcript_disclosure(tool_call: &crate::app::ToolCallEntry) ->
             "shell.run" | "bash" => shell_output
                 .as_deref()
                 .or(tool_call.output_summary.as_deref())
-                .is_some_and(|output| !output.trim().is_empty()),
+                .is_some_and(has_trimmed_content),
             "edit.hashline_apply" | "fs.write" | "edit" => tool_call_has_preview_content(tool_call),
             "agent.spawn" => true,
-            _ => !output.trim().is_empty() && output_line_count > 3,
+            _ => has_trimmed_content(output) && output_line_count > 3,
         }
 }
 
 fn tool_output_hidden_behind_disclosure_by_default(tool_call: &crate::app::ToolCallEntry) -> bool {
     tool_call.status == ToolCallDisplayStatus::Succeeded
-        && tool_call.effective_tool_id().starts_with("mcp.")
+        && is_mcp_tool_id(tool_call.effective_tool_id())
         && tool_call
             .output_summary
             .as_deref()
-            .is_some_and(|output| !output.trim().is_empty())
+            .is_some_and(has_trimmed_content)
 }
 
 fn tool_path_display(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
@@ -3763,20 +3772,20 @@ fn shell_tool_subtitle(args_summary: &str) -> Option<String> {
 }
 
 fn shell_tool_command(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
-    tool_json_string_preserve_whitespace(tool_call.output_json.as_ref(), &["command"])
+    trimmed_json_string_field(tool_call.output_json.as_ref(), &["command"])
         .or_else(|| shell_tool_command_from_value(tool_call.output_json.as_ref()))
         .or_else(|| {
             serde_json::from_str::<serde_json::Value>(&tool_call.args_summary)
                 .ok()
                 .and_then(|value| {
-                    tool_json_string_preserve_whitespace(Some(&value), &["command"])
+                    trimmed_json_string_field(Some(&value), &["command"])
                         .or_else(|| shell_tool_command_from_value(Some(&value)))
                 })
         })
 }
 
 fn shell_tool_command_from_value(value: Option<&serde_json::Value>) -> Option<String> {
-    let cmd = tool_json_string_preserve_whitespace(value, &["cmd"])?;
+    let cmd = trimmed_json_string_field(value, &["cmd"])?;
     let args = value
         .and_then(|value| value.get("args"))
         .and_then(serde_json::Value::as_array)
@@ -3817,14 +3826,11 @@ fn shell_tool_workdir_display(
     tool_call: &crate::app::ToolCallEntry,
     session_path: Option<&Path>,
 ) -> Option<String> {
-    let workdir =
-        tool_json_string_preserve_whitespace(tool_call.output_json.as_ref(), &["workdir", "cwd"])
-            .or_else(|| {
+    let workdir = trimmed_json_string_field(tool_call.output_json.as_ref(), &["workdir", "cwd"])
+        .or_else(|| {
             serde_json::from_str::<serde_json::Value>(&tool_call.args_summary)
                 .ok()
-                .and_then(|value| {
-                    tool_json_string_preserve_whitespace(Some(&value), &["workdir", "cwd"])
-                })
+                .and_then(|value| trimmed_json_string_field(Some(&value), &["workdir", "cwd"]))
         })?;
     if workdir == "." {
         return None;
@@ -3887,21 +3893,6 @@ fn shell_tool_structured_output(output_json: Option<&serde_json::Value>) -> Opti
     };
     let stripped = strip_ansi_escapes(&output);
     Some(stripped.trim().to_string())
-}
-
-fn tool_json_string_preserve_whitespace(
-    output_json: Option<&serde_json::Value>,
-    keys: &[&str],
-) -> Option<String> {
-    let object = output_json?.as_object()?;
-    keys.iter().find_map(|key| {
-        object
-            .get(*key)
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4223,7 +4214,7 @@ fn tool_match_count_suffix(tool_call: &crate::app::ToolCallEntry) -> String {
             tool_call.output_summary.as_deref().map(|output| {
                 output
                     .lines()
-                    .filter(|line| !line.trim().is_empty())
+                    .filter(|line| has_trimmed_content(line))
                     .count() as u64
             })
         });
@@ -4583,6 +4574,11 @@ fn tool_error_text(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
 
 fn collapse_inline_whitespace(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn collapsed_inline_non_empty(text: &str) -> Option<String> {
+    let collapsed = collapse_inline_whitespace(text);
+    (!collapsed.is_empty()).then_some(collapsed)
 }
 
 fn measure_transcript_layout(
@@ -6285,7 +6281,7 @@ fn harness_bash_card_lines(
         );
     }
 
-    if let Some(expand_hint) = expand_hint.filter(|hint| !hint.trim().is_empty()) {
+    if let Some(expand_hint) = expand_hint.filter(|hint| has_trimmed_content(hint)) {
         for _ in 0..HARNESS_BLOCK_TOOL_GAP {
             lines.push(harness_bash_padding_line(theme));
         }
@@ -6414,15 +6410,7 @@ fn wrap_plain_terminal_row(text: &str, width: usize) -> Vec<String> {
 }
 
 fn sanitize_harness_bash_text(text: &str) -> String {
-    text.chars()
-        .map(|character| {
-            if character.is_control() && character != '\t' {
-                ' '
-            } else {
-                character
-            }
-        })
-        .collect()
+    replace_control_chars_except_tabs(text)
 }
 
 fn append_tool_call_todo_list(
@@ -7575,7 +7563,7 @@ fn build_assistant_footer_line(
         assistant_footer_label(&turn.header.profile_label),
         Style::default().fg(assistant_primary_label_color(turn, theme)),
     ));
-    if !turn.header.model_id.trim().is_empty() {
+    if has_trimmed_content(&turn.header.model_id) {
         spans.push(Span::styled(" · ", muted_meta_style(theme)));
         spans.push(Span::styled(
             turn.header.model_id.clone(),
@@ -7621,7 +7609,7 @@ fn titlecase_label(value: &str) -> String {
 }
 
 fn assistant_footer_label(value: &str) -> String {
-    if value.trim().is_empty()
+    if !has_trimmed_content(value)
         || value.eq_ignore_ascii_case("unknown")
         || value.eq_ignore_ascii_case("default")
     {
@@ -7682,15 +7670,6 @@ fn format_duration_ms(duration_ms: u64) -> String {
         format!("{:.1}s", duration_ms as f64 / 1_000.0)
     } else {
         format!("{duration_ms}ms")
-    }
-}
-
-fn format_transcript_timestamp(timestamp: &str) -> String {
-    let trimmed = timestamp.trim();
-    if trimmed.len() >= 16 && trimmed.as_bytes().get(10) == Some(&b'T') {
-        trimmed[11..16].to_string()
-    } else {
-        trimmed.to_string()
     }
 }
 

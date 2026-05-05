@@ -1,4 +1,3 @@
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -12,11 +11,15 @@ use harness_core::config::{
 use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle,
 };
-use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionDecision};
+use harness_core::event::{ActorKind, EventActor, EventV1, PermissionDecision};
 use harness_core::perm::PermissionPolicy;
 use harness_core::redact::DefaultRedactor;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
 use serde_json::json;
+
+mod common;
+
+use common::load_events;
 
 const SHELL_RUN_TOOL_ID: &str = "shell.run";
 const EDIT_TOOL_ID: &str = "edit";
@@ -347,11 +350,4 @@ fn test_tool_registry() -> Arc<ToolRegistry> {
     registry.register(Arc::new(TestShellTool));
     registry.register(Arc::new(TestEditTool));
     Arc::new(registry)
-}
-
-fn load_events(events_path: &Path) -> Vec<EventEnvelopeV1> {
-    let body = fs::read_to_string(events_path).expect("read events file");
-    body.lines()
-        .map(|line| serde_json::from_str::<EventEnvelopeV1>(line).expect("parse event jsonl line"))
-        .collect()
 }

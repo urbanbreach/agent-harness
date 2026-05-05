@@ -21,6 +21,9 @@ use harness_core::proj::{
     LifecycleSegmentStatus, RunStatus,
 };
 
+mod common;
+use common::load_events;
+
 #[test]
 fn resume_plan_reconstructs_sequence_and_id_watermarks() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
@@ -1244,12 +1247,7 @@ fn session_catalog_counts_checkpoint_artifacts_alongside_tool_artifacts() {
             && artifact.modified_file_count == Some(1)
     }));
 
-    let events_path = run_dir.join("events.jsonl");
-    let body = fs::read_to_string(&events_path).expect("read events");
-    let events = body
-        .lines()
-        .map(|line| serde_json::from_str::<EventEnvelopeV1>(line).expect("valid event"))
-        .collect::<Vec<_>>();
+    let events = load_events(&run_dir.join("events.jsonl"));
     let entry = project_session_catalog_entry(
         events.iter(),
         "run_resume_fixture",

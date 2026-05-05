@@ -263,15 +263,7 @@ fn wrap_terminal_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
 }
 
 fn sanitize_terminal_text(text: &str) -> String {
-    text.chars()
-        .map(|character| {
-            if character.is_control() && character != '\t' {
-                ' '
-            } else {
-                character
-            }
-        })
-        .collect()
+    crate::text::replace_control_chars_except_tabs(text)
 }
 
 fn format_duration_ms(duration_ms: u64) -> String {

@@ -29,6 +29,10 @@ use hashline_edit::HashlineEditTool;
 mod hashline_scan;
 use hashline_scan::HashlineScanTool;
 
+mod fs_walk;
+
+mod http_client;
+
 mod fs_glob;
 use fs_glob::FsGlobTool;
 
@@ -41,6 +45,8 @@ use fs_grep::FsGrepTool;
 mod workspace_edit;
 use workspace_edit::{record_file_hashline_read, record_file_read};
 
+mod workspace_paths;
+
 mod network;
 use network::NetworkExecutor;
 
@@ -48,6 +54,20 @@ mod mcp;
 
 mod control_plane;
 use control_plane::ControlPlaneExecutor;
+
+mod question_env;
+
+mod env_vars;
+
+mod read_window;
+use read_window::{
+    normalize_read_limit, normalize_read_offset, READ_DEFAULT_LIMIT, READ_DEFAULT_OFFSET,
+};
+
+mod limit_summary;
+
+mod text;
+use text::trimmed_non_empty;
 
 mod agent_ops;
 use agent_ops::AgentOpsExecutor;
@@ -203,8 +223,6 @@ impl FsReadTool {
     }
 }
 
-const FS_READ_DEFAULT_OFFSET: u32 = 1;
-const FS_READ_DEFAULT_LIMIT: u32 = 2000;
 const TOOL_OUTPUT_INLINE_LINE_LIMIT: usize = 2_000;
 const TOOL_OUTPUT_INLINE_BYTE_LIMIT: usize = 51_200;
 
@@ -223,11 +241,11 @@ struct FsReadArgs {
 }
 
 fn default_fs_read_offset() -> u32 {
-    FS_READ_DEFAULT_OFFSET
+    READ_DEFAULT_OFFSET
 }
 
 fn default_fs_read_limit() -> u32 {
-    FS_READ_DEFAULT_LIMIT
+    READ_DEFAULT_LIMIT
 }
 
 fn default_fs_read_line_numbers() -> bool {
@@ -244,12 +262,12 @@ fn fs_read_parameters_json_schema(default_hashline_anchors: bool) -> serde_json:
             "offset": {
                 "type": "integer",
                 "minimum": 1,
-                "default": FS_READ_DEFAULT_OFFSET
+                "default": READ_DEFAULT_OFFSET
             },
             "limit": {
                 "type": "integer",
                 "minimum": 1,
-                "default": FS_READ_DEFAULT_LIMIT
+                "default": READ_DEFAULT_LIMIT
             },
             "line_numbers": {
                 "type": "boolean",
@@ -264,18 +282,6 @@ fn fs_read_parameters_json_schema(default_hashline_anchors: bool) -> serde_json:
         "required": ["path"],
         "additionalProperties": false
     })
-}
-
-fn normalize_fs_read_offset(offset: u32) -> u32 {
-    offset.max(FS_READ_DEFAULT_OFFSET)
-}
-
-fn normalize_fs_read_limit(limit: u32) -> u32 {
-    if limit == 0 {
-        FS_READ_DEFAULT_LIMIT
-    } else {
-        limit
-    }
 }
 
 fn format_fs_read_line(line: &str, line_number: usize, line_numbers: bool) -> String {
@@ -511,8 +517,8 @@ impl Tool for FsReadTool {
     ) -> Result<ToolResult, ToolError> {
         let args: FsReadArgs = serde_json::from_value(args_json)
             .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
-        let offset = normalize_fs_read_offset(args.offset);
-        let limit = normalize_fs_read_limit(args.limit);
+        let offset = normalize_read_offset(args.offset);
+        let limit = normalize_read_limit(args.limit);
         let hashline_anchors = args
             .hashline_anchors
             .unwrap_or(self.default_hashline_anchors);
@@ -844,14 +850,12 @@ impl Tool for ShellRunTool {
         let cmd = args
             .cmd
             .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
+            .and_then(trimmed_non_empty)
             .map(str::to_string);
         let command = args
             .command
             .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
+            .and_then(trimmed_non_empty)
             .map(str::to_string);
         let duplicate_wrapper_command =
             matches!((&cmd, &command), (Some(cmd), Some(command)) if cmd == command);
@@ -1015,6 +1019,14 @@ mod tests {
             tool_call_id: tool_call_id.to_string(),
             coordinator,
         }
+    }
+
+    fn read_spilled_artifact(context: &ToolContext, artifact_path: &str) -> String {
+        let relative = artifact_path
+            .strip_prefix("artifacts/")
+            .expect("artifact path prefix");
+        std::fs::read_to_string(context.artifacts_dir.join(relative))
+            .expect("read spilled artifact")
     }
 
     #[test]
@@ -1274,7 +1286,7 @@ mod tests {
 
         let metadata = result.structured_json.expect("structured json");
         assert_eq!(metadata["offset"], json!(1));
-        assert_eq!(metadata["limit"], json!(super::FS_READ_DEFAULT_LIMIT));
+        assert_eq!(metadata["limit"], json!(super::READ_DEFAULT_LIMIT));
         assert_eq!(metadata["hashline_anchors"], json!(false));
     }
 
@@ -1310,7 +1322,7 @@ mod tests {
 
         let metadata = result.structured_json.expect("structured json");
         assert_eq!(metadata["offset"], json!(1));
-        assert_eq!(metadata["limit"], json!(super::FS_READ_DEFAULT_LIMIT));
+        assert_eq!(metadata["limit"], json!(super::READ_DEFAULT_LIMIT));
         assert_eq!(metadata["hashline_anchors"], json!(true));
     }
 
@@ -1420,12 +1432,7 @@ mod tests {
         assert_eq!(metadata["truncated"], json!(true));
         assert_eq!(metadata["total_lines"], json!(4));
 
-        let artifact_path = &result.artifacts[0].path;
-        let relative = artifact_path
-            .strip_prefix("artifacts/")
-            .expect("artifact path prefix");
-        let spilled = std::fs::read_to_string(context.artifacts_dir.join(relative))
-            .expect("read spilled artifact");
+        let spilled = read_spilled_artifact(&context, &result.artifacts[0].path);
         assert!(spilled.contains("1: alpha"));
         assert!(spilled.contains("4: delta"));
     }
@@ -1480,12 +1487,7 @@ mod tests {
         assert!(metadata.get("stderr").is_none());
         assert_eq!(metadata["total_output_bytes"], json!(55_000));
 
-        let artifact_path = result.artifacts[0]
-            .path
-            .strip_prefix("artifacts/")
-            .expect("artifact path prefix");
-        let spilled = std::fs::read_to_string(context.artifacts_dir.join(artifact_path))
-            .expect("read spilled shell output artifact");
+        let spilled = read_spilled_artifact(&context, &result.artifacts[0].path);
         assert_eq!(spilled.len(), 55_000);
         assert!(spilled.starts_with("alphaalphaalpha"));
     }

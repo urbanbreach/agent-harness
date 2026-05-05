@@ -2,34 +2,20 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock};
 
-use harness_core::clock::RealClock;
 use harness_core::config::{
     registered_lsp_config, set_registered_lsp_config, LspConfig, LspServerConfig, ShellAllowlist,
 };
-use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
-use harness_core::event::{ActorKind, EventActor};
-use harness_core::redact::DefaultRedactor;
 use harness_core::tool::{ToolContext, ToolError};
 use harness_tools::coordinator_registry;
 use serde_json::json;
 
+#[path = "common/tool_context.rs"]
+mod tool_context;
+
 fn test_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
-    let coordinator = spawn_coordinator(
-        CoordinatorConfig::default(),
-        Arc::new(RealClock::new()),
-        Arc::new(DefaultRedactor::default()),
-    );
-    ToolContext {
-        run_id: "run-native-code-lsp-tests".to_string(),
-        workspace_root: workspace_root.to_path_buf(),
-        artifacts_dir: workspace_root.join("artifacts"),
-        actor: EventActor::new(ActorKind::Worker, Some("worker-1".to_string())),
-        category: Some("deep".to_string()),
-        tool_call_id: tool_call_id.to_string(),
-        coordinator,
-    }
+    tool_context::test_context(workspace_root, "run-native-code-lsp-tests", tool_call_id)
 }
 
 fn setup_workspace() -> tempfile::TempDir {

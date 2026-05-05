@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -10,11 +10,15 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use crate::code_lsp::{canonical_workspace_root, format_diagnostics, resolve_existing_path};
 use crate::hashline_apply::{
     apply_hashline_workspace_op_to_workspace, resolve_workspace_target_path,
 };
-use crate::lsp_support::{execute_lsp_rename, LspPosition, LspRenameRequest, LspRenameResponse};
+use crate::lsp_support::{
+    execute_lsp_rename, format_diagnostics, LspPosition, LspRenameRequest, LspRenameResponse,
+};
+use crate::workspace_paths::{
+    canonical_workspace_root, resolve_existing_path, workspace_relative_path_from_file_uri,
+};
 
 pub(crate) struct CodeLspRenameExecutor;
 
@@ -174,6 +178,20 @@ struct RenameOperationAccumulator<'a> {
     next_operation_index: &'a mut usize,
 }
 
+struct RenameResourceOperationOptions {
+    overwrite: bool,
+    ignore_if_exists: bool,
+}
+
+impl RenameResourceOperationOptions {
+    fn from_change(change: &Value) -> Self {
+        Self {
+            overwrite: bool_option(change, "overwrite"),
+            ignore_if_exists: bool_option(change, "ignoreIfExists"),
+        }
+    }
+}
+
 struct PreviewFileAccumulator {
     edit_count: usize,
     annotation_ids: BTreeSet<String>,
@@ -249,16 +267,12 @@ fn build_rename_plan(ctx: &ToolContext, workspace_edit: &Value) -> Result<Rename
     {
         for change in document_changes {
             if let Some(text_document) = change.get("textDocument") {
-                let path = text_document
-                    .get("uri")
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| {
-                        ToolError::Execution(
-                            "lsp.rename returned documentChanges without textDocument.uri"
-                                .to_string(),
-                        )
-                    })
-                    .and_then(|uri| workspace_relative_path_from_uri(&workspace_root, uri))?;
+                let path = required_workspace_uri(
+                    &workspace_root,
+                    text_document,
+                    "uri",
+                    "lsp.rename returned documentChanges without textDocument.uri",
+                )?;
                 let edits = change
                     .get("edits")
                     .and_then(Value::as_array)
@@ -286,15 +300,12 @@ fn build_rename_plan(ctx: &ToolContext, workspace_edit: &Value) -> Result<Rename
             })?;
             match kind {
                 "create" => {
-                    let path = change
-                        .get("uri")
-                        .and_then(Value::as_str)
-                        .ok_or_else(|| {
-                            ToolError::Execution(
-                                "lsp.rename create operation is missing uri".to_string(),
-                            )
-                        })
-                        .and_then(|uri| workspace_relative_path_from_uri(&workspace_root, uri))?;
+                    let path = required_workspace_uri(
+                        &workspace_root,
+                        change,
+                        "uri",
+                        "lsp.rename create operation is missing uri",
+                    )?;
                     apply_create_operation(
                         ctx,
                         change,
@@ -308,24 +319,18 @@ fn build_rename_plan(ctx: &ToolContext, workspace_edit: &Value) -> Result<Rename
                     )?;
                 }
                 "rename" => {
-                    let from_path = change
-                        .get("oldUri")
-                        .and_then(Value::as_str)
-                        .ok_or_else(|| {
-                            ToolError::Execution(
-                                "lsp.rename rename operation is missing oldUri".to_string(),
-                            )
-                        })
-                        .and_then(|uri| workspace_relative_path_from_uri(&workspace_root, uri))?;
-                    let to_path = change
-                        .get("newUri")
-                        .and_then(Value::as_str)
-                        .ok_or_else(|| {
-                            ToolError::Execution(
-                                "lsp.rename rename operation is missing newUri".to_string(),
-                            )
-                        })
-                        .and_then(|uri| workspace_relative_path_from_uri(&workspace_root, uri))?;
+                    let from_path = required_workspace_uri(
+                        &workspace_root,
+                        change,
+                        "oldUri",
+                        "lsp.rename rename operation is missing oldUri",
+                    )?;
+                    let to_path = required_workspace_uri(
+                        &workspace_root,
+                        change,
+                        "newUri",
+                        "lsp.rename rename operation is missing newUri",
+                    )?;
                     apply_rename_operation(
                         ctx,
                         change,
@@ -340,15 +345,12 @@ fn build_rename_plan(ctx: &ToolContext, workspace_edit: &Value) -> Result<Rename
                     )?;
                 }
                 "delete" => {
-                    let path = change
-                        .get("uri")
-                        .and_then(Value::as_str)
-                        .ok_or_else(|| {
-                            ToolError::Execution(
-                                "lsp.rename delete operation is missing uri".to_string(),
-                            )
-                        })
-                        .and_then(|uri| workspace_relative_path_from_uri(&workspace_root, uri))?;
+                    let path = required_workspace_uri(
+                        &workspace_root,
+                        change,
+                        "uri",
+                        "lsp.rename delete operation is missing uri",
+                    )?;
                     apply_delete_operation(
                         ctx,
                         change,
@@ -370,7 +372,7 @@ fn build_rename_plan(ctx: &ToolContext, workspace_edit: &Value) -> Result<Rename
         }
     } else if let Some(changes) = workspace_edit.get("changes").and_then(Value::as_object) {
         for (uri, edits_value) in changes {
-            let path = workspace_relative_path_from_uri(&workspace_root, uri)?;
+            let path = workspace_relative_path_from_file_uri(&workspace_root, uri)?;
             let edits = edits_value.as_array().ok_or_else(|| {
                 ToolError::Execution(
                     "lsp.rename returned changes with a non-array edit list".to_string(),
@@ -466,19 +468,10 @@ fn apply_create_operation(
         resource_operations,
         next_operation_index,
     } = operation_accumulator;
-    let overwrite = change
-        .get("options")
-        .and_then(|options| options.get("overwrite"))
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let ignore_if_exists = change
-        .get("options")
-        .and_then(|options| options.get("ignoreIfExists"))
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
+    let options = RenameResourceOperationOptions::from_change(change);
     let existing = load_virtual_file(ctx, virtual_files, path)?;
-    if existing.is_some() && !overwrite {
-        if ignore_if_exists {
+    if existing.is_some() && !options.overwrite {
+        if options.ignore_if_exists {
             return Ok(());
         }
         return Err(ToolError::Execution(format!(
@@ -493,15 +486,7 @@ fn apply_create_operation(
         content: String::new(),
     });
     *next_operation_index += 1;
-    resource_operations.push(RenameResourceOperationPreview {
-        kind: "create".to_string(),
-        path: path.to_string(),
-        to_path: None,
-        annotation_id: change
-            .get("annotationId")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-    });
+    push_resource_operation_preview(resource_operations, "create", path, None, change);
     Ok(())
 }
 
@@ -518,27 +503,18 @@ fn apply_rename_operation(
         resource_operations,
         next_operation_index,
     } = operation_accumulator;
-    let overwrite = change
-        .get("options")
-        .and_then(|options| options.get("overwrite"))
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let ignore_if_exists = change
-        .get("options")
-        .and_then(|options| options.get("ignoreIfExists"))
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
+    let options = RenameResourceOperationOptions::from_change(change);
     let source = load_virtual_file(ctx, virtual_files, from_path)?.ok_or_else(|| {
         ToolError::Execution(format!(
             "lsp.rename rename operation source is missing: {from_path}"
         ))
     })?;
     let destination = load_virtual_file(ctx, virtual_files, to_path)?;
-    if destination.is_some() && ignore_if_exists && !overwrite {
+    if destination.is_some() && options.ignore_if_exists && !options.overwrite {
         return Ok(());
     }
     if destination.is_some() {
-        if overwrite {
+        if options.overwrite {
             virtual_files.insert(to_path.to_string(), None);
             operations.push(HashlineWorkspaceOp::DeleteFile {
                 edit_id: next_rename_edit_id(ctx, *next_operation_index),
@@ -560,15 +536,13 @@ fn apply_rename_operation(
         to_path: to_path.to_string(),
     });
     *next_operation_index += 1;
-    resource_operations.push(RenameResourceOperationPreview {
-        kind: "rename".to_string(),
-        path: from_path.to_string(),
-        to_path: Some(to_path.to_string()),
-        annotation_id: change
-            .get("annotationId")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-    });
+    push_resource_operation_preview(
+        resource_operations,
+        "rename",
+        from_path,
+        Some(to_path),
+        change,
+    );
     Ok(())
 }
 
@@ -605,16 +579,26 @@ fn apply_delete_operation(
         path: path.to_string(),
     });
     *next_operation_index += 1;
+    push_resource_operation_preview(resource_operations, "delete", path, None, change);
+    Ok(())
+}
+
+fn push_resource_operation_preview(
+    resource_operations: &mut Vec<RenameResourceOperationPreview>,
+    kind: &str,
+    path: &str,
+    to_path: Option<&str>,
+    change: &Value,
+) {
     resource_operations.push(RenameResourceOperationPreview {
-        kind: "delete".to_string(),
+        kind: kind.to_string(),
         path: path.to_string(),
-        to_path: None,
+        to_path: to_path.map(str::to_string),
         annotation_id: change
             .get("annotationId")
             .and_then(Value::as_str)
             .map(str::to_string),
     });
-    Ok(())
 }
 
 fn parse_change_annotations(workspace_edit: &Value) -> Vec<RenameAnnotationPreview> {
@@ -668,6 +652,14 @@ fn load_virtual_file(
     Ok(content)
 }
 
+fn bool_option(change: &Value, name: &str) -> bool {
+    change
+        .get("options")
+        .and_then(|options| options.get(name))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
 fn parse_text_edits(source: &str, edits: &[Value]) -> Result<Vec<ParsedTextEdit>, ToolError> {
     let line_starts = build_line_starts(source);
     edits
@@ -676,52 +668,14 @@ fn parse_text_edits(source: &str, edits: &[Value]) -> Result<Vec<ParsedTextEdit>
             let range = edit.get("range").ok_or_else(|| {
                 ToolError::Execution("lsp.rename returned a text edit without a range".to_string())
             })?;
-            let start = position_to_byte_offset(
+            let (start, end) = range_to_byte_offsets(
                 source,
                 &line_starts,
-                range
-                    .get("start")
-                    .and_then(|start| start.get("line"))
-                    .and_then(Value::as_u64)
-                    .ok_or_else(|| {
-                        ToolError::Execution(
-                            "lsp.rename returned a text edit with an invalid start line"
-                                .to_string(),
-                        )
-                    })?,
-                range
-                    .get("start")
-                    .and_then(|start| start.get("character"))
-                    .and_then(Value::as_u64)
-                    .ok_or_else(|| {
-                        ToolError::Execution(
-                            "lsp.rename returned a text edit with an invalid start character"
-                                .to_string(),
-                        )
-                    })?,
-            )?;
-            let end = position_to_byte_offset(
-                source,
-                &line_starts,
-                range
-                    .get("end")
-                    .and_then(|end| end.get("line"))
-                    .and_then(Value::as_u64)
-                    .ok_or_else(|| {
-                        ToolError::Execution(
-                            "lsp.rename returned a text edit with an invalid end line".to_string(),
-                        )
-                    })?,
-                range
-                    .get("end")
-                    .and_then(|end| end.get("character"))
-                    .and_then(Value::as_u64)
-                    .ok_or_else(|| {
-                        ToolError::Execution(
-                            "lsp.rename returned a text edit with an invalid end character"
-                                .to_string(),
-                        )
-                    })?,
+                range,
+                "lsp.rename returned a text edit with an invalid start line",
+                "lsp.rename returned a text edit with an invalid start character",
+                "lsp.rename returned a text edit with an invalid end line",
+                "lsp.rename returned a text edit with an invalid end character",
             )?;
             Ok(ParsedTextEdit {
                 start,
@@ -829,25 +783,65 @@ fn position_to_byte_offset(
     Ok(line_end)
 }
 
-fn workspace_relative_path_from_uri(
-    workspace_root: &PathBuf,
-    uri: &str,
+fn range_position_to_byte_offset(
+    source: &str,
+    line_starts: &[usize],
+    range: &Value,
+    endpoint: &str,
+    missing_line_message: &str,
+    missing_character_message: &str,
+) -> Result<usize, ToolError> {
+    let position = range.get(endpoint);
+    let line = position
+        .and_then(|position| position.get("line"))
+        .and_then(Value::as_u64)
+        .ok_or_else(|| ToolError::Execution(missing_line_message.to_string()))?;
+    let character = position
+        .and_then(|position| position.get("character"))
+        .and_then(Value::as_u64)
+        .ok_or_else(|| ToolError::Execution(missing_character_message.to_string()))?;
+    position_to_byte_offset(source, line_starts, line, character)
+}
+
+fn range_to_byte_offsets(
+    source: &str,
+    line_starts: &[usize],
+    range: &Value,
+    missing_start_line_message: &str,
+    missing_start_character_message: &str,
+    missing_end_line_message: &str,
+    missing_end_character_message: &str,
+) -> Result<(usize, usize), ToolError> {
+    let start = range_position_to_byte_offset(
+        source,
+        line_starts,
+        range,
+        "start",
+        missing_start_line_message,
+        missing_start_character_message,
+    )?;
+    let end = range_position_to_byte_offset(
+        source,
+        line_starts,
+        range,
+        "end",
+        missing_end_line_message,
+        missing_end_character_message,
+    )?;
+    Ok((start, end))
+}
+
+fn required_workspace_uri(
+    workspace_root: &Path,
+    value: &Value,
+    key: &str,
+    missing_message: &str,
 ) -> Result<String, ToolError> {
-    let url = reqwest::Url::parse(uri)
-        .map_err(|err| ToolError::Execution(format!("invalid workspace edit uri: {err}")))?;
-    let path = url.to_file_path().map_err(|_| {
-        ToolError::Execution(format!(
-            "workspace edit uri does not map to a local filesystem path: {uri}"
-        ))
-    })?;
-    let normalized = crate::code_lsp::normalize_workspace_target_path(workspace_root, &path)?;
-    normalized
-        .strip_prefix(workspace_root)
-        .map(|relative| relative.to_string_lossy().replace('\\', "/"))
-        .map_err(|_| ToolError::PathEscapesWorkspace {
-            workspace_root: workspace_root.display().to_string(),
-            path: normalized.display().to_string(),
-        })
+    let uri = value
+        .get(key)
+        .and_then(Value::as_str)
+        .ok_or_else(|| ToolError::Execution(missing_message.to_string()))?;
+    workspace_relative_path_from_file_uri(workspace_root, uri)
 }
 
 fn next_rename_edit_id(ctx: &ToolContext, index: usize) -> String {
@@ -862,10 +856,7 @@ fn apply_plan(ctx: &ToolContext, plan: &RenamePlan) -> Result<Vec<ToolResult>, T
     Ok(results)
 }
 
-fn symbol_preview(
-    file_path: &PathBuf,
-    prepare_result: &Value,
-) -> Result<Option<String>, ToolError> {
+fn symbol_preview(file_path: &Path, prepare_result: &Value) -> Result<Option<String>, ToolError> {
     if let Some(placeholder) = prepare_result.get("placeholder").and_then(Value::as_str) {
         return Ok(Some(placeholder.to_string()));
     }
@@ -876,62 +867,37 @@ fn symbol_preview(
     {
         return Ok(None);
     }
-    if prepare_result.get("start").is_some() && prepare_result.get("end").is_some() {
-        let source = std::fs::read_to_string(file_path).map_err(|err| {
-            ToolError::Execution(format!(
-                "failed to read rename source file for preview: {err}"
-            ))
-        })?;
-        return extract_text_for_range(&source, prepare_result).map(Some);
-    }
-    if let Some(range) = prepare_result.get("range") {
-        let source = std::fs::read_to_string(file_path).map_err(|err| {
-            ToolError::Execution(format!(
-                "failed to read rename source file for preview: {err}"
-            ))
-        })?;
+    let preview_range =
+        if prepare_result.get("start").is_some() && prepare_result.get("end").is_some() {
+            Some(prepare_result)
+        } else {
+            prepare_result.get("range")
+        };
+    if let Some(range) = preview_range {
+        let source = read_rename_source_for_preview(file_path)?;
         return extract_text_for_range(&source, range).map(Some);
     }
     Ok(None)
 }
 
+fn read_rename_source_for_preview(file_path: &Path) -> Result<String, ToolError> {
+    std::fs::read_to_string(file_path).map_err(|err| {
+        ToolError::Execution(format!(
+            "failed to read rename source file for preview: {err}"
+        ))
+    })
+}
+
 fn extract_text_for_range(source: &str, range: &Value) -> Result<String, ToolError> {
     let line_starts = build_line_starts(source);
-    let start = position_to_byte_offset(
+    let (start, end) = range_to_byte_offsets(
         source,
         &line_starts,
-        range
-            .get("start")
-            .and_then(|start| start.get("line"))
-            .and_then(Value::as_u64)
-            .ok_or_else(|| {
-                ToolError::Execution("rename prepare result is missing start.line".to_string())
-            })?,
-        range
-            .get("start")
-            .and_then(|start| start.get("character"))
-            .and_then(Value::as_u64)
-            .ok_or_else(|| {
-                ToolError::Execution("rename prepare result is missing start.character".to_string())
-            })?,
-    )?;
-    let end = position_to_byte_offset(
-        source,
-        &line_starts,
-        range
-            .get("end")
-            .and_then(|end| end.get("line"))
-            .and_then(Value::as_u64)
-            .ok_or_else(|| {
-                ToolError::Execution("rename prepare result is missing end.line".to_string())
-            })?,
-        range
-            .get("end")
-            .and_then(|end| end.get("character"))
-            .and_then(Value::as_u64)
-            .ok_or_else(|| {
-                ToolError::Execution("rename prepare result is missing end.character".to_string())
-            })?,
+        range,
+        "rename prepare result is missing start.line",
+        "rename prepare result is missing start.character",
+        "rename prepare result is missing end.line",
+        "rename prepare result is missing end.character",
     )?;
     Ok(source[start..end].to_string())
 }

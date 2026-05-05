@@ -1,20 +1,21 @@
 use std::fs;
-use std::path::Path;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[path = "common/repo_root.rs"]
+mod repo_root;
+
+use repo_root::repo_root;
+
 #[test]
 fn stress_harness_script_offline_mode_writes_summary_and_stage_artifacts() {
-    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("repo root from harness crate path");
+    let repo_root = repo_root();
     let script_path = repo_root.join("scripts/stress-harness.sh");
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let artifact_dir = temp_dir.path().join("artifacts");
 
     let output = Command::new("bash")
-        .current_dir(repo_root)
+        .current_dir(&repo_root)
         .arg(script_path)
         .arg("--mode")
         .arg("offline")
@@ -60,14 +61,11 @@ fn stress_harness_script_offline_mode_writes_summary_and_stage_artifacts() {
 
 #[test]
 fn stress_harness_script_reports_missing_option_values_cleanly() {
-    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("repo root from harness crate path");
+    let repo_root = repo_root();
     let script_path = repo_root.join("scripts/stress-harness.sh");
 
     let output = Command::new("bash")
-        .current_dir(repo_root)
+        .current_dir(&repo_root)
         .arg(script_path)
         .arg("--mode")
         .output()
@@ -84,10 +82,7 @@ fn stress_harness_script_reports_missing_option_values_cleanly() {
 
 #[test]
 fn stress_harness_script_accepts_relative_artifact_dir_with_missing_parent() {
-    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("repo root from harness crate path");
+    let repo_root = repo_root();
     let script_path = repo_root.join("scripts/stress-harness.sh");
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)

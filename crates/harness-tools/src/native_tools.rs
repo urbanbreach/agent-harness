@@ -9,9 +9,17 @@ use crate::control_plane::{
     question_parameters_json_schema, todo_write_parameters_json_schema, ControlPlaneExecutor,
     QuestionPrompt, TodoItem,
 };
+use crate::fs_glob::DEFAULT_GLOB_LIMIT;
+use crate::fs_grep::{DEFAULT_GREP_CONTEXT, DEFAULT_GREP_LIMIT};
+use crate::fs_walk::{normalize_base_relative_path, normalize_relative_path, should_skip_entry};
 use crate::network::{
     CodeSearchRequest, NetworkExecutor, WebFetchFormat, WebFetchRequest, WebSearchRequest,
 };
+use crate::read_window::{
+    normalize_read_limit, normalize_read_offset, READ_DEFAULT_LIMIT, READ_DEFAULT_OFFSET,
+};
+use crate::text::trimmed_non_empty;
+use crate::workspace_paths::{normalize_workspace_target_path, resolve_existing_path};
 use crate::{FsGlobTool, FsGrepTool, FsLsTool, FsReadTool, ShellRunTool};
 use async_trait::async_trait;
 use globset::Glob;
@@ -20,14 +28,9 @@ use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResul
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer};
 use serde_json::{json, Value};
-use walkdir::{DirEntry, WalkDir};
+use walkdir::WalkDir;
 
-const DEFAULT_READ_LIMIT: usize = 2_000;
-const DEFAULT_GLOB_LIMIT: usize = 100;
-const DEFAULT_GREP_LIMIT: usize = 100;
 const DEFAULT_LIST_LIMIT: usize = 100;
-const SKIPPED_DIR_NAMES: &[&str] = &[".git", "target"];
-const SKIPPED_RELATIVE_DIRS: &[&str] = &[".agent-harness/sessions"];
 const TODO_WRITE_DESCRIPTION: &str = r#"Use this tool to create and manage a structured task list for your current coding session. This helps track progress on complex work and makes progress visible to the user.
 
 Use todowrite proactively for complex multi-step tasks, non-trivial work that requires planning, explicit user requests for a todo item/list/checklist/test todo, user requests with multiple tasks, and whenever new instructions change the current plan. If the user explicitly asks you to make/add/create/update a todo, call this tool even when the request is otherwise trivial; never reply only "Done". Skip it only for single straightforward tasks, trivial work that does not benefit from tracking, and purely informational answers that did not ask for todos.
@@ -186,7 +189,7 @@ fn read_parameters_json_schema(default_hashline_anchors: bool) -> Value {
             "limit": {
                 "type": "integer",
                 "minimum": 1,
-                "description": "The maximum number of lines to read (defaults to 2000)"
+                "description": format!("The maximum number of lines to read (defaults to {READ_DEFAULT_LIMIT})")
             },
             "hashlineAnchors": {
                 "type": "boolean",
@@ -197,16 +200,6 @@ fn read_parameters_json_schema(default_hashline_anchors: bool) -> Value {
         "required": ["filePath"],
         "additionalProperties": false
     })
-}
-
-fn normalize_read_offset(offset: Option<u32>) -> u32 {
-    offset.filter(|value| *value >= 1).unwrap_or(1)
-}
-
-fn normalize_read_limit(limit: Option<u32>) -> u32 {
-    limit
-        .filter(|value| *value >= 1)
-        .unwrap_or(DEFAULT_READ_LIMIT as u32)
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -460,11 +453,9 @@ impl TryFrom<BatchWrapperCall> for BatchCall {
     fn try_from(value: BatchWrapperCall) -> Result<Self, Self::Error> {
         let tool = value
             .recipient_name
-            .trim()
             .rsplit('.')
             .next()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
+            .and_then(trimmed_non_empty)
             .ok_or_else(|| "batch wrapper call requires a non-empty recipient_name".to_string())?
             .to_string();
         let parameters = value.parameters.or(value.arguments).unwrap_or(Value::Null);
@@ -497,8 +488,8 @@ impl Tool for ReadTool {
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: ReadArgs = serde_json::from_value(args_json)
             .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
-        let offset = normalize_read_offset(args.offset);
-        let limit = normalize_read_limit(args.limit);
+        let offset = normalize_read_offset(args.offset.unwrap_or(READ_DEFAULT_OFFSET));
+        let limit = normalize_read_limit(args.limit.unwrap_or(READ_DEFAULT_LIMIT));
         let hashline_anchors = args
             .hashline_anchors
             .unwrap_or(self.default_hashline_anchors);
@@ -630,7 +621,7 @@ impl Tool for GrepTool {
                     "path": args.path,
                     "include": args.include,
                     "limit": DEFAULT_GREP_LIMIT,
-                    "context": 0,
+                    "context": DEFAULT_GREP_CONTEXT,
                 }),
             )
             .await
@@ -990,20 +981,6 @@ impl Tool for LspTool {
     }
 }
 
-fn resolve_existing_path(ctx: &ToolContext, input: &str) -> Result<PathBuf, ToolError> {
-    let workspace = canonical_workspace_root(ctx)?;
-    let candidate = normalize_workspace_target_path(&workspace, Path::new(input))?;
-    let canonical = if candidate == workspace {
-        workspace.clone()
-    } else {
-        candidate
-            .canonicalize()
-            .map_err(|err| ToolError::Execution(format!("failed to resolve path: {err}")))?
-    };
-    ensure_within_workspace_path(&workspace, &canonical)?;
-    Ok(canonical)
-}
-
 fn resolve_directory_path(ctx: &ToolContext, input: &str) -> Result<PathBuf, ToolError> {
     let path = resolve_existing_path(ctx, input)?;
     if !path.is_dir() {
@@ -1013,59 +990,6 @@ fn resolve_directory_path(ctx: &ToolContext, input: &str) -> Result<PathBuf, Too
         )));
     }
     Ok(path)
-}
-
-fn canonical_workspace_root(ctx: &ToolContext) -> Result<PathBuf, ToolError> {
-    ctx.workspace_root
-        .canonicalize()
-        .map_err(|err| ToolError::Execution(format!("failed to resolve workspace root: {err}")))
-}
-
-fn ensure_within_workspace_path(workspace: &Path, candidate: &Path) -> Result<(), ToolError> {
-    if candidate.starts_with(workspace) {
-        Ok(())
-    } else {
-        Err(ToolError::PathEscapesWorkspace {
-            workspace_root: workspace.display().to_string(),
-            path: candidate.display().to_string(),
-        })
-    }
-}
-
-fn normalize_workspace_target_path(workspace: &Path, input: &Path) -> Result<PathBuf, ToolError> {
-    let relative = if input.is_absolute() {
-        input
-            .strip_prefix(workspace)
-            .map_err(|_| ToolError::PathEscapesWorkspace {
-                workspace_root: workspace.display().to_string(),
-                path: input.display().to_string(),
-            })?
-    } else {
-        input
-    };
-
-    let mut normalized = workspace.to_path_buf();
-    for component in relative.components() {
-        match component {
-            std::path::Component::CurDir => {}
-            std::path::Component::Normal(segment) => normalized.push(segment),
-            std::path::Component::ParentDir => {
-                if normalized == workspace {
-                    return Err(ToolError::PathEscapesWorkspace {
-                        workspace_root: workspace.display().to_string(),
-                        path: input.display().to_string(),
-                    });
-                }
-                normalized.pop();
-            }
-            std::path::Component::Prefix(_) | std::path::Component::RootDir => {
-                return Err(ToolError::InvalidArguments(
-                    "path must be workspace-relative or inside the workspace".to_string(),
-                ));
-            }
-        }
-    }
-    Ok(normalized)
 }
 
 struct RenderedTree {
@@ -1092,11 +1016,11 @@ fn build_recursive_tree(
     for entry in WalkDir::new(root)
         .follow_links(false)
         .into_iter()
-        .filter_entry(|entry| !should_skip_entry(ctx, entry))
+        .filter_entry(|entry| !should_skip_entry(&ctx.workspace_root, entry))
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_file())
     {
-        let rel = normalize_relative_path(entry.path().strip_prefix(root).unwrap_or(entry.path()));
+        let rel = normalize_base_relative_path(root, entry.path());
         if ignore_matchers.iter().any(|matcher| matcher.is_match(&rel)) {
             continue;
         }
@@ -1185,36 +1109,6 @@ fn register_tree_dirs(child_dirs_by_dir: &mut BTreeMap<String, BTreeSet<String>>
             .insert(child.clone());
         child_dirs_by_dir.entry(child).or_default();
     }
-}
-
-fn should_skip_entry(ctx: &ToolContext, entry: &DirEntry) -> bool {
-    if entry.depth() == 0 {
-        return false;
-    }
-    let path = entry.path();
-    let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
-        return false;
-    };
-    if entry.file_type().is_dir() && SKIPPED_DIR_NAMES.contains(&name) {
-        return true;
-    }
-    let Ok(relative) = path.strip_prefix(&ctx.workspace_root) else {
-        return false;
-    };
-    let relative = normalize_relative_path(relative);
-    SKIPPED_RELATIVE_DIRS
-        .iter()
-        .any(|prefix| relative == *prefix || relative.starts_with(&format!("{prefix}/")))
-}
-
-fn normalize_relative_path(path: &Path) -> String {
-    if path.as_os_str().is_empty() {
-        return ".".to_string();
-    }
-    path.iter()
-        .map(|segment| segment.to_string_lossy().to_string())
-        .collect::<Vec<_>>()
-        .join("/")
 }
 
 pub(crate) fn validate_bash_command(

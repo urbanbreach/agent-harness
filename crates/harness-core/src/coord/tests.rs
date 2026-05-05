@@ -45,9 +45,9 @@ use super::{
     compaction_summary_override_from_hooks, completion_messages_to_conversation_messages,
     mark_failed_terminal_compaction_attempt, provider_context_summary_required_headings,
     provider_tool_message_status, restore_provider_context_from_history, spawn_coordinator,
-    validate_model_compaction_summary, Coordinator, CoordinatorConfig, CoordinatorError,
-    FailedTerminalCompactionRequest, HookExecutionBatch, JobOutcome, JobProgressKind,
-    ProviderCompactionTrigger, ProviderContextCompactionPlan, RunInfo, RunState,
+    summarize_hook_output, validate_model_compaction_summary, Coordinator, CoordinatorConfig,
+    CoordinatorError, FailedTerminalCompactionRequest, HookExecutionBatch, JobOutcome,
+    JobProgressKind, ProviderCompactionTrigger, ProviderContextCompactionPlan, RunInfo, RunState,
     TaskExecutionState, TaskState,
 };
 use harness_providers::{CompletionMessage, MessageRole};
@@ -61,6 +61,26 @@ struct TestMcpWrapperTool;
 fn mcp_identity_registry_test_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
+}
+
+#[test]
+fn summarize_hook_output_preserves_existing_summary_contract() {
+    assert_eq!(summarize_hook_output("  stdout only  ", ""), "stdout only");
+    assert_eq!(summarize_hook_output("", "\nstderr only\n"), "stderr only");
+    assert_eq!(
+        summarize_hook_output("stdout", "stderr"),
+        "stdout/stderr captured"
+    );
+    assert_eq!(summarize_hook_output(" \n", "\t"), "no output");
+}
+
+#[test]
+fn summarize_hook_output_truncates_long_single_stream_output() {
+    let summary = summarize_hook_output(&"x".repeat(161), "");
+
+    assert_eq!(summary.chars().count(), 161);
+    assert!(summary.starts_with(&"x".repeat(160)));
+    assert!(summary.ends_with('…'));
 }
 
 #[async_trait]

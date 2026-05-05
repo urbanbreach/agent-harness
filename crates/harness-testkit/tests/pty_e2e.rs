@@ -7,24 +7,34 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{
-    atomic::{AtomicU64, Ordering},
     mpsc::{Receiver, RecvTimeoutError},
     OnceLock,
 };
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 use vt100::Parser as VtParser;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+#[path = "support/binary_name.rs"]
+mod binary_name;
+#[path = "support/focus_region.rs"]
+mod focus_region;
 #[path = "support/markers.rs"]
 mod markers;
 #[path = "support/pty_process.rs"]
 mod pty_process;
+#[path = "support/repo_root.rs"]
+mod repo_root;
+#[allow(dead_code)]
+#[path = "support/temp_path.rs"]
+mod temp_path;
 #[path = "support/visual_contracts.rs"]
 mod visual_contracts;
 #[path = "support/visual_renderer.rs"]
 mod visual_renderer;
 
+use binary_name::binary_name;
+use focus_region::anchored_region as anchored_focus_region;
 use markers::{
     LIVE_OPERATOR_EMPTY_MARKER, LIVE_READY_NEXT_TURN_MARKER, LIVE_SUCCESS_COMPOSER_MARKER,
     OPERATOR_FILES_MARKER, REPLAY_DENSE_READY_MARKER, REPLAY_READY_MARKER,
@@ -34,6 +44,8 @@ use markers::{
     STARTUP_LAUNCHER_READY_MARKER, STARTUP_REPLAY_HISTORY_MARKER,
 };
 use pty_process::{spawn_pty_process, SpawnedPtyProcess};
+use repo_root::repo_root;
+use temp_path::create_unique_temp_dir;
 use visual_contracts::OFFLINE_VISUAL_EVIDENCE_CONTRACTS;
 
 use visual_renderer::{
@@ -2987,18 +2999,14 @@ fn anchored_region(
     bounds: (u16, u16),
     focus: FocusCapture,
 ) -> (u16, u16, u16, u16) {
-    let (anchor_row, anchor_col) = anchor;
-    let (rows, cols) = bounds;
-    let row_start = anchor_row.saturating_sub(focus.top_padding_cells);
-    let col_start = anchor_col.saturating_sub(focus.left_padding_cells);
-
-    let max_height = rows.saturating_sub(row_start).max(1);
-    let max_width = cols.saturating_sub(col_start).max(1);
-
-    let height = focus.height_cells.min(max_height).max(1);
-    let width = focus.width_cells.min(max_width).max(1);
-
-    (row_start, col_start, height, width)
+    anchored_focus_region(
+        anchor,
+        bounds,
+        focus.width_cells,
+        focus.height_cells,
+        focus.top_padding_cells,
+        focus.left_padding_cells,
+    )
 }
 
 fn visual_artifacts_dir() -> PathBuf {
@@ -3124,32 +3132,8 @@ fn resolve_harness_bin() -> PathBuf {
     harness_bin
 }
 
-fn repo_root() -> PathBuf {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest_dir
-        .parent()
-        .and_then(Path::parent)
-        .map(Path::to_path_buf)
-        .expect("harness-testkit should live under <repo>/crates/harness-testkit")
-}
-
 fn create_temp_session_dir() -> PathBuf {
-    static TEMP_SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-    let base = std::env::temp_dir().join("harness-testkit");
-    fs::create_dir_all(&base).expect("create base temp session dir");
-
-    let suffix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before unix epoch")
-        .as_nanos();
-    let sequence = TEMP_SESSION_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let dir = base.join(format!(
-        "pty-e2e-{}-{suffix}-{sequence}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&dir).expect("create unique temp session dir");
-    dir
+    create_unique_temp_dir("pty-e2e")
 }
 
 fn session_run_dirs(session_dir: &Path) -> Vec<PathBuf> {
@@ -4126,14 +4110,4 @@ fn session_event_with_ts(
             "data": data,
         },
     })
-}
-
-#[cfg(target_os = "windows")]
-fn binary_name(name: &str) -> String {
-    format!("{name}.exe")
-}
-
-#[cfg(not(target_os = "windows"))]
-fn binary_name(name: &str) -> String {
-    name.to_string()
 }

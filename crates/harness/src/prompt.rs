@@ -1,17 +1,15 @@
 use std::env;
 use std::fs;
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use clap::Args;
 use harness_core::agent::{default_model_settings_for_profile, AgentModelSettings};
-use harness_core::clock::{Clock, FakeClock, RealClock};
-use harness_core::config::{
-    load_resolved_config, resolve_configured_model_metadata, ShellAllowlist,
-};
+use harness_core::clock::{Clock, Determinism, FakeClock, RealClock};
+use harness_core::config::{resolve_configured_model_metadata, ShellAllowlist};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
 use harness_core::event::{
     ActorKind, EventActor, EventEnvelopeV1, EventV1, TaskCancelledEvent, TaskCompletedEvent,
@@ -21,22 +19,25 @@ use harness_core::proj::inspect_resume_plan;
 use harness_core::redact::DefaultRedactor;
 use harness_core::store::{EventStore, EventStoreError};
 use harness_tools::coordinator_registry;
-use harness_tui::load_events_from_run_dir;
 use uuid::Uuid;
 
+use crate::cli_config::{apply_runtime_metadata, load_optional_config_with_digest};
+use crate::cli_io::{copy_events_file, load_events_from_run_dir};
+use crate::defaults::{
+    DEFAULT_INTERACTIVE_RUN_NAME, DEFAULT_MOCK_PROFILE, DEFAULT_SESSION_DIR,
+    RESUME_UNAVAILABLE_FALLBACK_REASON,
+};
 use crate::recovery::{
     inspect_session_recovery, latest_run_name, resolve_session_run_dir, select_resume_agent_id,
 };
 use crate::{
     bootstrap, logging,
-    scenarios::{golden_path_profiles, golden_path_provider},
+    scenarios::{golden_path_profiles, golden_path_provider, supervisor_actor},
 };
 
 const DEFAULT_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 const WAIT_TIMEOUT_ENV: &str = "HARNESS_PROMPT_WAIT_TIMEOUT_MS";
 const PROVIDER_ERROR_REASON_GRACE: Duration = Duration::from_secs(2);
-const DEFAULT_SESSION_DIR: &str = ".agent-harness/sessions";
-const DEFAULT_MOCK_PROFILE: &str = "worker";
 
 #[derive(Debug, Args, Clone)]
 pub struct PromptCommand {
@@ -151,19 +152,16 @@ fn resolve_settings(
         return resolve_mock_settings(config_path, global_session_dir);
     }
 
-    let loaded = load_resolved_config(config_path.as_deref())
-        .map_err(|err| err.to_string())?
-        .ok_or_else(|| {
+    let loaded = load_optional_config_with_digest(config_path.as_deref())?.ok_or_else(|| {
             "prompt mode requires a config file; pass --config <path>, create ./harness.jsonc or ./harness.json, or create $XDG_CONFIG_HOME/harness/harness.jsonc or $XDG_CONFIG_HOME/harness/harness.json for shared defaults. A starting point lives at configs/harness.example.jsonc, or re-run with --mock"
                 .to_string()
         })?;
 
     let mut config = loaded.config;
     config.apply_session_dir_override(global_session_dir);
-    let config_digest = config_digest_for_paths(&loaded.paths)?;
+    let config_digest = loaded.digest;
 
-    let deterministic = config.deterministic.enabled
-        || matches!(std::env::var("HARNESS_DETERMINISTIC").as_deref(), Ok("1"));
+    let deterministic = Determinism::enabled(config.deterministic.enabled);
     let deterministic_seed = config.deterministic.seed;
     let default_profile = bootstrap::interactive_profile_name(&config);
     let coordinator_config = bootstrap::build_interactive_coordinator_config(&config)?;
@@ -189,13 +187,11 @@ fn resolve_mock_settings(
     let mut config_digest = "none".to_string();
     let mut logging_config = None;
 
-    if let Some(loaded) =
-        load_resolved_config(config_path.as_deref()).map_err(|err| err.to_string())?
-    {
+    if let Some(loaded) = load_optional_config_with_digest(config_path.as_deref())? {
         let mut config = loaded.config;
         config.apply_session_dir_override(global_session_dir.clone());
 
-        config_digest = config_digest_for_paths(&loaded.paths)?;
+        config_digest = loaded.digest;
         shell_allowlist = config.permissions.shell_allowlist.clone();
         session_dir = config.paths.session_dir.clone();
         deterministic = config.deterministic.enabled;
@@ -204,7 +200,7 @@ fn resolve_mock_settings(
     }
 
     let session_dir = global_session_dir.unwrap_or(session_dir);
-    deterministic |= matches!(std::env::var("HARNESS_DETERMINISTIC").as_deref(), Ok("1"));
+    deterministic = Determinism::enabled(deterministic);
 
     let mut coordinator_config = CoordinatorConfig::new(session_dir);
     coordinator_config.permission_policy = default_prompt_permission_policy();
@@ -232,10 +228,11 @@ async fn run_prompt(
     }
 
     let mut coordinator_config = settings.coordinator_config.clone();
-    coordinator_config.deterministic_store = settings.deterministic;
-    coordinator_config.hook_runtime_config.suppress_execution = settings.deterministic;
-    coordinator_config.config_digest = settings.config_digest.clone();
-    coordinator_config.harness_version = env!("CARGO_PKG_VERSION").to_string();
+    apply_runtime_metadata(
+        &mut coordinator_config,
+        settings.deterministic,
+        &settings.config_digest,
+    );
 
     coordinator_config.run_id_override = Some(if settings.deterministic {
         format!("prompt_{:016x}", settings.deterministic_seed)
@@ -349,10 +346,11 @@ async fn run_resumed_prompt(
     prompt_text: &str,
 ) -> Result<PromptOutcome, String> {
     let mut coordinator_config = settings.coordinator_config.clone();
-    coordinator_config.deterministic_store = settings.deterministic;
-    coordinator_config.hook_runtime_config.suppress_execution = settings.deterministic;
-    coordinator_config.config_digest = settings.config_digest.clone();
-    coordinator_config.harness_version = env!("CARGO_PKG_VERSION").to_string();
+    apply_runtime_metadata(
+        &mut coordinator_config,
+        settings.deterministic,
+        &settings.config_digest,
+    );
     coordinator_config.run_id_override = None;
 
     let run_dir = resolve_session_run_dir(selector, &coordinator_config.session_dir)?;
@@ -361,7 +359,7 @@ async fn run_resumed_prompt(
         let reason = recovery
             .resume_disabled_reason
             .clone()
-            .unwrap_or_else(|| "resume unavailable without reason".to_string());
+            .unwrap_or_else(|| RESUME_UNAVAILABLE_FALLBACK_REASON.to_string());
         return Err(format!(
             "resume is disabled for {}: {reason}",
             recovery.run_id
@@ -381,7 +379,7 @@ async fn run_resumed_prompt(
         .run_name
         .clone()
         .or_else(|| latest_run_name(&historical_events))
-        .unwrap_or_else(|| "interactive".to_string());
+        .unwrap_or_else(|| DEFAULT_INTERACTIVE_RUN_NAME.to_string());
 
     let session_dir = run_dir.parent().ok_or_else(|| {
         format!(
@@ -458,10 +456,6 @@ async fn run_resumed_prompt(
     })
 }
 
-fn supervisor_actor() -> EventActor {
-    EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string()))
-}
-
 fn user_actor() -> EventActor {
     EventActor::new(ActorKind::User, Some("agent-supervisor".to_string()))
 }
@@ -491,19 +485,6 @@ fn resolve_prompt_text(cmd: &PromptCommand) -> Result<String, String> {
     }
 
     Err("no prompt text provided; pass --text, positional TEXT, or --stdin".to_string())
-}
-
-fn config_digest_for_paths(paths: &[PathBuf]) -> Result<String, String> {
-    let mut hasher = blake3::Hasher::new();
-    for path in paths {
-        hasher.update(path.to_string_lossy().as_bytes());
-        hasher.update(&[0]);
-        let config_bytes = fs::read(path)
-            .map_err(|err| format!("failed to read config file {}: {err}", path.display()))?;
-        hasher.update(&config_bytes);
-        hasher.update(&[0xff]);
-    }
-    Ok(hasher.finalize().to_hex().to_string())
 }
 
 fn default_prompt_permission_policy() -> PermissionPolicy {
@@ -1079,27 +1060,6 @@ fn has_provider_error_finish(events: &[EventEnvelopeV1], request_id: &str) -> bo
         }
         _ => false,
     })
-}
-
-fn copy_events_file(from: &Path, to: &Path) -> Result<(), String> {
-    if let Some(parent) = to.parent() {
-        fs::create_dir_all(parent).map_err(|err| {
-            format!(
-                "failed to create output directory {}: {err}",
-                parent.display()
-            )
-        })?;
-    }
-
-    fs::copy(from, to).map_err(|err| {
-        format!(
-            "failed to copy events file from {} to {}: {err}",
-            from.display(),
-            to.display()
-        )
-    })?;
-
-    Ok(())
 }
 
 fn prompt_wait_timeout() -> Duration {

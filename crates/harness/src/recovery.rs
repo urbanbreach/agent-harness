@@ -7,9 +7,10 @@ use harness_core::event::{ActorKind, EventEnvelopeV1, EventV1};
 use harness_core::proj::{
     inspect_resume_plan, project_run_summary, ResumePlan, RunStatus, SessionModeSource,
 };
-use harness_tui::load_events_from_run_dir;
 use serde::Serialize;
 
+use crate::cli_io::{load_events_from_run_dir, EVENTS_FILE_NAME};
+use crate::cli_labels::provider_model_label;
 use crate::replay::inspect_session_catalog;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -225,10 +226,10 @@ fn ensure_run_dir(run_dir: PathBuf) -> Result<PathBuf, String> {
     if !run_dir.is_dir() {
         return Err(format!("{} is not a session directory", run_dir.display()));
     }
-    if !run_dir.join("events.jsonl").exists() {
+    if !run_dir.join(EVENTS_FILE_NAME).exists() {
         return Err(format!(
-            "{} does not contain an events.jsonl session log",
-            run_dir.display()
+            "{} does not contain an {EVENTS_FILE_NAME} session log",
+            run_dir.display(),
         ));
     }
     Ok(run_dir)
@@ -292,12 +293,10 @@ fn collect_child_sessions(resume_plan: &ResumePlan) -> Vec<RecoveryChildSessionE
                 .get(agent_id)
                 .cloned()
                 .or_else(|| child.profile.clone()),
-            provider_model: match (child.provider_id.as_deref(), child.model_id.as_deref()) {
-                (Some(provider), Some(model)) => Some(format!("{provider}/{model}")),
-                (Some(provider), None) => Some(format!("{provider}/<unavailable>")),
-                (None, Some(model)) => Some(format!("<unavailable>/{model}")),
-                (None, None) => None,
-            },
+            provider_model: provider_model_label(
+                child.provider_id.as_deref(),
+                child.model_id.as_deref(),
+            ),
             latest_child_request_id: child.latest_child_request_id.clone(),
             parent_session_id: child.parent_session_id.clone(),
             parent_tool_call_id: child.parent_tool_call_id.clone(),
@@ -342,7 +341,7 @@ fn collect_artifacts(resume_plan: &ResumePlan) -> Vec<RecoveryArtifactEntry> {
     entries
 }
 
-fn most_recent_conversational_agent_id(
+pub(crate) fn most_recent_conversational_agent_id(
     historical_events: &[EventEnvelopeV1],
     known_agents: &BTreeMap<String, String>,
 ) -> Option<String> {

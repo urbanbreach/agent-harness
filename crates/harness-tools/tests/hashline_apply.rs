@@ -8,10 +8,16 @@ use harness_core::clock::FakeClock;
 use harness_core::config::{PermissionMode, ShellAllowlist};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, CoordinatorHandle};
 use harness_core::edit::hashline::{compute_line_hash, HashlineOp, HashlinePatch, LineAnchor};
-use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1, ToolCallStatus};
+use harness_core::event::{ActorKind, EventActor, EventV1, ToolCallStatus};
 use harness_core::perm::{PermissionDecision, PermissionPolicy};
 use harness_core::redact::DefaultRedactor;
 use harness_tools::coordinator_registry_with_internal_hashline_tools;
+
+use event_log::read_events;
+
+#[allow(dead_code)]
+#[path = "common/event_log.rs"]
+mod event_log;
 
 #[tokio::test]
 async fn hashline_apply_success_writes_file_and_emits_applied_event() {
@@ -461,11 +467,4 @@ fn replace_line_patch(
             lines: vec![replacement.to_string()],
         }],
     }
-}
-
-fn read_events(events_path: &Path) -> Vec<EventEnvelopeV1> {
-    let body = fs::read_to_string(events_path).expect("read events");
-    body.lines()
-        .map(|line| serde_json::from_str::<EventEnvelopeV1>(line).expect("parse event"))
-        .collect()
 }

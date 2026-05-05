@@ -21,6 +21,7 @@ use ratatui::layout::Rect;
 
 use crate::keybindings::{Action, KeyMap};
 use crate::overlay::{OverlayKind, OverlayStack, OverlayState};
+use crate::text::{has_trimmed_content, non_empty_trimmed, trimmed_json_string_field};
 use crate::theme::Theme;
 use crate::ui::{
     TranscriptMouseTarget, TranscriptScrollbarHit, TranscriptSelection, TranscriptSelectionCell,
@@ -297,109 +298,15 @@ impl ToolCallEntry {
 
 fn tool_path_summary(args_summary: &str) -> Option<String> {
     let value = serde_json::from_str::<serde_json::Value>(args_summary).ok()?;
-    let object = value.as_object()?;
-    ["path", "filePath"]
-        .iter()
-        .find_map(|key| object.get(*key))
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
+    trimmed_json_string_field(Some(&value), &["path", "filePath"])
 }
 
 fn compact_tool_payload_for_transcript(payload: &str) -> Option<String> {
-    let trimmed = payload.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    let compact = match serde_json::from_str::<serde_json::Value>(trimmed) {
-        Ok(value) => compact_json_value_for_transcript(&value),
-        Err(_) => collapse_whitespace(trimmed),
-    };
-
-    Some(truncate_for_transcript(&compact))
-}
-
-fn compact_json_value_for_transcript(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::Object(map) => {
-            if map.is_empty() {
-                return "{}".to_string();
-            }
-
-            let mut parts = Vec::new();
-            for (idx, (key, value)) in map.iter().enumerate() {
-                if idx >= TOOL_TRANSCRIPT_SUMMARY_MAX_FIELDS {
-                    parts.push("…".to_string());
-                    break;
-                }
-                parts.push(format!("{key}={}", compact_json_leaf_for_transcript(value)));
-            }
-            parts.join(", ")
-        }
-        serde_json::Value::Array(items) => {
-            if items.is_empty() {
-                return "[]".to_string();
-            }
-
-            let mut parts = Vec::new();
-            for (idx, item) in items.iter().enumerate() {
-                if idx >= TOOL_TRANSCRIPT_SUMMARY_MAX_FIELDS {
-                    parts.push("…".to_string());
-                    break;
-                }
-                parts.push(compact_json_leaf_for_transcript(item));
-            }
-            format!("[{}]", parts.join(", "))
-        }
-        _ => compact_json_leaf_for_transcript(value),
-    }
-}
-
-fn compact_json_leaf_for_transcript(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::String(text) => collapse_whitespace(text),
-        serde_json::Value::Number(number) => number.to_string(),
-        serde_json::Value::Bool(flag) => flag.to_string(),
-        serde_json::Value::Null => "null".to_string(),
-        serde_json::Value::Array(items) => format!(
-            "[{} item{}]",
-            items.len(),
-            if items.len() == 1 { "" } else { "s" }
-        ),
-        serde_json::Value::Object(fields) => format!(
-            "{{{} field{}}}",
-            fields.len(),
-            if fields.len() == 1 { "" } else { "s" }
-        ),
-    }
-}
-
-fn collapse_whitespace(text: &str) -> String {
-    let mut parts = text.split_whitespace();
-    let Some(first) = parts.next() else {
-        return String::new();
-    };
-
-    let mut compact = String::from(first);
-    for part in parts {
-        compact.push(' ');
-        compact.push_str(part);
-    }
-    compact
-}
-
-fn truncate_for_transcript(text: &str) -> String {
-    if text.chars().count() <= TOOL_TRANSCRIPT_SUMMARY_MAX_CHARS {
-        return text.to_string();
-    }
-
-    let truncated: String = text
-        .chars()
-        .take(TOOL_TRANSCRIPT_SUMMARY_MAX_CHARS.saturating_sub(1))
-        .collect();
-    format!("{truncated}…")
+    crate::text_compact::compact_payload(
+        payload,
+        TOOL_TRANSCRIPT_SUMMARY_MAX_FIELDS,
+        TOOL_TRANSCRIPT_SUMMARY_MAX_CHARS,
+    )
 }
 
 fn rect_contains(area: Rect, column: u16, row: u16) -> bool {
@@ -739,16 +646,14 @@ impl OrchestrationTaskRow {
         self.child_session_id
             .as_deref()
             .or(self.owner_agent_id.as_deref())
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
+            .and_then(non_empty_trimmed)
     }
 
     pub(crate) fn effective_child_request_id(&self) -> Option<&str> {
         self.child_request_id
             .as_deref()
             .or(self.request_id.as_deref())
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
+            .and_then(non_empty_trimmed)
     }
 }
 
@@ -1756,23 +1661,8 @@ impl AppState {
     fn transcript_render_cache_stamp(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
 
-        self.replay_mode.hash(&mut hasher);
-        self.selected_activity_index.hash(&mut hasher);
-        self.show_transcript_thinking.hash(&mut hasher);
-        self.show_transcript_timestamps.hash(&mut hasher);
-        self.show_tool_details.hash(&mut hasher);
-        self.show_generic_tool_output.hash(&mut hasher);
-        self.stacked_transcript_diffs.hash(&mut hasher);
-        self.transcript_animation_phase.hash(&mut hasher);
-        self.transcript_render_epoch.hash(&mut hasher);
-        self.active_profile().hash(&mut hasher);
-        self.session_path.hash(&mut hasher);
-        for tool_call_id in &self.expanded_tool_outputs {
-            tool_call_id.hash(&mut hasher);
-        }
-        for file_key in &self.expanded_patch_file_outputs {
-            file_key.hash(&mut hasher);
-        }
+        self.hash_transcript_render_settings(&mut hasher);
+        self.hash_transcript_render_expansions(&mut hasher);
 
         hasher.finish()
     }
@@ -1780,85 +1670,9 @@ impl AppState {
     fn compute_transcript_render_cache_key(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
 
-        self.replay_mode.hash(&mut hasher);
-        self.selected_activity_index.hash(&mut hasher);
-        self.show_transcript_thinking.hash(&mut hasher);
-        self.show_transcript_timestamps.hash(&mut hasher);
-        self.show_tool_details.hash(&mut hasher);
-        self.show_generic_tool_output.hash(&mut hasher);
-        self.stacked_transcript_diffs.hash(&mut hasher);
-        self.transcript_animation_phase.hash(&mut hasher);
-        self.transcript_render_epoch.hash(&mut hasher);
-        self.active_profile().hash(&mut hasher);
-        self.session_path.hash(&mut hasher);
-
-        for activity in &self.activities {
-            activity.request_id.hash(&mut hasher);
-            activity.model_id.hash(&mut hasher);
-            activity.provider_id.hash(&mut hasher);
-            activity.status.hash(&mut hasher);
-            activity.user_timestamp.hash(&mut hasher);
-            activity.thinking_text.hash(&mut hasher);
-            activity.transcript_text.hash(&mut hasher);
-            activity.error_message.hash(&mut hasher);
-            activity.first_seq.hash(&mut hasher);
-            activity.last_seq.hash(&mut hasher);
-
-            if let Some(user_message) = activity.user_message.as_ref() {
-                user_message.request_id.hash(&mut hasher);
-                user_message.text.hash(&mut hasher);
-            }
-
-            for permission in &activity.permissions {
-                permission.permission_id.hash(&mut hasher);
-                permission.kind.hash(&mut hasher);
-                permission.tool_call_id.hash(&mut hasher);
-                permission.summary.hash(&mut hasher);
-                permission.request_digest.hash(&mut hasher);
-                permission.timeout_ms.hash(&mut hasher);
-                std::mem::discriminant(&permission.default_decision).hash(&mut hasher);
-                permission.resolution_reason.hash(&mut hasher);
-                permission.first_seq.hash(&mut hasher);
-                permission.last_seq.hash(&mut hasher);
-            }
-
-            for tool_call in &activity.tool_calls {
-                tool_call.tool_call_id.hash(&mut hasher);
-                tool_call.tool_id.hash(&mut hasher);
-                tool_call.canonical_tool_id.hash(&mut hasher);
-                tool_call.alias_source_tool_id.hash(&mut hasher);
-                tool_call.args_digest.hash(&mut hasher);
-                tool_call.output_digest.hash(&mut hasher);
-                tool_call.output_summary.hash(&mut hasher);
-                tool_call.first_seq.hash(&mut hasher);
-                tool_call.last_seq.hash(&mut hasher);
-                std::mem::discriminant(&tool_call.status).hash(&mut hasher);
-
-                if let Some(edit) = tool_call.edit.as_ref() {
-                    edit.edit_id.hash(&mut hasher);
-                    edit.path.hash(&mut hasher);
-                    std::mem::discriminant(&edit.status).hash(&mut hasher);
-                    edit.summary.hash(&mut hasher);
-                    edit.patch_digest.hash(&mut hasher);
-                    edit.new_file_digest.hash(&mut hasher);
-                    edit.diff_rel_path.hash(&mut hasher);
-                    edit.diff_digest.hash(&mut hasher);
-                    edit.rejection_reason.hash(&mut hasher);
-                }
-
-                for artifact in &tool_call.artifact_refs {
-                    artifact.path.hash(&mut hasher);
-                    artifact.digest.hash(&mut hasher);
-                }
-            }
-        }
-
-        for tool_call_id in &self.expanded_tool_outputs {
-            tool_call_id.hash(&mut hasher);
-        }
-        for file_key in &self.expanded_patch_file_outputs {
-            file_key.hash(&mut hasher);
-        }
+        self.hash_transcript_render_settings(&mut hasher);
+        self.hash_transcript_content(&mut hasher);
+        self.hash_transcript_render_expansions(&mut hasher);
 
         for (permission_id, summary) in self.transcript_pending_permissions() {
             permission_id.hash(&mut hasher);
@@ -1866,6 +1680,92 @@ impl AppState {
         }
 
         hasher.finish()
+    }
+
+    fn hash_transcript_render_settings(&self, hasher: &mut impl Hasher) {
+        self.replay_mode.hash(hasher);
+        self.selected_activity_index.hash(hasher);
+        self.show_transcript_thinking.hash(hasher);
+        self.show_transcript_timestamps.hash(hasher);
+        self.show_tool_details.hash(hasher);
+        self.show_generic_tool_output.hash(hasher);
+        self.stacked_transcript_diffs.hash(hasher);
+        self.transcript_animation_phase.hash(hasher);
+        self.transcript_render_epoch.hash(hasher);
+        self.active_profile().hash(hasher);
+        self.session_path.hash(hasher);
+    }
+
+    fn hash_transcript_content(&self, hasher: &mut impl Hasher) {
+        for activity in &self.activities {
+            activity.request_id.hash(hasher);
+            activity.model_id.hash(hasher);
+            activity.provider_id.hash(hasher);
+            activity.status.hash(hasher);
+            activity.user_timestamp.hash(hasher);
+            activity.thinking_text.hash(hasher);
+            activity.transcript_text.hash(hasher);
+            activity.error_message.hash(hasher);
+            activity.first_seq.hash(hasher);
+            activity.last_seq.hash(hasher);
+
+            if let Some(user_message) = activity.user_message.as_ref() {
+                user_message.request_id.hash(hasher);
+                user_message.text.hash(hasher);
+            }
+
+            for permission in &activity.permissions {
+                permission.permission_id.hash(hasher);
+                permission.kind.hash(hasher);
+                permission.tool_call_id.hash(hasher);
+                permission.summary.hash(hasher);
+                permission.request_digest.hash(hasher);
+                permission.timeout_ms.hash(hasher);
+                std::mem::discriminant(&permission.default_decision).hash(hasher);
+                permission.resolution_reason.hash(hasher);
+                permission.first_seq.hash(hasher);
+                permission.last_seq.hash(hasher);
+            }
+
+            for tool_call in &activity.tool_calls {
+                tool_call.tool_call_id.hash(hasher);
+                tool_call.tool_id.hash(hasher);
+                tool_call.canonical_tool_id.hash(hasher);
+                tool_call.alias_source_tool_id.hash(hasher);
+                tool_call.args_digest.hash(hasher);
+                tool_call.output_digest.hash(hasher);
+                tool_call.output_summary.hash(hasher);
+                tool_call.first_seq.hash(hasher);
+                tool_call.last_seq.hash(hasher);
+                std::mem::discriminant(&tool_call.status).hash(hasher);
+
+                if let Some(edit) = tool_call.edit.as_ref() {
+                    edit.edit_id.hash(hasher);
+                    edit.path.hash(hasher);
+                    std::mem::discriminant(&edit.status).hash(hasher);
+                    edit.summary.hash(hasher);
+                    edit.patch_digest.hash(hasher);
+                    edit.new_file_digest.hash(hasher);
+                    edit.diff_rel_path.hash(hasher);
+                    edit.diff_digest.hash(hasher);
+                    edit.rejection_reason.hash(hasher);
+                }
+
+                for artifact in &tool_call.artifact_refs {
+                    artifact.path.hash(hasher);
+                    artifact.digest.hash(hasher);
+                }
+            }
+        }
+    }
+
+    fn hash_transcript_render_expansions(&self, hasher: &mut impl Hasher) {
+        for tool_call_id in &self.expanded_tool_outputs {
+            tool_call_id.hash(hasher);
+        }
+        for file_key in &self.expanded_patch_file_outputs {
+            file_key.hash(hasher);
+        }
     }
 
     #[cfg(test)]
@@ -3457,7 +3357,7 @@ impl AppState {
         if let EventV1::PermissionResolved(data) = &event.payload {
             self.dismissed_permissions.remove(&data.permission_id);
             self.clear_permission_modal_selection(&data.permission_id);
-            if self.submitted_permission_id.as_deref() == Some(data.permission_id.as_str()) {
+            if self.submitted_permission_is_active(&data.permission_id) {
                 self.submitted_permission_id = None;
             }
             self.clear_question_answer_state(&data.permission_id);
@@ -3482,15 +3382,7 @@ fn action_preempts_text_input(action: Action) -> bool {
 }
 
 fn json_string_field(output_json: Option<&serde_json::Value>, keys: &[&str]) -> Option<String> {
-    let object = output_json?.as_object()?;
-    keys.iter().find_map(|key| {
-        object
-            .get(*key)
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-    })
+    trimmed_json_string_field(output_json, keys)
 }
 
 fn tool_call_has_expandable_output(tool_call: &ToolCallEntry) -> bool {
@@ -3502,8 +3394,7 @@ fn tool_call_has_expandable_output(tool_call: &ToolCallEntry) -> bool {
     }
 
     if matches!(tool_call.effective_tool_id(), "shell.run" | "bash")
-        && shell_tool_output_for_expansion(tool_call)
-            .is_some_and(|output| !output.trim().is_empty())
+        && shell_tool_output_for_expansion(tool_call).is_some_and(has_trimmed_content)
     {
         return true;
     }
@@ -3517,7 +3408,7 @@ fn tool_call_has_expandable_output(tool_call: &ToolCallEntry) -> bool {
                     .get("filePath")
                     .or_else(|| object.get("path"))
                     .and_then(serde_json::Value::as_str)
-                    .is_some_and(|path| !path.trim().is_empty());
+                    .is_some_and(has_trimmed_content);
                 let inline_preview = match tool_call.effective_tool_id() {
                     "edit" => {
                         object
@@ -3557,7 +3448,7 @@ fn tool_call_has_expandable_output(tool_call: &ToolCallEntry) -> bool {
         && tool_call
             .output_summary
             .as_deref()
-            .is_some_and(|output| !output.trim().is_empty())
+            .is_some_and(has_trimmed_content)
     {
         return true;
     }
@@ -3578,7 +3469,7 @@ fn tool_call_has_expandable_output(tool_call: &ToolCallEntry) -> bool {
             "shell.run" | "bash" => line_count > 10,
             "edit.hashline_apply" | "fs.write" | "edit" | "apply_patch" => has_diff_preview,
             "agent.spawn" => true,
-            _ => !output.trim().is_empty() && line_count > 3,
+            _ => has_trimmed_content(output) && line_count > 3,
         }
 }
 
@@ -3588,12 +3479,12 @@ fn shell_tool_output_for_expansion(tool_call: &ToolCallEntry) -> Option<&str> {
         output_json
             .get("stdout")
             .and_then(serde_json::Value::as_str)
-            .filter(|stdout| !stdout.trim().is_empty())
+            .filter(|stdout| has_trimmed_content(stdout))
             .or_else(|| {
                 output_json
                     .get("stderr")
                     .and_then(serde_json::Value::as_str)
-                    .filter(|stderr| !stderr.trim().is_empty())
+                    .filter(|stderr| has_trimmed_content(stderr))
             })
     })
 }
