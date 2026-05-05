@@ -37,8 +37,8 @@ pub struct AgentProfile {
     pub system_prompt: String,
     #[serde(default)]
     pub temperature: Option<f32>,
-    #[serde(default = "default_agent_profile_max_iters")]
-    pub max_iters: usize,
+    #[serde(default)]
+    pub max_iters: Option<usize>,
     pub tool_failure_mode: ToolFailureMode,
     pub toolset: Vec<String>,
 }
@@ -51,16 +51,12 @@ impl AgentProfile {
             model_ref: "default:default".to_string(),
             system_prompt: String::new(),
             temperature: None,
-            max_iters: default_agent_profile_max_iters(),
+            max_iters: None,
             tool_failure_mode: ToolFailureMode::FailTurn,
             toolset: Vec::new(),
             name,
         }
     }
-}
-
-fn default_agent_profile_max_iters() -> usize {
-    12
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2339,7 +2335,7 @@ mod tests {
             category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
             system_prompt: "sys".to_string(),
-            max_iters,
+            max_iters: Some(max_iters),
             temperature: Some(0.1),
             tool_failure_mode: ToolFailureMode::FailTurn,
             toolset: vec!["read".to_string()],

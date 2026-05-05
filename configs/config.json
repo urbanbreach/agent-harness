@@ -820,8 +820,11 @@
           ]
         },
         "max_iters": {
-          "default": 12,
-          "type": "integer",
+          "default": null,
+          "type": [
+            "integer",
+            "null"
+          ],
           "format": "uint",
           "minimum": 0.0
         },

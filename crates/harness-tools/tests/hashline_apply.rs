@@ -421,7 +421,7 @@ fn test_coordinator(session_dir: &Path, permission_policy: PermissionPolicy) -> 
             category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
             system_prompt: "worker-prompt".to_string(),
-            max_iters: 12,
+            max_iters: Some(12),
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
             toolset: vec!["edit.hashline_apply".to_string()],

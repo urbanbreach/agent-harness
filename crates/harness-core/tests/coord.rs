@@ -1431,7 +1431,7 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
         model_ref: "mock:model-1".to_string(),
         system_prompt: "single-call-system".to_string(),
         temperature: Some(0.0),
-        max_iters: 12,
+        max_iters: Some(12),
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
         toolset: vec!["shell.run".to_string()],
     };
@@ -8978,7 +8978,7 @@ fn test_agent_tool_coordinator_with_compaction(
     config.agent_profiles = agent_profiles();
     if let Some(profile) = config.agent_profiles.get_mut("alpha") {
         profile.toolset = alpha_toolset;
-        profile.max_iters = alpha_max_iters;
+        profile.max_iters = Some(alpha_max_iters);
     }
 
     let clock = Arc::new(FakeClock::new());
@@ -9441,7 +9441,7 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
             system_prompt: "alpha-prompt".to_string(),
-            max_iters: 12,
+            max_iters: Some(12),
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
             toolset: vec![],
@@ -9454,7 +9454,7 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
             system_prompt: "beta-prompt".to_string(),
-            max_iters: 12,
+            max_iters: Some(12),
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
             toolset: vec![],

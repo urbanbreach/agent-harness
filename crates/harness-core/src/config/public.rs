@@ -94,8 +94,8 @@ pub struct PublicAgentConfig {
     pub temperature: Option<f32>,
     #[serde(default, alias = "permissions")]
     pub permission: Option<PublicProfilePermissions>,
-    #[serde(default = "default_max_iters", alias = "maxIters")]
-    pub max_iters: usize,
+    #[serde(default, alias = "maxIters")]
+    pub max_iters: Option<usize>,
     #[serde(default, alias = "toolFailureMode")]
     pub tool_failure_mode: ToolFailureMode,
     #[serde(default)]
@@ -451,7 +451,7 @@ fn default_shipped_agents(model_ref: &str) -> BTreeMap<String, ProfileConfig> {
                     lsp: Some(PermissionMode::Allow),
                     rules: PermissionRuleSet::default(),
                 }),
-                max_iters: 24,
+                max_iters: None,
                 tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
                 tools: vec![
                     "todowrite",
@@ -513,7 +513,7 @@ fn default_shipped_agents(model_ref: &str) -> BTreeMap<String, ProfileConfig> {
                         shell: Vec::new(),
                     },
                 }),
-                max_iters: 24,
+                max_iters: None,
                 tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
                 tools: vec![
                     "todowrite",
@@ -604,13 +604,9 @@ fn public_agent_to_profile(
                 base.as_ref()
                     .and_then(|profile| profile.permissions.clone())
             }),
-        max_iters: if agent.max_iters == default_max_iters() {
-            base.as_ref()
-                .map(|profile| profile.max_iters)
-                .unwrap_or(agent.max_iters)
-        } else {
-            agent.max_iters
-        },
+        max_iters: agent
+            .max_iters
+            .or_else(|| base.as_ref().and_then(|profile| profile.max_iters)),
         tool_failure_mode: if matches!(agent.tool_failure_mode, ToolFailureMode::FailTurn) {
             base.as_ref()
                 .map(|profile| profile.tool_failure_mode)

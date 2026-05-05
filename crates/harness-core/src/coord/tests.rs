@@ -2894,7 +2894,7 @@ fn provider_neutral_reconstruction_marks_continue_as_tool_message_failures() {
         category: "deep".to_string(),
         model_ref: "mock:model-1".to_string(),
         system_prompt: "sys".to_string(),
-        max_iters: 12,
+        max_iters: Some(12),
         temperature: Some(0.0),
         tool_failure_mode: crate::config::ToolFailureMode::ContinueAsToolMessage,
         toolset: vec!["shell.run".to_string()],

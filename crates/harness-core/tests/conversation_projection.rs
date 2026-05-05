@@ -625,7 +625,7 @@ fn boundary_profile() -> AgentProfile {
         model_ref: "mock:model-1".to_string(),
         system_prompt: "sys".to_string(),
         temperature: Some(0.1),
-        max_iters: 12,
+        max_iters: Some(12),
         tool_failure_mode: ToolFailureMode::FailTurn,
         toolset: vec!["read".to_string()],
     }

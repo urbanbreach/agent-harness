@@ -130,7 +130,7 @@ fn worker_profile(name: &str, toolset: &[&str]) -> AgentProfile {
         model_ref: format!("default:{name}"),
         system_prompt: format!("{name} prompt"),
         temperature: None,
-        max_iters: 12,
+        max_iters: Some(12),
         tool_failure_mode: ToolFailureMode::FailTurn,
         toolset: toolset.iter().map(|tool| (*tool).to_string()).collect(),
     }

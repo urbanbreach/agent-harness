@@ -401,7 +401,7 @@ fn native_provider_tool_defs_accept_edit_and_question_export_schemas() {
         category: "test".to_string(),
         model_ref: "mock:model".to_string(),
         system_prompt: "test".to_string(),
-        max_iters: 4,
+        max_iters: Some(4),
         temperature: Some(0.0),
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
         toolset: vec!["edit".to_string(), "question".to_string()],

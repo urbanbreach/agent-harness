@@ -332,7 +332,7 @@ mod tests {
     }
 
     #[test]
-    fn interactive_agent_profiles_preserve_default_max_iters_and_temperature() {
+    fn interactive_agent_profiles_preserve_optional_max_iters_and_temperature() {
         let cfg = config_fixture(
             r#"
             deep: {
@@ -353,9 +353,9 @@ mod tests {
         );
 
         let profiles = interactive_agent_profiles(&cfg).expect("interactive profiles");
-        assert_eq!(profiles["deep"].max_iters, 12);
+        assert_eq!(profiles["deep"].max_iters, None);
         assert_eq!(profiles["deep"].temperature, Some(0.7));
-        assert_eq!(profiles["review"].max_iters, 20);
+        assert_eq!(profiles["review"].max_iters, Some(20));
         assert_eq!(profiles["review"].temperature, None);
     }
 

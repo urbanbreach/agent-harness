@@ -108,10 +108,7 @@ fn profile_from_markdown_agent(
         variant: markdown.frontmatter.variant.clone(),
         temperature: markdown.frontmatter.temperature,
         permissions: markdown.frontmatter.permissions.clone(),
-        max_iters: markdown
-            .frontmatter
-            .max_iters
-            .unwrap_or_else(default_max_iters),
+        max_iters: markdown.frontmatter.max_iters,
         tool_failure_mode: markdown.frontmatter.tool_failure_mode.unwrap_or_default(),
         tools: markdown.frontmatter.tools.clone().unwrap_or_default(),
     }))

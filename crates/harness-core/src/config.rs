@@ -1234,10 +1234,10 @@ pub struct ProfileConfig {
     pub temperature: Option<f32>,
     #[serde(default)]
     pub permissions: Option<ProfilePermissions>,
-    /// Per-profile multi-turn budget enforced directly by the runtime.
-    /// There is no separate hardcoded runtime iteration cap beyond this setting.
-    #[serde(default = "default_max_iters", alias = "maxIters")]
-    pub max_iters: usize,
+    /// Optional per-profile multi-turn budget. When unset, the runtime does not
+    /// impose a profile-specific iteration cap.
+    #[serde(default, alias = "maxIters")]
+    pub max_iters: Option<usize>,
     #[serde(
         default = "default_runtime_tool_failure_mode",
         alias = "toolFailureMode"
@@ -1286,10 +1286,6 @@ pub enum ToolFailureMode {
     #[default]
     FailTurn,
     ContinueAsToolMessage,
-}
-
-fn default_max_iters() -> usize {
-    12
 }
 
 fn default_runtime_tool_failure_mode() -> ToolFailureMode {
@@ -2877,7 +2873,7 @@ mod tests {
             parsed.agents["review"].tool_failure_mode,
             ToolFailureMode::ContinueAsToolMessage
         );
-        assert_eq!(parsed.agents["review"].max_iters, 20);
+        assert_eq!(parsed.agents["review"].max_iters, Some(20));
         assert_eq!(
             parsed.permissions.defaults.question,
             Some(PermissionMode::Ask)
@@ -4573,12 +4569,12 @@ mod tests {
     }
 
     #[test]
-    fn runtime_profile_tool_failure_mode_defaults_to_continue_as_tool_message() {
+    fn runtime_profile_max_iters_defaults_to_unbounded() {
         let cfg = config_fixture(&deep_profile(r#"tools: ["read"],"#), "test-key", None, None);
 
         let parsed =
             load_config_from_str(&cfg).expect("config with default tool failure mode must parse");
-        assert_eq!(parsed.agents["deep"].max_iters, default_max_iters());
+        assert_eq!(parsed.agents["deep"].max_iters, None);
         assert_eq!(
             parsed.agents["deep"].tool_failure_mode,
             ToolFailureMode::ContinueAsToolMessage
@@ -4607,7 +4603,7 @@ mod tests {
             parsed.agents["deep"].tool_failure_mode,
             ToolFailureMode::ContinueAsToolMessage
         );
-        assert_eq!(parsed.agents["deep"].max_iters, 24);
+        assert_eq!(parsed.agents["deep"].max_iters, Some(24));
         assert_eq!(
             parsed.agents["deep"].system_prompt.as_deref(),
             Some("Be precise.")
@@ -4782,7 +4778,7 @@ Execute from markdown only."#,
         assert_eq!(build.description, "Build from markdown");
         assert_eq!(build.model_ref, "default:gpt-4o-mini");
         assert_eq!(build.tools, vec!["read", "grep"]);
-        assert_eq!(build.max_iters, 18);
+        assert_eq!(build.max_iters, Some(18));
         assert_eq!(
             build.system_prompt.as_deref(),
             Some("Execute from markdown only.")

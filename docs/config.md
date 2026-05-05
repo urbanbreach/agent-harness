@@ -139,6 +139,11 @@ ask questions, write only under `.agent-harness/plans/`, and call `plan_exit` to
 ask whether to switch to `build`. The edit boundary is enforced by per-agent
 permission rules, not just prompt text.
 
+Agent `max_iters` / `maxIters` is optional. When unset, the runtime does not add
+a profile-specific iteration cap; the agent continues until the model stops, the
+user interrupts, or another runtime safety limit applies. Set `max_iters` on an
+agent only when a profile needs an explicit per-turn budget.
+
 ## Permission policy
 
 The canonical scalar form is:
