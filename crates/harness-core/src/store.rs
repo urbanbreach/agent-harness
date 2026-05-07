@@ -1,7 +1,8 @@
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufRead, BufReader, Seek, SeekFrom, Write};
+use std::io::{BufRead, BufReader, ErrorKind, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
 use serde::{Deserialize, Serialize};
@@ -12,9 +13,13 @@ use tokio_stream::{Stream, StreamExt};
 
 use crate::event::{EventActor, EventEnvelopeV1, EventV1};
 use crate::path_display::display_path;
-use crate::session_paths::{EVENTS_FILE_NAME, WRITER_LOCK_FILE_NAME};
+use crate::session_paths::{
+    ARTIFACTS_DIR_NAME, EVENTS_FILE_NAME, META_FILE_NAME, WRITER_LOCK_FILE_NAME,
+};
 
 const SUBSCRIBER_BUFFER: usize = 1024;
+const WRITER_LOCK_RECOVERY_FILE_NAME: &str = ".writer.lock.recovering";
+static NEXT_WRITER_LOCK_TOKEN: AtomicU64 = AtomicU64::new(1);
 
 pub type EventStream = Pin<Box<dyn Stream<Item = Result<EventEnvelopeV1, EventStoreError>> + Send>>;
 
@@ -224,28 +229,142 @@ pub struct JsonlFileEventStore {
 #[derive(Debug)]
 struct WriterLock {
     path: PathBuf,
+    contents: String,
+    _file: File,
+}
+
+#[derive(Debug)]
+struct WriterLockRecoveryGuard {
+    path: PathBuf,
+    contents: String,
     _file: File,
 }
 
 impl WriterLock {
     fn acquire(run_dir: &Path) -> Result<Self, EventStoreError> {
         let path = run_dir.join(WRITER_LOCK_FILE_NAME);
-        let file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)
-            .map_err(|source| EventStoreError::AcquireWriterLock {
+        match create_writer_lock(&path) {
+            Ok((file, contents)) => Ok(Self {
+                path,
+                contents,
+                _file: file,
+            }),
+            Err(source) if source.kind() == ErrorKind::AlreadyExists => {
+                let _recovery_guard = WriterLockRecoveryGuard::acquire(run_dir, &path)?;
+                if stale_writer_lock(run_dir, &path) {
+                    let _ = fs::remove_file(&path);
+                    let (file, contents) = create_writer_lock(&path).map_err(|source| {
+                        EventStoreError::AcquireWriterLock {
+                            path: display_path(&path),
+                            source,
+                        }
+                    })?;
+                    Ok(Self {
+                        path,
+                        contents,
+                        _file: file,
+                    })
+                } else {
+                    Err(EventStoreError::AcquireWriterLock {
+                        path: display_path(&path),
+                        source,
+                    })
+                }
+            }
+            Err(source) => Err(EventStoreError::AcquireWriterLock {
                 path: display_path(&path),
                 source,
-            })?;
-
-        Ok(Self { path, _file: file })
+            }),
+        }
     }
+}
+
+impl WriterLockRecoveryGuard {
+    fn acquire(run_dir: &Path, writer_lock_path: &Path) -> Result<Self, EventStoreError> {
+        let path = run_dir.join(WRITER_LOCK_RECOVERY_FILE_NAME);
+        let (file, contents) =
+            create_writer_lock(&path).map_err(|source| EventStoreError::AcquireWriterLock {
+                path: display_path(writer_lock_path),
+                source,
+            })?;
+        Ok(Self {
+            path,
+            contents,
+            _file: file,
+        })
+    }
+}
+
+fn create_writer_lock(path: &Path) -> Result<(File, String), std::io::Error> {
+    let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
+    let token = NEXT_WRITER_LOCK_TOKEN.fetch_add(1, Ordering::Relaxed);
+    let contents = format!("pid={}\ntoken={token}\n", std::process::id());
+    file.write_all(contents.as_bytes())?;
+    file.sync_all()?;
+    Ok((file, contents))
+}
+
+fn stale_writer_lock(run_dir: &Path, path: &Path) -> bool {
+    let Ok(contents) = fs::read_to_string(path) else {
+        return false;
+    };
+    if contents.trim().is_empty() {
+        return unborn_run_dir(run_dir);
+    }
+    let Some(pid) = contents.lines().find_map(|line| {
+        line.strip_prefix("pid=")
+            .and_then(|pid| pid.parse::<u32>().ok())
+    }) else {
+        return unborn_run_dir(run_dir);
+    };
+
+    !process_exists(pid)
+}
+
+fn unborn_run_dir(run_dir: &Path) -> bool {
+    if run_dir.join(EVENTS_FILE_NAME).exists()
+        || run_dir.join(META_FILE_NAME).exists()
+        || run_dir.join(ARTIFACTS_DIR_NAME).exists()
+    {
+        return false;
+    }
+
+    let Ok(entries) = fs::read_dir(run_dir) else {
+        return false;
+    };
+    entries.into_iter().all(|entry| {
+        entry
+            .ok()
+            .and_then(|entry| entry.file_name().into_string().ok())
+            .is_some_and(|name| {
+                name == WRITER_LOCK_FILE_NAME || name == WRITER_LOCK_RECOVERY_FILE_NAME
+            })
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn process_exists(pid: u32) -> bool {
+    Path::new("/proc").join(pid.to_string()).exists()
+}
+
+#[cfg(not(target_os = "linux"))]
+fn process_exists(_pid: u32) -> bool {
+    true
 }
 
 impl Drop for WriterLock {
     fn drop(&mut self) {
-        let _ = fs::remove_file(&self.path);
+        if fs::read_to_string(&self.path).is_ok_and(|contents| contents == self.contents) {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
+}
+
+impl Drop for WriterLockRecoveryGuard {
+    fn drop(&mut self) {
+        if fs::read_to_string(&self.path).is_ok_and(|contents| contents == self.contents) {
+            let _ = fs::remove_file(&self.path);
+        }
     }
 }
 
@@ -597,6 +716,8 @@ mod tests {
     use std::fs::{self, OpenOptions};
     use std::io::Write;
     use std::path::Path;
+    use std::sync::{Arc, Barrier};
+    use std::thread;
     use tokio::time::{timeout, Duration};
     use tokio_stream::StreamExt;
 
@@ -654,6 +775,196 @@ mod tests {
             .expect("append resumed event");
 
         assert_eq!(appended.seq, 3);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn jsonl_open_recovers_dead_pid_writer_lock() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let run_dir = temp_dir.path().join("run_stale_pid_lock");
+        fs::create_dir_all(&run_dir).expect("create run dir");
+        fs::write(run_dir.join(".writer.lock"), "pid=999999999\n").expect("write stale lock");
+
+        let store = JsonlFileEventStore::open(temp_dir.path(), "run_stale_pid_lock", false)
+            .expect("open store after stale lock recovery");
+
+        assert!(store.file_path().exists());
+        let lock_contents = fs::read_to_string(run_dir.join(".writer.lock")).expect("read lock");
+        assert!(lock_contents.contains(&format!("pid={}", std::process::id())));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn jsonl_open_serializes_concurrent_dead_pid_writer_lock_recovery() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let run_id = "run_concurrent_stale_pid_lock";
+        let run_dir = temp_dir.path().join(run_id);
+        fs::create_dir_all(&run_dir).expect("create run dir");
+        fs::write(run_dir.join(".writer.lock"), "pid=999999999\n").expect("write stale lock");
+
+        assert_single_concurrent_writer(temp_dir.path(), run_id);
+    }
+
+    #[test]
+    fn jsonl_open_recovers_legacy_empty_writer_lock_before_log_exists() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let run_dir = temp_dir.path().join("run_legacy_empty_lock");
+        fs::create_dir_all(&run_dir).expect("create run dir");
+        fs::write(run_dir.join(".writer.lock"), "").expect("write legacy lock");
+
+        let store = JsonlFileEventStore::open(temp_dir.path(), "run_legacy_empty_lock", false)
+            .expect("open store after legacy lock recovery");
+
+        assert!(store.file_path().exists());
+    }
+
+    #[test]
+    fn jsonl_open_recovers_legacy_text_writer_lock_for_unborn_run_dir() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let run_dir = temp_dir.path().join("run_legacy_text_lock");
+        fs::create_dir_all(&run_dir).expect("create run dir");
+        fs::write(run_dir.join(".writer.lock"), "locked").expect("write legacy lock");
+
+        let store = JsonlFileEventStore::open(temp_dir.path(), "run_legacy_text_lock", false)
+            .expect("open store after legacy text lock recovery");
+
+        assert!(store.file_path().exists());
+    }
+
+    #[test]
+    fn jsonl_open_serializes_concurrent_legacy_empty_writer_lock_recovery() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let run_id = "run_concurrent_legacy_empty_lock";
+        let run_dir = temp_dir.path().join(run_id);
+        fs::create_dir_all(&run_dir).expect("create run dir");
+        fs::write(run_dir.join(".writer.lock"), "").expect("write legacy lock");
+
+        assert_single_concurrent_writer(temp_dir.path(), run_id);
+    }
+
+    #[test]
+    fn jsonl_open_serializes_concurrent_legacy_text_writer_lock_recovery() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let run_id = "run_concurrent_legacy_text_lock";
+        let run_dir = temp_dir.path().join(run_id);
+        fs::create_dir_all(&run_dir).expect("create run dir");
+        fs::write(run_dir.join(".writer.lock"), "locked").expect("write legacy lock");
+
+        assert_single_concurrent_writer(temp_dir.path(), run_id);
+    }
+
+    #[test]
+    fn jsonl_open_rejects_legacy_empty_writer_lock_when_log_exists() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let run_dir = temp_dir.path().join("run_locked_existing_log");
+        fs::create_dir_all(&run_dir).expect("create run dir");
+        fs::write(run_dir.join("events.jsonl"), "").expect("write event log");
+        fs::write(run_dir.join(".writer.lock"), "").expect("write legacy lock");
+
+        let err = JsonlFileEventStore::open(temp_dir.path(), "run_locked_existing_log", false)
+            .expect_err("existing log lock should remain exclusive");
+
+        assert!(matches!(err, EventStoreError::AcquireWriterLock { .. }));
+    }
+
+    #[test]
+    fn jsonl_open_rejects_legacy_text_writer_lock_when_log_exists() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let run_dir = temp_dir.path().join("run_locked_text_existing_log");
+        fs::create_dir_all(&run_dir).expect("create run dir");
+        fs::write(run_dir.join("events.jsonl"), "").expect("write event log");
+        fs::write(run_dir.join(".writer.lock"), "locked").expect("write legacy lock");
+
+        let err = JsonlFileEventStore::open(temp_dir.path(), "run_locked_text_existing_log", false)
+            .expect_err("existing log lock should remain exclusive");
+
+        assert!(matches!(err, EventStoreError::AcquireWriterLock { .. }));
+    }
+
+    #[test]
+    fn jsonl_open_rejects_legacy_text_writer_lock_when_meta_exists() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let run_dir = temp_dir.path().join("run_locked_text_existing_meta");
+        fs::create_dir_all(&run_dir).expect("create run dir");
+        fs::write(run_dir.join("meta.json"), "{}").expect("write metadata");
+        fs::write(run_dir.join(".writer.lock"), "locked").expect("write legacy lock");
+
+        let err =
+            JsonlFileEventStore::open(temp_dir.path(), "run_locked_text_existing_meta", false)
+                .expect_err("metadata lock should remain exclusive");
+
+        assert!(matches!(err, EventStoreError::AcquireWriterLock { .. }));
+    }
+
+    #[test]
+    fn jsonl_open_rejects_legacy_text_writer_lock_when_artifacts_exist() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let run_dir = temp_dir.path().join("run_locked_text_existing_artifacts");
+        fs::create_dir_all(run_dir.join("artifacts")).expect("create artifacts dir");
+        fs::write(run_dir.join(".writer.lock"), "locked").expect("write legacy lock");
+
+        let err =
+            JsonlFileEventStore::open(temp_dir.path(), "run_locked_text_existing_artifacts", false)
+                .expect_err("artifacts lock should remain exclusive");
+
+        assert!(matches!(err, EventStoreError::AcquireWriterLock { .. }));
+    }
+
+    #[test]
+    fn jsonl_writer_lock_drop_preserves_replaced_lock_file() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let run_dir = temp_dir.path().join("run_replaced_lock");
+        let lock_path = run_dir.join(".writer.lock");
+        let store = JsonlFileEventStore::open(temp_dir.path(), "run_replaced_lock", false)
+            .expect("open jsonl event store");
+
+        fs::remove_file(&lock_path).expect("replace lock by removing original");
+        fs::write(&lock_path, "pid=1\n").expect("write replacement lock");
+        drop(store);
+
+        assert_eq!(
+            fs::read_to_string(&lock_path).expect("replacement lock should remain"),
+            "pid=1\n"
+        );
+    }
+
+    fn assert_single_concurrent_writer(session_dir: &Path, run_id: &str) {
+        let start = Arc::new(Barrier::new(3));
+        let finish = Arc::new(Barrier::new(3));
+        let handles = (0..2)
+            .map(|_| {
+                let session_dir = session_dir.to_path_buf();
+                let run_id = run_id.to_string();
+                let start = Arc::clone(&start);
+                let finish = Arc::clone(&finish);
+                thread::spawn(move || {
+                    start.wait();
+                    let result = JsonlFileEventStore::open(&session_dir, &run_id, false);
+                    match result {
+                        Ok(store) => {
+                            finish.wait();
+                            drop(store);
+                            true
+                        }
+                        Err(EventStoreError::AcquireWriterLock { .. }) => {
+                            finish.wait();
+                            false
+                        }
+                        Err(err) => panic!("unexpected open error: {err}"),
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+
+        start.wait();
+        finish.wait();
+
+        let successes = handles
+            .into_iter()
+            .map(|handle| handle.join().expect("thread should not panic"))
+            .filter(|success| *success)
+            .count();
+        assert_eq!(successes, 1, "exactly one writer should acquire the lock");
     }
 
     #[tokio::test]

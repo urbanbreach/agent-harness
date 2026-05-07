@@ -214,6 +214,62 @@ fn test_config(session_dir: &Path) -> CoordinatorConfig {
     config
 }
 
+fn test_agent_profile(name: &str) -> AgentProfile {
+    AgentProfile {
+        name: name.to_string(),
+        category: name.to_string(),
+        model_ref: "mock:model-1".to_string(),
+        system_prompt: "sys".to_string(),
+        max_iters: Some(1),
+        temperature: None,
+        tool_failure_mode: crate::config::ToolFailureMode::FailTurn,
+        toolset: Vec::new(),
+    }
+}
+
+#[tokio::test]
+async fn fresh_run_agent_ids_skip_existing_child_session_directories() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    fs::create_dir_all(temp_dir.path().join("agent_000001")).expect("create first old child dir");
+    let stale_child_dir = temp_dir.path().join("agent_000002");
+    fs::create_dir_all(&stale_child_dir).expect("create stale child dir");
+    fs::write(stale_child_dir.join(".writer.lock"), "").expect("write stale legacy lock");
+    fs::write(stale_child_dir.join("events.jsonl"), "").expect("write stale event log");
+
+    let mut config = test_config(temp_dir.path());
+    config
+        .agent_profiles
+        .insert("alpha".to_string(), test_agent_profile("alpha"));
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+
+    let run = handle
+        .start_run("fresh skips old child dirs", temp_dir.path())
+        .await
+        .expect("start run");
+    let supervisor = EventActor::new(ActorKind::Supervisor, None);
+    let parent_agent_id = handle
+        .spawn_agent(supervisor.clone(), "alpha", None)
+        .await
+        .expect("spawn parent agent");
+    let child_agent_id = handle
+        .spawn_agent_idle(supervisor, "alpha", Some(parent_agent_id.clone()))
+        .await
+        .expect("spawn child agent without colliding with stale lock");
+
+    assert_eq!(parent_agent_id, "agent_000003");
+    assert_eq!(child_agent_id, "agent_000004");
+    assert!(temp_dir.path().join("agent_000004/events.jsonl").exists());
+    assert_eq!(
+        fs::read_to_string(stale_child_dir.join(".writer.lock")).expect("stale lock remains"),
+        ""
+    );
+    assert!(run.run_dir.ends_with("run_000001"));
+}
+
 fn shell_permission_policy(shell_mode: PermissionMode) -> PermissionPolicy {
     PermissionPolicy::new(PermissionMode::Deny, shell_mode, PermissionMode::Deny)
 }

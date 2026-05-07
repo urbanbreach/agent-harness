@@ -5088,6 +5088,81 @@ async fn resume_existing_run_restores_agent_profile_bindings() {
 }
 
 #[tokio::test]
+async fn resumed_run_agent_ids_skip_existing_child_session_directories() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let run_id = "run_resume_skips_stale_child_dir";
+    write_resume_fixture(
+        temp_dir.path(),
+        run_id,
+        &[
+            resume_fixture_event(
+                run_id,
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/workspace/project".to_string(),
+                }),
+            ),
+            resume_fixture_event(
+                run_id,
+                2,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_000001".to_string(),
+                    profile: "alpha".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            resume_fixture_event(
+                run_id,
+                3,
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req_000001".to_string(),
+                    provider_id: "mock".to_string(),
+                    model_id: "model-1".to_string(),
+                    prompt_summary: "existing prompt".to_string(),
+                    request_digest: "digest-existing".to_string(),
+                    metadata: None,
+                }),
+            ),
+            resume_fixture_event(
+                run_id,
+                4,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "segment complete".to_string(),
+                }),
+            ),
+        ],
+    );
+    let stale_child_dir = temp_dir.path().join("agent_000002");
+    fs::create_dir_all(&stale_child_dir).expect("create stale child dir");
+    fs::write(stale_child_dir.join(".writer.lock"), "").expect("write stale legacy lock");
+    fs::write(stale_child_dir.join("events.jsonl"), "").expect("write stale event log");
+
+    let coordinator = test_resume_coordinator(temp_dir.path());
+
+    coordinator
+        .resume_run(run_id, "interactive")
+        .await
+        .expect("resume run");
+    let child_agent_id = coordinator
+        .spawn_agent_idle(
+            supervisor_actor(),
+            "alpha",
+            Some("agent_000001".to_string()),
+        )
+        .await
+        .expect("spawn child without colliding with stale child dir");
+
+    assert_eq!(child_agent_id, "agent_000003");
+    assert!(temp_dir.path().join("agent_000003/events.jsonl").exists());
+    assert_eq!(
+        fs::read_to_string(stale_child_dir.join(".writer.lock")).expect("stale lock remains"),
+        ""
+    );
+    coordinator.stop_run().await.expect("stop resumed run");
+}
+
+#[tokio::test]
 async fn resume_existing_run_persists_bindings_for_future_reresume() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let run_id = "run_resume_reresume";

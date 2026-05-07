@@ -1306,11 +1306,13 @@ impl Coordinator {
             events_path,
         };
 
+        let next_agent_id = next_agent_counter_for_run(&self.config.session_dir, &run_id, 0)?;
+
         let mut run_state = RunState {
             info: run_info.clone(),
             event_store,
             next_event_seq: 1,
-            next_agent_id: 1,
+            next_agent_id,
             next_tool_call_id: 1,
             next_task_id: 1,
             next_provider_request_id: 1,
@@ -1484,7 +1486,8 @@ impl Coordinator {
         let provider_context_by_agent =
             restore_provider_context_from_history(&self.config.session_dir, &run_id)?;
 
-        let next_agent_id = checked_next_counter(max_agent_id, &run_id, "agent id")?;
+        let next_agent_id =
+            next_agent_counter_for_run(&self.config.session_dir, &run_id, max_agent_id)?;
         let next_tool_call_id = checked_next_counter(
             resume_plan.id_watermarks.max_tool_call_id,
             &run_id,
@@ -11911,6 +11914,43 @@ fn checked_next_counter(
             run_id: run_id.to_string(),
             reason: format!("{counter_kind} counter overflow"),
         })
+}
+
+fn next_agent_counter_for_run(
+    session_dir: &Path,
+    run_id: &str,
+    minimum_previous_agent_id: u64,
+) -> Result<u64, CoordinatorError> {
+    let mut max_agent_id = minimum_previous_agent_id;
+    let entries =
+        fs::read_dir(session_dir).map_err(|source| CoordinatorError::CreateSessionDirectory {
+            path: session_dir.display().to_string(),
+            source,
+        })?;
+
+    for entry in entries {
+        let entry = entry.map_err(|source| CoordinatorError::CreateSessionDirectory {
+            path: session_dir.display().to_string(),
+            source,
+        })?;
+        if !entry.file_type().is_ok_and(|file_type| file_type.is_dir()) {
+            continue;
+        }
+        let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+            continue;
+        };
+        let Some(suffix) = name.strip_prefix("agent_") else {
+            continue;
+        };
+        if suffix.len() != 6 || !suffix.chars().all(|ch| ch.is_ascii_digit()) {
+            continue;
+        }
+        if let Ok(parsed) = suffix.parse::<u64>() {
+            max_agent_id = max_agent_id.max(parsed);
+        }
+    }
+
+    checked_next_counter(max_agent_id, run_id, "agent id")
 }
 
 fn append_built_event(
