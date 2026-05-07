@@ -67,7 +67,7 @@ async fn execute_plan_exit(ctx: ToolContext) -> Result<ToolResult, ToolError> {
         .await
         .map_err(|err| ToolError::Execution(format!("failed to switch to build agent: {err}")))?;
     let prompt = format!(
-        "The plan at {plan_file} has been approved, you can now edit files. Execute the plan"
+        "<system-reminder>\nYour operational mode has changed from plan to build.\nYou are no longer in plan-mode read-only restrictions.\nUse the active build profile's available tools and permission policy to execute the approved plan; file edits and shell commands are allowed when that profile exposes and permits those tools.\n</system-reminder>\n\nA plan file exists at {plan_file}. You should execute on the plan defined within it"
     );
     let request_id = ctx
         .coordinator
