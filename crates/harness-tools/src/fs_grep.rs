@@ -67,8 +67,7 @@ impl Tool for FsGrepTool {
         ctx: ToolContext,
         args_json: serde_json::Value,
     ) -> Result<ToolResult, ToolError> {
-        let args: FsGrepArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let args: FsGrepArgs = crate::parse_tool_args(args_json)?;
 
         let (workspace_root, resolved_base, display_path) =
             resolve_search_base(&ctx, args.path.as_deref())?;
@@ -94,9 +93,9 @@ impl Tool for FsGrepTool {
             context,
         )?;
 
-        Ok(ToolResult {
-            display_text: matches.lines.join("\n"),
-            structured_json: Some(json!({
+        Ok(crate::text_json_tool_result(
+            matches.lines.join("\n"),
+            json!({
                 "pattern": args.pattern,
                 "path": display_path,
                 "resolved_path": resolved_base.display().to_string(),
@@ -109,9 +108,8 @@ impl Tool for FsGrepTool {
                 "truncated_count": matches.truncated_count,
                 "truncated": matches.is_truncated,
                 "skipped_dirs": SKIPPED_WORKSPACE_DIRS,
-            })),
-            artifacts: Vec::new(),
-        })
+            }),
+        ))
     }
 }
 

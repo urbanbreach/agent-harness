@@ -19,6 +19,7 @@ use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::time::timeout;
 
 use crate::http_client;
+use crate::parse_tool_args;
 use crate::text::{has_trimmed_content, trimmed_non_empty};
 
 const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
@@ -274,33 +275,27 @@ impl Tool for McpServerTool {
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         match self.kind {
             McpToolKind::ToolsList => {
-                let _: EmptyArgs = serde_json::from_value(args_json)
-                    .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+                let _: EmptyArgs = parse_tool_args(args_json)?;
                 self.executor.list_tools().await
             }
             McpToolKind::ToolCall => {
-                let args: McpToolCallArgs = serde_json::from_value(args_json)
-                    .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+                let args: McpToolCallArgs = parse_tool_args(args_json)?;
                 self.executor.call_tool(&ctx, args).await
             }
             McpToolKind::ResourcesList => {
-                let _: EmptyArgs = serde_json::from_value(args_json)
-                    .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+                let _: EmptyArgs = parse_tool_args(args_json)?;
                 self.executor.list_resources().await
             }
             McpToolKind::ResourceRead => {
-                let args: McpResourceReadArgs = serde_json::from_value(args_json)
-                    .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+                let args: McpResourceReadArgs = parse_tool_args(args_json)?;
                 self.executor.read_resource(args).await
             }
             McpToolKind::PromptsList => {
-                let _: EmptyArgs = serde_json::from_value(args_json)
-                    .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+                let _: EmptyArgs = parse_tool_args(args_json)?;
                 self.executor.list_prompts().await
             }
             McpToolKind::PromptGet => {
-                let args: McpPromptGetArgs = serde_json::from_value(args_json)
-                    .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+                let args: McpPromptGetArgs = parse_tool_args(args_json)?;
                 self.executor.get_prompt(args).await
             }
         }
@@ -438,11 +433,7 @@ impl McpServerExecutor {
                 format!("{name} — {description}")
             },
         );
-        Ok(ToolResult {
-            display_text,
-            structured_json: Some(self.wrap_result(json!({ "tools": list.items }), &list.metadata)),
-            artifacts: Vec::new(),
-        })
+        Ok(self.tool_result(display_text, json!({ "tools": list.items }), &list.metadata))
     }
 
     async fn call_tool(
@@ -499,18 +490,15 @@ impl McpServerExecutor {
             return Err(ToolError::Execution(display_text));
         }
 
-        Ok(ToolResult {
+        Ok(self.tool_result(
             display_text,
-            structured_json: Some(self.wrap_result(
-                json!({
-                    "tool": tool_name,
-                    "arguments": arguments,
-                    "result": result,
-                }),
-                &metadata,
-            )),
-            artifacts: Vec::new(),
-        })
+            json!({
+                "tool": tool_name,
+                "arguments": arguments,
+                "result": result,
+            }),
+            &metadata,
+        ))
     }
 
     async fn discover_tools(&self) -> Result<Vec<DiscoveredMcpToolSpec>, ToolError> {
@@ -607,13 +595,11 @@ impl McpServerExecutor {
                 }
             },
         );
-        Ok(ToolResult {
+        Ok(self.tool_result(
             display_text,
-            structured_json: Some(
-                self.wrap_result(json!({ "resources": list.items }), &list.metadata),
-            ),
-            artifacts: Vec::new(),
-        })
+            json!({ "resources": list.items }),
+            &list.metadata,
+        ))
     }
 
     async fn read_resource(&self, args: McpResourceReadArgs) -> Result<ToolResult, ToolError> {
@@ -639,17 +625,14 @@ impl McpServerExecutor {
             .cloned()
             .unwrap_or_default();
         let display_text = render_resource_contents(&contents);
-        Ok(ToolResult {
+        Ok(self.tool_result(
             display_text,
-            structured_json: Some(self.wrap_result(
-                json!({
-                    "uri": uri,
-                    "contents": contents,
-                }),
-                &metadata,
-            )),
-            artifacts: Vec::new(),
-        })
+            json!({
+                "uri": uri,
+                "contents": contents,
+            }),
+            &metadata,
+        ))
     }
 
     async fn list_prompts(&self) -> Result<ToolResult, ToolError> {
@@ -667,13 +650,11 @@ impl McpServerExecutor {
                 format!("{name} — {description}")
             },
         );
-        Ok(ToolResult {
+        Ok(self.tool_result(
             display_text,
-            structured_json: Some(
-                self.wrap_result(json!({ "prompts": list.items }), &list.metadata),
-            ),
-            artifacts: Vec::new(),
-        })
+            json!({ "prompts": list.items }),
+            &list.metadata,
+        ))
     }
 
     async fn get_prompt(&self, args: McpPromptGetArgs) -> Result<ToolResult, ToolError> {
@@ -713,18 +694,15 @@ impl McpServerExecutor {
             .cloned()
             .unwrap_or_default();
         let display_text = render_prompt_messages(&messages);
-        Ok(ToolResult {
+        Ok(self.tool_result(
             display_text,
-            structured_json: Some(self.wrap_result(
-                json!({
-                    "name": prompt_name,
-                    "arguments": arguments,
-                    "messages": messages,
-                }),
-                &metadata,
-            )),
-            artifacts: Vec::new(),
-        })
+            json!({
+                "name": prompt_name,
+                "arguments": arguments,
+                "messages": messages,
+            }),
+            &metadata,
+        ))
     }
 
     async fn list_items(&self, method: &str, key: &str) -> Result<McpListResult, ToolError> {
@@ -861,6 +839,15 @@ impl McpServerExecutor {
             "serverInfo": metadata.server_info,
             "payload": payload,
         })
+    }
+
+    fn tool_result(
+        &self,
+        display_text: String,
+        payload: Value,
+        metadata: &McpSessionMetadata,
+    ) -> ToolResult {
+        crate::text_json_tool_result(display_text, self.wrap_result(payload, metadata))
     }
 }
 

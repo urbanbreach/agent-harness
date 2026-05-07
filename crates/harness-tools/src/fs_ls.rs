@@ -51,8 +51,7 @@ impl Tool for FsLsTool {
         ctx: ToolContext,
         args_json: serde_json::Value,
     ) -> Result<ToolResult, ToolError> {
-        let args: FsLsArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let args: FsLsArgs = crate::parse_tool_args(args_json)?;
 
         let path = Path::new(&args.path);
         if path.is_absolute() {
@@ -65,9 +64,9 @@ impl Tool for FsLsTool {
         let limit = args.limit.map_or(DEFAULT_LIMIT, |value| value as usize);
         let list_result = list_directory_entries(&resolved, limit)?;
 
-        Ok(ToolResult {
-            display_text: list_result.entries.join("\n"),
-            structured_json: Some(json!({
+        Ok(crate::text_json_tool_result(
+            list_result.entries.join("\n"),
+            json!({
                 "path": args.path,
                 "resolved_path": resolved.display().to_string(),
                 "entries": list_result.entries,
@@ -75,9 +74,8 @@ impl Tool for FsLsTool {
                 "returned_count": list_result.returned_count,
                 "truncated_count": list_result.truncated_count,
                 "truncated": list_result.is_truncated,
-            })),
-            artifacts: Vec::new(),
-        })
+            }),
+        ))
     }
 }
 

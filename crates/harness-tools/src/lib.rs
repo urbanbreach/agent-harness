@@ -17,6 +17,7 @@ use harness_core::tool::{
     ArtifactRef, Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult,
 };
 use schemars::JsonSchema;
+use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::json;
 
@@ -94,6 +95,27 @@ mod plan;
 use plan::PlanExitTool;
 
 pub use harness_core::tool::canonical_tool_id_for;
+
+pub(crate) fn parse_tool_args<T: DeserializeOwned>(
+    args_json: serde_json::Value,
+) -> Result<T, ToolError> {
+    serde_json::from_value(args_json).map_err(|err| ToolError::InvalidArguments(err.to_string()))
+}
+
+pub(crate) fn text_json_tool_result(
+    display_text: impl Into<String>,
+    structured_json: serde_json::Value,
+) -> ToolResult {
+    ToolResult::structured(display_text, structured_json)
+}
+
+pub(crate) fn text_json_artifacts_tool_result(
+    display_text: impl Into<String>,
+    structured_json: serde_json::Value,
+    artifacts: Vec<ArtifactRef>,
+) -> ToolResult {
+    ToolResult::structured_with_artifacts(display_text, structured_json, artifacts)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EditingToolSurfaceConfig {
@@ -433,11 +455,10 @@ fn build_shell_run_result(
         structured_json.insert("stdout".to_string(), json!(stdout));
         structured_json.insert("stderr".to_string(), json!(stderr));
         structured_json.insert("truncated".to_string(), json!(false));
-        return Ok(ToolResult {
-            display_text: full_output,
-            structured_json: Some(serde_json::Value::Object(structured_json)),
-            artifacts: Vec::new(),
-        });
+        return Ok(text_json_tool_result(
+            full_output,
+            serde_json::Value::Object(structured_json),
+        ));
     }
 
     let artifact = ctx
@@ -488,11 +509,11 @@ fn build_shell_run_result(
         display_text.push_str(&marker);
     }
 
-    Ok(ToolResult {
+    Ok(text_json_artifacts_tool_result(
         display_text,
-        structured_json: Some(serde_json::Value::Object(structured_json)),
-        artifacts: vec![artifact],
-    })
+        serde_json::Value::Object(structured_json),
+        vec![artifact],
+    ))
 }
 
 #[async_trait]
@@ -518,8 +539,7 @@ impl Tool for FsReadTool {
         ctx: ToolContext,
         args_json: serde_json::Value,
     ) -> Result<ToolResult, ToolError> {
-        let args: FsReadArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let args: FsReadArgs = parse_tool_args(args_json)?;
         let offset = normalize_read_offset(args.offset);
         let limit = normalize_read_limit(args.limit);
         let hashline_anchors = args
@@ -574,9 +594,9 @@ impl Tool for FsReadTool {
             record_file_read(&ctx, &resolved)?;
         }
 
-        Ok(ToolResult {
+        Ok(text_json_artifacts_tool_result(
             display_text,
-            structured_json: Some(json!({
+            json!({
                 "path": args.path,
                 "resolved_path": resolved.display().to_string(),
                 "offset": offset,
@@ -590,9 +610,9 @@ impl Tool for FsReadTool {
                     serde_json::Value::Null
                 },
                 "truncated": read.truncated,
-            })),
+            }),
             artifacts,
-        })
+        ))
     }
 }
 
@@ -847,8 +867,7 @@ impl Tool for ShellRunTool {
         ctx: ToolContext,
         args_json: serde_json::Value,
     ) -> Result<ToolResult, ToolError> {
-        let args: ShellRunArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let args: ShellRunArgs = parse_tool_args(args_json)?;
 
         let cmd = args
             .cmd

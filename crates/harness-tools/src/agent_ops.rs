@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use harness_core::coord::{AgentRuntimeInfo, CoordinatorError};
 use harness_core::event::{ActorKind, EventActor, EventV1, TaskScheduleState, ToolCallStatus};
+use harness_core::store::{EventStoreError, EventStream};
 use harness_core::tool::{canonical_tool_id_for, ToolContext, ToolError, ToolResult};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,8 @@ use serde_json::{json, Value};
 use tokio::task::JoinSet;
 use tokio::time::{sleep, Instant};
 use tokio_stream::StreamExt;
+
+use crate::text_json_tool_result;
 
 const DEFAULT_TASK_WAIT_TIMEOUT_MS: u64 = 300_000;
 const MAX_BACKGROUND_OUTPUT_TIMEOUT_MS: u64 = 300_000;
@@ -76,19 +79,18 @@ impl AgentOpsExecutor {
                     tool_calls: ChildToolCallCounts::default(),
                 },
             );
-            return Ok(ToolResult {
-                display_text: format!(
+            return Ok(text_json_tool_result(
+                format!(
                     "task_id: {agent_id} (for resuming to continue this task if needed)\nrequest_id: {request_id}\n\n<task_result>Background task scheduled.</task_result>"
                 ),
-                structured_json: Some(spawn_result_json(
+                spawn_result_json(
                     &request,
                     &agent_id,
                     &request_id,
                     lineage.clone(),
                     &child_session,
-                )),
-                artifacts: Vec::new(),
-            });
+                ),
+            ));
         }
 
         let child_observability = wait_for_request_completion(ctx, &request_id).await?;
@@ -111,20 +113,19 @@ impl AgentOpsExecutor {
                 _ => "Child session finished without a summary.".to_string(),
             });
 
-        Ok(ToolResult {
-            display_text: format!(
+        Ok(text_json_tool_result(
+            format!(
                 "task_id: {agent_id} (for resuming to continue this task if needed)\nrequest_id: {request_id}\n\n<task_result>\n{}\n</task_result>",
                 task_result
             ),
-            structured_json: Some(spawn_result_json(
+            spawn_result_json(
                 &request,
                 &agent_id,
                 &request_id,
                 lineage,
                 &child_session,
-            )),
-            artifacts: Vec::new(),
-        })
+            ),
+        ))
     }
 
     pub(crate) async fn execute_batch(
@@ -206,13 +207,13 @@ impl AgentOpsExecutor {
             .map(batch_detail_json)
             .collect::<Vec<_>>();
 
-        Ok(ToolResult {
-            display_text: if failed == 0 {
+        Ok(text_json_tool_result(
+            if failed == 0 {
                 format!("All {successful} tools executed successfully.")
             } else {
                 format!("Executed {successful} tools successfully. {failed} failed.")
             },
-            structured_json: Some(json!({
+            json!({
                 "successful": successful,
                 "failed": failed,
                 "requested_call_count": requested_call_count,
@@ -232,9 +233,8 @@ impl AgentOpsExecutor {
                     "discarded_call_count": requested_call_count.saturating_sub(MAX_BATCH_CALLS),
                 },
                 "details": details,
-            })),
-            artifacts: Vec::new(),
-        })
+            }),
+        ))
     }
 
     pub(crate) async fn background_output(
@@ -261,9 +261,9 @@ impl AgentOpsExecutor {
             timed_out = !observed_terminal && !summary.terminal;
         }
 
-        Ok(ToolResult {
-            display_text: format_background_output(&summary, timed_out),
-            structured_json: Some(json!({
+        Ok(text_json_tool_result(
+            format_background_output(&summary, timed_out),
+            json!({
                 "request_id": summary.request_id,
                 "task_id": summary.session_id,
                 "session_id": summary.session_id,
@@ -280,9 +280,8 @@ impl AgentOpsExecutor {
                 "child_tool_call_counts": summary.tool_calls,
                 "late_result": summary.late_result,
                 "source": "event_replay",
-            })),
-            artifacts: Vec::new(),
-        })
+            }),
+        ))
     }
 }
 
@@ -592,14 +591,7 @@ async fn wait_for_request_completion(
     ctx: &ToolContext,
     request_id: &str,
 ) -> Result<ChildRequestObservability, ToolError> {
-    let store = ctx
-        .coordinator
-        .event_store()
-        .await
-        .map_err(|err| ToolError::Execution(format!("failed to access event store: {err}")))?;
-    let mut stream = store
-        .subscribe(1)
-        .map_err(|err| ToolError::Execution(format!("failed to subscribe to events: {err}")))?;
+    let mut stream = subscribe_events(ctx).await?;
     let deadline = Instant::now() + Duration::from_millis(DEFAULT_TASK_WAIT_TIMEOUT_MS);
     while Instant::now() < deadline {
         let remaining = deadline.saturating_duration_since(Instant::now());
@@ -622,9 +614,7 @@ async fn wait_for_request_completion(
                 _ => {}
             },
             Ok(Some(Err(err))) => {
-                return Err(ToolError::Execution(format!(
-                    "failed to consume event stream: {err}"
-                )));
+                return Err(map_event_stream_error(err));
             }
             Ok(None) | Err(_) => {
                 sleep(Duration::from_millis(10)).await;
@@ -639,14 +629,7 @@ async fn wait_for_background_request_terminal(
     request_id: &str,
     timeout_ms: u64,
 ) -> Result<bool, ToolError> {
-    let store = ctx
-        .coordinator
-        .event_store()
-        .await
-        .map_err(|err| ToolError::Execution(format!("failed to access event store: {err}")))?;
-    let mut stream = store
-        .subscribe(1)
-        .map_err(|err| ToolError::Execution(format!("failed to subscribe to events: {err}")))?;
+    let mut stream = subscribe_events(ctx).await?;
     let deadline = Instant::now() + Duration::from_millis(timeout_ms);
 
     while Instant::now() < deadline {
@@ -665,9 +648,7 @@ async fn wait_for_background_request_terminal(
                 }
             }
             Ok(Some(Err(err))) => {
-                return Err(ToolError::Execution(format!(
-                    "failed to consume event stream: {err}"
-                )));
+                return Err(map_event_stream_error(err));
             }
             Ok(None) | Err(_) => sleep(Duration::from_millis(10)).await,
         }
@@ -691,22 +672,14 @@ async fn resolve_background_request_ref(
         ));
     }
 
-    let store = ctx
-        .coordinator
-        .event_store()
-        .await
-        .map_err(|err| ToolError::Execution(format!("failed to access event store: {err}")))?;
-    let mut replay = store
-        .replay(1)
-        .map_err(|err| ToolError::Execution(format!("failed to replay events: {err}")))?;
+    let mut replay = replay_events(ctx).await?;
     let mut latest_request_id = None;
     let mut parent_by_agent = BTreeMap::new();
     let mut saw_matching_unauthorized = false;
     let mut saw_explicit_request = false;
 
     while let Some(next) = replay.next().await {
-        let event = next
-            .map_err(|err| ToolError::Execution(format!("failed to replay event stream: {err}")))?;
+        let event = next.map_err(map_replay_stream_error)?;
         match &event.payload {
             EventV1::AgentSpawned(data) => {
                 if let Some(parent_agent_id) = data.parent_agent_id.as_deref() {
@@ -803,14 +776,7 @@ async fn summarize_background_request(
     ctx: &ToolContext,
     request_ref: &BackgroundRequestRef,
 ) -> Result<BackgroundRequestSummary, ToolError> {
-    let store = ctx
-        .coordinator
-        .event_store()
-        .await
-        .map_err(|err| ToolError::Execution(format!("failed to access event store: {err}")))?;
-    let mut replay = store
-        .replay(1)
-        .map_err(|err| ToolError::Execution(format!("failed to replay events: {err}")))?;
+    let mut replay = replay_events(ctx).await?;
 
     let mut tool_calls = ChildToolCallCounts::default();
     let mut started_mono_ms = None;
@@ -825,8 +791,7 @@ async fn summarize_background_request(
     let mut saw_event = false;
 
     while let Some(next) = replay.next().await {
-        let event = next
-            .map_err(|err| ToolError::Execution(format!("failed to replay event stream: {err}")))?;
+        let event = next.map_err(map_replay_stream_error)?;
         if event.correlation_id.as_deref() != Some(request_ref.request_id.as_str()) {
             continue;
         }
@@ -950,14 +915,7 @@ async fn summarize_child_request(
     request_id: &str,
     terminal_state: ChildTerminalState,
 ) -> Result<ChildRequestObservability, ToolError> {
-    let store = ctx
-        .coordinator
-        .event_store()
-        .await
-        .map_err(|err| ToolError::Execution(format!("failed to access event store: {err}")))?;
-    let mut replay = store
-        .replay(1)
-        .map_err(|err| ToolError::Execution(format!("failed to replay events: {err}")))?;
+    let mut replay = replay_events(ctx).await?;
 
     let mut tool_calls = ChildToolCallCounts::default();
     let mut started_mono_ms = None;
@@ -967,8 +925,7 @@ async fn summarize_child_request(
     let mut observed_status = None;
 
     while let Some(next) = replay.next().await {
-        let event = next
-            .map_err(|err| ToolError::Execution(format!("failed to replay event stream: {err}")))?;
+        let event = next.map_err(map_replay_stream_error)?;
         if event.correlation_id.as_deref() != Some(request_id) {
             continue;
         }
@@ -1028,6 +985,36 @@ async fn summarize_child_request(
         failure_summary,
         tool_calls,
     })
+}
+
+async fn subscribe_events(ctx: &ToolContext) -> Result<EventStream, ToolError> {
+    let store = ctx
+        .coordinator
+        .event_store()
+        .await
+        .map_err(|err| ToolError::Execution(format!("failed to access event store: {err}")))?;
+    store
+        .subscribe(1)
+        .map_err(|err| ToolError::Execution(format!("failed to subscribe to events: {err}")))
+}
+
+async fn replay_events(ctx: &ToolContext) -> Result<EventStream, ToolError> {
+    let store = ctx
+        .coordinator
+        .event_store()
+        .await
+        .map_err(|err| ToolError::Execution(format!("failed to access event store: {err}")))?;
+    store
+        .replay(1)
+        .map_err(|err| ToolError::Execution(format!("failed to replay events: {err}")))
+}
+
+fn map_event_stream_error(err: EventStoreError) -> ToolError {
+    ToolError::Execution(format!("failed to consume event stream: {err}"))
+}
+
+fn map_replay_stream_error(err: EventStoreError) -> ToolError {
+    ToolError::Execution(format!("failed to replay event stream: {err}"))
 }
 
 fn elapsed_ms_from_events(started_mono_ms: Option<u64>, finished_mono_ms: u64) -> Option<u64> {

@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::question_env::read_question_answers_from_env;
+use crate::question_env::question_answers_from_env_or_request;
 
 const PLAN_EXIT_YES: &str = "Yes";
 const PLAN_EXIT_NO: &str = "No";
@@ -41,8 +41,7 @@ impl Tool for PlanExitTool {
     }
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let _args: PlanExitArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let _args: PlanExitArgs = crate::parse_tool_args(args_json)?;
         execute_plan_exit(ctx).await
     }
 }
@@ -79,17 +78,16 @@ async fn execute_plan_exit(ctx: ToolContext) -> Result<ToolResult, ToolError> {
             ))
         })?;
 
-    Ok(ToolResult {
-        display_text: "Switching to build agent".to_string(),
-        structured_json: Some(json!({
+    Ok(crate::text_json_tool_result(
+        "Switching to build agent",
+        json!({
             "agent": BUILD_AGENT_NAME,
             "build_agent_id": build_agent_id,
             "request_id": request_id,
             "plan_file": plan_file,
             "approved": true,
-        })),
-        artifacts: Vec::new(),
-    })
+        }),
+    ))
 }
 
 async fn request_plan_exit_approval(ctx: &ToolContext, plan_file: &str) -> Result<bool, ToolError> {
@@ -104,14 +102,8 @@ async fn request_plan_exit_approval(ctx: &ToolContext, plan_file: &str) -> Resul
         }]
     });
 
-    let answers = match read_question_answers_from_env()? {
-        Some(answers) => answers,
-        None => ctx
-            .coordinator
-            .request_question(ctx.actor.clone(), ctx.tool_call_id.clone(), questions)
-            .await
-            .map_err(ToolError::Execution)?,
-    };
+    let answers =
+        question_answers_from_env_or_request(ctx, questions, ToolError::Execution).await?;
     let answer = answers
         .first()
         .and_then(|group| group.first())

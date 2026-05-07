@@ -56,8 +56,7 @@ impl Tool for FsGlobTool {
         ctx: ToolContext,
         args_json: serde_json::Value,
     ) -> Result<ToolResult, ToolError> {
-        let args: FsGlobArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let args: FsGlobArgs = crate::parse_tool_args(args_json)?;
 
         let (workspace_root, resolved_base, display_path) =
             resolve_search_base(&ctx, args.path.as_deref())?;
@@ -72,9 +71,9 @@ impl Tool for FsGlobTool {
 
         let matches = collect_glob_matches(&workspace_root, &resolved_base, &args.pattern, limit)?;
 
-        Ok(ToolResult {
-            display_text: matches.paths.join("\n"),
-            structured_json: Some(json!({
+        Ok(crate::text_json_tool_result(
+            matches.paths.join("\n"),
+            json!({
                 "pattern": args.pattern,
                 "path": display_path,
                 "resolved_path": resolved_base.display().to_string(),
@@ -84,9 +83,8 @@ impl Tool for FsGlobTool {
                 "truncated_count": matches.truncated_count,
                 "truncated": matches.is_truncated,
                 "skipped_dirs": SKIPPED_WORKSPACE_DIRS,
-            })),
-            artifacts: Vec::new(),
-        })
+            }),
+        ))
     }
 }
 

@@ -96,9 +96,9 @@ impl NetworkExecutor {
                         display_content_type(&content_type, &mime)
                     ))
                 })?;
-                Ok(ToolResult {
-                    display_text: render_textual_content(request.format, &mime, &text),
-                    structured_json: Some(json!({
+                Ok(crate::text_json_tool_result(
+                    render_textual_content(request.format, &mime, &text),
+                    json!({
                         "url": url.as_str(),
                         "content_type": content_type,
                         "media_type": mime,
@@ -106,21 +106,20 @@ impl NetworkExecutor {
                         "timeout_secs": timeout_secs,
                         "response_kind": "text",
                         "byte_len": text.len(),
-                    })),
-                    artifacts: Vec::new(),
-                })
+                    }),
+                ))
             }
             WebFetchBodyKind::Image | WebFetchBodyKind::Pdf | WebFetchBodyKind::Binary => {
                 let artifact = write_web_fetch_artifact(ctx, &bytes, &mime, kind)?;
-                Ok(ToolResult {
-                    display_text: format!(
+                Ok(crate::text_json_artifacts_tool_result(
+                    format!(
                         "Fetched {} artifact ({} bytes, {}).\nArtifact: {}",
                         kind.label(),
                         bytes.len(),
                         display_content_type(&content_type, &mime),
                         artifact.path
                     ),
-                    structured_json: Some(json!({
+                    json!({
                         "url": url.as_str(),
                         "content_type": content_type,
                         "media_type": mime,
@@ -133,9 +132,9 @@ impl NetworkExecutor {
                             "path": artifact.path,
                             "digest": artifact.digest,
                         },
-                    })),
-                    artifacts: vec![artifact],
-                })
+                    }),
+                    vec![artifact],
+                ))
             }
         }
     }
@@ -202,22 +201,22 @@ impl NetworkExecutor {
         let request = NormalizedWebSearchRequest::from(request);
         let response = self.remote_search.web_search(&request).await?;
         let empty = response.is_empty();
-        Ok(ToolResult {
-            display_text: if empty {
-                "No search results found".to_string()
-            } else {
-                response.text
-            },
-            structured_json: Some(json!({
+        let display_text = if empty {
+            "No search results found".to_string()
+        } else {
+            response.text
+        };
+        Ok(crate::text_json_tool_result(
+            display_text,
+            json!({
                 "query": request.query,
                 "numResults": request.num_results,
                 "livecrawl": request.livecrawl,
                 "type": request.search_type,
                 "contextMaxCharacters": request.context_max_characters,
                 "empty": empty,
-            })),
-            artifacts: Vec::new(),
-        })
+            }),
+        ))
     }
 
     pub(crate) async fn code_search(
@@ -231,19 +230,19 @@ impl NetworkExecutor {
             .await
             .map_err(normalize_code_search_error)?;
         let empty = response.is_empty();
-        Ok(ToolResult {
-            display_text: if empty {
-                EMPTY_CODE_SEARCH_MESSAGE.to_string()
-            } else {
-                response.text
-            },
-            structured_json: Some(json!({
+        let display_text = if empty {
+            EMPTY_CODE_SEARCH_MESSAGE.to_string()
+        } else {
+            response.text
+        };
+        Ok(crate::text_json_tool_result(
+            display_text,
+            json!({
                 "query": request.query,
                 "tokensNum": request.tokens_num,
                 "empty": empty,
-            })),
-            artifacts: Vec::new(),
-        })
+            }),
+        ))
     }
 }
 

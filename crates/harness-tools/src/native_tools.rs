@@ -22,7 +22,10 @@ use crate::read_window::{
 };
 use crate::text::trimmed_non_empty;
 use crate::workspace_paths::{normalize_workspace_target_path, resolve_existing_path};
-use crate::{FsGlobTool, FsGrepTool, FsLsTool, FsReadTool, ShellRunTool};
+use crate::{
+    parse_tool_args, text_json_tool_result, FsGlobTool, FsGrepTool, FsLsTool, FsReadTool,
+    ShellRunTool,
+};
 use async_trait::async_trait;
 use globset::Glob;
 use harness_core::config::ShellAllowlist;
@@ -516,8 +519,7 @@ impl Tool for ReadTool {
     }
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: ReadArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let args: ReadArgs = parse_tool_args(args_json)?;
         let offset = normalize_read_offset(args.offset.unwrap_or(READ_DEFAULT_OFFSET));
         let limit = normalize_read_limit(args.limit.unwrap_or(READ_DEFAULT_LIMIT));
         let hashline_anchors = args
@@ -571,20 +573,18 @@ impl Tool for ListTool {
     }
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: ListArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let args: ListArgs = parse_tool_args(args_json)?;
         let root = resolve_directory_path(&ctx, args.path.as_deref().unwrap_or("."))?;
         let ignore = args.ignore.unwrap_or_default();
         let tree = build_recursive_tree(&ctx, &root, &ignore, DEFAULT_LIST_LIMIT)?;
-        Ok(ToolResult {
-            display_text: tree.rendered,
-            structured_json: Some(json!({
+        Ok(text_json_tool_result(
+            tree.rendered,
+            json!({
                 "path": root.display().to_string(),
                 "count": tree.count,
                 "truncated": tree.truncated,
-            })),
-            artifacts: Vec::new(),
-        })
+            }),
+        ))
     }
 }
 
@@ -607,8 +607,7 @@ impl Tool for GlobTool {
     }
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: GlobArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let args: GlobArgs = parse_tool_args(args_json)?;
         FsGlobTool
             .call(
                 ctx,
@@ -641,8 +640,7 @@ impl Tool for GrepTool {
     }
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: GrepArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let args: GrepArgs = parse_tool_args(args_json)?;
         FsGrepTool
             .call(
                 ctx,
@@ -677,8 +675,7 @@ impl Tool for BashTool {
     }
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: BashArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let args: BashArgs = parse_tool_args(args_json)?;
         ShellRunTool::new(self.allowlist.clone())
             .call(
                 ctx,
@@ -712,8 +709,7 @@ impl Tool for WebFetchTool {
     }
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: WebFetchArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let args: WebFetchArgs = parse_tool_args(args_json)?;
         self.executor
             .web_fetch(
                 &ctx,
@@ -746,8 +742,7 @@ impl Tool for TodoWriteTool {
     }
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: TodoWriteArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let args: TodoWriteArgs = parse_tool_args(args_json)?;
         self.executor.write_todos(&ctx, args.todos)
     }
 }
@@ -799,8 +794,7 @@ impl Tool for TaskTool {
     }
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: TaskArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let args: TaskArgs = parse_tool_args(args_json)?;
         let category_selector = args
             .subagent_type
             .as_deref()
@@ -853,8 +847,7 @@ impl Tool for BackgroundOutputTool {
     }
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: BackgroundOutputArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let args: BackgroundOutputArgs = parse_tool_args(args_json)?;
         self.executor
             .background_output(
                 &ctx,
@@ -889,8 +882,7 @@ impl Tool for BatchTool {
     }
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: BatchArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let args: BatchArgs = parse_tool_args(args_json)?;
         self.executor.execute_batch(&ctx, args.tool_calls).await
     }
 }
@@ -914,8 +906,7 @@ impl Tool for SkillTool {
     }
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: SkillArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let args: SkillArgs = parse_tool_args(args_json)?;
         self.executor
             .load_skill(&ctx, &args.name, args.user_message)
             .await
@@ -941,8 +932,7 @@ impl Tool for InvalidTool {
     }
 
     async fn call(&self, _ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: InvalidArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let args: InvalidArgs = parse_tool_args(args_json)?;
         Ok(self.executor.invalid_tool(&args.tool, &args.error))
     }
 }
@@ -966,8 +956,7 @@ impl Tool for WebSearchTool {
     }
 
     async fn call(&self, _ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: WebSearchArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let args: WebSearchArgs = parse_tool_args(args_json)?;
         self.executor
             .web_search(WebSearchRequest {
                 query: args.query,
@@ -999,8 +988,7 @@ impl Tool for CodeSearchTool {
     }
 
     async fn call(&self, _ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: CodeSearchArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let args: CodeSearchArgs = parse_tool_args(args_json)?;
         self.executor
             .code_search(CodeSearchRequest {
                 query: args.query,
@@ -1029,8 +1017,7 @@ impl Tool for QuestionTool {
     }
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: QuestionArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let args: QuestionArgs = parse_tool_args(args_json)?;
         self.executor.user_question(&ctx, args.questions).await
     }
 }
@@ -1331,10 +1318,7 @@ fn push_shell_segment(segments: &mut Vec<String>, current: &mut String) {
 }
 
 fn first_shell_command_name(segment: &str) -> Result<Option<String>, ToolError> {
-    let tokens = shell_words::split(segment).map_err(|err| {
-        ToolError::InvalidArguments(format!("failed to parse command string: {err}"))
-    })?;
-    for token in tokens {
+    for token in parse_shell_segment_tokens(segment)? {
         if is_shell_env_assignment(&token) {
             continue;
         }
@@ -1381,10 +1365,7 @@ fn resolve_shell_cd_target(
     workspace_root: &Path,
     allowlist: &ShellAllowlist,
 ) -> Result<PathBuf, ToolError> {
-    let tokens = shell_words::split(segment).map_err(|err| {
-        ToolError::InvalidArguments(format!("failed to parse command string: {err}"))
-    })?;
-    let mut args = tokens
+    let mut args = parse_shell_segment_tokens(segment)?
         .into_iter()
         .filter(|token| !is_shell_env_assignment(token));
     let _ = args.next();
@@ -1430,11 +1411,8 @@ fn validate_shell_path_arguments(
     cwd: &Path,
     workspace_root: &Path,
 ) -> Result<(), ToolError> {
-    let tokens = shell_words::split(segment).map_err(|err| {
-        ToolError::InvalidArguments(format!("failed to parse command string: {err}"))
-    })?;
     let mut seen_command = false;
-    for token in tokens {
+    for token in parse_shell_segment_tokens(segment)? {
         if !seen_command {
             if is_shell_env_assignment(&token) {
                 continue;
@@ -1456,6 +1434,12 @@ fn validate_shell_path_arguments(
     }
 
     Ok(())
+}
+
+fn parse_shell_segment_tokens(segment: &str) -> Result<Vec<String>, ToolError> {
+    shell_words::split(segment).map_err(|err| {
+        ToolError::InvalidArguments(format!("failed to parse command string: {err}"))
+    })
 }
 
 fn looks_like_shell_path_argument(token: &str) -> bool {

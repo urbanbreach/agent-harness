@@ -9,7 +9,7 @@ use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
 
-use crate::question_env::read_question_answers_from_env;
+use crate::question_env::question_answers_from_env_or_request;
 use crate::text::has_trimmed_content;
 
 const TODO_STATE_FILE: &str = "control-plane/todos.json";
@@ -33,22 +33,12 @@ impl ControlPlaneExecutor {
     ) -> Result<ToolResult, ToolError> {
         validate_todo_items(&todos).map_err(ToolError::InvalidArguments)?;
         write_todo_state(ctx, &todos)?;
-        Ok(ToolResult {
-            display_text: serde_json::to_string_pretty(&todos)
-                .map_err(|err| ToolError::Execution(format!("failed to render todos: {err}")))?,
-            structured_json: Some(json!({ "todos": todos })),
-            artifacts: Vec::new(),
-        })
+        render_todos_result(todos)
     }
 
     pub(crate) fn read_todos(&self, ctx: &ToolContext) -> Result<ToolResult, ToolError> {
         let todos = read_todo_state(ctx)?;
-        Ok(ToolResult {
-            display_text: serde_json::to_string_pretty(&todos)
-                .map_err(|err| ToolError::Execution(format!("failed to render todos: {err}")))?,
-            structured_json: Some(json!({ "todos": todos })),
-            artifacts: Vec::new(),
-        })
+        render_todos_result(todos)
     }
 
     pub(crate) async fn load_skill(
@@ -94,14 +84,13 @@ impl ControlPlaneExecutor {
                 "\n\n<skill_user_message>{user_message}</skill_user_message>"
             ));
         }
-        Ok(ToolResult {
-            display_text: output,
-            structured_json: Some(json!({
+        Ok(crate::text_json_tool_result(
+            output,
+            json!({
                 "name": skill.name,
                 "location": skill.location.display().to_string(),
-            })),
-            artifacts: Vec::new(),
-        })
+            }),
+        ))
     }
 
     async fn request_skill_load_approval(
@@ -110,22 +99,13 @@ impl ControlPlaneExecutor {
         name: &str,
     ) -> Result<(), ToolError> {
         let questions = vec![skill_load_confirmation_question(name)];
-        let answers = match read_question_answers_from_env()? {
-            Some(answers) => answers,
-            None => ctx
-                .coordinator
-                .request_question(
-                    ctx.actor.clone(),
-                    ctx.tool_call_id.clone(),
-                    json!({ "questions": questions }),
-                )
-                .await
-                .map_err(|err| {
-                    ToolError::Execution(format!(
-                        "Skill \"{name}\" approval failed before loading: {err}"
-                    ))
-                })?,
-        };
+        let answers =
+            question_answers_from_env_or_request(ctx, json!({ "questions": questions }), |err| {
+                ToolError::Execution(format!(
+                    "Skill \"{name}\" approval failed before loading: {err}"
+                ))
+            })
+            .await?;
         let answers =
             validate_question_answers(&questions, answers).map_err(ToolError::Execution)?;
         let approved = answers
@@ -169,34 +149,27 @@ impl ControlPlaneExecutor {
         )
         .map_err(|err| ToolError::Execution(format!("failed to write question state: {err}")))?;
 
-        let answers = match read_question_answers_from_env()? {
-            Some(answers) => answers,
-            None => ctx
-                .coordinator
-                .request_question(
-                    ctx.actor.clone(),
-                    ctx.tool_call_id.clone(),
-                    json!({ "questions": questions }),
-                )
-                .await
-                .map_err(ToolError::Execution)?,
-        };
+        let answers = question_answers_from_env_or_request(
+            ctx,
+            json!({ "questions": questions }),
+            ToolError::Execution,
+        )
+        .await?;
         let answers =
             validate_question_answers(&questions, answers).map_err(ToolError::Execution)?;
         let formatted = format_question_answers(&questions, &answers);
         let display_text = format!(
             "User has answered your questions: {formatted}. You can now continue with the user's answers in mind."
         );
-        Ok(ToolResult {
-            display_text: display_text.clone(),
-            structured_json: Some(json!({
+        Ok(crate::text_json_tool_result(
+            display_text.clone(),
+            json!({
                 "questions": questions,
                 "answers": answers,
                 "output": display_text,
                 "state_path": state_path.display().to_string(),
-            })),
-            artifacts: Vec::new(),
-        })
+            }),
+        ))
     }
 }
 
@@ -543,6 +516,11 @@ struct SkillFrontmatter {
     description: Option<String>,
 }
 
+struct FrontmatterFieldLine<'a> {
+    key: &'a str,
+    raw_value: &'a str,
+}
+
 fn todo_state_path(ctx: &ToolContext) -> Result<PathBuf, ToolError> {
     run_root(ctx).map(|root| root.join(TODO_STATE_FILE))
 }
@@ -592,6 +570,15 @@ fn validate_todo_items(todos: &[TodoItem]) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+fn render_todos_result(todos: Vec<TodoItem>) -> Result<ToolResult, ToolError> {
+    let display_text = serde_json::to_string_pretty(&todos)
+        .map_err(|err| ToolError::Execution(format!("failed to render todos: {err}")))?;
+    Ok(crate::text_json_tool_result(
+        display_text,
+        json!({ "todos": todos }),
+    ))
 }
 
 fn write_todo_state(ctx: &ToolContext, todos: &[TodoItem]) -> Result<(), ToolError> {
@@ -984,38 +971,49 @@ fn parse_frontmatter_fields(lines: &[&str]) -> Result<SkillFrontmatter, String> 
             ));
         }
 
-        let trimmed = line.trim_end();
-        let (key, raw_value) = trimmed
-            .split_once(':')
-            .ok_or_else(|| format!("frontmatter line `{trimmed}` must use `key: value` syntax"))?;
-        let key = key.trim();
-        let raw_value = raw_value.trim_start();
+        let field = parse_frontmatter_field_line(line, |trimmed| {
+            format!("frontmatter line `{trimmed}` must use `key: value` syntax")
+        })?;
 
-        match key {
+        match field.key {
             "name" => {
-                let (value, next_index) = parse_scalar_field(lines, index, raw_value)?;
+                let (value, next_index) = parse_scalar_field(lines, index, field.raw_value)?;
                 frontmatter.name = Some(value);
                 index = next_index;
             }
             "description" => {
-                let (value, next_index) = parse_scalar_field(lines, index, raw_value)?;
+                let (value, next_index) = parse_scalar_field(lines, index, field.raw_value)?;
                 frontmatter.description = Some(value);
                 index = next_index;
             }
             "license" | "compatibility" => {
-                let (_, next_index) = parse_scalar_field(lines, index, raw_value)?;
+                let (_, next_index) = parse_scalar_field(lines, index, field.raw_value)?;
                 index = next_index;
             }
             "metadata" => {
-                index = parse_metadata_field(lines, index, raw_value)?;
+                index = parse_metadata_field(lines, index, field.raw_value)?;
             }
             _ => {
-                index = skip_unknown_field(lines, index, raw_value)?;
+                index = skip_unknown_field(lines, index, field.raw_value)?;
             }
         }
     }
 
     Ok(frontmatter)
+}
+
+fn parse_frontmatter_field_line<'a>(
+    line: &'a str,
+    syntax_error: impl FnOnce(&str) -> String,
+) -> Result<FrontmatterFieldLine<'a>, String> {
+    let trimmed = line.trim_end();
+    let (key, raw_value) = trimmed
+        .split_once(':')
+        .ok_or_else(|| syntax_error(trimmed))?;
+    Ok(FrontmatterFieldLine {
+        key: key.trim(),
+        raw_value: raw_value.trim_start(),
+    })
 }
 
 fn parse_scalar_field(
@@ -1065,16 +1063,14 @@ fn parse_metadata_field(lines: &[&str], index: usize, raw_value: &str) -> Result
             break;
         }
 
-        let trimmed = line.trim();
-        let (key, raw_nested_value) = trimmed.split_once(':').ok_or_else(|| {
+        let field = parse_frontmatter_field_line(line.trim(), |trimmed| {
             format!("frontmatter `metadata` entry `{trimmed}` must use `key: value` syntax")
         })?;
-        if !has_trimmed_content(key) {
+        if !has_trimmed_content(field.key) {
             return Err("frontmatter `metadata` keys must not be empty".to_string());
         }
 
-        let raw_nested_value = raw_nested_value.trim_start();
-        match raw_nested_value {
+        match field.raw_value {
             ">" | "|" => {
                 let (_, next_index) = collect_block_scalar(lines, cursor + 1, indent)?;
                 cursor = next_index;
