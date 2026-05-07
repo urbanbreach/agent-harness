@@ -533,6 +533,13 @@ mod tests {
     };
     use crate::tool::ToolCapability;
 
+    fn ask_decision(timeout_ms: u64) -> PolicyDecision {
+        PolicyDecision::Ask {
+            timeout_ms,
+            default_decision: PermissionDecision::Deny,
+        }
+    }
+
     #[test]
     fn evaluate_uses_global_defaults() {
         let policy = PermissionPolicy::new(
@@ -552,10 +559,7 @@ mod tests {
         );
         assert_eq!(
             policy.evaluate(None, PermissionKind::EditFs),
-            PolicyDecision::Ask {
-                timeout_ms: 1_234,
-                default_decision: PermissionDecision::Deny,
-            }
+            ask_decision(1_234)
         );
     }
 
@@ -583,10 +587,7 @@ mod tests {
         );
         assert_eq!(
             policy.evaluate(Some("deep"), PermissionKind::Shell),
-            PolicyDecision::Ask {
-                timeout_ms: 55,
-                default_decision: PermissionDecision::Deny,
-            }
+            ask_decision(55)
         );
         assert_eq!(
             policy.evaluate(Some("deep"), PermissionKind::Network),
@@ -615,10 +616,7 @@ mod tests {
 
         assert_eq!(
             policy.evaluate(None, PermissionKind::Question),
-            PolicyDecision::Ask {
-                timeout_ms: 77,
-                default_decision: PermissionDecision::Deny,
-            }
+            ask_decision(77)
         );
         assert_eq!(
             policy.evaluate(None, PermissionKind::Task),
@@ -638,10 +636,7 @@ mod tests {
         );
         assert_eq!(
             policy.evaluate(Some("deep"), PermissionKind::Task),
-            PolicyDecision::Ask {
-                timeout_ms: 77,
-                default_decision: PermissionDecision::Deny,
-            }
+            ask_decision(77)
         );
         assert_eq!(
             policy.evaluate(Some("deep"), PermissionKind::WebSearch),
@@ -653,10 +648,7 @@ mod tests {
         );
         assert_eq!(
             policy.evaluate(Some("deep"), PermissionKind::Lsp),
-            PolicyDecision::Ask {
-                timeout_ms: 77,
-                default_decision: PermissionDecision::Deny,
-            }
+            ask_decision(77)
         );
     }
 
@@ -711,10 +703,7 @@ mod tests {
                     "cargo test -p harness-core --lib".to_string()
                 ))
             ),
-            PolicyDecision::Ask {
-                timeout_ms: 0,
-                default_decision: PermissionDecision::Deny,
-            }
+            ask_decision(0)
         );
         assert_eq!(
             policy.evaluate_request(
@@ -792,10 +781,7 @@ mod tests {
                     "cargo test -p harness-core --lib".to_string()
                 ))
             ),
-            PolicyDecision::Ask {
-                timeout_ms: 0,
-                default_decision: PermissionDecision::Deny,
-            }
+            ask_decision(0)
         );
         assert_eq!(
             policy.evaluate_request(
@@ -815,10 +801,7 @@ mod tests {
                     "docs/locked.md".to_string()
                 ))
             ),
-            PolicyDecision::Ask {
-                timeout_ms: 0,
-                default_decision: PermissionDecision::Deny,
-            }
+            ask_decision(0)
         );
         assert_eq!(
             policy.evaluate_request(

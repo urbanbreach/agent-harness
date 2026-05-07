@@ -541,24 +541,54 @@ pub struct CoordinatorHandle {
 }
 
 impl CoordinatorHandle {
-    pub async fn start_run(
+    async fn request<T>(
         &self,
-        run_name: impl Into<String>,
-        workspace_root: impl Into<PathBuf>,
-    ) -> Result<RunInfo, CoordinatorError> {
+        build_command: impl FnOnce(oneshot::Sender<Result<T, CoordinatorError>>) -> Command,
+    ) -> Result<T, CoordinatorError> {
         let (respond_to, response_rx) = oneshot::channel();
         self.tx
-            .send(Command::StartRun {
-                run_name: run_name.into(),
-                workspace_root: workspace_root.into(),
-                respond_to,
-            })
+            .send(build_command(respond_to))
             .await
             .map_err(|_| CoordinatorError::CommandChannelClosed)?;
 
         response_rx
             .await
             .map_err(|_| CoordinatorError::ResponseChannelClosed)?
+    }
+
+    async fn request_string_error<T>(
+        &self,
+        build_command: impl FnOnce(oneshot::Sender<Result<T, String>>) -> Command,
+    ) -> Result<T, String> {
+        let (respond_to, response_rx) = oneshot::channel();
+        self.tx
+            .send(build_command(respond_to))
+            .await
+            .map_err(|_| CoordinatorError::CommandChannelClosed.to_string())?;
+
+        response_rx
+            .await
+            .map_err(|_| CoordinatorError::ResponseChannelClosed.to_string())?
+    }
+
+    async fn send_command(&self, command: Command) -> Result<(), CoordinatorError> {
+        self.tx
+            .send(command)
+            .await
+            .map_err(|_| CoordinatorError::CommandChannelClosed)
+    }
+
+    pub async fn start_run(
+        &self,
+        run_name: impl Into<String>,
+        workspace_root: impl Into<PathBuf>,
+    ) -> Result<RunInfo, CoordinatorError> {
+        self.request(|respond_to| Command::StartRun {
+            run_name: run_name.into(),
+            workspace_root: workspace_root.into(),
+            respond_to,
+        })
+        .await
     }
 
     pub async fn resume_run(
@@ -566,43 +596,23 @@ impl CoordinatorHandle {
         run_id: impl Into<String>,
         run_name: impl Into<String>,
     ) -> Result<RunInfo, CoordinatorError> {
-        let (respond_to, response_rx) = oneshot::channel();
-        self.tx
-            .send(Command::ResumeRun {
-                run_id: run_id.into(),
-                run_name: run_name.into(),
-                respond_to,
-            })
-            .await
-            .map_err(|_| CoordinatorError::CommandChannelClosed)?;
-
-        response_rx
-            .await
-            .map_err(|_| CoordinatorError::ResponseChannelClosed)?
+        self.request(|respond_to| Command::ResumeRun {
+            run_id: run_id.into(),
+            run_name: run_name.into(),
+            respond_to,
+        })
+        .await
     }
 
     pub async fn stop_run(&self) -> Result<(), CoordinatorError> {
-        let (respond_to, response_rx) = oneshot::channel();
-        self.tx
-            .send(Command::StopRun { respond_to })
+        self.request(|respond_to| Command::StopRun { respond_to })
             .await
-            .map_err(|_| CoordinatorError::CommandChannelClosed)?;
-
-        response_rx
-            .await
-            .map_err(|_| CoordinatorError::ResponseChannelClosed)?
     }
 
     pub async fn event_store(&self) -> Result<Arc<dyn EventStore>, CoordinatorError> {
-        let (respond_to, response_rx) = oneshot::channel();
-        self.tx
-            .send(Command::GetEventStore { respond_to })
-            .await
-            .map_err(|_| CoordinatorError::CommandChannelClosed)?;
-
-        let store = response_rx
-            .await
-            .map_err(|_| CoordinatorError::ResponseChannelClosed)??;
+        let store = self
+            .request(|respond_to| Command::GetEventStore { respond_to })
+            .await?;
         let store: Arc<dyn EventStore> = store;
         Ok(store)
     }
@@ -611,18 +621,11 @@ impl CoordinatorHandle {
         &self,
         agent_id: impl Into<String>,
     ) -> Result<AgentRuntimeInfo, CoordinatorError> {
-        let (respond_to, response_rx) = oneshot::channel();
-        self.tx
-            .send(Command::GetAgentRuntimeInfo {
-                agent_id: agent_id.into(),
-                respond_to,
-            })
-            .await
-            .map_err(|_| CoordinatorError::CommandChannelClosed)?;
-
-        response_rx
-            .await
-            .map_err(|_| CoordinatorError::ResponseChannelClosed)?
+        self.request(|respond_to| Command::GetAgentRuntimeInfo {
+            agent_id: agent_id.into(),
+            respond_to,
+        })
+        .await
     }
 
     pub async fn spawn_agent(
@@ -631,21 +634,14 @@ impl CoordinatorHandle {
         profile: impl Into<String>,
         parent_agent_id: Option<String>,
     ) -> Result<String, CoordinatorError> {
-        let (respond_to, response_rx) = oneshot::channel();
-        self.tx
-            .send(Command::SpawnAgent {
-                actor,
-                profile: profile.into(),
-                parent_agent_id,
-                child_session_title: None,
-                respond_to,
-            })
-            .await
-            .map_err(|_| CoordinatorError::CommandChannelClosed)?;
-
-        response_rx
-            .await
-            .map_err(|_| CoordinatorError::ResponseChannelClosed)?
+        self.request(|respond_to| Command::SpawnAgent {
+            actor,
+            profile: profile.into(),
+            parent_agent_id,
+            child_session_title: None,
+            respond_to,
+        })
+        .await
     }
 
     pub async fn spawn_agent_idle(
@@ -654,21 +650,14 @@ impl CoordinatorHandle {
         profile: impl Into<String>,
         parent_agent_id: Option<String>,
     ) -> Result<String, CoordinatorError> {
-        let (respond_to, response_rx) = oneshot::channel();
-        self.tx
-            .send(Command::SpawnAgentIdle {
-                actor,
-                profile: profile.into(),
-                parent_agent_id,
-                child_session_title: None,
-                respond_to,
-            })
-            .await
-            .map_err(|_| CoordinatorError::CommandChannelClosed)?;
-
-        response_rx
-            .await
-            .map_err(|_| CoordinatorError::ResponseChannelClosed)?
+        self.request(|respond_to| Command::SpawnAgentIdle {
+            actor,
+            profile: profile.into(),
+            parent_agent_id,
+            child_session_title: None,
+            respond_to,
+        })
+        .await
     }
 
     pub async fn spawn_agent_idle_with_child_title(
@@ -678,21 +667,14 @@ impl CoordinatorHandle {
         parent_agent_id: Option<String>,
         child_session_title: impl Into<String>,
     ) -> Result<String, CoordinatorError> {
-        let (respond_to, response_rx) = oneshot::channel();
-        self.tx
-            .send(Command::SpawnAgentIdle {
-                actor,
-                profile: profile.into(),
-                parent_agent_id,
-                child_session_title: Some(child_session_title.into()),
-                respond_to,
-            })
-            .await
-            .map_err(|_| CoordinatorError::CommandChannelClosed)?;
-
-        response_rx
-            .await
-            .map_err(|_| CoordinatorError::ResponseChannelClosed)?
+        self.request(|respond_to| Command::SpawnAgentIdle {
+            actor,
+            profile: profile.into(),
+            parent_agent_id,
+            child_session_title: Some(child_session_title.into()),
+            respond_to,
+        })
+        .await
     }
 
     pub async fn request_tool_call(
@@ -702,21 +684,14 @@ impl CoordinatorHandle {
         tool_id: impl Into<String>,
         args_json: Value,
     ) -> Result<String, CoordinatorError> {
-        let (respond_to, response_rx) = oneshot::channel();
-        self.tx
-            .send(Command::RequestToolCall {
-                actor,
-                category,
-                tool_id: tool_id.into(),
-                args_json,
-                respond_to,
-            })
-            .await
-            .map_err(|_| CoordinatorError::CommandChannelClosed)?;
-
-        response_rx
-            .await
-            .map_err(|_| CoordinatorError::ResponseChannelClosed)?
+        self.request(|respond_to| Command::RequestToolCall {
+            actor,
+            category,
+            tool_id: tool_id.into(),
+            args_json,
+            respond_to,
+        })
+        .await
     }
 
     pub async fn execute_agent_tool_call(
@@ -726,21 +701,14 @@ impl CoordinatorHandle {
         tool_id: impl Into<String>,
         args_json: Value,
     ) -> Result<ToolResult, String> {
-        let (respond_to, response_rx) = oneshot::channel();
-        self.tx
-            .send(Command::ExecuteAgentToolCall {
-                actor,
-                category,
-                tool_id: tool_id.into(),
-                args_json,
-                respond_to,
-            })
-            .await
-            .map_err(|_| CoordinatorError::CommandChannelClosed.to_string())?;
-
-        response_rx
-            .await
-            .map_err(|_| CoordinatorError::ResponseChannelClosed.to_string())?
+        self.request_string_error(|respond_to| Command::ExecuteAgentToolCall {
+            actor,
+            category,
+            tool_id: tool_id.into(),
+            args_json,
+            respond_to,
+        })
+        .await
     }
 
     pub async fn request_agent_turn(
@@ -761,22 +729,15 @@ impl CoordinatorHandle {
         model_ref_override: Option<String>,
         model_settings_override: Option<AgentModelSettings>,
     ) -> Result<String, CoordinatorError> {
-        let (respond_to, response_rx) = oneshot::channel();
-        self.tx
-            .send(Command::RequestAgentTurn {
-                actor,
-                agent_id: agent_id.into(),
-                prompt: prompt.into(),
-                model_ref_override,
-                model_settings_override,
-                respond_to,
-            })
-            .await
-            .map_err(|_| CoordinatorError::CommandChannelClosed)?;
-
-        response_rx
-            .await
-            .map_err(|_| CoordinatorError::ResponseChannelClosed)?
+        self.request(|respond_to| Command::RequestAgentTurn {
+            actor,
+            agent_id: agent_id.into(),
+            prompt: prompt.into(),
+            model_ref_override,
+            model_settings_override,
+            respond_to,
+        })
+        .await
     }
 
     pub async fn compact_agent_context(
@@ -785,20 +746,13 @@ impl CoordinatorHandle {
         through_request_id: Option<String>,
         trigger_reason: impl Into<String>,
     ) -> Result<ManualCompactionOutcome, CoordinatorError> {
-        let (respond_to, response_rx) = oneshot::channel();
-        self.tx
-            .send(Command::ManualCompactAgentContext {
-                agent_id: agent_id.into(),
-                through_request_id,
-                trigger_reason: trigger_reason.into(),
-                respond_to,
-            })
-            .await
-            .map_err(|_| CoordinatorError::CommandChannelClosed)?;
-
-        response_rx
-            .await
-            .map_err(|_| CoordinatorError::ResponseChannelClosed)?
+        self.request(|respond_to| Command::ManualCompactAgentContext {
+            agent_id: agent_id.into(),
+            through_request_id,
+            trigger_reason: trigger_reason.into(),
+            respond_to,
+        })
+        .await
     }
 
     pub async fn resolve_permission(
@@ -818,21 +772,14 @@ impl CoordinatorHandle {
         reason: Option<String>,
         grant_scope: Option<PermissionGrantScope>,
     ) -> Result<(), CoordinatorError> {
-        let (respond_to, response_rx) = oneshot::channel();
-        self.tx
-            .send(Command::ResolvePermission {
-                permission_id: permission_id.into(),
-                decision,
-                reason,
-                grant_scope,
-                respond_to,
-            })
-            .await
-            .map_err(|_| CoordinatorError::CommandChannelClosed)?;
-
-        response_rx
-            .await
-            .map_err(|_| CoordinatorError::ResponseChannelClosed)?
+        self.request(|respond_to| Command::ResolvePermission {
+            permission_id: permission_id.into(),
+            decision,
+            reason,
+            grant_scope,
+            respond_to,
+        })
+        .await
     }
 
     pub async fn request_question(
@@ -841,20 +788,13 @@ impl CoordinatorHandle {
         tool_call_id: impl Into<String>,
         request_json: Value,
     ) -> Result<Vec<Vec<String>>, String> {
-        let (respond_to, response_rx) = oneshot::channel();
-        self.tx
-            .send(Command::RequestQuestion {
-                actor,
-                tool_call_id: tool_call_id.into(),
-                request_json,
-                respond_to,
-            })
-            .await
-            .map_err(|_| CoordinatorError::CommandChannelClosed.to_string())?;
-
-        response_rx
-            .await
-            .map_err(|_| CoordinatorError::ResponseChannelClosed.to_string())?
+        self.request_string_error(|respond_to| Command::RequestQuestion {
+            actor,
+            tool_call_id: tool_call_id.into(),
+            request_json,
+            respond_to,
+        })
+        .await
     }
 
     pub async fn job_progress(
@@ -862,13 +802,11 @@ impl CoordinatorHandle {
         task_id: impl Into<String>,
         kind: JobProgressKind,
     ) -> Result<(), CoordinatorError> {
-        self.tx
-            .send(Command::JobProgress {
-                task_id: task_id.into(),
-                kind,
-            })
-            .await
-            .map_err(|_| CoordinatorError::CommandChannelClosed)
+        self.send_command(Command::JobProgress {
+            task_id: task_id.into(),
+            kind,
+        })
+        .await
     }
 
     pub async fn cancel_task(
@@ -876,19 +814,12 @@ impl CoordinatorHandle {
         task_id: impl Into<String>,
         reason: impl Into<String>,
     ) -> Result<(), CoordinatorError> {
-        let (respond_to, response_rx) = oneshot::channel();
-        self.tx
-            .send(Command::CancelTask {
-                task_id: task_id.into(),
-                reason: reason.into(),
-                respond_to,
-            })
-            .await
-            .map_err(|_| CoordinatorError::CommandChannelClosed)?;
-
-        response_rx
-            .await
-            .map_err(|_| CoordinatorError::ResponseChannelClosed)?
+        self.request(|respond_to| Command::CancelTask {
+            task_id: task_id.into(),
+            reason: reason.into(),
+            respond_to,
+        })
+        .await
     }
 
     pub async fn job_finished(
@@ -896,13 +827,11 @@ impl CoordinatorHandle {
         task_id: impl Into<String>,
         outcome: JobOutcome,
     ) -> Result<(), CoordinatorError> {
-        self.tx
-            .send(Command::JobFinished {
-                task_id: task_id.into(),
-                outcome,
-            })
-            .await
-            .map_err(|_| CoordinatorError::CommandChannelClosed)
+        self.send_command(Command::JobFinished {
+            task_id: task_id.into(),
+            outcome,
+        })
+        .await
     }
 }
 
@@ -6736,17 +6665,13 @@ async fn run_tool_phase(
                     ToolFailureMode::ContinueAsToolMessage
                 ) =>
             {
-                ToolResult {
-                    display_text: format!(
-                        "tool call `{}` failed: {reason}",
-                        tool_call.function_name
-                    ),
-                    structured_json: Some(json!({
+                ToolResult::structured(
+                    format!("tool call `{}` failed: {reason}", tool_call.function_name),
+                    json!({
                         "error": reason,
                         "status": "failed"
-                    })),
-                    artifacts: Vec::new(),
-                }
+                    }),
+                )
             }
             Err(reason) => {
                 return Err(format!(

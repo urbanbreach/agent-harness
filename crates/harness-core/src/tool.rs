@@ -57,6 +57,30 @@ impl ToolResult {
             artifacts: Vec::new(),
         }
     }
+
+    pub fn structured(display_text: impl Into<String>, structured_json: Value) -> Self {
+        Self::structured_with_artifacts(display_text, structured_json, Vec::new())
+    }
+
+    pub fn artifacts(display_text: impl Into<String>, artifacts: Vec<ArtifactRef>) -> Self {
+        Self {
+            display_text: display_text.into(),
+            structured_json: None,
+            artifacts,
+        }
+    }
+
+    pub fn structured_with_artifacts(
+        display_text: impl Into<String>,
+        structured_json: Value,
+        artifacts: Vec<ArtifactRef>,
+    ) -> Self {
+        Self {
+            display_text: display_text.into(),
+            structured_json: Some(structured_json),
+            artifacts,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

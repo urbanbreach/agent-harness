@@ -1935,80 +1935,48 @@ fn mcp_server_first_class_tool_id_registry(
     MCP_SERVER_FIRST_CLASS_TOOL_ID_REGISTRY.get_or_init(|| Mutex::new(BTreeMap::new()))
 }
 
+fn with_registry_lock<T, U>(registry: &'static Mutex<T>, f: impl FnOnce(&mut T) -> U) -> U {
+    match registry.lock() {
+        Ok(mut guard) => f(&mut guard),
+        Err(poisoned) => {
+            let mut guard = poisoned.into_inner();
+            f(&mut guard)
+        }
+    }
+}
+
 fn with_profile_model_metadata_registry<T>(
     f: impl FnOnce(&mut BTreeMap<String, ResolvedProfileModelMetadata>) -> T,
 ) -> T {
-    match profile_model_metadata_registry().lock() {
-        Ok(mut guard) => f(&mut guard),
-        Err(poisoned) => {
-            let mut guard = poisoned.into_inner();
-            f(&mut guard)
-        }
-    }
+    with_registry_lock(profile_model_metadata_registry(), f)
 }
 
 fn with_hook_runtime_config_registry<T>(f: impl FnOnce(&mut HookRuntimeConfig) -> T) -> T {
-    match hook_runtime_config_registry().lock() {
-        Ok(mut guard) => f(&mut guard),
-        Err(poisoned) => {
-            let mut guard = poisoned.into_inner();
-            f(&mut guard)
-        }
-    }
+    with_registry_lock(hook_runtime_config_registry(), f)
 }
 
 fn with_skills_config_registry<T>(f: impl FnOnce(&mut SkillsConfig) -> T) -> T {
-    match skills_config_registry().lock() {
-        Ok(mut guard) => f(&mut guard),
-        Err(poisoned) => {
-            let mut guard = poisoned.into_inner();
-            f(&mut guard)
-        }
-    }
+    with_registry_lock(skills_config_registry(), f)
 }
 
 fn with_lsp_config_registry<T>(f: impl FnOnce(&mut LspConfig) -> T) -> T {
-    match lsp_config_registry().lock() {
-        Ok(mut guard) => f(&mut guard),
-        Err(poisoned) => {
-            let mut guard = poisoned.into_inner();
-            f(&mut guard)
-        }
-    }
+    with_registry_lock(lsp_config_registry(), f)
 }
 
 fn with_integrations_config_registry<T>(f: impl FnOnce(&mut Option<IntegrationsConfig>) -> T) -> T {
-    match integrations_config_registry().lock() {
-        Ok(mut guard) => f(&mut guard),
-        Err(poisoned) => {
-            let mut guard = poisoned.into_inner();
-            f(&mut guard)
-        }
-    }
+    with_registry_lock(integrations_config_registry(), f)
 }
 
 fn with_mcp_server_connection_registry<T>(
     f: impl FnOnce(&mut BTreeMap<String, McpServerConnectionState>) -> T,
 ) -> T {
-    match mcp_server_connection_registry().lock() {
-        Ok(mut guard) => f(&mut guard),
-        Err(poisoned) => {
-            let mut guard = poisoned.into_inner();
-            f(&mut guard)
-        }
-    }
+    with_registry_lock(mcp_server_connection_registry(), f)
 }
 
 fn with_mcp_server_first_class_tool_id_registry<T>(
     f: impl FnOnce(&mut BTreeMap<String, BTreeMap<String, String>>) -> T,
 ) -> T {
-    match mcp_server_first_class_tool_id_registry().lock() {
-        Ok(mut guard) => f(&mut guard),
-        Err(poisoned) => {
-            let mut guard = poisoned.into_inner();
-            f(&mut guard)
-        }
-    }
+    with_registry_lock(mcp_server_first_class_tool_id_registry(), f)
 }
 
 pub fn refresh_profile_model_metadata_registry(cfg: &HarnessConfig) -> Result<(), ConfigError> {

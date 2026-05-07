@@ -1932,35 +1932,29 @@ mod tests {
 
     #[test]
     fn tool_result_message_content_prefers_display_text() {
-        let result = ToolResult {
-            display_text: "crate summary".to_string(),
-            structured_json: Some(json!({ "raw": "should stay out of provider replay" })),
-            artifacts: Vec::new(),
-        };
+        let result = ToolResult::structured(
+            "crate summary",
+            json!({ "raw": "should stay out of provider replay" }),
+        );
 
         assert_eq!(tool_result_to_message_content(&result), "crate summary");
     }
 
     #[test]
     fn tool_result_message_content_falls_back_to_structured_output_when_display_text_missing() {
-        let structured = ToolResult {
-            display_text: String::new(),
-            structured_json: Some(json!({ "status": "ok" })),
-            artifacts: Vec::new(),
-        };
+        let structured = ToolResult::structured("", json!({ "status": "ok" }));
         assert_eq!(
             tool_result_to_message_content(&structured),
             json!({ "structured_output": { "status": "ok" } }).to_string()
         );
 
-        let artifacts = ToolResult {
-            display_text: String::new(),
-            structured_json: None,
-            artifacts: vec![crate::tool::ArtifactRef {
+        let artifacts = ToolResult::artifacts(
+            "",
+            vec![crate::tool::ArtifactRef {
                 path: "artifacts/tool-output.txt".to_string(),
                 digest: None,
             }],
-        };
+        );
         assert_eq!(
             tool_result_to_message_content(&artifacts),
             json!({
