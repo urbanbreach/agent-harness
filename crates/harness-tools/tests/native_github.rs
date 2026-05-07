@@ -4,7 +4,7 @@ use std::time::Duration;
 mod common;
 
 use common::{
-    env_lock, expect_execution_error, setup_workspace, spawn_http_server,
+    env_test_lock, expect_execution_error, setup_workspace_fixture, spawn_http_server,
     test_context as common_test_context, EnvGuard, TestRequest, TestResponse,
 };
 use harness_core::config::ShellAllowlist;
@@ -28,9 +28,8 @@ fn test_context(
     reason = "the global env lock intentionally serializes process-wide GitHub env mutation across awaits"
 )]
 async fn github_issue_get_uses_env_repository_and_auth_headers() {
-    let _env_guard = env_lock().lock().expect("env lock");
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let _env_guard = env_test_lock();
+    let workspace = setup_workspace_fixture();
     let requests = Arc::new(Mutex::new(Vec::<TestRequest>::new()));
     let request_log = Arc::clone(&requests);
     let base_url = spawn_http_server(Arc::new(move |request| {
@@ -62,7 +61,7 @@ async fn github_issue_get_uses_env_repository_and_auth_headers() {
     let tool = registry.get("github.issue").expect("github.issue tool");
     let result = tool
         .call(
-            test_context(&workspace, "toolcall-github-issue-get"),
+            test_context(workspace.workspace(), "toolcall-github-issue-get"),
             json!({
                 "operation": "get",
                 "issue_number": 19
@@ -106,9 +105,8 @@ async fn github_issue_get_uses_env_repository_and_auth_headers() {
     reason = "the global env lock intentionally serializes process-wide GitHub env mutation across awaits"
 )]
 async fn github_issue_list_filters_pull_requests_and_preserves_query_parameters() {
-    let _env_guard = env_lock().lock().expect("env lock");
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let _env_guard = env_test_lock();
+    let workspace = setup_workspace_fixture();
     let requests = Arc::new(Mutex::new(Vec::<TestRequest>::new()));
     let request_log = Arc::clone(&requests);
     let base_url = spawn_http_server(Arc::new(move |request| {
@@ -148,7 +146,7 @@ async fn github_issue_list_filters_pull_requests_and_preserves_query_parameters(
     let tool = registry.get("github.issue").expect("github.issue tool");
     let result = tool
         .call(
-            test_context(&workspace, "toolcall-github-issue-list"),
+            test_context(workspace.workspace(), "toolcall-github-issue-list"),
             json!({
                 "operation": "list",
                 "state": "closed",
@@ -185,10 +183,87 @@ async fn github_issue_list_filters_pull_requests_and_preserves_query_parameters(
     clippy::await_holding_lock,
     reason = "the global env lock intentionally serializes process-wide GitHub env mutation across awaits"
 )]
+async fn github_pull_request_list_preserves_query_parameters_and_renders_refs() {
+    let _env_guard = env_test_lock();
+    let workspace = setup_workspace_fixture();
+    let requests = Arc::new(Mutex::new(Vec::<TestRequest>::new()));
+    let request_log = Arc::clone(&requests);
+    let base_url = spawn_http_server(Arc::new(move |request| {
+        request_log.lock().expect("request log").push(request);
+        TestResponse {
+            status: "200 OK",
+            headers: vec![(
+                "Content-Type".to_string(),
+                "application/json; charset=utf-8".to_string(),
+            )],
+            body: json!([
+                {
+                    "number": 11,
+                    "title": "Simplify GitHub rendering",
+                    "state": "open",
+                    "html_url": "https://github.com/urbanbreach/agent-harness/pull/11",
+                    "head": {"ref": "cleanup/github-rendering"},
+                    "base": {"ref": "dev"}
+                }
+            ])
+            .to_string(),
+            delay: Duration::ZERO,
+        }
+    }));
+    let _env = EnvGuard::set(&[
+        (GITHUB_API_BASE_URL_ENV, Some(base_url.as_str())),
+        (GITHUB_TOKEN_ENV, None),
+        (GITHUB_REPOSITORY_ENV, Some("urbanbreach/agent-harness")),
+    ]);
+
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let tool = registry
+        .get("github.pull_request")
+        .expect("github.pull_request tool");
+    let result = tool
+        .call(
+            test_context(workspace.workspace(), "toolcall-github-pr-list"),
+            json!({
+                "operation": "list",
+                "state": "all",
+                "per_page": 1
+            }),
+        )
+        .await
+        .expect("github.pull_request list");
+
+    assert_eq!(
+        result.display_text,
+        "Pull requests for urbanbreach/agent-harness:\n- #11 [open] Simplify GitHub rendering (cleanup/github-rendering -> dev)"
+    );
+    assert_eq!(
+        result
+            .structured_json
+            .as_ref()
+            .and_then(|value| value.pointer("/items/0/number")),
+        Some(&json!(11))
+    );
+
+    let requests = requests.lock().expect("request log");
+    let request = requests.first().expect("request captured");
+    assert_eq!(
+        request.path,
+        "/repos/urbanbreach/agent-harness/pulls?per_page=1&state=all"
+    );
+    assert!(
+        !request.headers.contains_key("authorization"),
+        "read-only pull request list call should not require auth"
+    );
+}
+
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global env lock intentionally serializes process-wide GitHub env mutation across awaits"
+)]
 async fn github_issue_close_requires_authentication() {
-    let _env_guard = env_lock().lock().expect("env lock");
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let _env_guard = env_test_lock();
+    let workspace = setup_workspace_fixture();
     let _env = EnvGuard::set(&[
         (GITHUB_API_BASE_URL_ENV, Some("http://127.0.0.1:9")),
         (GITHUB_TOKEN_ENV, None),
@@ -199,7 +274,7 @@ async fn github_issue_close_requires_authentication() {
     let tool = registry.get("github.issue").expect("github.issue tool");
     let error = tool
         .call(
-            test_context(&workspace, "toolcall-github-issue-close"),
+            test_context(workspace.workspace(), "toolcall-github-issue-close"),
             json!({
                 "operation": "close",
                 "issue_number": 19
@@ -215,10 +290,82 @@ async fn github_issue_close_requires_authentication() {
     clippy::await_holding_lock,
     reason = "the global env lock intentionally serializes process-wide GitHub env mutation across awaits"
 )]
+async fn github_issue_comment_posts_body_and_renders_comment_url() {
+    let _env_guard = env_test_lock();
+    let workspace = setup_workspace_fixture();
+    let requests = Arc::new(Mutex::new(Vec::<TestRequest>::new()));
+    let request_log = Arc::clone(&requests);
+    let base_url = spawn_http_server(Arc::new(move |request| {
+        request_log.lock().expect("request log").push(request);
+        TestResponse {
+            status: "201 Created",
+            headers: vec![(
+                "Content-Type".to_string(),
+                "application/json; charset=utf-8".to_string(),
+            )],
+            body: json!({
+                "id": 55,
+                "body": "Looks good from here.",
+                "html_url": "https://github.com/urbanbreach/agent-harness/issues/19#issuecomment-55"
+            })
+            .to_string(),
+            delay: Duration::ZERO,
+        }
+    }));
+    let _env = EnvGuard::set(&[
+        (GITHUB_API_BASE_URL_ENV, Some(base_url.as_str())),
+        (GITHUB_TOKEN_ENV, Some("fixture-token")),
+        (GITHUB_REPOSITORY_ENV, Some("urbanbreach/agent-harness")),
+    ]);
+
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let tool = registry.get("github.issue").expect("github.issue tool");
+    let result = tool
+        .call(
+            test_context(workspace.workspace(), "toolcall-github-issue-comment"),
+            json!({
+                "operation": "comment",
+                "issue_number": 19,
+                "body": "Looks good from here."
+            }),
+        )
+        .await
+        .expect("github.issue comment");
+
+    assert_eq!(
+        result.display_text,
+        "Commented on issue #19 in urbanbreach/agent-harness.\nURL: https://github.com/urbanbreach/agent-harness/issues/19#issuecomment-55"
+    );
+    assert_eq!(
+        result
+            .structured_json
+            .as_ref()
+            .and_then(|value| value.pointer("/comment/id")),
+        Some(&json!(55))
+    );
+
+    let requests = requests.lock().expect("request log");
+    let request = requests.first().expect("request captured");
+    assert_eq!(
+        request.path,
+        "/repos/urbanbreach/agent-harness/issues/19/comments"
+    );
+    assert_eq!(
+        request.headers.get("authorization"),
+        Some(&"Bearer fixture-token".to_string())
+    );
+    let payload: Value = serde_json::from_str(&request.body).expect("request json");
+    assert_eq!(payload.get("body"), Some(&json!("Looks good from here.")));
+}
+
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global env lock intentionally serializes process-wide GitHub env mutation across awaits"
+)]
 async fn github_pull_request_create_posts_expected_payload() {
-    let _env_guard = env_lock().lock().expect("env lock");
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let _env_guard = env_test_lock();
+    let workspace = setup_workspace_fixture();
     let requests = Arc::new(Mutex::new(Vec::<TestRequest>::new()));
     let request_log = Arc::clone(&requests);
     let base_url = spawn_http_server(Arc::new(move |request| {
@@ -254,7 +401,7 @@ async fn github_pull_request_create_posts_expected_payload() {
         .expect("github.pull_request tool");
     let result = tool
         .call(
-            test_context(&workspace, "toolcall-github-pr-create"),
+            test_context(workspace.workspace(), "toolcall-github-pr-create"),
             json!({
                 "operation": "create",
                 "title": "Add GitHub tool docs",
@@ -287,5 +434,6 @@ async fn github_pull_request_create_posts_expected_payload() {
     assert_eq!(payload.get("title"), Some(&json!("Add GitHub tool docs")));
     assert_eq!(payload.get("head"), Some(&json!("feature/github-docs")));
     assert_eq!(payload.get("base"), Some(&json!("main")));
+    assert_eq!(payload.get("body"), Some(&json!("This adds docs.")));
     assert_eq!(payload.get("draft"), Some(&json!(true)));
 }

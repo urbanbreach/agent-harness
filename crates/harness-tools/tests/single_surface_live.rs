@@ -7,19 +7,20 @@ use std::sync::Arc;
 
 use harness_core::agent::AgentProfile;
 use harness_core::clock::RealClock;
-use harness_core::config::{load_config_from_file, McpConfig, PermissionMode};
+use harness_core::config::{load_config_from_file, McpConfig};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
 use harness_core::edit::hashline::compute_line_hash;
-use harness_core::event::{ActorKind, EventActor};
-use harness_core::perm::{PermissionDecision, PermissionPolicy};
+use harness_core::perm::PermissionDecision;
 use harness_core::redact::DefaultRedactor;
 use harness_tools::{coordinator_registry_with_mcp_and_editing, EditingToolSurfaceConfig};
 use tokio::time::Duration;
 
-#[path = "common/question_events.rs"]
-mod question_events;
-#[path = "common/repo_root.rs"]
-mod repo_root;
+mod common;
+
+use common::{
+    allow_all_permission_policy, anonymous_supervisor_actor, repo_root, setup_workspace_fixture,
+    wait_for_question_permission, worker_actor,
+};
 
 const SURFACE_LIVE_PROFILE: &str = "surface_live";
 
@@ -49,13 +50,7 @@ fn surface_live_toolset() -> Vec<String> {
 }
 
 fn example_config_path() -> PathBuf {
-    repo_root::repo_root()
-        .join("configs")
-        .join("harness.example.jsonc")
-}
-
-fn actor(agent_id: &str) -> EventActor {
-    EventActor::new(ActorKind::Worker, Some(agent_id.to_string()))
+    repo_root().join("configs").join("harness.example.jsonc")
 }
 
 fn spawn_test_http_server() -> String {
@@ -160,29 +155,24 @@ async fn example_config_exposes_single_surface_tools_through_live_registry() {
 #[tokio::test]
 async fn single_surface_tools_execute_under_example_config() {
     let config = load_config_from_file(&example_config_path()).expect("load example config");
-    let temp_dir = tempfile::tempdir().expect("tempdir");
-    let session_dir = temp_dir.path().join("sessions");
-    let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
-    fs::write(workspace.join("existing.txt"), "alpha\nbeta\n").expect("seed existing file");
-    fs::create_dir_all(workspace.join("src")).expect("src dir");
+    let workspace = setup_workspace_fixture();
+    let session_dir = workspace.temp_dir().join("sessions");
+    let workspace_root = workspace.workspace();
+    fs::write(workspace_root.join("existing.txt"), "alpha\nbeta\n").expect("seed existing file");
+    fs::create_dir_all(workspace_root.join("src")).expect("src dir");
     fs::write(
-        workspace.join("Cargo.toml"),
+        workspace_root.join("Cargo.toml"),
         "[package]\nname = \"compat_lsp\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
     )
     .expect("seed cargo manifest");
     fs::write(
-        workspace.join("src/lib.rs"),
+        workspace_root.join("src/lib.rs"),
         "fn helper() {}\n\nfn caller() {\n    helper();\n}\n",
     )
     .expect("seed rust file");
 
     let mut coordinator_config = CoordinatorConfig::new(session_dir.clone());
-    coordinator_config.permission_policy = PermissionPolicy::new(
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-    );
+    coordinator_config.permission_policy = allow_all_permission_policy();
     coordinator_config.tool_registry = Arc::new(coordinator_registry_with_mcp_and_editing(
         config.permissions.shell_allowlist.clone(),
         McpConfig::default(),
@@ -199,21 +189,17 @@ async fn single_surface_tools_execute_under_example_config() {
     );
 
     let run = handle
-        .start_run("single_surface_live", &workspace)
+        .start_run("single_surface_live", workspace_root)
         .await
         .expect("start run");
     let worker_id = handle
-        .spawn_agent(
-            EventActor::new(ActorKind::Supervisor, None),
-            SURFACE_LIVE_PROFILE,
-            None,
-        )
+        .spawn_agent(anonymous_supervisor_actor(), SURFACE_LIVE_PROFILE, None)
         .await
         .expect("spawn worker");
 
     let create = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "edit",
             serde_json::json!({
@@ -233,7 +219,7 @@ async fn single_surface_tools_execute_under_example_config() {
 
     let escaped = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "edit",
             serde_json::json!({
@@ -251,7 +237,7 @@ async fn single_surface_tools_execute_under_example_config() {
 
     let read = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "read",
             serde_json::json!({ "filePath": "written.txt" }),
@@ -263,7 +249,7 @@ async fn single_surface_tools_execute_under_example_config() {
 
     let listed = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "list",
             serde_json::json!({ "path": "." }),
@@ -274,7 +260,7 @@ async fn single_surface_tools_execute_under_example_config() {
 
     let globbed = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "glob",
             serde_json::json!({ "pattern": "**/*.txt" }),
@@ -285,7 +271,7 @@ async fn single_surface_tools_execute_under_example_config() {
 
     let grepped = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "grep",
             serde_json::json!({ "pattern": "surface", "path": "." }),
@@ -298,7 +284,7 @@ async fn single_surface_tools_execute_under_example_config() {
 
     let bashed = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "bash",
             serde_json::json!({
@@ -312,7 +298,7 @@ async fn single_surface_tools_execute_under_example_config() {
 
     let large_bash = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "bash",
             serde_json::json!({
@@ -347,7 +333,7 @@ async fn single_surface_tools_execute_under_example_config() {
 
     let edited = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "edit",
             serde_json::json!({
@@ -367,7 +353,7 @@ async fn single_surface_tools_execute_under_example_config() {
 
     let reread_after_edit = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "read",
             serde_json::json!({
@@ -380,7 +366,7 @@ async fn single_surface_tools_execute_under_example_config() {
 
     let patched = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "edit",
             serde_json::json!({
@@ -400,7 +386,7 @@ async fn single_surface_tools_execute_under_example_config() {
 
     let reread = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "read",
             serde_json::json!({ "filePath": "written.txt" }),
@@ -411,7 +397,7 @@ async fn single_surface_tools_execute_under_example_config() {
 
     let todos = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "todowrite",
             serde_json::json!({
@@ -426,7 +412,7 @@ async fn single_surface_tools_execute_under_example_config() {
 
     let todo_read = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "todoread",
             serde_json::json!({}),
@@ -441,7 +427,7 @@ async fn single_surface_tools_execute_under_example_config() {
         tokio::spawn(async move {
             handle
                 .execute_agent_tool_call(
-                    actor(&worker_id),
+                    worker_actor(&worker_id),
                     Some(SURFACE_LIVE_PROFILE.to_string()),
                     "question",
                     serde_json::json!({
@@ -457,12 +443,8 @@ async fn single_surface_tools_execute_under_example_config() {
                 .await
         })
     };
-    let question_permission_id = question_events::wait_for_question_permission(
-        &run.events_path,
-        None,
-        Duration::from_secs(10),
-    )
-    .await;
+    let question_permission_id =
+        wait_for_question_permission(&run.events_path, None, Duration::from_secs(10)).await;
     handle
         .resolve_permission(
             question_permission_id,
@@ -479,7 +461,7 @@ async fn single_surface_tools_execute_under_example_config() {
 
     let invalid = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "invalid",
             serde_json::json!({ "tool": "missing_tool", "error": "bad args" }),
@@ -490,7 +472,7 @@ async fn single_surface_tools_execute_under_example_config() {
 
     let lsp = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "lsp",
             serde_json::json!({
@@ -506,7 +488,7 @@ async fn single_surface_tools_execute_under_example_config() {
 
     let batch = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "batch",
             serde_json::json!({
@@ -524,7 +506,7 @@ async fn single_surface_tools_execute_under_example_config() {
 
     let task = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "task",
             serde_json::json!({
@@ -542,7 +524,7 @@ async fn single_surface_tools_execute_under_example_config() {
     let fetch_url = spawn_test_http_server();
     let fetched = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "webfetch",
             serde_json::json!({
@@ -557,7 +539,7 @@ async fn single_surface_tools_execute_under_example_config() {
 
     let websearch = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "websearch",
             serde_json::json!({
@@ -572,7 +554,7 @@ async fn single_surface_tools_execute_under_example_config() {
 
     let codesearch = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "codesearch",
             serde_json::json!({

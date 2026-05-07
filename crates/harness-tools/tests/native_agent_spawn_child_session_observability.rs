@@ -3,24 +3,21 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
-use event_log::{find_finished, read_events, wait_for_tool_call_finish};
+mod common;
+
+use common::{
+    allow_all_permission_policy, anonymous_supervisor_actor, find_finished, read_events,
+    setup_workspace_fixture, wait_for_tool_call_finish, worker_actor,
+};
 use harness_core::agent::AgentProfile;
 use harness_core::clock::RealClock;
 use harness_core::config::{PermissionMode, ProfilePermissions, ShellAllowlist};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, CoordinatorHandle, RunInfo};
-use harness_core::event::{ActorKind, EventActor, EventV1, ToolCallStatus};
+use harness_core::event::{EventV1, ToolCallStatus};
 use harness_core::perm::PermissionPolicy;
 use harness_core::redact::DefaultRedactor;
 use harness_tools::coordinator_registry;
 use serde_json::{json, Value};
-
-#[allow(dead_code)]
-#[path = "common/event_log.rs"]
-mod event_log;
-
-fn worker_actor(agent_id: &str) -> EventActor {
-    EventActor::new(ActorKind::Worker, Some(agent_id.to_string()))
-}
 
 fn profile(name: &str, category: &str, toolset: &[&str]) -> AgentProfile {
     AgentProfile {
@@ -35,32 +32,25 @@ fn profile(name: &str, category: &str, toolset: &[&str]) -> AgentProfile {
     }
 }
 
-async fn spawn_run(workspace: &Path) -> (CoordinatorHandle, RunInfo, String) {
-    let session_dir = workspace.join("sessions");
-    fs::create_dir_all(&session_dir).expect("session dir");
-
-    let permission_policy = PermissionPolicy::new(
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-    )
-    .with_category_override(
+fn child_observability_permission_policy() -> PermissionPolicy {
+    allow_all_permission_policy().with_category_override(
         "restricted",
         ProfilePermissions {
             shell: Some(PermissionMode::Deny),
             ..ProfilePermissions::default()
         },
-    );
+    )
+}
 
-    let allowlist = ShellAllowlist {
+fn pwd_allowlist() -> ShellAllowlist {
+    ShellAllowlist {
         executables: vec!["pwd".to_string()],
         cwd_roots: vec![".".to_string()],
-    };
+    }
+}
 
-    let mut config = CoordinatorConfig::new(session_dir);
-    config.permission_policy = permission_policy;
-    config.tool_registry = Arc::new(coordinator_registry(allowlist));
-    config.agent_profiles = BTreeMap::from([
+fn child_observability_profiles() -> BTreeMap<String, AgentProfile> {
+    BTreeMap::from([
         (
             "parent".to_string(),
             profile("parent", "parent", &["task", "bash"]),
@@ -69,7 +59,17 @@ async fn spawn_run(workspace: &Path) -> (CoordinatorHandle, RunInfo, String) {
             "restricted".to_string(),
             profile("restricted", "restricted", &["bash"]),
         ),
-    ]);
+    ])
+}
+
+async fn spawn_run(workspace: &Path) -> (CoordinatorHandle, RunInfo, String) {
+    let session_dir = workspace.join("sessions");
+    fs::create_dir_all(&session_dir).expect("session dir");
+
+    let mut config = CoordinatorConfig::new(session_dir);
+    config.permission_policy = child_observability_permission_policy();
+    config.tool_registry = Arc::new(coordinator_registry(pwd_allowlist()));
+    config.agent_profiles = child_observability_profiles();
 
     let handle = spawn_coordinator(
         config,
@@ -81,7 +81,7 @@ async fn spawn_run(workspace: &Path) -> (CoordinatorHandle, RunInfo, String) {
         .await
         .expect("start run");
     let worker_id = handle
-        .spawn_agent(EventActor::new(ActorKind::Supervisor, None), "parent", None)
+        .spawn_agent(anonymous_supervisor_actor(), "parent", None)
         .await
         .expect("spawn worker");
 
@@ -90,11 +90,9 @@ async fn spawn_run(workspace: &Path) -> (CoordinatorHandle, RunInfo, String) {
 
 #[tokio::test]
 async fn agent_spawn_returns_child_session_status_duration_and_counts() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
-    let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
+    let workspace = setup_workspace_fixture();
 
-    let (handle, run, worker_id) = spawn_run(&workspace).await;
+    let (handle, run, worker_id) = spawn_run(workspace.workspace()).await;
     let tool_call_id = handle
         .request_tool_call(
             worker_actor(&worker_id),
@@ -208,25 +206,9 @@ async fn agent_spawn_returns_child_session_status_duration_and_counts() {
 
     let child_event_count_before_resume = child_events.len();
     let mut resume_config = CoordinatorConfig::new(session_dir.to_path_buf());
-    resume_config.permission_policy = PermissionPolicy::new(
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-    );
-    resume_config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist {
-        executables: vec!["pwd".to_string()],
-        cwd_roots: vec![".".to_string()],
-    }));
-    resume_config.agent_profiles = BTreeMap::from([
-        (
-            "parent".to_string(),
-            profile("parent", "parent", &["task", "bash"]),
-        ),
-        (
-            "restricted".to_string(),
-            profile("restricted", "restricted", &["bash"]),
-        ),
-    ]);
+    resume_config.permission_policy = allow_all_permission_policy();
+    resume_config.tool_registry = Arc::new(coordinator_registry(pwd_allowlist()));
+    resume_config.agent_profiles = child_observability_profiles();
     let resumed_handle = spawn_coordinator(
         resume_config,
         Arc::new(RealClock::new()),
@@ -250,11 +232,9 @@ async fn agent_spawn_returns_child_session_status_duration_and_counts() {
 
 #[tokio::test]
 async fn child_session_permission_inheritance_isolated_by_task() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
-    let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
+    let workspace = setup_workspace_fixture();
 
-    let (handle, run, worker_id) = spawn_run(&workspace).await;
+    let (handle, run, worker_id) = spawn_run(workspace.workspace()).await;
 
     let inherited_spawn = handle
         .request_tool_call(

@@ -1,28 +1,26 @@
 use std::fs;
-use std::path::Path;
 
 use harness_core::agent::{build_provider_tool_defs, AgentProfile};
 use harness_core::config::ShellAllowlist;
 use harness_core::edit::hashline::compute_line_hash;
-use harness_core::tool::ToolContext;
 use harness_tools::{coordinator_registry, coordinator_registry_with_internal_hashline_tools};
 use serde_json::json;
 
-#[path = "common/tool_context.rs"]
-mod tool_context;
-#[path = "common/workspace.rs"]
-mod workspace;
+mod common;
 
-use workspace::setup_workspace;
+use common::{setup_workspace_fixture, test_context as common_test_context};
 
-fn test_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
-    tool_context::test_context(workspace_root, "run-native-surface-tests", tool_call_id)
+fn test_context(
+    workspace_root: &std::path::Path,
+    tool_call_id: &str,
+) -> harness_core::tool::ToolContext {
+    common_test_context(workspace_root, "run-native-surface-tests", tool_call_id)
 }
 
 #[tokio::test]
 async fn native_execution_surface_tools_execute_through_native_ids() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
 
     let read = registry.get("read").expect("read in registry");
@@ -39,7 +37,7 @@ async fn native_execution_surface_tools_execute_through_native_ids() {
     fs::write(workspace.join("surface.txt"), "before\n").expect("seed existing file");
 
     read.call(
-        test_context(&workspace, "read"),
+        test_context(workspace, "read"),
         json!({
             "filePath": "surface.txt",
             "offset": 1,
@@ -55,10 +53,7 @@ async fn native_execution_surface_tools_execute_through_native_ids() {
         ]
     });
     let todo_write_result = todo_write
-        .call(
-            test_context(&workspace, "todo-write"),
-            todos_payload.clone(),
-        )
+        .call(test_context(workspace, "todo-write"), todos_payload.clone())
         .await
         .expect("todowrite");
     assert!(!todo_write_result.display_text.trim().is_empty());
@@ -72,14 +67,14 @@ async fn native_execution_surface_tools_execute_through_native_ids() {
     );
 
     let todo_read_result = todo_read
-        .call(test_context(&workspace, "todo-read"), json!({}))
+        .call(test_context(workspace, "todo-read"), json!({}))
         .await
         .expect("todoread");
     assert!(todo_read_result.display_text.contains("task"));
 
     let invalid_result = invalid
         .call(
-            test_context(&workspace, "invalid"),
+            test_context(workspace, "invalid"),
             json!({
                 "tool": "missing_tool",
                 "error": "bad args",
@@ -92,8 +87,8 @@ async fn native_execution_surface_tools_execute_through_native_ids() {
 
 #[tokio::test]
 async fn native_todowrite_accepts_legacy_text_shape_and_defaults_priority() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
 
     let todo_write = registry.get("todowrite").expect("todowrite in registry");
@@ -101,7 +96,7 @@ async fn native_todowrite_accepts_legacy_text_shape_and_defaults_priority() {
 
     let todo_write_result = todo_write
         .call(
-            test_context(&workspace, "todo-write-legacy"),
+            test_context(workspace, "todo-write-legacy"),
             json!({
                 "todos": [
                     {"id": "todo-1", "text": "legacy text entry", "status": "in_progress"},
@@ -123,7 +118,7 @@ async fn native_todowrite_accepts_legacy_text_shape_and_defaults_priority() {
     );
 
     let todo_read_result = todo_read
-        .call(test_context(&workspace, "todo-read-legacy"), json!({}))
+        .call(test_context(workspace, "todo-read-legacy"), json!({}))
         .await
         .expect("todoread legacy state");
     assert!(todo_read_result.display_text.contains("legacy text entry"));
@@ -133,8 +128,8 @@ async fn native_todowrite_accepts_legacy_text_shape_and_defaults_priority() {
 
 #[tokio::test]
 async fn native_todowrite_accepts_state_alias_from_model_tool_call() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
 
     let todo_write = registry.get("todowrite").expect("todowrite in registry");
@@ -143,7 +138,7 @@ async fn native_todowrite_accepts_state_alias_from_model_tool_call() {
 
     let todo_write_result = todo_write
         .call(
-            test_context(&workspace, "todo-write-state-alias"),
+            test_context(workspace, "todo-write-state-alias"),
             json!({
                 "todos": [
                     {"title": "Test functionality", "state": "pending", "priority": "medium"}
@@ -165,8 +160,8 @@ async fn native_todowrite_accepts_state_alias_from_model_tool_call() {
 
 #[tokio::test]
 async fn native_todowrite_accepts_done_shape_and_schema_advertises_it() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
 
     let todo_write = registry.get("todowrite").expect("todowrite in registry");
@@ -181,7 +176,7 @@ async fn native_todowrite_accepts_done_shape_and_schema_advertises_it() {
 
     let todo_write_result = todo_write
         .call(
-            test_context(&workspace, "todo-write-done-shape"),
+            test_context(workspace, "todo-write-done-shape"),
             json!({
                 "todos": [
                     {"done": false, "text": "stress-test harness tools"},
@@ -205,15 +200,15 @@ async fn native_todowrite_accepts_done_shape_and_schema_advertises_it() {
 
 #[tokio::test]
 async fn native_todowrite_rejects_unknown_status_values() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
 
     let todo_write = registry.get("todowrite").expect("todowrite in registry");
 
     let error = todo_write
         .call(
-            test_context(&workspace, "todo-write-invalid-status"),
+            test_context(workspace, "todo-write-invalid-status"),
             json!({
                 "todos": [
                     {"text": "legacy text entry", "status": "doing"}
@@ -230,8 +225,8 @@ async fn native_todowrite_rejects_unknown_status_values() {
 
 #[tokio::test]
 async fn native_public_edit_uses_hashline_surface_and_reports_success() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
     let edit = registry.get("edit").expect("edit in registry");
     let edit_description = edit.description();
@@ -260,7 +255,7 @@ async fn native_public_edit_uses_hashline_surface_and_reports_success() {
 
     let result = edit
         .call(
-            test_context(&workspace, "edit"),
+            test_context(workspace, "edit"),
             json!({
                 "filePath": "surface.txt",
                 "edits": [
@@ -284,8 +279,8 @@ async fn native_public_edit_uses_hashline_surface_and_reports_success() {
 
 #[tokio::test]
 async fn native_public_edit_accepts_start_alias_for_pos() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
     let edit = registry.get("edit").expect("edit in registry");
 
@@ -293,7 +288,7 @@ async fn native_public_edit_accepts_start_alias_for_pos() {
 
     let result = edit
         .call(
-            test_context(&workspace, "edit-start-alias"),
+            test_context(workspace, "edit-start-alias"),
             json!({
                 "filePath": "surface.txt",
                 "edits": [
@@ -317,8 +312,8 @@ async fn native_public_edit_accepts_start_alias_for_pos() {
 
 #[tokio::test]
 async fn native_public_edit_accepts_opless_anchored_delete_shape() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
     let edit = registry.get("edit").expect("edit in registry");
 
@@ -326,7 +321,7 @@ async fn native_public_edit_accepts_opless_anchored_delete_shape() {
 
     let result = edit
         .call(
-            test_context(&workspace, "edit-opless-delete"),
+            test_context(workspace, "edit-opless-delete"),
             json!({
                 "filePath": "surface.txt",
                 "edits": [
@@ -349,8 +344,8 @@ async fn native_public_edit_accepts_opless_anchored_delete_shape() {
 
 #[tokio::test]
 async fn native_public_edit_rejects_delete_flag_with_edit_payload() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
     let edit = registry.get("edit").expect("edit in registry");
     let schema = edit.parameters_json_schema();
@@ -367,7 +362,7 @@ async fn native_public_edit_rejects_delete_flag_with_edit_payload() {
 
     let error = edit
         .call(
-            test_context(&workspace, "edit-delete-compat"),
+            test_context(workspace, "edit-delete-compat"),
             json!({
                 "filePath": file_path.display().to_string(),
                 "delete": true,
@@ -418,8 +413,8 @@ fn native_provider_tool_defs_accept_edit_and_question_export_schemas() {
 
 #[tokio::test]
 async fn native_public_edit_rejects_opless_anchored_non_delete_shape() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
     let edit = registry.get("edit").expect("edit in registry");
 
@@ -427,7 +422,7 @@ async fn native_public_edit_rejects_opless_anchored_non_delete_shape() {
 
     let error = edit
         .call(
-            test_context(&workspace, "edit-opless-anchored-non-delete"),
+            test_context(workspace, "edit-opless-anchored-non-delete"),
             json!({
                 "filePath": "surface.txt",
                 "edits": [
@@ -449,8 +444,8 @@ async fn native_public_edit_rejects_opless_anchored_non_delete_shape() {
 
 #[tokio::test]
 async fn native_public_edit_rejects_opless_anchorless_shape() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
     let edit = registry.get("edit").expect("edit in registry");
 
@@ -458,7 +453,7 @@ async fn native_public_edit_rejects_opless_anchorless_shape() {
 
     let error = edit
         .call(
-            test_context(&workspace, "edit-opless-anchorless"),
+            test_context(workspace, "edit-opless-anchorless"),
             json!({
                 "filePath": "surface.txt",
                 "edits": [
@@ -479,8 +474,8 @@ async fn native_public_edit_rejects_opless_anchorless_shape() {
 
 #[tokio::test]
 async fn native_public_edit_accepts_quoted_refresh_snippet_anchor() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
     let edit = registry.get("edit").expect("edit in registry");
 
@@ -488,7 +483,7 @@ async fn native_public_edit_accepts_quoted_refresh_snippet_anchor() {
 
     let result = edit
         .call(
-            test_context(&workspace, "edit-quoted-anchor"),
+            test_context(workspace, "edit-quoted-anchor"),
             json!({
                 "filePath": "surface.txt",
                 "edits": [
@@ -512,8 +507,8 @@ async fn native_public_edit_accepts_quoted_refresh_snippet_anchor() {
 
 #[tokio::test]
 async fn native_public_edit_accepts_unique_hash_only_anchor() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
     let edit = registry.get("edit").expect("edit in registry");
 
@@ -521,7 +516,7 @@ async fn native_public_edit_accepts_unique_hash_only_anchor() {
 
     let result = edit
         .call(
-            test_context(&workspace, "edit-hash-only-anchor"),
+            test_context(workspace, "edit-hash-only-anchor"),
             json!({
                 "filePath": "surface.txt",
                 "edits": [
@@ -545,8 +540,8 @@ async fn native_public_edit_accepts_unique_hash_only_anchor() {
 
 #[tokio::test]
 async fn native_public_edit_uses_recent_hashline_read_to_disambiguate_hash_only_anchor() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
     let read = registry.get("read").expect("read in registry");
     let edit = registry.get("edit").expect("edit in registry");
@@ -554,7 +549,7 @@ async fn native_public_edit_uses_recent_hashline_read_to_disambiguate_hash_only_
     fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").expect("seed existing file");
 
     read.call(
-        test_context(&workspace, "read-disambiguation-window"),
+        test_context(workspace, "read-disambiguation-window"),
         json!({
             "filePath": "surface.txt",
             "offset": 1,
@@ -566,7 +561,7 @@ async fn native_public_edit_uses_recent_hashline_read_to_disambiguate_hash_only_
 
     let result = edit
         .call(
-            test_context(&workspace, "edit-read-window-hash-only-anchor"),
+            test_context(workspace, "edit-read-window-hash-only-anchor"),
             json!({
                 "filePath": "surface.txt",
                 "edits": [
@@ -590,8 +585,8 @@ async fn native_public_edit_uses_recent_hashline_read_to_disambiguate_hash_only_
 
 #[tokio::test]
 async fn native_internal_hashline_scan_disambiguates_hash_only_anchor_for_edit() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry_with_internal_hashline_tools(ShellAllowlist::default());
     let scan = registry
         .get("edit.hashline_scan")
@@ -601,7 +596,7 @@ async fn native_internal_hashline_scan_disambiguates_hash_only_anchor_for_edit()
     fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").expect("seed existing file");
 
     scan.call(
-        test_context(&workspace, "scan-disambiguation-window"),
+        test_context(workspace, "scan-disambiguation-window"),
         json!({
             "path": "surface.txt",
             "start_line": 1,
@@ -613,7 +608,7 @@ async fn native_internal_hashline_scan_disambiguates_hash_only_anchor_for_edit()
 
     let result = edit
         .call(
-            test_context(&workspace, "edit-scan-window-hash-only-anchor"),
+            test_context(workspace, "edit-scan-window-hash-only-anchor"),
             json!({
                 "filePath": "surface.txt",
                 "edits": [
@@ -637,8 +632,8 @@ async fn native_internal_hashline_scan_disambiguates_hash_only_anchor_for_edit()
 
 #[tokio::test]
 async fn native_public_edit_ignores_stale_recent_hashline_read_for_hash_only_anchor() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
     let read = registry.get("read").expect("read in registry");
     let edit = registry.get("edit").expect("edit in registry");
@@ -646,7 +641,7 @@ async fn native_public_edit_ignores_stale_recent_hashline_read_for_hash_only_anc
     fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").expect("seed existing file");
 
     read.call(
-        test_context(&workspace, "read-stale-disambiguation-window"),
+        test_context(workspace, "read-stale-disambiguation-window"),
         json!({
             "filePath": "surface.txt",
             "offset": 1,
@@ -661,7 +656,7 @@ async fn native_public_edit_ignores_stale_recent_hashline_read_for_hash_only_anc
 
     let error = edit
         .call(
-            test_context(&workspace, "edit-stale-read-window-hash-only-anchor"),
+            test_context(workspace, "edit-stale-read-window-hash-only-anchor"),
             json!({
                 "filePath": "surface.txt",
                 "edits": [
@@ -687,8 +682,8 @@ async fn native_public_edit_ignores_stale_recent_hashline_read_for_hash_only_anc
 
 #[tokio::test]
 async fn native_public_edit_rejects_ambiguous_hash_only_anchor() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
     let edit = registry.get("edit").expect("edit in registry");
 
@@ -696,7 +691,7 @@ async fn native_public_edit_rejects_ambiguous_hash_only_anchor() {
 
     let error = edit
         .call(
-            test_context(&workspace, "edit-ambiguous-hash-only-anchor"),
+            test_context(workspace, "edit-ambiguous-hash-only-anchor"),
             json!({
                 "filePath": "surface.txt",
                 "edits": [
@@ -720,8 +715,8 @@ async fn native_public_edit_rejects_ambiguous_hash_only_anchor() {
 
 #[tokio::test]
 async fn native_public_edit_rejects_unknown_hash_only_anchor() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
     let edit = registry.get("edit").expect("edit in registry");
 
@@ -729,7 +724,7 @@ async fn native_public_edit_rejects_unknown_hash_only_anchor() {
 
     let error = edit
         .call(
-            test_context(&workspace, "edit-missing-hash-only-anchor"),
+            test_context(workspace, "edit-missing-hash-only-anchor"),
             json!({
                 "filePath": "surface.txt",
                 "edits": [
@@ -751,8 +746,8 @@ async fn native_public_edit_rejects_unknown_hash_only_anchor() {
 
 #[tokio::test]
 async fn native_public_edit_stale_anchor_error_includes_refresh_snippet() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
     let edit = registry.get("edit").expect("edit in registry");
 
@@ -760,7 +755,7 @@ async fn native_public_edit_stale_anchor_error_includes_refresh_snippet() {
 
     let error = edit
         .call(
-            test_context(&workspace, "edit-stale"),
+            test_context(workspace, "edit-stale"),
             json!({
                 "filePath": "surface.txt",
                 "edits": [

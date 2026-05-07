@@ -4,14 +4,17 @@ use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
 use async_trait::async_trait;
-use event_log::{find_finished, read_events, wait_for_request_terminal, wait_for_tool_call_finish};
+mod common;
+
+use common::{
+    anonymous_supervisor_actor, find_finished, read_events, setup_workspace,
+    wait_for_request_terminal, wait_for_tool_call_finish, worker_actor, EnvGuard,
+};
 use harness_core::agent::AgentProfile;
 use harness_core::clock::RealClock;
 use harness_core::config::{PermissionMode, ShellAllowlist};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, CoordinatorHandle, RunInfo};
-use harness_core::event::{
-    ActorKind, EventActor, EventV1, PermissionDecision as EventPermissionDecision, ToolCallStatus,
-};
+use harness_core::event::{EventV1, PermissionDecision as EventPermissionDecision, ToolCallStatus};
 use harness_core::perm::PermissionPolicy;
 use harness_core::redact::DefaultRedactor;
 use harness_providers::{
@@ -20,18 +23,6 @@ use harness_providers::{
 use harness_tools::coordinator_registry;
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
-
-#[path = "common/env_guard.rs"]
-mod env_guard;
-#[allow(dead_code)]
-#[path = "common/event_log.rs"]
-mod event_log;
-
-use env_guard::EnvGuard;
-
-fn worker_actor(agent_id: &str) -> EventActor {
-    EventActor::new(ActorKind::Worker, Some(agent_id.to_string()))
-}
 
 #[derive(Debug)]
 struct StaticProvider;
@@ -96,6 +87,31 @@ fn write_numbered_fixture(workspace: &Path) {
     fs::write(workspace.join("fixture.txt"), format!("{fixture_body}\n")).expect("fixture file");
 }
 
+fn plan_mode_permission_policy() -> PermissionPolicy {
+    PermissionPolicy::new(
+        PermissionMode::Deny,
+        PermissionMode::Deny,
+        PermissionMode::Allow,
+    )
+}
+
+fn plan_task_profiles() -> BTreeMap<String, AgentProfile> {
+    BTreeMap::from([
+        (
+            "plan".to_string(),
+            named_worker_profile("plan", &["task", "background_output"]),
+        ),
+        (
+            "explore".to_string(),
+            named_worker_profile("explore", &["read", "grep", "glob", "list"]),
+        ),
+        (
+            "general".to_string(),
+            named_worker_profile("general", &["read", "bash"]),
+        ),
+    ])
+}
+
 async fn spawn_run(workspace: &Path) -> (CoordinatorHandle, RunInfo, String) {
     let session_dir = workspace.join("sessions");
     fs::create_dir_all(&session_dir).expect("session dir");
@@ -133,7 +149,7 @@ async fn spawn_run(workspace: &Path) -> (CoordinatorHandle, RunInfo, String) {
         .await
         .expect("start run");
     let worker_id = handle
-        .spawn_agent(EventActor::new(ActorKind::Supervisor, None), "deep", None)
+        .spawn_agent(anonymous_supervisor_actor(), "deep", None)
         .await
         .expect("spawn worker");
 
@@ -144,18 +160,13 @@ async fn spawn_run(workspace: &Path) -> (CoordinatorHandle, RunInfo, String) {
 async fn native_plan_exit_switches_to_build_agent_after_approval() {
     let _guard = env_lock().lock().await;
     let _answers = EnvGuard::set(&[("HARNESS_QUESTION_ANSWERS", Some(r#"[["Yes"]]"#))]);
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
     let session_dir = workspace.join("sessions");
     fs::create_dir_all(&session_dir).expect("session dir");
 
     let mut config = CoordinatorConfig::new(session_dir);
-    config.permission_policy = PermissionPolicy::new(
-        PermissionMode::Deny,
-        PermissionMode::Deny,
-        PermissionMode::Allow,
-    );
+    config.permission_policy = plan_mode_permission_policy();
     config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
     config.agent_profiles = BTreeMap::from([
         (
@@ -175,7 +186,7 @@ async fn native_plan_exit_switches_to_build_agent_after_approval() {
         .await
         .expect("start run");
     let plan_agent_id = handle
-        .spawn_agent_idle(EventActor::new(ActorKind::Supervisor, None), "plan", None)
+        .spawn_agent_idle(anonymous_supervisor_actor(), "plan", None)
         .await
         .expect("spawn plan");
 
@@ -221,33 +232,15 @@ async fn native_plan_exit_switches_to_build_agent_after_approval() {
 
 #[tokio::test]
 async fn plan_profile_can_spawn_explore_but_cannot_use_bash() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
     let session_dir = workspace.join("sessions");
     fs::create_dir_all(&session_dir).expect("session dir");
 
     let mut config = CoordinatorConfig::new(session_dir);
-    config.permission_policy = PermissionPolicy::new(
-        PermissionMode::Deny,
-        PermissionMode::Deny,
-        PermissionMode::Allow,
-    );
+    config.permission_policy = plan_mode_permission_policy();
     config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
-    config.agent_profiles = BTreeMap::from([
-        (
-            "plan".to_string(),
-            named_worker_profile("plan", &["task", "background_output"]),
-        ),
-        (
-            "explore".to_string(),
-            named_worker_profile("explore", &["read", "grep", "glob", "list"]),
-        ),
-        (
-            "general".to_string(),
-            named_worker_profile("general", &["read", "bash"]),
-        ),
-    ]);
+    config.agent_profiles = plan_task_profiles();
 
     let handle = spawn_coordinator(
         config,
@@ -259,7 +252,7 @@ async fn plan_profile_can_spawn_explore_but_cannot_use_bash() {
         .await
         .expect("start run");
     let plan_agent_id = handle
-        .spawn_agent_idle(EventActor::new(ActorKind::Supervisor, None), "plan", None)
+        .spawn_agent_idle(anonymous_supervisor_actor(), "plan", None)
         .await
         .expect("spawn plan");
 
@@ -340,9 +333,8 @@ async fn plan_profile_can_spawn_explore_but_cannot_use_bash() {
 
 #[tokio::test]
 async fn task_subagent_type_selects_explore_and_general_profiles() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
 
@@ -382,9 +374,8 @@ async fn task_subagent_type_selects_explore_and_general_profiles() {
 
 #[tokio::test]
 async fn task_subagent_type_wins_when_category_hint_is_also_present() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
 
@@ -423,9 +414,8 @@ async fn task_subagent_type_wins_when_category_hint_is_also_present() {
 
 #[tokio::test]
 async fn task_category_without_matching_profile_falls_back_to_general() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
 
@@ -464,9 +454,8 @@ async fn task_category_without_matching_profile_falls_back_to_general() {
 
 #[tokio::test]
 async fn background_output_retrieves_completed_child_result_by_request_id() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
 
@@ -528,13 +517,12 @@ async fn background_output_retrieves_completed_child_result_by_request_id() {
 
 #[tokio::test]
 async fn background_output_rejects_sibling_request_ids() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
     let sibling_worker_id = handle
-        .spawn_agent(EventActor::new(ActorKind::Supervisor, None), "deep", None)
+        .spawn_agent(anonymous_supervisor_actor(), "deep", None)
         .await
         .expect("spawn sibling worker");
 
@@ -588,9 +576,8 @@ async fn background_output_rejects_sibling_request_ids() {
 
 #[tokio::test]
 async fn background_output_rejects_excessive_block_timeout() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
 
@@ -620,9 +607,8 @@ async fn background_output_rejects_excessive_block_timeout() {
 
 #[tokio::test]
 async fn child_agent_toolset_boundary_is_enforced() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
 
@@ -666,9 +652,8 @@ async fn child_agent_toolset_boundary_is_enforced() {
 
 #[tokio::test]
 async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_order() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
     write_numbered_fixture(&workspace);
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
@@ -967,14 +952,9 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
 
 #[tokio::test]
 async fn compat_task_and_batch_delegate_to_native_orchestration() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
-    let fixture_body = (1..=30)
-        .map(|index| format!("line-{index:02}"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    fs::write(workspace.join("fixture.txt"), format!("{fixture_body}\n")).expect("fixture file");
+    write_numbered_fixture(&workspace);
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
 
@@ -1146,9 +1126,8 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
 
 #[tokio::test]
 async fn task_tool_rejects_unknown_child_profile_before_spawning_fallback_model() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
 
@@ -1183,9 +1162,8 @@ async fn task_tool_rejects_unknown_child_profile_before_spawning_fallback_model(
 
 #[tokio::test]
 async fn batch_tool_accepts_args_alias_on_real_tool_path() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
     write_fixture(&workspace);
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
@@ -1239,9 +1217,8 @@ async fn batch_tool_accepts_args_alias_on_real_tool_path() {
 
 #[tokio::test]
 async fn batch_tool_accepts_wrapper_calls_inside_tool_calls_on_real_path() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
     write_fixture(&workspace);
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
@@ -1288,9 +1265,8 @@ async fn batch_tool_accepts_wrapper_calls_inside_tool_calls_on_real_path() {
 
 #[tokio::test]
 async fn task_tool_reenters_existing_child_session_by_session_id() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
 
@@ -1391,9 +1367,8 @@ async fn task_tool_reenters_existing_child_session_by_session_id() {
 
 #[tokio::test]
 async fn task_tool_reenters_existing_child_session_by_task_id() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
 
@@ -1494,18 +1469,17 @@ async fn task_tool_reenters_existing_child_session_by_task_id() {
 
 #[tokio::test]
 async fn task_tool_rejects_reentry_to_sibling_child_session() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
     let sibling_parent = handle
-        .spawn_agent_idle(EventActor::new(ActorKind::Supervisor, None), "deep", None)
+        .spawn_agent_idle(anonymous_supervisor_actor(), "deep", None)
         .await
         .expect("spawn sibling parent");
     let sibling_child = handle
         .spawn_agent_idle(
-            EventActor::new(ActorKind::Supervisor, None),
+            anonymous_supervisor_actor(),
             "general",
             Some(sibling_parent),
         )
@@ -1542,33 +1516,15 @@ async fn task_tool_rejects_reentry_to_sibling_child_session() {
 
 #[tokio::test]
 async fn plan_task_reentry_rejects_non_explore_existing_child_profile() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
     let session_dir = workspace.join("sessions");
     fs::create_dir_all(&session_dir).expect("session dir");
 
     let mut config = CoordinatorConfig::new(session_dir);
-    config.permission_policy = PermissionPolicy::new(
-        PermissionMode::Deny,
-        PermissionMode::Deny,
-        PermissionMode::Allow,
-    );
+    config.permission_policy = plan_mode_permission_policy();
     config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
-    config.agent_profiles = BTreeMap::from([
-        (
-            "plan".to_string(),
-            named_worker_profile("plan", &["task", "background_output"]),
-        ),
-        (
-            "explore".to_string(),
-            named_worker_profile("explore", &["read", "grep", "glob", "list"]),
-        ),
-        (
-            "general".to_string(),
-            named_worker_profile("general", &["read", "bash"]),
-        ),
-    ]);
+    config.agent_profiles = plan_task_profiles();
 
     let handle = spawn_coordinator(
         config,
@@ -1580,12 +1536,12 @@ async fn plan_task_reentry_rejects_non_explore_existing_child_profile() {
         .await
         .expect("start run");
     let plan_agent_id = handle
-        .spawn_agent_idle(EventActor::new(ActorKind::Supervisor, None), "plan", None)
+        .spawn_agent_idle(anonymous_supervisor_actor(), "plan", None)
         .await
         .expect("spawn plan");
     let general_child = handle
         .spawn_agent_idle(
-            EventActor::new(ActorKind::Supervisor, None),
+            anonymous_supervisor_actor(),
             "general",
             Some(plan_agent_id.clone()),
         )
@@ -1622,9 +1578,8 @@ async fn plan_task_reentry_rejects_non_explore_existing_child_profile() {
 
 #[tokio::test]
 async fn batch_rejects_more_than_25_calls_preserving_input_order() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
     fs::write(workspace.join("fixture.txt"), "alpha\nbeta\n").expect("fixture file");
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;

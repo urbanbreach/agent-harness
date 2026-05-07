@@ -3,25 +3,19 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+mod common;
+
+use common::{
+    allow_all_permission_policy, anonymous_supervisor_actor, read_events, setup_workspace_fixture,
+    worker_actor,
+};
 use harness_core::agent::AgentProfile;
 use harness_core::clock::RealClock;
-use harness_core::config::{PermissionMode, ShellAllowlist};
+use harness_core::config::ShellAllowlist;
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, RunInfo};
-use harness_core::event::{ActorKind, EventActor};
-use harness_core::perm::PermissionPolicy;
 use harness_core::redact::DefaultRedactor;
 use harness_tools::coordinator_registry;
 use serde_json::json;
-
-use event_log::read_events;
-
-#[allow(dead_code)]
-#[path = "common/event_log.rs"]
-mod event_log;
-
-fn actor(agent_id: &str) -> EventActor {
-    EventActor::new(ActorKind::Worker, Some(agent_id.to_string()))
-}
 
 fn worker_profile(name: &str, toolset: &[&str]) -> AgentProfile {
     AgentProfile {
@@ -49,11 +43,7 @@ async fn spawn_worker_run(
     fs::create_dir_all(&session_dir).expect("session dir");
 
     let mut config = CoordinatorConfig::new(session_dir);
-    config.permission_policy = PermissionPolicy::new(
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-    );
+    config.permission_policy = allow_all_permission_policy();
     config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
     config.agent_profiles = agent_profiles;
 
@@ -67,11 +57,7 @@ async fn spawn_worker_run(
         .await
         .expect("start run");
     let worker_id = handle
-        .spawn_agent(
-            EventActor::new(ActorKind::Supervisor, None),
-            worker_profile_name,
-            None,
-        )
+        .spawn_agent(anonymous_supervisor_actor(), worker_profile_name, None)
         .await
         .expect("spawn worker");
     (handle, run, worker_id)
@@ -87,20 +73,19 @@ fn todo_state_file(run: &RunInfo) -> PathBuf {
 
 #[tokio::test]
 async fn native_control_plane_tools_cover_invalid_todo_and_skill() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
-    let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
+    let workspace = setup_workspace_fixture();
 
     let toolset = control_plane_toolset();
     let agent_profiles = BTreeMap::from([("build".to_string(), worker_profile("build", &toolset))]);
-    let (handle, run, worker_id) = spawn_worker_run(&workspace, "build", agent_profiles).await;
+    let (handle, run, worker_id) =
+        spawn_worker_run(workspace.workspace(), "build", agent_profiles).await;
 
     let todos_payload = json!({
         "todos": [{"content": "task", "status": "pending", "priority": "high"}]
     });
     let todo_write = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some("build".to_string()),
             "todowrite",
             todos_payload,
@@ -119,7 +104,7 @@ async fn native_control_plane_tools_cover_invalid_todo_and_skill() {
 
     let todo_read = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some("build".to_string()),
             "todoread",
             json!({}),
@@ -130,7 +115,7 @@ async fn native_control_plane_tools_cover_invalid_todo_and_skill() {
 
     let invalid = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some("build".to_string()),
             "invalid",
             json!({"tool": "todowrite", "error": "bad args"}),
@@ -141,7 +126,7 @@ async fn native_control_plane_tools_cover_invalid_todo_and_skill() {
 
     let skill = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some("build".to_string()),
             "skill",
             json!({"name": "rust-best-practices"}),
@@ -153,19 +138,18 @@ async fn native_control_plane_tools_cover_invalid_todo_and_skill() {
 
 #[tokio::test]
 async fn native_todo_write_rejects_multiple_in_progress_items() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
-    let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
+    let workspace = setup_workspace_fixture();
 
     let agent_profiles = BTreeMap::from([(
         "deep".to_string(),
         worker_profile("deep", &["todowrite", "todoread"]),
     )]);
-    let (handle, run, worker_id) = spawn_worker_run(&workspace, "deep", agent_profiles).await;
+    let (handle, run, worker_id) =
+        spawn_worker_run(workspace.workspace(), "deep", agent_profiles).await;
 
     handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some("deep".to_string()),
             "todowrite",
             json!({
@@ -181,7 +165,7 @@ async fn native_todo_write_rejects_multiple_in_progress_items() {
 
     let err = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some("deep".to_string()),
             "todowrite",
             json!({
@@ -200,7 +184,7 @@ async fn native_todo_write_rejects_multiple_in_progress_items() {
 
     let todo_read = handle
         .execute_agent_tool_call(
-            actor(&worker_id),
+            worker_actor(&worker_id),
             Some("deep".to_string()),
             "todoread",
             json!({}),

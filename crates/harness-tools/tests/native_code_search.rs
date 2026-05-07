@@ -2,11 +2,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 mod common;
-mod remote_search_env;
 
 use common::{
-    env_lock, expect_execution_error, setup_workspace, spawn_http_server,
-    test_context as common_test_context, EnvGuard, TestRequest, TestResponse,
+    env_test_lock, expect_execution_error, remote_search_env, setup_workspace_fixture,
+    spawn_http_server, test_context as common_test_context, EnvGuard, TestRequest, TestResponse,
 };
 use harness_core::config::ShellAllowlist;
 use harness_tools::coordinator_registry;
@@ -27,9 +26,8 @@ fn test_context(
     reason = "the global env lock intentionally serializes process-wide search env mutation across awaits"
 )]
 async fn native_code_search_uses_shared_client_and_respects_tokens_contract() {
-    let _env_guard = env_lock().lock().expect("env lock");
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let _env_guard = env_test_lock();
+    let workspace = setup_workspace_fixture();
     let requests = Arc::new(Mutex::new(Vec::<TestRequest>::new()));
     let request_log = Arc::clone(&requests);
     let base_url = spawn_http_server(Arc::new(move |request| {
@@ -58,7 +56,7 @@ async fn native_code_search_uses_shared_client_and_respects_tokens_contract() {
 
     let min_result = codesearch
         .call(
-            test_context(&workspace, "codesearch-min"),
+            test_context(workspace.workspace(), "codesearch-min"),
             json!({
                 "query": "Tokio JoinSet rust example",
                 "tokensNum": 25,
@@ -68,7 +66,7 @@ async fn native_code_search_uses_shared_client_and_respects_tokens_contract() {
         .expect("codesearch min clamp");
     let default_result = codesearch
         .call(
-            test_context(&workspace, "codesearch-default"),
+            test_context(workspace.workspace(), "codesearch-default"),
             json!({
                 "query": "Tokio JoinSet rust example default"
             }),
@@ -77,7 +75,7 @@ async fn native_code_search_uses_shared_client_and_respects_tokens_contract() {
         .expect("codesearch default");
     let max_result = codesearch
         .call(
-            test_context(&workspace, "codesearch-max"),
+            test_context(workspace.workspace(), "codesearch-max"),
             json!({
                 "query": "Tokio JoinSet rust example max",
                 "tokensNum": 90_000,
@@ -142,9 +140,8 @@ async fn native_code_search_uses_shared_client_and_respects_tokens_contract() {
     reason = "the global env lock intentionally serializes process-wide search env mutation across awaits"
 )]
 async fn native_code_search_handles_timeout_and_empty_context_cleanly() {
-    let _env_guard = env_lock().lock().expect("env lock");
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let _env_guard = env_test_lock();
+    let workspace = setup_workspace_fixture();
 
     let timeout_url = spawn_http_server(Arc::new(move |_request| TestResponse {
         status: "200 OK",
@@ -169,7 +166,7 @@ async fn native_code_search_handles_timeout_and_empty_context_cleanly() {
         .get("codesearch")
         .expect("codesearch tool")
         .call(
-            test_context(&workspace, "timeout-code-search"),
+            test_context(workspace.workspace(), "timeout-code-search"),
             json!({
                 "query": "Tokio JoinSet timeout"
             }),
@@ -202,7 +199,7 @@ async fn native_code_search_handles_timeout_and_empty_context_cleanly() {
         .get("codesearch")
         .expect("codesearch tool")
         .call(
-            test_context(&workspace, "empty-code-search"),
+            test_context(workspace.workspace(), "empty-code-search"),
             json!({
                 "query": "no matches fixture"
             }),

@@ -12,7 +12,7 @@ use serde_json::json;
 mod common;
 
 use common::{
-    expect_execution_error, expect_invalid_arguments, setup_workspace,
+    expect_execution_error, expect_invalid_arguments, setup_workspace_fixture,
     spawn_binary_http_server as spawn_http_server, test_context as common_test_context,
     TestBinaryResponse as TestResponse, TestRequest,
 };
@@ -36,8 +36,8 @@ fn artifact_bytes(context: &ToolContext, artifact_path: &str) -> Vec<u8> {
 
 #[tokio::test]
 async fn native_web_fetch_supports_text_markdown_html_and_binary_artifacts() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let workspace = setup_workspace_fixture();
+    let workspace_root = workspace.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
     let web_fetch = registry.get("webfetch").expect("webfetch tool");
 
@@ -129,7 +129,7 @@ async fn native_web_fetch_supports_text_markdown_html_and_binary_artifacts() {
 
     let plain = web_fetch
         .call(
-            test_context(&workspace, "native-plain"),
+            test_context(workspace_root, "native-plain"),
             json!({
                 "url": format!("{base_url}/plain"),
                 "format": "text",
@@ -146,7 +146,7 @@ async fn native_web_fetch_supports_text_markdown_html_and_binary_artifacts() {
 
     let markdown = web_fetch
         .call(
-            test_context(&workspace, "native-markdown"),
+            test_context(workspace_root, "native-markdown"),
             json!({
                 "url": format!("{base_url}/markdown"),
                 "format": "markdown",
@@ -156,7 +156,7 @@ async fn native_web_fetch_supports_text_markdown_html_and_binary_artifacts() {
         .expect("markdown fetch");
     let repeated_markdown = web_fetch
         .call(
-            test_context(&workspace, "repeat-markdown"),
+            test_context(workspace_root, "repeat-markdown"),
             json!({
                 "url": format!("{base_url}/markdown"),
                 "format": "markdown",
@@ -170,7 +170,7 @@ async fn native_web_fetch_supports_text_markdown_html_and_binary_artifacts() {
 
     let html = web_fetch
         .call(
-            test_context(&workspace, "native-html"),
+            test_context(workspace_root, "native-html"),
             json!({
                 "url": format!("{base_url}/html"),
                 "format": "html",
@@ -186,7 +186,7 @@ async fn native_web_fetch_supports_text_markdown_html_and_binary_artifacts() {
 
     let retry = web_fetch
         .call(
-            test_context(&workspace, "native-retry"),
+            test_context(workspace_root, "native-retry"),
             json!({
                 "url": format!("{base_url}/cf"),
                 "format": "markdown",
@@ -197,7 +197,7 @@ async fn native_web_fetch_supports_text_markdown_html_and_binary_artifacts() {
     assert!(retry.display_text.contains("# Retry Title"));
     assert!(retry.display_text.contains("Retry body"));
 
-    let image_ctx = test_context(&workspace, "native-image");
+    let image_ctx = test_context(workspace_root, "native-image");
     let image = web_fetch
         .call(
             image_ctx.clone(),
@@ -222,7 +222,7 @@ async fn native_web_fetch_supports_text_markdown_html_and_binary_artifacts() {
         json!(image.artifacts[0].path.clone())
     );
 
-    let pdf_ctx = test_context(&workspace, "native-pdf");
+    let pdf_ctx = test_context(workspace_root, "native-pdf");
     let pdf = web_fetch
         .call(
             pdf_ctx.clone(),
@@ -272,8 +272,8 @@ async fn native_web_fetch_supports_text_markdown_html_and_binary_artifacts() {
 
 #[tokio::test]
 async fn native_web_fetch_rejects_invalid_scheme_large_response_and_timeout() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
+    let workspace = setup_workspace_fixture();
+    let workspace_root = workspace.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
     let web_fetch = registry.get("webfetch").expect("webfetch tool");
 
@@ -306,7 +306,7 @@ async fn native_web_fetch_rejects_invalid_scheme_large_response_and_timeout() {
 
     let invalid_scheme = web_fetch
         .call(
-            test_context(&workspace, "invalid-scheme"),
+            test_context(workspace_root, "invalid-scheme"),
             json!({
                 "url": "file:///tmp/secret.txt",
                 "format": "text",
@@ -318,7 +318,7 @@ async fn native_web_fetch_rejects_invalid_scheme_large_response_and_timeout() {
 
     let oversized = web_fetch
         .call(
-            test_context(&workspace, "oversized"),
+            test_context(workspace_root, "oversized"),
             json!({
                 "url": format!("{base_url}/large"),
                 "format": "markdown",
@@ -330,7 +330,7 @@ async fn native_web_fetch_rejects_invalid_scheme_large_response_and_timeout() {
 
     let timed_out = web_fetch
         .call(
-            test_context(&workspace, "timed-out"),
+            test_context(workspace_root, "timed-out"),
             json!({
                 "url": format!("{base_url}/slow"),
                 "format": "text",
