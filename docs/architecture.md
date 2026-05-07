@@ -115,7 +115,7 @@ Events are the source of truth. All state is derived from events.
 
 **Lifecycle**
 - `RunStarted` / `RunFinished` / `RunFailed`
-- `SessionTitleUpdated` - Opencode-compatible generated session title persisted after the first real user prompt when a default title is still present
+- `SessionTitleUpdated` - Harness-compatible generated session title persisted after the first real user prompt when a default title is still present
 - `AgentSpawned` / `AgentStopped`
 
 **Task Management**
