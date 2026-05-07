@@ -241,6 +241,8 @@ struct GrepArgs {
     path: Option<String>,
     #[serde(default)]
     include: Option<String>,
+    #[serde(default)]
+    literal: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -628,7 +630,7 @@ impl Tool for GrepTool {
     }
 
     fn description(&self) -> &str {
-        "Searches file or directory contents by regex using canonical harness arguments."
+        "Searches file or directory contents by regex using canonical harness arguments. Set `literal: true` to search for the pattern as plain text."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -648,6 +650,7 @@ impl Tool for GrepTool {
                     "pattern": args.pattern,
                     "path": args.path,
                     "include": args.include,
+                    "literal": args.literal,
                     "limit": DEFAULT_GREP_LIMIT,
                     "context": DEFAULT_GREP_CONTEXT,
                 }),

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::io::BufRead;
 use std::path::Path;
 
@@ -29,6 +29,8 @@ struct FsGrepArgs {
     path: Option<String>,
     #[serde(default)]
     include: Option<String>,
+    #[serde(default)]
+    literal: bool,
     #[serde(default)]
     limit: Option<u32>,
     #[serde(default)]
@@ -88,6 +90,7 @@ impl Tool for FsGrepTool {
             &workspace_root,
             &resolved_base,
             &args.pattern,
+            args.literal,
             args.include.as_deref(),
             limit,
             context,
@@ -100,6 +103,7 @@ impl Tool for FsGrepTool {
                 "path": display_path,
                 "resolved_path": resolved_base.display().to_string(),
                 "include": args.include,
+                "literal": args.literal,
                 "limit": limit,
                 "context": context,
                 "matches": matches.lines,
@@ -117,12 +121,19 @@ fn collect_grep_matches(
     workspace_root: &Path,
     search_path: &Path,
     pattern: &str,
+    literal: bool,
     include: Option<&str>,
     limit: usize,
     context: usize,
 ) -> Result<GrepMatches, ToolError> {
-    let regex = Regex::new(pattern)
-        .map_err(|err| ToolError::InvalidArguments(format!("invalid regex pattern: {err}")))?;
+    let compiled_pattern = if literal {
+        regex::escape(pattern)
+    } else {
+        pattern.to_string()
+    };
+    let regex = Regex::new(&compiled_pattern).map_err(|err| {
+        ToolError::InvalidArguments(format_invalid_regex_pattern_error(pattern, err))
+    })?;
     let include_matcher = compile_include_matcher(include)?;
 
     let mut files = collect_candidate_files(workspace_root, search_path)?;
@@ -181,6 +192,13 @@ fn collect_grep_matches(
     })
 }
 
+fn format_invalid_regex_pattern_error(pattern: &str, err: regex::Error) -> String {
+    format!(
+        "invalid regex pattern: {err}\nHint: grep patterns are regular expressions. Escape regex metacharacters (for example, `{}`) or set `literal: true` to search for this text exactly.",
+        regex::escape(pattern)
+    )
+}
+
 fn compile_include_matcher(include: Option<&str>) -> Result<Option<GlobMatcher>, ToolError> {
     include
         .map(|pattern| {
@@ -228,20 +246,17 @@ fn append_rendered_lines(
         return;
     }
 
-    let mut line_indexes = BTreeMap::<usize, bool>::new();
+    let mut line_indexes = BTreeSet::<usize>::new();
     for &match_idx in match_line_indexes {
         let start = match_idx.saturating_sub(context);
         let end = (match_idx + context).min(lines.len().saturating_sub(1));
 
         for line_idx in start..=end {
-            line_indexes
-                .entry(line_idx)
-                .and_modify(|is_match| *is_match = *is_match || line_idx == match_idx)
-                .or_insert(line_idx == match_idx);
+            line_indexes.insert(line_idx);
         }
     }
 
-    for (line_idx, _is_match) in line_indexes {
+    for line_idx in line_indexes {
         output.push(format!(
             "{relative_path}:{}: {}",
             line_idx + 1,
@@ -346,7 +361,7 @@ mod tests {
         .expect("write binary");
 
         let result =
-            collect_grep_matches(root, root, "TODO", None, 100, 1).expect("collect matches");
+            collect_grep_matches(root, root, "TODO", false, None, 100, 1).expect("collect matches");
 
         assert_eq!(result.total_count, 3);
         assert_eq!(result.returned_count, 3);
@@ -376,7 +391,7 @@ mod tests {
         fs::write(root.join("c.txt"), "TODO c\n").expect("write c.txt");
 
         let result =
-            collect_grep_matches(root, root, "TODO", Some("*.txt"), 1, 0).expect("collect");
+            collect_grep_matches(root, root, "TODO", false, Some("*.txt"), 1, 0).expect("collect");
 
         assert_eq!(result.total_count, 2);
         assert_eq!(result.returned_count, 1);
@@ -416,6 +431,35 @@ mod tests {
             Some(&json!("src/session_lineage.rs"))
         );
         assert_eq!(structured.get("total_count"), Some(&json!(1)));
+    }
+
+    #[test]
+    fn collect_grep_matches_invalid_regex_suggests_literal_search() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let root = tempdir.path();
+        fs::write(root.join("notes.txt"), "task(run_in_background\n").expect("write notes");
+
+        let err = collect_grep_matches(root, root, "task(run_in_background", false, None, 100, 0)
+            .expect_err("unescaped regex group should fail");
+
+        let message = err.to_string();
+        assert!(message.contains("invalid regex pattern"));
+        assert!(message.contains("task\\(run_in_background"));
+        assert!(message.contains("literal: true"));
+    }
+
+    #[test]
+    fn collect_grep_matches_literal_search_escapes_regex_metacharacters() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let root = tempdir.path();
+        fs::write(root.join("notes.txt"), "task(run_in_background\ntaskXrun\n")
+            .expect("write notes");
+
+        let result = collect_grep_matches(root, root, "task(run_in_background", true, None, 100, 0)
+            .expect("literal search should escape pattern");
+
+        assert_eq!(result.total_count, 1);
+        assert_eq!(result.lines, vec!["notes.txt:1: task(run_in_background"]);
     }
 
     #[tokio::test]
