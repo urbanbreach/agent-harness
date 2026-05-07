@@ -143,8 +143,7 @@ impl Tool for HashlineEditTool {
     }
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: HashlineEditArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let args: HashlineEditArgs = crate::parse_tool_args(args_json)?;
         execute_hashline_edit(&ctx, args)
     }
 }

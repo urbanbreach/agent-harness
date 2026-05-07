@@ -8,6 +8,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use crate::parse_tool_args;
 use crate::read_window::{normalize_read_offset, READ_DEFAULT_LIMIT, READ_DEFAULT_OFFSET};
 use crate::workspace_edit::record_file_hashline_read;
 
@@ -51,8 +52,7 @@ impl Tool for HashlineScanTool {
         ctx: ToolContext,
         args_json: serde_json::Value,
     ) -> Result<ToolResult, ToolError> {
-        let args: HashlineScanArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let args: HashlineScanArgs = parse_tool_args(args_json)?;
 
         let path = Path::new(&args.path);
         if path.is_absolute() {
@@ -104,11 +104,11 @@ impl Tool for HashlineScanTool {
                 ToolError::Execution(format!("failed to write hashline scan artifact: {err}"))
             })?;
 
-        Ok(ToolResult {
-            display_text: render_display_text(&anchors),
-            structured_json: Some(structured_json),
-            artifacts: vec![artifact],
-        })
+        Ok(crate::text_json_artifacts_tool_result(
+            render_display_text(&anchors),
+            structured_json,
+            vec![artifact],
+        ))
     }
 }
 
