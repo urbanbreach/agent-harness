@@ -38,6 +38,9 @@ mod cli_labels;
 #[path = "../src/defaults.rs"]
 mod defaults;
 #[allow(dead_code)]
+#[path = "../src/dynamic_prompt.rs"]
+mod dynamic_prompt;
+#[allow(dead_code)]
 #[path = "../src/logging.rs"]
 mod logging;
 #[allow(dead_code)]

@@ -291,6 +291,103 @@ async fn prompt_cli_calls_responses_endpoint() {
 }
 
 #[tokio::test]
+async fn prompt_cli_generates_harness_session_title() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    title_responses_sse_transcript("Debugging production 500 errors"),
+                    "text/event-stream",
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.public.jsonc");
+    let session_dir = temp.path().join("sessions");
+    let out_path = temp.path().join("events.jsonl");
+    fs::write(
+        &config_path,
+        prompt_cli_public_runtime_config(&format!("{}/v1", server.uri())),
+    )
+    .expect("write config");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "--session-dir",
+            session_dir.to_str().expect("session dir utf-8"),
+            "prompt",
+            "--text",
+            "debug 500 errors in production",
+            "--out",
+            out_path.to_str().expect("out path utf-8"),
+        ])
+        .output()
+        .expect("run harness prompt");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let events_body = fs::read_to_string(&out_path).expect("read prompt events");
+    let events = events_body
+        .lines()
+        .map(|line| serde_json::from_str::<EventEnvelopeV1>(line).expect("parse prompt event"))
+        .collect::<Vec<_>>();
+    let run_started = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::RunStarted(payload) => Some(payload),
+            _ => None,
+        })
+        .expect("run started");
+    assert!(
+        harness_core::session_title::is_default_title(&run_started.run_name),
+        "initial title should be harness default, got `{}`",
+        run_started.run_name
+    );
+    assert_eq!(
+        events.iter().find_map(|event| match &event.payload {
+            EventV1::SessionTitleUpdated(payload) => Some(payload.title.as_str()),
+            _ => None,
+        }),
+        Some("Debugging production 500 errors")
+    );
+
+    let meta_path = session_dir.join(&events[0].run_id).join("meta.json");
+    let meta: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&meta_path).expect("read meta"))
+            .expect("parse meta");
+    assert_eq!(meta["run_name"], "Debugging production 500 errors");
+    assert_eq!(meta["mode_source"], "prompt");
+
+    let requests = server
+        .received_requests()
+        .await
+        .expect("request recording must be enabled");
+    assert_eq!(
+        requests.len(),
+        2,
+        "expected title request plus main prompt request"
+    );
+    let first_request_body = String::from_utf8_lossy(&requests[0].body);
+    assert!(
+        first_request_body.contains("Generate a title for this conversation:"),
+        "first provider request should be the harness title request: {first_request_body}"
+    );
+}
+
+#[tokio::test]
 async fn prompt_tracker_waits_for_agent_turn_end_not_provider_finish() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -1673,6 +1770,26 @@ fn deterministic_responses_sse_transcript() -> String {
         "data: [DONE]\n\n",
     ]
     .concat()
+}
+
+fn title_responses_sse_transcript(title: &str) -> String {
+    let delta = serde_json::json!({
+        "type": "response.output_text.delta",
+        "delta": title,
+    });
+    let completed = serde_json::json!({
+        "type": "response.completed",
+        "response": {
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 4,
+                "total_tokens": 14,
+            }
+        }
+    });
+    format!(
+        "event: response.output_text.delta\ndata: {delta}\n\nevent: response.completed\ndata: {completed}\n\ndata: [DONE]\n\n"
+    )
 }
 
 fn reasoning_responses_sse_transcript() -> String {

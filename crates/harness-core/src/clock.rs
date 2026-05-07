@@ -4,6 +4,7 @@ use std::time::{Instant, SystemTime};
 pub trait Clock {
     fn mono_ms(&self) -> u64;
     fn system_time_rfc3339(&self) -> Option<String>;
+    fn system_time_rfc3339_millis(&self) -> Option<String>;
 }
 
 #[derive(Debug)]
@@ -33,6 +34,12 @@ impl Clock for RealClock {
     fn system_time_rfc3339(&self) -> Option<String> {
         Some(humantime::format_rfc3339(SystemTime::now()).to_string())
     }
+
+    fn system_time_rfc3339_millis(&self) -> Option<String> {
+        Some(crate::session_title::system_time_millis_iso(
+            SystemTime::now(),
+        ))
+    }
 }
 
 #[derive(Debug, Default)]
@@ -60,6 +67,10 @@ impl Clock for FakeClock {
     fn system_time_rfc3339(&self) -> Option<String> {
         None
     }
+
+    fn system_time_rfc3339_millis(&self) -> Option<String> {
+        None
+    }
 }
 
 pub const HARNESS_DETERMINISTIC_ENV: &str = "HARNESS_DETERMINISTIC";
@@ -82,6 +93,13 @@ impl Clock for ClockSource {
         match self {
             Self::Real(clock) => clock.system_time_rfc3339(),
             Self::Fake(clock) => clock.system_time_rfc3339(),
+        }
+    }
+
+    fn system_time_rfc3339_millis(&self) -> Option<String> {
+        match self {
+            Self::Real(clock) => clock.system_time_rfc3339_millis(),
+            Self::Fake(clock) => clock.system_time_rfc3339_millis(),
         }
     }
 }

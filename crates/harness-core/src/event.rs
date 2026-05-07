@@ -98,6 +98,7 @@ impl EventContext {
 #[serde(tag = "event_type", content = "data", rename_all = "snake_case")]
 pub enum EventV1 {
     RunStarted(RunStartedEvent),
+    SessionTitleUpdated(SessionTitleUpdatedEvent),
     RunFinished(RunFinishedEvent),
     RunFailed(RunFailedEvent),
     AgentSpawned(AgentSpawnedEvent),
@@ -156,6 +157,11 @@ impl EventV1 {
 pub struct RunStartedEvent {
     pub run_name: String,
     pub workspace_root: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionTitleUpdatedEvent {
+    pub title: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

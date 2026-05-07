@@ -140,6 +140,8 @@ pub struct RunMetadata {
     pub harness_version: String,
     #[serde(default)]
     pub recorded_runtime_context: Option<RecordedRuntimeContext>,
+    #[serde(default)]
+    pub mode_source: Option<SessionModeSource>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -594,6 +596,7 @@ pub fn project_resume_plan<'a>(
                 agent_turns_in_flight.clear();
                 agent_turns_terminal_pending_late.clear();
             }
+            EventV1::SessionTitleUpdated(_) => {}
             EventV1::RunFinished(_) => {
                 if latest_lifecycle_status != LifecycleSegmentStatus::Missing {
                     latest_lifecycle_status = LifecycleSegmentStatus::Finished;
@@ -1488,8 +1491,16 @@ pub fn project_session_catalog_entry<'a>(
             _ => None,
         });
 
-    let run_name = run_started
-        .map(|data| data.run_name.clone())
+    let latest_title = collected
+        .iter()
+        .rev()
+        .find_map(|event| match &event.payload {
+            EventV1::SessionTitleUpdated(data) => Some(data.title.clone()),
+            _ => None,
+        });
+
+    let run_name = latest_title
+        .or_else(|| run_started.map(|data| data.run_name.clone()))
         .or_else(|| metadata.and_then(|meta| meta.run_name.clone()));
     let workspace_root = run_started
         .map(|data| data.workspace_root.clone())
@@ -1565,6 +1576,7 @@ fn apply_run_summary_event(summary: &mut RunSummary, event: &EventEnvelopeV1) {
         EventV1::RunStarted(_) => {
             summary.status = RunStatus::Running;
         }
+        EventV1::SessionTitleUpdated(_) => {}
         EventV1::RunFinished(_) => {
             summary.status = RunStatus::Finished;
         }
@@ -1616,6 +1628,7 @@ fn apply_timeline_event(index: &mut TimelineIndex, event: &EventEnvelopeV1) {
 fn event_type_name(event: &EventV1) -> String {
     match event {
         EventV1::RunStarted(_) => "run_started",
+        EventV1::SessionTitleUpdated(_) => "session_title_updated",
         EventV1::RunFinished(_) => "run_finished",
         EventV1::RunFailed(_) => "run_failed",
         EventV1::AgentSpawned(_) => "agent_spawned",

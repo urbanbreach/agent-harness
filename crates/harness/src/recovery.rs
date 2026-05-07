@@ -193,12 +193,10 @@ pub fn inspect_session_recovery(run_dir: &Path) -> Result<SessionRecoverySummary
 }
 
 pub fn latest_run_name(events: &[EventEnvelopeV1]) -> Option<String> {
-    events.iter().rev().find_map(|event| {
-        if let EventV1::RunStarted(data) = &event.payload {
-            Some(data.run_name.clone())
-        } else {
-            None
-        }
+    events.iter().rev().find_map(|event| match &event.payload {
+        EventV1::SessionTitleUpdated(data) => Some(data.title.clone()),
+        EventV1::RunStarted(data) => Some(data.run_name.clone()),
+        _ => None,
     })
 }
 

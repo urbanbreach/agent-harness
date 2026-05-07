@@ -28,6 +28,7 @@ use harness_core::session_lineage::{
     materialize_child_session, ChildSessionMaterializationRequest,
     ChildSessionMaterializationResult, ChildSessionMaterializationSourceKind, StableSessionPrefix,
 };
+use harness_core::session_title::create_default_title;
 use harness_core::store::{EventStore, EventStoreError};
 use harness_tools::coordinator_registry;
 use harness_tui::app::{
@@ -719,7 +720,10 @@ fn configured_profile_model_options(
         }
     }
 
-    for profile in agent_profiles.keys() {
+    for profile in agent_profiles
+        .keys()
+        .filter(|profile| profile.as_str() != harness_core::session_title::TITLE_AGENT_NAME)
+    {
         if let Ok(metadata) = resolve_profile_model_metadata(config, profile) {
             let configured_provider = metadata.provider.clone();
             let configured_model = metadata.model.clone();
@@ -789,6 +793,7 @@ fn model_options_from_profiles(
 ) -> Vec<ModelOption> {
     agent_profiles
         .values()
+        .filter(|profile| profile.name != harness_core::session_title::TITLE_AGENT_NAME)
         .map(|profile| ModelOption::from_model_ref(profile.name.clone(), &profile.model_ref))
         .collect()
 }
@@ -1866,12 +1871,18 @@ async fn bootstrap_new_live_runtime(
         .await?;
     profile_handoff("new_live.coordinator_ready");
     coordinator_config.run_id_override = Some(run_id_override);
+    coordinator_config.session_mode_source = Some(if demo_mode {
+        SessionModeSource::InteractiveMock
+    } else {
+        SessionModeSource::InteractiveLive
+    });
     apply_runtime_metadata(
         &mut coordinator_config,
         settings.deterministic,
         &settings.config_digest,
     );
 
+    let run_name = create_default_title(clock.as_ref(), false);
     let coordinator = spawn_coordinator(
         coordinator_config,
         clock,
@@ -1880,7 +1891,7 @@ async fn bootstrap_new_live_runtime(
     profile_handoff("new_live.coordinator_spawned");
 
     let run = coordinator
-        .start_run("interactive", &workspace)
+        .start_run(run_name, &workspace)
         .await
         .map_err(|err| err.to_string())?;
     profile_handoff("new_live.start_run_done");

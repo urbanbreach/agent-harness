@@ -579,6 +579,7 @@ fn collect_referenced_artifacts(
                 }
             }
             EventV1::RunStarted(_)
+            | EventV1::SessionTitleUpdated(_)
             | EventV1::RunFinished(_)
             | EventV1::RunFailed(_)
             | EventV1::AgentSpawned(_)
@@ -1393,6 +1394,7 @@ impl PrefixState {
                     .insert(payload.request_id.clone());
             }
             EventV1::AgentSpawned(_)
+            | EventV1::SessionTitleUpdated(_)
             | EventV1::AgentStopped(_)
             | EventV1::StaleDetected(_)
             | EventV1::ProviderStreamDelta(_)

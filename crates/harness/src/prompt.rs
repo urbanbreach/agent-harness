@@ -15,8 +15,9 @@ use harness_core::event::{
     ActorKind, EventActor, EventEnvelopeV1, EventV1, TaskCancelledEvent, TaskCompletedEvent,
 };
 use harness_core::perm::PermissionPolicy;
-use harness_core::proj::inspect_resume_plan;
+use harness_core::proj::{inspect_resume_plan, SessionModeSource};
 use harness_core::redact::DefaultRedactor;
+use harness_core::session_title::create_default_title;
 use harness_core::store::{EventStore, EventStoreError};
 use harness_tools::coordinator_registry;
 use uuid::Uuid;
@@ -228,6 +229,7 @@ async fn run_prompt(
     }
 
     let mut coordinator_config = settings.coordinator_config.clone();
+    coordinator_config.session_mode_source = Some(SessionModeSource::Prompt);
     apply_runtime_metadata(
         &mut coordinator_config,
         settings.deterministic,
@@ -268,6 +270,7 @@ async fn run_prompt(
         Arc::new(RealClock::new())
     };
 
+    let run_name = create_default_title(clock.as_ref(), false);
     let coordinator = spawn_coordinator(
         coordinator_config,
         clock,
@@ -278,7 +281,7 @@ async fn run_prompt(
         .map_err(|err| format!("failed to resolve current working directory: {err}"))?;
 
     let run = coordinator
-        .start_run("prompt", workspace)
+        .start_run(run_name, workspace)
         .await
         .map_err(|err| err.to_string())?;
 
@@ -346,6 +349,7 @@ async fn run_resumed_prompt(
     prompt_text: &str,
 ) -> Result<PromptOutcome, String> {
     let mut coordinator_config = settings.coordinator_config.clone();
+    coordinator_config.session_mode_source = Some(SessionModeSource::Prompt);
     apply_runtime_metadata(
         &mut coordinator_config,
         settings.deterministic,

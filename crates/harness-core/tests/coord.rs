@@ -311,6 +311,122 @@ impl Provider for SequentialScriptedProvider {
 }
 
 #[tokio::test]
+async fn coord_title_generation_uses_isolated_hidden_title_agent_request() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = CapturingProvider::new(vec![
+        "<think>hidden</think>\n\nDebugging production 500 errors\nignored",
+        "main response",
+    ]);
+    let mut config = CoordinatorConfig::new(temp_dir.path());
+    config.provider = Arc::new(provider.clone());
+    config.agent_profiles = agent_profiles_with_title_agent();
+
+    let coordinator = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = coordinator
+        .start_run(
+            harness_core::session_title::create_default_title(&FakeClock::new(), false),
+            temp_dir.path(),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn agent");
+
+    coordinator
+        .request_agent_turn(
+            EventActor::new(ActorKind::User, Some("user".to_string())),
+            agent_id,
+            "debug 500 errors in production",
+        )
+        .await
+        .expect("request agent turn");
+
+    let requests = provider.requests();
+    let title_request = requests.first().expect("title request");
+    assert_eq!(title_request.provider_id.as_deref(), Some("mock"));
+    assert_eq!(title_request.model_id, "title-model");
+    assert_eq!(
+        title_request.temperature,
+        Some(harness_core::session_title::TITLE_AGENT_TEMPERATURE)
+    );
+    assert_eq!(title_request.tools, None);
+    assert_eq!(title_request.tool_choice, None);
+    assert_eq!(title_request.messages.len(), 3);
+    assert_eq!(title_request.messages[0].role, MessageRole::System);
+    assert_eq!(
+        title_request.messages[0].content,
+        harness_core::session_title::TITLE_AGENT_SYSTEM_PROMPT
+    );
+    assert_eq!(title_request.messages[1].role, MessageRole::User);
+    assert_eq!(
+        title_request.messages[1].content,
+        harness_core::session_title::TITLE_GENERATION_USER_PROMPT
+    );
+    assert_eq!(title_request.messages[2].role, MessageRole::User);
+    assert_eq!(
+        title_request.messages[2].content,
+        "debug 500 errors in production"
+    );
+
+    let events = load_events(&run.events_path);
+    assert_eq!(
+        events.iter().find_map(|event| match &event.payload {
+            EventV1::SessionTitleUpdated(payload) => Some(payload.title.as_str()),
+            _ => None,
+        }),
+        Some("Debugging production 500 errors")
+    );
+}
+
+#[tokio::test]
+async fn coord_supervisor_first_turn_does_not_generate_session_title() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = CapturingProvider::new(vec!["main response"]);
+    let mut config = CoordinatorConfig::new(temp_dir.path());
+    config.provider = Arc::new(provider.clone());
+    config.agent_profiles = agent_profiles_with_title_agent();
+
+    let coordinator = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = coordinator
+        .start_run(
+            harness_core::session_title::create_default_title(&FakeClock::new(), false),
+            temp_dir.path(),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn agent");
+
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "supervisor bootstrap")
+        .await
+        .expect("request supervisor turn");
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let requests = provider.requests();
+    assert_eq!(
+        requests.len(),
+        1,
+        "supervisor turn must not add title request"
+    );
+    assert!(!load_events(&run.events_path)
+        .iter()
+        .any(|event| matches!(event.payload, EventV1::SessionTitleUpdated(_))));
+}
+
+#[tokio::test]
 async fn coord_start_run_appends_run_started() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let coordinator = test_coordinator(temp_dir.path());
@@ -9456,6 +9572,24 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             system_prompt: "beta-prompt".to_string(),
             max_iters: Some(12),
             temperature: Some(0.0),
+            tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+            toolset: vec![],
+        },
+    );
+    profiles
+}
+
+fn agent_profiles_with_title_agent() -> BTreeMap<String, AgentProfile> {
+    let mut profiles = agent_profiles();
+    profiles.insert(
+        harness_core::session_title::TITLE_AGENT_NAME.to_string(),
+        AgentProfile {
+            name: harness_core::session_title::TITLE_AGENT_NAME.to_string(),
+            category: harness_core::session_title::TITLE_AGENT_NAME.to_string(),
+            model_ref: "mock:title-model".to_string(),
+            system_prompt: harness_core::session_title::TITLE_AGENT_SYSTEM_PROMPT.to_string(),
+            max_iters: None,
+            temperature: Some(harness_core::session_title::TITLE_AGENT_TEMPERATURE),
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
             toolset: vec![],
         },

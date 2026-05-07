@@ -473,6 +473,9 @@ pub fn project_transcript(
                     }),
                 );
             }
+            EventV1::SessionTitleUpdated(payload) => {
+                projection.session.run_name = Some(payload.title.clone());
+            }
             EventV1::RunFinished(payload) => {
                 projection.session.status = TranscriptRunStatus::Finished;
                 projection.session.status_reason = Some(payload.summary.clone());

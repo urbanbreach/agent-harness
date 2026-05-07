@@ -20,6 +20,7 @@ pub mod redact;
 pub mod sched;
 pub mod session_lineage;
 pub(crate) mod session_paths;
+pub mod session_title;
 pub mod store;
 pub(crate) mod text;
 pub mod tool;
