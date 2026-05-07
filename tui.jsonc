@@ -1,7 +1,7 @@
 {
   "$schema": "./configs/tui.json",
   "keybinds": {
-    "variant_cycle": "tab",
+    "variant_cycle": "ctrl+t",
     "session_child_first": "ctrl+]",
     "session_child_cycle": "]",
     "session_child_cycle_reverse": "[",

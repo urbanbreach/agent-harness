@@ -742,7 +742,19 @@ impl KeyMap {
     /// Get the action for a key event, if any.
     pub fn get_action(&self, event: &KeyEvent) -> Option<Action> {
         let binding = KeyBinding::new(event.code, event.modifiers);
-        self.bindings.get(&binding).copied()
+        self.bindings.get(&binding).copied().or_else(|| {
+            // Terminals encode Ctrl+] as ASCII GS (0x1d). Crossterm can surface
+            // that as a plain control character instead of Char(']')+CONTROL,
+            // so normalize it at lookup time without changing the displayed
+            // primary binding label.
+            (event.code == KeyCode::Char('\u{1d}') && event.modifiers == KeyModifiers::NONE)
+                .then(|| {
+                    self.bindings
+                        .get(&KeyBinding::new(KeyCode::Char(']'), KeyModifiers::CONTROL))
+                        .copied()
+                })
+                .flatten()
+        })
     }
 
     /// Get all key bindings for an action.
@@ -944,6 +956,10 @@ mod tests {
 
         assert_eq!(
             keymap.get_action(&KeyEvent::new(KeyCode::Char(']'), KeyModifiers::CONTROL)),
+            Some(Action::SessionChildFirst)
+        );
+        assert_eq!(
+            keymap.get_action(&KeyEvent::new(KeyCode::Char('\u{1d}'), KeyModifiers::NONE)),
             Some(Action::SessionChildFirst)
         );
         assert_eq!(
