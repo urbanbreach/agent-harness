@@ -3,20 +3,39 @@
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::net::TcpListener;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::thread;
 use std::time::Duration;
 
+use harness_core::config::PermissionMode;
+use harness_core::event::{ActorKind, EventActor};
+use harness_core::perm::PermissionPolicy;
 use harness_core::tool::ToolError;
 
 mod env_guard;
+mod event_log;
+mod event_reader;
+mod question_events;
+pub(crate) mod remote_search_env;
+mod repo_root;
 mod tool_context;
 mod workspace;
 
 #[allow(unused_imports)]
 pub use env_guard::EnvGuard;
+#[allow(unused_imports)]
+pub(crate) use event_log::{
+    find_finished, read_events, wait_for_request_terminal, wait_for_succeeded_tool_call_finish,
+    wait_for_tool_call_finish,
+};
+#[allow(unused_imports)]
+pub(crate) use question_events::wait_for_question_permission;
+#[allow(unused_imports)]
+pub(crate) use repo_root::repo_root;
+#[allow(unused_imports)]
 pub use tool_context::test_context;
-pub use workspace::setup_workspace;
+#[allow(unused_imports)]
+pub use workspace::{setup_workspace, setup_workspace_fixture};
 
 #[derive(Debug, Clone)]
 pub struct TestRequest {
@@ -44,6 +63,47 @@ pub struct TestBinaryResponse {
 pub fn env_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
+}
+
+pub fn env_test_lock() -> MutexGuard<'static, ()> {
+    env_lock().lock().expect("env lock")
+}
+
+pub fn worker_actor(agent_id: &str) -> EventActor {
+    EventActor::new(ActorKind::Worker, Some(agent_id.to_string()))
+}
+
+pub fn supervisor_actor() -> EventActor {
+    EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string()))
+}
+
+pub fn anonymous_supervisor_actor() -> EventActor {
+    EventActor::new(ActorKind::Supervisor, None)
+}
+
+pub fn allow_all_permission_policy() -> PermissionPolicy {
+    PermissionPolicy::new(
+        PermissionMode::Allow,
+        PermissionMode::Allow,
+        PermissionMode::Allow,
+    )
+}
+
+pub fn edit_only_permission_policy() -> PermissionPolicy {
+    PermissionPolicy::new(
+        PermissionMode::Allow,
+        PermissionMode::Deny,
+        PermissionMode::Deny,
+    )
+}
+
+pub fn ask_edit_permission_policy() -> PermissionPolicy {
+    PermissionPolicy::new(
+        PermissionMode::Ask,
+        PermissionMode::Deny,
+        PermissionMode::Deny,
+    )
+    .with_ask_timeout_ms(1_000)
 }
 
 pub fn expect_invalid_arguments(error: ToolError, expected: &str) {

@@ -3,10 +3,7 @@ use std::path::Path;
 use harness_core::event::{EventEnvelopeV1, EventV1};
 use tokio::time::{sleep, Duration, Instant};
 
-pub(crate) use event_reader::read_events;
-
-#[path = "event_reader.rs"]
-mod event_reader;
+pub(crate) use super::event_reader::read_events;
 
 pub(crate) async fn wait_for_question_permission(
     path: &Path,
