@@ -16,6 +16,8 @@ use harness_providers::openai::{
 use harness_providers::{Provider, ProviderRouter};
 use harness_tools::{coordinator_registry_with_mcp_and_editing, EditingToolSurfaceConfig};
 
+use crate::dynamic_prompt::{self, DynamicPromptContext};
+
 const DEFAULT_INTERACTIVE_PROFILE: &str = "build";
 
 const CONFIG_SEARCH_LOCATIONS: [&str; 4] = [
@@ -64,7 +66,12 @@ pub fn interactive_profile_name(cfg: &HarnessConfig) -> String {
                 .contains_key(DEFAULT_INTERACTIVE_PROFILE)
                 .then(|| DEFAULT_INTERACTIVE_PROFILE.to_string())
         })
-        .or_else(|| cfg.agents.keys().next().cloned())
+        .or_else(|| {
+            cfg.agents
+                .keys()
+                .find(|name| name.as_str() != harness_core::session_title::TITLE_AGENT_NAME)
+                .cloned()
+        })
         .unwrap_or_else(|| DEFAULT_INTERACTIVE_PROFILE.to_string())
 }
 
@@ -109,33 +116,33 @@ fn compose_interactive_system_prompt(
     cfg: &HarnessConfig,
     profile_name: &str,
     profile_cfg: &harness_core::config::ProfileConfig,
+    model: &harness_core::config::ResolvedModelTarget,
+    toolset: &[String],
 ) -> Result<String, String> {
-    let agent_prompt = profile_cfg
-        .system_prompt
-        .clone()
-        .or_else(|| builtin_agent_system_prompt(profile_name).map(str::to_string))
-        .ok_or_else(|| {
-            format!(
-                "agent `{profile_name}` is missing a system prompt; define `agents.{profile_name}.system_prompt` or ship `.agent-harness/agents/{profile_name}.md`"
-            )
-        })?;
-
-    Ok(cfg
-        .instruction_prompt_prefix()
-        .map(|instructions| format!("{instructions}\n\n{agent_prompt}"))
-        .unwrap_or(agent_prompt))
-}
-
-fn builtin_agent_system_prompt(profile_name: &str) -> Option<&'static str> {
-    match profile_name {
-        harness_core::plan::BUILD_AGENT_NAME => Some(
-            "You are harness, a coding agent. Use the available tools to implement, verify, and clearly summarize software engineering work.",
-        ),
-        harness_core::plan::PLAN_AGENT_NAME => Some(
-            "You are harness in planning mode. Inspect the workspace, write the final plan to the active plan file, and call plan_exit when the plan is complete. Do not edit files outside the active plan file or execute implementation work.",
-        ),
-        _ => None,
+    if profile_name == harness_core::session_title::TITLE_AGENT_NAME {
+        return Ok(profile_cfg.system_prompt.clone().unwrap_or_else(|| {
+            harness_core::session_title::TITLE_AGENT_SYSTEM_PROMPT.to_string()
+        }));
     }
+
+    if profile_cfg.system_prompt.is_none()
+        && !matches!(
+            profile_name,
+            harness_core::plan::BUILD_AGENT_NAME | harness_core::plan::PLAN_AGENT_NAME
+        )
+    {
+        return Err(format!(
+            "agent `{profile_name}` is missing a system prompt; define `agents.{profile_name}.system_prompt` or ship `.agent-harness/agents/{profile_name}.md`"
+        ));
+    }
+
+    let instruction_prompt = cfg.instruction_prompt_prefix();
+    Ok(dynamic_prompt::compose(DynamicPromptContext {
+        configured_prompt: profile_cfg.system_prompt.as_deref(),
+        model,
+        instruction_prompt: instruction_prompt.as_deref(),
+        skill_tool_enabled: toolset.iter().any(|tool| tool == "skill"),
+    }))
 }
 
 pub fn interactive_agent_profiles(
@@ -166,22 +173,31 @@ fn interactive_agent_profiles_with_extra_tools(
                     )
                 })?;
 
+        let toolset: Vec<String> = normalize_profile_toolset(&profile_cfg.tools, editing_surface)
+            .iter()
+            .map(String::as_str)
+            .chain(extra_tool_ids.iter().map(String::as_str))
+            .map(ToOwned::to_owned)
+            .collect();
+        let system_prompt = compose_interactive_system_prompt(
+            cfg,
+            profile_name,
+            profile_cfg,
+            &model_selection.primary,
+            &toolset,
+        )?;
+
         profiles.insert(
             profile_name.clone(),
             AgentProfile {
                 name: profile_name.clone(),
                 category: profile_name.clone(),
                 model_ref: model_selection.primary.model_ref,
-                system_prompt: compose_interactive_system_prompt(cfg, profile_name, profile_cfg)?,
+                system_prompt,
                 max_iters: profile_cfg.max_iters,
                 temperature: profile_cfg.temperature,
                 tool_failure_mode: profile_cfg.tool_failure_mode,
-                toolset: normalize_profile_toolset(&profile_cfg.tools, editing_surface)
-                    .iter()
-                    .map(String::as_str)
-                    .chain(extra_tool_ids.iter().map(String::as_str))
-                    .map(ToOwned::to_owned)
-                    .collect(),
+                toolset,
             },
         );
     }
@@ -376,14 +392,21 @@ mod tests {
         ));
 
         let profiles = interactive_agent_profiles(&cfg).expect("interactive profiles");
-        assert_eq!(profiles["review"].system_prompt, configured_prompt);
+        assert!(profiles["review"]
+            .system_prompt
+            .starts_with(configured_prompt));
+        assert!(profiles["review"]
+            .system_prompt
+            .contains("The exact model ID is default/gpt-5.4-mini"));
 
         let coordinator_config =
             build_interactive_coordinator_config(&cfg).expect("coordinator config");
-        assert_eq!(
-            coordinator_config.agent_profiles["review"].system_prompt,
-            configured_prompt
-        );
+        assert!(coordinator_config.agent_profiles["review"]
+            .system_prompt
+            .starts_with(configured_prompt));
+        assert!(coordinator_config.agent_profiles["review"]
+            .system_prompt
+            .contains("The exact model ID is default/gpt-5.4-mini"));
     }
 
     #[test]
@@ -485,22 +508,62 @@ mod tests {
     }
 
     #[test]
-    fn shipped_example_config_seeds_build_and_plan() {
+    fn shipped_example_config_seeds_build_plan_and_subagents() {
         let config_path = crate::cli_config::shipped_example_config_path();
         let cfg = load_config_from_file(&config_path).expect("shipped example config should parse");
 
         assert!(cfg.agents.contains_key("build"));
         assert!(cfg.agents.contains_key("plan"));
+        assert!(cfg.agents.contains_key("explore"));
+        assert!(cfg.agents.contains_key("general"));
         assert_eq!(cfg.default_agent.as_deref(), Some("build"));
 
         let profiles = interactive_agent_profiles(&cfg).expect("interactive profiles");
         assert!(profiles["build"].toolset.contains(&"edit".to_string()));
         assert!(profiles["build"].toolset.contains(&"bash".to_string()));
         assert!(profiles["build"].toolset.contains(&"task".to_string()));
+        assert!(profiles["build"]
+            .toolset
+            .contains(&"background_output".to_string()));
         assert!(profiles["build"].toolset.contains(&"todowrite".to_string()));
         assert!(profiles["plan"].toolset.contains(&"edit".to_string()));
         assert!(profiles["plan"].toolset.contains(&"plan_exit".to_string()));
+        assert!(profiles["plan"].toolset.contains(&"task".to_string()));
+        assert!(profiles["plan"]
+            .toolset
+            .contains(&"background_output".to_string()));
         assert!(!profiles["plan"].toolset.contains(&"bash".to_string()));
-        assert!(!profiles["plan"].toolset.contains(&"task".to_string()));
+        assert!(profiles["explore"].toolset.contains(&"read".to_string()));
+        assert!(profiles["explore"].toolset.contains(&"grep".to_string()));
+        assert!(!profiles["explore"].toolset.contains(&"edit".to_string()));
+        assert!(!profiles["explore"].toolset.contains(&"bash".to_string()));
+        assert!(profiles["general"].toolset.contains(&"edit".to_string()));
+        assert!(profiles["general"].toolset.contains(&"bash".to_string()));
+        assert!(!profiles["general"].toolset.contains(&"task".to_string()));
+        assert_eq!(
+            profiles[harness_core::session_title::TITLE_AGENT_NAME].system_prompt,
+            harness_core::session_title::TITLE_AGENT_SYSTEM_PROMPT
+        );
+        assert_eq!(
+            profiles[harness_core::session_title::TITLE_AGENT_NAME].temperature,
+            Some(harness_core::session_title::TITLE_AGENT_TEMPERATURE)
+        );
+        assert!(profiles[harness_core::session_title::TITLE_AGENT_NAME]
+            .toolset
+            .is_empty());
+        assert!(profiles["build"]
+            .system_prompt
+            .starts_with("You are agent-harness, You and the user"));
+        assert!(profiles["plan"]
+            .system_prompt
+            .starts_with("You are agent-harness, You and the user"));
+        assert!(!profiles["build"]
+            .system_prompt
+            .to_lowercase()
+            .contains(&["open", "code"].concat()));
+        assert!(!profiles["plan"]
+            .system_prompt
+            .to_lowercase()
+            .contains(&["open", "code"].concat()));
     }
 }

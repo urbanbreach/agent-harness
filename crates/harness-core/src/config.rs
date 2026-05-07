@@ -3557,8 +3557,8 @@ mod tests {
         assert!(parsed.agents["plan"]
             .tools
             .contains(&"plan_exit".to_string()));
+        assert!(parsed.agents["plan"].tools.contains(&"task".to_string()));
         assert!(!parsed.agents["plan"].tools.contains(&"bash".to_string()));
-        assert!(!parsed.agents["plan"].tools.contains(&"task".to_string()));
     }
 
     fn public_minimal_config_with_permission(permission: &str) -> String {

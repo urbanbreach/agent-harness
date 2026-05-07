@@ -16,6 +16,7 @@ mod cli_config;
 mod cli_io;
 mod cli_labels;
 mod defaults;
+mod dynamic_prompt;
 mod logging;
 mod models;
 mod prompt;

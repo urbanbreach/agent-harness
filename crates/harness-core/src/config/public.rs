@@ -426,7 +426,10 @@ fn canonicalize_runtime_aliases(runtime: &mut serde_json::Value) {
     }
 }
 
-fn default_shipped_agents(model_ref: &str) -> BTreeMap<String, ProfileConfig> {
+fn default_shipped_agents(
+    model_ref: &str,
+    small_model_ref: Option<&str>,
+) -> BTreeMap<String, ProfileConfig> {
     BTreeMap::from([
         (
             crate::plan::BUILD_AGENT_NAME.to_string(),
@@ -457,6 +460,8 @@ fn default_shipped_agents(model_ref: &str) -> BTreeMap<String, ProfileConfig> {
                     "todowrite",
                     "todoread",
                     "question",
+                    "task",
+                    "background_output",
                     "skill",
                     "websearch",
                     "webfetch",
@@ -469,7 +474,6 @@ fn default_shipped_agents(model_ref: &str) -> BTreeMap<String, ProfileConfig> {
                     "edit",
                     "bash",
                     "batch",
-                    "task",
                 ]
                 .into_iter()
                 .map(str::to_string)
@@ -519,6 +523,8 @@ fn default_shipped_agents(model_ref: &str) -> BTreeMap<String, ProfileConfig> {
                     "todowrite",
                     "todoread",
                     "question",
+                    "task",
+                    "background_output",
                     "skill",
                     "websearch",
                     "webfetch",
@@ -534,6 +540,114 @@ fn default_shipped_agents(model_ref: &str) -> BTreeMap<String, ProfileConfig> {
                 .into_iter()
                 .map(str::to_string)
                 .collect(),
+            },
+        ),
+        (
+            "explore".to_string(),
+            ProfileConfig {
+                description:
+                    "Read-only contextual codebase search agent for finding files, patterns, and conventions."
+                        .to_string(),
+                system_prompt: Some(
+                    "You are a read-only exploration subagent. Search the local codebase, inspect relevant files, and return concise findings with file paths and rationale. Do not edit files, run shell commands, or delegate to other agents."
+                        .to_string(),
+                ),
+                model_ref: model_ref.to_string(),
+                variant: None,
+                temperature: None,
+                permissions: Some(ProfilePermissions {
+                    fallback: None,
+                    edit: Some(PermissionMode::Deny),
+                    shell: Some(PermissionMode::Deny),
+                    network: Some(PermissionMode::Deny),
+                    question: Some(PermissionMode::Allow),
+                    task: Some(PermissionMode::Deny),
+                    webfetch: Some(PermissionMode::Deny),
+                    websearch: Some(PermissionMode::Deny),
+                    codesearch: Some(PermissionMode::Deny),
+                    lsp: Some(PermissionMode::Allow),
+                    rules: PermissionRuleSet::default(),
+                }),
+                max_iters: None,
+                tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
+                tools: vec!["question", "lsp", "read", "glob", "grep", "list", "batch"]
+                    .into_iter()
+                    .map(str::to_string)
+                    .collect(),
+            },
+        ),
+        (
+            "general".to_string(),
+            ProfileConfig {
+                description:
+                    "General-purpose implementation and research subagent for focused multi-step work."
+                        .to_string(),
+                system_prompt: Some(
+                    "You are a focused general-purpose subagent. Complete the delegated task using the tools available to this profile, report what you changed or learned, and include verification evidence when applicable. Do not spawn further subagents unless this profile is explicitly configured with the task tool."
+                        .to_string(),
+                ),
+                model_ref: model_ref.to_string(),
+                variant: None,
+                temperature: None,
+                permissions: Some(ProfilePermissions {
+                    fallback: None,
+                    edit: Some(PermissionMode::Allow),
+                    shell: Some(PermissionMode::Allow),
+                    network: Some(PermissionMode::Allow),
+                    question: Some(PermissionMode::Allow),
+                    task: Some(PermissionMode::Deny),
+                    webfetch: Some(PermissionMode::Allow),
+                    websearch: Some(PermissionMode::Allow),
+                    codesearch: Some(PermissionMode::Allow),
+                    lsp: Some(PermissionMode::Allow),
+                    rules: PermissionRuleSet::default(),
+                }),
+                max_iters: None,
+                tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
+                tools: vec![
+                    "question",
+                    "skill",
+                    "websearch",
+                    "webfetch",
+                    "codesearch",
+                    "lsp",
+                    "read",
+                    "glob",
+                    "grep",
+                    "list",
+                    "edit",
+                    "bash",
+                    "batch",
+                ]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            },
+        ),
+        (
+            crate::session_title::TITLE_AGENT_NAME.to_string(),
+            ProfileConfig {
+                description: "Hidden title generation agent.".to_string(),
+                system_prompt: Some(crate::session_title::TITLE_AGENT_SYSTEM_PROMPT.to_string()),
+                model_ref: small_model_ref.unwrap_or(model_ref).to_string(),
+                variant: None,
+                temperature: Some(crate::session_title::TITLE_AGENT_TEMPERATURE),
+                permissions: Some(ProfilePermissions {
+                    fallback: Some(PermissionMode::Deny),
+                    edit: Some(PermissionMode::Deny),
+                    shell: Some(PermissionMode::Deny),
+                    network: Some(PermissionMode::Deny),
+                    question: Some(PermissionMode::Deny),
+                    task: Some(PermissionMode::Deny),
+                    webfetch: Some(PermissionMode::Deny),
+                    websearch: Some(PermissionMode::Deny),
+                    codesearch: Some(PermissionMode::Deny),
+                    lsp: Some(PermissionMode::Deny),
+                    rules: PermissionRuleSet::default(),
+                }),
+                max_iters: None,
+                tool_failure_mode: ToolFailureMode::FailTurn,
+                tools: Vec::new(),
             },
         ),
     ])
@@ -796,7 +910,7 @@ pub(super) fn translate_public_runtime_root(
 
     let shipped = model
         .as_deref()
-        .map(default_shipped_agents)
+        .map(|model_ref| default_shipped_agents(model_ref, small_model.as_deref()))
         .unwrap_or_default();
 
     if let Some(value) = object.get("agent") {

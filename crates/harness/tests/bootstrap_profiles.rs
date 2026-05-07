@@ -8,6 +8,10 @@ use harness_core::perm::{PermissionKind, PolicyDecision};
 use tempfile::tempdir;
 
 #[allow(dead_code)]
+#[path = "../src/dynamic_prompt.rs"]
+mod dynamic_prompt;
+
+#[allow(dead_code)]
 #[path = "../src/bootstrap.rs"]
 mod bootstrap;
 
@@ -117,10 +121,9 @@ fn interactive_bootstrap_builds_runtime_state_from_agents() {
 
     assert!(coordinator_config.agent_profiles.contains_key("deep"));
     assert!(coordinator_config.agent_profiles.contains_key("review"));
-    assert_eq!(
-        coordinator_config.agent_profiles["review"].system_prompt,
-        "Review prompt"
-    );
+    let review_prompt = &coordinator_config.agent_profiles["review"].system_prompt;
+    assert!(review_prompt.starts_with("Review prompt"));
+    assert!(review_prompt.contains("The exact model ID is default/gpt-4o-mini"));
 
     assert_eq!(
         coordinator_config
@@ -312,10 +315,9 @@ fn interactive_bootstrap_uses_discovered_markdown_prompt_when_inline_missing() {
     let config = load_config_from_file(&config_path).expect("load harness config");
     let coordinator_config =
         bootstrap::build_interactive_coordinator_config(&config).expect("build config");
-    assert_eq!(
-        coordinator_config.agent_profiles["build"].system_prompt,
-        "Markdown-backed build prompt."
-    );
+    let prompt = &coordinator_config.agent_profiles["build"].system_prompt;
+    assert!(prompt.starts_with("Markdown-backed build prompt."));
+    assert!(prompt.contains("The exact model ID is default/gpt-4o-mini"));
 }
 
 #[test]
@@ -393,5 +395,6 @@ fn interactive_bootstrap_prepends_project_agents_md_to_agent_prompt() {
     let prompt = &coordinator_config.agent_profiles["build"].system_prompt;
     assert!(prompt.contains("Instructions from:"));
     assert!(prompt.contains("Project-wide instructions."));
-    assert!(prompt.ends_with("Build prompt"));
+    assert!(prompt.starts_with("Build prompt"));
+    assert!(prompt.contains("The exact model ID is default/gpt-4o-mini"));
 }
