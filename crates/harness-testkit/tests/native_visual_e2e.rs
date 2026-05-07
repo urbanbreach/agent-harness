@@ -848,20 +848,23 @@ fn native_visual_navigation_views_inner() {
     child_navigation_harness
         .send_key("C-]")
         .unwrap_or_else(|err| panic!("failed to navigate to native child session: {err}"));
+    let child_header = "Worker · 000_parent_navigation / Inspect parity child session";
+    let child_footer = "Worker (1 of 1)";
     let child_screen = child_navigation_harness
         .wait_for_text("Child session captured sidebar parity.", STARTUP_TIMEOUT)
         .unwrap_or_else(|err| panic!("native child replay screen did not appear: {err}"));
-    assert!(child_screen.contains(child_session_id));
+    assert!(child_screen.contains(child_header));
+    assert!(child_screen.contains(child_footer));
     let child_navigation_checkpoint = child_navigation_harness
         .capture_checkpoint(
             &mut child_navigation_run,
             CHECKPOINT_RUN_FINISHED,
             &[
-                REPLAY_DENSE_READY_MARKER,
-                child_session_id,
+                child_header,
+                child_footer,
                 "Child session captured sidebar parity.",
             ],
-            &FocusCapture::anchored_exact("Child session captured sidebar parity.", 30, 6),
+            &FocusCapture::anchored_exact(child_header, 58, 2),
             Some(json!({
                 "purpose": "child-session-navigation",
                 "family": "replay_shell",
@@ -1186,11 +1189,11 @@ fn native_visual_transcript_parity_inner() {
             &[
                 "Bring native tool parity inline",
                 "Read src/ui.rs [offset=12, limit=24] · 14:35 · 1.2s",
-                "Spawn researcher · audit transcript parity",
-                "14:36 · 1.6s",
-                "foreground · agent_worker · req_child · completed · 3 child tool calls",
+                "Task — audit transcript parity",
+                "3 toolcalls · 1.6s",
+                "Found the inline transcript path.",
             ],
-            &FocusCapture::anchored_exact("Spawn researcher", 34, 6),
+            &FocusCapture::anchored_exact("Task — audit transcript parity", 34, 6),
             Some(json!({
                 "purpose": "native-tool-parity-task-row",
                 "family": "transcript_shell",
