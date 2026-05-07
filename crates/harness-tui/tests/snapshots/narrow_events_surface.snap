@@ -1,13 +1,13 @@
   events · run_fixture
 
-     events   18 recorded · selected seq 18 · follow on
-    Event log · j/k active ·eEvent detailsdebar,
-          47   47   };
-         1pawn researcher · au{it tool lifecycle parity  ▸
-     UserMessageSubmitted(Uwor"schema_version": 1,mpleted · 2 child tool
+     events   18 recorded · selected seq 18 · follow ontab, render_help_tab
+    Event log · j/k active · Event details
+               45 +     render_events_tab, render_help_tab, render_live_det
+         1          ails_overl{y,
+     UserMessageSubmitted(Uder"schema_version": 1,
      serMessageSubmittedEve   "event_id": "evt-0018",
-     nt { request_idole-tool p"seq": 18,.                                  █
-         2mpat alias · task → "run_id": "run_fixture",                     █
+     nt { request_idTask — aud"seq": 18,fecycle parity                     █
+         22 toolcalls · 2ms   "run_id": "run_fixture",                     █
      ProviderRequestStartedess"mono_ms": 18,                               █
      (ProviderRequestStarte   "actor": {                                   █
      dEvent { request_id misma"kind": "system",                            █
