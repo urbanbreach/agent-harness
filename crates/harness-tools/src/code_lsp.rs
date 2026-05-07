@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use harness_core::tool::{ToolContext, ToolError, ToolResult};
 use schemars::JsonSchema;
@@ -23,7 +23,7 @@ impl CodeLspExecutor {
         ctx: &ToolContext,
         request: CodeLspRequest,
     ) -> Result<ToolResult, ToolError> {
-        match request {
+        let (operation, file_path, input, extra_args) = match request {
             CodeLspRequest::Position {
                 operation,
                 file_path,
@@ -32,30 +32,17 @@ impl CodeLspExecutor {
             } => {
                 let position = LspPosition::from_one_based(line, character)?;
                 let file_path = resolve_existing_path(ctx, &file_path)?;
-                let response = tokio::task::spawn_blocking({
-                    let workspace_root = ctx.workspace_root.clone();
-                    let file_path = file_path.clone();
-                    move || {
-                        execute_lsp_operation(&LspOperationRequest {
-                            operation,
-                            input: LspOperationInput::Position {
-                                file_path: &file_path,
-                                position,
-                            },
-                            workspace_root: &workspace_root,
-                        })
-                    }
-                })
-                .await
-                .map_err(|err| ToolError::Execution(format!("lsp task failed: {err}")))??;
-                build_result(
+                (
                     operation,
-                    &file_path,
+                    file_path.clone(),
+                    OwnedLspOperationInput::Position {
+                        file_path,
+                        position,
+                    },
                     json!({
                         "line": line,
                         "character": character,
                     }),
-                    response,
                 )
             }
             CodeLspRequest::File {
@@ -63,22 +50,12 @@ impl CodeLspExecutor {
                 file_path,
             } => {
                 let file_path = resolve_existing_path(ctx, &file_path)?;
-                let response = tokio::task::spawn_blocking({
-                    let workspace_root = ctx.workspace_root.clone();
-                    let file_path = file_path.clone();
-                    move || {
-                        execute_lsp_operation(&LspOperationRequest {
-                            operation,
-                            input: LspOperationInput::File {
-                                file_path: &file_path,
-                            },
-                            workspace_root: &workspace_root,
-                        })
-                    }
-                })
-                .await
-                .map_err(|err| ToolError::Execution(format!("lsp task failed: {err}")))??;
-                build_result(operation, &file_path, json!({}), response)
+                (
+                    operation,
+                    file_path.clone(),
+                    OwnedLspOperationInput::File { file_path },
+                    json!({}),
+                )
             }
             CodeLspRequest::Query {
                 operation,
@@ -86,34 +63,76 @@ impl CodeLspExecutor {
                 query,
             } => {
                 let file_path = resolve_existing_path(ctx, &file_path)?;
-                let response = tokio::task::spawn_blocking({
-                    let workspace_root = ctx.workspace_root.clone();
-                    let file_path = file_path.clone();
-                    let query = query.clone();
-                    move || {
-                        execute_lsp_operation(&LspOperationRequest {
-                            operation,
-                            input: LspOperationInput::Query {
-                                file_path: &file_path,
-                                query: &query,
-                            },
-                            workspace_root: &workspace_root,
-                        })
-                    }
-                })
-                .await
-                .map_err(|err| ToolError::Execution(format!("lsp task failed: {err}")))??;
-                build_result(
+                (
                     operation,
-                    &file_path,
+                    file_path.clone(),
+                    OwnedLspOperationInput::Query {
+                        file_path,
+                        query: query.clone(),
+                    },
                     json!({
                         "query": query,
                     }),
-                    response,
                 )
             }
-        }
+        };
+
+        let response = run_lsp_operation(ctx.workspace_root.clone(), operation, input).await?;
+        build_result(operation, &file_path, extra_args, response)
     }
+}
+
+enum OwnedLspOperationInput {
+    Position {
+        file_path: PathBuf,
+        position: LspPosition,
+    },
+    File {
+        file_path: PathBuf,
+    },
+    Query {
+        file_path: PathBuf,
+        query: String,
+    },
+}
+
+async fn run_lsp_operation(
+    workspace_root: PathBuf,
+    operation: LspOperation,
+    input: OwnedLspOperationInput,
+) -> Result<LspOperationResponse, ToolError> {
+    tokio::task::spawn_blocking(move || match input {
+        OwnedLspOperationInput::Position {
+            file_path,
+            position,
+        } => execute_lsp_operation(&LspOperationRequest {
+            operation,
+            input: LspOperationInput::Position {
+                file_path: &file_path,
+                position,
+            },
+            workspace_root: &workspace_root,
+        }),
+        OwnedLspOperationInput::File { file_path } => execute_lsp_operation(&LspOperationRequest {
+            operation,
+            input: LspOperationInput::File {
+                file_path: &file_path,
+            },
+            workspace_root: &workspace_root,
+        }),
+        OwnedLspOperationInput::Query { file_path, query } => {
+            execute_lsp_operation(&LspOperationRequest {
+                operation,
+                input: LspOperationInput::Query {
+                    file_path: &file_path,
+                    query: &query,
+                },
+                workspace_root: &workspace_root,
+            })
+        }
+    })
+    .await
+    .map_err(|err| ToolError::Execution(format!("lsp task failed: {err}")))?
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -192,18 +211,13 @@ fn supported_operation_names() -> Vec<&'static str> {
 }
 
 pub(crate) fn parse_code_lsp_request(args_json: Value) -> Result<CodeLspRequest, ToolError> {
-    let args: CodeLspArgs = serde_json::from_value(args_json)
-        .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+    let args: CodeLspArgs = crate::parse_tool_args(args_json)?;
     let operation = LspOperation::parse(&args.operation)?;
 
     match operation.input_kind() {
         LspOperationInputKind::Position => {
-            let line = args
-                .line
-                .ok_or_else(|| ToolError::InvalidArguments("missing field `line`".to_string()))?;
-            let character = args.character.ok_or_else(|| {
-                ToolError::InvalidArguments("missing field `character`".to_string())
-            })?;
+            let line = required_lsp_field(args.line, "line")?;
+            let character = required_lsp_field(args.character, "character")?;
             Ok(CodeLspRequest::Position {
                 operation,
                 file_path: args.file_path,
@@ -216,9 +230,7 @@ pub(crate) fn parse_code_lsp_request(args_json: Value) -> Result<CodeLspRequest,
             file_path: args.file_path,
         }),
         LspOperationInputKind::Query => {
-            let query = args
-                .query
-                .ok_or_else(|| ToolError::InvalidArguments("missing field `query`".to_string()))?;
+            let query = required_lsp_field(args.query, "query")?;
             Ok(CodeLspRequest::Query {
                 operation,
                 file_path: args.file_path,
@@ -226,6 +238,10 @@ pub(crate) fn parse_code_lsp_request(args_json: Value) -> Result<CodeLspRequest,
             })
         }
     }
+}
+
+fn required_lsp_field<T>(value: Option<T>, field: &str) -> Result<T, ToolError> {
+    value.ok_or_else(|| ToolError::InvalidArguments(format!("missing field `{field}`")))
 }
 
 fn lsp_result_is_empty(value: &Value) -> bool {
@@ -286,11 +302,7 @@ fn build_result(
         base.extend(extra.clone());
     }
 
-    Ok(ToolResult {
-        display_text,
-        structured_json: Some(structured_json),
-        artifacts: Vec::new(),
-    })
+    Ok(crate::text_json_tool_result(display_text, structured_json))
 }
 
 fn render_diagnostics_only_display_text(

@@ -4,11 +4,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use harness_core::edit::hashline::HashlineWorkspaceOp;
-use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResult};
+use harness_core::tool::{ArtifactRef, Tool, ToolCapability, ToolContext, ToolError, ToolResult};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 use crate::hashline_apply::{
     apply_hashline_workspace_op_to_workspace, resolve_workspace_target_path,
@@ -16,6 +16,7 @@ use crate::hashline_apply::{
 use crate::lsp_support::{
     execute_lsp_rename, format_diagnostics, LspPosition, LspRenameRequest, LspRenameResponse,
 };
+use crate::parse_tool_args;
 use crate::workspace_paths::{
     canonical_workspace_root, resolve_existing_path, workspace_relative_path_from_file_uri,
 };
@@ -50,39 +51,31 @@ impl CodeLspRenameExecutor {
         .await
         .map_err(|err| ToolError::Execution(format!("lsp rename task failed: {err}")))??;
 
-        let plan = build_rename_plan(ctx, &response.workspace_edit)?;
-        let symbol_preview = symbol_preview(&file_path, &response.prepare_result)?;
+        let plan = RenamePlan::from_workspace_edit(ctx, &response.workspace_edit)?;
+        let symbol_preview = RenamePreparePreview::from_prepare_result(&response.prepare_result)
+            .symbol_preview(&file_path)?;
         let applied_results = if request.apply {
-            apply_plan(ctx, &plan)?
+            plan.apply(ctx)?
         } else {
-            Vec::new()
+            AppliedRenameResults::default()
         };
-        let display_text = render_display_text(
+        let display_text = plan.preview.display_text(
             &request.new_name,
             request.apply,
             symbol_preview.as_deref(),
-            &plan.preview,
             &response,
         );
-        let artifacts = applied_results
-            .iter()
-            .flat_map(|result| result.artifacts.clone())
-            .collect::<Vec<_>>();
-        let applied_edits = applied_results
-            .iter()
-            .filter_map(|result| result.structured_json.clone())
-            .collect::<Vec<_>>();
 
-        Ok(ToolResult {
+        Ok(crate::text_json_artifacts_tool_result(
             display_text,
-            structured_json: Some(json!({
+            json!({
                 "operation": "renameSymbol",
                 "filePath": file_path.display().to_string(),
                 "line": request.line,
                 "character": request.character,
                 "newName": request.new_name,
                 "apply": request.apply,
-                "applied": request.apply && !plan.operations.is_empty(),
+                "applied": request.apply && plan.has_operations(),
                 "server": {
                     "name": response.server.name,
                     "command": response.server.command,
@@ -92,10 +85,10 @@ impl CodeLspRenameExecutor {
                 "preview": plan.preview,
                 "symbol": symbol_preview,
                 "diagnostics": response.diagnostics,
-                "appliedEdits": applied_edits,
-            })),
-            artifacts,
-        })
+                "appliedEdits": applied_results.structured_json,
+            }),
+            applied_results.artifacts,
+        ))
     }
 }
 
@@ -130,13 +123,90 @@ struct CodeLspRenameArgs {
     apply: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 struct RenamePreview {
     file_count: usize,
     text_edit_count: usize,
     files: Vec<RenameFilePreview>,
     resource_operations: Vec<RenameResourceOperationPreview>,
     annotations: Vec<RenameAnnotationPreview>,
+}
+
+impl RenamePreview {
+    fn from_accumulators(
+        preview_files: BTreeMap<String, PreviewFileAccumulator>,
+        resource_operations: Vec<RenameResourceOperationPreview>,
+        workspace_edit: &Value,
+    ) -> Self {
+        let files = preview_files
+            .into_iter()
+            .map(|(path, accumulator)| RenameFilePreview {
+                path,
+                edit_count: accumulator.edit_count,
+                annotation_ids: accumulator.annotation_ids.into_iter().collect(),
+            })
+            .collect::<Vec<_>>();
+        let text_edit_count = files.iter().map(|file| file.edit_count).sum();
+
+        Self {
+            file_count: files.len(),
+            text_edit_count,
+            files,
+            resource_operations,
+            annotations: RenameAnnotationPreview::from_workspace_edit(workspace_edit),
+        }
+    }
+
+    fn append_summary_lines(&self, lines: &mut Vec<String>, apply: bool) {
+        if self.file_count == 0 && self.resource_operations.is_empty() {
+            lines.push("No workspace changes were returned.".to_string());
+            return;
+        }
+
+        lines.push(format!(
+            "{} text edit{} across {} file{}",
+            self.text_edit_count,
+            plural(self.text_edit_count),
+            self.file_count,
+            plural(self.file_count),
+        ));
+        for file in &self.files {
+            lines.push(file.display_line());
+        }
+        for operation in &self.resource_operations {
+            lines.push(operation.display_line());
+        }
+        if !apply {
+            lines.push("Re-run with `apply: true` to execute these edits.".to_string());
+        }
+    }
+
+    fn display_text(
+        &self,
+        new_name: &str,
+        apply: bool,
+        symbol_preview: Option<&str>,
+        response: &LspRenameResponse,
+    ) -> String {
+        let current = symbol_preview.unwrap_or("<symbol>");
+        let mut lines = vec![if apply {
+            format!("Applied LSP rename `{current}` → `{new_name}`")
+        } else {
+            format!("Prepared LSP rename preview `{current}` → `{new_name}`")
+        }];
+        lines.push(format!("Server: {}", response.server.name));
+
+        self.append_summary_lines(&mut lines, apply);
+
+        let diagnostics = format_diagnostics(&response.diagnostics);
+        if !diagnostics.is_empty() {
+            lines.push(String::new());
+            lines.push("Diagnostics:".to_string());
+            lines.push(diagnostics);
+        }
+
+        lines.join("\n")
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -147,14 +217,58 @@ struct RenameFilePreview {
     annotation_ids: Vec<String>,
 }
 
+impl RenameFilePreview {
+    fn display_line(&self) -> String {
+        let annotation_suffix = if self.annotation_ids.is_empty() {
+            String::new()
+        } else {
+            format!(" · annotations: {}", self.annotation_ids.join(", "))
+        };
+        format!(
+            "- {} ({} edit{}){}",
+            self.path,
+            self.edit_count,
+            plural(self.edit_count),
+            annotation_suffix
+        )
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 struct RenameResourceOperationPreview {
-    kind: String,
+    kind: RenameResourceOperationKind,
     path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     to_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     annotation_id: Option<String>,
+}
+
+impl RenameResourceOperationPreview {
+    fn from_change(
+        kind: RenameResourceOperationKind,
+        path: &str,
+        to_path: Option<&str>,
+        change: &Value,
+    ) -> Self {
+        Self {
+            kind,
+            path: path.to_string(),
+            to_path: to_path.map(str::to_string),
+            annotation_id: change
+                .get("annotationId")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+        }
+    }
+
+    fn display_line(&self) -> String {
+        let detail = match &self.to_path {
+            Some(to_path) => format!("{} → {}", self.path, to_path),
+            None => self.path.clone(),
+        };
+        format!("- {} {}", self.kind.as_str(), detail)
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -167,41 +281,948 @@ struct RenameAnnotationPreview {
     needs_confirmation: bool,
 }
 
+impl RenameAnnotationPreview {
+    fn from_workspace_edit(workspace_edit: &Value) -> Vec<Self> {
+        let Some(annotations) = workspace_edit
+            .get("changeAnnotations")
+            .and_then(Value::as_object)
+        else {
+            return Vec::new();
+        };
+
+        annotations
+            .iter()
+            .map(|(id, annotation)| Self::from_change_annotation(id, annotation))
+            .collect()
+    }
+
+    fn from_change_annotation(id: &str, annotation: &Value) -> Self {
+        Self {
+            id: id.to_string(),
+            label: annotation
+                .get("label")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            description: annotation
+                .get("description")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            needs_confirmation: annotation
+                .get("needsConfirmation")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        }
+    }
+}
+
+#[derive(Default)]
 struct RenamePlan {
     operations: Vec<HashlineWorkspaceOp>,
     preview: RenamePreview,
 }
 
-struct RenameOperationAccumulator<'a> {
-    operations: &'a mut Vec<HashlineWorkspaceOp>,
-    resource_operations: &'a mut Vec<RenameResourceOperationPreview>,
-    next_operation_index: &'a mut usize,
+impl RenamePlan {
+    fn from_workspace_edit(ctx: &ToolContext, workspace_edit: &Value) -> Result<Self, ToolError> {
+        if workspace_edit.is_null() {
+            return Ok(Self::default());
+        }
+
+        let workspace_root = canonical_workspace_root(ctx)?;
+        let mut state = RenamePlanningState::default();
+
+        RenameWorkspaceEdit::from_workspace_edit(workspace_edit)?.plan(
+            ctx,
+            &workspace_root,
+            &mut state,
+        )?;
+
+        Ok(state.into_plan(workspace_edit))
+    }
+
+    fn has_operations(&self) -> bool {
+        !self.operations.is_empty()
+    }
+
+    fn apply(&self, ctx: &ToolContext) -> Result<AppliedRenameResults, ToolError> {
+        let mut results = AppliedRenameResults::default();
+        for operation in self.operations.iter().cloned() {
+            results.push(apply_hashline_workspace_op_to_workspace(ctx, operation)?);
+        }
+        Ok(results)
+    }
 }
 
-struct RenameResourceOperationOptions {
-    overwrite: bool,
-    ignore_if_exists: bool,
+enum RenameWorkspaceEdit<'a> {
+    DocumentChanges(&'a [Value]),
+    LegacyChanges(&'a Map<String, Value>),
 }
 
-impl RenameResourceOperationOptions {
-    fn from_change(change: &Value) -> Self {
-        Self {
-            overwrite: bool_option(change, "overwrite"),
-            ignore_if_exists: bool_option(change, "ignoreIfExists"),
+impl RenameWorkspaceEdit<'_> {
+    fn from_workspace_edit(workspace_edit: &Value) -> Result<RenameWorkspaceEdit<'_>, ToolError> {
+        if let Some(document_changes) = workspace_edit
+            .get("documentChanges")
+            .and_then(Value::as_array)
+        {
+            return Ok(RenameWorkspaceEdit::DocumentChanges(document_changes));
+        }
+
+        if let Some(changes) = workspace_edit.get("changes").and_then(Value::as_object) {
+            return Ok(RenameWorkspaceEdit::LegacyChanges(changes));
+        }
+
+        Err(ToolError::Execution(
+            "lsp.rename returned a workspace edit without changes".to_string(),
+        ))
+    }
+
+    fn plan(
+        self,
+        ctx: &ToolContext,
+        workspace_root: &Path,
+        state: &mut RenamePlanningState,
+    ) -> Result<(), ToolError> {
+        match self {
+            Self::DocumentChanges(document_changes) => {
+                for change in document_changes {
+                    RenameDocumentChange::from_change(change)?.plan(ctx, workspace_root, state)?;
+                }
+            }
+            Self::LegacyChanges(changes) => {
+                for (uri, edits_value) in changes {
+                    let path = workspace_relative_path_from_file_uri(workspace_root, uri)?;
+                    let edits = required_array(
+                        Some(edits_value),
+                        "lsp.rename returned changes with a non-array edit list",
+                    )?;
+                    state.plan_text_edits_for_path(ctx, &path, edits)?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+enum RenamePreparePreview<'a> {
+    Placeholder(&'a str),
+    Range(&'a Value),
+    DefaultBehavior,
+    None,
+}
+
+impl RenamePreparePreview<'_> {
+    fn from_prepare_result(prepare_result: &Value) -> RenamePreparePreview<'_> {
+        if let Some(placeholder) = prepare_result.get("placeholder").and_then(Value::as_str) {
+            return RenamePreparePreview::Placeholder(placeholder);
+        }
+        if prepare_result
+            .get("defaultBehavior")
+            .and_then(Value::as_bool)
+            .is_some()
+        {
+            return RenamePreparePreview::DefaultBehavior;
+        }
+        if prepare_result.get("start").is_some() && prepare_result.get("end").is_some() {
+            return RenamePreparePreview::Range(prepare_result);
+        }
+        prepare_result
+            .get("range")
+            .map(RenamePreparePreview::Range)
+            .unwrap_or(RenamePreparePreview::None)
+    }
+
+    fn symbol_preview(self, file_path: &Path) -> Result<Option<String>, ToolError> {
+        match self {
+            Self::Placeholder(placeholder) => Ok(Some(placeholder.to_string())),
+            Self::Range(range) => {
+                let source = std::fs::read_to_string(file_path).map_err(|err| {
+                    ToolError::Execution(format!(
+                        "failed to read rename source file for preview: {err}"
+                    ))
+                })?;
+                let source = SourceText::new(&source);
+                source
+                    .text_for_lsp_range(range, RangeErrorMessages::prepare_result())
+                    .map(str::to_string)
+                    .map(Some)
+            }
+            Self::DefaultBehavior | Self::None => Ok(None),
         }
     }
 }
 
+enum RenameDocumentChange<'a> {
+    TextDocument {
+        text_document: &'a Value,
+        change: &'a Value,
+    },
+    Resource {
+        kind: RenameResourceOperationKind,
+        change: &'a Value,
+    },
+}
+
+impl RenameDocumentChange<'_> {
+    fn from_change(change: &Value) -> Result<RenameDocumentChange<'_>, ToolError> {
+        if let Some(text_document) = change.get("textDocument") {
+            return Ok(RenameDocumentChange::TextDocument {
+                text_document,
+                change,
+            });
+        }
+
+        let kind = RenameResourceOperationKind::from_change(change)?;
+        Ok(RenameDocumentChange::Resource { kind, change })
+    }
+
+    fn plan(
+        self,
+        ctx: &ToolContext,
+        workspace_root: &Path,
+        state: &mut RenamePlanningState,
+    ) -> Result<(), ToolError> {
+        match self {
+            Self::TextDocument {
+                text_document,
+                change,
+            } => {
+                let path = required_workspace_uri(
+                    workspace_root,
+                    text_document,
+                    "uri",
+                    "lsp.rename returned documentChanges without textDocument.uri",
+                )?;
+                let edits = required_array(
+                    change.get("edits"),
+                    "lsp.rename returned documentChanges without edits",
+                )?;
+                state.plan_text_edits_for_path(ctx, &path, edits)
+            }
+            Self::Resource { kind, change } => kind.plan(ctx, workspace_root, change, state),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum RenameResourceOperationKind {
+    Create,
+    Rename,
+    Delete,
+}
+
+impl RenameResourceOperationKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Create => "create",
+            Self::Rename => "rename",
+            Self::Delete => "delete",
+        }
+    }
+
+    fn from_change(change: &Value) -> Result<Self, ToolError> {
+        match change.get("kind").and_then(Value::as_str).ok_or_else(|| {
+            ToolError::Execution(
+                "lsp.rename returned documentChanges with an unknown item".to_string(),
+            )
+        })? {
+            "create" => Ok(Self::Create),
+            "rename" => Ok(Self::Rename),
+            "delete" => Ok(Self::Delete),
+            other => Err(ToolError::Execution(format!(
+                "lsp.rename returned unsupported workspace edit operation kind: {other}"
+            ))),
+        }
+    }
+
+    fn plan(
+        self,
+        ctx: &ToolContext,
+        workspace_root: &Path,
+        change: &Value,
+        state: &mut RenamePlanningState,
+    ) -> Result<(), ToolError> {
+        match self {
+            Self::Create => {
+                let path = required_workspace_uri(
+                    workspace_root,
+                    change,
+                    "uri",
+                    "lsp.rename create operation is missing uri",
+                )?;
+                state.plan_create_operation(ctx, change, &path)
+            }
+            Self::Rename => {
+                let from_path = required_workspace_uri(
+                    workspace_root,
+                    change,
+                    "oldUri",
+                    "lsp.rename rename operation is missing oldUri",
+                )?;
+                let to_path = required_workspace_uri(
+                    workspace_root,
+                    change,
+                    "newUri",
+                    "lsp.rename rename operation is missing newUri",
+                )?;
+                state.plan_rename_operation(ctx, change, &from_path, &to_path)
+            }
+            Self::Delete => {
+                let path = required_workspace_uri(
+                    workspace_root,
+                    change,
+                    "uri",
+                    "lsp.rename delete operation is missing uri",
+                )?;
+                state.plan_delete_operation(ctx, change, &path)
+            }
+        }
+    }
+}
+
+#[derive(Default)]
+struct AppliedRenameResults {
+    artifacts: Vec<ArtifactRef>,
+    structured_json: Vec<Value>,
+}
+
+impl AppliedRenameResults {
+    fn push(&mut self, result: ToolResult) {
+        self.artifacts.extend(result.artifacts);
+        if let Some(structured_json) = result.structured_json {
+            self.structured_json.push(structured_json);
+        }
+    }
+}
+
+#[derive(Default)]
+struct RenamePlanningState {
+    virtual_files: BTreeMap<String, Option<String>>,
+    operations: Vec<HashlineWorkspaceOp>,
+    preview_files: BTreeMap<String, PreviewFileAccumulator>,
+    resource_operations: Vec<RenameResourceOperationPreview>,
+    next_operation_index: usize,
+}
+
+impl RenamePlanningState {
+    fn plan_file_rewrite(&mut self, ctx: &ToolContext, path: &str, content: String) {
+        self.set_virtual_file_content(path, content.clone());
+        self.push_operation(ctx, |edit_id| HashlineWorkspaceOp::RewriteFile {
+            edit_id,
+            path: path.to_string(),
+            content,
+        });
+    }
+
+    fn plan_file_delete(&mut self, ctx: &ToolContext, path: &str) {
+        self.set_virtual_file_deleted(path);
+        self.push_operation(ctx, |edit_id| HashlineWorkspaceOp::DeleteFile {
+            edit_id,
+            path: path.to_string(),
+        });
+    }
+
+    fn plan_file_move(
+        &mut self,
+        ctx: &ToolContext,
+        from_path: &str,
+        to_path: &str,
+        content: String,
+    ) {
+        self.set_virtual_file_deleted(from_path);
+        self.set_virtual_file_content(to_path, content);
+        self.push_operation(ctx, |edit_id| HashlineWorkspaceOp::MoveFile {
+            edit_id,
+            from_path: from_path.to_string(),
+            to_path: to_path.to_string(),
+        });
+    }
+
+    fn plan_resource_create(&mut self, ctx: &ToolContext, change: &Value, path: &str) {
+        self.plan_file_rewrite(ctx, path, String::new());
+        self.push_resource_preview(RenameResourceOperationKind::Create, path, None, change);
+    }
+
+    fn plan_resource_rename(
+        &mut self,
+        ctx: &ToolContext,
+        change: &Value,
+        from_path: &str,
+        to_path: &str,
+        content: String,
+    ) {
+        self.plan_file_move(ctx, from_path, to_path, content);
+        self.push_resource_preview(
+            RenameResourceOperationKind::Rename,
+            from_path,
+            Some(to_path),
+            change,
+        );
+    }
+
+    fn plan_resource_delete(&mut self, ctx: &ToolContext, change: &Value, path: &str) {
+        self.plan_file_delete(ctx, path);
+        self.push_resource_preview(RenameResourceOperationKind::Delete, path, None, change);
+    }
+
+    fn push_operation(
+        &mut self,
+        ctx: &ToolContext,
+        build: impl FnOnce(String) -> HashlineWorkspaceOp,
+    ) {
+        let edit_id = self.next_edit_id(ctx);
+        self.operations.push(build(edit_id));
+    }
+
+    fn push_resource_preview(
+        &mut self,
+        kind: RenameResourceOperationKind,
+        path: &str,
+        to_path: Option<&str>,
+        change: &Value,
+    ) {
+        self.resource_operations
+            .push(RenameResourceOperationPreview::from_change(
+                kind, path, to_path, change,
+            ));
+    }
+
+    fn load_virtual_file(
+        &mut self,
+        ctx: &ToolContext,
+        path: &str,
+    ) -> Result<Option<String>, ToolError> {
+        if let Some(existing) = self.virtual_files.get(path) {
+            return Ok(existing.clone());
+        }
+
+        let resolved = resolve_workspace_target_path(ctx, path)?;
+        let content = match std::fs::read_to_string(&resolved) {
+            Ok(content) => Some(content),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+            Err(err) => {
+                return Err(ToolError::Execution(format!(
+                    "failed to read workspace path {path}: {err}"
+                )));
+            }
+        };
+        self.virtual_files.insert(path.to_string(), content.clone());
+        Ok(content)
+    }
+
+    fn virtual_path_exists(&mut self, ctx: &ToolContext, path: &str) -> Result<bool, ToolError> {
+        Ok(self.load_virtual_file(ctx, path)?.is_some())
+    }
+
+    fn require_virtual_file(
+        &mut self,
+        ctx: &ToolContext,
+        path: &str,
+        missing_message: String,
+    ) -> Result<String, ToolError> {
+        self.load_virtual_file(ctx, path)?
+            .ok_or(ToolError::Execution(missing_message))
+    }
+
+    fn set_virtual_file_content(&mut self, path: &str, content: String) {
+        self.virtual_files.insert(path.to_string(), Some(content));
+    }
+
+    fn set_virtual_file_deleted(&mut self, path: &str) {
+        self.virtual_files.insert(path.to_string(), None);
+    }
+
+    fn next_edit_id(&mut self, ctx: &ToolContext) -> String {
+        let edit_id = format!(
+            "lsp-rename-{}-{}",
+            ctx.tool_call_id, self.next_operation_index
+        );
+        self.next_operation_index += 1;
+        edit_id
+    }
+
+    fn record_text_edits(&mut self, path: &str, parsed_edits: &[ParsedTextEdit]) {
+        self.preview_files
+            .entry(path.to_string())
+            .or_default()
+            .record_text_edits(parsed_edits);
+    }
+
+    fn plan_text_edits_for_path(
+        &mut self,
+        ctx: &ToolContext,
+        path: &str,
+        edits: &[Value],
+    ) -> Result<(), ToolError> {
+        let source = self.require_virtual_file(
+            ctx,
+            path,
+            format!("lsp.rename returned edits for a missing workspace path: {path}"),
+        )?;
+        let source = SourceText::new(&source);
+        let parsed_edits = source.parse_lsp_text_edits(edits)?;
+        let updated = source.apply_text_edits(&parsed_edits)?;
+        self.plan_file_rewrite(ctx, path, updated);
+        self.record_text_edits(path, &parsed_edits);
+        Ok(())
+    }
+
+    fn plan_create_operation(
+        &mut self,
+        ctx: &ToolContext,
+        change: &Value,
+        path: &str,
+    ) -> Result<(), ToolError> {
+        let options = RenameResourceOperationOptions::from_change(change);
+        let target_exists = self.virtual_path_exists(ctx, path)?;
+        if target_exists {
+            match options.existing_target_policy() {
+                ExistingTargetPolicy::Ignore => return Ok(()),
+                ExistingTargetPolicy::Reject => {
+                    return Err(ToolError::Execution(format!(
+                        "lsp.rename create operation would overwrite existing path: {path}"
+                    )));
+                }
+                ExistingTargetPolicy::Overwrite => {}
+            }
+        }
+
+        self.plan_resource_create(ctx, change, path);
+        Ok(())
+    }
+
+    fn plan_rename_operation(
+        &mut self,
+        ctx: &ToolContext,
+        change: &Value,
+        from_path: &str,
+        to_path: &str,
+    ) -> Result<(), ToolError> {
+        let options = RenameResourceOperationOptions::from_change(change);
+        let source = self.require_virtual_file(
+            ctx,
+            from_path,
+            format!("lsp.rename rename operation source is missing: {from_path}"),
+        )?;
+        if self.virtual_path_exists(ctx, to_path)? {
+            match options.existing_target_policy() {
+                ExistingTargetPolicy::Ignore => return Ok(()),
+                ExistingTargetPolicy::Reject => {
+                    return Err(ToolError::Execution(format!(
+                        "lsp.rename rename operation destination already exists: {to_path}"
+                    )));
+                }
+                ExistingTargetPolicy::Overwrite => self.plan_file_delete(ctx, to_path),
+            }
+        }
+
+        self.plan_resource_rename(ctx, change, from_path, to_path, source);
+        Ok(())
+    }
+
+    fn plan_delete_operation(
+        &mut self,
+        ctx: &ToolContext,
+        change: &Value,
+        path: &str,
+    ) -> Result<(), ToolError> {
+        let options = RenameResourceOperationOptions::from_change(change);
+        let target_missing = !self.virtual_path_exists(ctx, path)?;
+        if target_missing {
+            match options.missing_target_policy() {
+                MissingTargetPolicy::Ignore => return Ok(()),
+                MissingTargetPolicy::Reject => {
+                    return Err(ToolError::Execution(format!(
+                        "lsp.rename delete operation target is missing: {path}"
+                    )));
+                }
+            }
+        }
+
+        self.plan_resource_delete(ctx, change, path);
+        Ok(())
+    }
+
+    fn into_plan(self, workspace_edit: &Value) -> RenamePlan {
+        RenamePlan {
+            operations: self.operations,
+            preview: RenamePreview::from_accumulators(
+                self.preview_files,
+                self.resource_operations,
+                workspace_edit,
+            ),
+        }
+    }
+}
+
+struct RenameResourceOperationOptions {
+    existing_target_policy: ExistingTargetPolicy,
+    missing_target_policy: MissingTargetPolicy,
+}
+
+#[derive(Clone, Copy)]
+enum ExistingTargetPolicy {
+    Ignore,
+    Reject,
+    Overwrite,
+}
+
+#[derive(Clone, Copy)]
+enum MissingTargetPolicy {
+    Ignore,
+    Reject,
+}
+
+impl RenameResourceOperationOptions {
+    fn from_change(change: &Value) -> Self {
+        let overwrite_existing_target = Self::bool_option(change, "overwrite");
+        let ignore_existing_target = Self::bool_option(change, "ignoreIfExists");
+        let ignore_missing_target = Self::bool_option(change, "ignoreIfNotExists");
+
+        Self {
+            existing_target_policy: ExistingTargetPolicy::from_options(
+                overwrite_existing_target,
+                ignore_existing_target,
+            ),
+            missing_target_policy: MissingTargetPolicy::from_options(ignore_missing_target),
+        }
+    }
+
+    fn bool_option(change: &Value, name: &str) -> bool {
+        change
+            .get("options")
+            .and_then(|options| options.get(name))
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }
+
+    fn existing_target_policy(&self) -> ExistingTargetPolicy {
+        self.existing_target_policy
+    }
+
+    fn missing_target_policy(&self) -> MissingTargetPolicy {
+        self.missing_target_policy
+    }
+}
+
+impl ExistingTargetPolicy {
+    fn from_options(overwrite_existing_target: bool, ignore_existing_target: bool) -> Self {
+        match (overwrite_existing_target, ignore_existing_target) {
+            (true, _) => ExistingTargetPolicy::Overwrite,
+            (false, true) => ExistingTargetPolicy::Ignore,
+            (false, false) => ExistingTargetPolicy::Reject,
+        }
+    }
+}
+
+impl MissingTargetPolicy {
+    fn from_options(ignore_missing_target: bool) -> Self {
+        if ignore_missing_target {
+            MissingTargetPolicy::Ignore
+        } else {
+            MissingTargetPolicy::Reject
+        }
+    }
+}
+
+#[derive(Default)]
 struct PreviewFileAccumulator {
     edit_count: usize,
     annotation_ids: BTreeSet<String>,
 }
 
+impl PreviewFileAccumulator {
+    fn record_text_edits(&mut self, parsed_edits: &[ParsedTextEdit]) {
+        self.edit_count += parsed_edits.len();
+        self.annotation_ids.extend(
+            parsed_edits
+                .iter()
+                .filter_map(|edit| edit.annotation_id.as_deref())
+                .map(str::to_string),
+        );
+    }
+}
+
 struct ParsedTextEdit {
-    start: usize,
-    end: usize,
+    range: TextByteRange,
     new_text: String,
     annotation_id: Option<String>,
+}
+
+impl ParsedTextEdit {
+    fn from_lsp_edit(source: &SourceText<'_>, edit: &Value) -> Result<Self, ToolError> {
+        let range = edit.get("range").ok_or_else(|| {
+            ToolError::Execution("lsp.rename returned a text edit without a range".to_string())
+        })?;
+        let range = TextByteRange::from_lsp_range(source, range, RangeErrorMessages::text_edit())?;
+        let new_text = edit
+            .get("newText")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                ToolError::Execution("lsp.rename returned a text edit without newText".to_string())
+            })?
+            .to_string();
+        let annotation_id = edit
+            .get("annotationId")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+
+        Ok(Self {
+            range,
+            new_text,
+            annotation_id,
+        })
+    }
+}
+
+struct TextPosition {
+    line: u64,
+    character: u64,
+}
+
+impl TextPosition {
+    fn from_range_endpoint(
+        range: &Value,
+        endpoint: &str,
+        error_messages: RangePositionErrorMessages,
+    ) -> Result<Self, ToolError> {
+        let position = range.get(endpoint);
+        let line = position
+            .and_then(|position| position.get("line"))
+            .and_then(Value::as_u64)
+            .ok_or_else(|| ToolError::Execution(error_messages.missing_line.to_string()))?;
+        let character = position
+            .and_then(|position| position.get("character"))
+            .and_then(Value::as_u64)
+            .ok_or_else(|| ToolError::Execution(error_messages.missing_character.to_string()))?;
+        Ok(Self { line, character })
+    }
+
+    fn line_index(&self) -> Result<usize, ToolError> {
+        usize::try_from(self.line)
+            .map_err(|_| ToolError::Execution("line index overflow in workspace edit".to_string()))
+    }
+
+    fn character_offset(&self) -> Result<usize, ToolError> {
+        usize::try_from(self.character).map_err(|_| {
+            ToolError::Execution("character index overflow in workspace edit".to_string())
+        })
+    }
+
+    fn to_byte_offset(&self, source: &SourceText<'_>) -> Result<usize, ToolError> {
+        let line = self.line_index()?;
+        let character = self.character_offset()?;
+        source.line(line)?.utf16_position_to_byte_offset(character)
+    }
+}
+
+struct TextByteRange {
+    start: usize,
+    end: usize,
+}
+
+impl TextByteRange {
+    fn from_lsp_range(
+        source: &SourceText<'_>,
+        range: &Value,
+        error_messages: RangeErrorMessages,
+    ) -> Result<Self, ToolError> {
+        let start = TextPosition::from_range_endpoint(range, "start", error_messages.start)?;
+        let end = TextPosition::from_range_endpoint(range, "end", error_messages.end)?;
+        let start = start.to_byte_offset(source)?;
+        let end = end.to_byte_offset(source)?;
+        Ok(Self { start, end })
+    }
+
+    fn validate_after(&self, previous_end: usize) -> Result<(), ToolError> {
+        if self.start > self.end {
+            return Err(ToolError::Execution(
+                "lsp.rename returned a text edit with an inverted range".to_string(),
+            ));
+        }
+        if self.start < previous_end {
+            return Err(ToolError::Execution(
+                "lsp.rename returned overlapping text edits".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn replace_in(&self, text: &mut String, replacement: &str) {
+        text.replace_range(self.start..self.end, replacement);
+    }
+
+    fn slice_from<'a>(&self, text: &'a str) -> &'a str {
+        &text[self.start..self.end]
+    }
+}
+
+struct SourceText<'a> {
+    text: &'a str,
+    line_starts: Vec<usize>,
+}
+
+impl<'a> SourceText<'a> {
+    fn new(text: &'a str) -> Self {
+        Self {
+            text,
+            line_starts: Self::line_starts(text),
+        }
+    }
+
+    fn line_starts(text: &str) -> Vec<usize> {
+        let mut starts = vec![0usize];
+        for (index, byte) in text.bytes().enumerate() {
+            if byte == b'\n' {
+                starts.push(index + 1);
+            }
+        }
+        starts
+    }
+
+    fn line(&self, line: usize) -> Result<SourceLine<'a>, ToolError> {
+        let Some(&start) = self.line_starts.get(line) else {
+            return Err(ToolError::Execution(format!(
+                "workspace edit referenced missing line index {line}"
+            )));
+        };
+        Ok(SourceLine::from_bounds(
+            self.text,
+            start,
+            self.line_end(line),
+        ))
+    }
+
+    fn line_end(&self, line: usize) -> usize {
+        self.line_starts
+            .get(line + 1)
+            .copied()
+            .unwrap_or(self.text.len())
+    }
+
+    fn apply_text_edits(&self, edits: &[ParsedTextEdit]) -> Result<String, ToolError> {
+        let ordered = Self::ordered_non_overlapping_text_edits(edits)?;
+
+        let mut updated = self.text.to_string();
+        for edit in ordered.into_iter().rev() {
+            edit.range.replace_in(&mut updated, &edit.new_text);
+        }
+        Ok(updated)
+    }
+
+    fn ordered_non_overlapping_text_edits(
+        edits: &[ParsedTextEdit],
+    ) -> Result<Vec<&ParsedTextEdit>, ToolError> {
+        let mut ordered = edits.iter().collect::<Vec<_>>();
+        ordered.sort_by_key(|edit| (edit.range.start, edit.range.end));
+
+        let mut previous_end = 0usize;
+        for edit in &ordered {
+            edit.range.validate_after(previous_end)?;
+            previous_end = edit.range.end;
+        }
+
+        Ok(ordered)
+    }
+
+    fn parse_lsp_text_edits(&self, edits: &[Value]) -> Result<Vec<ParsedTextEdit>, ToolError> {
+        edits
+            .iter()
+            .map(|edit| ParsedTextEdit::from_lsp_edit(self, edit))
+            .collect()
+    }
+
+    fn text_for_lsp_range(
+        &self,
+        range: &Value,
+        errors: RangeErrorMessages,
+    ) -> Result<&'a str, ToolError> {
+        let range = TextByteRange::from_lsp_range(self, range, errors)?;
+        Ok(range.slice_from(self.text))
+    }
+}
+
+struct SourceLine<'a> {
+    text: &'a str,
+    start: usize,
+    end: usize,
+}
+
+impl<'a> SourceLine<'a> {
+    fn from_bounds(source: &'a str, start: usize, mut end: usize) -> Self {
+        if end > start && source.as_bytes()[end - 1] == b'\n' {
+            end -= 1;
+            if end > start && source.as_bytes()[end - 1] == b'\r' {
+                end -= 1;
+            }
+        }
+        SourceLine {
+            text: &source[start..end],
+            start,
+            end,
+        }
+    }
+
+    fn utf16_position_to_byte_offset(&self, character: usize) -> Result<usize, ToolError> {
+        if character == 0 {
+            return Ok(self.start);
+        }
+
+        let mut utf16_offset = 0usize;
+        for (byte_offset, ch) in self.text.char_indices() {
+            if utf16_offset == character {
+                return Ok(self.start + byte_offset);
+            }
+            utf16_offset += ch.len_utf16();
+            if utf16_offset == character {
+                return Ok(self.start + byte_offset + ch.len_utf8());
+            }
+            if utf16_offset > character {
+                return Err(ToolError::Execution(
+                    "workspace edit referenced a non-boundary UTF-16 character offset".to_string(),
+                ));
+            }
+        }
+        Ok(self.end)
+    }
+}
+
+struct RangePositionErrorMessages {
+    missing_line: &'static str,
+    missing_character: &'static str,
+}
+
+struct RangeErrorMessages {
+    start: RangePositionErrorMessages,
+    end: RangePositionErrorMessages,
+}
+
+impl RangeErrorMessages {
+    fn text_edit() -> Self {
+        Self {
+            start: RangePositionErrorMessages {
+                missing_line: "lsp.rename returned a text edit with an invalid start line",
+                missing_character:
+                    "lsp.rename returned a text edit with an invalid start character",
+            },
+            end: RangePositionErrorMessages {
+                missing_line: "lsp.rename returned a text edit with an invalid end line",
+                missing_character: "lsp.rename returned a text edit with an invalid end character",
+            },
+        }
+    }
+
+    fn prepare_result() -> Self {
+        Self {
+            start: RangePositionErrorMessages {
+                missing_line: "rename prepare result is missing start.line",
+                missing_character: "rename prepare result is missing start.character",
+            },
+            end: RangePositionErrorMessages {
+                missing_line: "rename prepare result is missing end.line",
+                missing_character: "rename prepare result is missing end.character",
+            },
+        }
+    }
 }
 
 #[async_trait]
@@ -223,8 +1244,7 @@ impl Tool for CodeLspRenameTool {
     }
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: CodeLspRenameArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let args: CodeLspRenameArgs = parse_tool_args(args_json)?;
         self.executor
             .execute(
                 &ctx,
@@ -240,597 +1260,6 @@ impl Tool for CodeLspRenameTool {
     }
 }
 
-fn build_rename_plan(ctx: &ToolContext, workspace_edit: &Value) -> Result<RenamePlan, ToolError> {
-    if workspace_edit.is_null() {
-        return Ok(RenamePlan {
-            operations: Vec::new(),
-            preview: RenamePreview {
-                file_count: 0,
-                text_edit_count: 0,
-                files: Vec::new(),
-                resource_operations: Vec::new(),
-                annotations: Vec::new(),
-            },
-        });
-    }
-
-    let workspace_root = canonical_workspace_root(ctx)?;
-    let mut virtual_files = BTreeMap::<String, Option<String>>::new();
-    let mut operations = Vec::<HashlineWorkspaceOp>::new();
-    let mut preview_files = BTreeMap::<String, PreviewFileAccumulator>::new();
-    let mut resource_operations = Vec::<RenameResourceOperationPreview>::new();
-    let mut next_operation_index = 0usize;
-
-    if let Some(document_changes) = workspace_edit
-        .get("documentChanges")
-        .and_then(Value::as_array)
-    {
-        for change in document_changes {
-            if let Some(text_document) = change.get("textDocument") {
-                let path = required_workspace_uri(
-                    &workspace_root,
-                    text_document,
-                    "uri",
-                    "lsp.rename returned documentChanges without textDocument.uri",
-                )?;
-                let edits = change
-                    .get("edits")
-                    .and_then(Value::as_array)
-                    .ok_or_else(|| {
-                        ToolError::Execution(
-                            "lsp.rename returned documentChanges without edits".to_string(),
-                        )
-                    })?;
-                rewrite_path_from_text_edits(
-                    ctx,
-                    &path,
-                    edits,
-                    &mut virtual_files,
-                    &mut preview_files,
-                    &mut operations,
-                    &mut next_operation_index,
-                )?;
-                continue;
-            }
-
-            let kind = change.get("kind").and_then(Value::as_str).ok_or_else(|| {
-                ToolError::Execution(
-                    "lsp.rename returned documentChanges with an unknown item".to_string(),
-                )
-            })?;
-            match kind {
-                "create" => {
-                    let path = required_workspace_uri(
-                        &workspace_root,
-                        change,
-                        "uri",
-                        "lsp.rename create operation is missing uri",
-                    )?;
-                    apply_create_operation(
-                        ctx,
-                        change,
-                        &path,
-                        &mut virtual_files,
-                        RenameOperationAccumulator {
-                            operations: &mut operations,
-                            resource_operations: &mut resource_operations,
-                            next_operation_index: &mut next_operation_index,
-                        },
-                    )?;
-                }
-                "rename" => {
-                    let from_path = required_workspace_uri(
-                        &workspace_root,
-                        change,
-                        "oldUri",
-                        "lsp.rename rename operation is missing oldUri",
-                    )?;
-                    let to_path = required_workspace_uri(
-                        &workspace_root,
-                        change,
-                        "newUri",
-                        "lsp.rename rename operation is missing newUri",
-                    )?;
-                    apply_rename_operation(
-                        ctx,
-                        change,
-                        &from_path,
-                        &to_path,
-                        &mut virtual_files,
-                        RenameOperationAccumulator {
-                            operations: &mut operations,
-                            resource_operations: &mut resource_operations,
-                            next_operation_index: &mut next_operation_index,
-                        },
-                    )?;
-                }
-                "delete" => {
-                    let path = required_workspace_uri(
-                        &workspace_root,
-                        change,
-                        "uri",
-                        "lsp.rename delete operation is missing uri",
-                    )?;
-                    apply_delete_operation(
-                        ctx,
-                        change,
-                        &path,
-                        &mut virtual_files,
-                        RenameOperationAccumulator {
-                            operations: &mut operations,
-                            resource_operations: &mut resource_operations,
-                            next_operation_index: &mut next_operation_index,
-                        },
-                    )?;
-                }
-                other => {
-                    return Err(ToolError::Execution(format!(
-                        "lsp.rename returned unsupported workspace edit operation kind: {other}"
-                    )));
-                }
-            }
-        }
-    } else if let Some(changes) = workspace_edit.get("changes").and_then(Value::as_object) {
-        for (uri, edits_value) in changes {
-            let path = workspace_relative_path_from_file_uri(&workspace_root, uri)?;
-            let edits = edits_value.as_array().ok_or_else(|| {
-                ToolError::Execution(
-                    "lsp.rename returned changes with a non-array edit list".to_string(),
-                )
-            })?;
-            rewrite_path_from_text_edits(
-                ctx,
-                &path,
-                edits,
-                &mut virtual_files,
-                &mut preview_files,
-                &mut operations,
-                &mut next_operation_index,
-            )?;
-        }
-    } else {
-        return Err(ToolError::Execution(
-            "lsp.rename returned a workspace edit without changes".to_string(),
-        ));
-    }
-
-    let files = preview_files
-        .into_iter()
-        .map(|(path, accumulator)| RenameFilePreview {
-            path,
-            edit_count: accumulator.edit_count,
-            annotation_ids: accumulator.annotation_ids.into_iter().collect(),
-        })
-        .collect::<Vec<_>>();
-    let text_edit_count = files.iter().map(|file| file.edit_count).sum();
-
-    Ok(RenamePlan {
-        operations,
-        preview: RenamePreview {
-            file_count: files.len(),
-            text_edit_count,
-            files,
-            resource_operations,
-            annotations: parse_change_annotations(workspace_edit),
-        },
-    })
-}
-
-fn rewrite_path_from_text_edits(
-    ctx: &ToolContext,
-    path: &str,
-    edits: &[Value],
-    virtual_files: &mut BTreeMap<String, Option<String>>,
-    preview_files: &mut BTreeMap<String, PreviewFileAccumulator>,
-    operations: &mut Vec<HashlineWorkspaceOp>,
-    next_operation_index: &mut usize,
-) -> Result<(), ToolError> {
-    let source = load_virtual_file(ctx, virtual_files, path)?.ok_or_else(|| {
-        ToolError::Execution(format!(
-            "lsp.rename returned edits for a missing workspace path: {path}"
-        ))
-    })?;
-    let parsed_edits = parse_text_edits(&source, edits)?;
-    let updated = apply_text_edits(&source, &parsed_edits)?;
-    virtual_files.insert(path.to_string(), Some(updated.clone()));
-    operations.push(HashlineWorkspaceOp::RewriteFile {
-        edit_id: next_rename_edit_id(ctx, *next_operation_index),
-        path: path.to_string(),
-        content: updated,
-    });
-    *next_operation_index += 1;
-
-    let preview_entry =
-        preview_files
-            .entry(path.to_string())
-            .or_insert_with(|| PreviewFileAccumulator {
-                edit_count: 0,
-                annotation_ids: BTreeSet::new(),
-            });
-    preview_entry.edit_count += parsed_edits.len();
-    preview_entry.annotation_ids.extend(
-        parsed_edits
-            .into_iter()
-            .filter_map(|edit| edit.annotation_id),
-    );
-    Ok(())
-}
-
-fn apply_create_operation(
-    ctx: &ToolContext,
-    change: &Value,
-    path: &str,
-    virtual_files: &mut BTreeMap<String, Option<String>>,
-    operation_accumulator: RenameOperationAccumulator<'_>,
-) -> Result<(), ToolError> {
-    let RenameOperationAccumulator {
-        operations,
-        resource_operations,
-        next_operation_index,
-    } = operation_accumulator;
-    let options = RenameResourceOperationOptions::from_change(change);
-    let existing = load_virtual_file(ctx, virtual_files, path)?;
-    if existing.is_some() && !options.overwrite {
-        if options.ignore_if_exists {
-            return Ok(());
-        }
-        return Err(ToolError::Execution(format!(
-            "lsp.rename create operation would overwrite existing path: {path}"
-        )));
-    }
-
-    virtual_files.insert(path.to_string(), Some(String::new()));
-    operations.push(HashlineWorkspaceOp::RewriteFile {
-        edit_id: next_rename_edit_id(ctx, *next_operation_index),
-        path: path.to_string(),
-        content: String::new(),
-    });
-    *next_operation_index += 1;
-    push_resource_operation_preview(resource_operations, "create", path, None, change);
-    Ok(())
-}
-
-fn apply_rename_operation(
-    ctx: &ToolContext,
-    change: &Value,
-    from_path: &str,
-    to_path: &str,
-    virtual_files: &mut BTreeMap<String, Option<String>>,
-    operation_accumulator: RenameOperationAccumulator<'_>,
-) -> Result<(), ToolError> {
-    let RenameOperationAccumulator {
-        operations,
-        resource_operations,
-        next_operation_index,
-    } = operation_accumulator;
-    let options = RenameResourceOperationOptions::from_change(change);
-    let source = load_virtual_file(ctx, virtual_files, from_path)?.ok_or_else(|| {
-        ToolError::Execution(format!(
-            "lsp.rename rename operation source is missing: {from_path}"
-        ))
-    })?;
-    let destination = load_virtual_file(ctx, virtual_files, to_path)?;
-    if destination.is_some() && options.ignore_if_exists && !options.overwrite {
-        return Ok(());
-    }
-    if destination.is_some() {
-        if options.overwrite {
-            virtual_files.insert(to_path.to_string(), None);
-            operations.push(HashlineWorkspaceOp::DeleteFile {
-                edit_id: next_rename_edit_id(ctx, *next_operation_index),
-                path: to_path.to_string(),
-            });
-            *next_operation_index += 1;
-        } else {
-            return Err(ToolError::Execution(format!(
-                "lsp.rename rename operation destination already exists: {to_path}"
-            )));
-        }
-    }
-
-    virtual_files.insert(from_path.to_string(), None);
-    virtual_files.insert(to_path.to_string(), Some(source));
-    operations.push(HashlineWorkspaceOp::MoveFile {
-        edit_id: next_rename_edit_id(ctx, *next_operation_index),
-        from_path: from_path.to_string(),
-        to_path: to_path.to_string(),
-    });
-    *next_operation_index += 1;
-    push_resource_operation_preview(
-        resource_operations,
-        "rename",
-        from_path,
-        Some(to_path),
-        change,
-    );
-    Ok(())
-}
-
-fn apply_delete_operation(
-    ctx: &ToolContext,
-    change: &Value,
-    path: &str,
-    virtual_files: &mut BTreeMap<String, Option<String>>,
-    operation_accumulator: RenameOperationAccumulator<'_>,
-) -> Result<(), ToolError> {
-    let RenameOperationAccumulator {
-        operations,
-        resource_operations,
-        next_operation_index,
-    } = operation_accumulator;
-    let ignore_if_not_exists = change
-        .get("options")
-        .and_then(|options| options.get("ignoreIfNotExists"))
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let existing = load_virtual_file(ctx, virtual_files, path)?;
-    if existing.is_none() {
-        if ignore_if_not_exists {
-            return Ok(());
-        }
-        return Err(ToolError::Execution(format!(
-            "lsp.rename delete operation target is missing: {path}"
-        )));
-    }
-
-    virtual_files.insert(path.to_string(), None);
-    operations.push(HashlineWorkspaceOp::DeleteFile {
-        edit_id: next_rename_edit_id(ctx, *next_operation_index),
-        path: path.to_string(),
-    });
-    *next_operation_index += 1;
-    push_resource_operation_preview(resource_operations, "delete", path, None, change);
-    Ok(())
-}
-
-fn push_resource_operation_preview(
-    resource_operations: &mut Vec<RenameResourceOperationPreview>,
-    kind: &str,
-    path: &str,
-    to_path: Option<&str>,
-    change: &Value,
-) {
-    resource_operations.push(RenameResourceOperationPreview {
-        kind: kind.to_string(),
-        path: path.to_string(),
-        to_path: to_path.map(str::to_string),
-        annotation_id: change
-            .get("annotationId")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-    });
-}
-
-fn parse_change_annotations(workspace_edit: &Value) -> Vec<RenameAnnotationPreview> {
-    let Some(annotations) = workspace_edit
-        .get("changeAnnotations")
-        .and_then(Value::as_object)
-    else {
-        return Vec::new();
-    };
-
-    annotations
-        .iter()
-        .map(|(id, annotation)| RenameAnnotationPreview {
-            id: id.clone(),
-            label: annotation
-                .get("label")
-                .and_then(Value::as_str)
-                .map(str::to_string),
-            description: annotation
-                .get("description")
-                .and_then(Value::as_str)
-                .map(str::to_string),
-            needs_confirmation: annotation
-                .get("needsConfirmation")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
-        })
-        .collect()
-}
-
-fn load_virtual_file(
-    ctx: &ToolContext,
-    virtual_files: &mut BTreeMap<String, Option<String>>,
-    path: &str,
-) -> Result<Option<String>, ToolError> {
-    if let Some(existing) = virtual_files.get(path) {
-        return Ok(existing.clone());
-    }
-
-    let resolved = resolve_workspace_target_path(ctx, path)?;
-    let content = match std::fs::read_to_string(&resolved) {
-        Ok(content) => Some(content),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
-        Err(err) => {
-            return Err(ToolError::Execution(format!(
-                "failed to read workspace path {path}: {err}"
-            )));
-        }
-    };
-    virtual_files.insert(path.to_string(), content.clone());
-    Ok(content)
-}
-
-fn bool_option(change: &Value, name: &str) -> bool {
-    change
-        .get("options")
-        .and_then(|options| options.get(name))
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
-}
-
-fn parse_text_edits(source: &str, edits: &[Value]) -> Result<Vec<ParsedTextEdit>, ToolError> {
-    let line_starts = build_line_starts(source);
-    edits
-        .iter()
-        .map(|edit| {
-            let range = edit.get("range").ok_or_else(|| {
-                ToolError::Execution("lsp.rename returned a text edit without a range".to_string())
-            })?;
-            let (start, end) = range_to_byte_offsets(
-                source,
-                &line_starts,
-                range,
-                "lsp.rename returned a text edit with an invalid start line",
-                "lsp.rename returned a text edit with an invalid start character",
-                "lsp.rename returned a text edit with an invalid end line",
-                "lsp.rename returned a text edit with an invalid end character",
-            )?;
-            Ok(ParsedTextEdit {
-                start,
-                end,
-                new_text: edit
-                    .get("newText")
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| {
-                        ToolError::Execution(
-                            "lsp.rename returned a text edit without newText".to_string(),
-                        )
-                    })?
-                    .to_string(),
-                annotation_id: edit
-                    .get("annotationId")
-                    .and_then(Value::as_str)
-                    .map(str::to_string),
-            })
-        })
-        .collect()
-}
-
-fn apply_text_edits(source: &str, edits: &[ParsedTextEdit]) -> Result<String, ToolError> {
-    let mut ordered = edits
-        .iter()
-        .map(|edit| (edit.start, edit.end, edit.new_text.clone()))
-        .collect::<Vec<_>>();
-    ordered.sort_by_key(|(start, end, _)| (*start, *end));
-    let mut previous_end = 0usize;
-    for (start, end, _) in &ordered {
-        if start > end {
-            return Err(ToolError::Execution(
-                "lsp.rename returned a text edit with an inverted range".to_string(),
-            ));
-        }
-        if *start < previous_end {
-            return Err(ToolError::Execution(
-                "lsp.rename returned overlapping text edits".to_string(),
-            ));
-        }
-        previous_end = *end;
-    }
-
-    let mut updated = source.to_string();
-    for (start, end, new_text) in ordered.into_iter().rev() {
-        updated.replace_range(start..end, &new_text);
-    }
-    Ok(updated)
-}
-
-fn build_line_starts(source: &str) -> Vec<usize> {
-    let mut starts = vec![0usize];
-    for (index, byte) in source.bytes().enumerate() {
-        if byte == b'\n' {
-            starts.push(index + 1);
-        }
-    }
-    starts
-}
-
-fn position_to_byte_offset(
-    source: &str,
-    line_starts: &[usize],
-    line: u64,
-    character: u64,
-) -> Result<usize, ToolError> {
-    let line = usize::try_from(line)
-        .map_err(|_| ToolError::Execution("line index overflow in workspace edit".to_string()))?;
-    let character = usize::try_from(character).map_err(|_| {
-        ToolError::Execution("character index overflow in workspace edit".to_string())
-    })?;
-    let Some(&line_start) = line_starts.get(line) else {
-        return Err(ToolError::Execution(format!(
-            "workspace edit referenced missing line index {line}"
-        )));
-    };
-    let raw_line_end = line_starts.get(line + 1).copied().unwrap_or(source.len());
-    let mut line_end = raw_line_end;
-    if line_end > line_start && source.as_bytes()[line_end - 1] == b'\n' {
-        line_end -= 1;
-        if line_end > line_start && source.as_bytes()[line_end - 1] == b'\r' {
-            line_end -= 1;
-        }
-    }
-    let line_text = &source[line_start..line_end];
-    if character == 0 {
-        return Ok(line_start);
-    }
-
-    let mut utf16_offset = 0usize;
-    for (byte_offset, ch) in line_text.char_indices() {
-        if utf16_offset == character {
-            return Ok(line_start + byte_offset);
-        }
-        utf16_offset += ch.len_utf16();
-        if utf16_offset == character {
-            return Ok(line_start + byte_offset + ch.len_utf8());
-        }
-        if utf16_offset > character {
-            return Err(ToolError::Execution(
-                "workspace edit referenced a non-boundary UTF-16 character offset".to_string(),
-            ));
-        }
-    }
-    Ok(line_end)
-}
-
-fn range_position_to_byte_offset(
-    source: &str,
-    line_starts: &[usize],
-    range: &Value,
-    endpoint: &str,
-    missing_line_message: &str,
-    missing_character_message: &str,
-) -> Result<usize, ToolError> {
-    let position = range.get(endpoint);
-    let line = position
-        .and_then(|position| position.get("line"))
-        .and_then(Value::as_u64)
-        .ok_or_else(|| ToolError::Execution(missing_line_message.to_string()))?;
-    let character = position
-        .and_then(|position| position.get("character"))
-        .and_then(Value::as_u64)
-        .ok_or_else(|| ToolError::Execution(missing_character_message.to_string()))?;
-    position_to_byte_offset(source, line_starts, line, character)
-}
-
-fn range_to_byte_offsets(
-    source: &str,
-    line_starts: &[usize],
-    range: &Value,
-    missing_start_line_message: &str,
-    missing_start_character_message: &str,
-    missing_end_line_message: &str,
-    missing_end_character_message: &str,
-) -> Result<(usize, usize), ToolError> {
-    let start = range_position_to_byte_offset(
-        source,
-        line_starts,
-        range,
-        "start",
-        missing_start_line_message,
-        missing_start_character_message,
-    )?;
-    let end = range_position_to_byte_offset(
-        source,
-        line_starts,
-        range,
-        "end",
-        missing_end_line_message,
-        missing_end_character_message,
-    )?;
-    Ok((start, end))
-}
-
 fn required_workspace_uri(
     workspace_root: &Path,
     value: &Value,
@@ -844,123 +1273,14 @@ fn required_workspace_uri(
     workspace_relative_path_from_file_uri(workspace_root, uri)
 }
 
-fn next_rename_edit_id(ctx: &ToolContext, index: usize) -> String {
-    format!("lsp-rename-{}-{index}", ctx.tool_call_id)
-}
-
-fn apply_plan(ctx: &ToolContext, plan: &RenamePlan) -> Result<Vec<ToolResult>, ToolError> {
-    let mut results = Vec::with_capacity(plan.operations.len());
-    for operation in plan.operations.iter().cloned() {
-        results.push(apply_hashline_workspace_op_to_workspace(ctx, operation)?);
-    }
-    Ok(results)
-}
-
-fn symbol_preview(file_path: &Path, prepare_result: &Value) -> Result<Option<String>, ToolError> {
-    if let Some(placeholder) = prepare_result.get("placeholder").and_then(Value::as_str) {
-        return Ok(Some(placeholder.to_string()));
-    }
-    if prepare_result
-        .get("defaultBehavior")
-        .and_then(Value::as_bool)
-        .is_some()
-    {
-        return Ok(None);
-    }
-    let preview_range =
-        if prepare_result.get("start").is_some() && prepare_result.get("end").is_some() {
-            Some(prepare_result)
-        } else {
-            prepare_result.get("range")
-        };
-    if let Some(range) = preview_range {
-        let source = read_rename_source_for_preview(file_path)?;
-        return extract_text_for_range(&source, range).map(Some);
-    }
-    Ok(None)
-}
-
-fn read_rename_source_for_preview(file_path: &Path) -> Result<String, ToolError> {
-    std::fs::read_to_string(file_path).map_err(|err| {
-        ToolError::Execution(format!(
-            "failed to read rename source file for preview: {err}"
-        ))
-    })
-}
-
-fn extract_text_for_range(source: &str, range: &Value) -> Result<String, ToolError> {
-    let line_starts = build_line_starts(source);
-    let (start, end) = range_to_byte_offsets(
-        source,
-        &line_starts,
-        range,
-        "rename prepare result is missing start.line",
-        "rename prepare result is missing start.character",
-        "rename prepare result is missing end.line",
-        "rename prepare result is missing end.character",
-    )?;
-    Ok(source[start..end].to_string())
-}
-
-fn render_display_text(
-    new_name: &str,
-    apply: bool,
-    symbol_preview: Option<&str>,
-    preview: &RenamePreview,
-    response: &LspRenameResponse,
-) -> String {
-    let current = symbol_preview.unwrap_or("<symbol>");
-    let mut lines = vec![if apply {
-        format!("Applied LSP rename `{current}` → `{new_name}`")
-    } else {
-        format!("Prepared LSP rename preview `{current}` → `{new_name}`")
-    }];
-    lines.push(format!("Server: {}", response.server.name));
-
-    if preview.file_count == 0 && preview.resource_operations.is_empty() {
-        lines.push("No workspace changes were returned.".to_string());
-    } else {
-        lines.push(format!(
-            "{} text edit{} across {} file{}",
-            preview.text_edit_count,
-            plural(preview.text_edit_count),
-            preview.file_count,
-            plural(preview.file_count),
-        ));
-        for file in &preview.files {
-            let annotation_suffix = if file.annotation_ids.is_empty() {
-                String::new()
-            } else {
-                format!(" · annotations: {}", file.annotation_ids.join(", "))
-            };
-            lines.push(format!(
-                "- {} ({} edit{}){}",
-                file.path,
-                file.edit_count,
-                plural(file.edit_count),
-                annotation_suffix
-            ));
-        }
-        for operation in &preview.resource_operations {
-            let detail = match &operation.to_path {
-                Some(to_path) => format!("{} → {}", operation.path, to_path),
-                None => operation.path.clone(),
-            };
-            lines.push(format!("- {} {}", operation.kind, detail));
-        }
-        if !apply {
-            lines.push("Re-run with `apply: true` to execute these edits.".to_string());
-        }
-    }
-
-    let diagnostics = format_diagnostics(&response.diagnostics);
-    if !diagnostics.is_empty() {
-        lines.push(String::new());
-        lines.push("Diagnostics:".to_string());
-        lines.push(diagnostics);
-    }
-
-    lines.join("\n")
+fn required_array<'a>(
+    value: Option<&'a Value>,
+    missing_or_invalid_message: &str,
+) -> Result<&'a [Value], ToolError> {
+    value
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .ok_or_else(|| ToolError::Execution(missing_or_invalid_message.to_string()))
 }
 
 fn plural(count: usize) -> &'static str {
