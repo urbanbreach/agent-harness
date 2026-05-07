@@ -1,15 +1,15 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-expression: "checkpoint_visual_snapshot(&screen,\n&[\"Bring native tool parity inline\", \"Gathered context · 2 reads\",\n\"task audit transcript parity [subagent_type=researcher]\",\n\"webfetch https://example.test/report.pdf [format=markdown]\",\n\"docs-rs_search_in_crate Layout [crate_name=ratatui]\",], &task_visual,)"
+expression: "checkpoint_visual_snapshot(&screen,\n&[\"Bring native tool parity inline\", \"Gathered context · 2 reads\",\n\"Task — audit transcript parity\",\n\"webfetch https://example.test/report.pdf [format=markdown]\",\n\"docs-rs_search_in_crate Layout [crate_name=ratatui]\",], &task_visual,)"
 ---
 Bring native tool parity inline: true
 Gathered context · 2 reads: true
-task audit transcript parity [subagent_type=researcher]: true
+Task — audit transcript parity: true
 webfetch https://example.test/report.pdf [format=markdown]: true
 docs-rs_search_in_crate Layout [crate_name=ratatui]: true
-focus_marker: task audit transcript parity [subagent_type=researcher]
-focus_render_state_blake3: fedbf35d6eca478dd8f5c8dadaecc149480018193cd2139c3e06d0dc22ba2989
-focus_region_cells: row=9, col=7, height=6, width=48
+focus_marker: Task — audit transcript parity
+focus_render_state_blake3: 22f49bdaad5f5db0f1388d766cead1f6d96578074387bb1abea9d89492bd33f4
+focus_region_cells: row=9, col=16, height=6, width=48
 image: pty_native_tool_parity_task_row.png
 manifest_json: pty-manifests/transcript_shell/manifest.json
 manifest_jsonl: pty-manifests/transcript_shell/manifest.jsonl
