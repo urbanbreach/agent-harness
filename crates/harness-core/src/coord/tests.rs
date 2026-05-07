@@ -4743,6 +4743,8 @@ fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
         task_hook_state: std::collections::BTreeMap::new(),
         agent_hook_state: std::collections::BTreeMap::new(),
         subagent_parent_by_id: std::collections::BTreeMap::new(),
+        child_session_mirrors: std::collections::BTreeMap::new(),
+        child_request_session_by_id: std::collections::BTreeMap::new(),
         pending_permissions: std::collections::BTreeMap::new(),
         active_permission_grants: crate::perm::PermissionGrantSet::default(),
         cancelled_running_tasks: std::collections::BTreeSet::new(),

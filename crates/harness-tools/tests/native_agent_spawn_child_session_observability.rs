@@ -155,6 +155,97 @@ async fn agent_spawn_returns_child_session_status_duration_and_counts() {
         output.pointer("/child_session/request_id"),
         output.get("child_request_id")
     );
+
+    let child_session_id = output
+        .get("child_session_id")
+        .and_then(Value::as_str)
+        .expect("child session id");
+    let child_request_id = output
+        .get("child_request_id")
+        .and_then(Value::as_str)
+        .expect("child request id");
+    let session_dir = run.run_dir.parent().expect("parent session dir");
+    let child_run_dir = session_dir.join(child_session_id);
+    let child_events_path = child_run_dir.join("events.jsonl");
+    assert!(
+        child_events_path.exists(),
+        "task should materialize a durable child events.jsonl at {}",
+        child_events_path.display()
+    );
+    let child_events = read_events(&child_events_path);
+    assert!(
+        child_events.len() >= 4,
+        "child log should include its own lifecycle and prompt"
+    );
+    assert!(child_events
+        .iter()
+        .enumerate()
+        .all(|(index, event)| event.seq == index as u64 + 1 && event.run_id == child_session_id));
+    assert!(child_events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::RunStarted(data)
+            if data.run_name == "Observe child failure metadata (@parent subagent)"
+    )));
+    assert!(child_events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::UserMessageSubmitted(data)
+            if data.request_id == child_request_id && data.text.contains("no provider configured")
+    )));
+
+    let child_meta: Value = serde_json::from_str(
+        &fs::read_to_string(child_run_dir.join("meta.json")).expect("read child meta"),
+    )
+    .expect("parse child meta");
+    assert_eq!(child_meta["run_id"], json!(child_session_id));
+    assert_eq!(
+        child_meta["harness_lineage"]["parent_run_id"],
+        json!(run.run_id)
+    );
+    assert_eq!(
+        child_meta["harness_lineage"]["relationship"],
+        json!("task_child_session")
+    );
+
+    let child_event_count_before_resume = child_events.len();
+    let mut resume_config = CoordinatorConfig::new(session_dir.to_path_buf());
+    resume_config.permission_policy = PermissionPolicy::new(
+        PermissionMode::Allow,
+        PermissionMode::Allow,
+        PermissionMode::Allow,
+    );
+    resume_config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist {
+        executables: vec!["pwd".to_string()],
+        cwd_roots: vec![".".to_string()],
+    }));
+    resume_config.agent_profiles = BTreeMap::from([
+        (
+            "parent".to_string(),
+            profile("parent", "parent", &["task", "bash"]),
+        ),
+        (
+            "restricted".to_string(),
+            profile("restricted", "restricted", &["bash"]),
+        ),
+    ]);
+    let resumed_handle = spawn_coordinator(
+        resume_config,
+        Arc::new(RealClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    resumed_handle
+        .resume_run(&run.run_id, "resumed parent")
+        .await
+        .expect("resume parent run");
+    resumed_handle
+        .stop_run()
+        .await
+        .expect("stop resumed parent run");
+    let child_events_after_resume = read_events(&child_events_path);
+    assert_eq!(
+        child_events_after_resume.len(),
+        child_event_count_before_resume,
+        "resuming the parent must attach child mirrors without appending lifecycle events"
+    );
 }
 
 #[tokio::test]

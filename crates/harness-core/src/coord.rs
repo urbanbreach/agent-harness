@@ -58,7 +58,7 @@ use crate::perm::{
     PermissionKind, PermissionPolicy, PermissionRuleRequest, PermissionToolSelector,
     PolicyDecision,
 };
-use crate::proj::{inspect_resume_plan, RecordedRuntimeContext, RunMetadata};
+use crate::proj::{inspect_resume_plan, RecordedRuntimeContext, RunMetadata, SessionModeSource};
 use crate::provider_args::provider_tool_arguments_json;
 use crate::question_answers::{validate_question_answers, QuestionAnswerPrompt};
 use crate::redact::Redactor;
@@ -66,6 +66,10 @@ use crate::sched::{
     ConcurrencyKey, ScheduleDecision, Scheduler, SchedulerLimits, TaskProgressSnapshot,
 };
 use crate::session_paths::{ARTIFACTS_DIR_NAME, EVENTS_FILE_NAME, META_FILE_NAME};
+use crate::session_title::{
+    clean_generated_title, create_default_title, is_parent_default_title, TITLE_AGENT_NAME,
+    TITLE_GENERATION_USER_PROMPT,
+};
 use crate::store::{EventEnvelopeWithoutSeqV1, EventStore, EventStoreError, JsonlFileEventStore};
 use crate::text::{non_empty_trimmed, truncate_with_ellipsis};
 use crate::tool::{
@@ -168,6 +172,7 @@ pub struct CoordinatorConfig {
     pub compaction: CompactionRuntimeConfig,
     pub config_digest: String,
     pub harness_version: String,
+    pub session_mode_source: Option<SessionModeSource>,
 }
 
 impl CoordinatorConfig {
@@ -190,6 +195,7 @@ impl CoordinatorConfig {
             compaction: CompactionRuntimeConfig::default(),
             config_digest: "none".to_string(),
             harness_version: env!("CARGO_PKG_VERSION").to_string(),
+            session_mode_source: None,
         }
     }
 
@@ -246,16 +252,22 @@ pub enum Command {
     GetEventStore {
         respond_to: oneshot::Sender<Result<Arc<JsonlFileEventStore>, CoordinatorError>>,
     },
+    GetAgentRuntimeInfo {
+        agent_id: String,
+        respond_to: oneshot::Sender<Result<AgentRuntimeInfo, CoordinatorError>>,
+    },
     SpawnAgent {
         actor: EventActor,
         profile: String,
         parent_agent_id: Option<String>,
+        child_session_title: Option<String>,
         respond_to: oneshot::Sender<Result<String, CoordinatorError>>,
     },
     SpawnAgentIdle {
         actor: EventActor,
         profile: String,
         parent_agent_id: Option<String>,
+        child_session_title: Option<String>,
         respond_to: oneshot::Sender<Result<String, CoordinatorError>>,
     },
     RequestAgentTurn {
@@ -373,6 +385,13 @@ pub enum Command {
         request_id: String,
         outcome: AgentTurnTaskOutcome,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentRuntimeInfo {
+    pub agent_id: String,
+    pub profile_name: String,
+    pub parent_agent_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -588,6 +607,24 @@ impl CoordinatorHandle {
         Ok(store)
     }
 
+    pub async fn agent_runtime_info(
+        &self,
+        agent_id: impl Into<String>,
+    ) -> Result<AgentRuntimeInfo, CoordinatorError> {
+        let (respond_to, response_rx) = oneshot::channel();
+        self.tx
+            .send(Command::GetAgentRuntimeInfo {
+                agent_id: agent_id.into(),
+                respond_to,
+            })
+            .await
+            .map_err(|_| CoordinatorError::CommandChannelClosed)?;
+
+        response_rx
+            .await
+            .map_err(|_| CoordinatorError::ResponseChannelClosed)?
+    }
+
     pub async fn spawn_agent(
         &self,
         actor: EventActor,
@@ -600,6 +637,7 @@ impl CoordinatorHandle {
                 actor,
                 profile: profile.into(),
                 parent_agent_id,
+                child_session_title: None,
                 respond_to,
             })
             .await
@@ -622,6 +660,31 @@ impl CoordinatorHandle {
                 actor,
                 profile: profile.into(),
                 parent_agent_id,
+                child_session_title: None,
+                respond_to,
+            })
+            .await
+            .map_err(|_| CoordinatorError::CommandChannelClosed)?;
+
+        response_rx
+            .await
+            .map_err(|_| CoordinatorError::ResponseChannelClosed)?
+    }
+
+    pub async fn spawn_agent_idle_with_child_title(
+        &self,
+        actor: EventActor,
+        profile: impl Into<String>,
+        parent_agent_id: Option<String>,
+        child_session_title: impl Into<String>,
+    ) -> Result<String, CoordinatorError> {
+        let (respond_to, response_rx) = oneshot::channel();
+        self.tx
+            .send(Command::SpawnAgentIdle {
+                actor,
+                profile: profile.into(),
+                parent_agent_id,
+                child_session_title: Some(child_session_title.into()),
                 respond_to,
             })
             .await
@@ -938,6 +1001,25 @@ impl Coordinator {
         })
     }
 
+    fn agent_runtime_info_internal(
+        &self,
+        agent_id: String,
+    ) -> Result<AgentRuntimeInfo, CoordinatorError> {
+        let run_state = self
+            .run_state
+            .as_ref()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        let profile = run_state
+            .agents
+            .get(&agent_id)
+            .ok_or_else(|| CoordinatorError::UnknownAgent(agent_id.clone()))?;
+        Ok(AgentRuntimeInfo {
+            agent_id: agent_id.clone(),
+            profile_name: profile.name.clone(),
+            parent_agent_id: run_state.subagent_parent_by_id.get(&agent_id).cloned(),
+        })
+    }
+
     async fn handle_command(&mut self, command: Command) {
         match command {
             Command::StartRun {
@@ -966,14 +1048,28 @@ impl Coordinator {
                 let result = self.get_event_store_internal();
                 warn_oneshot_send_failure(respond_to.send(result), "get_event_store");
             }
+            Command::GetAgentRuntimeInfo {
+                agent_id,
+                respond_to,
+            } => {
+                let result = self.agent_runtime_info_internal(agent_id);
+                warn_oneshot_send_failure(respond_to.send(result), "get_agent_runtime_info");
+            }
             Command::SpawnAgent {
                 actor,
                 profile,
                 parent_agent_id,
+                child_session_title,
                 respond_to,
             } => {
                 let result = self
-                    .spawn_agent_internal(actor, profile, parent_agent_id, true)
+                    .spawn_agent_internal(
+                        actor,
+                        profile,
+                        parent_agent_id,
+                        child_session_title,
+                        true,
+                    )
                     .await;
                 warn_oneshot_send_failure(respond_to.send(result), "spawn_agent");
             }
@@ -981,10 +1077,17 @@ impl Coordinator {
                 actor,
                 profile,
                 parent_agent_id,
+                child_session_title,
                 respond_to,
             } => {
                 let result = self
-                    .spawn_agent_internal(actor, profile, parent_agent_id, false)
+                    .spawn_agent_internal(
+                        actor,
+                        profile,
+                        parent_agent_id,
+                        child_session_title,
+                        false,
+                    )
                     .await;
                 warn_oneshot_send_failure(respond_to.send(result), "spawn_agent_idle");
             }
@@ -1289,6 +1392,8 @@ impl Coordinator {
             task_hook_state: BTreeMap::new(),
             agent_hook_state: BTreeMap::new(),
             subagent_parent_by_id: BTreeMap::new(),
+            child_session_mirrors: BTreeMap::new(),
+            child_request_session_by_id: BTreeMap::new(),
             pending_permissions: BTreeMap::new(),
             active_permission_grants: PermissionGrantSet::default(),
             cancelled_running_tasks: BTreeSet::new(),
@@ -1502,6 +1607,8 @@ impl Coordinator {
             task_hook_state: BTreeMap::new(),
             agent_hook_state: BTreeMap::new(),
             subagent_parent_by_id: restored_subagent_parent_by_id,
+            child_session_mirrors: BTreeMap::new(),
+            child_request_session_by_id: BTreeMap::new(),
             pending_permissions: BTreeMap::new(),
             active_permission_grants: resume_plan.active_permission_grants,
             cancelled_running_tasks: BTreeSet::new(),
@@ -1517,6 +1624,14 @@ impl Coordinator {
             allow_initial_runtime_context_recording: false,
             shutdown_token: CancellationToken::new(),
         };
+
+        restore_child_session_mirrors(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            &self.config,
+            &mut run_state,
+            &restored_agent_bindings,
+        )?;
 
         append_payload_event(
             self.clock.as_ref(),
@@ -1583,6 +1698,12 @@ impl Coordinator {
                 summary: summary.clone(),
             }),
         )?;
+        finish_child_session_mirrors(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            &run_state,
+            &summary,
+        )?;
 
         let hook_batch = run_lifecycle_hooks(
             self.clock.as_ref(),
@@ -1621,6 +1742,7 @@ impl Coordinator {
         actor: EventActor,
         profile: String,
         parent_agent_id: Option<String>,
+        child_session_title: Option<String>,
         auto_start_turn: bool,
     ) -> Result<String, CoordinatorError> {
         let run_state = self
@@ -1705,6 +1827,18 @@ impl Coordinator {
             }),
         )?;
 
+        if parent_agent_id.is_some() {
+            create_child_session_mirror(
+                self.clock.as_ref(),
+                self.redactor.as_ref(),
+                &self.config,
+                run_state,
+                &agent_id,
+                &profile,
+                child_session_title.as_deref(),
+            )?;
+        }
+
         let should_record_runtime_context =
             run_state.allow_initial_runtime_context_recording && parent_agent_id.is_none();
         run_state
@@ -1735,6 +1869,11 @@ impl Coordinator {
 
         if auto_start_turn {
             let request_id = allocate_provider_request_id(run_state);
+            if run_state.child_session_mirrors.contains_key(&agent_id) {
+                run_state
+                    .child_request_session_by_id
+                    .insert(request_id.clone(), agent_id.clone());
+            }
 
             let request = AgentRequest {
                 agent_id: agent_id.clone(),
@@ -1805,6 +1944,11 @@ impl Coordinator {
             .ok_or_else(|| CoordinatorError::UnknownAgent(agent_id.clone()))?;
 
         let request_id = allocate_provider_request_id(run_state);
+        if run_state.child_session_mirrors.contains_key(&agent_id) {
+            run_state
+                .child_request_session_by_id
+                .insert(request_id.clone(), agent_id.clone());
+        }
 
         let prompt = if profile.name == crate::plan::PLAN_AGENT_NAME {
             Self::plan_mode_prompt(&run_state.info.run_id, &prompt)
@@ -1833,6 +1977,15 @@ impl Coordinator {
             }),
         )?;
 
+        if actor.kind == ActorKind::User {
+            self.ensure_harness_session_title(&request.prompt).await;
+        }
+
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+
         schedule_agent_turn(
             self.clock.as_ref(),
             self.redactor.as_ref(),
@@ -1853,6 +2006,60 @@ impl Coordinator {
         Ok(request_id)
     }
 
+    async fn ensure_harness_session_title(&mut self, prompt: &str) {
+        let Some(run_state) = self.run_state.as_ref() else {
+            return;
+        };
+        if !is_parent_default_title(&run_state.info.run_name)
+            || run_state.next_provider_request_id != 2
+        {
+            return;
+        }
+
+        let Some(profile) = self.config.agent_profiles.get(TITLE_AGENT_NAME).cloned() else {
+            return;
+        };
+        let provider = self.config.provider.clone();
+
+        let title = match generate_harness_session_title(provider, profile, prompt).await {
+            Ok(Some(title)) => title,
+            Ok(None) => return,
+            Err(reason) => {
+                tracing::warn!(reason, "failed to generate session title");
+                return;
+            }
+        };
+
+        let Some(run_state) = self.run_state.as_mut() else {
+            return;
+        };
+        if !is_parent_default_title(&run_state.info.run_name)
+            || run_state.next_provider_request_id != 2
+        {
+            return;
+        }
+
+        let run_stream_key = format!("run:{}", run_state.info.run_id);
+        let title_event = EventV1::SessionTitleUpdated(crate::event::SessionTitleUpdatedEvent {
+            title: title.clone(),
+        });
+        let persist_result = append_payload_event(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            system_actor(),
+            Some(run_stream_key),
+            title_event,
+        )
+        .map(|_| {
+            run_state.info.run_name = title;
+        })
+        .and_then(|_| write_run_metadata(run_state, &self.config, self.clock.as_ref()));
+        if let Err(err) = persist_result {
+            tracing::warn!(error = %err, "failed to persist generated session title");
+        }
+    }
+
     fn allocate_provider_request_id_internal(&mut self) -> Result<String, CoordinatorError> {
         let run_state = self
             .run_state
@@ -1864,8 +2071,8 @@ impl Coordinator {
     fn plan_mode_prompt(run_id: &str, prompt: &str) -> String {
         let plan_file = crate::plan::plan_file_display_path(run_id);
         format!(
-            "{prompt}\n\n<system-reminder>\nPlan mode is active. The user indicated that they do not want you to execute yet -- you MUST NOT make any edits (with the exception of the plan file mentioned below), run any non-readonly tools (including changing configs or making commits), or otherwise make any changes to the system. This supersedes any other instructions you have received.\n\n## Plan File Info:\nCreate or update your plan at {plan_file} using the edit tool. This is the only workspace path you are allowed to edit; all other workspace edits are denied by runtime policy.\n\n## Plan Workflow\n1. Gain a comprehensive understanding of the user's request by reading/searching the codebase.\n2. Clarify ambiguities with the question tool when needed.\n3. Design the implementation approach and include critical files, constraints, risks, and verification.\n4. Write the final plan to the plan file.\n5. At the very end of your turn, call plan_exit to ask whether to switch to the build agent. Do not ask whether the plan is okay with question; plan_exit handles that approval flow.\n</system-reminder>"
-        )
+                "{prompt}\n\n<system-reminder>\nPlan mode is active. You MUST NOT make edits except to the plan file at {plan_file}, run non-readonly tools, change configs, or make commits. This supersedes all other instructions.\n\n## Plan Workflow\n1. Understand the request using read-only tools.\n2. You may launch up to 3 `explore` subagents for read-only codebase research. Runtime policy only permits the read-only `explore` profile in plan mode; do not launch `general`, `build`, or other write-capable agents.\n3. Ask clarifying questions only when exploration cannot resolve ambiguity.\n4. Write or update the plan at {plan_file}.\n</system-reminder>"
+            )
     }
 
     async fn request_tool_call_internal(
@@ -4192,6 +4399,15 @@ impl Coordinator {
                                 "failed_response",
                             ));
                         } else {
+                            let lineage = run_state
+                                .child_session_mirrors
+                                .contains_key(&running.agent_id)
+                                .then(|| TaskLineageMetadata {
+                                    parent_session_id: Some(run_state.info.run_id.clone()),
+                                    child_session_id: Some(running.agent_id.clone()),
+                                    child_request_id: Some(request_id.clone()),
+                                    ..TaskLineageMetadata::default()
+                                });
                             run_state
                                 .provider_context_by_agent
                                 .entry(running.agent_id.clone())
@@ -4218,7 +4434,7 @@ impl Coordinator {
                                     result_digest: digest12(output.as_bytes()),
                                     result_summary: output,
                                     metadata: Some(TaskCompletionMetadata {
-                                        lineage: None,
+                                        lineage,
                                         task_scope: Some(TaskTerminalScope::AgentTurn),
                                         timing: Some(execution_timing_metadata(
                                             running.started_mono_ms,
@@ -4417,6 +4633,8 @@ struct RunState {
     task_hook_state: BTreeMap<String, TaskHookState>,
     agent_hook_state: BTreeMap<String, Vec<HookExecutionMetadata>>,
     subagent_parent_by_id: BTreeMap<String, String>,
+    child_session_mirrors: BTreeMap<String, ChildSessionMirror>,
+    child_request_session_by_id: BTreeMap<String, String>,
     pending_permissions: BTreeMap<String, PendingPermissionState>,
     active_permission_grants: PermissionGrantSet,
     cancelled_running_tasks: BTreeSet<String>,
@@ -4428,6 +4646,12 @@ struct RunState {
     recorded_runtime_context: Option<RecordedRuntimeContext>,
     allow_initial_runtime_context_recording: bool,
     shutdown_token: CancellationToken,
+}
+
+#[derive(Debug)]
+struct ChildSessionMirror {
+    event_store: Arc<JsonlFileEventStore>,
+    append_parent_finish: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -6193,6 +6417,69 @@ fn normalize_provider_phase_error(reason: String) -> String {
     }
 }
 
+async fn generate_harness_session_title(
+    provider: Arc<dyn Provider>,
+    profile: AgentProfile,
+    prompt: &str,
+) -> Result<Option<String>, String> {
+    let model = AgentModelRef::parse(&profile.model_ref);
+    let mut stream = provider
+        .stream_completion(CompletionRequest {
+            provider_id: Some(model.provider_id),
+            model_id: model.model_id,
+            messages: vec![
+                CompletionMessage {
+                    role: MessageRole::System,
+                    content: profile.system_prompt,
+                    name: None,
+                    tool_call_id: None,
+                    assistant_tool_calls: None,
+                },
+                CompletionMessage {
+                    role: MessageRole::User,
+                    content: TITLE_GENERATION_USER_PROMPT.to_string(),
+                    name: None,
+                    tool_call_id: None,
+                    assistant_tool_calls: None,
+                },
+                CompletionMessage {
+                    role: MessageRole::User,
+                    content: prompt.to_string(),
+                    name: None,
+                    tool_call_id: None,
+                    assistant_tool_calls: None,
+                },
+            ],
+            temperature: profile.temperature,
+            max_tokens: None,
+            variant: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            reasoning_summary: None,
+            tools: None,
+            tool_choice: None,
+            stream: true,
+        })
+        .await;
+
+    let mut text = String::new();
+    while let Some(event) = stream.next().await {
+        match event {
+            ProviderStreamEvent::TextDelta(delta) => text.push_str(&delta),
+            ProviderStreamEvent::Error { message } => return Err(message),
+            ProviderStreamEvent::Start
+            | ProviderStreamEvent::Started { .. }
+            | ProviderStreamEvent::ReasoningDelta(_)
+            | ProviderStreamEvent::ToolCallDelta { .. }
+            | ProviderStreamEvent::ToolCallComplete { .. }
+            | ProviderStreamEvent::Done { .. }
+            | ProviderStreamEvent::DoneWithMetadata { .. } => {}
+        }
+    }
+
+    Ok(clean_generated_title(&text))
+}
+
 fn prepare_provider_transform_phase(
     profile: &AgentProfile,
     request: &AgentRequest,
@@ -7276,6 +7563,302 @@ where
     append_built_event(run_state, envelope)
 }
 
+fn create_child_session_mirror<C, R>(
+    clock: &C,
+    redactor: &R,
+    config: &CoordinatorConfig,
+    run_state: &mut RunState,
+    child_session_id: &str,
+    profile: &str,
+    child_session_title: Option<&str>,
+) -> Result<(), CoordinatorError>
+where
+    C: Clock + ?Sized,
+    R: Redactor + ?Sized,
+{
+    if run_state
+        .child_session_mirrors
+        .contains_key(child_session_id)
+    {
+        return Ok(());
+    }
+
+    let event_store = Arc::new(JsonlFileEventStore::open(
+        &config.session_dir,
+        child_session_id,
+        config.deterministic_store,
+    )?);
+    let run_dir = config.session_dir.join(child_session_id);
+    let title = child_session_title
+        .and_then(non_empty_trimmed)
+        .map(str::to_string)
+        .unwrap_or_else(|| create_default_title(clock, true));
+
+    write_child_session_metadata(
+        clock,
+        config,
+        run_state,
+        child_session_id,
+        &run_dir,
+        &title,
+        profile,
+    )?;
+
+    let child_appender = ChildPayloadAppender {
+        clock,
+        redactor,
+        event_store: event_store.as_ref(),
+        child_run_id: child_session_id,
+    };
+    child_appender.append(
+        system_actor(),
+        Some(format!("run:{child_session_id}")),
+        None,
+        EventV1::RunStarted(RunStartedEvent {
+            run_name: title,
+            workspace_root: run_state.info.workspace_root.display().to_string(),
+        }),
+    )?;
+    child_appender.append(
+        system_actor(),
+        Some(format!("agent:{child_session_id}")),
+        None,
+        EventV1::AgentSpawned(AgentSpawnedEvent {
+            agent_id: child_session_id.to_string(),
+            profile: profile.to_string(),
+            parent_agent_id: None,
+        }),
+    )?;
+
+    run_state.child_session_mirrors.insert(
+        child_session_id.to_string(),
+        ChildSessionMirror {
+            event_store,
+            append_parent_finish: true,
+        },
+    );
+    Ok(())
+}
+
+fn restore_child_session_mirrors<C, R>(
+    clock: &C,
+    redactor: &R,
+    config: &CoordinatorConfig,
+    run_state: &mut RunState,
+    restored_agent_bindings: &[(String, String, Option<String>)],
+) -> Result<(), CoordinatorError>
+where
+    C: Clock + ?Sized,
+    R: Redactor + ?Sized,
+{
+    for (agent_id, profile, parent_agent_id) in restored_agent_bindings {
+        if parent_agent_id.is_none() {
+            continue;
+        }
+
+        let run_dir = config.session_dir.join(agent_id);
+        if run_dir.join(EVENTS_FILE_NAME).exists() {
+            let event_store = Arc::new(JsonlFileEventStore::open_existing(
+                &config.session_dir,
+                agent_id,
+                config.deterministic_store,
+            )?);
+            run_state.child_session_mirrors.insert(
+                agent_id.clone(),
+                ChildSessionMirror {
+                    event_store,
+                    append_parent_finish: false,
+                },
+            );
+        } else {
+            create_child_session_mirror(
+                clock, redactor, config, run_state, agent_id, profile, None,
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+fn write_child_session_metadata<C>(
+    clock: &C,
+    config: &CoordinatorConfig,
+    run_state: &RunState,
+    child_session_id: &str,
+    child_run_dir: &Path,
+    title: &str,
+    profile: &str,
+) -> Result<(), CoordinatorError>
+where
+    C: Clock + ?Sized,
+{
+    let created_at = if config.deterministic_store {
+        None
+    } else {
+        clock.system_time_rfc3339()
+    };
+    let metadata = json!({
+        "run_id": child_session_id,
+        "run_name": title,
+        "workspace_root": run_state.info.workspace_root.display().to_string(),
+        "created_at": created_at,
+        "config_digest": config.config_digest.clone(),
+        "harness_version": config.harness_version.clone(),
+        "recorded_runtime_context": null,
+        "harness_lineage": {
+            "relationship": "task_child_session",
+            "parent_run_id": run_state.info.run_id.clone(),
+            "parent_session_id": run_state.info.run_id.clone(),
+            "child_session_id": child_session_id,
+            "profile": profile,
+        }
+    });
+    let meta_path = child_run_dir.join(META_FILE_NAME);
+    let body = serde_json::to_string_pretty(&metadata)?;
+    fs::write(&meta_path, body).map_err(|source| CoordinatorError::WriteRunMetadata {
+        path: meta_path.display().to_string(),
+        source,
+    })
+}
+
+struct ChildPayloadAppender<'a, C, R>
+where
+    C: Clock + ?Sized,
+    R: Redactor + ?Sized,
+{
+    clock: &'a C,
+    redactor: &'a R,
+    event_store: &'a JsonlFileEventStore,
+    child_run_id: &'a str,
+}
+
+impl<C, R> ChildPayloadAppender<'_, C, R>
+where
+    C: Clock + ?Sized,
+    R: Redactor + ?Sized,
+{
+    fn append(
+        &self,
+        actor: EventActor,
+        stream_key: Option<String>,
+        correlation_id: Option<String>,
+        payload: EventV1,
+    ) -> Result<EventEnvelopeV1, CoordinatorError> {
+        let builder = EventBuilder::new(self.clock, self.redactor, self.child_run_id.to_string());
+        let mut context = EventContext::new(self.event_store.next_seq()?, actor);
+        context.stream_key = stream_key;
+        context.correlation_id = correlation_id;
+        let envelope = builder.build(context, payload)?;
+        Ok(self
+            .event_store
+            .append(EventEnvelopeWithoutSeqV1::from(envelope))?)
+    }
+}
+
+fn mirror_event_to_child_session(
+    run_state: &mut RunState,
+    event: &EventEnvelopeV1,
+) -> Result<(), CoordinatorError> {
+    let Some(child_session_id) = child_session_id_for_event(run_state, event) else {
+        return Ok(());
+    };
+    let Some(mirror) = run_state.child_session_mirrors.get(&child_session_id) else {
+        return Ok(());
+    };
+
+    let mut child_event = event.clone();
+    child_event.run_id = child_session_id.clone();
+    child_event.seq = mirror.event_store.next_seq()?;
+    child_event.event_id = format!("evt_{child_session_id}_mirror_{:012}", event.seq);
+    if child_event.stream_key.as_deref() == Some(format!("run:{}", run_state.info.run_id).as_str())
+    {
+        child_event.stream_key = Some(format!("run:{child_session_id}"));
+    }
+
+    mirror
+        .event_store
+        .append(EventEnvelopeWithoutSeqV1::from(child_event))?;
+    Ok(())
+}
+
+fn child_session_id_for_event(run_state: &RunState, event: &EventEnvelopeV1) -> Option<String> {
+    if matches!(
+        event.payload,
+        EventV1::RunStarted(_) | EventV1::RunFinished(_)
+    ) {
+        return None;
+    }
+
+    if let Some(agent_id) = event.actor.agent_id.as_deref() {
+        if run_state.child_session_mirrors.contains_key(agent_id) {
+            return Some(agent_id.to_string());
+        }
+    }
+
+    if let Some(request_id) = event.correlation_id.as_deref() {
+        if let Some(child_session_id) = run_state.child_request_session_by_id.get(request_id) {
+            return Some(child_session_id.clone());
+        }
+    }
+
+    match &event.payload {
+        EventV1::ProviderRequestStarted(payload) => run_state
+            .child_request_session_by_id
+            .get(&payload.request_id)
+            .cloned(),
+        EventV1::ProviderStreamDelta(payload) => run_state
+            .child_request_session_by_id
+            .get(&payload.request_id)
+            .cloned(),
+        EventV1::ProviderReasoningDelta(payload) => run_state
+            .child_request_session_by_id
+            .get(&payload.request_id)
+            .cloned(),
+        EventV1::ProviderRequestFinished(payload) => run_state
+            .child_request_session_by_id
+            .get(&payload.request_id)
+            .cloned(),
+        EventV1::AssistantMessageFinished(payload) => run_state
+            .child_request_session_by_id
+            .get(&payload.request_id)
+            .cloned(),
+        _ => None,
+    }
+}
+
+fn finish_child_session_mirrors<C, R>(
+    clock: &C,
+    redactor: &R,
+    run_state: &RunState,
+    summary: &str,
+) -> Result<(), CoordinatorError>
+where
+    C: Clock + ?Sized,
+    R: Redactor + ?Sized,
+{
+    for (child_session_id, mirror) in &run_state.child_session_mirrors {
+        if !mirror.append_parent_finish {
+            continue;
+        }
+        let child_appender = ChildPayloadAppender {
+            clock,
+            redactor,
+            event_store: mirror.event_store.as_ref(),
+            child_run_id: child_session_id,
+        };
+        child_appender.append(
+            system_actor(),
+            Some(format!("run:{child_session_id}")),
+            None,
+            EventV1::RunFinished(RunFinishedEvent {
+                summary: format!("parent session finished: {summary}"),
+            }),
+        )?;
+    }
+
+    Ok(())
+}
+
 fn write_run_metadata(
     run_state: &RunState,
     config: &CoordinatorConfig,
@@ -7293,6 +7876,7 @@ fn write_run_metadata(
         config_digest: config.config_digest.clone(),
         harness_version: config.harness_version.clone(),
         recorded_runtime_context: run_state.recorded_runtime_context.clone(),
+        mode_source: config.session_mode_source,
     };
 
     let meta_path = run_state.info.run_dir.join(META_FILE_NAME);
@@ -10418,7 +11002,7 @@ fn tool_task_lineage_metadata(
         parent_tool_call_id: Some(task.tool_call_id.clone()),
         parent_task_id: None,
         parent_request_id: task.request_correlation_id.clone(),
-        parent_session_id: task.owner_actor.agent_id.clone(),
+        parent_session_id: extract_lineage_value(output_json, &["parent_session_id"]),
         child_session_id: extract_lineage_value(
             output_json,
             &["child_session_id", "session_id", "task_id"],
@@ -11421,6 +12005,7 @@ fn append_built_event(
     }
 
     run_state.next_event_seq += 1;
+    mirror_event_to_child_session(run_state, &appended)?;
     Ok(appended)
 }
 

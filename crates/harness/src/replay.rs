@@ -192,6 +192,7 @@ pub fn inspect_session_catalog(session_dir: &Path) -> Result<Vec<SessionInspecti
         .filter_map(|entry| entry.ok().map(|item| item.path()))
         .filter(|path| path.is_dir() && path.join(EVENTS_FILE_NAME).exists())
         .map(|run_dir| inspect_single_session(&run_dir))
+        .map(normalize_lineage_entry)
         .collect::<Vec<_>>();
 
     SessionInspectionEntry::sort_by_updated_desc(&mut entries);
