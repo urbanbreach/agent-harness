@@ -3,6 +3,8 @@ use std::cell::RefCell;
 #[cfg(not(test))]
 use std::sync::Mutex;
 #[cfg(not(test))]
+use std::sync::MutexGuard;
+#[cfg(not(test))]
 use std::sync::OnceLock;
 
 use super::LaunchMetadata;
@@ -38,6 +40,13 @@ struct PendingLiveState;
 
 impl PendingLiveState {
     #[cfg(not(test))]
+    fn lock<T>(mutex: &'static Mutex<T>, label: &str) -> MutexGuard<'static, T> {
+        mutex
+            .lock()
+            .unwrap_or_else(|_| panic!("pending live {label} lock poisoned"))
+    }
+
+    #[cfg(not(test))]
     fn launch_metadata() -> &'static Mutex<Option<LaunchMetadata>> {
         PENDING_LIVE_LAUNCH_METADATA.get_or_init(|| Mutex::new(None))
     }
@@ -67,9 +76,7 @@ impl PendingLiveState {
 
         #[cfg(not(test))]
         {
-            *Self::launch_metadata()
-                .lock()
-                .expect("pending live launch metadata lock poisoned") = Some(metadata);
+            *Self::lock(Self::launch_metadata(), "launch metadata") = Some(metadata);
         }
     }
 
@@ -81,10 +88,7 @@ impl PendingLiveState {
 
         #[cfg(not(test))]
         {
-            Self::launch_metadata()
-                .lock()
-                .expect("pending live launch metadata lock poisoned")
-                .take()
+            Self::lock(Self::launch_metadata(), "launch metadata").take()
         }
     }
 
@@ -101,12 +105,8 @@ impl PendingLiveState {
 
         #[cfg(not(test))]
         {
-            *Self::prompt_draft()
-                .lock()
-                .expect("pending live prompt draft lock poisoned") = prompt;
-            *Self::prompt_auto_submit()
-                .lock()
-                .expect("pending live prompt auto-submit lock poisoned") = auto_submit;
+            *Self::lock(Self::prompt_draft(), "prompt draft") = prompt;
+            *Self::lock(Self::prompt_auto_submit(), "prompt auto-submit") = auto_submit;
         }
     }
 
@@ -114,20 +114,16 @@ impl PendingLiveState {
         #[cfg(test)]
         let draft = PENDING_LIVE_PROMPT_DRAFT.with(|pending| pending.borrow_mut().take());
         #[cfg(not(test))]
-        let draft = Self::prompt_draft()
-            .lock()
-            .expect("pending live prompt draft lock poisoned")
-            .take();
+        let draft = Self::lock(Self::prompt_draft(), "prompt draft").take();
 
         #[cfg(test)]
         let auto_submit = PENDING_LIVE_PROMPT_AUTO_SUBMIT
             .with(|pending| std::mem::take(&mut *pending.borrow_mut()));
         #[cfg(not(test))]
-        let auto_submit = std::mem::take(
-            &mut *Self::prompt_auto_submit()
-                .lock()
-                .expect("pending live prompt auto-submit lock poisoned"),
-        );
+        let auto_submit = std::mem::take(&mut *Self::lock(
+            Self::prompt_auto_submit(),
+            "prompt auto-submit",
+        ));
 
         if let Some(text) = draft {
             return Some(PendingLivePrompt { text, auto_submit });
@@ -135,9 +131,7 @@ impl PendingLiveState {
 
         #[cfg(not(test))]
         {
-            let mut env_consumed = Self::prompt_env_consumed()
-                .lock()
-                .expect("pending live prompt env-consumed lock poisoned");
+            let mut env_consumed = Self::lock(Self::prompt_env_consumed(), "prompt env-consumed");
             if *env_consumed {
                 return None;
             }
