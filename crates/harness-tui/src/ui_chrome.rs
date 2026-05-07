@@ -168,6 +168,10 @@ pub(super) fn render_footer(
         return;
     }
     if app.replay_mode && app.review_surface().is_none() {
+        if let Some(info) = app.current_subagent_session_info() {
+            render_subagent_footer(frame, app, area, text_area, theme, &info);
+            return;
+        }
         frame.render_widget(
             Block::default().style(Style::default().bg(theme.surface.shell)),
             area,
@@ -256,6 +260,90 @@ fn render_live_footer_row(
     }
 }
 
+fn render_subagent_footer(
+    frame: &mut Frame,
+    app: &AppState,
+    area: Rect,
+    text_area: Rect,
+    theme: &Theme,
+    info: &crate::app::SubagentSessionInfo,
+) {
+    let surface = theme.surface.panel;
+    let style = Style::default().bg(surface);
+    frame.render_widget(Block::default().style(style), area);
+    if area.width > 0 && area.height > 0 {
+        let rail_style = Style::default().fg(theme.border.subtle).bg(surface);
+        frame.buffer_mut()[(area.x, area.y)]
+            .set_symbol("┃")
+            .set_style(rail_style);
+    }
+
+    let parent_key = app.keymap.get_binding_str(Action::SessionParent);
+    let previous_key = app.keymap.get_binding_str(Action::SessionChildCycleReverse);
+    let next_key = app.keymap.get_binding_str(Action::SessionChildCycle);
+    let nav_text = format!("Parent {parent_key}  Prev {previous_key}  Next {next_key}");
+    let nav_width = nav_text.chars().count().min(usize::from(text_area.width));
+    let columns = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(u16::try_from(nav_width).unwrap_or(u16::MAX)),
+        ])
+        .split(text_area);
+
+    let mut left_spans = vec![Span::styled(
+        info.label.clone(),
+        Style::default()
+            .fg(theme.text.primary)
+            .bg(surface)
+            .add_modifier(Modifier::BOLD),
+    )];
+    if info.total > 0 {
+        left_spans.push(Span::styled(
+            format!(" ({} of {})", info.index, info.total),
+            muted_meta_style(theme).bg(surface),
+        ));
+    }
+    if let Some(usage) = info.usage.as_deref() {
+        left_spans.push(Span::styled("  ", Style::default().bg(surface)));
+        left_spans.push(Span::styled(
+            usage.to_string(),
+            muted_meta_style(theme).bg(surface),
+        ));
+    }
+
+    if columns[0].width > 0 {
+        frame.render_widget(
+            Paragraph::new(Line::from(left_spans)).style(style),
+            columns[0],
+        );
+    }
+    if columns[1].width > 0 {
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(
+                    "Parent ",
+                    Style::default().fg(theme.text.primary).bg(surface),
+                ),
+                Span::styled(parent_key, muted_meta_style(theme).bg(surface)),
+                Span::styled(
+                    "  Prev ",
+                    Style::default().fg(theme.text.primary).bg(surface),
+                ),
+                Span::styled(previous_key, muted_meta_style(theme).bg(surface)),
+                Span::styled(
+                    "  Next ",
+                    Style::default().fg(theme.text.primary).bg(surface),
+                ),
+                Span::styled(next_key, muted_meta_style(theme).bg(surface)),
+            ]))
+            .style(style)
+            .alignment(Alignment::Right),
+            columns[1],
+        );
+    }
+}
+
 fn compact_footer_hints(
     hints: &[crate::view_model::FooterHint],
     max_hints: usize,
@@ -329,6 +417,13 @@ fn header_identity_text(app: &AppState, header_mode: SessionHeaderMode) -> Strin
     let run_id = app.run_id().unwrap_or("unknown");
 
     if app.replay_mode {
+        if let Some(info) = app.current_subagent_session_info() {
+            let mut title = format!("{} / {}", info.parent_label, info.title);
+            if title.chars().count() > 0 {
+                title = format!("{} · {title}", info.label);
+            }
+            return title;
+        }
         let replay_identity = format!(
             "Replay · read-only · run {run_id} · {} ev",
             app.events.len()
