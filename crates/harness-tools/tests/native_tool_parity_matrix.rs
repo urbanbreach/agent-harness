@@ -7,6 +7,7 @@ fn coordinator_registry_exposes_single_native_tool_surface() {
 
     for tool_id in [
         "bash",
+        "background_output",
         "batch",
         "lsp.rename",
         "codesearch",

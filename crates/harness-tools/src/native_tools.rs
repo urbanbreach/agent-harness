@@ -3,7 +3,9 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::agent_ops::{select_profile_name, AgentOpsExecutor, AgentSpawnRequest, BatchCall};
+use crate::agent_ops::{
+    select_profile_name, AgentOpsExecutor, AgentSpawnRequest, BackgroundOutputRequest, BatchCall,
+};
 use crate::code_lsp::{code_lsp_parameters_json_schema, parse_code_lsp_request, CodeLspExecutor};
 use crate::control_plane::{
     question_parameters_json_schema, todo_write_parameters_json_schema, ControlPlaneExecutor,
@@ -58,6 +60,9 @@ pub(crate) struct TodoReadTool {
 pub(crate) struct TaskTool {
     executor: Arc<AgentOpsExecutor>,
 }
+pub(crate) struct BackgroundOutputTool {
+    executor: Arc<AgentOpsExecutor>,
+}
 pub(crate) struct BatchTool {
     executor: Arc<AgentOpsExecutor>,
 }
@@ -107,6 +112,12 @@ impl TodoReadTool {
 }
 
 impl TaskTool {
+    pub(crate) fn new(executor: Arc<AgentOpsExecutor>) -> Self {
+        Self { executor }
+    }
+}
+
+impl BackgroundOutputTool {
     pub(crate) fn new(executor: Arc<AgentOpsExecutor>) -> Self {
         Self { executor }
     }
@@ -274,6 +285,25 @@ struct TaskArgs {
     command: Option<String>,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct BackgroundOutputArgs {
+    #[serde(default)]
+    task_id: Option<String>,
+    #[serde(default)]
+    session_id: Option<String>,
+    #[serde(default)]
+    request_id: Option<String>,
+    #[serde(default)]
+    block: bool,
+    #[serde(default = "default_background_output_timeout_ms", alias = "timeout_ms")]
+    timeout: u64,
+}
+
+fn default_background_output_timeout_ms() -> u64 {
+    120_000
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct TaskArgsCompat {
@@ -295,7 +325,7 @@ struct TaskArgsCompat {
     session_id: Option<String>,
     #[serde(default, alias = "background")]
     run_in_background: Option<bool>,
-    #[serde(default)]
+    #[serde(default, alias = "skills")]
     load_skills: Vec<String>,
     #[serde(default)]
     command: Option<String>,
@@ -771,6 +801,18 @@ impl Tool for TaskTool {
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: TaskArgs = serde_json::from_value(args_json)
             .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let category_selector = args
+            .subagent_type
+            .as_deref()
+            .and_then(trimmed_non_empty)
+            .is_none()
+            .then(|| {
+                args.category
+                    .as_deref()
+                    .and_then(trimmed_non_empty)
+                    .map(str::to_string)
+            })
+            .flatten();
         let profile_name =
             select_profile_name(args.category.as_deref(), args.subagent_type.as_deref())?;
         self.executor
@@ -779,12 +821,49 @@ impl Tool for TaskTool {
                 AgentSpawnRequest {
                     description: args.description,
                     profile_name,
+                    category_selector,
                     prompt: args.prompt,
                     task_id: args.task_id,
                     session_id: args.session_id,
                     run_in_background: args.run_in_background.unwrap_or(false),
                     load_skills: args.load_skills,
                     command: args.command,
+                },
+            )
+            .await
+    }
+}
+
+#[async_trait]
+impl Tool for BackgroundOutputTool {
+    fn id(&self) -> &str {
+        "background_output"
+    }
+
+    fn description(&self) -> &str {
+        "Retrieves the current status or terminal result for a child task scheduled with task(run_in_background=true). Prefer request_id from the task result; task_id/session_id resolve to the latest child request for compatibility."
+    }
+
+    fn parameters_json_schema(&self) -> Value {
+        super::json_schema_for::<BackgroundOutputArgs>()
+    }
+
+    fn capability(&self) -> ToolCapability {
+        ToolCapability::SpawnAgent
+    }
+
+    async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
+        let args: BackgroundOutputArgs = serde_json::from_value(args_json)
+            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        self.executor
+            .background_output(
+                &ctx,
+                BackgroundOutputRequest {
+                    task_id: args.task_id,
+                    session_id: args.session_id,
+                    request_id: args.request_id,
+                    block: args.block,
+                    timeout_ms: args.timeout,
                 },
             )
             .await
@@ -1545,6 +1624,19 @@ mod tests {
 
         assert_eq!(args.subagent_type.as_deref(), Some("explorer"));
         assert_eq!(args.run_in_background, Some(true));
+    }
+
+    #[test]
+    fn task_args_accept_skills_alias_for_load_skills() {
+        let args: TaskArgs = serde_json::from_value(json!({
+            "description": "Explore codebase",
+            "prompt": "Find auth flow",
+            "category": "explore",
+            "skills": ["rust-best-practices"]
+        }))
+        .expect("task args should accept skills alias");
+
+        assert_eq!(args.load_skills, vec!["rust-best-practices".to_string()]);
     }
 
     #[test]

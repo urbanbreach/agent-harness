@@ -3,6 +3,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
+use async_trait::async_trait;
 use event_log::{find_finished, read_events, wait_for_request_terminal, wait_for_tool_call_finish};
 use harness_core::agent::AgentProfile;
 use harness_core::clock::RealClock;
@@ -13,6 +14,9 @@ use harness_core::event::{
 };
 use harness_core::perm::PermissionPolicy;
 use harness_core::redact::DefaultRedactor;
+use harness_providers::{
+    CompletionRequest, CompletionUsage, Provider, ProviderEventStream, ProviderStreamEvent,
+};
 use harness_tools::coordinator_registry;
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
@@ -27,6 +31,26 @@ use env_guard::EnvGuard;
 
 fn worker_actor(agent_id: &str) -> EventActor {
     EventActor::new(ActorKind::Worker, Some(agent_id.to_string()))
+}
+
+#[derive(Debug)]
+struct StaticProvider;
+
+#[async_trait]
+impl Provider for StaticProvider {
+    async fn stream_completion(&self, _req: CompletionRequest) -> ProviderEventStream {
+        Box::pin(tokio_stream::iter(vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("static child result".to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 1,
+                    completion_tokens: 1,
+                    total_tokens: 2,
+                },
+            },
+        ]))
+    }
 }
 
 fn worker_profile(toolset: &[&str]) -> AgentProfile {
@@ -46,7 +70,7 @@ fn named_worker_profile(name: &str, toolset: &[&str]) -> AgentProfile {
     AgentProfile {
         name: name.to_string(),
         category: name.to_string(),
-        model_ref: format!("default:{name}"),
+        model_ref: "default:deep".to_string(),
         system_prompt: format!("{name} prompt"),
         max_iters: Some(12),
         temperature: Some(0.0),
@@ -82,11 +106,22 @@ async fn spawn_run(workspace: &Path) -> (CoordinatorHandle, RunInfo, String) {
         PermissionMode::Deny,
         PermissionMode::Allow,
     );
+    config.provider = Arc::new(StaticProvider);
     config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
-    config.agent_profiles = BTreeMap::from([(
-        "deep".to_string(),
-        worker_profile(&["task", "batch", "read", "bash"]),
-    )]);
+    config.agent_profiles = BTreeMap::from([
+        (
+            "deep".to_string(),
+            worker_profile(&["task", "background_output", "batch", "read", "bash"]),
+        ),
+        (
+            "explore".to_string(),
+            named_worker_profile("explore", &["read", "glob", "grep", "list"]),
+        ),
+        (
+            "general".to_string(),
+            named_worker_profile("general", &["read", "bash"]),
+        ),
+    ]);
 
     let handle = spawn_coordinator(
         config,
@@ -179,9 +214,454 @@ async fn native_plan_exit_switches_to_build_agent_after_approval() {
     assert!(events.iter().any(|event| matches!(
         &event.payload,
         EventV1::UserMessageSubmitted(payload)
-            if payload.text.contains("has been approved")
+            if payload.text.contains("Your operational mode has changed from plan to build")
                 && payload.text.contains(".agent-harness/plans/")
     )));
+}
+
+#[tokio::test]
+async fn plan_profile_can_spawn_explore_but_cannot_use_bash() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+    let session_dir = workspace.join("sessions");
+    fs::create_dir_all(&session_dir).expect("session dir");
+
+    let mut config = CoordinatorConfig::new(session_dir);
+    config.permission_policy = PermissionPolicy::new(
+        PermissionMode::Deny,
+        PermissionMode::Deny,
+        PermissionMode::Allow,
+    );
+    config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
+    config.agent_profiles = BTreeMap::from([
+        (
+            "plan".to_string(),
+            named_worker_profile("plan", &["task", "background_output"]),
+        ),
+        (
+            "explore".to_string(),
+            named_worker_profile("explore", &["read", "grep", "glob", "list"]),
+        ),
+        (
+            "general".to_string(),
+            named_worker_profile("general", &["read", "bash"]),
+        ),
+    ]);
+
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(RealClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = handle
+        .start_run("native_plan_task_boundary", &workspace)
+        .await
+        .expect("start run");
+    let plan_agent_id = handle
+        .spawn_agent_idle(EventActor::new(ActorKind::Supervisor, None), "plan", None)
+        .await
+        .expect("spawn plan");
+
+    let denied = handle
+        .request_tool_call(
+            worker_actor(&plan_agent_id),
+            Some("plan".to_string()),
+            "bash",
+            json!({"command": "true", "description": "try bash"}),
+        )
+        .await
+        .expect_err("plan profile must not be able to call bash");
+    assert!(denied
+        .to_string()
+        .contains("tool `bash` is not in worker toolset"));
+
+    let task_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&plan_agent_id),
+            Some("plan".to_string()),
+            "task",
+            json!({
+                "subagent_type": "explore",
+                "description": "Explore child",
+                "prompt": "Inspect the fixture",
+                "run_in_background": true,
+                "load_skills": []
+            }),
+        )
+        .await
+        .expect("plan profile can call task");
+    wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
+
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &task_tool_call_id);
+    assert_eq!(finished.status, ToolCallStatus::Succeeded);
+    let output = finished.output_json.expect("task structured output");
+    assert_eq!(output["profile"], json!("explore"));
+    let child_session_id = output["child_session_id"]
+        .as_str()
+        .expect("child session id");
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::AgentSpawned(payload)
+            if payload.agent_id == child_session_id && payload.profile == "explore"
+    )));
+
+    let denied_general = handle
+        .request_tool_call(
+            worker_actor(&plan_agent_id),
+            Some("plan".to_string()),
+            "task",
+            json!({
+                "subagent_type": "general",
+                "description": "General child",
+                "prompt": "Try write-capable delegation",
+                "run_in_background": true,
+                "load_skills": []
+            }),
+        )
+        .await
+        .expect("plan profile can request task policy denial");
+    wait_for_tool_call_finish(&run.events_path, &denied_general).await;
+
+    let events = read_events(&run.events_path);
+    let denied_finished = find_finished(&events, &denied_general);
+    assert_eq!(denied_finished.status, ToolCallStatus::Failed);
+    assert!(denied_finished
+        .output_summary
+        .as_deref()
+        .unwrap_or_default()
+        .contains("Plan mode may only delegate to the read-only `explore` profile"));
+    assert!(!events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::AgentSpawned(payload) if payload.profile == "general"
+    )));
+}
+
+#[tokio::test]
+async fn task_subagent_type_selects_explore_and_general_profiles() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+
+    let (handle, run, worker_id) = spawn_run(&workspace).await;
+
+    for profile in ["explore", "general"] {
+        let tool_call_id = handle
+            .request_tool_call(
+                worker_actor(&worker_id),
+                Some("deep".to_string()),
+                "task",
+                json!({
+                    "subagent_type": profile,
+                    "description": format!("{profile} child"),
+                    "prompt": "Return a short answer",
+                    "run_in_background": true,
+                    "load_skills": []
+                }),
+            )
+            .await
+            .expect("request task");
+        wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
+
+        let events = read_events(&run.events_path);
+        let finished = find_finished(&events, &tool_call_id);
+        assert_eq!(finished.status, ToolCallStatus::Succeeded);
+        let output = finished.output_json.expect("task structured output");
+        assert_eq!(output["profile"], json!(profile));
+        let child_session_id = output["child_session_id"]
+            .as_str()
+            .expect("child session id");
+        assert!(events.iter().any(|event| matches!(
+            &event.payload,
+            EventV1::AgentSpawned(payload)
+                if payload.agent_id == child_session_id && payload.profile == profile
+        )));
+    }
+}
+
+#[tokio::test]
+async fn task_subagent_type_wins_when_category_hint_is_also_present() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+
+    let (handle, run, worker_id) = spawn_run(&workspace).await;
+
+    let tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "task",
+            json!({
+                "category": "quick",
+                "subagent_type": "general",
+                "description": "Direct subagent with category hint",
+                "prompt": "Return a short answer",
+                "run_in_background": true,
+                "load_skills": []
+            }),
+        )
+        .await
+        .expect("request task");
+    wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
+
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &tool_call_id);
+    assert_eq!(finished.status, ToolCallStatus::Succeeded);
+    let output = finished.output_json.expect("task structured output");
+    assert_eq!(output["profile"], json!("general"));
+    let child_session_id = output["child_session_id"]
+        .as_str()
+        .expect("child session id");
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::AgentSpawned(payload)
+            if payload.agent_id == child_session_id && payload.profile == "general"
+    )));
+}
+
+#[tokio::test]
+async fn task_category_without_matching_profile_falls_back_to_general() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+
+    let (handle, run, worker_id) = spawn_run(&workspace).await;
+
+    let tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "task",
+            json!({
+                "category": "quick",
+                "description": "Category fallback child",
+                "prompt": "Return a short answer",
+                "run_in_background": true,
+                "load_skills": []
+            }),
+        )
+        .await
+        .expect("request task");
+    wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
+
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &tool_call_id);
+    assert_eq!(finished.status, ToolCallStatus::Succeeded);
+    let output = finished.output_json.expect("task structured output");
+    assert_eq!(output["profile"], json!("general"));
+    let child_session_id = output["child_session_id"]
+        .as_str()
+        .expect("child session id");
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::AgentSpawned(payload)
+            if payload.agent_id == child_session_id
+                && payload.profile == "general"
+    )));
+}
+
+#[tokio::test]
+async fn background_output_retrieves_completed_child_result_by_request_id() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+
+    let (handle, run, worker_id) = spawn_run(&workspace).await;
+
+    let task_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "task",
+            json!({
+                "category": "deep",
+                "description": "Background child",
+                "prompt": "Return a concise completed result",
+                "run_in_background": true,
+                "load_skills": []
+            }),
+        )
+        .await
+        .expect("request task");
+    wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
+
+    let task_events = read_events(&run.events_path);
+    let task_finished = find_finished(&task_events, &task_tool_call_id);
+    let task_output = task_finished.output_json.expect("task structured output");
+    let request_id = task_output["child_request_id"]
+        .as_str()
+        .expect("child request id")
+        .to_string();
+    wait_for_request_terminal(&run.events_path, &request_id).await;
+
+    let output_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "background_output",
+            json!({
+                "request_id": request_id,
+                "block": true,
+                "timeout_ms": 1
+            }),
+        )
+        .await
+        .expect("request background output");
+    wait_for_tool_call_finish(&run.events_path, &output_tool_call_id).await;
+
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &output_tool_call_id);
+    assert_eq!(finished.status, ToolCallStatus::Succeeded);
+    let output = finished
+        .output_json
+        .expect("background output structured json");
+    assert_eq!(output["request_id"], json!(request_id));
+    assert_eq!(output["status"], json!("completed"));
+    assert_eq!(output["terminal"], json!(true));
+    assert_eq!(output["timed_out"], json!(false));
+    assert!(output["result_summary"]
+        .as_str()
+        .is_some_and(|value| !value.is_empty()));
+}
+
+#[tokio::test]
+async fn background_output_rejects_sibling_request_ids() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+
+    let (handle, run, worker_id) = spawn_run(&workspace).await;
+    let sibling_worker_id = handle
+        .spawn_agent(EventActor::new(ActorKind::Supervisor, None), "deep", None)
+        .await
+        .expect("spawn sibling worker");
+
+    let task_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "task",
+            json!({
+                "category": "deep",
+                "description": "Private child",
+                "prompt": "Return a concise completed result",
+                "run_in_background": true,
+                "load_skills": []
+            }),
+        )
+        .await
+        .expect("request task");
+    wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
+
+    let task_events = read_events(&run.events_path);
+    let task_finished = find_finished(&task_events, &task_tool_call_id);
+    let task_output = task_finished.output_json.expect("task structured output");
+    let request_id = task_output["child_request_id"]
+        .as_str()
+        .expect("child request id")
+        .to_string();
+
+    let output_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&sibling_worker_id),
+            Some("deep".to_string()),
+            "background_output",
+            json!({
+                "request_id": request_id,
+                "block": false
+            }),
+        )
+        .await
+        .expect("request unauthorized background output");
+    wait_for_tool_call_finish(&run.events_path, &output_tool_call_id).await;
+
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &output_tool_call_id);
+    assert_eq!(finished.status, ToolCallStatus::Failed);
+    assert!(finished
+        .output_summary
+        .as_deref()
+        .is_some_and(|summary| summary.contains("not in the caller's task lineage")));
+}
+
+#[tokio::test]
+async fn background_output_rejects_excessive_block_timeout() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+
+    let (handle, run, worker_id) = spawn_run(&workspace).await;
+
+    let output_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "background_output",
+            json!({
+                "request_id": "req_missing",
+                "block": true,
+                "timeout_ms": 300_001
+            }),
+        )
+        .await
+        .expect("request background output");
+    wait_for_tool_call_finish(&run.events_path, &output_tool_call_id).await;
+
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &output_tool_call_id);
+    assert_eq!(finished.status, ToolCallStatus::Failed);
+    assert!(finished
+        .output_summary
+        .as_deref()
+        .is_some_and(|summary| summary.contains("timeout must be <= 300000 ms")));
+}
+
+#[tokio::test]
+async fn child_agent_toolset_boundary_is_enforced() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+
+    let (handle, run, worker_id) = spawn_run(&workspace).await;
+
+    let task_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "task",
+            json!({
+                "subagent_type": "explore",
+                "description": "Restricted child",
+                "prompt": "Stay read-only",
+                "run_in_background": true,
+                "load_skills": []
+            }),
+        )
+        .await
+        .expect("spawn restricted child");
+
+    wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &task_tool_call_id);
+    let output = finished.output_json.expect("task structured output");
+    let child_session_id = output["child_session_id"]
+        .as_str()
+        .expect("child session id");
+
+    let denied = handle
+        .request_tool_call(
+            worker_actor(child_session_id),
+            Some("explore".to_string()),
+            "bash",
+            json!({"command": "true", "description": "try child shell"}),
+        )
+        .await
+        .expect_err("explore child must not be able to call bash");
+    assert!(denied
+        .to_string()
+        .contains("tool `bash` is not in worker toolset"));
 }
 
 #[tokio::test]
@@ -410,9 +890,14 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
     assert_eq!(native_details[0].get("index"), Some(&json!(0)));
     assert_eq!(native_details[0].get("tool_id"), Some(&json!("read")));
     assert_eq!(
-        native_details[0].pointer("/request/parameters/filePath"),
-        Some(&json!("fixture.txt"))
+        native_details[0].pointer("/request/parameter_keys/0"),
+        Some(&json!("filePath"))
     );
+    assert_eq!(
+        native_details[0].pointer("/request/parameters_redacted"),
+        Some(&json!(true))
+    );
+    assert!(native_details[0].get("parameters").is_none());
     assert_eq!(native_details[0].get("success"), Some(&json!(true)));
 
     assert_eq!(native_details[1].get("index"), Some(&json!(1)));
@@ -616,8 +1101,12 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
     assert_eq!(compat_details[0].get("index"), Some(&json!(0)));
     assert_eq!(compat_details[0].get("tool_id"), Some(&json!("read")));
     assert_eq!(
-        compat_details[0].pointer("/request/parameters/filePath"),
-        Some(&json!("fixture.txt"))
+        compat_details[0].pointer("/request/parameter_keys/0"),
+        Some(&json!("filePath"))
+    );
+    assert_eq!(
+        compat_details[0].pointer("/request/parameters_redacted"),
+        Some(&json!(true))
     );
     assert_eq!(
         compat_details[0].get("canonical_tool_id"),
@@ -729,8 +1218,12 @@ async fn batch_tool_accepts_args_alias_on_real_tool_path() {
         .and_then(Value::as_array)
         .expect("batch details");
     assert_eq!(
-        details[0].pointer("/request/parameters/filePath"),
-        Some(&json!("fixture.txt"))
+        details[0].pointer("/request/parameter_keys/0"),
+        Some(&json!("filePath"))
+    );
+    assert_eq!(
+        details[0].pointer("/request/parameters_redacted"),
+        Some(&json!(true))
     );
     assert!(details[0]
         .get("summary")
@@ -1000,6 +1493,134 @@ async fn task_tool_reenters_existing_child_session_by_task_id() {
 }
 
 #[tokio::test]
+async fn task_tool_rejects_reentry_to_sibling_child_session() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+
+    let (handle, run, worker_id) = spawn_run(&workspace).await;
+    let sibling_parent = handle
+        .spawn_agent_idle(EventActor::new(ActorKind::Supervisor, None), "deep", None)
+        .await
+        .expect("spawn sibling parent");
+    let sibling_child = handle
+        .spawn_agent_idle(
+            EventActor::new(ActorKind::Supervisor, None),
+            "general",
+            Some(sibling_parent),
+        )
+        .await
+        .expect("spawn sibling child");
+
+    let reentry_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "task",
+            json!({
+                "category": "general",
+                "description": "Forbidden sibling reentry",
+                "prompt": "Try to drive another parent's child",
+                "session_id": sibling_child,
+                "run_in_background": true,
+                "load_skills": []
+            }),
+        )
+        .await
+        .expect("request sibling reentry task");
+    wait_for_tool_call_finish(&run.events_path, &reentry_tool_call_id).await;
+
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &reentry_tool_call_id);
+    assert_eq!(finished.status, ToolCallStatus::Failed);
+    assert!(finished
+        .output_summary
+        .as_deref()
+        .expect("failure summary")
+        .contains("is not a direct child of the calling agent"));
+}
+
+#[tokio::test]
+async fn plan_task_reentry_rejects_non_explore_existing_child_profile() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+    let session_dir = workspace.join("sessions");
+    fs::create_dir_all(&session_dir).expect("session dir");
+
+    let mut config = CoordinatorConfig::new(session_dir);
+    config.permission_policy = PermissionPolicy::new(
+        PermissionMode::Deny,
+        PermissionMode::Deny,
+        PermissionMode::Allow,
+    );
+    config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
+    config.agent_profiles = BTreeMap::from([
+        (
+            "plan".to_string(),
+            named_worker_profile("plan", &["task", "background_output"]),
+        ),
+        (
+            "explore".to_string(),
+            named_worker_profile("explore", &["read", "grep", "glob", "list"]),
+        ),
+        (
+            "general".to_string(),
+            named_worker_profile("general", &["read", "bash"]),
+        ),
+    ]);
+
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(RealClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = handle
+        .start_run("native_plan_task_reentry_boundary", &workspace)
+        .await
+        .expect("start run");
+    let plan_agent_id = handle
+        .spawn_agent_idle(EventActor::new(ActorKind::Supervisor, None), "plan", None)
+        .await
+        .expect("spawn plan");
+    let general_child = handle
+        .spawn_agent_idle(
+            EventActor::new(ActorKind::Supervisor, None),
+            "general",
+            Some(plan_agent_id.clone()),
+        )
+        .await
+        .expect("spawn general child");
+
+    let reentry_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&plan_agent_id),
+            Some("plan".to_string()),
+            "task",
+            json!({
+                "category": "explore",
+                "description": "Forbidden profile reentry",
+                "prompt": "Try to drive a write-capable existing child",
+                "session_id": general_child,
+                "run_in_background": true,
+                "load_skills": []
+            }),
+        )
+        .await
+        .expect("request plan reentry task");
+    wait_for_tool_call_finish(&run.events_path, &reentry_tool_call_id).await;
+
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &reentry_tool_call_id);
+    assert_eq!(finished.status, ToolCallStatus::Failed);
+    assert!(finished
+        .output_summary
+        .as_deref()
+        .expect("failure summary")
+        .contains("uses profile `general`, but the request selected `explore`"));
+}
+
+#[tokio::test]
 async fn batch_rejects_more_than_25_calls_preserving_input_order() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let workspace = temp_dir.path().join("workspace");
@@ -1053,9 +1674,14 @@ async fn batch_rejects_more_than_25_calls_preserving_input_order() {
     for (index, detail) in details.iter().enumerate() {
         assert_eq!(detail.get("index"), Some(&json!(index)));
         assert_eq!(
-            detail.pointer("/request/parameters/offset"),
-            Some(&json!(index + 1))
+            detail.pointer("/request/parameter_shape"),
+            Some(&json!("object"))
         );
+        assert_eq!(
+            detail.pointer("/request/parameters_redacted"),
+            Some(&json!(true))
+        );
+        assert!(detail.get("parameters").is_none());
     }
     for detail in &details[..25] {
         assert_eq!(detail.get("success"), Some(&json!(true)));

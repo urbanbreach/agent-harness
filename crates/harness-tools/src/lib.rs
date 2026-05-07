@@ -85,9 +85,9 @@ mod lsp_support;
 
 mod native_tools;
 use native_tools::{
-    blocked_shell_command_message, BashTool, BatchTool, CodeSearchTool, GlobTool, GrepTool,
-    InvalidTool, ListTool, LspTool, QuestionTool, ReadTool, SkillTool, TaskTool, TodoReadTool,
-    TodoWriteTool, WebFetchTool, WebSearchTool,
+    blocked_shell_command_message, BackgroundOutputTool, BashTool, BatchTool, CodeSearchTool,
+    GlobTool, GrepTool, InvalidTool, ListTool, LspTool, QuestionTool, ReadTool, SkillTool,
+    TaskTool, TodoReadTool, TodoWriteTool, WebFetchTool, WebSearchTool,
 };
 
 mod plan;
@@ -144,6 +144,9 @@ pub fn coordinator_registry_with_mcp_and_editing(
     registry.register(Arc::new(GlobTool));
     registry.register(Arc::new(GrepTool));
     registry.register(Arc::new(TaskTool::new(agent_ops_executor.clone())));
+    registry.register(Arc::new(BackgroundOutputTool::new(
+        agent_ops_executor.clone(),
+    )));
     registry.register(Arc::new(PlanExitTool));
     registry.register(Arc::new(HashlineEditTool));
     registry.register(Arc::new(ShellRunTool::new(shell_allowlist.clone())));
@@ -1035,6 +1038,7 @@ mod tests {
 
         for tool_id in [
             "bash",
+            "background_output",
             "batch",
             "codesearch",
             "edit",
