@@ -20,6 +20,8 @@ use crate::{
     LIVE_PROXY_VISION_VERIFIER_PROFILE, LIVE_TOOL_FLOW_RELATIVE_PATH,
 };
 
+const LIVE_PROXY_SYNTHETIC_PROMPT: &str = "You are agent-harness, an interactive CLI tool that helps users with software engineering tasks. Use the available tools to complete and verify the requested live proxy signoff task.";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LivePromptRequest {
     pub(crate) source_config_path: PathBuf,
@@ -1058,9 +1060,17 @@ fn seed_inline_system_prompts(config: &mut Value) -> Result<(), String> {
             continue;
         }
 
+        if matches!(profile_name.as_str(), "build" | "plan") {
+            continue;
+        }
+
         profile.insert(
             "system_prompt".to_string(),
-            Value::String(build_prompt.clone()),
+            Value::String(if build_prompt.is_empty() {
+                LIVE_PROXY_SYNTHETIC_PROMPT.to_string()
+            } else {
+                build_prompt.clone()
+            }),
         );
     }
 

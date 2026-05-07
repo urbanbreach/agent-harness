@@ -1309,15 +1309,11 @@ fn example_config_keeps_minimal_surface_and_live_helper_prepares_runtime_profile
         "the shipped public example should rely on runtime-synthesized build defaults"
     );
 
-    let build_prompt = read_shipped_agent_prompt_asset("build");
-    assert!(build_prompt.contains("Use `read` to view files"));
+    let build_prompt = shipped_agent_prompt_body("build");
     assert!(
-        build_prompt.contains("`edit` for file creation, targeted changes, deletion, and rename")
+        build_prompt.is_empty(),
+        "the shipped build prompt asset should defer to runtime-synthesized dynamic prompts"
     );
-    assert!(!build_prompt.contains("apply_patch"));
-    assert!(!build_prompt.contains("edit.hashline_apply"));
-    assert!(!build_prompt.contains("edit.hashline_scan"));
-    assert!(build_prompt.contains("do the work without asking questions"));
 
     let prepared = prepare_prompt_run_config(
         &config_path,
@@ -1348,24 +1344,23 @@ fn example_config_keeps_minimal_surface_and_live_helper_prepares_runtime_profile
     assert!(live_profile
         .get("system_prompt")
         .and_then(Value::as_str)
-        .is_some_and(|prompt| prompt
-            .contains("`edit` for file creation, targeted changes, deletion, and rename")));
+        .is_some_and(|prompt| prompt.contains("You are agent-harness")));
 
     assert!(
         !prepared_agents.contains_key("plan"),
-        "plan should not be part of the shipped default agent surface"
+        "plan should not be part of the prepared live proxy profile surface"
     );
     assert!(
         !prepared_agents.contains_key("explore"),
-        "explore should not be part of the shipped default agent surface"
+        "explore should not be part of the prepared live proxy profile surface"
     );
     assert!(
         !prepared_agents.contains_key("executor"),
-        "executor should not be part of the shipped default agent surface"
+        "executor should not be part of the prepared live proxy profile surface"
     );
     assert!(
         !prepared_agents.contains_key("tool_audit"),
-        "tool_audit should not be part of the shipped default agent surface"
+        "tool_audit should not be part of the prepared live proxy profile surface"
     );
 
     assert!(
