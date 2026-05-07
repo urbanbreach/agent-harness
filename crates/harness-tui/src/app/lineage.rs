@@ -647,6 +647,7 @@ fn status_label(status: RunStatus) -> &'static str {
 fn event_kind_label(event: &EventV1) -> &'static str {
     match event {
         EventV1::RunStarted(_) => "run_started",
+        EventV1::SessionTitleUpdated(_) => "session_title_updated",
         EventV1::RunFinished(_) => "run_finished",
         EventV1::RunFailed(_) => "run_failed",
         EventV1::AgentSpawned(_) => "agent_spawned",

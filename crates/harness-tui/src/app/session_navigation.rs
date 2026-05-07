@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::fs;
+use std::path::{Component, Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_core::agent::AgentModelRef;
@@ -9,12 +10,13 @@ use harness_core::proj::{
     inspect_resume_plan, load_run_metadata, SessionCatalogEntry, SessionModeSource,
 };
 use harness_core::session_lineage::{latest_clone_stable_prefix, StableSessionPrefix};
+use serde_json::Value;
 
 use super::{
     json_string_field, set_pending_live_launch_metadata, set_pending_live_prompt_draft,
     ActivityEntry, AppState, Focus, PermissionConfirmSelection, PermissionModalSelection,
-    PermissionModalStage, PostRunHandoffAction, ReviewSurface, StartupLauncherAction, Tab,
-    UiIntent, SLASH_COMMANDS,
+    PermissionModalStage, PostRunHandoffAction, ReviewSurface, StartupLauncherAction,
+    SubagentSessionInfo, Tab, ToolCallEntry, UiIntent, SLASH_COMMANDS,
 };
 use crate::keybindings::Action;
 use crate::text::{has_trimmed_content, non_empty_trimmed};
@@ -53,6 +55,7 @@ pub(super) struct SessionNavigationSnapshot {
     pub(super) events: Vec<EventEnvelopeV1>,
     pub(super) launch_metadata: LaunchMetadata,
     pub(super) child_session_ids: Vec<String>,
+    pub(super) replay_mode: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -237,6 +240,17 @@ fn session_history_filter_matches(entry: &SessionHistoryEntry, input: &str) -> b
     ];
 
     candidates.iter().any(|candidate| candidate.contains(input))
+}
+
+fn harness_lineage_parent_run_id(run_dir: &Path) -> Option<String> {
+    let body = fs::read_to_string(run_dir.join("meta.json")).ok()?;
+    let metadata: Value = serde_json::from_str(&body).ok()?;
+    metadata
+        .get("harness_lineage")
+        .and_then(|lineage| lineage.get("parent_run_id"))
+        .and_then(Value::as_str)
+        .and_then(non_empty_trimmed)
+        .map(str::to_string)
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -1992,25 +2006,95 @@ impl AppState {
             .and_then(non_empty_trimmed)
     }
 
+    pub(crate) fn current_subagent_session_info(&self) -> Option<SubagentSessionInfo> {
+        let current_session_id = self.current_session_id()?;
+        let parent_snapshot = self.session_navigation_stack.last();
+        let parent_session_id = parent_snapshot
+            .and_then(|snapshot| session_id_from_path(&snapshot.session_path))
+            .or_else(|| self.current_parent_session_id());
+
+        parent_session_id.as_ref()?;
+
+        let sibling_ids = parent_snapshot
+            .map(|snapshot| snapshot.child_session_ids.clone())
+            .or_else(|| {
+                parent_session_id
+                    .as_deref()
+                    .and_then(|session_id| self.session_path_for_id(session_id))
+                    .and_then(|path| {
+                        session_navigation_snapshot_from_path(&path, &self.launch_metadata).ok()
+                    })
+                    .map(|snapshot| snapshot.child_session_ids)
+            })
+            .unwrap_or_default();
+        let total = sibling_ids.len().max(1);
+        let index = sibling_ids
+            .iter()
+            .position(|session_id| session_id == current_session_id)
+            .map(|idx| idx + 1)
+            .unwrap_or(1);
+
+        let task = parent_snapshot
+            .and_then(|snapshot| child_task_info_from_events(&snapshot.events, current_session_id))
+            .or_else(|| {
+                parent_session_id
+                    .as_deref()
+                    .and_then(|session_id| self.session_path_for_id(session_id))
+                    .and_then(|path| {
+                        session_navigation_snapshot_from_path(&path, &self.launch_metadata).ok()
+                    })
+                    .and_then(|snapshot| {
+                        child_task_info_from_events(&snapshot.events, current_session_id)
+                    })
+            });
+        let child_agent = child_agent_info_from_events(&self.events, current_session_id);
+        let label = task
+            .as_ref()
+            .and_then(|task| task.label.as_deref())
+            .or_else(|| {
+                child_agent
+                    .as_ref()
+                    .and_then(|agent| agent.label.as_deref())
+            })
+            .map(humanize_profile_label)
+            .unwrap_or_else(|| "Subagent".to_string());
+        let title = task
+            .as_ref()
+            .and_then(|task| task.description.clone())
+            .or_else(|| {
+                child_agent
+                    .as_ref()
+                    .and_then(|agent| agent.description.clone())
+            })
+            .filter(|description| has_trimmed_content(description))
+            .unwrap_or_else(|| current_session_id.to_string());
+        let parent_label = parent_session_id
+            .as_deref()
+            .map(str::to_string)
+            .unwrap_or_else(|| "Parent".to_string());
+
+        Some(SubagentSessionInfo {
+            label,
+            title,
+            parent_label,
+            index,
+            total,
+            usage: subagent_usage_label(self),
+        })
+    }
+
     pub(super) fn child_session_ids(&self) -> Vec<String> {
         let mut child_session_ids = BTreeSet::new();
+        let delegated_child_request_ids = self.delegated_child_request_ids();
 
         for activity in &self.activities {
+            if delegated_child_request_ids.contains(activity.request_id.as_str()) {
+                continue;
+            }
             for tool_call in &activity.tool_calls {
-                let child_session_id = tool_call
-                    .lineage
-                    .as_ref()
-                    .and_then(|lineage| lineage.child_session_id.as_deref())
-                    .and_then(non_empty_trimmed)
-                    .map(str::to_string)
-                    .or_else(|| {
-                        json_string_field(
-                            tool_call.output_json.as_ref(),
-                            &["child_session_id", "session_id"],
-                        )
-                    });
-
-                if let Some(child_session_id) = child_session_id {
+                if let Some(child_session_id) =
+                    Self::task_tool_child_session_id_from_entry(tool_call)
+                {
                     child_session_ids.insert(child_session_id);
                 }
             }
@@ -2019,8 +2103,62 @@ impl AppState {
         child_session_ids.into_iter().collect()
     }
 
+    fn delegated_child_request_ids(&self) -> BTreeSet<String> {
+        self.activities
+            .iter()
+            .flat_map(|activity| activity.tool_calls.iter())
+            .filter_map(Self::task_tool_child_request_id)
+            .collect()
+    }
+
+    fn task_tool_child_request_id(tool_call: &ToolCallEntry) -> Option<String> {
+        if !Self::tool_call_is_task_spawn(tool_call) {
+            return None;
+        }
+
+        tool_call
+            .lineage
+            .as_ref()
+            .and_then(|lineage| lineage.child_request_id.as_deref())
+            .and_then(non_empty_trimmed)
+            .map(str::to_string)
+            .or_else(|| {
+                json_string_field(
+                    tool_call.output_json.as_ref(),
+                    &["child_request_id", "request_id"],
+                )
+            })
+    }
+
+    fn task_tool_child_session_id_from_entry(tool_call: &ToolCallEntry) -> Option<String> {
+        if !Self::tool_call_is_task_spawn(tool_call) {
+            return None;
+        }
+
+        tool_call
+            .lineage
+            .as_ref()
+            .and_then(|lineage| lineage.child_session_id.as_deref())
+            .and_then(non_empty_trimmed)
+            .map(str::to_string)
+            .or_else(|| {
+                json_string_field(
+                    tool_call.output_json.as_ref(),
+                    &["child_session_id", "session_id"],
+                )
+            })
+    }
+
+    fn tool_call_is_task_spawn(tool_call: &ToolCallEntry) -> bool {
+        matches!(tool_call.effective_tool_id(), "agent.spawn" | "task")
+            || matches!(tool_call.tool_id.as_str(), "agent.spawn" | "task")
+    }
+
     pub(super) fn current_parent_session_id(&self) -> Option<String> {
-        first_lineage_parent_session_id(&self.events).map(str::to_string)
+        self.session_path
+            .as_deref()
+            .and_then(harness_lineage_parent_run_id)
+            .or_else(|| first_lineage_parent_session_id(&self.events).map(str::to_string))
     }
 
     fn build_launch_metadata_for_option(&self, selected_model: &ModelOption) -> LaunchMetadata {
@@ -2129,11 +2267,12 @@ impl AppState {
             events: self.events.clone(),
             launch_metadata: self.launch_metadata.clone(),
             child_session_ids: self.child_session_ids(),
+            replay_mode: self.replay_mode,
         })
     }
 
     fn restore_session_snapshot(&mut self, snapshot: SessionNavigationSnapshot) {
-        self.replay_mode = true;
+        self.replay_mode = snapshot.replay_mode;
         self.session_path = Some(snapshot.session_path);
         self.replace_events(snapshot.events);
         self.set_launch_metadata(snapshot.launch_metadata);
@@ -2144,10 +2283,7 @@ impl AppState {
     }
 
     fn session_path_for_id(&self, session_id: &str) -> Option<PathBuf> {
-        let session_id = session_id.trim();
-        if session_id.is_empty() {
-            return None;
-        }
+        let session_id = safe_session_id_path_component(session_id)?;
 
         self.session_path
             .as_deref()
@@ -2179,6 +2315,11 @@ impl AppState {
             return;
         };
 
+        if !session_path.is_dir() {
+            self.open_inline_child_session(session_id, session_path, push_current);
+            return;
+        }
+
         let snapshot =
             match session_navigation_snapshot_from_path(&session_path, &self.launch_metadata) {
                 Ok(snapshot) => snapshot,
@@ -2204,6 +2345,98 @@ impl AppState {
         self.restore_session_snapshot(snapshot);
     }
 
+    fn open_inline_child_session(
+        &mut self,
+        session_id: String,
+        session_path: PathBuf,
+        push_current: bool,
+    ) {
+        let Some(snapshot) = self.inline_child_session_snapshot(&session_id, session_path) else {
+            self.set_status_banner(Some(format!("subagent session unavailable: {session_id}")));
+            return;
+        };
+
+        if push_current {
+            if let Some(current_snapshot) = self.current_session_snapshot() {
+                self.session_navigation_stack.push(current_snapshot);
+            }
+        }
+
+        self.restore_session_snapshot(snapshot);
+    }
+
+    fn inline_child_session_snapshot(
+        &self,
+        session_id: &str,
+        session_path: PathBuf,
+    ) -> Option<SessionNavigationSnapshot> {
+        let session_id = session_id.trim();
+        if session_id.is_empty() {
+            return None;
+        }
+
+        let child_request_ids = self
+            .activities
+            .iter()
+            .flat_map(|activity| activity.tool_calls.iter())
+            .filter_map(|tool_call| {
+                let child_session = tool_call
+                    .lineage
+                    .as_ref()
+                    .and_then(|lineage| lineage.child_session_id.as_deref())
+                    .and_then(non_empty_trimmed)
+                    .map(str::to_string)
+                    .or_else(|| {
+                        json_string_field(
+                            tool_call.output_json.as_ref(),
+                            &["child_session_id", "session_id", "task_id"],
+                        )
+                    })?;
+                (child_session == session_id).then(|| {
+                    tool_call
+                        .lineage
+                        .as_ref()
+                        .and_then(|lineage| lineage.child_request_id.as_deref())
+                        .and_then(non_empty_trimmed)
+                        .map(str::to_string)
+                        .or_else(|| {
+                            json_string_field(
+                                tool_call.output_json.as_ref(),
+                                &["child_request_id", "request_id"],
+                            )
+                        })
+                })
+            })
+            .flatten()
+            .collect::<BTreeSet<_>>();
+
+        let events = self
+            .events
+            .iter()
+            .filter(|event| {
+                matches!(&event.payload, EventV1::RunStarted(_))
+                    || event.actor.agent_id.as_deref() == Some(session_id)
+                    || event
+                        .correlation_id
+                        .as_deref()
+                        .is_some_and(|request_id| child_request_ids.contains(request_id))
+                    || matches!(
+                        &event.payload,
+                        EventV1::AgentSpawned(payload) if payload.agent_id == session_id
+                    )
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+
+        (!events.is_empty()).then(|| SessionNavigationSnapshot {
+            session_path,
+            events,
+            launch_metadata: self.launch_metadata.clone(),
+            child_session_ids: Vec::new(),
+            replay_mode: true,
+        })
+    }
+
     fn sibling_child_session_target(&self, reverse: bool) -> Option<String> {
         let current_session_id = self.current_session_id()?;
         let siblings = if let Some(parent_snapshot) = self.session_navigation_stack.last() {
@@ -2224,13 +2457,21 @@ impl AppState {
             return;
         };
 
+        self.navigate_to_child_session_id(session_id);
+    }
+
+    pub(super) fn navigate_to_child_session_id(&mut self, session_id: String) {
         if self.replay_mode {
             self.open_replay_session(session_id, true);
             return;
         }
 
         if let Some(session_path) = self.session_path_for_id(&session_id) {
-            self.live_switch_to_session(session_id, session_path);
+            if session_path.is_dir() {
+                self.live_switch_to_session(session_id, session_path);
+            } else {
+                self.open_inline_child_session(session_id, session_path, true);
+            }
         }
     }
 
@@ -2256,21 +2497,27 @@ impl AppState {
         }
 
         if let Some(session_path) = self.session_path_for_id(&target_session_id) {
-            self.live_switch_to_session(target_session_id, session_path);
+            if session_path.is_dir() {
+                self.live_switch_to_session(target_session_id, session_path);
+            } else {
+                self.open_inline_child_session(target_session_id, session_path, true);
+            }
         }
     }
 
     pub(super) fn navigate_to_parent_session(&mut self) {
-        let Some(parent_session_id) = self.current_parent_session_id() else {
-            return;
-        };
-
         if self.replay_mode {
             if let Some(parent_snapshot) = self.session_navigation_stack.pop() {
                 self.restore_session_snapshot(parent_snapshot);
                 return;
             }
+        }
 
+        let Some(parent_session_id) = self.current_parent_session_id() else {
+            return;
+        };
+
+        if self.replay_mode {
             let Some(parent_session_path) = self.session_path_for_id(&parent_session_id) else {
                 self.set_status_banner(Some(
                     "session navigation unavailable: missing parent session path".to_string(),
@@ -2854,6 +3101,117 @@ fn slash_subsequence_score(haystack: &str, needle: &str) -> Option<usize> {
     Some(total_gap)
 }
 
+#[derive(Debug, Clone)]
+struct ChildTaskInfo {
+    label: Option<String>,
+    description: Option<String>,
+}
+
+fn session_id_from_path(path: &Path) -> Option<String> {
+    path.file_name()
+        .and_then(|value| value.to_str())
+        .and_then(non_empty_trimmed)
+        .map(str::to_string)
+}
+
+fn safe_session_id_path_component(session_id: &str) -> Option<&str> {
+    let session_id = session_id.trim();
+    if session_id.is_empty()
+        || session_id.contains(['/', '\\'])
+        || session_id.chars().any(char::is_control)
+    {
+        return None;
+    }
+
+    let mut components = Path::new(session_id).components();
+    match (components.next(), components.next()) {
+        (Some(Component::Normal(component)), None) if component.to_str() == Some(session_id) => {
+            Some(session_id)
+        }
+        _ => None,
+    }
+}
+
+fn child_task_info_from_events(
+    events: &[EventEnvelopeV1],
+    current_session_id: &str,
+) -> Option<ChildTaskInfo> {
+    events.iter().rev().find_map(|event| {
+        let EventV1::ToolCallRequested(tool_call) = &event.payload else {
+            return None;
+        };
+        let lineage_session = tool_call
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.lineage.as_ref())
+            .and_then(|lineage| lineage.child_session_id.as_deref())
+            .and_then(non_empty_trimmed);
+        let args = serde_json::from_str::<Value>(&tool_call.args_summary).ok();
+        let output_session = args.as_ref().and_then(|value| {
+            json_string_field(Some(value), &["child_session_id", "session_id", "task_id"])
+        });
+        if lineage_session != Some(current_session_id)
+            && output_session.as_deref() != Some(current_session_id)
+        {
+            return None;
+        }
+
+        Some(ChildTaskInfo {
+            label: args.as_ref().and_then(|value| {
+                json_string_field(Some(value), &["subagent_type", "profile", "profile_name"])
+            }),
+            description: args
+                .as_ref()
+                .and_then(|value| json_string_field(Some(value), &["description", "task"])),
+        })
+    })
+}
+
+fn child_agent_info_from_events(
+    events: &[EventEnvelopeV1],
+    current_session_id: &str,
+) -> Option<ChildTaskInfo> {
+    events.iter().find_map(|event| {
+        let EventV1::AgentSpawned(agent) = &event.payload else {
+            return None;
+        };
+        (agent.agent_id == current_session_id).then(|| ChildTaskInfo {
+            label: Some(agent.profile.clone()),
+            description: None,
+        })
+    })
+}
+
+fn subagent_usage_label(app: &AppState) -> Option<String> {
+    let total_tokens = app
+        .activities
+        .iter()
+        .filter_map(|activity| activity.usage)
+        .map(|usage| u64::from(usage.total_tokens))
+        .sum::<u64>();
+    if total_tokens == 0 {
+        return None;
+    }
+    let token_label = compact_usage_count(total_tokens);
+    let percent = app.current_context_window_tokens().and_then(|limit| {
+        (limit > 0).then(|| format!("{}%", (total_tokens * 100 / u64::from(limit)).min(999)))
+    });
+    Some(match percent {
+        Some(percent) => format!("{token_label} ({percent})"),
+        None => token_label,
+    })
+}
+
+fn compact_usage_count(value: u64) -> String {
+    if value >= 1_000_000 {
+        format!("{:.1}M", value as f64 / 1_000_000.0)
+    } else if value >= 1_000 {
+        format!("{:.1}K", value as f64 / 1_000.0)
+    } else {
+        value.to_string()
+    }
+}
+
 fn humanize_profile_label(profile: &str) -> String {
     let words = profile
         .split(['_', '-', ' '])
@@ -3002,5 +3360,201 @@ fn session_navigation_snapshot_from_path(
         events,
         launch_metadata,
         child_session_ids: replay.child_session_ids(),
+        replay_mode: true,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn actor(
+        kind: harness_core::event::ActorKind,
+        agent_id: &str,
+    ) -> harness_core::event::EventActor {
+        harness_core::event::EventActor::new(kind, Some(agent_id.to_string()))
+    }
+
+    fn event(
+        seq: u64,
+        correlation_id: Option<&str>,
+        actor: harness_core::event::EventActor,
+        payload: EventV1,
+    ) -> EventEnvelopeV1 {
+        EventEnvelopeV1 {
+            schema_version: harness_core::event::SCHEMA_VERSION,
+            event_id: format!("evt_subagent_nav_{seq:04}"),
+            seq,
+            run_id: "parent_run".to_string(),
+            mono_ms: seq * 100,
+            ts: Some(format!("2026-03-22T14:36:{seq:02}Z")),
+            actor,
+            correlation_id: correlation_id.map(str::to_string),
+            causation_id: None,
+            stream_key: None,
+            payload,
+        }
+    }
+
+    #[test]
+    fn subagent_session_info_matches_reference_footer_contract() {
+        let mut app = AppState::new_live(None, false, None);
+        app.session_path = Some(PathBuf::from("/tmp/harness-subagent-parent/parent_run"));
+        app.ingest_event(event(
+            1,
+            Some("req_parent"),
+            actor(harness_core::event::ActorKind::User, "interactive-user"),
+            EventV1::UserMessageSubmitted(harness_core::event::UserMessageSubmittedEvent {
+                request_id: "req_parent".to_string(),
+                text: "Audit transcript parity".to_string(),
+            }),
+        ));
+        app.ingest_event(event(
+            2,
+            Some("req_parent"),
+            actor(harness_core::event::ActorKind::Worker, "agent_parent"),
+            EventV1::ProviderRequestStarted(harness_core::event::ProviderRequestStartedEvent {
+                request_id: "req_parent".to_string(),
+                provider_id: "default".to_string(),
+                model_id: "model-1".to_string(),
+                prompt_summary: "Audit transcript parity".to_string(),
+                request_digest: "digest-parent".to_string(),
+                metadata: None,
+            }),
+        ));
+        app.ingest_event(event(
+            3,
+            Some("req_parent"),
+            actor(harness_core::event::ActorKind::System, "coordinator"),
+            EventV1::ToolCallRequested(harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tc_task".to_string(),
+                tool_id: "task".to_string(),
+                args_summary:
+                    r#"{"description":"map chat renderers","subagent_type":"sisyphus-junior"}"#
+                        .to_string(),
+                args_digest: "digest-task-call".to_string(),
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    lineage: Some(harness_core::event::TaskLineageMetadata {
+                        parent_tool_call_id: Some("tc_task".to_string()),
+                        parent_request_id: Some("req_parent".to_string()),
+                        parent_session_id: Some("parent_run".to_string()),
+                        child_session_id: Some("agent_worker".to_string()),
+                        child_request_id: Some("req_child".to_string()),
+                        ..harness_core::event::TaskLineageMetadata::default()
+                    }),
+                    ..harness_core::event::ToolCallMetadata::default()
+                }),
+            }),
+        ));
+        app.ingest_event(event(
+            4,
+            Some("req_child"),
+            actor(harness_core::event::ActorKind::Worker, "agent_worker"),
+            EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
+                agent_id: "agent_worker".to_string(),
+                profile: "sisyphus-junior".to_string(),
+                parent_agent_id: Some("agent_parent".to_string()),
+            }),
+        ));
+        app.ingest_event(event(
+            5,
+            Some("req_child"),
+            actor(harness_core::event::ActorKind::Worker, "agent_worker"),
+            EventV1::ProviderRequestStarted(harness_core::event::ProviderRequestStartedEvent {
+                request_id: "req_child".to_string(),
+                provider_id: "default".to_string(),
+                model_id: "model-1".to_string(),
+                prompt_summary: "map chat renderers".to_string(),
+                request_digest: "digest-child".to_string(),
+                metadata: None,
+            }),
+        ));
+
+        app.navigate_to_child_session_id("agent_worker".to_string());
+
+        let info = app
+            .current_subagent_session_info()
+            .expect("child session should expose subagent footer info");
+        assert_eq!(info.label, "Sisyphus Junior");
+        assert_eq!(info.title, "map chat renderers");
+        assert_eq!(info.parent_label, "parent_run");
+        assert_eq!((info.index, info.total), (1, 1));
+        assert!(
+            app.replay_mode,
+            "inline child sessions should stay read-only"
+        );
+    }
+
+    #[test]
+    fn subagent_session_info_uses_spawned_profile_when_task_args_omit_label() {
+        let mut app = AppState::new_live(None, false, None);
+        app.session_path = Some(PathBuf::from("/tmp/harness-subagent-parent/parent_run"));
+        app.ingest_event(event(
+            1,
+            Some("req_parent"),
+            actor(harness_core::event::ActorKind::System, "coordinator"),
+            EventV1::ToolCallRequested(harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tc_task".to_string(),
+                tool_id: "task".to_string(),
+                args_summary: r#"{"description":"map chat renderers"}"#.to_string(),
+                args_digest: "digest-task-call".to_string(),
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    lineage: Some(harness_core::event::TaskLineageMetadata {
+                        parent_tool_call_id: Some("tc_task".to_string()),
+                        parent_request_id: Some("req_parent".to_string()),
+                        parent_session_id: Some("parent_run".to_string()),
+                        child_session_id: Some("agent_worker".to_string()),
+                        child_request_id: Some("req_child".to_string()),
+                        ..harness_core::event::TaskLineageMetadata::default()
+                    }),
+                    ..harness_core::event::ToolCallMetadata::default()
+                }),
+            }),
+        ));
+        app.ingest_event(event(
+            2,
+            Some("req_child"),
+            actor(harness_core::event::ActorKind::Worker, "agent_worker"),
+            EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
+                agent_id: "agent_worker".to_string(),
+                profile: "sisyphus-junior".to_string(),
+                parent_agent_id: Some("agent_parent".to_string()),
+            }),
+        ));
+
+        app.navigate_to_child_session_id("agent_worker".to_string());
+
+        let info = app
+            .current_subagent_session_info()
+            .expect("child session should merge task description with spawned profile");
+        assert_eq!(info.label, "Sisyphus Junior");
+        assert_eq!(info.title, "map chat renderers");
+    }
+
+    #[test]
+    fn session_path_for_id_rejects_unsafe_event_derived_ids() {
+        let mut app = AppState::new_live(None, false, None);
+        app.session_path = Some(PathBuf::from("/tmp/harness-sessions/parent_run"));
+
+        assert_eq!(
+            app.session_path_for_id("child_run"),
+            Some(PathBuf::from("/tmp/harness-sessions/child_run"))
+        );
+        for unsafe_id in [
+            "",
+            ".",
+            "..",
+            "../secrets",
+            "/tmp/secrets",
+            "child/run",
+            "child\\run",
+            "child\nrun",
+        ] {
+            assert_eq!(
+                app.session_path_for_id(unsafe_id),
+                None,
+                "unsafe session id should be rejected: {unsafe_id:?}"
+            );
+        }
+    }
 }

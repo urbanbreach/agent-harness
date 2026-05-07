@@ -269,6 +269,7 @@ impl SessionProjection {
                 child_request_id: event.correlation_id.clone(),
                 result_summary: None,
                 child_tool_call_count: 0,
+                current_child_tool_title: None,
                 timing_elapsed_ms: None,
                 first_seq: event.seq,
                 last_seq: event.seq,
@@ -297,7 +298,11 @@ impl SessionProjection {
         self.enforce_orchestration_retention();
     }
 
-    fn note_child_task_tool_call(&mut self, event: &EventEnvelopeV1) {
+    fn note_child_task_tool_call(
+        &mut self,
+        event: &EventEnvelopeV1,
+        data: &harness_core::event::ToolCallRequestedEvent,
+    ) {
         let Some(request_id) = event.correlation_id.as_deref() else {
             return;
         };
@@ -305,11 +310,39 @@ impl SessionProjection {
         for row in self.orchestration_tasks.values_mut() {
             if row.effective_child_request_id() == Some(request_id) {
                 row.child_tool_call_count = row.child_tool_call_count.saturating_add(1);
+                row.current_child_tool_title = Self::child_tool_call_title(data);
                 row.last_seq = event.seq;
                 row.last_mono_ms = event.mono_ms;
                 row.last_timestamp = event.ts.clone();
             }
         }
+    }
+
+    fn child_tool_call_title(data: &harness_core::event::ToolCallRequestedEvent) -> Option<String> {
+        let args = serde_json::from_str::<serde_json::Value>(&data.args_summary).ok();
+        let arg = |keys: &[&str]| {
+            keys.iter().find_map(|key| {
+                args.as_ref()
+                    .and_then(|value| value.get(*key))
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(non_empty_preserved_string)
+            })
+        };
+        let title = match data.tool_id.as_str() {
+            "fs.read" | "read" => format!("Read {}", arg(&["filePath", "path"])?),
+            "fs.grep" | "grep" => format!("Grep \"{}\"", arg(&["pattern", "query"])?),
+            "fs.glob" | "glob" => format!("Glob \"{}\"", arg(&["pattern"])?),
+            "fs.ls" | "list" => {
+                format!("List {}", arg(&["path"]).unwrap_or_else(|| ".".to_string()))
+            }
+            "shell.run" | "bash" => {
+                arg(&["description", "command", "cmd"]).map(|value| format!("Shell {value}"))?
+            }
+            "edit.hashline_apply" | "edit" => format!("Edit {}", arg(&["filePath", "path"])?),
+            "fs.write" | "write" => format!("Write {}", arg(&["filePath", "path"])?),
+            other => titlecase_word(other),
+        };
+        Some(title)
     }
 
     fn has_active_turn_task_for_request(&self, request_id: &str) -> bool {
@@ -938,7 +971,7 @@ impl SessionProjection {
                     entry.tool_calls.push(tool_entry);
                     entry.last_seq = event.seq;
                 }
-                self.note_child_task_tool_call(event);
+                self.note_child_task_tool_call(event, data);
             }
             EventV1::ToolCallStarted(data) => {
                 if let Some(tool_entry) = self.find_tool_call_mut(&data.tool_call_id) {
@@ -1115,6 +1148,21 @@ impl SessionProjection {
             self.transcript_trimmed_count += trimmed;
         }
     }
+}
+
+fn titlecase_word(value: &str) -> String {
+    let mut label = String::with_capacity(value.len());
+    let mut previous_was_word = false;
+    for ch in value.chars() {
+        let is_word = ch.is_ascii_alphanumeric() || ch == '_';
+        if is_word && !previous_was_word {
+            label.extend(ch.to_uppercase());
+        } else {
+            label.push(ch);
+        }
+        previous_was_word = is_word;
+    }
+    label
 }
 
 impl AppState {

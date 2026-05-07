@@ -857,6 +857,37 @@ fn child_link_requested(
     )
 }
 
+fn child_task_requested(
+    seq: u64,
+    request_id: &str,
+    tool_call_id: &str,
+    child_session_id: &str,
+    child_request_id: &str,
+) -> EventEnvelopeV1 {
+    envelope(
+        seq,
+        request_id,
+        EventV1::ToolCallRequested(ToolCallRequestedEvent {
+            tool_call_id: tool_call_id.to_string(),
+            tool_id: "task".to_string(),
+            args_summary: r#"{"description":"inspect child","subagent_type":"explore"}"#
+                .to_string(),
+            args_digest: format!("digest-{tool_call_id}"),
+            metadata: Some(ToolCallMetadata {
+                canonical_tool_id: Some("task".to_string()),
+                lineage: Some(TaskLineageMetadata {
+                    parent_tool_call_id: Some(tool_call_id.to_string()),
+                    parent_request_id: Some(request_id.to_string()),
+                    child_session_id: Some(child_session_id.to_string()),
+                    child_request_id: Some(child_request_id.to_string()),
+                    ..TaskLineageMetadata::default()
+                }),
+                ..ToolCallMetadata::default()
+            }),
+        }),
+    )
+}
+
 #[test]
 fn tool_call_entries_prefer_resolved_identity_and_lifecycle_contract() {
     let mut app = AppState::new_live(None, false, None);
@@ -3360,18 +3391,37 @@ fn child_session_navigation_keybinds_follow_default_contract() {
         run_started(1),
         agent_spawned(2, "child_a", "worker-a"),
         provider_started(3, "req_child_a", "mock", "model-child-a"),
-        child_link_requested(4, "req_child_a", "tc_parent_a", None, Some("parent")),
+        child_link_requested(4, "req_child_a", "tc_parent_a", None, Some("child_a")),
     ];
     let child_b_events = vec![
         run_started(1),
         agent_spawned(2, "child_b", "worker-b"),
         provider_started(3, "req_child_b", "mock", "model-child-b"),
-        child_link_requested(4, "req_child_b", "tc_parent_b", None, Some("parent")),
+        child_link_requested(4, "req_child_b", "tc_parent_b", None, Some("child_b")),
     ];
 
     write_events_jsonl(&parent_dir, &parent_events);
     write_events_jsonl(&child_a_dir, &child_a_events);
     write_events_jsonl(&child_b_dir, &child_b_events);
+    for child_dir in [&child_a_dir, &child_b_dir] {
+        fs::write(
+            child_dir.join("meta.json"),
+            serde_json::to_string_pretty(&serde_json::json!({
+                "run_id": child_dir.file_name().and_then(|name| name.to_str()).unwrap(),
+                "run_name": "child",
+                "workspace_root": run_dir.path().display().to_string(),
+                "config_digest": "digest",
+                "harness_version": "test",
+                "harness_lineage": {
+                    "relationship": "task_child_session",
+                    "parent_run_id": "parent",
+                    "parent_session_id": "parent",
+                }
+            }))
+            .expect("serialize child meta"),
+        )
+        .expect("write child meta");
+    }
 
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
@@ -3513,6 +3563,224 @@ fn replay_child_navigation_does_not_emit_live_intents() {
     assert_eq!(app.session_path.as_deref(), Some(parent_dir.as_path()));
     assert_eq!(app.active_profile(), "planner");
     assert!(intents.lock().expect("lock intents").is_empty());
+}
+
+#[test]
+fn task_child_navigation_opens_inline_subagent_view_without_child_run_dir() {
+    let run_dir = tempfile::tempdir().expect("create temp run dir");
+    let parent_dir = run_dir.path().join("parent");
+    fs::create_dir_all(&parent_dir).expect("create parent dir");
+
+    let parent_events = vec![
+        run_started(1),
+        agent_spawned(2, "parent", "planner"),
+        provider_started(3, "req_parent", "mock", "model-parent"),
+        child_task_requested(4, "req_parent", "tc_child", "agent_child", "req_child"),
+        agent_spawned(5, "agent_child", "explore"),
+        envelope(
+            6,
+            "req_child",
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: "req_child".to_string(),
+                text: "Inspect child".to_string(),
+            }),
+        ),
+        provider_started(7, "req_child", "mock", "model-child"),
+        envelope(
+            8,
+            "req_child",
+            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                request_id: "req_child".to_string(),
+                delta: "child subagent transcript is visible only in child view".to_string(),
+            }),
+        ),
+        envelope(
+            9,
+            "req_child",
+            EventV1::ProviderRequestFinished(harness_core::event::ProviderRequestFinishedEvent {
+                request_id: "req_child".to_string(),
+                finish_reason: "done".to_string(),
+                output_digest: Some("digest-child-finished".to_string()),
+                usage: None,
+                metadata: None,
+            }),
+        ),
+        envelope(
+            10,
+            "req_parent",
+            EventV1::ProviderRequestFinished(harness_core::event::ProviderRequestFinishedEvent {
+                request_id: "req_parent".to_string(),
+                finish_reason: "done".to_string(),
+                output_digest: Some("digest-parent-finished".to_string()),
+                usage: None,
+                metadata: None,
+            }),
+        ),
+    ];
+
+    let mut app = AppState::new_replay(parent_dir.clone(), parent_events);
+    app.apply_keybindings(default_navigation_keybindings());
+    assert!(!render_debug(&app, 140, 40)
+        .contains("child subagent transcript is visible only in child view"));
+
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char(']'),
+        KeyModifiers::CONTROL,
+    ));
+
+    assert_eq!(
+        app.session_path.as_deref(),
+        Some(run_dir.path().join("agent_child").as_path())
+    );
+    assert!(app
+        .activities
+        .iter()
+        .any(|activity| activity.request_id == "req_child"));
+    assert!(render_debug(&app, 140, 40)
+        .contains("child subagent transcript is visible only in child view"));
+    assert!(app
+        .session_navigation_stack
+        .last()
+        .is_some_and(|snapshot| snapshot.session_path == parent_dir && snapshot.replay_mode));
+
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('['),
+        KeyModifiers::CONTROL,
+    ));
+
+    assert_eq!(app.session_path.as_deref(), Some(parent_dir.as_path()));
+    assert!(app.replay_mode);
+    assert!(!render_debug(&app, 140, 40)
+        .contains("child subagent transcript is visible only in child view"));
+}
+
+#[test]
+fn parent_child_navigation_ignores_nested_subagents_hidden_from_parent_transcript() {
+    let run_dir = tempfile::tempdir().expect("create temp run dir");
+    let parent_dir = run_dir.path().join("parent");
+    fs::create_dir_all(&parent_dir).expect("create parent dir");
+
+    let parent_events = vec![
+        run_started(1),
+        agent_spawned(2, "parent", "planner"),
+        provider_started(3, "req_parent", "mock", "model-parent"),
+        child_task_requested(4, "req_parent", "tc_child", "z_child", "req_child"),
+        agent_spawned(5, "z_child", "explore"),
+        envelope(
+            6,
+            "req_child",
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: "req_child".to_string(),
+                text: "Inspect child".to_string(),
+            }),
+        ),
+        provider_started(7, "req_child", "mock", "model-child"),
+        child_task_requested(
+            8,
+            "req_child",
+            "tc_grandchild",
+            "a_grandchild",
+            "req_grandchild",
+        ),
+        agent_spawned(9, "a_grandchild", "explore"),
+    ];
+
+    let mut app = AppState::new_replay(parent_dir, parent_events);
+    app.apply_keybindings(default_navigation_keybindings());
+
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char(']'),
+        KeyModifiers::CONTROL,
+    ));
+
+    assert_eq!(
+        app.session_path.as_deref(),
+        Some(run_dir.path().join("z_child").as_path()),
+        "parent ctrl+] should open the direct child, not a nested grandchild"
+    );
+    assert!(app
+        .activities
+        .iter()
+        .any(|activity| activity.request_id == "req_child"));
+    assert!(app
+        .session_navigation_stack
+        .last()
+        .is_some_and(|snapshot| snapshot.child_session_ids == vec!["z_child".to_string()]));
+}
+
+#[test]
+fn live_inline_child_navigation_restores_live_parent_mode() {
+    let run_dir = tempfile::tempdir().expect("create temp run dir");
+    let parent_dir = run_dir.path().join("parent");
+    fs::create_dir_all(&parent_dir).expect("create parent dir");
+
+    let parent_events = vec![
+        run_started(1),
+        agent_spawned(2, "parent", "planner"),
+        provider_started(3, "req_parent", "mock", "model-parent"),
+        child_task_requested(4, "req_parent", "tc_child", "agent_child", "req_child"),
+        agent_spawned(5, "agent_child", "explore"),
+        envelope(
+            6,
+            "req_child",
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: "req_child".to_string(),
+                text: "Inspect child".to_string(),
+            }),
+        ),
+        provider_started(7, "req_child", "mock", "model-child"),
+        envelope(
+            8,
+            "req_child",
+            EventV1::ProviderRequestFinished(harness_core::event::ProviderRequestFinishedEvent {
+                request_id: "req_child".to_string(),
+                finish_reason: "done".to_string(),
+                output_digest: Some("digest-child-finished".to_string()),
+                usage: None,
+                metadata: None,
+            }),
+        ),
+        envelope(
+            9,
+            "req_parent",
+            EventV1::ProviderRequestFinished(harness_core::event::ProviderRequestFinishedEvent {
+                request_id: "req_parent".to_string(),
+                finish_reason: "done".to_string(),
+                output_digest: Some("digest-parent-finished".to_string()),
+                usage: None,
+                metadata: None,
+            }),
+        ),
+    ];
+
+    let mut app = AppState::new_live(Some(parent_dir.clone()), false, None);
+    app.apply_keybindings(default_navigation_keybindings());
+    for event in parent_events {
+        app.ingest_event(event);
+    }
+
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char(']'),
+        KeyModifiers::CONTROL,
+    ));
+
+    assert_eq!(
+        app.session_path.as_deref(),
+        Some(run_dir.path().join("agent_child").as_path())
+    );
+    assert!(app.replay_mode);
+    assert!(app
+        .session_navigation_stack
+        .last()
+        .is_some_and(|snapshot| snapshot.session_path == parent_dir && !snapshot.replay_mode));
+
+    app.handle_key(key(KeyCode::Esc));
+
+    assert_eq!(app.session_path.as_deref(), Some(parent_dir.as_path()));
+    assert!(!app.replay_mode);
+    app.focus = Focus::Prompt;
+    app.handle_key(key(KeyCode::Char('x')));
+    assert_eq!(app.prompt_buffer, "x");
 }
 
 #[test]

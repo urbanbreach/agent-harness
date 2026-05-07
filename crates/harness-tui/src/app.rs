@@ -161,6 +161,16 @@ pub struct TaskLineageEntry {
     pub child_request_id: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SubagentSessionInfo {
+    pub label: String,
+    pub title: String,
+    pub parent_label: String,
+    pub index: usize,
+    pub total: usize,
+    pub usage: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct TranscriptScrollbarDragState {
     track: Rect,
@@ -619,6 +629,7 @@ pub struct OrchestrationTaskRow {
     pub child_request_id: Option<String>,
     pub result_summary: Option<String>,
     pub child_tool_call_count: usize,
+    pub current_child_tool_title: Option<String>,
     pub timing_elapsed_ms: Option<u64>,
     pub first_seq: u64,
     pub last_seq: u64,
@@ -1956,6 +1967,10 @@ impl AppState {
     fn activate_transcript_mouse_target(&mut self, target: TranscriptMouseTarget) {
         match target {
             TranscriptMouseTarget::Tool { tool_call_id } => {
+                if let Some(child_session_id) = self.task_tool_child_session_id(&tool_call_id) {
+                    self.navigate_to_child_session_id(child_session_id);
+                    return;
+                }
                 self.toggle_tool_output(&tool_call_id);
             }
             TranscriptMouseTarget::ToolGroup { tool_call_ids } => {
@@ -1971,6 +1986,26 @@ impl AppState {
                 self.toggle_patch_file_output(&tool_call_id, &file_path);
             }
         }
+    }
+
+    fn task_tool_child_session_id(&self, tool_call_id: &str) -> Option<String> {
+        let tool_call = self.tool_call_entry(tool_call_id)?;
+        if !matches!(tool_call.effective_tool_id(), "agent.spawn" | "task")
+            && !matches!(tool_call.tool_id.as_str(), "agent.spawn" | "task")
+        {
+            return None;
+        }
+
+        json_string_field(
+            tool_call.output_json.as_ref(),
+            &["child_session_id", "session_id", "task_id"],
+        )
+        .or_else(|| {
+            tool_call
+                .lineage
+                .as_ref()
+                .and_then(|lineage| lineage.child_session_id.clone())
+        })
     }
 
     fn selected_activity_expandable_tool_ids(&self) -> Vec<String> {
@@ -2565,6 +2600,13 @@ impl AppState {
 
         if self.active_review_surface.is_some() && key.code == KeyCode::Esc {
             self.close_review_surface();
+            self.maybe_auto_exit();
+            return;
+        }
+
+        if self.replay_mode && key.code == KeyCode::Esc && !self.session_navigation_stack.is_empty()
+        {
+            self.navigate_to_parent_session();
             self.maybe_auto_exit();
             return;
         }
