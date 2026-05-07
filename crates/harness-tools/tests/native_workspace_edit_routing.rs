@@ -5,38 +5,33 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use event_log::{read_events, wait_for_succeeded_tool_call_finish};
+mod common;
+
+use common::{
+    edit_only_permission_policy, read_events, setup_workspace_fixture, supervisor_actor,
+    wait_for_succeeded_tool_call_finish, worker_actor,
+};
 use harness_core::agent::AgentProfile;
 use harness_core::clock::FakeClock;
-use harness_core::config::{McpConfig, PermissionMode, ShellAllowlist};
+use harness_core::config::{McpConfig, ShellAllowlist};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, CoordinatorHandle};
-use harness_core::event::{ActorKind, EventActor, EventV1, ToolCallStatus};
+use harness_core::event::{EventV1, ToolCallStatus};
 use harness_core::perm::PermissionPolicy;
 use harness_core::redact::DefaultRedactor;
 use harness_tools::{coordinator_registry_with_mcp_and_editing, EditingToolSurfaceConfig};
 
-#[allow(dead_code)]
-#[path = "common/event_log.rs"]
-mod event_log;
-
 #[tokio::test]
 async fn native_edit_create_routes_through_hashline_and_emits_edit_events() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
-    let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
+    let workspace = setup_workspace_fixture();
 
     let handle = test_coordinator(
-        temp_dir.path(),
-        PermissionPolicy::new(
-            PermissionMode::Allow,
-            PermissionMode::Deny,
-            PermissionMode::Deny,
-        ),
+        workspace.temp_dir(),
+        edit_only_permission_policy(),
         vec!["edit".to_string()],
     );
 
     let run = handle
-        .start_run("native_edit_create_routes", &workspace)
+        .start_run("native_edit_create_routes", workspace.workspace())
         .await
         .expect("start run");
     let worker_agent_id = handle
@@ -68,7 +63,7 @@ async fn native_edit_create_routes_through_hashline_and_emits_edit_events() {
     handle.stop_run().await.expect("stop run");
 
     assert_eq!(
-        fs::read_to_string(workspace.join("demo.txt")).expect("read updated file"),
+        fs::read_to_string(workspace.workspace().join("demo.txt")).expect("read updated file"),
         "alpha\nBETA\n"
     );
 
@@ -102,25 +97,20 @@ async fn native_edit_create_routes_through_hashline_and_emits_edit_events() {
 #[cfg(unix)]
 #[tokio::test]
 async fn native_edit_create_rejects_symlink_parent_escape() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
-    let workspace = temp_dir.path().join("workspace");
-    let outside = temp_dir.path().join("outside");
-    fs::create_dir_all(&workspace).expect("workspace");
+    let workspace = setup_workspace_fixture();
+    let outside = workspace.temp_dir().join("outside");
     fs::create_dir_all(&outside).expect("outside");
-    symlink(&outside, workspace.join("escape-link")).expect("symlink outside dir into workspace");
+    symlink(&outside, workspace.workspace().join("escape-link"))
+        .expect("symlink outside dir into workspace");
 
     let handle = test_coordinator(
-        temp_dir.path(),
-        PermissionPolicy::new(
-            PermissionMode::Allow,
-            PermissionMode::Deny,
-            PermissionMode::Deny,
-        ),
+        workspace.temp_dir(),
+        edit_only_permission_policy(),
         vec!["edit".to_string()],
     );
 
     let _run = handle
-        .start_run("native_edit_create_symlink_escape", &workspace)
+        .start_run("native_edit_create_symlink_escape", workspace.workspace())
         .await
         .expect("start run");
     let worker_agent_id = handle
@@ -160,30 +150,24 @@ async fn native_edit_create_rejects_symlink_parent_escape() {
 #[cfg(unix)]
 #[tokio::test]
 async fn native_edit_rejects_symlink_file_escape() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
-    let workspace = temp_dir.path().join("workspace");
-    let outside = temp_dir.path().join("outside");
-    fs::create_dir_all(&workspace).expect("workspace");
+    let workspace = setup_workspace_fixture();
+    let outside = workspace.temp_dir().join("outside");
     fs::create_dir_all(&outside).expect("outside");
     fs::write(outside.join("secret.txt"), "outside\n").expect("seed outside file");
     symlink(
         outside.join("secret.txt"),
-        workspace.join("escape-file.txt"),
+        workspace.workspace().join("escape-file.txt"),
     )
     .expect("symlink outside file into workspace");
 
     let handle = test_coordinator(
-        temp_dir.path(),
-        PermissionPolicy::new(
-            PermissionMode::Allow,
-            PermissionMode::Deny,
-            PermissionMode::Deny,
-        ),
+        workspace.temp_dir(),
+        edit_only_permission_policy(),
         vec!["edit".to_string()],
     );
 
     let _run = handle
-        .start_run("native_edit_symlink_escape", &workspace)
+        .start_run("native_edit_symlink_escape", workspace.workspace())
         .await
         .expect("start run");
     let worker_agent_id = handle
@@ -223,24 +207,18 @@ async fn native_edit_rejects_symlink_file_escape() {
 
 #[tokio::test]
 async fn native_edit_delete_with_absolute_path_emits_applied_event_without_rejection() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
-    let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
-    let file_path = workspace.join("demo.txt");
+    let workspace = setup_workspace_fixture();
+    let file_path = workspace.workspace().join("demo.txt");
     fs::write(&file_path, "alpha\n").expect("seed file");
 
     let handle = test_coordinator(
-        temp_dir.path(),
-        PermissionPolicy::new(
-            PermissionMode::Allow,
-            PermissionMode::Deny,
-            PermissionMode::Deny,
-        ),
+        workspace.temp_dir(),
+        edit_only_permission_policy(),
         vec!["edit".to_string()],
     );
 
     let run = handle
-        .start_run("native_edit_delete_compat_absolute", &workspace)
+        .start_run("native_edit_delete_compat_absolute", workspace.workspace())
         .await
         .expect("start run");
     let worker_agent_id = handle
@@ -283,23 +261,17 @@ async fn native_edit_delete_with_absolute_path_emits_applied_event_without_rejec
 
 #[tokio::test]
 async fn native_edit_rename_only_moves_existing_file() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
-    let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
-    fs::write(workspace.join("old.txt"), "alpha\n").expect("seed file");
+    let workspace = setup_workspace_fixture();
+    fs::write(workspace.workspace().join("old.txt"), "alpha\n").expect("seed file");
 
     let handle = test_coordinator(
-        temp_dir.path(),
-        PermissionPolicy::new(
-            PermissionMode::Allow,
-            PermissionMode::Deny,
-            PermissionMode::Deny,
-        ),
+        workspace.temp_dir(),
+        edit_only_permission_policy(),
         vec!["edit".to_string()],
     );
 
     let run = handle
-        .start_run("native_edit_rename_only", &workspace)
+        .start_run("native_edit_rename_only", workspace.workspace())
         .await
         .expect("start run");
     let worker_agent_id = handle
@@ -322,9 +294,9 @@ async fn native_edit_rename_only_moves_existing_file() {
         .expect("rename-only edit should succeed");
     handle.stop_run().await.expect("stop run");
 
-    assert!(!workspace.join("old.txt").exists());
+    assert!(!workspace.workspace().join("old.txt").exists());
     assert_eq!(
-        fs::read_to_string(workspace.join("new.txt")).expect("read moved file"),
+        fs::read_to_string(workspace.workspace().join("new.txt")).expect("read moved file"),
         "alpha\n"
     );
 
@@ -339,24 +311,18 @@ async fn native_edit_rename_only_moves_existing_file() {
 
 #[tokio::test]
 async fn native_edit_rename_failure_does_not_apply_content_edit() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
-    let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
-    fs::write(workspace.join("old.txt"), "alpha\n").expect("seed source file");
-    fs::write(workspace.join("new.txt"), "occupied\n").expect("seed destination file");
+    let workspace = setup_workspace_fixture();
+    fs::write(workspace.workspace().join("old.txt"), "alpha\n").expect("seed source file");
+    fs::write(workspace.workspace().join("new.txt"), "occupied\n").expect("seed destination file");
 
     let handle = test_coordinator(
-        temp_dir.path(),
-        PermissionPolicy::new(
-            PermissionMode::Allow,
-            PermissionMode::Deny,
-            PermissionMode::Deny,
-        ),
+        workspace.temp_dir(),
+        edit_only_permission_policy(),
         vec!["edit".to_string()],
     );
 
     let run = handle
-        .start_run("native_edit_rename_failure_atomic", &workspace)
+        .start_run("native_edit_rename_failure_atomic", workspace.workspace())
         .await
         .expect("start run");
     let worker_agent_id = handle
@@ -388,11 +354,11 @@ async fn native_edit_rename_failure_does_not_apply_content_edit() {
 
     assert!(error.contains("destination already exists"));
     assert_eq!(
-        fs::read_to_string(workspace.join("old.txt")).expect("read source file"),
+        fs::read_to_string(workspace.workspace().join("old.txt")).expect("read source file"),
         "alpha\n"
     );
     assert_eq!(
-        fs::read_to_string(workspace.join("new.txt")).expect("read destination file"),
+        fs::read_to_string(workspace.workspace().join("new.txt")).expect("read destination file"),
         "occupied\n"
     );
 
@@ -439,12 +405,4 @@ fn test_coordinator(
         Arc::new(FakeClock::new()),
         Arc::new(DefaultRedactor::default()),
     )
-}
-
-fn worker_actor(agent_id: &str) -> EventActor {
-    EventActor::new(ActorKind::Worker, Some(agent_id.to_string()))
-}
-
-fn supervisor_actor() -> EventActor {
-    EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string()))
 }

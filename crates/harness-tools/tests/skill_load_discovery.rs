@@ -3,7 +3,7 @@ use std::env;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use harness_core::agent::AgentProfile;
 use harness_core::clock::RealClock;
@@ -12,24 +12,19 @@ use harness_core::config::{
     ShellAllowlist, SkillsConfig, ToolFailureMode,
 };
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, RunInfo};
-use harness_core::event::{ActorKind, EventActor};
-use harness_core::perm::{PermissionDecision, PermissionPolicy};
+use harness_core::perm::PermissionDecision;
 use harness_core::redact::DefaultRedactor;
 use harness_core::tool::ToolContext;
 use harness_tools::coordinator_registry;
 use serde_json::json;
 use tokio::time::Duration;
 
-#[path = "common/env_guard.rs"]
-mod env_guard;
-#[path = "common/question_events.rs"]
-mod question_events;
-#[path = "common/repo_root.rs"]
-mod repo_root;
+mod common;
 
-use env_guard::EnvGuard;
-
-static SKILL_DISCOVERY_ENV_LOCK: Mutex<()> = Mutex::new(());
+use common::{
+    allow_all_permission_policy, anonymous_supervisor_actor, env_test_lock, repo_root,
+    wait_for_question_permission, worker_actor, EnvGuard,
+};
 
 struct EnvTestContext {
     previous_cwd: PathBuf,
@@ -72,7 +67,7 @@ fn tool_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
         run_id: "run-skill-load-tests".to_string(),
         workspace_root: workspace_root.to_path_buf(),
         artifacts_dir: workspace_root.join(".artifacts"),
-        actor: EventActor::new(ActorKind::Supervisor, None),
+        actor: anonymous_supervisor_actor(),
         category: Some("deep".to_string()),
         tool_call_id: tool_call_id.to_string(),
         coordinator,
@@ -119,10 +114,6 @@ fn write_invalid_skill(root: &Path, name: &str) {
     .expect("write invalid skill file");
 }
 
-fn actor(agent_id: &str) -> EventActor {
-    EventActor::new(ActorKind::Worker, Some(agent_id.to_string()))
-}
-
 fn worker_profile(name: &str, toolset: &[&str]) -> AgentProfile {
     AgentProfile {
         name: name.to_string(),
@@ -145,11 +136,7 @@ async fn spawn_worker_run(
     fs::create_dir_all(&session_dir).expect("session dir");
 
     let mut config = CoordinatorConfig::new(session_dir);
-    config.permission_policy = PermissionPolicy::new(
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-    );
+    config.permission_policy = allow_all_permission_policy();
     config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
     config.agent_profiles = agent_profiles;
     let handle = spawn_coordinator(
@@ -162,11 +149,7 @@ async fn spawn_worker_run(
         .await
         .expect("start run");
     let worker_id = handle
-        .spawn_agent(
-            EventActor::new(ActorKind::Supervisor, None),
-            profile_name,
-            None,
-        )
+        .spawn_agent(anonymous_supervisor_actor(), profile_name, None)
         .await
         .expect("spawn worker");
     (handle, run, worker_id)
@@ -245,7 +228,7 @@ impl Drop for SkillsConfigGuard {
     reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
 )]
 async fn skill_load_discovers_project_and_global_roots_with_precedence() {
-    let _guard = SKILL_DISCOVERY_ENV_LOCK.lock().expect("env test lock");
+    let _guard = env_test_lock();
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("home");
     let repo = temp_dir.path().join("repo");
@@ -343,7 +326,7 @@ fn skill_discovery_walks_project_and_global_roots() {
     reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
 )]
 async fn skill_load_hides_denied_or_invalid_skills() {
-    let _guard = SKILL_DISCOVERY_ENV_LOCK.lock().expect("env test lock");
+    let _guard = env_test_lock();
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("home");
     let repo = temp_dir.path().join("repo");
@@ -434,8 +417,8 @@ fn skill_permissions_hide_denied_and_reject_invalid_frontmatter() {
     reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
 )]
 async fn shipped_starter_skill_pack_is_discoverable_from_repo_checkout() {
-    let _guard = SKILL_DISCOVERY_ENV_LOCK.lock().expect("env test lock");
-    let repo = repo_root::repo_root();
+    let _guard = env_test_lock();
+    let repo = repo_root();
     let _cwd = CurrentDirGuard::set(&repo);
     let registry = coordinator_registry(ShellAllowlist::default());
     let skill_tool = registry.get("skill").expect("skill tool");
@@ -466,8 +449,8 @@ async fn shipped_starter_skill_pack_is_discoverable_from_repo_checkout() {
     reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
 )]
 async fn codex_skill_pack_is_discoverable_from_repo_checkout() {
-    let _guard = SKILL_DISCOVERY_ENV_LOCK.lock().expect("env test lock");
-    let repo = repo_root::repo_root();
+    let _guard = env_test_lock();
+    let repo = repo_root();
     let _cwd = CurrentDirGuard::set(&repo);
     let registry = coordinator_registry(ShellAllowlist::default());
     let skill_tool = registry.get("skill").expect("skill tool");
@@ -498,8 +481,8 @@ async fn codex_skill_pack_is_discoverable_from_repo_checkout() {
     reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
 )]
 async fn skill_load_reports_agent_hint_for_build() {
-    let _guard = SKILL_DISCOVERY_ENV_LOCK.lock().expect("env test lock");
-    let repo = repo_root::repo_root();
+    let _guard = env_test_lock();
+    let repo = repo_root();
     let _cwd = CurrentDirGuard::set(&repo);
     let registry = coordinator_registry(ShellAllowlist::default());
     let skill_tool = registry.get("skill").expect("skill tool");
@@ -524,7 +507,7 @@ async fn skill_load_reports_agent_hint_for_build() {
     reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
 )]
 async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
-    let _guard = SKILL_DISCOVERY_ENV_LOCK.lock().expect("env test lock");
+    let _guard = env_test_lock();
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("home");
     let repo = temp_dir.path().join("repo");
@@ -630,7 +613,7 @@ async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
     reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
 )]
 async fn skill_load_ask_permissions_use_question_approval_flow() {
-    let _guard = SKILL_DISCOVERY_ENV_LOCK.lock().expect("env test lock");
+    let _guard = env_test_lock();
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("home");
     let repo = temp_dir.path().join("repo");
@@ -662,7 +645,7 @@ async fn skill_load_ask_permissions_use_question_approval_flow() {
         tokio::spawn(async move {
             handle
                 .execute_agent_tool_call(
-                    actor(&worker_id),
+                    worker_actor(&worker_id),
                     Some("deep".to_string()),
                     "skill",
                     json!({"name": "experimental-preview"}),
@@ -670,12 +653,8 @@ async fn skill_load_ask_permissions_use_question_approval_flow() {
                 .await
         })
     };
-    let permission_id = question_events::wait_for_question_permission(
-        &run.events_path,
-        None,
-        Duration::from_secs(5),
-    )
-    .await;
+    let permission_id =
+        wait_for_question_permission(&run.events_path, None, Duration::from_secs(5)).await;
     handle
         .resolve_permission(
             permission_id,

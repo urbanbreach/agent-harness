@@ -7,15 +7,16 @@ use std::sync::{Mutex, OnceLock};
 use harness_core::config::{
     registered_lsp_config, set_registered_lsp_config, LspConfig, LspServerConfig, ShellAllowlist,
 };
-use harness_core::tool::{ToolContext, ToolError};
+use harness_core::tool::ToolError;
 use harness_tools::coordinator_registry;
 use serde_json::json;
 
-#[path = "common/tool_context.rs"]
-mod tool_context;
+mod common;
 
-fn test_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
-    tool_context::test_context(workspace_root, "run-native-code-lsp-tests", tool_call_id)
+use common::test_context as common_test_context;
+
+fn test_context(workspace_root: &Path, tool_call_id: &str) -> harness_core::tool::ToolContext {
+    common_test_context(workspace_root, "run-native-code-lsp-tests", tool_call_id)
 }
 
 fn setup_workspace() -> tempfile::TempDir {

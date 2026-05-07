@@ -4,19 +4,15 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use harness_core::config::{McpConfig, McpServerConfig, ShellAllowlist};
-use harness_core::tool::ToolContext;
 use harness_tools::coordinator_registry_with_mcp;
 use serde_json::json;
 
-#[path = "common/tool_context.rs"]
-mod tool_context;
-#[path = "common/workspace.rs"]
-mod workspace;
+mod common;
 
-use workspace::setup_workspace;
+use common::{setup_workspace, test_context as common_test_context};
 
-fn test_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
-    tool_context::test_context(workspace_root, "run-mcp-generic-tests", tool_call_id)
+fn test_context(workspace_root: &Path, tool_call_id: &str) -> harness_core::tool::ToolContext {
+    common_test_context(workspace_root, "run-mcp-generic-tests", tool_call_id)
 }
 
 fn install_fake_mcp_server_with_tools(script_path: &Path, tools_literal: &str) {

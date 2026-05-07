@@ -3,29 +3,27 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+mod common;
+
+use common::{
+    ask_edit_permission_policy, edit_only_permission_policy, read_events, setup_workspace_fixture,
+    supervisor_actor, worker_actor,
+};
 use harness_core::agent::AgentProfile;
 use harness_core::clock::FakeClock;
-use harness_core::config::{PermissionMode, ShellAllowlist};
+use harness_core::config::ShellAllowlist;
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, CoordinatorHandle};
 use harness_core::edit::hashline::{compute_line_hash, HashlineOp, HashlinePatch, LineAnchor};
-use harness_core::event::{ActorKind, EventActor, EventV1, ToolCallStatus};
+use harness_core::event::{EventV1, ToolCallStatus};
 use harness_core::perm::{PermissionDecision, PermissionPolicy};
 use harness_core::redact::DefaultRedactor;
 use harness_tools::coordinator_registry_with_internal_hashline_tools;
 
-use event_log::read_events;
-
-#[allow(dead_code)]
-#[path = "common/event_log.rs"]
-mod event_log;
-
 #[tokio::test]
 async fn hashline_apply_success_writes_file_and_emits_applied_event() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
-    let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
+    let workspace = setup_workspace_fixture();
 
-    let file_path = workspace.join("demo.txt");
+    let file_path = workspace.workspace().join("demo.txt");
     let original = "alpha\nbeta\ngamma\n";
     fs::write(&file_path, original).expect("seed file");
 
@@ -35,17 +33,10 @@ async fn hashline_apply_success_writes_file_and_emits_applied_event() {
         .to_hex()
         .to_string();
 
-    let handle = test_coordinator(
-        temp_dir.path(),
-        PermissionPolicy::new(
-            PermissionMode::Allow,
-            PermissionMode::Deny,
-            PermissionMode::Deny,
-        ),
-    );
+    let handle = test_coordinator(workspace.temp_dir(), edit_only_permission_policy());
 
     let run = handle
-        .start_run("hashline_apply_success", &workspace)
+        .start_run("hashline_apply_success", workspace.workspace())
         .await
         .expect("start run");
 
@@ -56,7 +47,7 @@ async fn hashline_apply_success_writes_file_and_emits_applied_event() {
 
     let tool_call_id = handle
         .request_tool_call(
-            worker_actor(worker_agent_id),
+            worker_actor(&worker_agent_id),
             Some("deep".to_string()),
             "edit.hashline_apply",
             serde_json::to_value(&patch).expect("patch json"),
@@ -105,11 +96,9 @@ async fn hashline_apply_success_writes_file_and_emits_applied_event() {
 
 #[tokio::test]
 async fn hashline_apply_mismatch_leaves_file_unchanged() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
-    let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
+    let workspace = setup_workspace_fixture();
 
-    let file_path = workspace.join("demo.txt");
+    let file_path = workspace.workspace().join("demo.txt");
     let original = "alpha\nbeta\ngamma\n";
     fs::write(&file_path, original).expect("seed file");
 
@@ -118,17 +107,10 @@ async fn hashline_apply_mismatch_leaves_file_unchanged() {
         expected[0].hash = "000000000000".to_string();
     }
 
-    let handle = test_coordinator(
-        temp_dir.path(),
-        PermissionPolicy::new(
-            PermissionMode::Allow,
-            PermissionMode::Deny,
-            PermissionMode::Deny,
-        ),
-    );
+    let handle = test_coordinator(workspace.temp_dir(), edit_only_permission_policy());
 
     let run = handle
-        .start_run("hashline_apply_mismatch", &workspace)
+        .start_run("hashline_apply_mismatch", workspace.workspace())
         .await
         .expect("start run");
 
@@ -139,7 +121,7 @@ async fn hashline_apply_mismatch_leaves_file_unchanged() {
 
     let tool_call_id = handle
         .request_tool_call(
-            worker_actor(worker_agent_id),
+            worker_actor(&worker_agent_id),
             Some("deep".to_string()),
             "edit.hashline_apply",
             serde_json::to_value(&patch).expect("patch json"),
@@ -180,11 +162,9 @@ async fn hashline_apply_mismatch_leaves_file_unchanged() {
 
 #[tokio::test]
 async fn hashline_apply_overlap_rejection_explains_recovery() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
-    let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
+    let workspace = setup_workspace_fixture();
 
-    let file_path = workspace.join("demo.txt");
+    let file_path = workspace.workspace().join("demo.txt");
     let original = "alpha\nbeta\ngamma\ndelta\n";
     fs::write(&file_path, original).expect("seed file");
 
@@ -210,17 +190,10 @@ async fn hashline_apply_overlap_rejection_explains_recovery() {
         ],
     };
 
-    let handle = test_coordinator(
-        temp_dir.path(),
-        PermissionPolicy::new(
-            PermissionMode::Allow,
-            PermissionMode::Deny,
-            PermissionMode::Deny,
-        ),
-    );
+    let handle = test_coordinator(workspace.temp_dir(), edit_only_permission_policy());
 
     let run = handle
-        .start_run("hashline_apply_overlap", &workspace)
+        .start_run("hashline_apply_overlap", workspace.workspace())
         .await
         .expect("start run");
 
@@ -231,7 +204,7 @@ async fn hashline_apply_overlap_rejection_explains_recovery() {
 
     let tool_call_id = handle
         .request_tool_call(
-            worker_actor(worker_agent_id),
+            worker_actor(&worker_agent_id),
             Some("deep".to_string()),
             "edit.hashline_apply",
             serde_json::to_value(&patch).expect("patch json"),
@@ -275,28 +248,18 @@ async fn hashline_apply_overlap_rejection_explains_recovery() {
 
 #[tokio::test]
 async fn hashline_apply_permission_ask_blocks_until_resolved() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
-    let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
+    let workspace = setup_workspace_fixture();
 
-    let file_path = workspace.join("demo.txt");
+    let file_path = workspace.workspace().join("demo.txt");
     let original = "alpha\nbeta\ngamma\n";
     fs::write(&file_path, original).expect("seed file");
 
     let patch = replace_line_patch("edit-ask", "demo.txt", original, 2, "BETA");
 
-    let handle = test_coordinator(
-        temp_dir.path(),
-        PermissionPolicy::new(
-            PermissionMode::Ask,
-            PermissionMode::Deny,
-            PermissionMode::Deny,
-        )
-        .with_ask_timeout_ms(1_000),
-    );
+    let handle = test_coordinator(workspace.temp_dir(), ask_edit_permission_policy());
 
     let run = handle
-        .start_run("hashline_apply_ask", &workspace)
+        .start_run("hashline_apply_ask", workspace.workspace())
         .await
         .expect("start run");
 
@@ -307,7 +270,7 @@ async fn hashline_apply_permission_ask_blocks_until_resolved() {
 
     let tool_call_id = handle
         .request_tool_call(
-            worker_actor(worker_agent_id),
+            worker_actor(&worker_agent_id),
             Some("deep".to_string()),
             "edit.hashline_apply",
             serde_json::to_value(&patch).expect("patch json"),
@@ -433,14 +396,6 @@ fn test_coordinator(session_dir: &Path, permission_policy: PermissionPolicy) -> 
         Arc::new(FakeClock::new()),
         Arc::new(DefaultRedactor::default()),
     )
-}
-
-fn worker_actor(agent_id: String) -> EventActor {
-    EventActor::new(ActorKind::Worker, Some(agent_id))
-}
-
-fn supervisor_actor() -> EventActor {
-    EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string()))
 }
 
 fn replace_line_patch(
