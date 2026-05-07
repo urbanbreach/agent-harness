@@ -759,15 +759,11 @@ fn native_tool_parity_pty_lane() {
         "native_tool_parity_task_row",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact(
-            "task audit transcript parity [subagent_type=researcher]",
-            48,
-            6,
-        ),
+        FocusCapture::anchored_exact("Task — audit transcript parity", 48, 6),
         &[
             "Bring native tool parity inline",
             "Gathered context · 2 reads",
-            "task audit transcript parity [subagent_type=researcher]",
+            "Task — audit transcript parity",
             "webfetch https://example.test/report.pdf [format=markdown]",
             "docs-rs_search_in_crate Layout [crate_name=ratatui]",
         ],
@@ -809,7 +805,7 @@ fn native_tool_parity_pty_lane() {
     assert!(screen.contains("Thinking: Drafting the inline parity pass."));
     assert!(screen.contains("Inline transcript parity is easier to scan now."));
     assert!(screen.contains("Gathered context · 2 reads"));
-    assert!(screen.contains("task audit transcript parity [subagent_type=researcher]"));
+    assert!(screen.contains("Task — audit transcript parity"));
     assert!(screen.contains("webfetch https://example.test/report.pdf [format=markdown]"));
     assert!(screen.contains("docs-rs_search_in_crate Layout [crate_name=ratatui]"));
     assert!(!screen.contains("struct Layout"));
@@ -845,7 +841,7 @@ fn native_tool_parity_pty_lane() {
             &[
                 "Bring native tool parity inline",
                 "Gathered context · 2 reads",
-                "task audit transcript parity [subagent_type=researcher]",
+                "Task — audit transcript parity",
                 "webfetch https://example.test/report.pdf [format=markdown]",
                 "docs-rs_search_in_crate Layout [crate_name=ratatui]",
             ],
@@ -1839,26 +1835,34 @@ fn pty_e2e_child_session_navigation_checkpoint() {
     )
     .expect("wait for parent replay session before child navigation");
 
-    send_key(harness.writer.as_mut(), 0x1d).expect("navigate to first child session");
+    send_key(harness.writer.as_mut(), b']').expect("navigate to first child session");
+    let child_header = "Worker · 000_parent_navigation / Inspect parity child session";
+    let child_footer = "Worker (1 of 1)";
     let child_screen = wait_for_screen_contains(
         &mut harness.parser,
         &harness.output_rx,
-        child_session_id,
+        "Child session captured sidebar parity.",
         MARKER_TIMEOUT,
     )
     .expect("wait for child replay session after navigation");
+    let child_screen = stabilize_screen(&mut harness.parser, &harness.output_rx, child_screen);
+    assert!(child_screen.contains(child_header));
+    assert!(child_screen.contains(child_footer));
     let child_visual = capture_manifest_backed_visual_checkpoint(
         "replay_shell",
         "child_session_navigation",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact(child_session_id, 24, 4),
-        &[REPLAY_DENSE_READY_MARKER, child_session_id],
+        FocusCapture::anchored_exact(child_header, 58, 2),
+        &[
+            child_header,
+            child_footer,
+            "Child session captured sidebar parity.",
+        ],
     )
     .expect("capture child-session navigation image");
 
-    assert!(child_screen.contains(REPLAY_DENSE_READY_MARKER));
-    assert!(child_screen.contains(child_session_id));
+    assert!(child_screen.contains("Child session captured sidebar parity."));
     assert!(visual_dir.join(&child_visual.file_name).exists());
     assert!(child_visual.manifest_json_path.exists());
     assert!(child_visual.manifest_jsonl_path.exists());
