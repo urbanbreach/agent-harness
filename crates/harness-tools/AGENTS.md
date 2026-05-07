@@ -18,7 +18,7 @@ Read the workspace root `AGENTS.md` first; runtime policy lives in `harness-core
 | MCP | `src/mcp.rs` | Config-backed server registration and generic call surfaces. |
 
 ## TOOL SURFACE RULES
-- Keep canonical native ids stable: `read`, `list`, `glob`, `grep`, `edit`, `bash`, `task`, `batch`, `question`, `skill`, `webfetch`, `websearch`, `codesearch`, `lsp`.
+- Keep canonical native ids stable: `read`, `list`, `glob`, `grep`, `edit`, `bash`, `task`, `background_output`, `batch`, `question`, `skill`, `webfetch`, `websearch`, `codesearch`, `lsp`.
 - Coordinator registry may expose supervisor-only tools; worker registry must be filtered through `ActorKind::Worker`.
 - Tool schemas use typed args and `deny_unknown_fields`; keep generated provider schemas strict and parity-tested.
 - Use workspace-relative path resolution helpers; reject traversal/out-of-workspace access.

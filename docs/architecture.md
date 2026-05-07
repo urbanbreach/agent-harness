@@ -37,11 +37,12 @@ Core runtime and domain logic:
 
 Interactive agent runtime settings still come from structured config, but prompt bodies are now resolved separately from markdown assets and project instructions:
 
-- `.agent-harness/agents/<agent>.md` provides the canonical file-backed prompt body for an agent.
+- Built-in `build` and `plan` use runtime-synthesized dynamic prompts when their shipped markdown assets contain only frontmatter.
+- `.agent-harness/agents/<agent>.md` can provide a file-backed prompt body for custom agents or local overrides.
 - inline `system_prompt` in config remains a compatibility override and wins over the markdown body.
-- `AGENTS.md` is loaded as a separate project-instruction layer and prepended to the final runtime system prompt.
+- `AGENTS.md` is loaded as a separate project-instruction layer and composed into the final runtime system prompt.
 
-This keeps config focused on structured behavior while moving prompt prose into dedicated workspace assets.
+This keeps config focused on structured behavior while allowing the built-in agent prompts to adapt to model, workspace, project-instruction, and skill context.
 
 ### harness-providers (library)
 
@@ -58,7 +59,7 @@ Built-in tool implementations:
 - `read` / `list` / `glob` / `grep` - Safe workspace discovery and search
 - `edit` - Hashline-first file creation, targeted edits, deletion, and rename
 - `bash` - Execute shell commands with allowlist
-- `task` / `batch` / `question` / `skill` - Control-plane and delegation workflows
+- `task` / `background_output` / `batch` / `question` / `skill` - Control-plane and delegation workflows
 - `webfetch` / `websearch` / `codesearch` / `lsp` - Network and language-intelligence workflows
 
 Hashline editing is the only normal file-changing route. Agent profiles expose `read`
@@ -67,7 +68,7 @@ compatibility and focused test lanes.
 
 The active registry exposes a single native provider surface. Canonical ids such as
 `read`, `edit`, `bash`, `webfetch`, `websearch`, `codesearch`, `question`, `batch`, `task`,
-and `lsp` are the documented tool surface, while lower-level executors remain
+`background_output`, and `lsp` are the documented tool surface, while lower-level executors remain
 internal implementation details behind those tool ids.
 
 ### harness-tui (library)
@@ -114,6 +115,7 @@ Events are the source of truth. All state is derived from events.
 
 **Lifecycle**
 - `RunStarted` / `RunFinished` / `RunFailed`
+- `SessionTitleUpdated` - Opencode-compatible generated session title persisted after the first real user prompt when a default title is still present
 - `AgentSpawned` / `AgentStopped`
 
 **Task Management**
@@ -320,9 +322,10 @@ guard when a checkpoint cannot reduce active context.
 
 Provider and tool exposure is selected per agent by its configured `tools` list. The harness ships
 a single native tool surface, so profiles opt in by naming canonical tool ids such as `read`,
-`edit`, `bash`, `task`, and `plan_exit` directly. The shipped `plan` profile includes `edit`
-only for `.agent-harness/plans/**` through runtime permission rules and uses `plan_exit` to ask
-before the coordinator schedules a `build` continuation. By default, `read` emits
+`edit`, `bash`, `task`, `background_output`, and `plan_exit` directly. The shipped `plan` profile
+includes `edit` only for `.agent-harness/plans/**` through runtime permission rules, may delegate
+read-only exploration through `task`/`background_output`, and uses `plan_exit` to ask before the
+coordinator schedules a `build` continuation. By default, `read` emits
 `LINE#HASH|text` anchors and `edit` consumes hashline operations on that anchored view.
 
 ## Hashline Spec
