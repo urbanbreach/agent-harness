@@ -27,7 +27,7 @@ Primary agents for roadmap work:
 
 Secondary/supporting agents:
 
-- As of now subagent functionality is something that is planned but not yet implemented. Only start planning and implementing subagents when `plan` and `build` agents have been successfully and thoroughly tested and implemented.
+- Shipped supporting profiles now include `explore` for read-only codebase search and `general` for focused implementation/research delegation. Future subagent work should deepen these profiles and add richer orchestration only after `plan` and `build` remain stable under signoff.
 
 - [ ] Plan and Build agents have been successfully implemented, tested, and meet the harness quality bar.
 
@@ -65,7 +65,8 @@ Secondary/supporting agents:
 ## Agents, orchestration, and prompt quality
 
 - [ ] Add named agents with fleshed-out system prompts for main flows such as Build and Plan.
-- [ ] Flesh out subagents with configs available in JSON.
+- [x] Ship baseline `explore` and `general` subagent configs through the runtime defaults.
+- [ ] Flesh out additional specialized subagents with configs available in JSON.
 - [ ] Improve main-agent prompt engineering with a high-signal, low-noise approach.
 - [ ] Compaction (Check how it's done from other harnesses and inspiration/ folder. The decide on the best path.)
 - [ ] Add orchestration functionality that is toggleable in the HUD while staying legible and understandable. (after main agents are implemented properly)
