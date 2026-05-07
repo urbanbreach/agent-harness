@@ -10,7 +10,10 @@ use serde_json::{json, Map, Value};
 
 use crate::env_vars::first_env_value;
 use crate::http_client;
+use crate::json_schema_for;
+use crate::parse_tool_args;
 use crate::text::has_trimmed_content;
+use crate::text_json_tool_result;
 
 const DEFAULT_GITHUB_API_BASE_URL: &str = "https://api.github.com";
 const GITHUB_API_VERSION: &str = "2022-11-28";
@@ -25,6 +28,11 @@ pub(crate) struct GitHubExecutor {
     client: reqwest::Client,
     api_base_url: String,
     auth_token: Option<String>,
+}
+
+struct ListedItems {
+    items: Vec<Value>,
+    query: BTreeMap<String, String>,
 }
 
 impl GitHubExecutor {
@@ -43,124 +51,64 @@ impl GitHubExecutor {
             GitHubIssueOperation::Get => {
                 let issue_number = required_issue_number(args.issue_number)?;
                 let issue = self
-                    .send_json_request(
-                        Method::GET,
-                        &format!("/repos/{}/{}/issues/{issue_number}", repo.owner, repo.repo),
-                        None,
-                        false,
-                    )
+                    .send_json_request(Method::GET, &repo.issue_path(issue_number), None, false)
                     .await?;
-                Ok(ToolResult {
-                    display_text: render_issue(&issue),
-                    structured_json: Some(json!({
+                Ok(text_json_tool_result(
+                    render_issue(&issue),
+                    json!({
                         "repository": repo.as_json(),
                         "operation": "get",
                         "issue": issue,
-                    })),
-                    artifacts: Vec::new(),
-                })
+                    }),
+                ))
             }
             GitHubIssueOperation::List => {
-                let query = query_map([
-                    (
-                        "state",
-                        Some(args.state.unwrap_or(GitHubListState::Open).as_api_value()),
-                    ),
-                    ("per_page", Some(list_per_page_param(args.per_page))),
-                ]);
-                let issues = self
-                    .send_json_request(
-                        Method::GET,
-                        &path_with_query(
-                            &format!("/repos/{}/{}/issues", repo.owner, repo.repo),
-                            &query,
-                        ),
-                        None,
-                        false,
+                let ListedItems { items, query } = self
+                    .list_items(
+                        &repo.issues_path(),
+                        args.state,
+                        args.per_page,
+                        "GitHub returned a non-array issue list",
                     )
                     .await?;
-                let items = issues
-                    .as_array()
-                    .ok_or_else(|| {
-                        ToolError::Execution("GitHub returned a non-array issue list".to_string())
-                    })?
+                let items = items
                     .iter()
-                    .filter(|item| item.get("pull_request").is_none())
+                    .filter(|item| is_issue_list_item(item))
                     .cloned()
                     .collect::<Vec<_>>();
-                Ok(ToolResult {
-                    display_text: render_issue_list(&repo, &items),
-                    structured_json: Some(json!({
+                Ok(text_json_tool_result(
+                    render_issue_list(&repo, &items),
+                    json!({
                         "repository": repo.as_json(),
                         "operation": "list",
                         "items": items,
                         "query": query,
-                    })),
-                    artifacts: Vec::new(),
-                })
+                    }),
+                ))
             }
             GitHubIssueOperation::Comment => {
                 let issue_number = required_issue_number(args.issue_number)?;
                 let body = required_non_empty(args.body, "body")?;
-                let comment = self
-                    .send_json_request(
-                        Method::POST,
-                        &format!(
-                            "/repos/{}/{}/issues/{issue_number}/comments",
-                            repo.owner, repo.repo
-                        ),
-                        Some(json!({ "body": body })),
-                        true,
-                    )
-                    .await?;
-                Ok(ToolResult {
-                    display_text: format!(
-                        "Commented on issue #{} in {}/{}.\nURL: {}",
-                        issue_number,
-                        repo.owner,
-                        repo.repo,
-                        string_field(&comment, "html_url").unwrap_or("<unknown>")
-                    ),
-                    structured_json: Some(json!({
+                let comment = self.create_issue_comment(&repo, issue_number, body).await?;
+                Ok(text_json_tool_result(
+                    render_comment_result("issue", issue_number, &repo, &comment),
+                    json!({
                         "repository": repo.as_json(),
                         "operation": "comment",
                         "issue_number": issue_number,
                         "comment": comment,
-                    })),
-                    artifacts: Vec::new(),
-                })
+                    }),
+                ))
             }
-            GitHubIssueOperation::Close | GitHubIssueOperation::Reopen => {
+            GitHubIssueOperation::Close => {
                 let issue_number = required_issue_number(args.issue_number)?;
-                let state = match args.operation {
-                    GitHubIssueOperation::Close => "closed",
-                    GitHubIssueOperation::Reopen => "open",
-                    _ => unreachable!(),
-                };
-                let issue = self
-                    .send_json_request(
-                        Method::PATCH,
-                        &format!("/repos/{}/{}/issues/{issue_number}", repo.owner, repo.repo),
-                        Some(json!({ "state": state })),
-                        true,
-                    )
-                    .await?;
-                Ok(ToolResult {
-                    display_text: format!(
-                        "Issue #{} in {}/{} is now {}.\nURL: {}",
-                        issue_number,
-                        repo.owner,
-                        repo.repo,
-                        state,
-                        string_field(&issue, "html_url").unwrap_or("<unknown>")
-                    ),
-                    structured_json: Some(json!({
-                        "repository": repo.as_json(),
-                        "operation": state,
-                        "issue": issue,
-                    })),
-                    artifacts: Vec::new(),
-                })
+                self.update_issue_state(&repo, issue_number, IssueState::Closed)
+                    .await
+            }
+            GitHubIssueOperation::Reopen => {
+                let issue_number = required_issue_number(args.issue_number)?;
+                self.update_issue_state(&repo, issue_number, IssueState::Open)
+                    .await
             }
         }
     }
@@ -173,132 +121,131 @@ impl GitHubExecutor {
                 let pull_request = self
                     .send_json_request(
                         Method::GET,
-                        &format!("/repos/{}/{}/pulls/{pull_number}", repo.owner, repo.repo),
+                        &repo.pull_request_path(pull_number),
                         None,
                         false,
                     )
                     .await?;
-                Ok(ToolResult {
-                    display_text: render_pull_request(&pull_request),
-                    structured_json: Some(json!({
+                Ok(text_json_tool_result(
+                    render_pull_request(&pull_request),
+                    json!({
                         "repository": repo.as_json(),
                         "operation": "get",
                         "pull_request": pull_request,
-                    })),
-                    artifacts: Vec::new(),
-                })
+                    }),
+                ))
             }
             GitHubPullRequestOperation::List => {
-                let query = query_map([
-                    (
-                        "state",
-                        Some(args.state.unwrap_or(GitHubListState::Open).as_api_value()),
-                    ),
-                    ("per_page", Some(list_per_page_param(args.per_page))),
-                ]);
-                let pull_requests = self
-                    .send_json_request(
-                        Method::GET,
-                        &path_with_query(
-                            &format!("/repos/{}/{}/pulls", repo.owner, repo.repo),
-                            &query,
-                        ),
-                        None,
-                        false,
+                let ListedItems { items, query } = self
+                    .list_items(
+                        &repo.pull_requests_path(),
+                        args.state,
+                        args.per_page,
+                        "GitHub returned a non-array pull request list",
                     )
                     .await?;
-                let items = pull_requests
-                    .as_array()
-                    .ok_or_else(|| {
-                        ToolError::Execution(
-                            "GitHub returned a non-array pull request list".to_string(),
-                        )
-                    })?
-                    .clone();
-                Ok(ToolResult {
-                    display_text: render_pull_request_list(&repo, &items),
-                    structured_json: Some(json!({
+                Ok(text_json_tool_result(
+                    render_pull_request_list(&repo, &items),
+                    json!({
                         "repository": repo.as_json(),
                         "operation": "list",
                         "items": items,
                         "query": query,
-                    })),
-                    artifacts: Vec::new(),
-                })
+                    }),
+                ))
             }
             GitHubPullRequestOperation::Comment => {
                 let pull_number = required_pull_number(args.pull_number)?;
                 let body = required_non_empty(args.body, "body")?;
-                let comment = self
-                    .send_json_request(
-                        Method::POST,
-                        &format!(
-                            "/repos/{}/{}/issues/{pull_number}/comments",
-                            repo.owner, repo.repo
-                        ),
-                        Some(json!({ "body": body })),
-                        true,
-                    )
-                    .await?;
-                Ok(ToolResult {
-                    display_text: format!(
-                        "Commented on pull request #{} in {}/{}.\nURL: {}",
-                        pull_number,
-                        repo.owner,
-                        repo.repo,
-                        string_field(&comment, "html_url").unwrap_or("<unknown>")
-                    ),
-                    structured_json: Some(json!({
+                let comment = self.create_issue_comment(&repo, pull_number, body).await?;
+                Ok(text_json_tool_result(
+                    render_comment_result("pull request", pull_number, &repo, &comment),
+                    json!({
                         "repository": repo.as_json(),
                         "operation": "comment",
                         "pull_number": pull_number,
                         "comment": comment,
-                    })),
-                    artifacts: Vec::new(),
-                })
+                    }),
+                ))
             }
             GitHubPullRequestOperation::Create => {
                 let title = required_non_empty(args.title, "title")?;
                 let head = required_non_empty(args.head, "head")?;
                 let base = required_non_empty(args.base, "base")?;
-                let mut payload = Map::new();
-                payload.insert("title".to_string(), Value::String(title));
-                payload.insert("head".to_string(), Value::String(head));
-                payload.insert("base".to_string(), Value::String(base));
-                if let Some(body) = args.body.filter(|value| has_trimmed_content(value)) {
-                    payload.insert("body".to_string(), Value::String(body));
-                }
-                if let Some(draft) = args.draft {
-                    payload.insert("draft".to_string(), Value::Bool(draft));
-                }
+                let payload = pull_request_create_payload(title, head, base, args.body, args.draft);
                 let pull_request = self
                     .send_json_request(
                         Method::POST,
-                        &format!("/repos/{}/{}/pulls", repo.owner, repo.repo),
-                        Some(Value::Object(payload)),
+                        &repo.pull_requests_path(),
+                        Some(payload),
                         true,
                     )
                     .await?;
-                Ok(ToolResult {
-                    display_text: format!(
-                        "Created pull request #{} in {}/{}.\nURL: {}",
-                        pull_request
-                            .get("number")
-                            .and_then(Value::as_u64)
-                            .unwrap_or_default(),
-                        repo.owner,
-                        repo.repo,
-                        string_field(&pull_request, "html_url").unwrap_or("<unknown>")
-                    ),
-                    structured_json: Some(json!({
+                Ok(text_json_tool_result(
+                    render_created_pull_request(&repo, &pull_request),
+                    json!({
                         "repository": repo.as_json(),
                         "operation": "create",
                         "pull_request": pull_request,
-                    })),
-                    artifacts: Vec::new(),
-                })
+                    }),
+                ))
             }
         }
+    }
+
+    async fn list_items(
+        &self,
+        path: &str,
+        state: Option<GitHubListState>,
+        per_page: Option<u8>,
+        non_array_message: &str,
+    ) -> Result<ListedItems, ToolError> {
+        let query = list_query(state, per_page);
+        let response = self
+            .send_json_request(Method::GET, &path_with_query(path, &query), None, false)
+            .await?;
+        let items = required_json_array(&response, non_array_message)?.clone();
+        Ok(ListedItems { items, query })
+    }
+
+    async fn create_issue_comment(
+        &self,
+        repo: &RepoRef,
+        issue_number: u64,
+        body: String,
+    ) -> Result<Value, ToolError> {
+        self.send_json_request(
+            Method::POST,
+            &repo.issue_comments_path(issue_number),
+            Some(json!({ "body": body })),
+            true,
+        )
+        .await
+    }
+
+    async fn update_issue_state(
+        &self,
+        repo: &RepoRef,
+        issue_number: u64,
+        state: IssueState,
+    ) -> Result<ToolResult, ToolError> {
+        let api_state = state.as_api_value();
+        let issue = self
+            .send_json_request(
+                Method::PATCH,
+                &repo.issue_path(issue_number),
+                Some(json!({ "state": api_state })),
+                true,
+            )
+            .await?;
+        Ok(text_json_tool_result(
+            render_updated_issue_state(repo, issue_number, state, &issue),
+            json!({
+                "repository": repo.as_json(),
+                "operation": api_state,
+                "issue": issue,
+            }),
+        ))
     }
 
     async fn send_json_request(
@@ -308,27 +255,7 @@ impl GitHubExecutor {
         body: Option<Value>,
         require_auth: bool,
     ) -> Result<Value, ToolError> {
-        let mut url = self.api_base_url.trim_end_matches('/').to_string();
-        url.push_str(path);
-        let mut request = self
-            .client
-            .request(method, &url)
-            .header(reqwest::header::ACCEPT, "application/vnd.github+json")
-            .header("X-GitHub-Api-Version", GITHUB_API_VERSION)
-            .header(reqwest::header::USER_AGENT, USER_AGENT);
-
-        if let Some(token) = self
-            .auth_token
-            .as_deref()
-            .filter(|value| has_trimmed_content(value))
-        {
-            request = request.bearer_auth(token);
-        } else if require_auth {
-            return Err(ToolError::Execution(
-                "GitHub authentication is required for this operation; set HARNESS_GITHUB_TOKEN, GITHUB_TOKEN, or GH_TOKEN".to_string(),
-            ));
-        }
-
+        let mut request = self.github_request(method, path, require_auth)?;
         if let Some(body) = body {
             request = request.json(&body);
         }
@@ -337,30 +264,43 @@ impl GitHubExecutor {
             .send()
             .await
             .map_err(|err| ToolError::Execution(format!("GitHub request failed: {err}")))?;
-        let status = response.status();
-        let text = response.text().await.map_err(|err| {
-            ToolError::Execution(format!("failed to read GitHub response: {err}"))
-        })?;
+        read_github_json_response(response).await
+    }
 
-        if !status.is_success() {
-            let message = serde_json::from_str::<Value>(&text)
-                .ok()
-                .and_then(|value| {
-                    value
-                        .get("message")
-                        .and_then(Value::as_str)
-                        .map(str::to_string)
-                })
-                .unwrap_or_else(|| text.clone());
-            return Err(ToolError::Execution(format!(
-                "GitHub API request failed with status {}: {}",
-                status.as_u16(),
-                message
-            )));
+    fn github_request(
+        &self,
+        method: Method,
+        path: &str,
+        require_auth: bool,
+    ) -> Result<reqwest::RequestBuilder, ToolError> {
+        let mut request = self
+            .client
+            .request(method, self.api_url(path))
+            .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", GITHUB_API_VERSION)
+            .header(reqwest::header::USER_AGENT, USER_AGENT);
+
+        if let Some(token) = self.auth_token() {
+            request = request.bearer_auth(token);
+        } else if require_auth {
+            return Err(ToolError::Execution(
+                "GitHub authentication is required for this operation; set HARNESS_GITHUB_TOKEN, GITHUB_TOKEN, or GH_TOKEN".to_string(),
+            ));
         }
 
-        serde_json::from_str(&text)
-            .map_err(|err| ToolError::Execution(format!("GitHub returned invalid JSON: {err}")))
+        Ok(request)
+    }
+
+    fn api_url(&self, path: &str) -> String {
+        let mut url = self.api_base_url.trim_end_matches('/').to_string();
+        url.push_str(path);
+        url
+    }
+
+    fn auth_token(&self) -> Option<&str> {
+        self.auth_token
+            .as_deref()
+            .filter(|value| has_trimmed_content(value))
     }
 }
 
@@ -411,14 +351,28 @@ enum GitHubListState {
     All,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum IssueState {
+    Open,
+    Closed,
+}
+
+impl IssueState {
+    fn as_api_value(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Closed => "closed",
+        }
+    }
+}
+
 impl GitHubListState {
-    fn as_api_value(self) -> String {
+    fn as_api_value(self) -> &'static str {
         match self {
             Self::Open => "open",
             Self::Closed => "closed",
             Self::All => "all",
         }
-        .to_string()
     }
 }
 
@@ -492,6 +446,34 @@ impl RepoRef {
     fn as_json(&self) -> Value {
         json!({ "owner": self.owner, "repo": self.repo })
     }
+
+    fn full_name(&self) -> String {
+        format!("{}/{}", self.owner, self.repo)
+    }
+
+    fn api_path(&self, suffix: &str) -> String {
+        format!("/repos/{}/{}/{}", self.owner, self.repo, suffix)
+    }
+
+    fn issues_path(&self) -> String {
+        self.api_path("issues")
+    }
+
+    fn issue_path(&self, issue_number: u64) -> String {
+        self.api_path(&format!("issues/{issue_number}"))
+    }
+
+    fn issue_comments_path(&self, issue_number: u64) -> String {
+        self.api_path(&format!("issues/{issue_number}/comments"))
+    }
+
+    fn pull_requests_path(&self) -> String {
+        self.api_path("pulls")
+    }
+
+    fn pull_request_path(&self, pull_number: u64) -> String {
+        self.api_path(&format!("pulls/{pull_number}"))
+    }
 }
 
 fn repository_from_env() -> Result<RepoRef, ToolError> {
@@ -517,15 +499,52 @@ fn repository_from_env() -> Result<RepoRef, ToolError> {
     })
 }
 
+fn github_api_error_message(response_text: &str) -> String {
+    serde_json::from_str::<Value>(response_text)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("message")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| response_text.to_string())
+}
+
+async fn read_github_json_response(response: reqwest::Response) -> Result<Value, ToolError> {
+    let status = response.status();
+    let text = response
+        .text()
+        .await
+        .map_err(|err| ToolError::Execution(format!("failed to read GitHub response: {err}")))?;
+
+    if !status.is_success() {
+        return Err(ToolError::Execution(format!(
+            "GitHub API request failed with status {}: {}",
+            status.as_u16(),
+            github_api_error_message(&text)
+        )));
+    }
+
+    parse_github_json_response(&text)
+}
+
+fn parse_github_json_response(response_text: &str) -> Result<Value, ToolError> {
+    serde_json::from_str(response_text)
+        .map_err(|err| ToolError::Execution(format!("GitHub returned invalid JSON: {err}")))
+}
+
 fn required_issue_number(issue_number: Option<u64>) -> Result<u64, ToolError> {
-    issue_number.ok_or_else(|| {
-        ToolError::InvalidArguments("issue_number is required for this operation".to_string())
-    })
+    required_number(issue_number, "issue_number")
 }
 
 fn required_pull_number(pull_number: Option<u64>) -> Result<u64, ToolError> {
-    pull_number.ok_or_else(|| {
-        ToolError::InvalidArguments("pull_number is required for this operation".to_string())
+    required_number(pull_number, "pull_number")
+}
+
+fn required_number(value: Option<u64>, field: &str) -> Result<u64, ToolError> {
+    value.ok_or_else(|| {
+        ToolError::InvalidArguments(format!("{field} is required for this operation"))
     })
 }
 
@@ -541,6 +560,26 @@ fn required_non_empty(value: Option<String>, field: &str) -> Result<String, Tool
     Ok(value)
 }
 
+fn pull_request_create_payload(
+    title: String,
+    head: String,
+    base: String,
+    body: Option<String>,
+    draft: Option<bool>,
+) -> Value {
+    let mut payload = Map::new();
+    payload.insert("title".to_string(), Value::String(title));
+    payload.insert("head".to_string(), Value::String(head));
+    payload.insert("base".to_string(), Value::String(base));
+    if let Some(body) = body.filter(|value| has_trimmed_content(value)) {
+        payload.insert("body".to_string(), Value::String(body));
+    }
+    if let Some(draft) = draft {
+        payload.insert("draft".to_string(), Value::Bool(draft));
+    }
+    Value::Object(payload)
+}
+
 fn list_per_page_param(per_page: Option<u8>) -> String {
     per_page
         .unwrap_or(DEFAULT_LIST_PER_PAGE)
@@ -548,13 +587,18 @@ fn list_per_page_param(per_page: Option<u8>) -> String {
         .to_string()
 }
 
-fn query_map<const N: usize>(
-    entries: [(impl Into<String>, Option<String>); N],
-) -> BTreeMap<String, String> {
-    entries
-        .into_iter()
-        .filter_map(|(key, value)| value.map(|value| (key.into(), value)))
-        .collect()
+fn list_state_param(state: Option<GitHubListState>) -> String {
+    state
+        .unwrap_or(GitHubListState::Open)
+        .as_api_value()
+        .to_string()
+}
+
+fn list_query(state: Option<GitHubListState>, per_page: Option<u8>) -> BTreeMap<String, String> {
+    BTreeMap::from([
+        ("state".to_string(), list_state_param(state)),
+        ("per_page".to_string(), list_per_page_param(per_page)),
+    ])
 }
 
 fn path_with_query(path: &str, query: &BTreeMap<String, String>) -> String {
@@ -574,94 +618,159 @@ fn string_field<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
     value.get(key).and_then(Value::as_str)
 }
 
+fn number_field(value: &Value) -> u64 {
+    value
+        .get("number")
+        .and_then(Value::as_u64)
+        .unwrap_or_default()
+}
+
+fn html_url_field(value: &Value) -> &str {
+    string_field(value, "html_url").unwrap_or("<unknown>")
+}
+
+fn title_field(value: &Value) -> &str {
+    string_field(value, "title").unwrap_or("<untitled>")
+}
+
+fn state_field<'a>(value: &'a Value, fallback: &'static str) -> &'a str {
+    string_field(value, "state").unwrap_or(fallback)
+}
+
+fn body_field(value: &Value) -> Option<&str> {
+    string_field(value, "body")
+}
+
+fn is_issue_list_item(item: &Value) -> bool {
+    item.get("pull_request").is_none()
+}
+
+fn pull_request_ref<'a>(pull_request: &'a Value, path: &str) -> &'a str {
+    pull_request
+        .pointer(path)
+        .and_then(Value::as_str)
+        .unwrap_or("<unknown>")
+}
+
+fn pull_request_base_ref(pull_request: &Value) -> &str {
+    pull_request_ref(pull_request, "/base/ref")
+}
+
+fn pull_request_head_ref(pull_request: &Value) -> &str {
+    pull_request_ref(pull_request, "/head/ref")
+}
+
+fn required_json_array<'a>(value: &'a Value, message: &str) -> Result<&'a Vec<Value>, ToolError> {
+    value
+        .as_array()
+        .ok_or_else(|| ToolError::Execution(message.to_string()))
+}
+
+fn render_comment_result(subject: &str, number: u64, repo: &RepoRef, comment: &Value) -> String {
+    format!(
+        "Commented on {subject} #{} in {}.\nURL: {}",
+        number,
+        repo.full_name(),
+        html_url_field(comment)
+    )
+}
+
 fn render_issue(issue: &Value) -> String {
     format!(
         "Issue #{}: {}\nState: {}\nURL: {}\n{}",
-        issue
-            .get("number")
-            .and_then(Value::as_u64)
-            .unwrap_or_default(),
-        string_field(issue, "title").unwrap_or("<untitled>"),
-        string_field(issue, "state").unwrap_or("<unknown>"),
-        string_field(issue, "html_url").unwrap_or("<unknown>"),
-        render_body(issue.get("body").and_then(Value::as_str))
+        number_field(issue),
+        title_field(issue),
+        state_field(issue, "<unknown>"),
+        html_url_field(issue),
+        render_body(body_field(issue))
     )
 }
 
 fn render_issue_list(repo: &RepoRef, issues: &[Value]) -> String {
-    if issues.is_empty() {
-        return format!("No issues found for {}/{}.", repo.owner, repo.repo);
-    }
+    render_list(repo, issues, "issues", "Issues", render_issue_list_item)
+}
 
-    let lines = issues
-        .iter()
-        .map(|issue| {
-            format!(
-                "- #{} [{}] {}",
-                issue
-                    .get("number")
-                    .and_then(Value::as_u64)
-                    .unwrap_or_default(),
-                string_field(issue, "state").unwrap_or("unknown"),
-                string_field(issue, "title").unwrap_or("<untitled>")
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    format!("Issues for {}/{}:\n{}", repo.owner, repo.repo, lines)
+fn render_issue_list_item(issue: &Value) -> String {
+    format!(
+        "- #{} [{}] {}",
+        number_field(issue),
+        state_field(issue, "unknown"),
+        title_field(issue)
+    )
 }
 
 fn render_pull_request(pull_request: &Value) -> String {
     format!(
         "Pull request #{}: {}\nState: {}\nURL: {}\nBase: {}\nHead: {}\n{}",
-        pull_request
-            .get("number")
-            .and_then(Value::as_u64)
-            .unwrap_or_default(),
-        string_field(pull_request, "title").unwrap_or("<untitled>"),
-        string_field(pull_request, "state").unwrap_or("<unknown>"),
-        string_field(pull_request, "html_url").unwrap_or("<unknown>"),
-        pull_request
-            .pointer("/base/ref")
-            .and_then(Value::as_str)
-            .unwrap_or("<unknown>"),
-        pull_request
-            .pointer("/head/ref")
-            .and_then(Value::as_str)
-            .unwrap_or("<unknown>"),
-        render_body(pull_request.get("body").and_then(Value::as_str))
+        number_field(pull_request),
+        title_field(pull_request),
+        state_field(pull_request, "<unknown>"),
+        html_url_field(pull_request),
+        pull_request_base_ref(pull_request),
+        pull_request_head_ref(pull_request),
+        render_body(body_field(pull_request))
+    )
+}
+
+fn render_created_pull_request(repo: &RepoRef, pull_request: &Value) -> String {
+    format!(
+        "Created pull request #{} in {}.\nURL: {}",
+        number_field(pull_request),
+        repo.full_name(),
+        html_url_field(pull_request)
+    )
+}
+
+fn render_updated_issue_state(
+    repo: &RepoRef,
+    issue_number: u64,
+    state: IssueState,
+    issue: &Value,
+) -> String {
+    format!(
+        "Issue #{} in {} is now {}.\nURL: {}",
+        issue_number,
+        repo.full_name(),
+        state.as_api_value(),
+        html_url_field(issue)
     )
 }
 
 fn render_pull_request_list(repo: &RepoRef, pull_requests: &[Value]) -> String {
-    if pull_requests.is_empty() {
-        return format!("No pull requests found for {}/{}.", repo.owner, repo.repo);
+    render_list(
+        repo,
+        pull_requests,
+        "pull requests",
+        "Pull requests",
+        render_pull_request_list_item,
+    )
+}
+
+fn render_pull_request_list_item(pull_request: &Value) -> String {
+    format!(
+        "- #{} [{}] {} ({} -> {})",
+        number_field(pull_request),
+        state_field(pull_request, "unknown"),
+        title_field(pull_request),
+        pull_request_head_ref(pull_request),
+        pull_request_base_ref(pull_request)
+    )
+}
+
+fn render_list(
+    repo: &RepoRef,
+    items: &[Value],
+    empty_label: &str,
+    header_label: &str,
+    render_item: impl Fn(&Value) -> String,
+) -> String {
+    if items.is_empty() {
+        return format!("No {empty_label} found for {}.", repo.full_name());
     }
 
-    let lines = pull_requests
-        .iter()
-        .map(|pull_request| {
-            format!(
-                "- #{} [{}] {} ({} -> {})",
-                pull_request
-                    .get("number")
-                    .and_then(Value::as_u64)
-                    .unwrap_or_default(),
-                string_field(pull_request, "state").unwrap_or("unknown"),
-                string_field(pull_request, "title").unwrap_or("<untitled>"),
-                pull_request
-                    .pointer("/head/ref")
-                    .and_then(Value::as_str)
-                    .unwrap_or("<unknown>"),
-                pull_request
-                    .pointer("/base/ref")
-                    .and_then(Value::as_str)
-                    .unwrap_or("<unknown>")
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    format!("Pull requests for {}/{}:\n{}", repo.owner, repo.repo, lines)
+    let repo_name = repo.full_name();
+    let lines = items.iter().map(render_item).collect::<Vec<_>>().join("\n");
+    format!("{header_label} for {repo_name}:\n{lines}")
 }
 
 fn render_body(body: Option<&str>) -> String {
@@ -684,7 +793,7 @@ impl Tool for GitHubIssueTool {
     }
 
     fn parameters_json_schema(&self) -> Value {
-        super::json_schema_for::<GitHubIssueArgs>()
+        json_schema_for::<GitHubIssueArgs>()
     }
 
     fn capability(&self) -> ToolCapability {
@@ -692,8 +801,7 @@ impl Tool for GitHubIssueTool {
     }
 
     async fn call(&self, _ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: GitHubIssueArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let args: GitHubIssueArgs = parse_tool_args(args_json)?;
         self.executor.issue(args).await
     }
 }
@@ -709,7 +817,7 @@ impl Tool for GitHubPullRequestTool {
     }
 
     fn parameters_json_schema(&self) -> Value {
-        super::json_schema_for::<GitHubPullRequestArgs>()
+        json_schema_for::<GitHubPullRequestArgs>()
     }
 
     fn capability(&self) -> ToolCapability {
@@ -717,8 +825,7 @@ impl Tool for GitHubPullRequestTool {
     }
 
     async fn call(&self, _ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: GitHubPullRequestArgs = serde_json::from_value(args_json)
-            .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
+        let args: GitHubPullRequestArgs = parse_tool_args(args_json)?;
         self.executor.pull_request(args).await
     }
 }
