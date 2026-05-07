@@ -4,10 +4,9 @@ use std::process::Command;
 
 use sha2::{Digest, Sha256};
 
-#[path = "common/repo_root.rs"]
-mod repo_root;
+mod common;
 
-use repo_root::repo_root;
+use common::repo_root;
 
 #[test]
 fn deterministic_multi_turn_tools_twice_produces_identical_sha256_digest() {

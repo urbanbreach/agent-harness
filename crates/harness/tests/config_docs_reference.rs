@@ -2,10 +2,9 @@ use std::collections::BTreeSet;
 
 use harness_core::config::{harness_schema_pretty_json, harness_tui_schema_pretty_json};
 
-#[path = "common/repo_root.rs"]
-mod repo_root;
+mod common;
 
-use repo_root::repo_root;
+use common::repo_root;
 
 fn documented_table_keys(doc: &str, heading: &str) -> BTreeSet<String> {
     let mut section = doc

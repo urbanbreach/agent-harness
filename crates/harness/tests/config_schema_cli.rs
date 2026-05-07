@@ -11,10 +11,9 @@ use harness_core::config::{
 use serde_json::Value;
 use tempfile::tempdir;
 
-#[path = "common/repo_root.rs"]
-mod repo_root;
+mod common;
 
-use repo_root::repo_root;
+use common::repo_root;
 
 fn openai_api_key_env_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();

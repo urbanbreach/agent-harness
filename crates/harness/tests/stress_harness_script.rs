@@ -2,10 +2,9 @@ use std::fs;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-#[path = "common/repo_root.rs"]
-mod repo_root;
+mod common;
 
-use repo_root::repo_root;
+use common::repo_root;
 
 #[test]
 fn stress_harness_script_offline_mode_writes_summary_and_stage_artifacts() {

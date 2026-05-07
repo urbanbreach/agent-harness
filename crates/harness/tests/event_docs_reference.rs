@@ -1,9 +1,8 @@
 use std::collections::BTreeSet;
 
-#[path = "common/repo_root.rs"]
-mod repo_root;
+mod common;
 
-use repo_root::repo_root;
+use common::repo_root;
 
 fn event_variants_from_source(source: &str) -> BTreeSet<String> {
     let enum_body = source

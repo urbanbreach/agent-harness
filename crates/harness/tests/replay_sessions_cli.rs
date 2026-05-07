@@ -15,10 +15,9 @@ use harness_core::event::{
 };
 use tempfile::tempdir;
 
-#[path = "common/repo_root.rs"]
-mod repo_root;
+mod common;
 
-use repo_root::repo_root;
+use common::repo_root;
 
 fn envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
     EventEnvelopeV1 {
