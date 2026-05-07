@@ -13,8 +13,9 @@ The generated JSON schemas are the source of truth:
 
 Start with `configs/harness.example.jsonc`. It keeps the happy path small: one
 OpenAI-compatible provider, one default model, scalar permission mode, and
-optional MCP. The runtime fills in the standard `build` and `plan` agents plus
-provider-context compaction defaults unless you override them explicitly.
+optional MCP. The runtime fills in the standard `build`, `plan`, `explore`, and
+`general` agents plus provider-context compaction defaults unless you override
+them explicitly.
 
 ```jsonc
 {
@@ -138,6 +139,16 @@ The shipped `plan` agent provides a two-phase planning mode: it can read/search,
 ask questions, write only under `.agent-harness/plans/`, and call `plan_exit` to
 ask whether to switch to `build`. The edit boundary is enforced by per-agent
 permission rules, not just prompt text.
+
+The shipped subagent profiles are available without extra config. `explore` is a
+read-only local codebase search profile for `task(subagent_type: "explore")`.
+`general` is a broader focused implementation/research profile for
+`task(subagent_type: "general")`; it intentionally omits `task` by default so
+subagents do not recursively redelegate unless a project opts into that tool.
+`task(run_in_background: true)` returns a child `request_id`; use the
+`background_output` tool with that `request_id` to inspect completion status or
+the terminal result. Retrieval is event-replay based and does not cancel or
+advance the child task.
 
 Agent `max_iters` / `maxIters` is optional. When unset, the runtime does not add
 a profile-specific iteration cap; the agent continues until the model stops, the

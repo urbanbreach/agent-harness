@@ -40,6 +40,8 @@ runtime config's `model` default:
 
 - `build` — default implementation lane
 - `plan` — read-only planning lane with runtime-enforced edits limited to `.agent-harness/plans/`, plus `plan_exit` to hand off to Build
+- `explore` — shipped read-only subagent profile for local codebase search via `task(subagent_type: "explore")`
+- `general` — shipped focused implementation/research subagent profile via `task(subagent_type: "general")`
 
 Validate the shipped example config:
 
@@ -121,7 +123,7 @@ The same lineage surface is available from the terminal through `harness session
 
 - `configs/harness.example.jsonc` — canonical example config
 - `configs/tui.example.jsonc` — canonical TUI config example
-- `.agent-harness/agents/*.md` — shipped build prompt plus any optional local additions
+- `.agent-harness/agents/*.md` — built-in agent frontmatter and optional local prompt overrides/additions
 - `crates/harness-testkit/tests/live_proxy_e2e.rs` — shipped config/signoff coverage
 
 ## Common commands
