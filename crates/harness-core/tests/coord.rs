@@ -1722,11 +1722,7 @@ async fn provider_calls_in_one_turn_have_unique_request_ids() {
         temp_dir.path(),
         Arc::new(provider.clone()),
         test_tool_registry(),
-        PermissionPolicy::new(
-            PermissionMode::Deny,
-            PermissionMode::Allow,
-            PermissionMode::Deny,
-        ),
+        shell_only_permission_policy(),
         vec!["shell.run".to_string()],
         12,
     );
@@ -1864,11 +1860,7 @@ async fn completed_tool_turn_preserves_tool_messages_for_followup_context() {
         temp_dir.path(),
         Arc::new(provider.clone()),
         test_tool_registry(),
-        PermissionPolicy::new(
-            PermissionMode::Allow,
-            PermissionMode::Allow,
-            PermissionMode::Allow,
-        ),
+        allow_all_permission_policy(),
         vec!["shell.run".to_string()],
         12,
     );
@@ -1999,11 +1991,7 @@ async fn resumed_tool_turn_preserves_tool_messages_for_followup_context() {
         temp_dir.path(),
         Arc::new(initial_provider),
         test_tool_registry(),
-        PermissionPolicy::new(
-            PermissionMode::Allow,
-            PermissionMode::Allow,
-            PermissionMode::Allow,
-        ),
+        allow_all_permission_policy(),
         vec!["shell.run".to_string()],
         12,
     );
@@ -2471,11 +2459,7 @@ async fn tool_turn_does_not_preflight_until_assistant_message_end_is_durable() {
         temp_dir.path(),
         Arc::new(provider),
         test_tool_registry(),
-        PermissionPolicy::new(
-            PermissionMode::Deny,
-            PermissionMode::Allow,
-            PermissionMode::Deny,
-        ),
+        shell_only_permission_policy(),
         vec!["shell.run".to_string()],
         12,
     );
@@ -2764,11 +2748,7 @@ async fn tool_results_project_in_assistant_source_order_after_out_of_order_compl
                 release: None,
             },
         ]),
-        PermissionPolicy::new(
-            PermissionMode::Deny,
-            PermissionMode::Allow,
-            PermissionMode::Deny,
-        ),
+        shell_only_permission_policy(),
         vec!["shell.slow".to_string(), "shell.fast".to_string()],
         12,
     );
@@ -2897,11 +2877,7 @@ async fn duplicate_provider_tool_call_ids_fail_before_tool_start() {
         temp_dir.path(),
         Arc::new(provider),
         test_tool_registry(),
-        PermissionPolicy::new(
-            PermissionMode::Deny,
-            PermissionMode::Allow,
-            PermissionMode::Deny,
-        ),
+        shell_only_permission_policy(),
         vec!["shell.run".to_string()],
         12,
     );
@@ -2973,11 +2949,7 @@ async fn empty_provider_tool_call_id_fails_before_tool_start() {
         temp_dir.path(),
         Arc::new(provider),
         test_tool_registry(),
-        PermissionPolicy::new(
-            PermissionMode::Deny,
-            PermissionMode::Allow,
-            PermissionMode::Deny,
-        ),
+        shell_only_permission_policy(),
         vec!["shell.run".to_string()],
         12,
     );
@@ -3034,11 +3006,7 @@ async fn denied_or_pending_tool_never_starts_before_permission_resolution() {
         temp_dir.path(),
         Arc::new(test_mock_provider()),
         test_tool_registry(),
-        PermissionPolicy::new(
-            PermissionMode::Deny,
-            PermissionMode::Deny,
-            PermissionMode::Deny,
-        ),
+        deny_all_permission_policy(),
         vec!["shell.run".to_string()],
         12,
     );
@@ -3084,12 +3052,7 @@ async fn denied_or_pending_tool_never_starts_before_permission_resolution() {
         pending_temp_dir.path(),
         Arc::new(test_mock_provider()),
         test_tool_registry(),
-        PermissionPolicy::new(
-            PermissionMode::Deny,
-            PermissionMode::Ask,
-            PermissionMode::Deny,
-        )
-        .with_ask_timeout_ms(5_000),
+        ask_shell_permission_policy(),
         vec!["shell.run".to_string()],
         12,
     );
@@ -3164,12 +3127,7 @@ async fn ask_pending_tool_call_never_emits_started_before_approval() {
         temp_dir.path(),
         Arc::new(test_mock_provider()),
         test_tool_registry(),
-        PermissionPolicy::new(
-            PermissionMode::Deny,
-            PermissionMode::Ask,
-            PermissionMode::Deny,
-        )
-        .with_ask_timeout_ms(5_000),
+        ask_shell_permission_policy(),
         vec!["shell.run".to_string()],
         12,
     );
@@ -3252,12 +3210,7 @@ async fn cancelling_turn_waiting_for_permission_emits_turn_end_without_tool_star
         temp_dir.path(),
         Arc::new(provider),
         test_tool_registry(),
-        PermissionPolicy::new(
-            PermissionMode::Deny,
-            PermissionMode::Ask,
-            PermissionMode::Deny,
-        )
-        .with_ask_timeout_ms(5_000),
+        ask_shell_permission_policy(),
         vec!["shell.run".to_string()],
         12,
     );
@@ -3380,11 +3333,7 @@ async fn late_tool_result_after_turn_cancellation_is_task_result_late() {
         temp_dir.path(),
         Arc::new(provider),
         lifecycle_tool_registry(release.clone()),
-        PermissionPolicy::new(
-            PermissionMode::Deny,
-            PermissionMode::Allow,
-            PermissionMode::Deny,
-        ),
+        shell_only_permission_policy(),
         vec!["shell.block".to_string()],
         12,
     );
@@ -3883,11 +3832,7 @@ async fn failed_turn_context_preserves_cancelled_turn_marker() {
             started: Some(tool_started.clone()),
             release: Some(tool_release.clone()),
         }]),
-        PermissionPolicy::new(
-            PermissionMode::Deny,
-            PermissionMode::Allow,
-            PermissionMode::Deny,
-        ),
+        shell_only_permission_policy(),
         vec!["shell.block".to_string()],
         12,
     );
@@ -4027,11 +3972,7 @@ async fn failed_turn_context_preserves_tool_failure_without_orphan_tool_call() {
             registry.register(Arc::new(FailingShellTool));
             registry
         }),
-        PermissionPolicy::new(
-            PermissionMode::Deny,
-            PermissionMode::Allow,
-            PermissionMode::Deny,
-        ),
+        shell_only_permission_policy(),
         vec!["shell.fail".to_string()],
         12,
     );
@@ -4257,11 +4198,7 @@ async fn aborted_response_compaction_preserves_abort_marker() {
             started: Some(tool_started.clone()),
             release: Some(tool_release.clone()),
         }]),
-        PermissionPolicy::new(
-            PermissionMode::Deny,
-            PermissionMode::Allow,
-            PermissionMode::Deny,
-        ),
+        shell_only_permission_policy(),
         vec!["shell.block".to_string()],
         12,
         CompactionRuntimeConfig {
@@ -4648,11 +4585,7 @@ async fn profile_max_iters_does_not_cap_tool_loops() {
         temp_dir.path(),
         Arc::new(provider),
         test_tool_registry(),
-        PermissionPolicy::new(
-            PermissionMode::Deny,
-            PermissionMode::Allow,
-            PermissionMode::Deny,
-        ),
+        shell_only_permission_policy(),
         vec!["shell.run".to_string()],
         2,
     );
@@ -8176,12 +8109,7 @@ async fn lifecycle_hooks_cover_provider_subagent_and_permission_events() {
     let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());
     config.deterministic_store = true;
     config.command_buffer = 64;
-    config.permission_policy = PermissionPolicy::new(
-        PermissionMode::Deny,
-        PermissionMode::Ask,
-        PermissionMode::Deny,
-    )
-    .with_ask_timeout_ms(5_000);
+    config.permission_policy = ask_shell_permission_policy();
     config.tool_registry = lifecycle_tool_registry(Arc::new(Notify::new()));
     config.provider = Arc::new(SlowMockProvider {
         inner: test_mock_provider(),
@@ -9015,6 +8943,39 @@ fn test_agent_coordinator_with_provider_compaction_and_hooks(
     spawn_coordinator(config, clock, redactor)
 }
 
+fn allow_all_permission_policy() -> PermissionPolicy {
+    PermissionPolicy::new(
+        PermissionMode::Allow,
+        PermissionMode::Allow,
+        PermissionMode::Allow,
+    )
+}
+
+fn shell_only_permission_policy() -> PermissionPolicy {
+    PermissionPolicy::new(
+        PermissionMode::Deny,
+        PermissionMode::Allow,
+        PermissionMode::Deny,
+    )
+}
+
+fn ask_shell_permission_policy() -> PermissionPolicy {
+    PermissionPolicy::new(
+        PermissionMode::Deny,
+        PermissionMode::Ask,
+        PermissionMode::Deny,
+    )
+    .with_ask_timeout_ms(5_000)
+}
+
+fn deny_all_permission_policy() -> PermissionPolicy {
+    PermissionPolicy::new(
+        PermissionMode::Deny,
+        PermissionMode::Deny,
+        PermissionMode::Deny,
+    )
+}
+
 fn test_resume_coordinator(session_dir: &Path) -> CoordinatorHandle {
     test_resume_coordinator_with_provider(session_dir, Arc::new(test_mock_provider()))
 }
@@ -9026,12 +8987,7 @@ fn test_resume_coordinator_with_provider(
     let mut config = CoordinatorConfig::new(session_dir.to_path_buf());
     config.deterministic_store = true;
     config.command_buffer = 64;
-    config.permission_policy = PermissionPolicy::new(
-        PermissionMode::Deny,
-        PermissionMode::Ask,
-        PermissionMode::Deny,
-    )
-    .with_ask_timeout_ms(5_000);
+    config.permission_policy = ask_shell_permission_policy();
     config.tool_registry = test_tool_registry();
     config.provider = provider;
     config.agent_profiles = agent_profiles();

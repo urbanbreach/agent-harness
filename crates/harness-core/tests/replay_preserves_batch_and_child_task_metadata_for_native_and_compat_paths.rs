@@ -4,13 +4,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use harness_core::clock::FakeClock;
-use harness_core::config::PermissionMode;
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, CoordinatorHandle};
 use harness_core::event::{
-    ActorKind, EventActor, EventEnvelopeV1, EventV1, ToolCallFinishedEvent, ToolCallRequestedEvent,
-    ToolCallStatus,
+    EventEnvelopeV1, EventV1, ToolCallFinishedEvent, ToolCallRequestedEvent, ToolCallStatus,
 };
-use harness_core::perm::PermissionPolicy;
 use harness_core::proj::inspect_resume_plan;
 use harness_core::redact::DefaultRedactor;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
@@ -18,7 +15,9 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 mod common;
-use common::{load_events, wait_for_tool_call_finish};
+use common::{
+    allow_all_permission_policy, load_events, supervisor_actor, wait_for_tool_call_finish,
+};
 
 struct SpawnMetadataTool {
     id: &'static str,
@@ -45,16 +44,15 @@ impl Tool for SpawnMetadataTool {
         let args: SpawnMetadataArgs = serde_json::from_value(args_json)
             .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
 
-        Ok(ToolResult {
-            display_text: format!("delegated to {}", args.child_session_id),
-            structured_json: Some(json!({
+        Ok(ToolResult::structured(
+            format!("delegated to {}", args.child_session_id),
+            json!({
                 "child_session_id": args.child_session_id,
                 "child_request_id": args.child_request_id,
                 "mode": "background",
                 "status": "scheduled",
-            })),
-            artifacts: Vec::new(),
-        })
+            }),
+        ))
     }
 }
 
@@ -96,9 +94,9 @@ impl Tool for BatchMetadataTool {
             })
             .collect::<Vec<_>>();
 
-        Ok(ToolResult {
-            display_text: "batch complete".to_string(),
-            structured_json: Some(json!({
+        Ok(ToolResult::structured(
+            "batch complete",
+            json!({
                 "successful": details.len(),
                 "failed": 0,
                 "execution": {
@@ -107,9 +105,8 @@ impl Tool for BatchMetadataTool {
                     "nested_batch_disallowed": true,
                 },
                 "details": details,
-            })),
-            artifacts: Vec::new(),
-        })
+            }),
+        ))
     }
 }
 
@@ -489,18 +486,10 @@ fn assert_replay_tool(
     );
 }
 
-fn supervisor_actor() -> EventActor {
-    EventActor::new(ActorKind::Supervisor, Some("agent_supervisor".to_string()))
-}
-
 fn test_coordinator(session_dir: &Path) -> CoordinatorHandle {
     let mut config = CoordinatorConfig::new(session_dir);
     config.deterministic_store = true;
-    config.permission_policy = PermissionPolicy::new(
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-    );
+    config.permission_policy = allow_all_permission_policy();
     config.tool_registry = test_registry();
 
     spawn_coordinator(

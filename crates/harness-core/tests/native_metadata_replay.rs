@@ -10,7 +10,6 @@ use harness_core::agent::{
     ProviderContextCheckpointMetadata, ProviderConversationTurn,
 };
 use harness_core::clock::FakeClock;
-use harness_core::config::PermissionMode;
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, CoordinatorHandle};
 use harness_core::event::{
     ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1,
@@ -18,7 +17,6 @@ use harness_core::event::{
     TaskScheduleState, TaskScheduledEvent, ToolCallFinishedEvent, ToolCallRequestedEvent,
     ToolCallStartedEvent, ToolCallStatus, SCHEMA_VERSION,
 };
-use harness_core::perm::PermissionPolicy;
 use harness_core::proj::inspect_resume_plan;
 use harness_core::redact::DefaultRedactor;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
@@ -27,7 +25,9 @@ use serde_json::{json, Value};
 
 mod common;
 
-use common::{load_events, wait_for_tool_call_finish};
+use common::{
+    allow_all_permission_policy, load_events, supervisor_actor, wait_for_tool_call_finish,
+};
 
 struct DelegatingAliasTaskTool;
 struct ReplayGuardTool;
@@ -68,14 +68,14 @@ impl Tool for DelegatingAliasTaskTool {
             )
             .map_err(|err| ToolError::Execution(format!("failed to write artifact: {err}")))?;
 
-        Ok(ToolResult {
-            display_text: format!("delegated work to child session {}", args.child_session_id),
-            structured_json: Some(json!({
+        Ok(ToolResult::structured_with_artifacts(
+            format!("delegated work to child session {}", args.child_session_id),
+            json!({
                 "child_session_id": args.child_session_id,
                 "child_request_id": args.child_request_id,
-            })),
-            artifacts: vec![artifact],
-        })
+            }),
+            vec![artifact],
+        ))
     }
 }
 
@@ -573,10 +573,6 @@ async fn resume_projection_handles_checkpoint_between_turn_and_provider_restart(
     assert!(load_events(&resumed.events_path).len() > 6);
 }
 
-fn supervisor_actor() -> EventActor {
-    EventActor::new(ActorKind::Supervisor, Some("agent_supervisor".to_string()))
-}
-
 fn task_alias_registry() -> Arc<ToolRegistry> {
     let mut registry = ToolRegistry::new();
     registry.register(Arc::new(DelegatingAliasTaskTool));
@@ -592,11 +588,7 @@ fn tool_registry_with_guard() -> Arc<ToolRegistry> {
 fn test_coordinator(session_dir: &Path, tool_registry: Arc<ToolRegistry>) -> CoordinatorHandle {
     let mut config = CoordinatorConfig::new(session_dir);
     config.deterministic_store = true;
-    config.permission_policy = PermissionPolicy::new(
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-    );
+    config.permission_policy = allow_all_permission_policy();
     config.tool_registry = tool_registry;
     config.agent_profiles = agent_profiles();
 

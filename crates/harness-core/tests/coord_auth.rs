@@ -19,7 +19,7 @@ use serde_json::json;
 
 mod common;
 
-use common::load_events;
+use common::{allow_all_permission_policy, load_events, supervisor_actor};
 
 const SHELL_RUN_TOOL_ID: &str = "shell.run";
 const EDIT_TOOL_ID: &str = "edit";
@@ -69,25 +69,21 @@ impl Tool for TestEditTool {
 #[tokio::test]
 async fn tool_auth_uses_derived_worker_category_not_caller_category() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
-    let policy = PermissionPolicy::new(
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-    )
-    .with_category_override(
-        "worker-deny",
-        CategoryPermissions {
-            shell: Some(PermissionMode::Deny),
-            ..CategoryPermissions::default()
-        },
-    )
-    .with_category_override(
-        "spoof-allow",
-        CategoryPermissions {
-            shell: Some(PermissionMode::Allow),
-            ..CategoryPermissions::default()
-        },
-    );
+    let policy = allow_all_permission_policy()
+        .with_category_override(
+            "worker-deny",
+            CategoryPermissions {
+                shell: Some(PermissionMode::Deny),
+                ..CategoryPermissions::default()
+            },
+        )
+        .with_category_override(
+            "spoof-allow",
+            CategoryPermissions {
+                shell: Some(PermissionMode::Allow),
+                ..CategoryPermissions::default()
+            },
+        );
 
     let coordinator = test_coordinator(
         temp_dir.path(),
@@ -142,16 +138,11 @@ async fn tool_auth_uses_derived_worker_category_not_caller_category() {
 #[tokio::test]
 async fn unknown_worker_agent_id_is_denied_closed() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
-    let policy = PermissionPolicy::new(
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-    );
 
     let coordinator = test_coordinator(
         temp_dir.path(),
         worker_profile("worker-allow", vec!["shell.run".to_string()]),
-        policy,
+        allow_all_permission_policy(),
     );
 
     let run = coordinator
@@ -185,16 +176,11 @@ async fn unknown_worker_agent_id_is_denied_closed() {
 #[tokio::test]
 async fn worker_toolset_enforcement_blocks_non_allowlisted_tool() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
-    let policy = PermissionPolicy::new(
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-    );
 
     let coordinator = test_coordinator(
         temp_dir.path(),
         worker_profile("worker-allow", vec!["edit".to_string()]),
-        policy,
+        allow_all_permission_policy(),
     );
 
     let run = coordinator
@@ -233,12 +219,7 @@ async fn worker_toolset_enforcement_blocks_non_allowlisted_tool() {
 #[tokio::test]
 async fn edit_rename_requires_permission_for_destination_path() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
-    let policy = PermissionPolicy::new(
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-    )
-    .with_category_override(
+    let policy = allow_all_permission_policy().with_category_override(
         "plan",
         CategoryPermissions {
             edit: Some(PermissionMode::Deny),
@@ -320,10 +301,6 @@ fn worker_profile(category: &str, toolset: Vec<String>) -> AgentProfile {
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
         toolset,
     }
-}
-
-fn supervisor_actor() -> EventActor {
-    EventActor::new(ActorKind::Supervisor, Some("agent_supervisor".to_string()))
 }
 
 fn test_coordinator(

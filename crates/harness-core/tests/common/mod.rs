@@ -2,7 +2,37 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
-use harness_core::event::{EventEnvelopeV1, EventV1};
+use harness_core::config::PermissionMode;
+use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1};
+use harness_core::perm::PermissionPolicy;
+
+#[allow(dead_code)]
+pub fn supervisor_actor() -> EventActor {
+    supervisor_actor_with_id("agent_supervisor")
+}
+
+#[allow(dead_code)]
+pub fn supervisor_actor_with_id(agent_id: &str) -> EventActor {
+    EventActor::new(ActorKind::Supervisor, Some(agent_id.to_string()))
+}
+
+#[allow(dead_code)]
+pub fn allow_all_permission_policy() -> PermissionPolicy {
+    PermissionPolicy::new(
+        PermissionMode::Allow,
+        PermissionMode::Allow,
+        PermissionMode::Allow,
+    )
+}
+
+#[allow(dead_code)]
+pub fn shell_denied_permission_policy() -> PermissionPolicy {
+    PermissionPolicy::new(
+        PermissionMode::Allow,
+        PermissionMode::Deny,
+        PermissionMode::Allow,
+    )
+}
 
 pub fn load_events(events_path: &Path) -> Vec<EventEnvelopeV1> {
     let body = fs::read_to_string(events_path).expect("read events file");

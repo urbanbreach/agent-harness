@@ -149,9 +149,9 @@ impl Tool for TestMcpWrapperTool {
             .and_then(|value| value.get("text"))
             .and_then(serde_json::Value::as_str)
             .unwrap_or_default();
-        Ok(ToolResult {
-            display_text: text.to_string(),
-            structured_json: Some(serde_json::json!({
+        Ok(ToolResult::structured(
+            text,
+            serde_json::json!({
                 "server": {
                     "id": "fixture",
                     "transport": "stdio",
@@ -169,16 +169,15 @@ impl Tool for TestMcpWrapperTool {
                         "isError": false,
                     },
                 },
-            })),
-            artifacts: Vec::new(),
-        })
+            }),
+        ))
     }
 }
 
 fn fake_mcp_echo_result(text: &str) -> ToolResult {
-    ToolResult {
-        display_text: text.to_string(),
-        structured_json: Some(serde_json::json!({
+    ToolResult::structured(
+        text,
+        serde_json::json!({
             "server": {
                 "id": "fixture",
                 "transport": "stdio",
@@ -196,9 +195,8 @@ fn fake_mcp_echo_result(text: &str) -> ToolResult {
                     "isError": false,
                 },
             },
-        })),
-        artifacts: Vec::new(),
-    }
+        }),
+    )
 }
 
 fn test_tool_registry() -> Arc<ToolRegistry> {
@@ -216,15 +214,23 @@ fn test_config(session_dir: &Path) -> CoordinatorConfig {
     config
 }
 
+fn shell_permission_policy(shell_mode: PermissionMode) -> PermissionPolicy {
+    PermissionPolicy::new(PermissionMode::Deny, shell_mode, PermissionMode::Deny)
+}
+
+fn allow_shell_permission_policy() -> PermissionPolicy {
+    shell_permission_policy(PermissionMode::Allow)
+}
+
+fn ask_shell_permission_policy(timeout_ms: u64) -> PermissionPolicy {
+    shell_permission_policy(PermissionMode::Ask).with_ask_timeout_ms(timeout_ms)
+}
+
 #[tokio::test]
 async fn perm_allow_path_proceeds() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let mut config = test_config(temp_dir.path());
-    config.permission_policy = PermissionPolicy::new(
-        PermissionMode::Deny,
-        PermissionMode::Allow,
-        PermissionMode::Deny,
-    );
+    config.permission_policy = allow_shell_permission_policy();
 
     let handle = spawn_coordinator(
         config,
@@ -378,12 +384,7 @@ async fn permission_rule_bash_selector_is_enforced_at_tool_call_site() {
 async fn perm_ask_path_blocks_until_resolved() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let mut config = test_config(temp_dir.path());
-    config.permission_policy = PermissionPolicy::new(
-        PermissionMode::Deny,
-        PermissionMode::Ask,
-        PermissionMode::Deny,
-    )
-    .with_ask_timeout_ms(1_000);
+    config.permission_policy = ask_shell_permission_policy(1_000);
 
     let handle = spawn_coordinator(
         config,
@@ -477,12 +478,7 @@ async fn perm_ask_path_blocks_until_resolved() {
 async fn allow_always_records_grant_and_authorizes_matching_future_shell_call() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let mut config = test_config(temp_dir.path());
-    config.permission_policy = PermissionPolicy::new(
-        PermissionMode::Deny,
-        PermissionMode::Ask,
-        PermissionMode::Deny,
-    )
-    .with_ask_timeout_ms(1_000);
+    config.permission_policy = ask_shell_permission_policy(1_000);
 
     let handle = spawn_coordinator(
         config,
@@ -571,12 +567,7 @@ async fn allow_always_records_grant_and_authorizes_matching_future_shell_call() 
 async fn allow_always_shell_run_grant_does_not_authorize_changed_args() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let mut config = test_config(temp_dir.path());
-    config.permission_policy = PermissionPolicy::new(
-        PermissionMode::Deny,
-        PermissionMode::Ask,
-        PermissionMode::Deny,
-    )
-    .with_ask_timeout_ms(1_000);
+    config.permission_policy = ask_shell_permission_policy(1_000);
 
     let handle = spawn_coordinator(
         config,
@@ -655,19 +646,13 @@ async fn allow_always_shell_run_grant_does_not_authorize_changed_args() {
 async fn static_deny_overrides_permission_grant() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let mut config = test_config(temp_dir.path());
-    config.permission_policy = PermissionPolicy::new(
-        PermissionMode::Deny,
-        PermissionMode::Ask,
-        PermissionMode::Deny,
-    )
-    .with_category_override(
+    config.permission_policy = ask_shell_permission_policy(1_000).with_category_override(
         "locked",
         CategoryPermissions {
             shell: Some(PermissionMode::Deny),
             ..CategoryPermissions::default()
         },
-    )
-    .with_ask_timeout_ms(1_000);
+    );
 
     let handle = spawn_coordinator(
         config,
@@ -745,12 +730,7 @@ async fn static_deny_overrides_permission_grant() {
 async fn permission_grant_event_does_not_persist_raw_shell_command_secret() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let mut config = test_config(temp_dir.path());
-    config.permission_policy = PermissionPolicy::new(
-        PermissionMode::Deny,
-        PermissionMode::Ask,
-        PermissionMode::Deny,
-    )
-    .with_ask_timeout_ms(1_000);
+    config.permission_policy = ask_shell_permission_policy(1_000);
 
     let handle = spawn_coordinator(
         config,
@@ -810,12 +790,7 @@ async fn permission_grant_event_does_not_persist_raw_shell_command_secret() {
 async fn perm_timeout_path_denies_deterministically() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let mut config = test_config(temp_dir.path());
-    config.permission_policy = PermissionPolicy::new(
-        PermissionMode::Deny,
-        PermissionMode::Ask,
-        PermissionMode::Deny,
-    )
-    .with_ask_timeout_ms(25);
+    config.permission_policy = ask_shell_permission_policy(25);
 
     let handle = spawn_coordinator(
         config,
@@ -936,11 +911,7 @@ async fn malformed_question_answer_does_not_resolve_permission() {
 async fn mcp_effective_identity_persists_for_direct_and_wrapper_calls() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let mut config = test_config(temp_dir.path());
-    config.permission_policy = PermissionPolicy::new(
-        PermissionMode::Deny,
-        PermissionMode::Allow,
-        PermissionMode::Deny,
-    );
+    config.permission_policy = allow_shell_permission_policy();
 
     let handle = spawn_coordinator(
         config,

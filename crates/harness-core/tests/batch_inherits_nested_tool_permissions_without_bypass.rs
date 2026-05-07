@@ -3,10 +3,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use harness_core::clock::FakeClock;
-use harness_core::config::PermissionMode;
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, CoordinatorHandle};
-use harness_core::event::{ActorKind, EventActor, EventV1, PermissionDecision};
-use harness_core::perm::PermissionPolicy;
+use harness_core::event::{EventV1, PermissionDecision};
 use harness_core::redact::DefaultRedactor;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
 use serde::Deserialize;
@@ -14,7 +12,9 @@ use serde_json::{json, Value};
 
 mod common;
 
-use common::{load_events, wait_for_tool_call_finish};
+use common::{
+    load_events, shell_denied_permission_policy, supervisor_actor, wait_for_tool_call_finish,
+};
 
 struct TestShellTool;
 
@@ -144,19 +144,11 @@ async fn batch_inherits_nested_tool_permissions_without_bypass() {
     }));
 }
 
-fn supervisor_actor() -> EventActor {
-    EventActor::new(ActorKind::Supervisor, Some("agent_supervisor".to_string()))
-}
-
 fn test_coordinator(session_dir: &Path) -> CoordinatorHandle {
     let mut config = CoordinatorConfig::new(session_dir.to_path_buf());
     config.deterministic_store = true;
     config.command_buffer = 64;
-    config.permission_policy = PermissionPolicy::new(
-        PermissionMode::Allow,
-        PermissionMode::Deny,
-        PermissionMode::Allow,
-    );
+    config.permission_policy = shell_denied_permission_policy();
     config.tool_registry = test_tool_registry();
 
     let clock = Arc::new(FakeClock::new());

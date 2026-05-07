@@ -21,7 +21,7 @@ use harness_core::redact::DefaultRedactor;
 
 mod common;
 
-use common::load_events;
+use common::{load_events, supervisor_actor_with_id};
 
 const PROFILE_NAME: &str = "task1_deep";
 const MODEL_REF: &str = "default:gpt-5.4-mini";
@@ -44,7 +44,11 @@ async fn recorded_runtime_context_meta_roundtrips() {
         .await
         .expect("start run");
     coordinator
-        .spawn_agent_idle(supervisor_actor(), PROFILE_NAME, None)
+        .spawn_agent_idle(
+            supervisor_actor_with_id("agent-supervisor"),
+            PROFILE_NAME,
+            None,
+        )
         .await
         .expect("spawn launch agent");
     coordinator.stop_run().await.expect("stop run");
@@ -269,10 +273,6 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
         },
     );
     profiles
-}
-
-fn supervisor_actor() -> EventActor {
-    EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string()))
 }
 
 fn envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
