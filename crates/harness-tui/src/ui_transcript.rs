@@ -1581,15 +1581,25 @@ fn build_transcript_sections(app: &AppState) -> Vec<TranscriptSection> {
 }
 
 fn hidden_delegated_child_request_ids(app: &AppState) -> BTreeSet<&str> {
-    app.activities
-        .iter()
-        .flat_map(|activity| activity.tool_calls.iter())
-        .filter(|tool_call| {
-            matches!(tool_call.effective_tool_id(), "agent.spawn" | "task")
-                || matches!(tool_call.tool_id.as_str(), "agent.spawn" | "task")
-        })
-        .filter_map(task_tool_child_request_id)
-        .collect()
+    let current_session_id = app.current_session_id();
+    let mut hidden = app.delegated_child_request_ids_for_parent_view(app.current_session_id());
+    hidden.extend(
+        app.activities
+            .iter()
+            .flat_map(|activity| activity.tool_calls.iter())
+            .filter(|tool_call| {
+                matches!(tool_call.effective_tool_id(), "agent.spawn" | "task")
+                    || matches!(tool_call.tool_id.as_str(), "agent.spawn" | "task")
+            })
+            .filter_map(|tool_call| {
+                let request_id = task_tool_child_request_id(tool_call)?;
+                let child_session_id = task_tool_child_session_id(tool_call);
+                child_session_id
+                    .is_none_or(|child_session_id| current_session_id != Some(child_session_id))
+                    .then_some(request_id)
+            }),
+    );
+    hidden
 }
 
 fn task_tool_child_request_id(tool_call: &crate::app::ToolCallEntry) -> Option<&str> {
@@ -1602,6 +1612,20 @@ fn task_tool_child_request_id(tool_call: &crate::app::ToolCallEntry) -> Option<&
             tool_json_string_ref(
                 tool_call.output_json.as_ref(),
                 &["child_request_id", "request_id"],
+            )
+        })
+}
+
+fn task_tool_child_session_id(tool_call: &crate::app::ToolCallEntry) -> Option<&str> {
+    tool_call
+        .lineage
+        .as_ref()
+        .and_then(|lineage| lineage.child_session_id.as_deref())
+        .and_then(non_empty_trimmed)
+        .or_else(|| {
+            tool_json_string_ref(
+                tool_call.output_json.as_ref(),
+                &["child_session_id", "session_id", "task_id"],
             )
         })
 }
@@ -5296,12 +5320,7 @@ fn assistant_footer_target_index(turn: &TranscriptTurnSection) -> Option<usize> 
         .then_some(0);
     }
 
-    Some(
-        turn.assistant_parts
-            .iter()
-            .rposition(|part| matches!(part, TranscriptAssistantPart::Body(_)))
-            .unwrap_or_else(|| turn.assistant_parts.len() - 1),
-    )
+    Some(turn.assistant_parts.len() - 1)
 }
 
 fn assistant_part_needs_leading_gap(
@@ -8174,6 +8193,55 @@ pub(crate) fn exact_test_transcript_reasoning_precedes_answer_and_tool_rows() {
     assert!(lines
         .iter()
         .any(|line| line.contains("working through the plan")));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_latest_assistant_footer_stays_after_trailing_tool_rows() {
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-tool-after-body",
+        ActivityStatus::Done,
+        "I need to inspect the file first.",
+    );
+    let mut tool_call = transcript_section_model_test_tool_call("call-read", "fs.read");
+    tool_call.args_summary = r#"{"path":"src/ui.rs"}"#.to_string();
+    tool_call.status = ToolCallDisplayStatus::Succeeded;
+    tool_call.output_summary = Some("24 lines read".to_string());
+    tool_call.output_digest = Some("out-digest".to_string());
+    tool_call.truncated_output = Some("24 lines read".to_string());
+    tool_call.first_seq = 2;
+    tool_call.last_seq = 3;
+    entry.tool_calls.push(tool_call);
+    entry.last_seq = 3;
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+
+    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        96,
+    ));
+
+    let body_row = lines
+        .iter()
+        .position(|line| line.contains("I need to inspect the file first."))
+        .expect("assistant body row");
+    let tool_row = lines
+        .iter()
+        .position(|line| line.contains("Read src/ui.rs"))
+        .expect("tool row");
+    let footer_row = lines
+        .iter()
+        .position(|line| line.contains("Assistant · gpt-5.4-mini"))
+        .expect("assistant footer row");
+
+    assert!(
+        body_row < tool_row,
+        "tool row should render after the assistant prose\n{lines:#?}"
+    );
+    assert!(
+        tool_row < footer_row,
+        "assistant footer should stay pinned after trailing tool rows\n{lines:#?}"
+    );
 }
 
 #[cfg(test)]

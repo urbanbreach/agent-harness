@@ -28,6 +28,8 @@ pub struct SessionProjection {
     pub(crate) transcript_trimmed_count: usize,
     orchestration_tasks: BTreeMap<String, OrchestrationTaskRow>,
     agent_profiles: BTreeMap<String, String>,
+    child_agent_ids: BTreeSet<String>,
+    child_request_agents: BTreeMap<String, String>,
     seen_seqs: BTreeSet<u64>,
     pub(crate) pending_permissions: BTreeMap<String, PendingPermission>,
     pub(crate) run_terminal_seen: bool,
@@ -42,6 +44,8 @@ impl SessionProjection {
         self.compaction_usage_metrics = CompactionUsageMetrics::default();
         self.orchestration_tasks.clear();
         self.agent_profiles.clear();
+        self.child_agent_ids.clear();
+        self.child_request_agents.clear();
         self.seen_seqs.clear();
         self.pending_permissions.clear();
         self.run_terminal_seen = false;
@@ -132,6 +136,33 @@ impl SessionProjection {
             .correlation_id
             .as_deref()
             .unwrap_or(provider_request_id)
+    }
+
+    fn note_child_agent_request(&mut self, event: &EventEnvelopeV1, request_id: &str) {
+        let Some(agent_id) = event
+            .actor
+            .agent_id
+            .as_deref()
+            .or_else(|| event.stream_key.as_deref()?.strip_prefix("agent:"))
+        else {
+            return;
+        };
+        if self.child_agent_ids.contains(agent_id) {
+            self.child_request_agents
+                .insert(request_id.to_string(), agent_id.to_string());
+        }
+    }
+
+    pub(crate) fn delegated_child_request_ids_for_parent_view<'a>(
+        &'a self,
+        current_session_id: Option<&str>,
+    ) -> BTreeSet<&'a str> {
+        self.child_request_agents
+            .iter()
+            .filter_map(|(request_id, agent_id)| {
+                (current_session_id != Some(agent_id.as_str())).then_some(request_id.as_str())
+            })
+            .collect()
     }
 
     fn activity_index_for_provider_event(
@@ -590,8 +621,12 @@ impl SessionProjection {
             EventV1::AgentSpawned(data) => {
                 self.agent_profiles
                     .insert(data.agent_id.clone(), data.profile.clone());
+                if data.parent_agent_id.is_some() {
+                    self.child_agent_ids.insert(data.agent_id.clone());
+                }
             }
             EventV1::UserMessageSubmitted(data) => {
+                self.note_child_agent_request(event, &data.request_id);
                 if let Some(index) = self.activity_index_for_user_message(data, event.seq) {
                     let status = if self.activities.iter().any(|activity| {
                         activity.status == ActivityStatus::Streaming
@@ -638,6 +673,7 @@ impl SessionProjection {
                 }
             }
             EventV1::ProviderRequestStarted(data) => {
+                self.note_child_agent_request(event, &data.request_id);
                 let turn_id = Self::canonical_provider_turn_id(event, &data.request_id);
                 if let Some(index) = self.activity_index_for_provider_event(event, &data.request_id)
                 {
@@ -665,6 +701,7 @@ impl SessionProjection {
                 }
             }
             EventV1::ProviderStreamDelta(data) => {
+                self.note_child_agent_request(event, &data.request_id);
                 let turn_id = Self::canonical_provider_turn_id(event, &data.request_id);
                 if let Some(index) = self.activity_index_for_provider_event(event, &data.request_id)
                 {
@@ -691,6 +728,7 @@ impl SessionProjection {
                 self.enforce_transcript_memory_cap();
             }
             EventV1::ProviderReasoningDelta(data) => {
+                self.note_child_agent_request(event, &data.request_id);
                 let turn_id = Self::canonical_provider_turn_id(event, &data.request_id);
                 if let Some(index) = self.activity_index_for_provider_event(event, &data.request_id)
                 {
@@ -720,6 +758,7 @@ impl SessionProjection {
                 self.enforce_transcript_memory_cap();
             }
             EventV1::ProviderRequestFinished(data) => {
+                self.note_child_agent_request(event, &data.request_id);
                 let turn_id = Self::canonical_provider_turn_id(event, &data.request_id);
                 if let Some(index) = self.activity_index_for_provider_event(event, &data.request_id)
                 {
@@ -842,6 +881,9 @@ impl SessionProjection {
                 }
             }
             EventV1::TaskScheduled(data) => {
+                if let Some(request_id) = event.correlation_id.as_deref() {
+                    self.note_child_agent_request(event, request_id);
+                }
                 if data.state == harness_core::event::TaskScheduleState::Queued {
                     if let Some(request_id) = event.correlation_id.as_deref() {
                         if let Some(index) =
@@ -910,6 +952,9 @@ impl SessionProjection {
             }
             EventV1::ToolCallRequested(data) => {
                 let target_corr_id = event.correlation_id.clone();
+                if let Some(request_id) = target_corr_id.as_deref() {
+                    self.note_child_agent_request(event, request_id);
+                }
                 let use_back = self
                     .activities
                     .back()

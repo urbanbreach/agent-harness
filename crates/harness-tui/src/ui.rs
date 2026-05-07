@@ -203,6 +203,7 @@ pub(crate) use ui_transcript::{
     exact_test_block_tool_cards_skip_empty_subtitle_rows,
     exact_test_generic_tool_successful_output_prefers_inline_background_rows,
     exact_test_inline_tool_rows_wrap_long_subtitles_cleanly,
+    exact_test_latest_assistant_footer_stays_after_trailing_tool_rows,
     exact_test_lsp_tool_successful_output_stays_hidden_until_generic_output_enabled,
     exact_test_mcp_tool_transcript_rows_use_effective_identity_without_generic_fallback,
     exact_test_native_tool_transcript_rows_show_disclosure_timestamps_and_task_metadata,

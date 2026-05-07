@@ -24,6 +24,7 @@ delegate_test!(fenced_code_highlighting_falls_back_to_plain_text_when_unknown =>
 delegate_test!(transcript_section_model_preserves_activity_order => ui::exact_test_transcript_section_model_preserves_activity_order);
 delegate_test!(transcript_section_model_keeps_nested_tool_and_error_blocks => ui::exact_test_transcript_section_model_keeps_nested_tool_and_error_blocks);
 delegate_test!(transcript_reasoning_precedes_answer_and_tool_rows => ui::exact_test_transcript_reasoning_precedes_answer_and_tool_rows);
+delegate_test!(latest_assistant_footer_stays_after_trailing_tool_rows => ui::exact_test_latest_assistant_footer_stays_after_trailing_tool_rows);
 delegate_test!(transcript_tool_rows_follow_chronological_turn_order => ui::exact_test_transcript_tool_rows_follow_chronological_turn_order);
 delegate_test!(transcript_applied_edit_missing_diff_surfaces_fallback => ui::exact_test_transcript_applied_edit_missing_diff_surfaces_fallback);
 delegate_test!(transcript_edit_tool_matches_inline_diff_shape => ui::exact_test_transcript_edit_tool_matches_inline_diff_shape);
@@ -251,19 +252,18 @@ fn transcript_turn_sections_keep_nested_tool_details() {
         .unwrap_or_else(|| panic!("reasoning row\n{rendered}"));
     let body_row = find_line_containing(&lines, "Assistant body")
         .unwrap_or_else(|| panic!("assistant body row\n{rendered}"));
-    let assistant_footer = find_line_containing_from(&lines, body_row + 1, "Assistant")
-        .unwrap_or_else(|| panic!("assistant footer\n{rendered}"));
-    let tool_row = find_line_containing_all_from(&lines, assistant_footer + 1, &["false"])
+    let tool_row = find_line_containing_all_from(&lines, body_row + 1, &["false"])
         .unwrap_or_else(|| panic!("tool row\n{rendered}"));
     let error_row = find_line_containing_from(&lines, tool_row + 1, "tool call failed")
         .unwrap_or_else(|| panic!("tool error row\n{rendered}"));
+    let assistant_footer = find_line_containing_from(&lines, error_row + 1, "Assistant")
+        .unwrap_or_else(|| panic!("assistant footer\n{rendered}"));
 
     assert!(reasoning_row < body_row);
     assert!(body_row >= reasoning_row + 2);
-    assert!(body_row < assistant_footer);
-    assert!(assistant_footer < tool_row);
+    assert!(body_row < tool_row);
     assert!(tool_row < error_row);
-    assert!(body_row < error_row);
+    assert!(error_row < assistant_footer);
 
     let assistant_body_column = first_alphanumeric_column(lines[body_row]);
     let assistant_body_rail = first_non_whitespace_column(lines[body_row]);

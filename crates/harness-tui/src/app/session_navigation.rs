@@ -1998,7 +1998,7 @@ impl AppState {
         }
     }
 
-    pub(in crate::app) fn current_session_id(&self) -> Option<&str> {
+    pub(crate) fn current_session_id(&self) -> Option<&str> {
         self.session_path
             .as_deref()
             .and_then(Path::file_name)
