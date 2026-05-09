@@ -411,6 +411,22 @@ struct ShellOutputPreviewLimits {
 }
 
 impl ShellOutputPreviewLimits {
+    fn preview(self, text: &str) -> ShellOutputPreview {
+        let total_bytes = text.len();
+        let total_lines = count_shell_output_lines(text);
+        let preview_end = self.preview_end(text);
+
+        let inline_text = text[..preview_end].to_string();
+        let inline_lines = count_shell_output_lines(&inline_text);
+
+        ShellOutputPreview {
+            inline_lines,
+            inline_text,
+            total_bytes,
+            total_lines,
+        }
+    }
+
     fn preview_end(self, text: &str) -> usize {
         let byte_limited_end = self.byte_limited_end(text);
         let line_limited_end = self.line_limited_end(text);
@@ -491,22 +507,6 @@ impl ShellOutputPreview {
         let mut display_text = self.inline_text;
         append_truncation_marker(&mut display_text, &marker);
         display_text
-    }
-}
-
-fn preview_shell_output(text: &str, limits: ShellOutputPreviewLimits) -> ShellOutputPreview {
-    let total_bytes = text.len();
-    let total_lines = count_shell_output_lines(text);
-    let preview_end = limits.preview_end(text);
-
-    let inline_text = text[..preview_end].to_string();
-    let inline_lines = count_shell_output_lines(&inline_text);
-
-    ShellOutputPreview {
-        inline_lines,
-        inline_text,
-        total_bytes,
-        total_lines,
     }
 }
 
@@ -638,7 +638,7 @@ fn build_shell_run_result(
 
     output.insert_stream_byte_metadata(&mut structured_json);
     let full_output = output.combined_output();
-    let preview = preview_shell_output(&full_output, SHELL_OUTPUT_PREVIEW_LIMITS);
+    let preview = SHELL_OUTPUT_PREVIEW_LIMITS.preview(&full_output);
 
     if !preview.is_truncated() {
         return Ok(build_inline_shell_run_result(
@@ -1514,19 +1514,17 @@ mod tests {
     }
 
     #[test]
-    fn preview_shell_output_enforces_line_limit_without_trailing_newline() {
+    fn shell_output_preview_enforces_line_limit_without_trailing_newline() {
         let output = (1..=2_001)
             .map(|idx| format!("line {idx}"))
             .collect::<Vec<_>>()
             .join("\n");
 
-        let preview = super::preview_shell_output(
-            &output,
-            super::ShellOutputPreviewLimits {
-                max_lines: super::SHELL_OUTPUT_INLINE_LINE_LIMIT,
-                max_bytes: usize::MAX,
-            },
-        );
+        let preview = super::ShellOutputPreviewLimits {
+            max_lines: super::SHELL_OUTPUT_INLINE_LINE_LIMIT,
+            max_bytes: usize::MAX,
+        }
+        .preview(&output);
 
         assert!(preview.is_truncated());
         assert_eq!(preview.inline_lines, super::SHELL_OUTPUT_INLINE_LINE_LIMIT);
@@ -1539,19 +1537,17 @@ mod tests {
     }
 
     #[test]
-    fn preview_shell_output_allows_exact_line_limit_without_trailing_newline() {
+    fn shell_output_preview_allows_exact_line_limit_without_trailing_newline() {
         let output = (1..=super::SHELL_OUTPUT_INLINE_LINE_LIMIT)
             .map(|idx| format!("line {idx}"))
             .collect::<Vec<_>>()
             .join("\n");
 
-        let preview = super::preview_shell_output(
-            &output,
-            super::ShellOutputPreviewLimits {
-                max_lines: super::SHELL_OUTPUT_INLINE_LINE_LIMIT,
-                max_bytes: usize::MAX,
-            },
-        );
+        let preview = super::ShellOutputPreviewLimits {
+            max_lines: super::SHELL_OUTPUT_INLINE_LINE_LIMIT,
+            max_bytes: usize::MAX,
+        }
+        .preview(&output);
 
         assert!(!preview.is_truncated());
         assert_eq!(preview.inline_lines, super::SHELL_OUTPUT_INLINE_LINE_LIMIT);
@@ -1560,14 +1556,12 @@ mod tests {
     }
 
     #[test]
-    fn preview_shell_output_byte_limit_keeps_utf8_boundaries() {
-        let preview = super::preview_shell_output(
-            "ééx",
-            super::ShellOutputPreviewLimits {
-                max_lines: usize::MAX,
-                max_bytes: 3,
-            },
-        );
+    fn shell_output_preview_byte_limit_keeps_utf8_boundaries() {
+        let preview = super::ShellOutputPreviewLimits {
+            max_lines: usize::MAX,
+            max_bytes: 3,
+        }
+        .preview("ééx");
 
         assert!(preview.is_truncated());
         assert_eq!(preview.inline_text, "é");
