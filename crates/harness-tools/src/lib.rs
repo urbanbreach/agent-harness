@@ -606,6 +606,7 @@ impl Tool for FsReadTool {
         let render = request.render;
         let read = read_fs_window(&resolved, start_line_index, line_limit, render)?;
         let display = build_fs_read_display(&ctx, &resolved, &read, start_line_index, render)?;
+        let structured_json = build_fs_read_structured_json(&request, &resolved, &read);
 
         if let Some(anchors) = read.anchors {
             record_file_hashline_read(&ctx, &resolved, anchors)?;
@@ -615,21 +616,7 @@ impl Tool for FsReadTool {
 
         Ok(text_json_artifacts_tool_result(
             display.text,
-            json!({
-                "path": request.path.as_str(),
-                "resolved_path": resolved.display().to_string(),
-                "offset": request.offset,
-                "limit": request.limit,
-                "total_lines": read.total_lines,
-                "line_numbers": request.render.line_numbers,
-                "hashline_anchors": request.render.hashline_anchors,
-                "anchors": if request.render.hashline_anchors {
-                    build_fs_read_anchor_payload_from_owned(&read.shown_lines, start_line_index)
-                } else {
-                    serde_json::Value::Null
-                },
-                "truncated": read.truncated,
-            }),
+            structured_json,
             display.artifacts,
         ))
     }
@@ -665,6 +652,30 @@ fn build_fs_read_display(
     }
 
     Ok(FsReadDisplay { text, artifacts })
+}
+
+fn build_fs_read_structured_json(
+    request: &FsReadRequest,
+    resolved: &Path,
+    read: &FsReadWindow,
+) -> serde_json::Value {
+    let anchors = if request.render.hashline_anchors {
+        build_fs_read_anchor_payload_from_owned(&read.shown_lines, request.start_line_index())
+    } else {
+        serde_json::Value::Null
+    };
+
+    json!({
+        "path": request.path.as_str(),
+        "resolved_path": resolved.display().to_string(),
+        "offset": request.offset,
+        "limit": request.limit,
+        "total_lines": read.total_lines,
+        "line_numbers": request.render.line_numbers,
+        "hashline_anchors": request.render.hashline_anchors,
+        "anchors": anchors,
+        "truncated": read.truncated,
+    })
 }
 
 #[derive(Debug)]
