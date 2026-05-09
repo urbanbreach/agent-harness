@@ -152,28 +152,26 @@ pub fn materialize_file_tag_context_with_selected(
     let mut sections = Vec::new();
 
     for tag in selected {
-        if !seen.insert(tag.filename.clone()) {
-            continue;
-        }
-        let resolved = resolve_tag_path(workspace_root, &tag.path);
-        sections.extend(materialized_file_section(
+        append_materialized_file_tag(
+            &mut sections,
+            &mut seen,
             workspace_root,
-            &resolved,
+            &tag.filename,
+            &tag.path,
             tag.line_range,
-        ));
+        );
     }
 
     for file_match in files(prompt) {
-        if !seen.insert(file_match.name.clone()) {
-            continue;
-        }
         let (path_name, line_range) = split_line_range(&file_match.name);
-        let resolved = resolve_tag_path(workspace_root, path_name);
-        sections.extend(materialized_file_section(
+        append_materialized_file_tag(
+            &mut sections,
+            &mut seen,
             workspace_root,
-            &resolved,
+            &file_match.name,
+            path_name,
             line_range,
-        ));
+        );
     }
 
     (!sections.is_empty()).then(|| sections.join("\n\n"))
@@ -216,6 +214,25 @@ fn is_forbidden_file_tag_prefix(ch: char) -> bool {
 
 fn is_file_tag_separator(ch: char) -> bool {
     ch.is_whitespace() || ch == '`' || ch == ','
+}
+
+fn append_materialized_file_tag(
+    sections: &mut Vec<String>,
+    seen: &mut BTreeSet<String>,
+    workspace_root: &Path,
+    dedupe_key: &str,
+    path_name: &str,
+    line_range: Option<FileTagLineRange>,
+) {
+    if !seen.insert(dedupe_key.to_string()) {
+        return;
+    }
+    let resolved = resolve_tag_path(workspace_root, path_name);
+    sections.extend(materialized_file_section(
+        workspace_root,
+        &resolved,
+        line_range,
+    ));
 }
 
 fn resolve_tag_path(workspace_root: &Path, name: &str) -> PathBuf {
