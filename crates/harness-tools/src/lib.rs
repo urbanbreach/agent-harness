@@ -420,10 +420,7 @@ impl ShellOutputPreview {
 fn preview_shell_output(text: &str, limits: ShellOutputPreviewLimits) -> ShellOutputPreview {
     let total_bytes = text.len();
     let total_lines = count_shell_output_lines(text);
-
-    let byte_limited_end = shell_output_preview_end_for_byte_limit(text, limits.max_bytes);
-    let line_limited_end = shell_output_preview_end_for_line_limit(text, limits.max_lines);
-    let preview_end = byte_limited_end.min(line_limited_end);
+    let preview_end = shell_output_preview_end(text, limits);
 
     let inline_text = text[..preview_end].to_string();
     let inline_lines = count_shell_output_lines(&inline_text);
@@ -435,6 +432,12 @@ fn preview_shell_output(text: &str, limits: ShellOutputPreviewLimits) -> ShellOu
         total_bytes,
         total_lines,
     }
+}
+
+fn shell_output_preview_end(text: &str, limits: ShellOutputPreviewLimits) -> usize {
+    let byte_limited_end = shell_output_preview_end_for_byte_limit(text, limits.max_bytes);
+    let line_limited_end = shell_output_preview_end_for_line_limit(text, limits.max_lines);
+    byte_limited_end.min(line_limited_end)
 }
 
 fn shell_output_preview_end_for_byte_limit(text: &str, max_bytes: usize) -> usize {
