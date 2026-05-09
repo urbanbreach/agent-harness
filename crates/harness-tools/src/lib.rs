@@ -1031,6 +1031,13 @@ struct ShellRunArgs {
     description: Option<String>,
 }
 
+const DEFAULT_SHELL_TIMEOUT_MS: u64 = 120_000;
+
+struct ShellRunRequest {
+    invocation: ShellInvocation,
+    timeout_ms: u64,
+}
+
 enum ShellInvocation {
     Direct {
         cmd: String,
@@ -1050,6 +1057,16 @@ struct ExecutedShellInvocation {
 }
 
 impl ShellRunArgs {
+    fn into_request(self) -> Result<ShellRunRequest, ToolError> {
+        let timeout_ms = self.timeout.unwrap_or(DEFAULT_SHELL_TIMEOUT_MS);
+        let invocation = self.into_invocation()?;
+
+        Ok(ShellRunRequest {
+            invocation,
+            timeout_ms,
+        })
+    }
+
     fn into_invocation(self) -> Result<ShellInvocation, ToolError> {
         let cmd = normalized_shell_command(self.cmd);
         let command = normalized_shell_command(self.command);
@@ -1181,10 +1198,10 @@ impl Tool for ShellRunTool {
         args_json: serde_json::Value,
     ) -> Result<ToolResult, ToolError> {
         let args: ShellRunArgs = parse_tool_args(args_json)?;
-        let timeout_ms = args.timeout.unwrap_or(120_000);
-        let executed = match args.into_invocation()? {
+        let request = args.into_request()?;
+        let executed = match request.invocation {
             ShellInvocation::Direct { cmd, args, workdir } => {
-                self.run_direct_invocation(&ctx, cmd, args, workdir, timeout_ms)
+                self.run_direct_invocation(&ctx, cmd, args, workdir, request.timeout_ms)
                     .await?
             }
             ShellInvocation::Wrapper {
@@ -1192,7 +1209,7 @@ impl Tool for ShellRunTool {
                 workdir,
                 description,
             } => {
-                self.run_wrapper_invocation(&ctx, command, workdir, description, timeout_ms)
+                self.run_wrapper_invocation(&ctx, command, workdir, description, request.timeout_ms)
                     .await?
             }
         };
