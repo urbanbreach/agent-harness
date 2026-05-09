@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::limit_summary::summarize_limit;
+use crate::limit_summary::{summarize_limit, LimitSummary};
 
 const DEFAULT_LIMIT: usize = 2000;
 
@@ -88,25 +88,30 @@ fn list_directory_entries(directory: &Path, limit: usize) -> Result<ListResult, 
     entries.sort();
 
     let total_count = entries.len();
-    let limit_summary = summarize_limit(total_count, limit);
-    let mut returned_entries = entries
-        .into_iter()
-        .take(limit_summary.returned_count)
-        .collect::<Vec<_>>();
-    if limit_summary.is_truncated {
-        returned_entries.push(format!(
-            "... (truncated, {} more)",
-            limit_summary.truncated_count
-        ));
-    }
+    let (entries, limit_summary) = limit_directory_entries(entries, limit);
 
     Ok(ListResult {
         total_count,
         returned_count: limit_summary.returned_count,
         truncated_count: limit_summary.truncated_count,
         is_truncated: limit_summary.is_truncated,
-        entries: returned_entries,
+        entries,
     })
+}
+
+fn limit_directory_entries(entries: Vec<String>, limit: usize) -> (Vec<String>, LimitSummary) {
+    let limit_summary = summarize_limit(entries.len(), limit);
+    let mut limited_entries = entries
+        .into_iter()
+        .take(limit_summary.returned_count)
+        .collect::<Vec<_>>();
+    if limit_summary.is_truncated {
+        limited_entries.push(format!(
+            "... (truncated, {} more)",
+            limit_summary.truncated_count
+        ));
+    }
+    (limited_entries, limit_summary)
 }
 
 fn directory_entry_display_name(
