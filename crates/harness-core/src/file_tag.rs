@@ -190,18 +190,13 @@ fn consume_file_tag_name(indices: &mut FileTagChars<'_>, initial_end: usize) -> 
     let mut name = String::new();
 
     if let Some(&(_, '.')) = indices.peek() {
-        let (_, dot) = indices.next().expect("peeked dot");
-        end += dot.len_utf8();
-        name.push(dot);
+        consume_file_tag_char(indices, &mut end, &mut name);
     }
 
     consume_file_tag_segment(indices, &mut end, &mut name);
 
     while should_continue_after_dot(indices) {
-        let (_, dot) = indices.next().expect("peeked dot");
-        end += dot.len_utf8();
-        name.push(dot);
-
+        consume_file_tag_char(indices, &mut end, &mut name);
         consume_file_tag_segment(indices, &mut end, &mut name);
     }
 
@@ -225,10 +220,14 @@ fn consume_file_tag_segment(indices: &mut FileTagChars<'_>, end: &mut usize, nam
             *end = next_idx;
             break;
         }
-        let (_, consumed) = indices.next().expect("peeked char");
-        *end += consumed.len_utf8();
-        name.push(consumed);
+        consume_file_tag_char(indices, end, name);
     }
+}
+
+fn consume_file_tag_char(indices: &mut FileTagChars<'_>, end: &mut usize, name: &mut String) {
+    let (_, consumed) = indices.next().expect("peeked char");
+    *end += consumed.len_utf8();
+    name.push(consumed);
 }
 
 struct FileTagMaterialization<'a> {
