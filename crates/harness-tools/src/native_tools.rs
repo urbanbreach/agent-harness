@@ -1338,22 +1338,12 @@ fn is_shell_env_assignment(token: &str) -> bool {
             .is_some_and(|ch| ch == '_' || ch.is_ascii_alphabetic())
 }
 
+const ALLOWED_SHELL_BUILTINS: &[&str] = &[
+    "alias", "echo", "export", "false", "printf", "pwd", "test", "true", "unset", "[",
+];
+
 fn is_shell_builtin_allowed(executable: &str) -> bool {
-    matches!(
-        executable,
-        "alias"
-            | "echo"
-            | "export"
-            | "false"
-            | "printf"
-            | "pwd"
-            | "source"
-            | "."
-            | "test"
-            | "true"
-            | "unset"
-            | "["
-    )
+    ALLOWED_SHELL_BUILTINS.contains(&executable)
 }
 
 fn resolve_shell_cd_target(
@@ -1517,6 +1507,23 @@ mod tests {
                 assert!(message.contains("git status"));
             }
             other => panic!("expected command blocked error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_bash_command_rejects_source_builtins() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let allowlist = ShellAllowlist {
+            executables: vec!["ls".to_string()],
+            cwd_roots: vec![".".to_string()],
+        };
+
+        for command in ["source env.sh", ". env.sh"] {
+            let err = validate_bash_command(command, tempdir.path(), tempdir.path(), &allowlist)
+                .expect_err("source-style builtins should be blocked");
+            assert!(
+                matches!(err, ToolError::CommandBlocked(message) if message == "source and . are not allowed in bash")
+            );
         }
     }
 
