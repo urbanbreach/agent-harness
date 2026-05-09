@@ -38,7 +38,7 @@ const STABLE_WINDOW: Duration = Duration::from_millis(180);
 const STABLE_TIMEOUT: Duration = Duration::from_secs(2);
 const ORCHESTRATION_EVENT_DELAY: Duration = Duration::from_millis(250);
 const PRESERVED_DRAFT_TEXT: &str = "keep this draft";
-const STARTUP_LAUNCHER_READY_MARKER: &str = "Ask anything... \"inspect src/ui.rs\"";
+const STARTUP_LAUNCHER_READY_MARKER: &str = "Ask anything...";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PtyGeometry {
@@ -909,7 +909,7 @@ fn startup_shell_displays_meaningful_mock_launch_metadata() {
     ] {
         let startup_shell = capture_startup_shell_snapshot(geometry);
         assert!(!startup_shell.contains("Launch: worker · model-1"));
-        assert!(startup_shell.contains("Ask anything... \"inspect src/ui.rs\""));
+        assert!(startup_shell.contains("Ask anything..."));
         assert!(startup_shell.contains("Worker model-1 mock"));
         assert!(!startup_shell.contains("Dispatch a new run"));
         assert!(!startup_shell.contains("Actions:"));

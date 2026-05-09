@@ -5,6 +5,7 @@ use ratatui::widgets::Padding;
 use crate::app::permissions::{
     PermissionConfirmSelection, PermissionModalSelection, PermissionModalStage,
 };
+use crate::app::SubagentFooterTarget;
 use crate::layout::{
     pad_rect, permission_dock_layout, ControlDockLayout, FrameLayoutPlan, SessionFooterMode,
     SessionHeaderMode,
@@ -167,11 +168,13 @@ pub(super) fn render_footer(
     if area.height == 0 || text_area.height == 0 {
         return;
     }
-    if app.replay_mode && app.review_surface().is_none() {
+    if app.review_surface().is_none() && app.current_subagent_session_present() {
         if let Some(info) = app.current_subagent_session_info() {
             render_subagent_footer(frame, app, area, text_area, theme, &info);
-            return;
         }
+        return;
+    }
+    if app.replay_mode && app.review_surface().is_none() {
         frame.render_widget(
             Block::default().style(Style::default().bg(theme.surface.shell)),
             area,
@@ -260,36 +263,159 @@ fn render_live_footer_row(
     }
 }
 
-fn render_subagent_footer(
-    frame: &mut Frame,
+#[derive(Debug, Clone, Copy)]
+struct SubagentFooterHitLayout {
+    row: u16,
+    parent: (u16, u16),
+    previous: (u16, u16),
+    next: (u16, u16),
+}
+
+pub(crate) fn subagent_footer_mouse_target(
     app: &AppState,
-    area: Rect,
-    text_area: Rect,
-    theme: &Theme,
-    info: &crate::app::SubagentSessionInfo,
-) {
-    let surface = theme.surface.panel;
-    let style = Style::default().bg(surface);
-    frame.render_widget(Block::default().style(style), area);
-    if area.width > 0 && area.height > 0 {
-        let rail_style = Style::default().fg(theme.border.subtle).bg(surface);
-        frame.buffer_mut()[(area.x, area.y)]
-            .set_symbol("┃")
-            .set_style(rail_style);
+    frame_area: Rect,
+    column: u16,
+    row: u16,
+) -> Option<SubagentFooterTarget> {
+    if app.review_surface().is_some() || !app.current_subagent_session_present() {
+        return None;
     }
 
+    let plan = FrameLayoutPlan::for_app(app, frame_area);
+    let layout = subagent_footer_hit_layout(app, plan.footer)?;
+    if row != layout.row {
+        return None;
+    }
+
+    if range_contains(layout.parent, column) {
+        Some(SubagentFooterTarget::Parent)
+    } else if range_contains(layout.previous, column) {
+        Some(SubagentFooterTarget::Previous)
+    } else if range_contains(layout.next, column) {
+        Some(SubagentFooterTarget::Next)
+    } else {
+        None
+    }
+}
+
+fn range_contains((start, end): (u16, u16), value: u16) -> bool {
+    value >= start && value < end
+}
+
+fn subagent_footer_hit_layout(app: &AppState, area: Rect) -> Option<SubagentFooterHitLayout> {
+    if area.width == 0 || area.height == 0 {
+        return None;
+    }
+
+    let content_y = if area.height >= 3 {
+        area.y.saturating_add(1)
+    } else {
+        area.y
+    };
+    let content_x = area.x.saturating_add(3);
+    let used_left = content_x.saturating_sub(area.x);
+    let content_width = area.width.saturating_sub(used_left).saturating_sub(1);
+    if content_width == 0 {
+        return None;
+    }
+
+    let content_area = Rect::new(content_x, content_y, content_width, 1);
     let parent_key = app.keymap.get_binding_str(Action::SessionParent);
     let previous_key = app.keymap.get_binding_str(Action::SessionChildCycleReverse);
     let next_key = app.keymap.get_binding_str(Action::SessionChildCycle);
-    let nav_text = format!("Parent {parent_key}  Prev {previous_key}  Next {next_key}");
-    let nav_width = nav_text.chars().count().min(usize::from(text_area.width));
+    let parent_width = display_width(&format!("Parent {parent_key}"));
+    let previous_width = display_width(&format!("Prev {previous_key}"));
+    let next_width = display_width(&format!("Next {next_key}"));
+    let gap_width = display_width("  ");
+    let nav_width = parent_width
+        .saturating_add(gap_width)
+        .saturating_add(previous_width)
+        .saturating_add(gap_width)
+        .saturating_add(next_width)
+        .min(usize::from(content_area.width));
+    if nav_width == 0 {
+        return None;
+    }
+
     let columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
             Constraint::Min(0),
             Constraint::Length(u16::try_from(nav_width).unwrap_or(u16::MAX)),
         ])
-        .split(text_area);
+        .split(content_area);
+    let nav_x = columns[1].x;
+    let parent_start = nav_x;
+    let parent_end = parent_start.saturating_add(u16::try_from(parent_width).unwrap_or(u16::MAX));
+    let previous_start = parent_end.saturating_add(u16::try_from(gap_width).unwrap_or(0));
+    let previous_end =
+        previous_start.saturating_add(u16::try_from(previous_width).unwrap_or(u16::MAX));
+    let next_start = previous_end.saturating_add(u16::try_from(gap_width).unwrap_or(0));
+    let next_end = next_start.saturating_add(u16::try_from(next_width).unwrap_or(u16::MAX));
+    let nav_end = columns[1].x.saturating_add(columns[1].width);
+
+    Some(SubagentFooterHitLayout {
+        row: content_y,
+        parent: (parent_start.min(nav_end), parent_end.min(nav_end)),
+        previous: (previous_start.min(nav_end), previous_end.min(nav_end)),
+        next: (next_start.min(nav_end), next_end.min(nav_end)),
+    })
+}
+
+fn render_subagent_footer(
+    frame: &mut Frame,
+    app: &AppState,
+    area: Rect,
+    _text_area: Rect,
+    theme: &Theme,
+    info: &crate::app::SubagentSessionInfo,
+) {
+    let surface = theme.surface.panel;
+    let style = Style::default().bg(surface);
+    frame.render_widget(Block::default().style(style), area);
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    let rail_style = Style::default().fg(theme.border.subtle).bg(surface);
+    for row in area.y..area.y.saturating_add(area.height) {
+        frame.buffer_mut()[(area.x, row)]
+            .set_symbol("┃")
+            .set_style(rail_style);
+    }
+
+    let content_y = if area.height >= 3 {
+        area.y.saturating_add(1)
+    } else {
+        area.y
+    };
+    let content_x = area.x.saturating_add(3);
+    let content_right_padding = 1;
+    let used_left = content_x.saturating_sub(area.x);
+    let content_width = area
+        .width
+        .saturating_sub(used_left)
+        .saturating_sub(content_right_padding);
+    if content_width == 0 {
+        return;
+    }
+    let content_area = Rect::new(content_x, content_y, content_width, 1);
+
+    let parent_key = app.keymap.get_binding_str(Action::SessionParent);
+    let previous_key = app.keymap.get_binding_str(Action::SessionChildCycleReverse);
+    let next_key = app.keymap.get_binding_str(Action::SessionChildCycle);
+    let nav_text = format!("Parent {parent_key}  Prev {previous_key}  Next {next_key}");
+    let nav_width = nav_text
+        .chars()
+        .count()
+        .min(usize::from(content_area.width));
+    let columns = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(u16::try_from(nav_width).unwrap_or(u16::MAX)),
+        ])
+        .split(content_area);
 
     let mut left_spans = vec![Span::styled(
         info.label.clone(),
@@ -305,7 +431,7 @@ fn render_subagent_footer(
         ));
     }
     if let Some(usage) = info.usage.as_deref() {
-        left_spans.push(Span::styled("  ", Style::default().bg(surface)));
+        left_spans.push(Span::styled(" ", Style::default().bg(surface)));
         left_spans.push(Span::styled(
             usage.to_string(),
             muted_meta_style(theme).bg(surface),
@@ -319,28 +445,46 @@ fn render_subagent_footer(
         );
     }
     if columns[1].width > 0 {
+        let hover = app.hovered_subagent_footer_target();
+        let parent_surface =
+            subagent_footer_button_surface(hover, SubagentFooterTarget::Parent, theme);
+        let previous_surface =
+            subagent_footer_button_surface(hover, SubagentFooterTarget::Previous, theme);
+        let next_surface = subagent_footer_button_surface(hover, SubagentFooterTarget::Next, theme);
         frame.render_widget(
             Paragraph::new(Line::from(vec![
                 Span::styled(
                     "Parent ",
-                    Style::default().fg(theme.text.primary).bg(surface),
+                    Style::default().fg(theme.text.primary).bg(parent_surface),
                 ),
-                Span::styled(parent_key, muted_meta_style(theme).bg(surface)),
+                Span::styled(parent_key, muted_meta_style(theme).bg(parent_surface)),
                 Span::styled(
                     "  Prev ",
-                    Style::default().fg(theme.text.primary).bg(surface),
+                    Style::default().fg(theme.text.primary).bg(previous_surface),
                 ),
-                Span::styled(previous_key, muted_meta_style(theme).bg(surface)),
+                Span::styled(previous_key, muted_meta_style(theme).bg(previous_surface)),
                 Span::styled(
                     "  Next ",
-                    Style::default().fg(theme.text.primary).bg(surface),
+                    Style::default().fg(theme.text.primary).bg(next_surface),
                 ),
-                Span::styled(next_key, muted_meta_style(theme).bg(surface)),
+                Span::styled(next_key, muted_meta_style(theme).bg(next_surface)),
             ]))
             .style(style)
             .alignment(Alignment::Right),
             columns[1],
         );
+    }
+}
+
+fn subagent_footer_button_surface(
+    hover: Option<SubagentFooterTarget>,
+    target: SubagentFooterTarget,
+    theme: &Theme,
+) -> Color {
+    if hover == Some(target) {
+        theme.surface.panel_elevated
+    } else {
+        theme.surface.panel
     }
 }
 
@@ -378,6 +522,209 @@ fn compact_footer_hints(
     }
     compact.truncate(max_hints);
     compact
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_subagent_footer_matches_opencode_layout() {
+    use ratatui::{backend::TestBackend, Terminal};
+
+    let app = AppState::new_replay(std::path::PathBuf::from("/tmp/subagent"), Vec::new());
+    let theme = Theme::default();
+    let info = crate::app::SubagentSessionInfo {
+        label: "Researcher".to_string(),
+        title: "audit transcript parity".to_string(),
+        parent_label: "parent_run".to_string(),
+        index: 2,
+        total: 3,
+        usage: Some("12,345 (8%) · $0.42".to_string()),
+    };
+
+    let backend = TestBackend::new(80, 5);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    terminal
+        .draw(|frame| {
+            render_subagent_footer(
+                frame,
+                &app,
+                Rect::new(0, 1, 80, 3),
+                Rect::new(0, 1, 80, 3),
+                &theme,
+                &info,
+            );
+        })
+        .expect("draw subagent footer");
+
+    let buffer = terminal.backend().buffer();
+    let rows = buffer
+        .content
+        .chunks(80)
+        .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+        .collect::<Vec<_>>();
+    assert_eq!(rows[1].chars().next(), Some('┃'));
+    assert_eq!(rows[2].chars().next(), Some('┃'));
+    assert_eq!(rows[3].chars().next(), Some('┃'));
+    assert!(
+        rows[1].chars().skip(1).all(|ch| ch == ' '),
+        "top padding row should only contain the split border\n{}",
+        rows[1]
+    );
+    assert!(
+        rows[3].chars().skip(1).all(|ch| ch == ' '),
+        "bottom padding row should only contain the split border\n{}",
+        rows[3]
+    );
+    assert!(
+        rows[2].starts_with("┃  Researcher (2 of 3) 12,345 (8%) · $0.42"),
+        "content should start after OpenCode's left border plus padding\n{}",
+        rows[2]
+    );
+    assert!(
+        rows[2].contains(&format!(
+            "Parent {}  Prev {}  Next {}",
+            app.keymap.get_binding_str(Action::SessionParent),
+            app.keymap.get_binding_str(Action::SessionChildCycleReverse),
+            app.keymap.get_binding_str(Action::SessionChildCycle),
+        )),
+        "content row should expose OpenCode subagent footer actions\n{}",
+        rows[2]
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_subagent_replay_suppresses_parent_replay_dock() {
+    use ratatui::{backend::TestBackend, Terminal};
+
+    let actor = harness_core::event::EventActor::new(
+        harness_core::event::ActorKind::System,
+        Some("coordinator".to_string()),
+    );
+    let worker = harness_core::event::EventActor::new(
+        harness_core::event::ActorKind::Worker,
+        Some("agent_alpha".to_string()),
+    );
+    let event =
+        |seq, correlation_id: Option<&str>, actor, payload| harness_core::event::EventEnvelopeV1 {
+            schema_version: harness_core::event::SCHEMA_VERSION,
+            event_id: format!("evt-subagent-footer-{seq:04}"),
+            seq,
+            run_id: "agent_alpha".to_string(),
+            mono_ms: seq,
+            ts: None,
+            actor,
+            correlation_id: correlation_id.map(str::to_string),
+            causation_id: None,
+            stream_key: Some("run:agent_alpha".to_string()),
+            payload,
+        };
+    let app = AppState::new_replay(
+        std::path::PathBuf::from("/tmp/harness-subagent-parent/agent_alpha"),
+        vec![
+            event(
+                1,
+                None,
+                actor.clone(),
+                harness_core::event::EventV1::AgentSpawned(
+                    harness_core::event::AgentSpawnedEvent {
+                        agent_id: "agent_alpha".to_string(),
+                        profile: "researcher".to_string(),
+                        parent_agent_id: Some("agent_parent".to_string()),
+                    },
+                ),
+            ),
+            event(
+                2,
+                Some("req_000001"),
+                actor.clone(),
+                harness_core::event::EventV1::ToolCallRequested(
+                    harness_core::event::ToolCallRequestedEvent {
+                        tool_call_id: "toolcall_000001".to_string(),
+                        tool_id: "task".to_string(),
+                        args_summary: r#"{"description":"child lineage marker"}"#.to_string(),
+                        args_digest: "digest-child-marker".to_string(),
+                        metadata: Some(harness_core::event::ToolCallMetadata {
+                            lineage: Some(harness_core::event::TaskLineageMetadata {
+                                parent_session_id: Some("parent_run".to_string()),
+                                child_session_id: Some("agent_alpha".to_string()),
+                                child_request_id: Some("req_000001".to_string()),
+                                ..harness_core::event::TaskLineageMetadata::default()
+                            }),
+                            ..harness_core::event::ToolCallMetadata::default()
+                        }),
+                    },
+                ),
+            ),
+            event(
+                3,
+                Some("req_000001"),
+                worker.clone(),
+                harness_core::event::EventV1::ProviderRequestStarted(
+                    harness_core::event::ProviderRequestStartedEvent {
+                        request_id: "req_000001".to_string(),
+                        provider_id: "mock".to_string(),
+                        model_id: "model-1".to_string(),
+                        prompt_summary: "audit transcript parity".to_string(),
+                        request_digest: "digest-child-start".to_string(),
+                        metadata: None,
+                    },
+                ),
+            ),
+            event(
+                4,
+                Some("req_000001"),
+                worker,
+                harness_core::event::EventV1::ProviderRequestFinished(
+                    harness_core::event::ProviderRequestFinishedEvent {
+                        request_id: "req_000001".to_string(),
+                        finish_reason: "stop".to_string(),
+                        output_digest: Some("digest-child-output".to_string()),
+                        usage: None,
+                        metadata: None,
+                    },
+                ),
+            ),
+        ],
+    );
+
+    let backend = TestBackend::new(100, 30);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    terminal
+        .draw(|frame| render_app(frame, &app))
+        .expect("draw subagent replay");
+    let rows = terminal
+        .backend()
+        .buffer()
+        .content
+        .chunks(100)
+        .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rows.contains("┃  Researcher (1 of 1)"), "{rows}");
+    assert!(!rows.contains("Replay is read-only"), "{rows}");
+    assert!(!rows.contains("Researcher · parent_run"), "{rows}");
+
+    let theme = app.theme();
+    let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 100, 30));
+    let transcript = plan.transcript.expect("subagent transcript area");
+    let sample_x = transcript.x.saturating_add(
+        theme
+            .live_shell
+            .rhythm
+            .transcript_gutter_x
+            .min(transcript.width.saturating_sub(1)),
+    );
+    let sample_y = transcript.y.saturating_add(
+        theme
+            .live_shell
+            .rhythm
+            .transcript_gutter_y
+            .min(transcript.height.saturating_sub(1)),
+    );
+    assert_eq!(
+        terminal.backend().buffer()[(sample_x, sample_y)].bg,
+        theme.surface.shell,
+        "subagent replay should use the same transcript surface as the main chat"
+    );
 }
 
 fn live_footer_status_candidates(app: &AppState, max_width: usize, theme: &Theme) -> Vec<String> {
@@ -1680,18 +2027,20 @@ fn render_document_composer_content(
         );
     }
 
-    let viewport = composer_viewport(
+    let mut viewport = composer_viewport(
         body,
         input_width,
         usize::from(input_area.height.max(1)),
-        (context.dock.composer_focused && !context.dock.composer_disabled).then_some(
-            if placeholder_visible {
+        (placeholder_visible || (context.dock.composer_focused && !context.dock.composer_disabled))
+            .then_some(if placeholder_visible {
                 0
             } else {
                 app.prompt_cursor
-            },
-        ),
+            }),
     );
+    if !context.dock.composer_focused || context.dock.composer_disabled {
+        viewport.cursor = None;
+    }
     let body_lines = viewport
         .lines
         .iter()
@@ -1969,38 +2318,6 @@ fn best_fit_text(options: &[String], max_width: usize) -> String {
         })
 }
 
-fn wrap_composer_lines(text: &str, width: usize) -> Vec<String> {
-    if width == 0 {
-        return vec![String::new()];
-    }
-
-    let logical_lines = text
-        .split('\n')
-        .map(|line| line.chars().collect::<Vec<_>>())
-        .collect::<Vec<_>>();
-    let mut visual_lines = Vec::new();
-
-    for chars in &logical_lines {
-        if chars.is_empty() {
-            visual_lines.push(String::new());
-            continue;
-        }
-
-        let mut start = 0usize;
-        while start < chars.len() {
-            let end = (start + width).min(chars.len());
-            visual_lines.push(chars[start..end].iter().collect::<String>());
-            start = end;
-        }
-    }
-
-    if visual_lines.is_empty() {
-        visual_lines.push(String::new());
-    }
-
-    visual_lines
-}
-
 fn composer_viewport(
     text: &str,
     width: usize,
@@ -2014,29 +2331,7 @@ fn composer_viewport(
         };
     }
 
-    const CURSOR_MARKER: char = '\0';
-
-    let mut raw = text.to_string();
-    if let Some(cursor_char_index) = cursor_char_index {
-        let cursor_byte_index = text
-            .char_indices()
-            .nth(cursor_char_index)
-            .map(|(index, _)| index)
-            .unwrap_or(text.len());
-        raw.insert(cursor_byte_index, CURSOR_MARKER);
-    }
-
-    let mut wrapped = wrap_composer_lines(&raw, width);
-    let cursor = wrapped.iter_mut().enumerate().find_map(|(row, line)| {
-        line.find(CURSOR_MARKER).map(|column| {
-            line.remove(column);
-            (row, column)
-        })
-    });
-
-    if wrapped.is_empty() {
-        wrapped.push(String::new());
-    }
+    let (wrapped, cursor) = composer_visual_lines(text, width, cursor_char_index);
 
     let total_lines = wrapped.len();
     let visible_count = max_lines.min(total_lines).max(1);
@@ -2057,11 +2352,65 @@ fn composer_viewport(
     }
 }
 
+fn composer_visual_lines(
+    text: &str,
+    width: usize,
+    cursor_char_index: Option<usize>,
+) -> (Vec<String>, Option<(usize, usize)>) {
+    let width = width.max(1);
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    let mut current_width = 0usize;
+    let mut cursor = None;
+
+    for (char_index, ch) in text.chars().enumerate() {
+        if ch == '\n' {
+            if cursor_char_index == Some(char_index) {
+                cursor = Some((lines.len(), current_width));
+            }
+            lines.push(std::mem::take(&mut current));
+            current_width = 0;
+            continue;
+        }
+
+        let ch_width = display_width(&ch.to_string()).max(1);
+        if current_width > 0 && current_width.saturating_add(ch_width) > width {
+            lines.push(std::mem::take(&mut current));
+            current_width = 0;
+        }
+
+        if cursor_char_index == Some(char_index) {
+            cursor = Some((lines.len(), current_width));
+        }
+
+        current.push(ch);
+        current_width = current_width.saturating_add(ch_width);
+    }
+
+    if cursor_char_index == Some(text.chars().count()) {
+        cursor = Some((lines.len(), current_width));
+    }
+
+    lines.push(current);
+    (lines, cursor)
+}
+
 fn composer_shortcut_hints(app: &AppState, composer_disabled: bool) -> String {
     let newline = composer_newline_binding_hint(app);
     if app.startup_shell_visible() {
-        let palette = app.keymap.get_binding_str(Action::Palette);
-        return format!("{palette} opens saved sessions · {newline} adds a newline");
+        let palette = app
+            .keymap
+            .get_binding_str(Action::Palette)
+            .to_ascii_lowercase();
+        let variant = app
+            .keymap
+            .get_binding_str(Action::VariantCycle)
+            .to_ascii_lowercase();
+        let focus = app
+            .keymap
+            .get_binding_str(Action::FocusNext)
+            .to_ascii_lowercase();
+        return format!("{variant} variants  {focus} agents  {palette} commands");
     }
 
     if composer_disabled || app.completed_session_shell_active() {
@@ -2361,26 +2710,20 @@ fn render_control_dock_disclosure(
             .into_iter()
             .find(|candidate| startup_disclosure_width(candidate) <= usize::from(area.width))
             .unwrap_or_else(|| {
-                vec![
-                    Span::styled("  ", base),
-                    Span::styled(
-                        "● Tip",
-                        Style::default()
-                            .fg(theme.text.accent)
-                            .bg(surface)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled("  ", base),
-                    Span::styled(
-                        truncate_plain_text(&palette, usize::from(area.width).saturating_sub(8)),
-                        Style::default()
-                            .fg(theme.text.primary)
-                            .bg(surface)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ]
+                vec![Span::styled(
+                    truncate_plain_text(&palette.to_ascii_lowercase(), usize::from(area.width)),
+                    Style::default()
+                        .fg(theme.text.primary)
+                        .bg(surface)
+                        .add_modifier(Modifier::BOLD),
+                )]
             });
-        frame.render_widget(Paragraph::new(Line::from(spans)).style(base), area);
+        frame.render_widget(
+            Paragraph::new(Line::from(spans))
+                .style(base)
+                .alignment(Alignment::Right),
+            area,
+        );
         return;
     }
 
@@ -2593,6 +2936,43 @@ fn compose_shortcut_row(
     spans
 }
 
+fn compose_interrupt_shortcut_row(
+    confirmation_pending: bool,
+    theme: &Theme,
+    surface: Color,
+) -> Vec<Span<'static>> {
+    let foreground = if confirmation_pending {
+        theme.text.accent
+    } else {
+        theme.text.primary
+    };
+    let label_tone = if confirmation_pending {
+        ComposerMetadataTone::Accent
+    } else {
+        ComposerMetadataTone::Secondary
+    };
+
+    vec![
+        Span::styled(
+            "esc",
+            Style::default()
+                .fg(foreground)
+                .bg(surface)
+                .add_modifier(Modifier::BOLD),
+        ),
+        disclosure_segment(
+            if confirmation_pending {
+                " again to interrupt"
+            } else {
+                " interrupt"
+            },
+            label_tone,
+            theme,
+            surface,
+        ),
+    ]
+}
+
 fn composer_disclosure_hint_candidates(
     app: &AppState,
     dock: &crate::view_model::ControlDockViewModel,
@@ -2635,6 +3015,14 @@ fn composer_disclosure_hint_candidates(
             ),
             compose_shortcut_row(&[(quit.as_str(), "quit")], theme, surface),
         ];
+    }
+
+    if app.interrupt_hint_visible() {
+        return vec![compose_interrupt_shortcut_row(
+            app.interrupt_confirmation_pending(),
+            theme,
+            surface,
+        )];
     }
 
     let commands = shortcut_binding(app, Action::Palette).unwrap_or_else(|| "Ctrl+p".to_string());
@@ -2701,40 +3089,32 @@ fn startup_disclosure_candidates(
     palette: &str,
     newline: &str,
 ) -> Vec<Vec<Span<'static>>> {
-    let base = Style::default().bg(surface);
-    let tip = Style::default()
-        .fg(theme.text.accent)
-        .bg(surface)
-        .add_modifier(Modifier::BOLD);
     let key = Style::default()
         .fg(theme.text.primary)
         .bg(surface)
         .add_modifier(Modifier::BOLD);
     let text = Style::default().fg(theme.text.secondary).bg(surface);
+    let variants = "ctrl+t";
+    let agents = "tab";
+    let commands = palette.to_ascii_lowercase();
+    let newline = newline.to_ascii_lowercase();
 
     vec![
         vec![
-            Span::styled("  ", base),
-            Span::styled("● Tip", tip),
-            Span::styled("  ", base),
-            Span::styled(palette.to_string(), key),
-            Span::styled(" opens saved sessions · ", text),
-            Span::styled(newline.to_string(), key),
-            Span::styled(" adds a newline", text),
+            Span::styled(variants.to_string(), key),
+            Span::styled(" variants  ", text),
+            Span::styled(agents.to_string(), key),
+            Span::styled(" agents  ", text),
+            Span::styled(commands.clone(), key),
+            Span::styled(" commands", text),
         ],
         vec![
-            Span::styled("  ", base),
-            Span::styled("● Tip", tip),
-            Span::styled("  ", base),
-            Span::styled(palette.to_string(), key),
-            Span::styled(" opens saved sessions", text),
+            Span::styled(commands.clone(), key),
+            Span::styled(" commands  ", text),
+            Span::styled(newline.clone(), key),
+            Span::styled(" newline", text),
         ],
-        vec![
-            Span::styled("  ", base),
-            Span::styled("● Tip", tip),
-            Span::styled("  ", base),
-            Span::styled(palette.to_string(), key),
-        ],
+        vec![Span::styled(commands, key), Span::styled(" commands", text)],
     ]
 }
 
@@ -3016,4 +3396,28 @@ pub(crate) fn exact_test_live_composer_disclosure_summarizes_compaction_metrics(
         .any(|candidate| candidate.contains("compactions 1")
             && candidate.contains("summary 80 tok")
             && candidate.contains("saved 380 tok")));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_startup_disclosure_matches_opencode_hint_row() {
+    let app = AppState::new_startup(Vec::new(), None);
+    let theme = app.theme();
+    let surface = control_dock_surface(theme, crate::view_model::ControlDockVariant::Startup);
+    let candidate = startup_disclosure_candidates(theme, surface, "Ctrl+p", "Shift+Enter/Ctrl+j")
+        .into_iter()
+        .next()
+        .expect("primary startup disclosure candidate")
+        .into_iter()
+        .map(|span| span.content.into_owned())
+        .collect::<String>();
+
+    assert_eq!(candidate, "ctrl+t variants  tab agents  ctrl+p commands");
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_composer_viewport_wraps_by_display_width() {
+    let viewport = composer_viewport("ab界c", 4, 6, Some(3));
+
+    assert_eq!(viewport.lines, vec!["ab界".to_string(), "c".to_string()]);
+    assert_eq!(viewport.cursor, Some((1, 0)));
 }

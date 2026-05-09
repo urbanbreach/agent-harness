@@ -9,6 +9,7 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
 };
+use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use harness_core::event::{
@@ -21,7 +22,10 @@ use ratatui::layout::Rect;
 
 use crate::keybindings::{Action, KeyMap};
 use crate::overlay::{OverlayKind, OverlayStack, OverlayState};
-use crate::text::{has_trimmed_content, non_empty_trimmed, trimmed_json_string_field};
+use crate::text::{
+    has_trimmed_content, non_empty_trimmed, trimmed_json_nested_string_field,
+    trimmed_json_string_field,
+};
 use crate::theme::Theme;
 use crate::ui::{
     TranscriptMouseTarget, TranscriptScrollbarHit, TranscriptSelection, TranscriptSelectionCell,
@@ -65,6 +69,7 @@ pub use session_navigation::{LaunchMetadata, ModelOption, SessionHistoryEntry};
 const TOOL_OUTPUT_DISPLAY_MAX_CHARS: usize = 100;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_CHARS: usize = 72;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_FIELDS: usize = 3;
+const INTERRUPT_CONFIRM_TIMEOUT: Duration = Duration::from_secs(5);
 pub(crate) const SLASH_COMMANDS: [(&str, &str); 13] = [
     ("new", "Return to the home shell"),
     ("resume", "Continue a saved session"),
@@ -169,6 +174,13 @@ pub(crate) struct SubagentSessionInfo {
     pub index: usize,
     pub total: usize,
     pub usage: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SubagentFooterTarget {
+    Parent,
+    Previous,
+    Next,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -926,6 +938,9 @@ pub enum UiIntent {
         launch_metadata: LaunchMetadata,
     },
     CompactSession,
+    InterruptSession {
+        task_ids: Vec<String>,
+    },
     ForkSession {
         source_run_dir: PathBuf,
         events: Vec<EventEnvelopeV1>,
@@ -1034,6 +1049,9 @@ pub struct AppState {
     pub(crate) last_terminal_panel_max_scroll: Cell<usize>,
     last_frame_area: Option<Rect>,
     transcript_scrollbar_drag: Option<TranscriptScrollbarDragState>,
+    hovered_transcript_target: Option<TranscriptMouseTarget>,
+    hovered_subagent_footer_target: Option<SubagentFooterTarget>,
+    transcript_click_activated_on_down: bool,
     transcript_selection: Option<TranscriptSelection>,
     transcript_selection_dragging: bool,
     transcript_cache_instance_id: u64,
@@ -1106,6 +1124,9 @@ pub struct AppState {
     question_answer_error: Option<String>,
     reload_requested: bool,
     compact_session_supported: bool,
+    replay_navigation_handoff_enabled: bool,
+    interrupt_confirm_deadline: Option<Instant>,
+    interrupt_confirm_task_ids: BTreeSet<String>,
     on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
 }
 
@@ -1132,6 +1153,9 @@ impl Default for AppState {
             last_terminal_panel_max_scroll: Cell::new(0),
             last_frame_area: None,
             transcript_scrollbar_drag: None,
+            hovered_transcript_target: None,
+            hovered_subagent_footer_target: None,
+            transcript_click_activated_on_down: false,
             transcript_selection: None,
             transcript_selection_dragging: false,
             transcript_cache_instance_id: NEXT_TRANSCRIPT_CACHE_INSTANCE_ID
@@ -1207,6 +1231,9 @@ impl Default for AppState {
             question_answer_error: None,
             reload_requested: false,
             compact_session_supported: false,
+            replay_navigation_handoff_enabled: false,
+            interrupt_confirm_deadline: None,
+            interrupt_confirm_task_ids: BTreeSet::new(),
             on_ui_intent: None,
         }
     }
@@ -1290,6 +1317,14 @@ impl AppState {
         state.replace_events(events);
         state.normalize_focus_for_active_surface();
         state
+    }
+
+    pub(crate) fn enable_replay_navigation_handoff(
+        &mut self,
+        on_ui_intent: Arc<dyn Fn(UiIntent) + Send + Sync>,
+    ) {
+        self.replay_navigation_handoff_enabled = true;
+        self.on_ui_intent = Some(on_ui_intent);
     }
 
     pub fn new_startup(
@@ -1648,6 +1683,14 @@ impl AppState {
         self.transcript_animation_phase
     }
 
+    pub(crate) fn hovered_transcript_target(&self) -> Option<&TranscriptMouseTarget> {
+        self.hovered_transcript_target.as_ref()
+    }
+
+    pub(crate) fn hovered_subagent_footer_target(&self) -> Option<SubagentFooterTarget> {
+        self.hovered_subagent_footer_target
+    }
+
     pub(crate) fn transcript_cache_instance_id(&self) -> u64 {
         self.transcript_cache_instance_id
     }
@@ -1702,6 +1745,7 @@ impl AppState {
         self.show_generic_tool_output.hash(hasher);
         self.stacked_transcript_diffs.hash(hasher);
         self.transcript_animation_phase.hash(hasher);
+        self.hovered_transcript_target.hash(hasher);
         self.transcript_render_epoch.hash(hasher);
         self.active_profile().hash(hasher);
         self.session_path.hash(hasher);
@@ -1791,6 +1835,7 @@ impl AppState {
 
     pub(crate) fn advance_transcript_animation_phase(&mut self) {
         self.transcript_animation_phase = self.transcript_animation_phase.wrapping_add(1);
+        self.clear_expired_interrupt_confirmation();
         if let Some(toast) = self.toast.as_mut() {
             toast.remaining_frames = toast.remaining_frames.saturating_sub(1);
             if toast.remaining_frames == 0 {
@@ -1800,7 +1845,9 @@ impl AppState {
     }
 
     pub(crate) fn has_active_animations(&self) -> bool {
-        self.active_turn_in_progress() || self.toast.is_some()
+        self.active_turn_in_progress()
+            || self.toast.is_some()
+            || self.interrupt_confirmation_pending()
     }
 
     fn bump_transcript_render_epoch(&mut self) {
@@ -1966,9 +2013,24 @@ impl AppState {
 
     fn activate_transcript_mouse_target(&mut self, target: TranscriptMouseTarget) {
         match target {
+            TranscriptMouseTarget::FirstSubagentSession => {
+                self.navigate_to_first_child_session();
+            }
+            TranscriptMouseTarget::SubagentSession { session_id } => {
+                self.navigate_to_child_session_id(session_id);
+            }
             TranscriptMouseTarget::Tool { tool_call_id } => {
                 if let Some(child_session_id) = self.task_tool_child_session_id(&tool_call_id) {
                     self.navigate_to_child_session_id(child_session_id);
+                    return;
+                }
+                if self
+                    .tool_call_entry(&tool_call_id)
+                    .is_some_and(Self::tool_call_is_task_spawn)
+                {
+                    self.set_status_banner(Some(
+                        "subagent session is not available for this task yet".to_string(),
+                    ));
                     return;
                 }
                 self.toggle_tool_output(&tool_call_id);
@@ -1988,24 +2050,31 @@ impl AppState {
         }
     }
 
+    fn activate_subagent_footer_target(&mut self, target: SubagentFooterTarget) {
+        match target {
+            SubagentFooterTarget::Parent => self.navigate_to_parent_session(),
+            SubagentFooterTarget::Previous => self.navigate_to_child_sibling(true),
+            SubagentFooterTarget::Next => self.navigate_to_child_sibling(false),
+        }
+    }
+
     fn task_tool_child_session_id(&self, tool_call_id: &str) -> Option<String> {
         let tool_call = self.tool_call_entry(tool_call_id)?;
-        if !matches!(tool_call.effective_tool_id(), "agent.spawn" | "task")
-            && !matches!(tool_call.tool_id.as_str(), "agent.spawn" | "task")
-        {
+        if !Self::tool_call_is_task_spawn(tool_call) {
             return None;
         }
 
-        json_string_field(
-            tool_call.output_json.as_ref(),
-            &["child_session_id", "session_id", "task_id"],
-        )
-        .or_else(|| {
-            tool_call
-                .lineage
-                .as_ref()
-                .and_then(|lineage| lineage.child_session_id.clone())
-        })
+        task_child_session_id_from_output(tool_call.output_json.as_ref())
+            .or_else(|| {
+                tool_call
+                    .lineage
+                    .as_ref()
+                    .and_then(|lineage| lineage.child_session_id.clone())
+            })
+            .or_else(|| {
+                self.transcript_task_row_for_tool_call(tool_call)
+                    .and_then(|row| row.effective_child_session_id().map(str::to_string))
+            })
     }
 
     fn selected_activity_expandable_tool_ids(&self) -> Vec<String> {
@@ -2211,6 +2280,29 @@ impl AppState {
         self.sync_slash_overlay();
     }
 
+    fn insert_prompt_text(&mut self, text: &str) {
+        for c in text.chars() {
+            self.insert_prompt_char(c);
+        }
+    }
+
+    pub(crate) fn handle_paste(&mut self, text: &str) {
+        if self.composer_disabled() {
+            return;
+        }
+
+        if self.startup_shell_visible() && self.focus != Focus::Prompt {
+            self.focus = Focus::Prompt;
+        }
+
+        if self.focus != Focus::Prompt {
+            return;
+        }
+
+        let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+        self.insert_prompt_text(&normalized);
+    }
+
     fn backspace_prompt_char(&mut self) {
         if self.prompt_cursor == 0 {
             return;
@@ -2238,6 +2330,72 @@ impl AppState {
         self.activities
             .iter()
             .any(|activity| activity.status == ActivityStatus::Streaming)
+    }
+
+    fn active_interrupt_task_id(&self) -> Option<&str> {
+        self.projection.active_turn_task_id()
+    }
+
+    fn active_interrupt_task_ids(&self) -> BTreeSet<String> {
+        self.projection
+            .active_turn_task_ids()
+            .into_iter()
+            .map(str::to_string)
+            .collect()
+    }
+
+    pub(crate) fn interrupt_hint_visible(&self) -> bool {
+        !self.replay_mode
+            && !self.startup_shell_visible()
+            && !self.composer_disabled()
+            && !self.slash_visible
+            && self.active_interrupt_task_id().is_some()
+    }
+
+    pub(crate) fn interrupt_confirmation_pending(&self) -> bool {
+        let active_task_ids = self.active_interrupt_task_ids();
+        self.interrupt_confirmation_pending_for(&active_task_ids)
+    }
+
+    fn interrupt_confirmation_pending_for(&self, active_task_ids: &BTreeSet<String>) -> bool {
+        self.interrupt_confirm_deadline
+            .is_some_and(|deadline| Instant::now() < deadline)
+            && !active_task_ids.is_empty()
+            && self.interrupt_confirm_task_ids == *active_task_ids
+    }
+
+    fn clear_expired_interrupt_confirmation(&mut self) {
+        if self
+            .interrupt_confirm_deadline
+            .is_some_and(|deadline| Instant::now() >= deadline)
+        {
+            self.reset_interrupt_confirmation();
+        }
+    }
+
+    fn reset_interrupt_confirmation(&mut self) {
+        self.interrupt_confirm_deadline = None;
+        self.interrupt_confirm_task_ids.clear();
+    }
+
+    fn handle_interrupt_escape(&mut self) -> bool {
+        let active_task_ids = self.active_interrupt_task_ids();
+        if !self.interrupt_hint_visible() || active_task_ids.is_empty() {
+            self.reset_interrupt_confirmation();
+            return false;
+        }
+
+        if !self.interrupt_confirmation_pending_for(&active_task_ids) {
+            self.interrupt_confirm_deadline = Some(Instant::now() + INTERRUPT_CONFIRM_TIMEOUT);
+            self.interrupt_confirm_task_ids = active_task_ids;
+            return true;
+        }
+
+        let task_ids = active_task_ids.into_iter().collect();
+
+        self.emit_ui_intent(UiIntent::InterruptSession { task_ids });
+        self.reset_interrupt_confirmation();
+        true
     }
 
     fn runtime_state_activity(&self) -> Option<&ActivityEntry> {
@@ -2358,7 +2516,7 @@ impl AppState {
         hovered_wheel_target: Option<WheelTarget>,
         clicked_operator_sidebar_section: Option<OperatorSidebarSection>,
         transcript_scrollbar_hit: Option<TranscriptScrollbarHit>,
-    ) {
+    ) -> bool {
         if self.slash_visible {
             let slash_overlay =
                 crate::layout::FrameLayoutPlan::for_app(self, frame_area).slash_overlay;
@@ -2366,59 +2524,90 @@ impl AppState {
                 slash_overlay.filter(|overlay| rect_contains(*overlay, mouse.column, mouse.row))
             {
                 self.handle_slash_mouse(mouse, overlay);
-                return;
+                return true;
             }
         }
 
         if self.overlay_stack().blocks_pointer_interaction() {
+            let changed = self.transcript_scrollbar_drag.is_some()
+                || self.hovered_transcript_target.is_some()
+                || self.hovered_subagent_footer_target.is_some()
+                || self.transcript_selection.is_some();
             self.transcript_scrollbar_drag = None;
+            self.hovered_transcript_target = None;
+            self.hovered_subagent_footer_target = None;
             self.clear_transcript_selection();
-            return;
+            return changed;
         }
 
         self.set_frame_area(frame_area);
 
         match mouse.kind {
+            MouseEventKind::Moved => {
+                let hovered_transcript_target =
+                    ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row);
+                let hovered_subagent_footer_target =
+                    ui::subagent_footer_mouse_target(self, frame_area, mouse.column, mouse.row);
+                let changed = self.hovered_transcript_target != hovered_transcript_target
+                    || self.hovered_subagent_footer_target != hovered_subagent_footer_target;
+                self.hovered_transcript_target = hovered_transcript_target;
+                self.hovered_subagent_footer_target = hovered_subagent_footer_target;
+                changed
+            }
             MouseEventKind::Down(MouseButton::Right) => {
                 let copy_on_select_disabled = clipboard::copy_on_select_disabled();
                 if copy_on_select_disabled && self.copy_transcript_selection(frame_area) {
                     self.clear_transcript_selection();
                 }
+                true
             }
             MouseEventKind::Down(MouseButton::Left) => {
+                self.transcript_click_activated_on_down = false;
+                self.hovered_transcript_target =
+                    ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row);
+                self.hovered_subagent_footer_target =
+                    ui::subagent_footer_mouse_target(self, frame_area, mouse.column, mouse.row);
                 if let Some(scrollbar) = transcript_scrollbar_hit
                     .filter(|scrollbar| rect_contains(scrollbar.thumb, mouse.column, mouse.row))
                 {
                     self.begin_transcript_scrollbar_drag(scrollbar, mouse.row);
                     self.clear_transcript_selection();
-                    return;
+                    return true;
                 }
 
                 self.transcript_scrollbar_drag = None;
+                if let Some(target) = self.hovered_subagent_footer_target {
+                    self.activate_subagent_footer_target(target);
+                    self.transcript_click_activated_on_down = true;
+                    self.clear_transcript_selection();
+                    return true;
+                }
                 if let Some(target) =
                     ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row)
                 {
                     self.activate_transcript_mouse_target(target);
+                    self.transcript_click_activated_on_down = true;
                     self.clear_transcript_selection();
-                    return;
+                    return true;
                 }
                 let transcript_hit =
                     ui::transcript_selection_cell(self, frame_area, mouse.column, mouse.row);
                 if let Some(cell) = transcript_hit {
                     self.set_transcript_selection(cell, cell);
                     self.transcript_selection_dragging = true;
-                    return;
+                    return true;
                 }
 
                 self.clear_transcript_selection();
                 if let Some(section) = clicked_operator_sidebar_section {
                     self.toggle_operator_sidebar_section(section);
                 }
+                true
             }
             MouseEventKind::Drag(MouseButton::Left) => {
                 if self.transcript_scrollbar_drag.is_some() {
                     self.update_transcript_scrollbar_drag(mouse.row);
-                    return;
+                    return true;
                 }
 
                 if self.transcript_selection_dragging {
@@ -2429,6 +2618,9 @@ impl AppState {
                             self.set_transcript_selection(selection.anchor, cell);
                         }
                     }
+                    true
+                } else {
+                    false
                 }
             }
             MouseEventKind::Up(MouseButton::Left) => {
@@ -2452,25 +2644,54 @@ impl AppState {
                         }
                     }
                 }
+                if self.transcript_click_activated_on_down {
+                    self.transcript_click_activated_on_down = false;
+                    self.transcript_scrollbar_drag = None;
+                    return true;
+                }
+                if self.transcript_scrollbar_drag.is_none() {
+                    if let Some(target) =
+                        ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row)
+                    {
+                        self.activate_transcript_mouse_target(target);
+                        self.clear_transcript_selection();
+                        return true;
+                    }
+                }
                 self.transcript_scrollbar_drag = None;
+                true
             }
             MouseEventKind::ScrollUp => match hovered_wheel_target {
-                Some(WheelTarget::Transcript) => self.scroll_transcript_up(3),
-                Some(WheelTarget::Terminal) => self.scroll_terminal_panel_up(3),
+                Some(WheelTarget::Transcript) => {
+                    self.scroll_transcript_up(3);
+                    true
+                }
+                Some(WheelTarget::Terminal) => {
+                    self.scroll_terminal_panel_up(3);
+                    true
+                }
                 Some(WheelTarget::Inspector) => {
                     self.details_scroll = self.details_scroll.saturating_sub(3);
+                    true
                 }
-                None => {}
+                None => false,
             },
             MouseEventKind::ScrollDown => match hovered_wheel_target {
-                Some(WheelTarget::Transcript) => self.scroll_transcript_down(3),
-                Some(WheelTarget::Terminal) => self.scroll_terminal_panel_down(3),
+                Some(WheelTarget::Transcript) => {
+                    self.scroll_transcript_down(3);
+                    true
+                }
+                Some(WheelTarget::Terminal) => {
+                    self.scroll_terminal_panel_down(3);
+                    true
+                }
                 Some(WheelTarget::Inspector) => {
                     self.details_scroll = self.details_scroll.saturating_add(3);
+                    true
                 }
-                None => {}
+                None => false,
             },
-            _ => {}
+            _ => false,
         }
     }
 
@@ -2607,6 +2828,11 @@ impl AppState {
         if self.replay_mode && key.code == KeyCode::Esc && !self.session_navigation_stack.is_empty()
         {
             self.navigate_to_parent_session();
+            self.maybe_auto_exit();
+            return;
+        }
+
+        if key.code == KeyCode::Esc && self.handle_interrupt_escape() {
             self.maybe_auto_exit();
             return;
         }
@@ -3065,6 +3291,7 @@ impl AppState {
         // Handle global actions
         match action {
             Action::Quit => {
+                self.restore_parent_session_for_quit();
                 self.should_quit = true;
                 self.emit_ui_intent(UiIntent::QuitRequested);
             }
@@ -3425,6 +3652,64 @@ fn action_preempts_text_input(action: Action) -> bool {
 
 fn json_string_field(output_json: Option<&serde_json::Value>, keys: &[&str]) -> Option<String> {
     trimmed_json_string_field(output_json, keys)
+}
+
+fn task_child_session_id_from_output(output_json: Option<&serde_json::Value>) -> Option<String> {
+    trimmed_json_string_field(
+        output_json,
+        &[
+            "child_session_id",
+            "session_id",
+            "task_id",
+            "childSessionId",
+            "sessionId",
+            "taskId",
+        ],
+    )
+    .or_else(|| trimmed_json_nested_string_field(output_json, &["child_session", "session_id"]))
+    .or_else(|| trimmed_json_nested_string_field(output_json, &["childSession", "sessionId"]))
+    .or_else(|| trimmed_json_nested_string_field(output_json, &["metadata", "sessionId"]))
+    .or_else(|| trimmed_json_nested_string_field(output_json, &["metadata", "session_id"]))
+    .or_else(|| trimmed_json_nested_string_field(output_json, &["lineage", "child_session_id"]))
+    .or_else(|| trimmed_json_nested_string_field(output_json, &["lineage", "session_id"]))
+    .or_else(|| trimmed_json_nested_string_field(output_json, &["lineage", "sessionId"]))
+    .or_else(|| {
+        trimmed_json_nested_string_field(output_json, &["_harness", "lineage", "child_session_id"])
+    })
+    .or_else(|| {
+        trimmed_json_nested_string_field(output_json, &["_harness", "lineage", "session_id"])
+    })
+    .or_else(|| {
+        trimmed_json_nested_string_field(output_json, &["_harness", "lineage", "sessionId"])
+    })
+}
+
+fn task_child_request_id_from_output(output_json: Option<&serde_json::Value>) -> Option<String> {
+    trimmed_json_string_field(
+        output_json,
+        &[
+            "child_request_id",
+            "request_id",
+            "childRequestId",
+            "requestId",
+        ],
+    )
+    .or_else(|| trimmed_json_nested_string_field(output_json, &["child_session", "request_id"]))
+    .or_else(|| trimmed_json_nested_string_field(output_json, &["childSession", "requestId"]))
+    .or_else(|| trimmed_json_nested_string_field(output_json, &["metadata", "requestId"]))
+    .or_else(|| trimmed_json_nested_string_field(output_json, &["metadata", "request_id"]))
+    .or_else(|| trimmed_json_nested_string_field(output_json, &["lineage", "child_request_id"]))
+    .or_else(|| trimmed_json_nested_string_field(output_json, &["lineage", "request_id"]))
+    .or_else(|| trimmed_json_nested_string_field(output_json, &["lineage", "requestId"]))
+    .or_else(|| {
+        trimmed_json_nested_string_field(output_json, &["_harness", "lineage", "child_request_id"])
+    })
+    .or_else(|| {
+        trimmed_json_nested_string_field(output_json, &["_harness", "lineage", "request_id"])
+    })
+    .or_else(|| {
+        trimmed_json_nested_string_field(output_json, &["_harness", "lineage", "requestId"])
+    })
 }
 
 fn tool_call_has_expandable_output(tool_call: &ToolCallEntry) -> bool {

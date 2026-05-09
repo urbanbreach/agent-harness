@@ -38,12 +38,18 @@ mod ui_terminal;
 #[path = "ui_transcript.rs"]
 mod ui_transcript;
 
+pub(crate) use ui_chrome::subagent_footer_mouse_target;
 use ui_chrome::{
     compact_inline_payload, display_width, elevated_card_surface, interruptive_modal_block,
     live_transcript_shell_section, muted_meta_style, panel_block, panel_style, render_footer,
     render_header, render_unified_bottom_dock, runtime_state_color, status_badge,
     subdued_payload_style, take_width_prefix, transcript_prefix_style, truncate_plain_text,
     ChromeFrame,
+};
+#[cfg(test)]
+pub(crate) use ui_chrome::{
+    exact_test_subagent_footer_matches_opencode_layout,
+    exact_test_subagent_replay_suppresses_parent_replay_dock,
 };
 pub(super) use ui_lifecycle::render_startup_lifecycle_surface;
 use ui_lifecycle::{live_empty_state_visible, render_live_empty_state, startup_shell_visible};
@@ -77,11 +83,13 @@ pub(crate) use ui_transcript::{TranscriptMouseTarget, TranscriptScrollbarHit};
 
 #[cfg(test)]
 pub(crate) use ui_chrome::{
+    exact_test_composer_viewport_wraps_by_display_width,
     exact_test_live_composer_disclosure_summarizes_compaction_metrics,
     exact_test_live_composer_metadata_omits_success_without_variant,
     exact_test_live_composer_reserves_right_gap,
     exact_test_live_control_dock_collapses_disclosure_before_status,
     exact_test_live_control_dock_renders_shared_surface,
+    exact_test_startup_disclosure_matches_opencode_hint_row,
     exact_test_tool_status_summary_uses_effective_tool_identity,
 };
 #[cfg(test)]
@@ -122,7 +130,7 @@ pub(crate) fn exact_test_startup_shell_keeps_no_default_tab_chrome_after_runtime
 
     assert!(!debug.contains("Launch: deep · GPT-5.4 Mini · Deterministic"));
     assert!(!debug.contains("Provider default"));
-    assert!(debug.contains("Ask anything... \"inspect src/ui.rs\""));
+    assert!(debug.contains("Ask anything... \"What is the tech stack of this project?\""));
     assert!(!debug.contains("Tabs"));
     assert!(!debug.contains("Actions:"));
     assert!(!debug.contains("Enter select"));
@@ -1365,9 +1373,9 @@ mod tests {
         assert!(!debug.contains("Launch: deep · gpt-5.4"));
         assert!(!debug.contains("Provider proxy"));
         assert!(debug.contains("Deep gpt-5.4 proxy · Demo"));
-        assert!(debug.contains("Ctrl+p open"));
+        assert!(debug.contains("ctrl+p commands"));
         assert!(!debug.contains("Enter select"));
-        assert!(debug.contains("Ask anything... \"inspect src/ui.rs\""));
+        assert!(debug.contains("Ask anything... \"What is the tech stack of this project?\""));
         assert!(!debug.contains("Dispatch a new run, reopen live work, or inspect saved history."));
         assert!(!debug.contains("Actions:"));
     }

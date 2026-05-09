@@ -1,26 +1,26 @@
 
-  ┃                                                                                                                                                                                 Inspect tool activity
-  ┃  Inspect tool activity
-  ┃                                                                                                                                                                                 ▼ MCP
-                                                                                                                                                                                    • No MCP servers configured
-     → Read src/ui.rs [offset=1, limit=24]  ▸
-      ↳ Loaded src/ui.rs                                                                                                                                                            ▼ LSP
-      Compat alias · read → fs.read                                                                                                                                                 • No active LSP servers
-     ← Patch · ui.rs  ▸
-      crates/harness-tui/src                                                                                                                                                        ▼ Modified Files
-        44   use ui_secondary::{                                                              44   use ui_secondary::{                                                              • crates/harness-tui/src/ui.rs · +1 -1
-        45 -     render_diff_tab, render_events_tab, render_help_tab,                         45 +     render_events_tab, render_help_tab, render_live_details_overlay,
-        46       render_operator_sidebar,                                                     46       render_operator_sidebar,
-        47   };                                                                               47   };
-     │ Researcher Task — audit tool lifecycle parity
-      └ 2 toolcalls · 2ms
-     $ cargo test -p harness-tui  ▸
-      exit code: 1
-      stderr: snapshot mismatch
-
-     Tool summaries are now easier to scan, and edits stay inline.
-
-     ▪ Assistant · model-1 · 17ms
+  ┃  Inspect tool activity                                                                                                                                                     █    Inspect tool activity
+  ┃                                                                                                                                                                            █
+                                                                                                                                                                               █    ▼ MCP
+     → Read src/ui.rs [offset=1, limit=24]  ▸                                                                                                                                  █    • No MCP servers configured
+      ↳ Loaded src/ui.rs                                                                                                                                                       █
+      Compat alias · read → fs.read                                                                                                                                            █    ▼ LSP
+     ← Patch · ui.rs  ▸                                                                                                                                                        █    • No active LSP servers
+      crates/harness-tui/src                                                                                                                                                   █
+        44   use ui_secondary::{                                                             44   use ui_secondary::{                                                          █    ▼ Modified Files
+        45 -     render_diff_tab, render_events_tab, render_help_tab,                        45 +     render_events_tab, render_help_tab, render_live_details_overlay,         █    • crates/harness-tui/src/ui.rs · +1 -1
+        46       render_operator_sidebar,                                                    46       render_operator_sidebar,                                                 █
+        47   };                                                                              47   };                                                                           █
+     │ Researcher Task — audit tool lifecycle parity                                                                                                                           █
+      └ 2 toolcalls · 2ms                                                                                                                                                      █
+     $ cargo test -p harness-tui  ▸                                                                                                                                            █
+      exit code: 1                                                                                                                                                             █
+      stderr: snapshot mismatch                                                                                                                                                █
+                                                                                                                                                                               █
+     Tool summaries are now easier to scan, and edits stay inline.                                                                                                             █
+     Ctrl+] view subagents                                                                                                                                                     █
+                                                                                                                                                                               █
+     ▪ Assistant · model-1 · 17ms                                                                                                                                              █
 
 ┃
 ┃

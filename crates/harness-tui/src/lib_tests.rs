@@ -31,6 +31,8 @@ delegate_test!(transcript_edit_tool_matches_inline_diff_shape => ui::exact_test_
 delegate_test!(transcript_native_edit_renders_inline_diff_from_artifact => ui::exact_test_transcript_native_edit_renders_inline_diff_from_artifact);
 delegate_test!(transcript_harness_tool_progress_indicators => ui::exact_test_transcript_harness_tool_progress_indicators);
 delegate_test!(transcript_apply_patch_multifile_uses_output_edit_paths => ui::exact_test_transcript_apply_patch_multifile_uses_output_edit_paths);
+delegate_test!(subagent_footer_matches_opencode_layout => ui::exact_test_subagent_footer_matches_opencode_layout);
+delegate_test!(subagent_replay_suppresses_parent_replay_dock => ui::exact_test_subagent_replay_suppresses_parent_replay_dock);
 delegate_test!(transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs => ui::exact_test_transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs);
 delegate_test!(transcript_inline_diff_stays_compact_between_tool_rows => ui::exact_test_transcript_inline_diff_stays_compact_between_tool_rows);
 delegate_test!(transcript_proposed_edit_renders_header => ui::exact_test_transcript_proposed_edit_renders_header);
@@ -463,6 +465,8 @@ delegate_test!(live_control_dock_collapses_disclosure_before_status => ui::exact
 delegate_test!(live_composer_metadata_omits_success_without_variant => ui::exact_test_live_composer_metadata_omits_success_without_variant);
 delegate_test!(live_composer_reserves_right_gap => ui::exact_test_live_composer_reserves_right_gap);
 delegate_test!(live_composer_disclosure_summarizes_compaction_metrics => ui::exact_test_live_composer_disclosure_summarizes_compaction_metrics);
+delegate_test!(startup_disclosure_matches_opencode_hint_row => ui::exact_test_startup_disclosure_matches_opencode_hint_row);
+delegate_test!(composer_viewport_wraps_by_display_width => ui::exact_test_composer_viewport_wraps_by_display_width);
 delegate_test!(tool_status_summary_uses_effective_tool_identity => ui::exact_test_tool_status_summary_uses_effective_tool_identity);
 delegate_test!(wheel_target_hits_transcript_when_hovered => ui::exact_test_wheel_target_hits_transcript_when_hovered);
 delegate_test!(wheel_target_hits_inspector_inside_live_overlay => ui::exact_test_wheel_target_hits_inspector_inside_live_overlay);
@@ -1076,10 +1080,10 @@ fn startup_home_screen_renders_compose_first_shell() {
     assert!(!rendered.contains("Launch: deep · gpt-5.4"));
     assert!(!rendered.contains("Provider proxy"));
     assert!(rendered.contains("Deep gpt-5.4 proxy · Demo"));
-    assert!(rendered.contains("Ctrl+p opens saved sessions"));
+    assert!(rendered.contains("ctrl+p commands"));
     assert!(!rendered.contains("Enter select"));
-    assert!(rendered.contains("Ask anything... \"inspect src/ui.rs\""));
-    assert!(rendered.contains("opens saved sessions"));
+    assert!(rendered.contains("Ask anything... \"What is the tech stack of this project?\""));
+    assert!(rendered.contains("commands"));
     assert!(!rendered.contains("Dispatch a new run, reopen live work, or inspect saved history."));
     assert!(!rendered.contains("Actions: New session · Continue session · Replay session"));
 }
@@ -1091,7 +1095,7 @@ fn startup_home_screen_uses_minimal_compat_shell() {
 
     let rendered = render_live_lines(&app, 100, 24);
     assert!(rendered.contains("╻ ╻  ┏━┓  ┏━┓  ┏┓╻") || rendered.contains("Harness"));
-    assert!(rendered.contains("Ask anything... \"inspect src/ui.rs\""));
+    assert!(rendered.contains("Ask anything... \"What is the tech stack of this project?\""));
     assert!(!rendered.contains("Dispatch a new run, reopen live work, or inspect saved history."));
     assert!(!rendered.contains("New session"));
     assert!(!rendered.contains("Continue session"));
@@ -1109,10 +1113,11 @@ fn startup_composer_keeps_inset_input_then_metadata_row_order() {
     for (width, height) in [(100, 30), (80, 24)] {
         let rendered = render_live_lines(&app, width, height);
         let lines = rendered.lines().collect::<Vec<_>>();
-        let composer_input_row =
-            find_line_containing(&lines, "Ask anything... \"inspect src/ui.rs\"").unwrap_or_else(
-                || panic!("startup composer input row at {width}x{height}\n{rendered}"),
-            );
+        let composer_input_row = find_line_containing(
+            &lines,
+            "Ask anything... \"What is the tech stack of this project?\"",
+        )
+        .unwrap_or_else(|| panic!("startup composer input row at {width}x{height}\n{rendered}"));
         let composer_first_row = composer_input_row.saturating_sub(1);
         let metadata_gap_row = composer_input_row.saturating_add(1);
         let metadata_row = find_line_containing(&lines, "Deep gpt-5.4 proxy · Demo")
@@ -6893,10 +6898,10 @@ fn startup_surface_renders_primary_actions() {
     assert!(!rendered.contains("Launch: worker · model-1"));
     assert!(!rendered.contains("Provider mock"));
     assert!(rendered.contains("Worker model-1 mock"));
-    assert!(rendered.contains("Ctrl+p opens saved sessions"));
+    assert!(rendered.contains("ctrl+p commands"));
     assert!(!rendered.contains("Enter select"));
-    assert!(rendered.contains("Ask anything... \"inspect src/ui.rs\""));
-    assert!(rendered.contains("● Tip"));
+    assert!(rendered.contains("Ask anything... \"What is the tech stack of this project?\""));
+    assert!(!rendered.contains("● Tip"));
     assert!(!rendered.contains("Dispatch a new run, reopen live work, or inspect saved history."));
     assert!(!rendered.contains("Actions:"));
 }
@@ -6918,8 +6923,8 @@ fn startup_typing_moves_to_quick_start_prompt() {
     let rendered = render_live_lines(&app, 100, 24);
     assert!(!rendered.contains("Composer"));
     assert!(rendered.contains("x"));
-    assert!(rendered.contains("Ctrl+p opens saved sessions"));
-    assert!(rendered.contains("● Tip"));
+    assert!(rendered.contains("ctrl+p commands"));
+    assert!(!rendered.contains("● Tip"));
     assert!(!rendered.contains("Dispatch a new run, reopen live work, or inspect saved history."));
     assert!(!rendered.contains("Actions:"));
 }
@@ -7075,6 +7080,134 @@ fn post_run_handoff_disables_prompt_submission() {
 
 #[cfg(test)]
 #[test]
+fn double_escape_interrupts_active_live_turn_after_opencode_confirmation() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let intent_sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+    let mut app = app::AppState::new_live(None, false, Some(intent_sink));
+    app.focus = app::Focus::Details;
+
+    app.ingest_event(envelope_with_actor(
+        1,
+        Some("req_active"),
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Worker,
+            Some("agent_worker".to_string()),
+        ),
+        harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
+            task_id: "task_active".to_string(),
+            state: harness_core::event::TaskScheduleState::Started,
+            queue_key: Some("provider_model:default:model-1".to_string()),
+        }),
+    ));
+    app.ingest_event(envelope_with_actor(
+        2,
+        Some("req_sibling"),
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Worker,
+            Some("agent_sibling".to_string()),
+        ),
+        harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
+            task_id: "task_sibling".to_string(),
+            state: harness_core::event::TaskScheduleState::Started,
+            queue_key: Some("provider_model:default:model-2".to_string()),
+        }),
+    ));
+
+    assert!(app.interrupt_hint_visible());
+    assert!(render_live_lines(&app, 100, 24).contains("esc interrupt"));
+
+    app.handle_key(key(crossterm::event::KeyCode::Esc));
+
+    assert!(app.interrupt_confirmation_pending());
+    assert!(intents.lock().expect("lock intents").is_empty());
+    assert!(render_live_lines(&app, 100, 24).contains("esc again to interrupt"));
+
+    app.handle_key(key(crossterm::event::KeyCode::Esc));
+
+    assert!(!app.interrupt_confirmation_pending());
+    assert_eq!(
+        &*intents.lock().expect("lock intents"),
+        &[UiIntent::InterruptSession {
+            task_ids: vec!["task_active".to_string(), "task_sibling".to_string()],
+        }]
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn interrupt_confirmation_is_scoped_to_current_active_turn_set() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let intent_sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+    let mut app = app::AppState::new_live(None, false, Some(intent_sink));
+    app.focus = app::Focus::Details;
+
+    app.ingest_event(envelope_with_actor(
+        1,
+        Some("req_old"),
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Worker,
+            Some("agent_worker".to_string()),
+        ),
+        harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
+            task_id: "task_old".to_string(),
+            state: harness_core::event::TaskScheduleState::Started,
+            queue_key: Some("provider_model:default:model-1".to_string()),
+        }),
+    ));
+
+    app.handle_key(key(crossterm::event::KeyCode::Esc));
+    assert!(app.interrupt_confirmation_pending());
+
+    app.ingest_event(envelope(
+        2,
+        Some("req_old"),
+        harness_core::event::EventV1::TaskCancelled(harness_core::event::TaskCancelledEvent {
+            task_id: "task_old".to_string(),
+            reason: "cancelled externally".to_string(),
+            task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
+        }),
+    ));
+    app.ingest_event(envelope_with_actor(
+        3,
+        Some("req_new"),
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Worker,
+            Some("agent_worker".to_string()),
+        ),
+        harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
+            task_id: "task_new".to_string(),
+            state: harness_core::event::TaskScheduleState::Started,
+            queue_key: Some("provider_model:default:model-1".to_string()),
+        }),
+    ));
+
+    assert!(!app.interrupt_confirmation_pending());
+    app.handle_key(key(crossterm::event::KeyCode::Esc));
+    assert!(app.interrupt_confirmation_pending());
+    assert!(intents.lock().expect("lock intents").is_empty());
+
+    app.handle_key(key(crossterm::event::KeyCode::Esc));
+
+    assert_eq!(
+        &*intents.lock().expect("lock intents"),
+        &[UiIntent::InterruptSession {
+            task_ids: vec!["task_new".to_string()],
+        }]
+    );
+}
+
+#[cfg(test)]
+#[test]
 fn continued_quiescent_bootstrap_shows_handoff_before_reopening_live_conversation() {
     app::set_pending_live_launch_metadata(
         app::LaunchMetadata::from_model_ref("worker", "default:model-1")
@@ -7193,10 +7326,10 @@ fn lifecycle_shell_snapshots() {
 
     let startup_render = render_live_lines(&startup, 100, 24);
     assert!(startup_render.contains("╻ ╻  ┏━┓  ┏━┓  ┏┓╻") || startup_render.contains("Harness"));
-    assert!(startup_render.contains("Ctrl+p opens saved sessions"));
+    assert!(startup_render.contains("ctrl+p commands"));
     assert!(!startup_render.contains("Enter select"));
-    assert!(startup_render.contains("Ask anything... \"inspect src/ui.rs\""));
-    assert!(startup_render.contains("opens saved sessions"));
+    assert!(startup_render.contains("Ask anything... \"What is the tech stack of this project?\""));
+    assert!(startup_render.contains("commands"));
     assert!(
         !startup_render.contains("Dispatch a new run, reopen live work, or inspect saved history.")
     );
@@ -7882,10 +8015,10 @@ fn startup_shell_shows_profile_provider_and_model_chrome() {
     assert!(!rendered.contains("Launch: deep · gpt-5.4"));
     assert!(!rendered.contains("Provider proxy"));
     assert!(rendered.contains("Deep gpt-5.4 proxy · Demo"));
-    assert!(rendered.contains("Ctrl+p opens saved sessions"));
+    assert!(rendered.contains("ctrl+p commands"));
     assert!(!rendered.contains("Enter select"));
-    assert!(rendered.contains("Ask anything... \"inspect src/ui.rs\""));
-    assert!(rendered.contains("opens saved sessions"));
+    assert!(rendered.contains("Ask anything... \"What is the tech stack of this project?\""));
+    assert!(rendered.contains("commands"));
     assert!(!rendered.contains("Dispatch a new run, reopen live work, or inspect saved history."));
     assert!(!rendered.contains("Actions:"));
 }
@@ -7904,14 +8037,17 @@ fn lifecycle_shell_narrow_layout_renders_primary_cta() {
 
     let lines = rendered.lines().collect::<Vec<_>>();
     let title_row = find_line_containing(&lines, "╻ ╻  ┏━┓  ┏━┓  ┏┓╻").expect("startup logo row");
-    let prompt_row = find_line_containing(&lines, "Ask anything... \"inspect src/ui.rs\"")
-        .expect("startup prompt row");
-    let footer_row = find_line_containing(&lines, "opens saved sessions").expect("footer row");
+    let prompt_row = find_line_containing(
+        &lines,
+        "Ask anything... \"What is the tech stack of this project?\"",
+    )
+    .expect("startup prompt row");
+    let footer_row = find_line_containing(&lines, "commands").expect("footer row");
 
     assert!(!rendered.contains("Actions:"));
     assert!(!rendered.contains("Dispatch a new run"));
     assert!(!rendered.contains("Launch: worker · model-1"));
-    assert!(rendered.contains("opens saved sessions"));
+    assert!(rendered.contains("commands"));
     assert!(title_row < prompt_row);
     assert!(prompt_row < footer_row);
 }
@@ -8127,7 +8263,7 @@ fn startup_home_matches_live_empty_shell_language() {
 
     for marker in [
         "╻ ╻  ┏━┓  ┏━┓  ┏┓╻",
-        "Ask anything... \"inspect src/ui.rs\"",
+        "Ask anything... \"What is the tech stack of this project?\"",
     ] {
         assert!(
             startup_render.contains(marker),
@@ -8144,7 +8280,7 @@ fn startup_home_matches_live_empty_shell_language() {
     assert!(!startup_render.contains("Dispatch a new run"));
     assert!(!startup_render.contains("Launch: worker · model-1"));
     assert!(live_render.contains("Start a conversation to begin"));
-    assert!(startup_render.contains("● Tip"));
+    assert!(!startup_render.contains("● Tip"));
     assert!(!live_render.contains("Waiting for first turn…"));
 }
 
@@ -8174,7 +8310,7 @@ fn live_empty_state_uses_shared_home_surface_tokens() {
         "startup should not render purpose copy below the logo\n{startup_render}"
     );
     assert!(
-        startup_render.contains("Ask anything... \"inspect src/ui.rs\""),
+        startup_render.contains("Ask anything... \"What is the tech stack of this project?\""),
         "startup should keep the prompt accessible in the minimal shell\n{startup_render}"
     );
     assert!(live_render.contains("Session"));
@@ -8214,11 +8350,12 @@ fn startup_and_live_empty_share_spacing_contract() {
     let startup_lines = startup_render.lines().collect::<Vec<_>>();
     let startup_title =
         find_line_containing(&startup_lines, "╻ ╻  ┏━┓  ┏━┓  ┏┓╻").expect("startup logo");
-    let startup_prompt =
-        find_line_containing(&startup_lines, "Ask anything... \"inspect src/ui.rs\"")
-            .expect("startup prompt");
-    let startup_keys =
-        find_line_containing(&startup_lines, "opens saved sessions").expect("startup key hints");
+    let startup_prompt = find_line_containing(
+        &startup_lines,
+        "Ask anything... \"What is the tech stack of this project?\"",
+    )
+    .expect("startup prompt");
+    let startup_keys = find_line_containing(&startup_lines, "commands").expect("startup key hints");
 
     let live_render = render_live_lines(&live, 100, 24);
     let live_lines = live_render.lines().collect::<Vec<_>>();

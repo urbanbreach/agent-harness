@@ -5,8 +5,9 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use crossterm::event::{
-    DisableMouseCapture, EnableMouseCapture, KeyboardEnhancementFlags, MouseButton, MouseEventKind,
-    PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+    KeyboardEnhancementFlags, MouseButton, MouseEventKind, PopKeyboardEnhancementFlags,
+    PushKeyboardEnhancementFlags,
 };
 use harness_core::event::EventEnvelopeV1;
 use ratatui::buffer::Buffer;
@@ -37,6 +38,7 @@ struct PreservedTerminalSession {
     active: bool,
     keyboard_enhancements_enabled: bool,
     mouse_capture_enabled: bool,
+    bracketed_paste_enabled: bool,
     buffer: Option<Buffer>,
 }
 
@@ -141,6 +143,9 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         }
         TuiMode::Replay { run_dir, events } => {
             let mut app = AppState::new_replay(run_dir, events);
+            if let Some(on_ui_intent) = on_ui_intent {
+                app.enable_replay_navigation_handoff(on_ui_intent);
+            }
             if let Some(launch_metadata) = take_pending_replay_launch_metadata() {
                 app.set_launch_metadata(launch_metadata);
             }
@@ -177,6 +182,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
     let reusing_terminal = preserved_terminal.active;
     let mut keyboard_enhancements_enabled = preserved_terminal.keyboard_enhancements_enabled;
     let mut mouse_capture_enabled = preserved_terminal.mouse_capture_enabled;
+    let mut bracketed_paste_enabled = preserved_terminal.bracketed_paste_enabled;
 
     if !reusing_terminal {
         crossterm::terminal::enable_raw_mode().context("failed to enable terminal raw mode")?;
@@ -199,6 +205,10 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 keyboard_enhancements_enabled = true;
             }
 
+            crossterm::execute!(stdout, EnableBracketedPaste)
+                .context("failed to enable bracketed paste before launching TUI")?;
+            bracketed_paste_enabled = true;
+
             crossterm::execute!(stdout, EnableMouseCapture)
                 .context("failed to enable mouse capture before launching TUI")?;
             mouse_capture_enabled = true;
@@ -208,6 +218,9 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         if let Err(err) = setup_result {
             if mouse_capture_enabled {
                 let _ = crossterm::execute!(stdout, DisableMouseCapture);
+            }
+            if bracketed_paste_enabled {
+                let _ = crossterm::execute!(stdout, DisableBracketedPaste);
             }
             if keyboard_enhancements_enabled {
                 let _ = crossterm::execute!(stdout, PopKeyboardEnhancementFlags);
@@ -268,9 +281,6 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 app.set_frame_area(frame_area);
                 terminal.draw(|frame| ui::render_app(frame, &app))?;
                 redraw_requested = false;
-                if app.has_active_animations() {
-                    next_animation_tick = next_animation_tick_after_frame(Instant::now());
-                }
             }
 
             if app.should_quit {
@@ -309,12 +319,20 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             }
 
             if let Some(event) = event {
-                match event {
+                let event_changed = match event {
                     event::TuiEvent::Key(key) => {
                         let size = terminal.size()?;
                         let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
                         app.set_frame_area(frame_area);
-                        app.handle_key(key)
+                        app.handle_key(key);
+                        true
+                    }
+                    event::TuiEvent::Paste(text) => {
+                        let size = terminal.size()?;
+                        let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
+                        app.set_frame_area(frame_area);
+                        app.handle_paste(&text);
+                        true
                     }
                     event::TuiEvent::Mouse(mouse) => {
                         if !mouse_event_requires_handling(mouse.kind, app.slash_visible) {
@@ -357,12 +375,13 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                             hovered_wheel_target,
                             clicked_operator_sidebar_section,
                             transcript_scrollbar_hit,
-                        );
+                        )
                     }
-                    event::TuiEvent::Resize(_, _) => {}
+                    event::TuiEvent::Resize(_, _) => true,
+                };
+                if event_changed {
+                    redraw_requested = true;
                 }
-
-                redraw_requested = true;
             }
         }
         Ok(())
@@ -373,6 +392,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             active: true,
             keyboard_enhancements_enabled,
             mouse_capture_enabled,
+            bracketed_paste_enabled,
             buffer: Some(terminal.current_buffer_mut().clone()),
         };
         return run_result;
@@ -383,6 +403,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         terminal.backend_mut(),
         keyboard_enhancements_enabled,
         mouse_capture_enabled,
+        bracketed_paste_enabled,
     )?;
 
     run_result
@@ -402,6 +423,7 @@ pub fn close_preserved_terminal_session() -> Result<()> {
         &mut stdout,
         preserved.keyboard_enhancements_enabled,
         preserved.mouse_capture_enabled,
+        preserved.bracketed_paste_enabled,
     )
 }
 
@@ -409,33 +431,25 @@ fn teardown_terminal_session(
     writer: &mut impl std::io::Write,
     keyboard_enhancements_enabled: bool,
     mouse_capture_enabled: bool,
+    bracketed_paste_enabled: bool,
 ) -> Result<()> {
     crossterm::terminal::disable_raw_mode()
         .context("failed to disable terminal raw mode after TUI")?;
 
-    match (mouse_capture_enabled, keyboard_enhancements_enabled) {
-        (true, true) => crossterm::execute!(
-            writer,
-            DisableMouseCapture,
-            PopKeyboardEnhancementFlags,
-            crossterm::terminal::LeaveAlternateScreen
-        )
-        .context("failed to leave alternate screen after TUI"),
-        (true, false) => crossterm::execute!(
-            writer,
-            DisableMouseCapture,
-            crossterm::terminal::LeaveAlternateScreen
-        )
-        .context("failed to leave alternate screen after TUI"),
-        (false, true) => crossterm::execute!(
-            writer,
-            PopKeyboardEnhancementFlags,
-            crossterm::terminal::LeaveAlternateScreen
-        )
-        .context("failed to leave alternate screen after TUI"),
-        (false, false) => crossterm::execute!(writer, crossterm::terminal::LeaveAlternateScreen)
-            .context("failed to leave alternate screen after TUI"),
+    if mouse_capture_enabled {
+        crossterm::execute!(writer, DisableMouseCapture)
+            .context("failed to disable mouse capture after TUI")?;
     }
+    if bracketed_paste_enabled {
+        crossterm::execute!(writer, DisableBracketedPaste)
+            .context("failed to disable bracketed paste after TUI")?;
+    }
+    if keyboard_enhancements_enabled {
+        crossterm::execute!(writer, PopKeyboardEnhancementFlags)
+            .context("failed to pop keyboard enhancement flags after TUI")?;
+    }
+    crossterm::execute!(writer, crossterm::terminal::LeaveAlternateScreen)
+        .context("failed to leave alternate screen after TUI")
 }
 
 pub fn run_tui() -> Result<()> {
@@ -473,11 +487,13 @@ fn poll_timeout(
 }
 
 fn next_animation_tick_after_frame(frame_completed_at: Instant) -> Instant {
+    // Animation cadence must be independent from redraw cadence. Mouse movement can request
+    // redraws continuously, so only animation advancement should move this deadline forward.
     frame_completed_at + ACTIVE_POLL_INTERVAL
 }
 
-fn mouse_event_requires_handling(kind: MouseEventKind, slash_visible: bool) -> bool {
-    !matches!(kind, MouseEventKind::Moved) || slash_visible
+fn mouse_event_requires_handling(_kind: MouseEventKind, _slash_visible: bool) -> bool {
+    true
 }
 
 fn drain_live_updates(
@@ -617,8 +633,8 @@ mod tests {
     }
 
     #[test]
-    fn plain_mouse_movement_does_not_force_a_redraw() {
-        assert!(!mouse_event_requires_handling(MouseEventKind::Moved, false));
+    fn plain_mouse_movement_reaches_hover_handling() {
+        assert!(mouse_event_requires_handling(MouseEventKind::Moved, false));
         assert!(mouse_event_requires_handling(MouseEventKind::Moved, true));
         assert!(mouse_event_requires_handling(
             MouseEventKind::ScrollDown,

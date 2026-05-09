@@ -14,9 +14,10 @@ use serde_json::Value;
 
 use super::{
     json_string_field, set_pending_live_launch_metadata, set_pending_live_prompt_draft,
-    ActivityEntry, AppState, Focus, PermissionConfirmSelection, PermissionModalSelection,
-    PermissionModalStage, PostRunHandoffAction, ReviewSurface, StartupLauncherAction,
-    SubagentSessionInfo, Tab, ToolCallEntry, UiIntent, SLASH_COMMANDS,
+    task_child_request_id_from_output, task_child_session_id_from_output, ActivityEntry, AppState,
+    Focus, PermissionConfirmSelection, PermissionModalSelection, PermissionModalStage,
+    PostRunHandoffAction, ReviewSurface, StartupLauncherAction, SubagentSessionInfo, Tab,
+    ToolCallEntry, UiIntent, SLASH_COMMANDS,
 };
 use crate::keybindings::Action;
 use crate::text::{has_trimmed_content, non_empty_trimmed};
@@ -2006,6 +2007,18 @@ impl AppState {
             .and_then(non_empty_trimmed)
     }
 
+    pub(crate) fn current_subagent_session_present(&self) -> bool {
+        let Some(current_session_id) = self.current_session_id() else {
+            return false;
+        };
+
+        self.session_navigation_stack
+            .last()
+            .and_then(|snapshot| session_id_from_path(&snapshot.session_path))
+            .or_else(|| self.current_parent_session_id())
+            .is_some_and(|parent_session_id| parent_session_id != current_session_id)
+    }
+
     pub(crate) fn current_subagent_session_info(&self) -> Option<SubagentSessionInfo> {
         let current_session_id = self.current_session_id()?;
         let parent_snapshot = self.session_navigation_stack.last();
@@ -2013,14 +2026,13 @@ impl AppState {
             .and_then(|snapshot| session_id_from_path(&snapshot.session_path))
             .or_else(|| self.current_parent_session_id());
 
-        parent_session_id.as_ref()?;
+        let parent_session_id =
+            parent_session_id.filter(|session_id| session_id != current_session_id)?;
 
         let sibling_ids = parent_snapshot
             .map(|snapshot| snapshot.child_session_ids.clone())
             .or_else(|| {
-                parent_session_id
-                    .as_deref()
-                    .and_then(|session_id| self.session_path_for_id(session_id))
+                self.session_path_for_id(&parent_session_id)
                     .and_then(|path| {
                         session_navigation_snapshot_from_path(&path, &self.launch_metadata).ok()
                     })
@@ -2037,9 +2049,7 @@ impl AppState {
         let task = parent_snapshot
             .and_then(|snapshot| child_task_info_from_events(&snapshot.events, current_session_id))
             .or_else(|| {
-                parent_session_id
-                    .as_deref()
-                    .and_then(|session_id| self.session_path_for_id(session_id))
+                self.session_path_for_id(&parent_session_id)
                     .and_then(|path| {
                         session_navigation_snapshot_from_path(&path, &self.launch_metadata).ok()
                     })
@@ -2068,10 +2078,7 @@ impl AppState {
             })
             .filter(|description| has_trimmed_content(description))
             .unwrap_or_else(|| current_session_id.to_string());
-        let parent_label = parent_session_id
-            .as_deref()
-            .map(str::to_string)
-            .unwrap_or_else(|| "Parent".to_string());
+        let parent_label = parent_session_id;
 
         Some(SubagentSessionInfo {
             label,
@@ -2084,7 +2091,7 @@ impl AppState {
     }
 
     pub(super) fn child_session_ids(&self) -> Vec<String> {
-        let mut child_session_ids = BTreeSet::new();
+        let mut child_session_ids = Vec::new();
         let delegated_child_request_ids = self.delegated_child_request_ids();
 
         for activity in &self.activities {
@@ -2095,12 +2102,14 @@ impl AppState {
                 if let Some(child_session_id) =
                     Self::task_tool_child_session_id_from_entry(tool_call)
                 {
-                    child_session_ids.insert(child_session_id);
+                    if !child_session_ids.contains(&child_session_id) {
+                        child_session_ids.push(child_session_id);
+                    }
                 }
             }
         }
 
-        child_session_ids.into_iter().collect()
+        child_session_ids
     }
 
     fn delegated_child_request_ids(&self) -> BTreeSet<String> {
@@ -2122,12 +2131,7 @@ impl AppState {
             .and_then(|lineage| lineage.child_request_id.as_deref())
             .and_then(non_empty_trimmed)
             .map(str::to_string)
-            .or_else(|| {
-                json_string_field(
-                    tool_call.output_json.as_ref(),
-                    &["child_request_id", "request_id"],
-                )
-            })
+            .or_else(|| task_child_request_id_from_output(tool_call.output_json.as_ref()))
     }
 
     fn task_tool_child_session_id_from_entry(tool_call: &ToolCallEntry) -> Option<String> {
@@ -2141,15 +2145,10 @@ impl AppState {
             .and_then(|lineage| lineage.child_session_id.as_deref())
             .and_then(non_empty_trimmed)
             .map(str::to_string)
-            .or_else(|| {
-                json_string_field(
-                    tool_call.output_json.as_ref(),
-                    &["child_session_id", "session_id"],
-                )
-            })
+            .or_else(|| task_child_session_id_from_output(tool_call.output_json.as_ref()))
     }
 
-    fn tool_call_is_task_spawn(tool_call: &ToolCallEntry) -> bool {
+    pub(super) fn tool_call_is_task_spawn(tool_call: &ToolCallEntry) -> bool {
         matches!(tool_call.effective_tool_id(), "agent.spawn" | "task")
             || matches!(tool_call.tool_id.as_str(), "agent.spawn" | "task")
     }
@@ -2278,7 +2277,11 @@ impl AppState {
         self.set_launch_metadata(snapshot.launch_metadata);
         self.active_review_surface = None;
         self.active_tab = Tab::Run;
-        self.focus = Focus::Details;
+        self.focus = if self.replay_mode {
+            Focus::Details
+        } else {
+            Focus::Prompt
+        };
         self.normalize_focus_for_active_surface();
     }
 
@@ -2305,6 +2308,7 @@ impl AppState {
                 run_dir: session_path,
             });
         }
+        self.should_quit = true;
     }
 
     fn open_replay_session(&mut self, session_id: String, push_current: bool) {
@@ -2387,10 +2391,7 @@ impl AppState {
                     .and_then(non_empty_trimmed)
                     .map(str::to_string)
                     .or_else(|| {
-                        json_string_field(
-                            tool_call.output_json.as_ref(),
-                            &["child_session_id", "session_id", "task_id"],
-                        )
+                        task_child_session_id_from_output(tool_call.output_json.as_ref())
                     })?;
                 (child_session == session_id).then(|| {
                     tool_call
@@ -2400,10 +2401,7 @@ impl AppState {
                         .and_then(non_empty_trimmed)
                         .map(str::to_string)
                         .or_else(|| {
-                            json_string_field(
-                                tool_call.output_json.as_ref(),
-                                &["child_request_id", "request_id"],
-                            )
+                            task_child_request_id_from_output(tool_call.output_json.as_ref())
                         })
                 })
             })
@@ -2466,12 +2464,8 @@ impl AppState {
             return;
         }
 
-        if let Some(session_path) = self.session_path_for_id(&session_id) {
-            if session_path.is_dir() {
-                self.live_switch_to_session(session_id, session_path);
-            } else {
-                self.open_inline_child_session(session_id, session_path, true);
-            }
+        if self.session_path_for_id(&session_id).is_some() {
+            self.open_replay_session(session_id, true);
         }
     }
 
@@ -2489,9 +2483,16 @@ impl AppState {
         };
 
         if self.replay_mode {
+            if let Some(parent_snapshot) = self.session_navigation_stack.last().cloned() {
+                self.restore_session_snapshot(parent_snapshot);
+                self.open_replay_session(target_session_id, false);
+                return;
+            }
+
             self.open_replay_session(
                 target_session_id,
-                self.current_parent_session_id().is_none(),
+                self.current_parent_session_id().is_none()
+                    && self.session_navigation_stack.is_empty(),
             );
             return;
         }
@@ -2524,6 +2525,10 @@ impl AppState {
                 ));
                 return;
             };
+            if self.replay_navigation_handoff_enabled {
+                self.live_switch_to_session(parent_session_id, parent_session_path);
+                return;
+            }
             match session_navigation_snapshot_from_path(&parent_session_path, &self.launch_metadata)
             {
                 Ok(snapshot) => self.restore_session_snapshot(snapshot),
@@ -2537,6 +2542,16 @@ impl AppState {
         if let Some(parent_session_path) = self.session_path_for_id(&parent_session_id) {
             self.live_switch_to_session(parent_session_id, parent_session_path);
         }
+    }
+
+    pub(super) fn restore_parent_session_for_quit(&mut self) {
+        if !self.replay_mode || self.session_navigation_stack.is_empty() {
+            return;
+        }
+
+        let parent_snapshot = self.session_navigation_stack.remove(0);
+        self.session_navigation_stack.clear();
+        self.restore_session_snapshot(parent_snapshot);
     }
 
     pub(crate) fn is_current_model_option(&self, option: &ModelOption) -> bool {
@@ -3483,6 +3498,41 @@ mod tests {
             app.replay_mode,
             "inline child sessions should stay read-only"
         );
+    }
+
+    #[test]
+    fn parent_session_with_child_lineage_is_not_its_own_subagent() {
+        let mut app = AppState::new_replay(
+            PathBuf::from("/tmp/harness-subagent-parent/parent_run"),
+            vec![event(
+                1,
+                Some("req_parent"),
+                actor(harness_core::event::ActorKind::System, "coordinator"),
+                EventV1::ToolCallRequested(harness_core::event::ToolCallRequestedEvent {
+                    tool_call_id: "toolcall_000001".to_string(),
+                    tool_id: "task".to_string(),
+                    args_summary:
+                        r#"{"description":"map chat renderers","subagent_type":"researcher"}"#
+                            .to_string(),
+                    args_digest: "digest-task-call".to_string(),
+                    metadata: Some(harness_core::event::ToolCallMetadata {
+                        lineage: Some(harness_core::event::TaskLineageMetadata {
+                            parent_tool_call_id: Some("toolcall_000001".to_string()),
+                            parent_request_id: Some("req_parent".to_string()),
+                            parent_session_id: Some("parent_run".to_string()),
+                            child_session_id: Some("agent_worker".to_string()),
+                            child_request_id: Some("req_child".to_string()),
+                            ..harness_core::event::TaskLineageMetadata::default()
+                        }),
+                        ..harness_core::event::ToolCallMetadata::default()
+                    }),
+                }),
+            )],
+        );
+        app.session_path = Some(PathBuf::from("/tmp/harness-subagent-parent/parent_run"));
+
+        assert!(!app.current_subagent_session_present());
+        assert!(app.current_subagent_session_info().is_none());
     }
 
     #[test]

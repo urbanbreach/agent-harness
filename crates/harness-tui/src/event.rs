@@ -10,6 +10,7 @@ thread_local! {
 pub enum TuiEvent {
     Key(event::KeyEvent),
     Mouse(MouseEvent),
+    Paste(String),
     Resize(u16, u16),
 }
 
@@ -34,6 +35,7 @@ fn normalize_event(ev: Event) -> Result<Option<TuiEvent>> {
                 Ok(None)
             }
         }
+        Event::Paste(text) => Ok(Some(TuiEvent::Paste(text))),
         Event::Resize(w, h) => coalesce_resize_events(w, h),
         Event::Mouse(mouse) => coalesce_mouse_events(mouse),
         _ => Ok(None),
@@ -108,6 +110,7 @@ fn stashable_event(ev: Event) -> Option<TuiEvent> {
     match ev {
         Event::Key(key) if key.kind == KeyEventKind::Press => Some(TuiEvent::Key(key)),
         Event::Mouse(mouse) => Some(TuiEvent::Mouse(mouse)),
+        Event::Paste(text) => Some(TuiEvent::Paste(text)),
         Event::Resize(width, height) => Some(TuiEvent::Resize(width, height)),
         _ => None,
     }
@@ -126,5 +129,17 @@ mod tests {
             .matches(event::MouseEventKind::Drag(event::MouseButton::Left)));
         assert!(!CoalescedMouseKind::Drag(event::MouseButton::Left)
             .matches(event::MouseEventKind::Drag(event::MouseButton::Right)));
+    }
+
+    #[test]
+    fn paste_events_are_preserved_for_prompt_insertion() {
+        let event = normalize_event(Event::Paste("alpha\nbeta".to_string()))
+            .expect("normalize paste")
+            .expect("paste event");
+
+        match event {
+            TuiEvent::Paste(text) => assert_eq!(text, "alpha\nbeta"),
+            _ => panic!("expected paste event"),
+        }
     }
 }

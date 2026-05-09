@@ -553,7 +553,7 @@ fn startup_runtime_state(continue_disabled_banner: Option<&str>) -> RuntimeState
         summary,
         detail,
         composer_disabled: false,
-        composer_hint: "Ask anything... \"inspect src/ui.rs\"".to_string(),
+        composer_hint: "Ask anything... \"What is the tech stack of this project?\"".to_string(),
     }
 }
 

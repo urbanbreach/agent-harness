@@ -219,6 +219,20 @@ fn child_session_navigation_keybinds_follow_default_contract() {
         KeyCode::Char(']'),
         KeyModifiers::CONTROL,
     ));
+    assert_eq!(
+        parent_app.session_path.as_deref(),
+        Some(child_a_dir.as_path())
+    );
+    assert!(parent_app.replay_mode);
+    parent_app.handle_key(key_with_modifiers(
+        KeyCode::Char('['),
+        KeyModifiers::CONTROL,
+    ));
+    assert_eq!(
+        parent_app.session_path.as_deref(),
+        Some(parent_dir.as_path())
+    );
+    assert!(!parent_app.replay_mode);
 
     let mut child_a_app =
         AppState::new_live(Some(child_a_dir.clone()), false, Some(Arc::clone(&sink)));
@@ -256,10 +270,6 @@ fn child_session_navigation_keybinds_follow_default_contract() {
     assert_eq!(
         intents.lock().expect("lock intents").as_slice(),
         &[
-            UiIntent::ReplaySession {
-                run_id: "child_a".to_string(),
-                run_dir: child_a_dir.clone(),
-            },
             UiIntent::ReplaySession {
                 run_id: "child_b".to_string(),
                 run_dir: child_b_dir.clone(),

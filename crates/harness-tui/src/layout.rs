@@ -1,4 +1,7 @@
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::{
+    layout::{Constraint, Direction, Layout, Rect},
+    text::Line,
+};
 
 use crate::app::AppState;
 use crate::overlay::OverlayKind;
@@ -185,7 +188,10 @@ impl FrameLayoutPlan {
         } else {
             shell_tokens.spacing.heights.header
         };
-        let footer_height = if app.replay_mode {
+        let subagent_footer_visible = subagent_footer_visible(app);
+        let footer_height = if subagent_footer_visible {
+            shell_tokens.spacing.heights.footer.saturating_add(2)
+        } else if app.replay_mode {
             shell_tokens.spacing.heights.footer
         } else {
             0
@@ -203,7 +209,7 @@ impl FrameLayoutPlan {
         let content = root_chunks[1];
         let header = root_chunks[0];
         let footer = root_chunks[2];
-        let shell = if app.replay_mode {
+        let shell = if app.replay_mode && !app.current_subagent_session_present() {
             content
         } else {
             centered_live_shell_area(content, shell_layout)
@@ -377,11 +383,18 @@ fn session_responsive_mode(area: Rect, shell: LiveShellLayout) -> SessionRespons
 }
 
 fn hide_session_header(app: &AppState, contract: SessionGeometryContract) -> bool {
-    !app.replay_mode
-        && app.review_surface().is_none()
+    app.review_surface().is_none()
         && matches!(contract.header_mode, SessionHeaderMode::Hidden)
         && !app.startup_shell_visible()
         && app.active_permission().is_none()
+        && (!app.replay_mode || app.current_subagent_session_present())
+}
+
+fn subagent_footer_visible(app: &AppState) -> bool {
+    app.review_surface().is_none()
+        && !app.startup_shell_visible()
+        && app.active_permission().is_none()
+        && app.current_subagent_session_present()
 }
 
 pub(crate) fn session_shell_layout(
@@ -396,51 +409,55 @@ pub(crate) fn session_shell_layout(
     let min_transcript_width = shell
         .transcript_min_width
         .max(LIVE_DETAILS_MIN_TRANSCRIPT_WIDTH);
-    let (content_column, operator_sidebar) = if app.startup_shell_visible() {
-        (area, None)
-    } else if app.replay_mode {
-        let sidebar_width = shell
-            .details_sidebar_width
-            .min(area.width.saturating_sub(1))
-            .max(1);
-        if area.width
-            >= min_transcript_width
-                .saturating_add(gap)
-                .saturating_add(sidebar_width)
-        {
-            let content_width = area.width.saturating_sub(sidebar_width).saturating_sub(gap);
-            let sidebar_x = area.x.saturating_add(content_width).saturating_add(gap);
-            (
-                Rect::new(area.x, area.y, content_width, area.height),
-                Some(Rect::new(sidebar_x, area.y, sidebar_width, area.height)),
-            )
-        } else {
+    let (content_column, operator_sidebar) =
+        if app.startup_shell_visible() || app.current_subagent_session_present() {
             (area, None)
-        }
-    } else {
-        match contract.sidebar_mode {
-            SessionSidebarMode::Persistent { width } => {
-                let sidebar_width = width.min(area.width.saturating_sub(1)).max(1);
-                if area.width
-                    >= min_transcript_width
-                        .saturating_add(gap)
-                        .saturating_add(sidebar_width)
-                {
-                    let content_width =
-                        area.width.saturating_sub(sidebar_width).saturating_sub(gap);
-                    let sidebar_x = area.x.saturating_add(content_width).saturating_add(gap);
-                    (
-                        Rect::new(area.x, area.y, content_width, area.height),
-                        Some(Rect::new(sidebar_x, area.y, sidebar_width, area.height)),
-                    )
-                } else {
-                    (area, None)
-                }
+        } else if app.replay_mode {
+            let sidebar_width = shell
+                .details_sidebar_width
+                .min(area.width.saturating_sub(1))
+                .max(1);
+            if area.width
+                >= min_transcript_width
+                    .saturating_add(gap)
+                    .saturating_add(sidebar_width)
+            {
+                let content_width = area.width.saturating_sub(sidebar_width).saturating_sub(gap);
+                let sidebar_x = area.x.saturating_add(content_width).saturating_add(gap);
+                (
+                    Rect::new(area.x, area.y, content_width, area.height),
+                    Some(Rect::new(sidebar_x, area.y, sidebar_width, area.height)),
+                )
+            } else {
+                (area, None)
             }
-            SessionSidebarMode::Overlay { .. } | SessionSidebarMode::Hidden => (area, None),
-        }
-    };
-    let prompt_height = if app.replay_mode {
+        } else {
+            match contract.sidebar_mode {
+                SessionSidebarMode::Persistent { width } => {
+                    let sidebar_width = width.min(area.width.saturating_sub(1)).max(1);
+                    if area.width
+                        >= min_transcript_width
+                            .saturating_add(gap)
+                            .saturating_add(sidebar_width)
+                    {
+                        let content_width =
+                            area.width.saturating_sub(sidebar_width).saturating_sub(gap);
+                        let sidebar_x = area.x.saturating_add(content_width).saturating_add(gap);
+                        (
+                            Rect::new(area.x, area.y, content_width, area.height),
+                            Some(Rect::new(sidebar_x, area.y, sidebar_width, area.height)),
+                        )
+                    } else {
+                        (area, None)
+                    }
+                }
+                SessionSidebarMode::Overlay { .. } | SessionSidebarMode::Hidden => (area, None),
+            }
+        };
+    let subagent_footer_visible = subagent_footer_visible(app);
+    let prompt_height = if subagent_footer_visible {
+        0
+    } else if app.replay_mode {
         shell_tokens.spacing.heights.prompt_block()
     } else {
         live_prompt_block_height(app, content_column, contract, shell)
@@ -494,7 +511,9 @@ pub(crate) fn session_shell_layout(
     let (transcript, terminal_panel) = terminal_panel_split(app, body, gap);
     let operator_overlay = if operator_sidebar.is_some() {
         None
-    } else if app.replay_mode || app.details_drawer_open() {
+    } else if (app.replay_mode && !app.current_subagent_session_present())
+        || app.details_drawer_open()
+    {
         session_operator_overlay(body, contract)
     } else {
         None
@@ -566,8 +585,8 @@ pub(crate) fn composer_input_height(text: &str, width: u16) -> u16 {
     } else {
         text.split('\n')
             .map(|line| {
-                let char_count = line.chars().count();
-                char_count.max(1).div_ceil(inner_width)
+                let line_width = display_width(line);
+                line_width.max(1).div_ceil(inner_width)
             })
             .sum()
     };
@@ -575,6 +594,10 @@ pub(crate) fn composer_input_height(text: &str, width: u16) -> u16 {
     let clamped_lines =
         wrapped_lines.clamp(usize::from(MIN_COMPOSER_LINES), usize::from(max_lines));
     u16::try_from(clamped_lines).unwrap_or(max_lines)
+}
+
+fn display_width(text: &str) -> usize {
+    Line::from(text.to_string()).width()
 }
 
 fn permission_prompt_block_height(

@@ -5,11 +5,12 @@ use harness_core::event::{ActorKind, EventEnvelopeV1, EventV1, ResolvedToolIdent
 
 use super::permissions::PendingPermission;
 use super::{
-    json_string_field, mark_activity_event, merge_orchestration_task_completion_metadata,
+    mark_activity_event, merge_orchestration_task_completion_metadata,
     merge_orchestration_task_event, merge_resolved_tool_identity, merge_tool_call_metadata,
-    new_streaming_activity_entry, task_completed_updates_assistant_transcript, ActiveContextUsage,
-    ActivityEntry, ActivityStatus, ActivityUsage, AppState, CompactionState, CompactionStatus,
-    CompactionUsageMetrics, Focus, MemoryCaps, NewStreamingActivityEntryArgs,
+    new_streaming_activity_entry, task_child_request_id_from_output,
+    task_child_session_id_from_output, task_completed_updates_assistant_transcript,
+    ActiveContextUsage, ActivityEntry, ActivityStatus, ActivityUsage, AppState, CompactionState,
+    CompactionStatus, CompactionUsageMetrics, Focus, MemoryCaps, NewStreamingActivityEntryArgs,
     OrchestrationOwnerLabels, OrchestrationSummary, OrchestrationTaskRow, OrchestrationTaskState,
     ToolCallDisplayStatus, ToolCallEntry, TOOL_OUTPUT_DISPLAY_MAX_CHARS,
 };
@@ -385,6 +386,22 @@ impl SessionProjection {
         })
     }
 
+    pub(super) fn active_turn_task_ids(&self) -> Vec<&str> {
+        self.orchestration_tasks
+            .values()
+            .filter(|row| !row.state.is_terminal() && Self::task_row_is_turn_level(row))
+            .map(|row| row.task_id.as_str())
+            .collect()
+    }
+
+    pub(super) fn active_turn_task_id(&self) -> Option<&str> {
+        self.orchestration_tasks
+            .values()
+            .filter(|row| !row.state.is_terminal() && Self::task_row_is_turn_level(row))
+            .max_by_key(|row| (row.last_seq, row.first_seq))
+            .map(|row| row.task_id.as_str())
+    }
+
     fn task_row_is_turn_level(row: &OrchestrationTaskRow) -> bool {
         row.queue_key
             .as_deref()
@@ -432,22 +449,12 @@ impl SessionProjection {
             .lineage
             .as_ref()
             .and_then(|lineage| lineage.child_request_id.clone())
-            .or_else(|| {
-                json_string_field(
-                    tool_call.output_json.as_ref(),
-                    &["child_request_id", "request_id"],
-                )
-            });
+            .or_else(|| task_child_request_id_from_output(tool_call.output_json.as_ref()));
         let child_session_id = tool_call
             .lineage
             .as_ref()
             .and_then(|lineage| lineage.child_session_id.clone())
-            .or_else(|| {
-                json_string_field(
-                    tool_call.output_json.as_ref(),
-                    &["child_session_id", "session_id"],
-                )
-            });
+            .or_else(|| task_child_session_id_from_output(tool_call.output_json.as_ref()));
 
         self.orchestration_tasks
             .values()

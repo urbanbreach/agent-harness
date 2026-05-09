@@ -110,7 +110,7 @@ struct TranscriptRenderSurface {
     rail_color: Color,
     surface: Color,
     lines: Vec<Line<'static>>,
-    interaction_rows: Option<Vec<Option<TranscriptMouseTarget>>>,
+    interaction_rows: Option<Vec<Option<TranscriptInteractionRow>>>,
     selection_rows: Option<Vec<TranscriptSelectionRow>>,
 }
 
@@ -134,12 +134,16 @@ struct MeasuredTranscriptSurface {
     rail_color: Color,
     surface: Color,
     lines: Vec<Line<'static>>,
-    interaction_rows: Option<Vec<Option<TranscriptMouseTarget>>>,
+    interaction_rows: Option<Vec<Option<TranscriptInteractionRow>>>,
     selection_rows: Option<Vec<TranscriptSelectionRow>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum TranscriptMouseTarget {
+    FirstSubagentSession,
+    SubagentSession {
+        session_id: String,
+    },
     Tool {
         tool_call_id: String,
     },
@@ -155,7 +159,14 @@ pub(crate) enum TranscriptMouseTarget {
 #[derive(Debug, Clone)]
 struct ToolSectionRender {
     lines: Vec<Line<'static>>,
-    interaction_rows: Vec<Option<TranscriptMouseTarget>>,
+    interaction_rows: Vec<Option<TranscriptInteractionRow>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TranscriptInteractionRow {
+    target: TranscriptMouseTarget,
+    hit_start: u16,
+    hit_width: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -406,6 +417,7 @@ struct TranscriptTurnSection {
     thinking: Option<TranscriptLabeledTextSection>,
     error: Option<TranscriptErrorSection>,
     assistant_parts: Vec<TranscriptAssistantPart>,
+    subagent_hint_key: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -437,6 +449,8 @@ struct TranscriptLabeledTextSection {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TranscriptToolCallSection {
     tool_call_id: String,
+    child_session_id: Option<String>,
+    hovered_target: Option<TranscriptMouseTarget>,
     header: TranscriptToolCallHeader,
     detail_blocks: Vec<TranscriptToolCallDetailBlock>,
     expanded: bool,
@@ -519,7 +533,8 @@ struct TranscriptErrorSection {
 enum TranscriptAssistantPart {
     Reasoning(TranscriptLabeledTextSection),
     Body(TranscriptBodyBlock),
-    ToolCall(TranscriptToolCallSection),
+    ToolCall(Box<TranscriptToolCallSection>),
+    SubagentHint,
     Error(TranscriptErrorSection),
 }
 
@@ -663,13 +678,18 @@ fn transcript_pane_context<'a>(
     }
 
     if app.active_tab == Tab::Run {
+        let base_surface = if app.current_subagent_session_present() {
+            theme.surface.shell
+        } else {
+            theme.surface.panel
+        };
         return TranscriptPaneContext {
             inner_area: inset_rect(
                 area,
                 theme.live_shell.rhythm.transcript_gutter_x,
                 theme.live_shell.rhythm.transcript_gutter_y,
             ),
-            base_surface: theme.surface.panel,
+            base_surface,
             block: None,
         };
     }
@@ -857,7 +877,7 @@ fn with_transcript_selection_snapshot<R>(
     let theme = *app.theme();
     let follow_mode = app.follow_mode;
     let transcript_scroll = app.transcript_scroll;
-    let transcript_area = area;
+    let transcript_area = FrameLayoutPlan::for_app(app, area).transcript?;
     let context = transcript_pane_context(app, transcript_area, &theme);
     let full_width = context.inner_area.width;
     let show_scrollbar = with_measured_transcript_layout_for_width_on_surface(
@@ -881,7 +901,7 @@ fn with_transcript_selection_snapshot<R>(
                 entry.app_instance_id == app_instance_id
                     && entry.render_key == render_key
                     && entry.theme == theme
-                    && entry.area == area
+                    && entry.area == transcript_area
                     && entry.follow_mode == follow_mode
                     && entry.transcript_scroll == transcript_scroll
                     && entry.render_width == render_width_u16
@@ -905,7 +925,7 @@ fn with_transcript_selection_snapshot<R>(
                 app_instance_id,
                 render_key,
                 theme,
-                area,
+                area: transcript_area,
                 follow_mode,
                 transcript_scroll,
                 render_width: render_width_u16,
@@ -924,7 +944,7 @@ fn with_transcript_selection_snapshot<R>(
                 entry.app_instance_id == app_instance_id
                     && entry.render_key == render_key
                     && entry.theme == theme
-                    && entry.area == area
+                    && entry.area == transcript_area
                     && entry.follow_mode == follow_mode
                     && entry.transcript_scroll == transcript_scroll
                     && entry.render_width == render_width_u16
@@ -1608,12 +1628,7 @@ fn task_tool_child_request_id(tool_call: &crate::app::ToolCallEntry) -> Option<&
         .as_ref()
         .and_then(|lineage| lineage.child_request_id.as_deref())
         .and_then(non_empty_trimmed)
-        .or_else(|| {
-            tool_json_string_ref(
-                tool_call.output_json.as_ref(),
-                &["child_request_id", "request_id"],
-            )
-        })
+        .or_else(|| task_tool_child_request_id_from_output(tool_call.output_json.as_ref()))
 }
 
 fn task_tool_child_session_id(tool_call: &crate::app::ToolCallEntry) -> Option<&str> {
@@ -1622,12 +1637,7 @@ fn task_tool_child_session_id(tool_call: &crate::app::ToolCallEntry) -> Option<&
         .as_ref()
         .and_then(|lineage| lineage.child_session_id.as_deref())
         .and_then(non_empty_trimmed)
-        .or_else(|| {
-            tool_json_string_ref(
-                tool_call.output_json.as_ref(),
-                &["child_session_id", "session_id", "task_id"],
-            )
-        })
+        .or_else(|| task_tool_child_session_id_from_output(tool_call.output_json.as_ref()))
 }
 
 fn turn_supports_assistant_footer(turn: &TranscriptTurnSection) -> bool {
@@ -1737,6 +1747,7 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
         thinking,
         error,
         assistant_parts,
+        subagent_hint_key: app.keymap.get_binding_str(Action::SessionChildFirst),
     }
 }
 
@@ -1764,8 +1775,9 @@ fn build_ordered_assistant_parts(
         fallback_parts.extend(
             ordered_tool_calls
                 .into_iter()
-                .map(|tool_call| TranscriptAssistantPart::ToolCall(tool_call.section)),
+                .map(|tool_call| TranscriptAssistantPart::ToolCall(Box::new(tool_call.section))),
         );
+        insert_subagent_hint_after_task_tools(&mut fallback_parts);
         if let Some(error) = error {
             fallback_parts.push(TranscriptAssistantPart::Error(error));
         }
@@ -1773,11 +1785,36 @@ fn build_ordered_assistant_parts(
     }
 
     sync_reasoning_parts_with_activity(&mut event_parts, activity, thinking_visible);
+    insert_subagent_hint_after_task_tools(&mut event_parts);
 
     if let Some(error) = error {
         event_parts.push(TranscriptAssistantPart::Error(error));
     }
     event_parts
+}
+
+fn insert_subagent_hint_after_task_tools(parts: &mut Vec<TranscriptAssistantPart>) {
+    if parts
+        .iter()
+        .any(|part| matches!(part, TranscriptAssistantPart::SubagentHint))
+    {
+        return;
+    }
+    let has_task_tool = parts.iter().any(|part| {
+        matches!(
+            part,
+            TranscriptAssistantPart::ToolCall(tool_call)
+                if matches!(tool_call.header.tool_id.as_str(), "agent.spawn" | "task")
+        )
+    });
+    if !has_task_tool {
+        return;
+    }
+    let insert_at = parts
+        .iter()
+        .position(|part| matches!(part, TranscriptAssistantPart::Error(_)))
+        .unwrap_or(parts.len());
+    parts.insert(insert_at, TranscriptAssistantPart::SubagentHint);
 }
 
 fn sync_reasoning_parts_with_activity(
@@ -1988,7 +2025,7 @@ fn build_ordered_assistant_parts_from_events(
                     parts.push(SequencedTranscriptAssistantPart {
                         seq: event.seq,
                         index: next_index,
-                        part: TranscriptAssistantPart::ToolCall(tool_call.section),
+                        part: TranscriptAssistantPart::ToolCall(Box::new(tool_call.section)),
                     });
                     next_index += 1;
                 }
@@ -2038,7 +2075,7 @@ fn build_ordered_assistant_parts_from_events(
         parts.push(SequencedTranscriptAssistantPart {
             seq: tool_call.first_seq,
             index: next_index,
-            part: TranscriptAssistantPart::ToolCall(tool_call.section),
+            part: TranscriptAssistantPart::ToolCall(Box::new(tool_call.section)),
         });
         next_index += 1;
     }
@@ -2206,6 +2243,13 @@ fn build_transcript_tool_call_section(
     let expanded = tool_output_expanded;
     let generic_output_visible = show_generic_tool_output || tool_output_expanded;
     let display_tool_id = tool_call.effective_tool_id();
+    let child_session_id = task_tool_child_session_id(tool_call)
+        .map(str::to_string)
+        .or_else(|| {
+            task_row
+                .and_then(crate::app::OrchestrationTaskRow::effective_child_session_id)
+                .map(str::to_string)
+        });
     let error_subtitle = tool_error_subtitle(tool_call);
     let error_body = tool_error_text(tool_call);
     let question_answers = resolved_question_answer_items(tool_call);
@@ -2355,7 +2399,7 @@ fn build_transcript_tool_call_section(
             false,
         ),
         "agent.spawn" | "task" => {
-            build_agent_spawn_tool_row(tool_call, task_row, &mut detail_blocks)
+            build_agent_spawn_tool_row(tool_call, task_row, &mut detail_blocks, animation_phase)
         }
         "fs.write" => {
             let rendered_diff = push_tool_call_diff_blocks(
@@ -2627,6 +2671,8 @@ fn build_transcript_tool_call_section(
 
     TranscriptToolCallSection {
         tool_call_id: tool_call.tool_call_id.clone(),
+        child_session_id,
+        hovered_target: app.hovered_transcript_target().cloned(),
         header: TranscriptToolCallHeader {
             tool_id: if matches!(display_tool_id, "shell.run" | "bash") {
                 display_tool_id.to_string()
@@ -3551,35 +3597,51 @@ fn build_agent_spawn_tool_row(
     tool_call: &crate::app::ToolCallEntry,
     task_row: Option<&crate::app::OrchestrationTaskRow>,
     detail_blocks: &mut Vec<TranscriptToolCallDetailBlock>,
+    animation_phase: usize,
 ) -> (
     String,
     Option<&'static str>,
     TranscriptToolCallVisualStyle,
     bool,
 ) {
-    let title = agent_spawn_title(tool_call);
-    if let Some(line) = agent_spawn_context_line(tool_call, task_row) {
-        detail_blocks.push(TranscriptToolCallDetailBlock::Message {
-            text: line,
-            tone: TranscriptToolCallDetailTone::Secondary,
-        });
+    let has_description = agent_spawn_description(tool_call).is_some();
+    let title = if has_description {
+        agent_spawn_title(tool_call)
+    } else {
+        "Delegating...".to_string()
+    };
+    if matches!(
+        tool_call.status,
+        ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Running
+    ) {
+        if let Some(line) = agent_spawn_context_line(tool_call, task_row) {
+            detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+                text: line,
+                tone: TranscriptToolCallDetailTone::Secondary,
+            });
+        }
     }
+    let icon = match tool_call.status {
+        ToolCallDisplayStatus::Running if has_description => {
+            Some(transcript_streaming_spinner_frame(animation_phase))
+        }
+        _ if has_description => Some("│"),
+        ToolCallDisplayStatus::PendingPermission
+        | ToolCallDisplayStatus::Queued
+        | ToolCallDisplayStatus::Running
+        | ToolCallDisplayStatus::Succeeded
+        | ToolCallDisplayStatus::Failed => Some("~"),
+    };
     (
         title,
-        Some("│"),
+        icon,
         TranscriptToolCallVisualStyle::TaskInline,
         false,
     )
 }
 
 fn agent_spawn_title(tool_call: &crate::app::ToolCallEntry) -> String {
-    let description = tool_call
-        .output_json
-        .as_ref()
-        .and_then(|value| value.get("description"))
-        .and_then(serde_json::Value::as_str)
-        .map(collapse_inline_whitespace)
-        .or_else(|| tool_summary_string(&tool_call.args_summary, &["description", "task"]));
+    let description = agent_spawn_description(tool_call);
     let profile = tool_call
         .output_json
         .as_ref()
@@ -3602,6 +3664,16 @@ fn agent_spawn_title(tool_call: &crate::app::ToolCallEntry) -> String {
         Some(description) => format!("{prefix} — {description}"),
         None => prefix,
     }
+}
+
+fn agent_spawn_description(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
+    tool_call
+        .output_json
+        .as_ref()
+        .and_then(|value| value.get("description"))
+        .and_then(serde_json::Value::as_str)
+        .map(collapse_inline_whitespace)
+        .or_else(|| tool_summary_string(&tool_call.args_summary, &["description", "task"]))
 }
 
 fn subagent_profile_label(profile: &str) -> String {
@@ -3724,6 +3796,67 @@ fn tool_json_string_ref<'a>(
             .and_then(serde_json::Value::as_str)
             .and_then(non_empty_trimmed)
     })
+}
+
+fn tool_json_nested_string_ref<'a>(
+    output_json: Option<&'a serde_json::Value>,
+    path: &[&str],
+) -> Option<&'a str> {
+    let mut current = output_json?;
+    for key in path {
+        current = current.get(*key)?;
+    }
+    current.as_str().and_then(non_empty_trimmed)
+}
+
+fn task_tool_child_session_id_from_output(output_json: Option<&serde_json::Value>) -> Option<&str> {
+    tool_json_string_ref(
+        output_json,
+        &[
+            "child_session_id",
+            "session_id",
+            "task_id",
+            "childSessionId",
+            "sessionId",
+            "taskId",
+        ],
+    )
+    .or_else(|| tool_json_nested_string_ref(output_json, &["child_session", "session_id"]))
+    .or_else(|| tool_json_nested_string_ref(output_json, &["childSession", "sessionId"]))
+    .or_else(|| tool_json_nested_string_ref(output_json, &["metadata", "sessionId"]))
+    .or_else(|| tool_json_nested_string_ref(output_json, &["metadata", "session_id"]))
+    .or_else(|| tool_json_nested_string_ref(output_json, &["lineage", "child_session_id"]))
+    .or_else(|| tool_json_nested_string_ref(output_json, &["lineage", "session_id"]))
+    .or_else(|| tool_json_nested_string_ref(output_json, &["lineage", "sessionId"]))
+    .or_else(|| {
+        tool_json_nested_string_ref(output_json, &["_harness", "lineage", "child_session_id"])
+    })
+    .or_else(|| tool_json_nested_string_ref(output_json, &["_harness", "lineage", "session_id"]))
+    .or_else(|| tool_json_nested_string_ref(output_json, &["_harness", "lineage", "sessionId"]))
+}
+
+fn task_tool_child_request_id_from_output(output_json: Option<&serde_json::Value>) -> Option<&str> {
+    tool_json_string_ref(
+        output_json,
+        &[
+            "child_request_id",
+            "request_id",
+            "childRequestId",
+            "requestId",
+        ],
+    )
+    .or_else(|| tool_json_nested_string_ref(output_json, &["child_session", "request_id"]))
+    .or_else(|| tool_json_nested_string_ref(output_json, &["childSession", "requestId"]))
+    .or_else(|| tool_json_nested_string_ref(output_json, &["metadata", "requestId"]))
+    .or_else(|| tool_json_nested_string_ref(output_json, &["metadata", "request_id"]))
+    .or_else(|| tool_json_nested_string_ref(output_json, &["lineage", "child_request_id"]))
+    .or_else(|| tool_json_nested_string_ref(output_json, &["lineage", "request_id"]))
+    .or_else(|| tool_json_nested_string_ref(output_json, &["lineage", "requestId"]))
+    .or_else(|| {
+        tool_json_nested_string_ref(output_json, &["_harness", "lineage", "child_request_id"])
+    })
+    .or_else(|| tool_json_nested_string_ref(output_json, &["_harness", "lineage", "request_id"]))
+    .or_else(|| tool_json_nested_string_ref(output_json, &["_harness", "lineage", "requestId"]))
 }
 
 fn tool_json_nested_string(
@@ -4631,7 +4764,10 @@ fn tool_error_text(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
 }
 
 fn collapse_inline_whitespace(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
+    replace_control_chars_except_tabs(text)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn collapsed_inline_non_empty(text: &str) -> Option<String> {
@@ -4930,7 +5066,8 @@ pub(crate) fn transcript_mouse_target(
     row: u16,
 ) -> Option<TranscriptMouseTarget> {
     let theme = *app.theme();
-    let context = transcript_pane_context(app, area, &theme);
+    let transcript_area = FrameLayoutPlan::for_app(app, area).transcript?;
+    let context = transcript_pane_context(app, transcript_area, &theme);
     if app.startup_shell_visible() || live_empty_state_visible(app) {
         return None;
     }
@@ -5072,14 +5209,19 @@ fn transcript_mouse_target_at(
             }
 
             let local_row = absolute_row.saturating_sub(surface_top);
-            if let Some(target) = surface
+            if let Some(interaction) = surface
                 .interaction_rows
                 .as_ref()
                 .and_then(|targets| targets.get(local_row))
                 .cloned()
                 .flatten()
             {
-                return Some(target);
+                let local_column = column.saturating_sub(viewport.x);
+                if local_column >= interaction.hit_start
+                    && local_column < interaction.hit_start.saturating_add(interaction.hit_width)
+                {
+                    return Some(interaction.target);
+                }
             }
         }
     }
@@ -5260,7 +5402,7 @@ fn build_assistant_render_surfaces(
             let tool_calls = turn.assistant_parts[index..index + group_len]
                 .iter()
                 .filter_map(|part| match part {
-                    TranscriptAssistantPart::ToolCall(tool_call) => Some(tool_call),
+                    TranscriptAssistantPart::ToolCall(tool_call) => Some(tool_call.as_ref()),
                     _ => None,
                 })
                 .collect::<Vec<_>>();
@@ -5453,6 +5595,23 @@ fn build_assistant_part_render_surface(
                 None,
             )
         }
+        TranscriptAssistantPart::SubagentHint => {
+            let hint_line_count =
+                append_subagent_hint_line(&mut lines, turn, theme, width, base_surface);
+            (
+                TranscriptRenderSurfaceKind::AssistantTool,
+                false,
+                transcript_nested_rail_color(theme),
+                transcript_flat_surface(base_surface),
+                Some(vec![
+                    Some(full_width_interaction_row(
+                        TranscriptMouseTarget::FirstSubagentSession
+                    ));
+                    hint_line_count
+                ]),
+                None,
+            )
+        }
         TranscriptAssistantPart::Error(error) => {
             append_assistant_error_box(&mut lines, &error.text, theme, width, base_surface);
             (
@@ -5516,6 +5675,29 @@ fn build_assistant_part_render_surface(
         interaction_rows,
         selection_rows,
     }
+}
+
+fn append_subagent_hint_line(
+    lines: &mut Vec<Line<'static>>,
+    turn: &TranscriptTurnSection,
+    theme: &Theme,
+    width: u16,
+    base_surface: Color,
+) -> usize {
+    let start = lines.len();
+    let keybind = turn.subagent_hint_key.as_str();
+    let spans = vec![
+        Span::styled(keybind.to_string(), Style::default().fg(theme.text.primary)),
+        Span::styled(" view subagents", muted_meta_style(theme)),
+    ];
+    append_surface_row(
+        lines,
+        TRANSCRIPT_ASSISTANT_BODY_PREFIX,
+        transcript_flat_surface(base_surface),
+        spans,
+        transcript_surface_content_width(width, false),
+    );
+    lines.len().saturating_sub(start)
 }
 
 fn build_footer_only_render_surface(
@@ -5712,12 +5894,14 @@ fn build_context_tool_group_render_surface(
 
     let mut interaction_rows = vec![None; lines.len()];
     if !interaction_rows.is_empty() {
-        interaction_rows[0] = Some(TranscriptMouseTarget::ToolGroup {
-            tool_call_ids: tool_calls
-                .iter()
-                .map(|tool_call| tool_call.tool_call_id.clone())
-                .collect(),
-        });
+        interaction_rows[0] = Some(full_width_interaction_row(
+            TranscriptMouseTarget::ToolGroup {
+                tool_call_ids: tool_calls
+                    .iter()
+                    .map(|tool_call| tool_call.tool_call_id.clone())
+                    .collect(),
+            },
+        ));
     }
 
     TranscriptRenderSurface {
@@ -5802,25 +5986,32 @@ fn append_task_inline_tool_section_lines(
     width: u16,
     base_surface: Color,
 ) {
-    let fg = task_inline_tool_color(tool_call, theme);
+    let target = subagent_session_target(tool_call).or_else(|| {
+        Some(TranscriptMouseTarget::Tool {
+            tool_call_id: tool_call.tool_call_id.clone(),
+        })
+    });
+    let hovered = transcript_target_is_hovered(target.as_ref(), tool_call.hovered_target.as_ref());
+    let fg = task_inline_tool_color(tool_call, theme, hovered && target.is_some());
     let style = tool_call_header_style(tool_call, fg);
+    let surface = transcript_flat_surface(base_surface);
     let mut spans = Vec::new();
     if let Some(icon) = tool_call.header.icon {
-        spans.push(Span::styled(format!("{icon} "), style));
+        spans.push(Span::styled(icon.to_string(), style));
+        spans.push(Span::raw(" "));
     }
     spans.push(Span::styled(tool_call.header.title.clone(), style));
 
-    append_surface_row_with_target(
+    append_surface_row_with_bounded_target(
         render,
-        tool_header_target(tool_call),
+        target.clone(),
         TRANSCRIPT_ASSISTANT_BODY_PREFIX,
-        transcript_flat_surface(base_surface),
+        surface,
         spans,
         transcript_surface_content_width(width, false),
     );
 
     for detail_block in &tool_call.detail_blocks {
-        let start = render.lines.len();
         match detail_block {
             TranscriptToolCallDetailBlock::Message { text, tone } => {
                 let detail_style = match tone {
@@ -5834,21 +6025,23 @@ fn append_task_inline_tool_section_lines(
                     } else {
                         vec![Span::styled(row.to_string(), detail_style)]
                     };
-                    append_surface_row(
-                        &mut render.lines,
+                    append_surface_row_with_bounded_target(
+                        render,
+                        target.clone(),
                         TRANSCRIPT_OPCODE_EDIT_INDENT,
-                        transcript_flat_surface(base_surface),
+                        surface,
                         spans,
                         transcript_surface_content_width(width, false),
                     );
                 }
-                append_noninteractive_rows(render, start);
             }
             _ => {
                 append_tool_call_detail_blocks(
                     render,
                     &TranscriptToolCallSection {
                         tool_call_id: tool_call.tool_call_id.clone(),
+                        child_session_id: tool_call.child_session_id.clone(),
+                        hovered_target: tool_call.hovered_target.clone(),
                         header: tool_call.header.clone(),
                         detail_blocks: vec![detail_block.clone()],
                         expanded: tool_call.expanded,
@@ -5990,9 +6183,10 @@ fn append_shell_tool_harness_card(
                     width,
                 );
                 let added = render.lines.len().saturating_sub(start);
-                render
-                    .interaction_rows
-                    .extend(std::iter::repeat_n(tool_header_target(tool_call), added));
+                render.interaction_rows.extend(std::iter::repeat_n(
+                    tool_header_target(tool_call).map(full_width_interaction_row),
+                    added,
+                ));
             }
             TranscriptToolCallDetailBlock::Message { text, tone } => {
                 append_tool_call_message_block(
@@ -6011,6 +6205,8 @@ fn append_shell_tool_harness_card(
                     render,
                     &TranscriptToolCallSection {
                         tool_call_id: tool_call.tool_call_id.clone(),
+                        child_session_id: tool_call.child_session_id.clone(),
+                        hovered_target: tool_call.hovered_target.clone(),
                         header: tool_call.header.clone(),
                         detail_blocks: vec![detail_block.clone()],
                         expanded: tool_call.expanded,
@@ -6166,6 +6362,8 @@ fn append_tool_call_file_section(
     if file_section.disclosure_state == TranscriptToolCallDisclosureState::Expanded {
         let nested_tool = TranscriptToolCallSection {
             tool_call_id: file_section.tool_call_id.clone(),
+            child_session_id: None,
+            hovered_target: None,
             header: TranscriptToolCallHeader {
                 tool_id: String::new(),
                 title: String::new(),
@@ -6200,6 +6398,79 @@ fn tool_header_target(tool_call: &TranscriptToolCallSection) -> Option<Transcrip
         })
 }
 
+fn subagent_session_target(tool_call: &TranscriptToolCallSection) -> Option<TranscriptMouseTarget> {
+    tool_call
+        .child_session_id
+        .as_ref()
+        .filter(|session_id| has_trimmed_content(session_id))
+        .map(|session_id| TranscriptMouseTarget::SubagentSession {
+            session_id: session_id.clone(),
+        })
+}
+
+fn transcript_target_is_hovered(
+    target: Option<&TranscriptMouseTarget>,
+    hovered: Option<&TranscriptMouseTarget>,
+) -> bool {
+    matches!((target, hovered), (Some(target), Some(hovered)) if target == hovered)
+}
+
+fn full_width_interaction_row(target: TranscriptMouseTarget) -> TranscriptInteractionRow {
+    TranscriptInteractionRow {
+        target,
+        hit_start: 0,
+        hit_width: u16::MAX,
+    }
+}
+
+fn bounded_interaction_row(
+    target: Option<TranscriptMouseTarget>,
+    line: &Line<'_>,
+) -> Option<TranscriptInteractionRow> {
+    let (hit_start, hit_width) = line_hit_bounds_without_trailing_fill(line);
+    target.map(|target| TranscriptInteractionRow {
+        target,
+        hit_start,
+        hit_width,
+    })
+}
+
+fn line_hit_bounds_without_trailing_fill(line: &Line<'_>) -> (u16, u16) {
+    let total_width = line
+        .spans
+        .iter()
+        .fold(0usize, |width, span| width.saturating_add(span.width()));
+    let mut leading_blank_width = 0usize;
+    let mut found_content = false;
+    for span in &line.spans {
+        for ch in span.content.chars() {
+            if ch != ' ' {
+                found_content = true;
+                break;
+            }
+            leading_blank_width =
+                leading_blank_width.saturating_add(Line::from(ch.to_string()).width());
+        }
+        if found_content {
+            break;
+        }
+    }
+    let trailing_fill_width = line
+        .spans
+        .last()
+        .filter(|span| span.style.bg.is_some() && span.content.chars().all(|ch| ch == ' '))
+        .map_or(0, Span::width);
+    let hit_end = total_width.saturating_sub(trailing_fill_width);
+    if hit_end <= leading_blank_width {
+        return (0, 1);
+    }
+
+    (
+        u16::try_from(leading_blank_width).unwrap_or(u16::MAX),
+        u16::try_from(hit_end.saturating_sub(leading_blank_width)).unwrap_or(u16::MAX),
+    )
+}
+
 fn append_surface_row_with_target(
     render: &mut ToolSectionRender,
     target: Option<TranscriptMouseTarget>,
@@ -6211,9 +6482,27 @@ fn append_surface_row_with_target(
     let start = render.lines.len();
     append_surface_row(&mut render.lines, indent, surface, content_spans, width);
     let added = render.lines.len().saturating_sub(start);
-    render
-        .interaction_rows
-        .extend(std::iter::repeat_n(target, added));
+    render.interaction_rows.extend(std::iter::repeat_n(
+        target.map(full_width_interaction_row),
+        added,
+    ));
+}
+
+fn append_surface_row_with_bounded_target(
+    render: &mut ToolSectionRender,
+    target: Option<TranscriptMouseTarget>,
+    indent: &str,
+    surface: Color,
+    content_spans: Vec<Span<'static>>,
+    width: u16,
+) {
+    let start = render.lines.len();
+    append_surface_row(&mut render.lines, indent, surface, content_spans, width);
+    for line in &render.lines[start..] {
+        render
+            .interaction_rows
+            .push(bounded_interaction_row(target.clone(), line));
+    }
 }
 
 fn append_nested_surface_row_with_target(
@@ -6235,9 +6524,10 @@ fn append_nested_surface_row_with_target(
         width,
     );
     let added = render.lines.len().saturating_sub(start);
-    render
-        .interaction_rows
-        .extend(std::iter::repeat_n(target, added));
+    render.interaction_rows.extend(std::iter::repeat_n(
+        target.map(full_width_interaction_row),
+        added,
+    ));
 }
 
 fn append_noninteractive_rows(render: &mut ToolSectionRender, start: usize) {
@@ -6617,13 +6907,16 @@ fn inline_tool_color(tool_call: &TranscriptToolCallSection, theme: &Theme) -> Co
     }
 }
 
-fn task_inline_tool_color(tool_call: &TranscriptToolCallSection, theme: &Theme) -> Color {
+fn task_inline_tool_color(
+    tool_call: &TranscriptToolCallSection,
+    theme: &Theme,
+    clickable_hovered: bool,
+) -> Color {
     match tool_call.header.status {
         ToolCallDisplayStatus::PendingPermission => theme.status.warning,
-        ToolCallDisplayStatus::Queued
-        | ToolCallDisplayStatus::Running
-        | ToolCallDisplayStatus::Succeeded
-        | ToolCallDisplayStatus::Failed => theme.text.secondary,
+        ToolCallDisplayStatus::Running | ToolCallDisplayStatus::Queued => theme.text.primary,
+        ToolCallDisplayStatus::Succeeded if clickable_hovered => theme.text.primary,
+        ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Failed => theme.text.secondary,
     }
 }
 
@@ -8106,6 +8399,8 @@ pub(crate) fn exact_test_transcript_section_model_keeps_nested_tool_and_error_bl
         turn.tool_calls[0],
         TranscriptToolCallSection {
             tool_call_id: "call-1".to_string(),
+            child_session_id: None,
+            hovered_target: None,
             header: TranscriptToolCallHeader {
                 tool_id: "shell.run".to_string(),
                 title: "false".to_string(),
@@ -8826,7 +9121,7 @@ fn task_row_hides_raw_task_result_payload_until_expanded() {
 
     let mut detail_blocks = Vec::new();
     let (title, icon, visual_style, _) =
-        build_agent_spawn_tool_row(&tool_call, None, &mut detail_blocks);
+        build_agent_spawn_tool_row(&tool_call, None, &mut detail_blocks, 0);
     assert_eq!(title, "Explore Task — review streaming states");
     assert_eq!(icon, Some("│"));
     assert_eq!(visual_style, TranscriptToolCallVisualStyle::TaskInline);
@@ -8836,6 +9131,14 @@ fn task_row_hides_raw_task_result_payload_until_expanded() {
     assert!(!detail_text.contains("request_id:"));
     assert!(!detail_text.contains("<task_result>"));
     assert!(!detail_text.contains(".sisyphus/evidence"));
+}
+
+#[test]
+fn inline_metadata_collapse_removes_terminal_controls() {
+    assert_eq!(
+        collapse_inline_whitespace("researcher\u{1b}]0;owned\u{7} task\nsummary"),
+        "researcher ]0;owned task summary"
+    );
 }
 
 #[test]
@@ -9987,17 +10290,108 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
         None,
     );
     assert_eq!(task_section.header.disclosure_state, None);
+    assert_eq!(
+        task_section.child_session_id.as_deref(),
+        Some("agent_worker")
+    );
     assert_eq!(task_section.header.icon, Some("│"));
     assert_eq!(
         task_section.header.visual_style,
         TranscriptToolCallVisualStyle::TaskInline
     );
-    let mut task_lines = Vec::new();
-    {
-        let render =
-            append_tool_call_section_lines(&task_section, &theme, 120, theme.surface.panel);
-        task_lines.extend(render.lines);
-    }
+    let task_render =
+        append_tool_call_section_lines(&task_section, &theme, 120, theme.surface.panel);
+    assert!(task_render.interaction_rows.iter().any(|interaction| matches!(
+        interaction.as_ref().map(|row| &row.target),
+        Some(TranscriptMouseTarget::SubagentSession { session_id }) if session_id == "agent_worker"
+    )));
+    assert!(
+        task_render.interaction_rows.iter().all(|interaction| matches!(
+            interaction.as_ref().map(|row| &row.target),
+            Some(TranscriptMouseTarget::SubagentSession { session_id }) if session_id == "agent_worker"
+        )),
+        "task inline rows should navigate to the child session, matching Opencode's clickable task card"
+    );
+    assert!(
+        task_render
+            .interaction_rows
+            .iter()
+            .flatten()
+            .all(|row| row.hit_width < 120),
+        "task inline hitboxes should stop at the rendered card text instead of spanning the transcript row"
+    );
+    let task_hit_width = task_render.interaction_rows[0]
+        .as_ref()
+        .expect("task header interaction")
+        .hit_width;
+    let task_hit_start = task_render.interaction_rows[0]
+        .as_ref()
+        .expect("task header interaction")
+        .hit_start;
+    let task_hit_layout = MeasuredTranscriptLayout {
+        sections: vec![MeasuredTranscriptSection {
+            kind: MeasuredTranscriptSectionKind::Turn,
+            top_row: 0,
+            leading_gap_height: 0,
+            content_height: task_render.lines.len(),
+            surfaces: vec![MeasuredTranscriptSurface {
+                top_offset: 0,
+                height: task_render.lines.len(),
+                width: 120,
+                show_outer_rail: false,
+                rail_color: theme.border.subtle,
+                surface: theme.surface.panel,
+                lines: task_render.lines.clone(),
+                interaction_rows: Some(task_render.interaction_rows.clone()),
+                selection_rows: None,
+            }],
+            lines: task_render.lines.clone(),
+        }],
+        total_height: task_render.lines.len(),
+    };
+    assert!(matches!(
+        transcript_mouse_target_at(
+            &task_hit_layout,
+            Rect::new(0, 0, 120, 10),
+            0,
+            task_hit_start,
+            0,
+        ),
+        Some(TranscriptMouseTarget::SubagentSession { session_id }) if session_id == "agent_worker"
+    ));
+    assert!(matches!(
+        transcript_mouse_target_at(
+            &task_hit_layout,
+            Rect::new(0, 0, 120, 10),
+            0,
+            task_hit_start
+                .saturating_add(task_hit_width)
+                .saturating_sub(1),
+            0,
+        ),
+        Some(TranscriptMouseTarget::SubagentSession { session_id }) if session_id == "agent_worker"
+    ));
+    assert_eq!(
+        transcript_mouse_target_at(
+            &task_hit_layout,
+            Rect::new(0, 0, 120, 10),
+            0,
+            task_hit_start.saturating_sub(1),
+            0,
+        ),
+        None
+    );
+    assert_eq!(
+        transcript_mouse_target_at(
+            &task_hit_layout,
+            Rect::new(0, 0, 120, 10),
+            0,
+            task_hit_start.saturating_add(task_hit_width),
+            0,
+        ),
+        None
+    );
+    let task_lines = task_render.lines;
     let task_text = transcript_test_line_texts(task_lines).join("\n");
     assert!(task_text.contains("│ Researcher Task — audit transcript parity"));
     assert!(task_text.contains("Researcher Task — audit transcript parity"));
@@ -10885,7 +11279,11 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
     .join("\n");
     assert!(parent_transcript_text.contains("Researcher Task — audit transcript parity"));
     assert!(parent_transcript_text.contains("2 toolcalls · 1.6s"));
-    assert!(!parent_transcript_text.contains("ctrl+] view subagents"));
+    let subagent_hint = format!(
+        "{} view subagents",
+        app.keymap.get_binding_str(Action::SessionChildFirst)
+    );
+    assert!(parent_transcript_text.contains(&subagent_hint));
     assert!(
         !parent_transcript_text.contains("CHILD SUBAGENT DETAILS SHOULD STAY OUT OF PARENT"),
         "parent transcript should keep delegated child turns behind the task row\n{parent_transcript_text}"
@@ -11287,6 +11685,8 @@ fn block_tool_cards_render_subtitle_inline_with_title() {
     let theme = Theme::default();
     let section = TranscriptToolCallSection {
         tool_call_id: "tool-agent-spawn".to_string(),
+        child_session_id: None,
+        hovered_target: None,
         header: TranscriptToolCallHeader {
             tool_id: "agent.spawn".to_string(),
             title: "Spawn researcher · audit transcript parity".to_string(),
@@ -11671,6 +12071,8 @@ pub(crate) fn exact_test_inline_tool_rows_wrap_long_subtitles_cleanly() {
     let theme = Theme::default();
     let section = TranscriptToolCallSection {
         tool_call_id: "tool-inline-read".to_string(),
+        child_session_id: None,
+        hovered_target: None,
         header: TranscriptToolCallHeader {
             tool_id: "fs.read".to_string(),
             title: "Read src/ui.rs [offset=12, limit=24]".to_string(),
