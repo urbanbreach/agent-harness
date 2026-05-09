@@ -290,8 +290,8 @@ fn materialize_resolved_path(
     line_range: Option<FileTagLineRange>,
 ) -> FileTagReadOutcome {
     let canonical = match canonicalize_file_tag_path(workspace_root, resolved) {
-        Ok(Some(canonical)) => canonical,
-        Ok(None) => return FileTagReadOutcome::Missing,
+        Ok(CanonicalFileTagPath::Path(canonical)) => canonical,
+        Ok(CanonicalFileTagPath::Missing) => return FileTagReadOutcome::Missing,
         Err(reason) => return FileTagReadOutcome::Failure(reason),
     };
     file_tag_read_outcome(read_canonical_file_tag_path(&canonical, line_range))
@@ -307,7 +307,7 @@ fn file_tag_read_outcome(result: Result<String, String>) -> FileTagReadOutcome {
 fn canonicalize_file_tag_path(
     workspace_root: &Path,
     resolved: &Path,
-) -> Result<Option<PathBuf>, String> {
+) -> Result<CanonicalFileTagPath, String> {
     let workspace = workspace_root
         .canonicalize()
         .map_err(|err| format!("failed to resolve workspace root: {err}"))?;
@@ -316,7 +316,7 @@ fn canonicalize_file_tag_path(
     } else {
         match resolved.canonicalize() {
             Ok(canonical) => canonical,
-            Err(_) => return Ok(None),
+            Err(_) => return Ok(CanonicalFileTagPath::Missing),
         }
     };
     if !canonical.starts_with(&workspace) {
@@ -326,7 +326,12 @@ fn canonicalize_file_tag_path(
             canonical.display()
         ));
     }
-    Ok(Some(canonical))
+    Ok(CanonicalFileTagPath::Path(canonical))
+}
+
+enum CanonicalFileTagPath {
+    Missing,
+    Path(PathBuf),
 }
 
 fn read_canonical_file_tag_path(
