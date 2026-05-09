@@ -532,7 +532,7 @@ fn append_truncation_marker(display_text: &mut String, marker: &str) {
 
 fn resolve_bash_executable() -> String {
     for candidate in ["/bin/bash", "/usr/bin/bash"] {
-        if is_usable_bash_path(Path::new(candidate)) {
+        if is_existing_bash_file(Path::new(candidate)) {
             return candidate.to_string();
         }
     }
@@ -551,14 +551,14 @@ fn shell_env_bash_candidate(shell: Option<&str>) -> Option<String> {
     }
 
     let path = Path::new(shell);
-    if !path.is_absolute() || !is_usable_bash_path(path) {
+    if !path.is_absolute() || !is_existing_bash_file(path) {
         return None;
     }
 
     Some(shell.to_string())
 }
 
-fn is_usable_bash_path(path: &Path) -> bool {
+fn is_existing_bash_file(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
         .is_some_and(|name| name.eq_ignore_ascii_case("bash"))
