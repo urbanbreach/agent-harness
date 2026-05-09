@@ -1,8 +1,18 @@
+use std::path::Path;
+
 use harness_core::file_tag::{
     files, materialize_file_tag_context, materialize_file_tag_context_with_selected,
     materialize_prompt_part_context, split_line_range, FileTagLineRange, FileTagSource,
     SelectedAgentTag, SelectedFileTag, SelectedResourceTag,
 };
+
+fn create_fixture_dir(root: &Path, relative: &str) {
+    std::fs::create_dir(root.join(relative)).expect("create fixture dir");
+}
+
+fn write_fixture(root: &Path, relative: &str, contents: impl AsRef<[u8]>) {
+    std::fs::write(root.join(relative), contents).expect("write fixture file");
+}
 
 #[test]
 fn files_matches_opencode_markdown_file_regex_examples() {
@@ -55,9 +65,9 @@ fn files_matches_opencode_markdown_file_regex_examples() {
 fn materialize_file_tag_context_reads_files_and_directories_once() {
     let tempdir = tempfile::tempdir().expect("tempdir");
     let root = tempdir.path();
-    std::fs::write(root.join("alpha.txt"), "first\nsecond\n").expect("write file");
-    std::fs::create_dir(root.join("src")).expect("create dir");
-    std::fs::write(root.join("src/lib.rs"), "pub fn demo() {}\n").expect("write nested file");
+    write_fixture(root, "alpha.txt", "first\nsecond\n");
+    create_fixture_dir(root, "src");
+    write_fixture(root, "src/lib.rs", "pub fn demo() {}\n");
 
     let context = materialize_file_tag_context(root, "read @alpha.txt and @src and @alpha.txt")
         .expect("context");
@@ -73,10 +83,10 @@ fn materialize_file_tag_context_reads_files_and_directories_once() {
 fn materialize_file_tag_context_sorts_directory_entries_and_marks_directories() {
     let tempdir = tempfile::tempdir().expect("tempdir");
     let root = tempdir.path();
-    std::fs::create_dir(root.join("src")).expect("create src dir");
-    std::fs::create_dir(root.join("src/nested")).expect("create nested dir");
-    std::fs::write(root.join("src/zeta.rs"), "pub fn zeta() {}\n").expect("write zeta");
-    std::fs::write(root.join("src/alpha.rs"), "pub fn alpha() {}\n").expect("write alpha");
+    create_fixture_dir(root, "src");
+    create_fixture_dir(root, "src/nested");
+    write_fixture(root, "src/zeta.rs", "pub fn zeta() {}\n");
+    write_fixture(root, "src/alpha.rs", "pub fn alpha() {}\n");
 
     let context = materialize_file_tag_context(root, "inspect @src").expect("context");
 
@@ -112,7 +122,7 @@ fn materialize_file_tag_context_reports_paths_outside_workspace() {
 fn materialize_file_tag_context_honors_line_ranges() {
     let tempdir = tempfile::tempdir().expect("tempdir");
     let root = tempdir.path();
-    std::fs::write(root.join("alpha.txt"), "one\ntwo\nthree\nfour\n").expect("write file");
+    write_fixture(root, "alpha.txt", "one\ntwo\nthree\nfour\n");
 
     let context = materialize_file_tag_context(root, "read @alpha.txt#2-3").expect("context");
 
@@ -125,7 +135,7 @@ fn materialize_file_tag_context_honors_line_ranges() {
 fn materialize_file_tag_context_clamps_reversed_line_ranges_to_start() {
     let tempdir = tempfile::tempdir().expect("tempdir");
     let root = tempdir.path();
-    std::fs::write(root.join("alpha.txt"), "one\ntwo\nthree\nfour\n").expect("write file");
+    write_fixture(root, "alpha.txt", "one\ntwo\nthree\nfour\n");
 
     let context = materialize_file_tag_context(root, "read @alpha.txt#3-1").expect("context");
 
@@ -180,7 +190,7 @@ fn split_line_range_strips_invalid_hash_suffixes_without_selecting_lines() {
 fn materialize_file_tag_context_omits_binary_files_by_mime() {
     let tempdir = tempfile::tempdir().expect("tempdir");
     let root = tempdir.path();
-    std::fs::write(root.join("image.png"), b"\x89PNG\0binary").expect("write binary file");
+    write_fixture(root, "image.png", b"\x89PNG\0binary");
 
     let context = materialize_file_tag_context(root, "read @image.png").expect("context");
 
@@ -191,7 +201,7 @@ fn materialize_file_tag_context_omits_binary_files_by_mime() {
 fn materialize_file_tag_context_reports_non_utf8_files() {
     let tempdir = tempfile::tempdir().expect("tempdir");
     let root = tempdir.path();
-    std::fs::write(root.join("bad.txt"), b"\xff\xfe").expect("write non-utf8 file");
+    write_fixture(root, "bad.txt", b"\xff\xfe");
 
     let context = materialize_file_tag_context(root, "read @bad.txt").expect("context");
 
@@ -203,7 +213,7 @@ fn materialize_file_tag_context_reports_non_utf8_files() {
 fn selected_file_tags_are_materialized_once_with_structured_metadata() {
     let tempdir = tempfile::tempdir().expect("tempdir");
     let root = tempdir.path();
-    std::fs::write(root.join("alpha.txt"), "one\ntwo\nthree\n").expect("write file");
+    write_fixture(root, "alpha.txt", "one\ntwo\nthree\n");
 
     let selected = SelectedFileTag {
         path: "alpha.txt".to_string(),
