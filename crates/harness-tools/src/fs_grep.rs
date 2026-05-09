@@ -51,6 +51,14 @@ struct FileMatchSelection {
     total_count: usize,
 }
 
+struct GrepSearch<'a> {
+    pattern: &'a str,
+    literal: bool,
+    include: Option<&'a str>,
+    limit: usize,
+    context: usize,
+}
+
 enum Utf8FileLines {
     Lines(Vec<String>),
     NonUtf8,
@@ -99,11 +107,13 @@ impl Tool for FsGrepTool {
         let matches = collect_grep_matches(
             &workspace_root,
             &resolved_base,
-            &args.pattern,
-            args.literal,
-            args.include.as_deref(),
-            limit,
-            context,
+            GrepSearch {
+                pattern: &args.pattern,
+                literal: args.literal,
+                include: args.include.as_deref(),
+                limit,
+                context,
+            },
         )?;
 
         Ok(crate::text_json_tool_result(
@@ -130,14 +140,10 @@ impl Tool for FsGrepTool {
 fn collect_grep_matches(
     workspace_root: &Path,
     search_path: &Path,
-    pattern: &str,
-    literal: bool,
-    include: Option<&str>,
-    limit: usize,
-    context: usize,
+    search: GrepSearch<'_>,
 ) -> Result<GrepMatches, ToolError> {
-    let regex = compile_grep_regex(pattern, literal)?;
-    let include_matcher = compile_include_matcher(include)?;
+    let regex = compile_grep_regex(search.pattern, search.literal)?;
+    let include_matcher = compile_include_matcher(search.include)?;
     let files = collect_sorted_grep_files(workspace_root, search_path, include_matcher.as_ref())?;
 
     let mut rendered_lines = Vec::new();
@@ -154,7 +160,7 @@ fn collect_grep_matches(
         }
 
         let file_matches =
-            select_file_matches(&regex, &lines, limit.saturating_sub(selected_count));
+            select_file_matches(&regex, &lines, search.limit.saturating_sub(selected_count));
         total_count += file_matches.total_count;
         selected_count += file_matches.selected_line_indexes.len();
 
@@ -167,11 +173,11 @@ fn collect_grep_matches(
             &file.relative_path,
             &lines,
             &file_matches.selected_line_indexes,
-            context,
+            search.context,
         );
     }
 
-    let limit_summary = summarize_limit(total_count, limit);
+    let limit_summary = summarize_limit(total_count, search.limit);
     Ok(GrepMatches {
         lines: rendered_lines,
         total_count,
@@ -359,7 +365,17 @@ mod tests {
     use harness_core::tool::{Tool, ToolContext};
     use serde_json::json;
 
-    use super::{collect_grep_matches, FsGrepTool};
+    use super::{collect_grep_matches, FsGrepTool, GrepSearch};
+
+    fn grep_search(pattern: &str) -> GrepSearch<'_> {
+        GrepSearch {
+            pattern,
+            literal: false,
+            include: None,
+            limit: 100,
+            context: 0,
+        }
+    }
 
     fn test_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
         let coordinator = spawn_coordinator(
@@ -411,8 +427,15 @@ mod tests {
         )
         .expect("write binary");
 
-        let result =
-            collect_grep_matches(root, root, "TODO", false, None, 100, 1).expect("collect matches");
+        let result = collect_grep_matches(
+            root,
+            root,
+            GrepSearch {
+                context: 1,
+                ..grep_search("TODO")
+            },
+        )
+        .expect("collect matches");
 
         assert_eq!(result.total_count, 3);
         assert_eq!(result.returned_count, 3);
@@ -441,8 +464,16 @@ mod tests {
         fs::write(root.join("b.log"), "TODO b\n").expect("write b.log");
         fs::write(root.join("c.txt"), "TODO c\n").expect("write c.txt");
 
-        let result =
-            collect_grep_matches(root, root, "TODO", false, Some("*.txt"), 1, 0).expect("collect");
+        let result = collect_grep_matches(
+            root,
+            root,
+            GrepSearch {
+                include: Some("*.txt"),
+                limit: 1,
+                ..grep_search("TODO")
+            },
+        )
+        .expect("collect");
 
         assert_eq!(result.total_count, 2);
         assert_eq!(result.returned_count, 1);
@@ -490,7 +521,7 @@ mod tests {
         let root = tempdir.path();
         fs::write(root.join("notes.txt"), "task(run_in_background\n").expect("write notes");
 
-        let err = collect_grep_matches(root, root, "task(run_in_background", false, None, 100, 0)
+        let err = collect_grep_matches(root, root, grep_search("task(run_in_background"))
             .expect_err("unescaped regex group should fail");
 
         let message = err.to_string();
@@ -506,8 +537,15 @@ mod tests {
         fs::write(root.join("notes.txt"), "task(run_in_background\ntaskXrun\n")
             .expect("write notes");
 
-        let result = collect_grep_matches(root, root, "task(run_in_background", true, None, 100, 0)
-            .expect("literal search should escape pattern");
+        let result = collect_grep_matches(
+            root,
+            root,
+            GrepSearch {
+                literal: true,
+                ..grep_search("task(run_in_background")
+            },
+        )
+        .expect("literal search should escape pattern");
 
         assert_eq!(result.total_count, 1);
         assert_eq!(result.lines, vec!["notes.txt:1: task(run_in_background"]);
