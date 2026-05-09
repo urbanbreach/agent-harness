@@ -82,36 +82,7 @@ pub fn files(template: &str) -> Vec<FileTagMatch> {
             continue;
         }
 
-        let mut end = idx + ch.len_utf8();
-        let mut name = String::new();
-
-        if let Some(&(_, '.')) = indices.peek() {
-            let (_, dot) = indices.next().expect("peeked dot");
-            end += dot.len_utf8();
-            name.push(dot);
-        }
-
-        consume_file_tag_segment(&mut indices, &mut end, &mut name);
-
-        loop {
-            let Some(&(_, '.')) = indices.peek() else {
-                break;
-            };
-            let mut lookahead = indices.clone();
-            let _ = lookahead.next();
-            let Some(&(_, after_dot)) = lookahead.peek() else {
-                break;
-            };
-            if is_file_tag_separator(after_dot) || after_dot == '.' {
-                break;
-            }
-
-            let (_, dot) = indices.next().expect("peeked dot");
-            end += dot.len_utf8();
-            name.push(dot);
-
-            consume_file_tag_segment(&mut indices, &mut end, &mut name);
-        }
+        let (end, name) = consume_file_tag_name(&mut indices, idx + ch.len_utf8());
 
         matches.push(FileTagMatch {
             start: idx,
@@ -200,6 +171,40 @@ fn is_forbidden_file_tag_prefix(ch: char) -> bool {
 
 fn is_file_tag_separator(ch: char) -> bool {
     ch.is_whitespace() || ch == '`' || ch == ','
+}
+
+fn consume_file_tag_name(indices: &mut FileTagChars<'_>, initial_end: usize) -> (usize, String) {
+    let mut end = initial_end;
+    let mut name = String::new();
+
+    if let Some(&(_, '.')) = indices.peek() {
+        let (_, dot) = indices.next().expect("peeked dot");
+        end += dot.len_utf8();
+        name.push(dot);
+    }
+
+    consume_file_tag_segment(indices, &mut end, &mut name);
+
+    while should_continue_after_dot(indices) {
+        let (_, dot) = indices.next().expect("peeked dot");
+        end += dot.len_utf8();
+        name.push(dot);
+
+        consume_file_tag_segment(indices, &mut end, &mut name);
+    }
+
+    (end, name)
+}
+
+fn should_continue_after_dot(indices: &FileTagChars<'_>) -> bool {
+    let mut lookahead = indices.clone();
+    let Some((_, '.')) = lookahead.next() else {
+        return false;
+    };
+    let Some(&(_, after_dot)) = lookahead.peek() else {
+        return false;
+    };
+    !is_file_tag_separator(after_dot) && after_dot != '.'
 }
 
 fn consume_file_tag_segment(indices: &mut FileTagChars<'_>, end: &mut usize, name: &mut String) {
