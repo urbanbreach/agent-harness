@@ -341,31 +341,46 @@ fn read_text_file(path: &Path, line_range: Option<FileTagLineRange>) -> Result<S
         )
     })?;
     let total = content.lines().count();
+    let selection = line_selection(total, line_range);
+    let mut lines = content
+        .lines()
+        .skip(selection.skip_lines)
+        .take(selection.requested_lines.min(READ_DEFAULT_LIMIT))
+        .enumerate()
+        .map(|(idx, line)| format!("{}: {line}", idx + selection.start_line))
+        .collect::<Vec<_>>();
+    if selection.requested_lines > READ_DEFAULT_LIMIT {
+        let requested_lines = selection.requested_lines;
+        let start_line = selection.start_line;
+        lines.push(format!(
+            "... [truncated: showing {READ_DEFAULT_LIMIT} of {requested_lines} requested lines from line {start_line}]",
+        ));
+    }
+    Ok(lines.join("\n"))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LineSelection {
+    start_line: usize,
+    skip_lines: usize,
+    requested_lines: usize,
+}
+
+fn line_selection(total_lines: usize, line_range: Option<FileTagLineRange>) -> LineSelection {
     let start_line = line_range.map(|range| range.start.max(1)).unwrap_or(1);
     let end_line = match line_range {
         Some(range) => range
             .end
             .map(|end| end.max(start_line))
             .unwrap_or(start_line),
-        None => total,
+        None => total_lines,
     }
-    .min(total);
-    let skip = start_line.saturating_sub(1);
-    let requested = end_line.saturating_sub(skip);
-    let mut lines = content
-        .lines()
-        .skip(skip)
-        .take(requested.min(READ_DEFAULT_LIMIT))
-        .enumerate()
-        .map(|(idx, line)| format!("{}: {line}", idx + start_line))
-        .collect::<Vec<_>>();
-    if requested > READ_DEFAULT_LIMIT {
-        lines.push(format!(
-            "... [truncated: showing {} of {requested} requested lines from line {start_line}]",
-            READ_DEFAULT_LIMIT,
-        ));
+    .min(total_lines);
+    LineSelection {
+        start_line,
+        skip_lines: start_line.saturating_sub(1),
+        requested_lines: end_line.saturating_sub(start_line.saturating_sub(1)),
     }
-    Ok(lines.join("\n"))
 }
 
 fn attachment_mime(path: &Path) -> &'static str {
