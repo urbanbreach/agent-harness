@@ -1836,7 +1836,6 @@ fn pty_e2e_child_session_navigation_checkpoint() {
     .expect("wait for parent replay session before child navigation");
 
     send_key(harness.writer.as_mut(), b']').expect("navigate to first child session");
-    let child_header = "Worker · 000_parent_navigation / Inspect parity child session";
     let child_footer = "Worker (1 of 1)";
     let child_screen = wait_for_screen_contains(
         &mut harness.parser,
@@ -1846,19 +1845,16 @@ fn pty_e2e_child_session_navigation_checkpoint() {
     )
     .expect("wait for child replay session after navigation");
     let child_screen = stabilize_screen(&mut harness.parser, &harness.output_rx, child_screen);
-    assert!(child_screen.contains(child_header));
     assert!(child_screen.contains(child_footer));
+    assert!(child_screen.contains("Parent Ctrl+[") || child_screen.contains("Parent ^["));
+    assert!(!child_screen.contains("▼ MCP"));
     let child_visual = capture_manifest_backed_visual_checkpoint(
         "replay_shell",
         "child_session_navigation",
         &harness.parser,
         &visual_dir,
-        FocusCapture::anchored_exact(child_header, 58, 2),
-        &[
-            child_header,
-            child_footer,
-            "Child session captured sidebar parity.",
-        ],
+        FocusCapture::anchored_exact(child_footer, 36, 3),
+        &[child_footer, "Child session captured sidebar parity."],
     )
     .expect("capture child-session navigation image");
 
