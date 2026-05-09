@@ -247,6 +247,10 @@ fn append_materialized_file_tag(
 }
 
 fn resolve_tag_path(workspace_root: &Path, name: &str) -> PathBuf {
+    normalize_path(&tag_path_before_normalization(workspace_root, name))
+}
+
+fn tag_path_before_normalization(workspace_root: &Path, name: &str) -> PathBuf {
     if let Some(home_relative) = name.strip_prefix("~/") {
         if let Some(home) = std::env::var_os("HOME") {
             return PathBuf::from(home).join(home_relative);
@@ -255,9 +259,9 @@ fn resolve_tag_path(workspace_root: &Path, name: &str) -> PathBuf {
 
     let path = Path::new(name);
     if path.is_absolute() {
-        return normalize_path(path);
+        return path.to_path_buf();
     }
-    normalize_path(&workspace_root.join(path))
+    workspace_root.join(path)
 }
 
 fn materialized_file_section(
