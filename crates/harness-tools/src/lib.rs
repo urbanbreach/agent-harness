@@ -401,7 +401,6 @@ struct ShellOutputPreview {
     inline_text: String,
     total_bytes: usize,
     total_lines: usize,
-    inline_bytes: usize,
     inline_lines: usize,
 }
 
@@ -413,7 +412,11 @@ struct ShellOutputPreviewLimits {
 
 impl ShellOutputPreview {
     fn is_truncated(&self) -> bool {
-        self.inline_bytes < self.total_bytes
+        self.inline_bytes() < self.total_bytes
+    }
+
+    fn inline_bytes(&self) -> usize {
+        self.inline_text.len()
     }
 }
 
@@ -426,7 +429,6 @@ fn preview_shell_output(text: &str, limits: ShellOutputPreviewLimits) -> ShellOu
     let inline_lines = count_shell_output_lines(&inline_text);
 
     ShellOutputPreview {
-        inline_bytes: inline_text.len(),
         inline_lines,
         inline_text,
         total_bytes,
@@ -657,7 +659,7 @@ fn shell_output_truncation_marker(preview: &ShellOutputPreview, artifact: &Artif
         "... [truncated: showing {} of {} lines and {} of {} bytes; full output: {}]",
         preview.inline_lines,
         preview.total_lines,
-        preview.inline_bytes,
+        preview.inline_bytes(),
         preview.total_bytes,
         artifact.path
     )
@@ -671,7 +673,7 @@ fn insert_truncated_shell_output_metadata(
     structured_json.insert("truncated".to_string(), json!(true));
     structured_json.insert(
         "inline_output_bytes".to_string(),
-        json!(preview.inline_bytes),
+        json!(preview.inline_bytes()),
     );
     structured_json.insert(
         "inline_output_lines".to_string(),
@@ -1566,7 +1568,7 @@ mod tests {
 
         assert!(preview.is_truncated());
         assert_eq!(preview.inline_text, "é");
-        assert_eq!(preview.inline_bytes, "é".len());
+        assert_eq!(preview.inline_bytes(), "é".len());
         assert_eq!(preview.total_bytes, "ééx".len());
     }
 
