@@ -406,17 +406,7 @@ fn preview_tool_output(text: &str, max_lines: usize, max_bytes: usize) -> Output
     let total_bytes = text.len();
     let total_lines = rendered_line_count(text);
 
-    let mut preview_end = 0usize;
-
-    for (idx, ch) in text.char_indices() {
-        let next_end = idx + ch.len_utf8();
-        if next_end > max_bytes {
-            break;
-        }
-        preview_end = next_end;
-    }
-
-    let byte_limited_end = preview_end;
+    let byte_limited_end = preview_end_for_byte_limit(text, max_bytes);
     let line_limited_end = preview_end_for_line_limit(text, max_lines);
     let preview_end = byte_limited_end.min(line_limited_end);
     let truncated = preview_end < text.len();
@@ -432,6 +422,20 @@ fn preview_tool_output(text: &str, max_lines: usize, max_bytes: usize) -> Output
         total_lines,
         truncated,
     }
+}
+
+fn preview_end_for_byte_limit(text: &str, max_bytes: usize) -> usize {
+    let mut preview_end = 0usize;
+
+    for (idx, ch) in text.char_indices() {
+        let next_end = idx + ch.len_utf8();
+        if next_end > max_bytes {
+            break;
+        }
+        preview_end = next_end;
+    }
+
+    preview_end
 }
 
 fn rendered_line_count(text: &str) -> usize {
@@ -1347,6 +1351,16 @@ mod tests {
         assert_eq!(preview.inline_lines, super::TOOL_OUTPUT_INLINE_LINE_LIMIT);
         assert_eq!(preview.total_lines, super::TOOL_OUTPUT_INLINE_LINE_LIMIT);
         assert_eq!(preview.text, output);
+    }
+
+    #[test]
+    fn preview_tool_output_byte_limit_keeps_utf8_boundaries() {
+        let preview = super::preview_tool_output("ééx", usize::MAX, 3);
+
+        assert!(preview.truncated);
+        assert_eq!(preview.text, "é");
+        assert_eq!(preview.inline_bytes, "é".len());
+        assert_eq!(preview.total_bytes, "ééx".len());
     }
 
     #[test]
