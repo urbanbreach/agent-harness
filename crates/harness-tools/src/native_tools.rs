@@ -1190,32 +1190,33 @@ pub(crate) fn validate_bash_command(
 
     let mut virtual_cwd = cwd.to_path_buf();
     for segment in segments {
-        let Some(executable) = first_shell_command_name(&segment)? else {
+        let Some(command) = parse_shell_segment_command(&segment)? else {
             continue;
         };
+        let executable = command.executable.as_str();
         if executable == "cd" {
             virtual_cwd =
-                resolve_shell_cd_target(&segment, &virtual_cwd, workspace_root, allowlist)?;
+                resolve_shell_cd_target(&command, &virtual_cwd, workspace_root, allowlist)?;
             continue;
         }
-        if matches!(executable.as_str(), "source" | ".") {
+        if matches!(executable, "source" | ".") {
             return Err(ToolError::CommandBlocked(
                 "source and . are not allowed in bash".to_string(),
             ));
         }
-        if is_shell_builtin_allowed(executable.as_str()) {
+        if is_shell_builtin_allowed(executable) {
             continue;
         }
         if !allowlist
             .executables
             .iter()
-            .any(|allowed| allowed == &executable)
+            .any(|allowed| allowed == executable)
         {
             return Err(ToolError::CommandBlocked(blocked_shell_command_message(
-                &executable,
+                executable,
             )));
         }
-        validate_shell_path_arguments(&segment, &virtual_cwd, workspace_root)?;
+        validate_shell_path_arguments(&command, &virtual_cwd, workspace_root)?;
     }
 
     Ok(())
@@ -1314,13 +1315,24 @@ fn push_shell_segment(segments: &mut Vec<String>, current: &mut String) {
     current.clear();
 }
 
-fn first_shell_command_name(segment: &str) -> Result<Option<String>, ToolError> {
-    for token in parse_shell_segment_tokens(segment)? {
+struct ShellSegmentCommand {
+    executable: String,
+    args: Vec<String>,
+}
+
+fn parse_shell_segment_command(segment: &str) -> Result<Option<ShellSegmentCommand>, ToolError> {
+    let mut tokens = parse_shell_segment_tokens(segment)?.into_iter();
+
+    for token in tokens.by_ref() {
         if is_shell_env_assignment(&token) {
             continue;
         }
-        return Ok(Some(token));
+        return Ok(Some(ShellSegmentCommand {
+            executable: token,
+            args: tokens.collect(),
+        }));
     }
+
     Ok(None)
 }
 
@@ -1347,25 +1359,28 @@ fn is_shell_builtin_allowed(executable: &str) -> bool {
 }
 
 fn resolve_shell_cd_target(
-    segment: &str,
+    command: &ShellSegmentCommand,
     cwd: &Path,
     workspace_root: &Path,
     allowlist: &ShellAllowlist,
 ) -> Result<PathBuf, ToolError> {
-    let mut args = parse_shell_segment_tokens(segment)?
-        .into_iter()
-        .filter(|token| !is_shell_env_assignment(token));
-    let _ = args.next();
-    let target = args.next().ok_or_else(|| {
-        ToolError::CommandBlocked("cd without an explicit target is not allowed".to_string())
-    })?;
+    let Some(target) = command
+        .args
+        .iter()
+        .find(|token| !is_shell_env_assignment(token.as_str()))
+        .map(String::as_str)
+    else {
+        return Err(ToolError::CommandBlocked(
+            "cd without an explicit target is not allowed".to_string(),
+        ));
+    };
     if target == "-" || target.starts_with('~') || target.contains('$') {
         return Err(ToolError::CommandBlocked(
             "cd target must be an explicit workspace path".to_string(),
         ));
     }
 
-    let candidate = normalize_shell_workspace_path(&target, cwd, workspace_root)?;
+    let candidate = normalize_shell_workspace_path(target, cwd, workspace_root)?;
     if allowlist.cwd_roots.is_empty() {
         return Ok(candidate);
     }
@@ -1389,25 +1404,16 @@ fn resolve_shell_cd_target(
 }
 
 fn validate_shell_path_arguments(
-    segment: &str,
+    command: &ShellSegmentCommand,
     cwd: &Path,
     workspace_root: &Path,
 ) -> Result<(), ToolError> {
-    let mut seen_command = false;
-    for token in parse_shell_segment_tokens(segment)? {
-        if !seen_command {
-            if is_shell_env_assignment(&token) {
-                continue;
-            }
-            seen_command = true;
+    for token in &command.args {
+        if !looks_like_shell_path_argument(token) {
             continue;
         }
 
-        if !looks_like_shell_path_argument(&token) {
-            continue;
-        }
-
-        let _ = normalize_shell_workspace_path(&token, cwd, workspace_root)?;
+        let _ = normalize_shell_workspace_path(token, cwd, workspace_root)?;
     }
 
     Ok(())
