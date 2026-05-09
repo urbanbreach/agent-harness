@@ -736,6 +736,9 @@ fn prompt_focus_enter_emits_submit_intent() {
         intents[0],
         UiIntent::SubmitPrompt {
             text: "hello".to_string(),
+            selected_file_tags: Vec::new(),
+            selected_agent_tags: Vec::new(),
+            selected_resource_tags: Vec::new(),
             launch_metadata: app::LaunchMetadata::default(),
         }
     );

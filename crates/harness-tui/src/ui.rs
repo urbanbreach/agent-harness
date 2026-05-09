@@ -83,6 +83,7 @@ pub(crate) use ui_transcript::{TranscriptMouseTarget, TranscriptScrollbarHit};
 
 #[cfg(test)]
 pub(crate) use ui_chrome::{
+    exact_test_composer_viewport_wraps_at_word_boundaries,
     exact_test_composer_viewport_wraps_by_display_width,
     exact_test_live_composer_disclosure_summarizes_compaction_metrics,
     exact_test_live_composer_metadata_omits_success_without_variant,

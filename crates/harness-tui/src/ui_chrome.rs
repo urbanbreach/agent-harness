@@ -29,8 +29,18 @@ struct DocumentComposerRenderContext<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ComposerViewport {
     lines: Vec<String>,
+    line_starts: Vec<usize>,
     cursor: Option<(usize, usize)>,
 }
+
+#[derive(Debug, Clone, Copy)]
+struct ComposerVisualChar {
+    index: usize,
+    ch: char,
+    width: usize,
+}
+
+type ComposerVisualLines = (Vec<(String, usize)>, Option<(usize, usize)>);
 
 const QUIET_SURFACE_PADDING_X: u16 = 1;
 const QUIET_SURFACE_PADDING_TOP: u16 = 1;
@@ -208,13 +218,12 @@ pub(super) fn render_footer(
         frame.render_widget(Block::default().style(replay_style), area);
         frame.render_widget(Paragraph::new(hint_text).style(replay_style), text_area);
     } else {
-        render_live_footer_row(
-            frame,
-            text_area,
-            style,
-            live_footer_status_candidates(app, usize::from(text_area.width), theme),
-            hint_text,
-        );
+        let status_candidates = if app.startup_shell_visible() {
+            vec![app.startup_directory_branch_label()]
+        } else {
+            live_footer_status_candidates(app, usize::from(text_area.width), theme)
+        };
+        render_live_footer_row(frame, text_area, style, status_candidates, hint_text);
     }
 }
 
@@ -236,9 +245,11 @@ fn render_live_footer_row(
     let status_text = if status_width == 0 {
         String::new()
     } else {
+        let first_candidate = status_candidates.first().cloned();
         status_candidates
             .into_iter()
             .find(|text| text.chars().count() <= status_width)
+            .or_else(|| first_candidate.map(|text| truncate_plain_text(&text, status_width)))
             .unwrap_or_default()
     };
 
@@ -2041,15 +2052,27 @@ fn render_document_composer_content(
     if !context.dock.composer_focused || context.dock.composer_disabled {
         viewport.cursor = None;
     }
+    let base_style = Style::default().fg(body_color).bg(composer_surface);
+    let tag_style = Style::default()
+        .fg(theme.status.warning)
+        .bg(composer_surface)
+        .add_modifier(Modifier::BOLD);
     let body_lines = viewport
         .lines
         .iter()
-        .cloned()
-        .map(|line| {
-            Line::from(Span::styled(
-                line,
-                Style::default().fg(body_color).bg(composer_surface),
-            ))
+        .zip(viewport.line_starts.iter().copied())
+        .map(|(line, start)| {
+            if placeholder_visible || context.dock.composer_disabled {
+                Line::from(Span::styled(line.clone(), base_style))
+            } else {
+                composer_line_with_file_tags(
+                    line,
+                    start,
+                    &app.file_mention_tags,
+                    base_style,
+                    tag_style,
+                )
+            }
         })
         .collect::<Vec<_>>();
     frame.render_widget(
@@ -2327,6 +2350,7 @@ fn composer_viewport(
     if max_lines == 0 {
         return ComposerViewport {
             lines: Vec::new(),
+            line_starts: Vec::new(),
             cursor: None,
         };
     }
@@ -2345,7 +2369,14 @@ fn composer_viewport(
     let end_row = start_row.saturating_add(visible_count).min(total_lines);
 
     ComposerViewport {
-        lines: wrapped[start_row..end_row].to_vec(),
+        lines: wrapped[start_row..end_row]
+            .iter()
+            .map(|(line, _)| line.clone())
+            .collect(),
+        line_starts: wrapped[start_row..end_row]
+            .iter()
+            .map(|(_, start)| *start)
+            .collect(),
         cursor: cursor.and_then(|(row, column)| {
             (row >= start_row && row < end_row).then_some((row - start_row, column))
         }),
@@ -2356,43 +2387,226 @@ fn composer_visual_lines(
     text: &str,
     width: usize,
     cursor_char_index: Option<usize>,
-) -> (Vec<String>, Option<(usize, usize)>) {
+) -> ComposerVisualLines {
     let width = width.max(1);
     let mut lines = Vec::new();
-    let mut current = String::new();
-    let mut current_width = 0usize;
     let mut cursor = None;
+    let chars = text
+        .chars()
+        .enumerate()
+        .map(|(index, ch)| ComposerVisualChar {
+            index,
+            ch,
+            width: display_width(&ch.to_string()).max(1),
+        })
+        .collect::<Vec<_>>();
 
-    for (char_index, ch) in text.chars().enumerate() {
-        if ch == '\n' {
-            if cursor_char_index == Some(char_index) {
-                cursor = Some((lines.len(), current_width));
-            }
-            lines.push(std::mem::take(&mut current));
-            current_width = 0;
+    let mut segment_start = 0usize;
+    let mut fallback_start = 0usize;
+    for position in 0..=chars.len() {
+        let hard_break = position == chars.len() || chars[position].ch == '\n';
+        if !hard_break {
             continue;
         }
 
-        let ch_width = display_width(&ch.to_string()).max(1);
-        if current_width > 0 && current_width.saturating_add(ch_width) > width {
-            lines.push(std::mem::take(&mut current));
-            current_width = 0;
-        }
+        wrap_composer_visual_segment(
+            &chars[segment_start..position],
+            fallback_start,
+            width,
+            cursor_char_index,
+            &mut cursor,
+            &mut lines,
+        );
 
-        if cursor_char_index == Some(char_index) {
-            cursor = Some((lines.len(), current_width));
+        if position < chars.len() {
+            if cursor_char_index == Some(chars[position].index) {
+                let row = lines.len().saturating_sub(1);
+                let column = lines
+                    .last()
+                    .map(|(line, _)| display_width(line))
+                    .unwrap_or(0);
+                cursor = Some((row, column));
+            }
+            fallback_start = chars[position].index + 1;
+            segment_start = position + 1;
         }
-
-        current.push(ch);
-        current_width = current_width.saturating_add(ch_width);
     }
 
     if cursor_char_index == Some(text.chars().count()) {
-        cursor = Some((lines.len(), current_width));
+        let row = lines.len().saturating_sub(1);
+        let column = lines
+            .last()
+            .map(|(line, _)| display_width(line))
+            .unwrap_or(0);
+        cursor = Some((row, column));
     }
 
-    lines.push(current);
     (lines, cursor)
+}
+
+fn wrap_composer_visual_segment(
+    chars: &[ComposerVisualChar],
+    fallback_start: usize,
+    width: usize,
+    cursor_char_index: Option<usize>,
+    cursor: &mut Option<(usize, usize)>,
+    lines: &mut Vec<(String, usize)>,
+) {
+    if chars.is_empty() {
+        emit_composer_visual_line(chars, fallback_start, cursor_char_index, cursor, lines);
+        return;
+    }
+
+    let mut start = 0usize;
+    while start < chars.len() {
+        let fit_end = composer_fit_end(chars, start, width);
+        if fit_end >= chars.len() {
+            emit_composer_visual_line(
+                &chars[start..],
+                chars[start].index,
+                cursor_char_index,
+                cursor,
+                lines,
+            );
+            break;
+        }
+
+        if let Some(break_at) = chars[start..fit_end]
+            .iter()
+            .rposition(|visual_char| visual_char.ch.is_whitespace())
+            .map(|offset| start + offset)
+            .filter(|break_at| *break_at > start)
+        {
+            let end = break_at + 1;
+            emit_composer_visual_line(
+                &chars[start..end],
+                chars[start].index,
+                cursor_char_index,
+                cursor,
+                lines,
+            );
+            start = end;
+            continue;
+        }
+
+        if chars[fit_end].ch.is_whitespace() {
+            emit_composer_visual_line(
+                &chars[start..fit_end],
+                chars[start].index,
+                cursor_char_index,
+                cursor,
+                lines,
+            );
+            if cursor_char_index == Some(chars[fit_end].index) {
+                let row = lines.len().saturating_sub(1);
+                let column = lines
+                    .last()
+                    .map(|(line, _)| display_width(line))
+                    .unwrap_or(0);
+                *cursor = Some((row, column));
+            }
+            start = fit_end + 1;
+            continue;
+        }
+
+        let end = fit_end.max(start + 1);
+        emit_composer_visual_line(
+            &chars[start..end],
+            chars[start].index,
+            cursor_char_index,
+            cursor,
+            lines,
+        );
+        start = end;
+    }
+}
+
+fn composer_fit_end(chars: &[ComposerVisualChar], start: usize, width: usize) -> usize {
+    let mut used = 0usize;
+    for (position, visual_char) in chars.iter().enumerate().skip(start) {
+        if position > start && used.saturating_add(visual_char.width) > width {
+            return position;
+        }
+        used = used.saturating_add(visual_char.width);
+    }
+    chars.len()
+}
+
+fn emit_composer_visual_line(
+    chars: &[ComposerVisualChar],
+    fallback_start: usize,
+    cursor_char_index: Option<usize>,
+    cursor: &mut Option<(usize, usize)>,
+    lines: &mut Vec<(String, usize)>,
+) {
+    let row = lines.len();
+    let line_start = chars
+        .first()
+        .map(|visual_char| visual_char.index)
+        .unwrap_or(fallback_start);
+    if let Some(cursor_index) = cursor_char_index {
+        if let Some(last) = chars.last() {
+            let line_end = last.index + 1;
+            if cursor_index >= line_start && cursor_index < line_end {
+                let column = chars
+                    .iter()
+                    .take_while(|visual_char| visual_char.index < cursor_index)
+                    .map(|visual_char| visual_char.width)
+                    .sum();
+                *cursor = Some((row, column));
+            }
+        } else if cursor_index == line_start {
+            *cursor = Some((row, 0));
+        }
+    }
+
+    lines.push((
+        chars.iter().map(|visual_char| visual_char.ch).collect(),
+        line_start,
+    ));
+}
+
+fn composer_line_with_file_tags(
+    line: &str,
+    line_start: usize,
+    tags: &[crate::app::FileMentionTag],
+    base_style: Style,
+    tag_style: Style,
+) -> Line<'static> {
+    if line.is_empty() {
+        return Line::from(Span::styled(String::new(), base_style));
+    }
+
+    let mut spans = Vec::new();
+    let mut current = String::new();
+    let mut current_style = None;
+    for (offset, ch) in line.chars().enumerate() {
+        let char_index = line_start + offset;
+        let style = if tags
+            .iter()
+            .any(|tag| char_index >= tag.start && char_index < tag.end)
+        {
+            tag_style
+        } else {
+            base_style
+        };
+        if current_style == Some(style) {
+            current.push(ch);
+        } else {
+            if !current.is_empty() {
+                spans.push(Span::styled(
+                    std::mem::take(&mut current),
+                    current_style.unwrap(),
+                ));
+            }
+            current_style = Some(style);
+            current.push(ch);
+        }
+    }
+    if !current.is_empty() {
+        spans.push(Span::styled(current, current_style.unwrap_or(base_style)));
+    }
+    Line::from(spans)
 }
 
 fn composer_shortcut_hints(app: &AppState, composer_disabled: bool) -> String {
@@ -3420,4 +3634,62 @@ pub(crate) fn exact_test_composer_viewport_wraps_by_display_width() {
 
     assert_eq!(viewport.lines, vec!["ab界".to_string(), "c".to_string()]);
     assert_eq!(viewport.cursor, Some((1, 0)));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_composer_viewport_wraps_at_word_boundaries() {
+    let viewport = composer_viewport("alpha beta", 8, 6, Some(6));
+
+    assert_eq!(
+        viewport.lines,
+        vec!["alpha ".to_string(), "beta".to_string()]
+    );
+    assert_eq!(viewport.cursor, Some((1, 0)));
+}
+
+#[cfg(test)]
+#[test]
+fn composer_file_tag_line_uses_warning_bold_style() {
+    let app = AppState::new_startup(Vec::new(), None);
+    let theme = app.theme();
+    let base = Style::default()
+        .fg(theme.text.primary)
+        .bg(theme.surface.panel_elevated);
+    let tag = Style::default()
+        .fg(theme.status.warning)
+        .bg(theme.surface.panel_elevated)
+        .add_modifier(Modifier::BOLD);
+
+    let line = composer_line_with_file_tags(
+        "use @docs/ now",
+        0,
+        &[crate::app::FileMentionTag {
+            start: 4,
+            end: 10,
+            part: crate::app::FileMentionSelectedTag::File(
+                harness_core::file_tag::SelectedFileTag {
+                    path: "docs/".to_string(),
+                    filename: "docs/".to_string(),
+                    url: "file:///workspace/docs/".to_string(),
+                    mime: "application/x-directory".to_string(),
+                    source: harness_core::file_tag::FileTagSource {
+                        start: 4,
+                        end: 10,
+                        value: "@docs/".to_string(),
+                    },
+                    line_range: None,
+                },
+            ),
+        }],
+        base,
+        tag,
+    );
+
+    assert_eq!(line.spans.len(), 3);
+    assert_eq!(line.spans[0].content.as_ref(), "use ");
+    assert_eq!(line.spans[0].style, base);
+    assert_eq!(line.spans[1].content.as_ref(), "@docs/");
+    assert_eq!(line.spans[1].style, tag);
+    assert_eq!(line.spans[2].content.as_ref(), " now");
+    assert_eq!(line.spans[2].style, base);
 }

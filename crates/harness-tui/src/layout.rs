@@ -191,7 +191,7 @@ impl FrameLayoutPlan {
         let subagent_footer_visible = subagent_footer_visible(app);
         let footer_height = if subagent_footer_visible {
             shell_tokens.spacing.heights.footer.saturating_add(2)
-        } else if app.replay_mode {
+        } else if app.startup_shell_visible() || app.replay_mode {
             shell_tokens.spacing.heights.footer
         } else {
             0
@@ -274,11 +274,12 @@ impl FrameLayoutPlan {
         plan.composer = Some(session.dock.composer);
         plan.disclosure = session.dock.disclosure;
         plan.details_overlay = session.operator_overlay;
-        plan.slash_overlay = matches!(app.overlay_stack().top(), Some(OverlayKind::SlashCommands))
-            .then(|| {
-                slash_command_overlay_area(session.dock.composer, theme, session_contract, app)
-            })
-            .flatten();
+        plan.slash_overlay = matches!(
+            app.overlay_stack().top(),
+            Some(OverlayKind::SlashCommands | OverlayKind::FileMentions)
+        )
+        .then(|| slash_command_overlay_area(session.dock.composer, theme, session_contract, app))
+        .flatten();
         plan.wheel_hit_areas = WheelHitAreas {
             transcript: Some(session.transcript),
             terminal_panel: session.terminal_panel,
@@ -584,10 +585,7 @@ pub(crate) fn composer_input_height(text: &str, width: u16) -> u16 {
         1
     } else {
         text.split('\n')
-            .map(|line| {
-                let line_width = display_width(line);
-                line_width.max(1).div_ceil(inner_width)
-            })
+            .map(|line| word_wrapped_line_count(line, inner_width))
             .sum()
     };
 
@@ -598,6 +596,52 @@ pub(crate) fn composer_input_height(text: &str, width: u16) -> u16 {
 
 fn display_width(text: &str) -> usize {
     Line::from(text.to_string()).width()
+}
+
+fn word_wrapped_line_count(line: &str, width: usize) -> usize {
+    if line.is_empty() {
+        return 1;
+    }
+
+    let chars = line
+        .chars()
+        .map(|ch| (ch, display_width(&ch.to_string()).max(1)))
+        .collect::<Vec<_>>();
+    let mut count = 0usize;
+    let mut start = 0usize;
+    while start < chars.len() {
+        count += 1;
+        let fit_end = word_wrap_fit_end(&chars, start, width.max(1));
+        if fit_end >= chars.len() {
+            break;
+        }
+
+        if let Some(break_at) = chars[start..fit_end]
+            .iter()
+            .rposition(|(ch, _)| ch.is_whitespace())
+            .map(|offset| start + offset)
+            .filter(|break_at| *break_at > start)
+        {
+            start = break_at + 1;
+        } else if chars[fit_end].0.is_whitespace() {
+            start = fit_end + 1;
+        } else {
+            start = fit_end.max(start + 1);
+        }
+    }
+
+    count.max(1)
+}
+
+fn word_wrap_fit_end(chars: &[(char, usize)], start: usize, width: usize) -> usize {
+    let mut used = 0usize;
+    for (position, (_, char_width)) in chars.iter().enumerate().skip(start) {
+        if position > start && used.saturating_add(*char_width) > width {
+            return position;
+        }
+        used = used.saturating_add(*char_width);
+    }
+    chars.len()
 }
 
 fn permission_prompt_block_height(
@@ -1190,7 +1234,7 @@ fn slash_command_overlay_area(
     _contract: SessionGeometryContract,
     app: &AppState,
 ) -> Option<Rect> {
-    if !app.slash_visible || composer.width == 0 || composer.y == 0 {
+    if !(app.slash_visible || app.file_mention_visible) || composer.width == 0 || composer.y == 0 {
         return None;
     }
 
@@ -1221,13 +1265,22 @@ fn slash_command_overlay_area(
 }
 
 pub(crate) fn slash_command_overlay_content_area(overlay: Rect) -> Rect {
+    completion_overlay_content_area(overlay)
+}
+
+pub(crate) fn completion_overlay_content_area(overlay: Rect) -> Rect {
     overlay
 }
 
 fn slash_command_overlay_height(app: &AppState) -> u16 {
     const MAX_ROWS: usize = 10;
 
-    let rows = app.slash_filtered.len().clamp(1, MAX_ROWS);
+    let len = if app.file_mention_visible {
+        app.file_mention_entries.len()
+    } else {
+        app.slash_filtered.len()
+    };
+    let rows = len.clamp(1, MAX_ROWS);
     u16::try_from(rows).unwrap_or(u16::MAX)
 }
 

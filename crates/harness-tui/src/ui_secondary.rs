@@ -103,6 +103,13 @@ struct OperatorRailModel {
     body: OperatorRailBody,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct StyledVisualChar {
+    ch: char,
+    style: Style,
+    width: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum OperatorRailItem {
     Plain(String),
@@ -1873,13 +1880,25 @@ fn render_operator_sidebar_surface(
     let rail = build_operator_rail_model(app);
     let title_text = build_operator_rail_title_text(rail.title.as_deref(), theme, inner.width);
     let body_layout = build_operator_rail_body_layout(&rail.body, theme, inner.width);
+    let footer = app
+        .sidebar_directory_branch_label()
+        .map(|label| operator_sidebar_directory_footer_text(label, theme, inner.width, surface));
     let title_height = title_text.lines.len().min(usize::from(u16::MAX)) as u16;
+    let footer_height = footer
+        .as_ref()
+        .map(|footer| footer.height().min(usize::from(u16::MAX)) as u16)
+        .unwrap_or(0);
     let sections = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(title_height), Constraint::Min(0)])
+        .constraints([
+            Constraint::Length(title_height),
+            Constraint::Min(0),
+            Constraint::Length(footer_height),
+        ])
         .split(inner);
     let title_area = sections[0];
     let body_area = sections[1];
+    let footer_area = sections[2];
 
     if title_height > 0 {
         frame.render_widget(
@@ -1894,6 +1913,14 @@ fn render_operator_sidebar_surface(
             .wrap(Wrap { trim: true }),
         body_area,
     );
+    if let Some(footer) = footer {
+        frame.render_widget(
+            Paragraph::new(footer)
+                .style(Style::default().bg(surface))
+                .wrap(Wrap { trim: false }),
+            footer_area,
+        );
+    }
 }
 
 #[cfg(test)]
@@ -1901,8 +1928,131 @@ fn build_operator_sidebar_content(app: &AppState, theme: &Theme) -> Text<'static
     let rail = build_operator_rail_model(app);
     let mut lines = build_operator_rail_title_text(rail.title.as_deref(), theme, 80).lines;
     lines.extend(build_operator_rail_body_layout(&rail.body, theme, 80).lines);
+    if let Some(label) = app.sidebar_directory_branch_label() {
+        lines.extend(
+            operator_sidebar_directory_footer_text(label, theme, 80, theme.surface.panel).lines,
+        );
+    }
 
     Text::from(lines)
+}
+
+fn operator_sidebar_directory_footer_text(
+    label: &str,
+    theme: &Theme,
+    width: u16,
+    surface: ratatui::style::Color,
+) -> Text<'static> {
+    let (parent, name) = opencode_sidebar_path_parts(label);
+    let line = Line::from(vec![
+        Span::styled(
+            format!("{parent}/"),
+            Style::default().fg(theme.text.tertiary).bg(surface),
+        ),
+        Span::styled(name, Style::default().fg(theme.text.primary).bg(surface)),
+    ]);
+    let wrapped_lines = wrap_line_preserving_spans(line, usize::from(width.max(1)));
+    Text::from(wrapped_lines)
+}
+
+fn opencode_sidebar_path_parts(text: &str) -> (String, String) {
+    let mut parts = text.split('/').collect::<Vec<_>>();
+    let name = parts.pop().unwrap_or_default().to_string();
+    (parts.join("/"), name)
+}
+
+fn wrap_line_preserving_spans(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
+    if width == 0 || line.width() <= width {
+        return vec![line];
+    }
+
+    let chars = line
+        .spans
+        .into_iter()
+        .flat_map(|span| {
+            let style = span.style;
+            span.content
+                .chars()
+                .map(move |ch| StyledVisualChar {
+                    ch,
+                    style,
+                    width: Line::from(ch.to_string()).width().max(1),
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    wrap_styled_chars_by_word(&chars, width)
+}
+
+fn wrap_styled_chars_by_word(chars: &[StyledVisualChar], width: usize) -> Vec<Line<'static>> {
+    if chars.is_empty() {
+        return vec![Line::default()];
+    }
+
+    let mut lines = Vec::new();
+    let mut start = 0usize;
+    while start < chars.len() {
+        let fit_end = styled_fit_end(chars, start, width);
+        if fit_end >= chars.len() {
+            lines.push(styled_chars_to_line(&chars[start..]));
+            break;
+        }
+
+        if let Some(break_at) = chars[start..fit_end]
+            .iter()
+            .rposition(|visual_char| visual_char.ch.is_whitespace())
+            .map(|offset| start + offset)
+            .filter(|break_at| *break_at > start)
+        {
+            let end = break_at + 1;
+            lines.push(styled_chars_to_line(&chars[start..end]));
+            start = end;
+        } else if chars[fit_end].ch.is_whitespace() {
+            lines.push(styled_chars_to_line(&chars[start..fit_end]));
+            start = fit_end + 1;
+        } else {
+            let end = chars[fit_end..]
+                .iter()
+                .position(|visual_char| visual_char.ch.is_whitespace())
+                .map(|offset| fit_end + offset)
+                .unwrap_or(chars.len());
+            lines.push(styled_chars_to_line(&chars[start..end]));
+            start = end;
+        }
+    }
+    lines
+}
+
+fn styled_fit_end(chars: &[StyledVisualChar], start: usize, width: usize) -> usize {
+    let mut used = 0usize;
+    for (position, visual_char) in chars.iter().enumerate().skip(start) {
+        if position > start && used.saturating_add(visual_char.width) > width {
+            return position;
+        }
+        used = used.saturating_add(visual_char.width);
+    }
+    chars.len()
+}
+
+fn styled_chars_to_line(chars: &[StyledVisualChar]) -> Line<'static> {
+    if chars.is_empty() {
+        return Line::default();
+    }
+
+    let mut spans = Vec::new();
+    let mut current = String::new();
+    let mut current_style = chars[0].style;
+    for visual_char in chars {
+        if visual_char.style == current_style {
+            current.push(visual_char.ch);
+        } else {
+            spans.push(Span::styled(std::mem::take(&mut current), current_style));
+            current_style = visual_char.style;
+            current.push(visual_char.ch);
+        }
+    }
+    spans.push(Span::styled(current, current_style));
+    Line::from(spans)
 }
 
 fn build_operator_rail_title_text(title: Option<&str>, theme: &Theme, width: u16) -> Text<'static> {
@@ -4399,6 +4549,34 @@ fn line_to_plain_text(line: Line<'static>) -> String {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sidebar_directory_footer_keeps_unbroken_path_segments_on_one_row() {
+        let theme = Theme::default();
+        let lines = operator_sidebar_directory_footer_text(
+            "/tmp/harness-opencode-sidebar-overflow/workspaces/golden_path_interactive-run_1234567890abcdef:dev",
+            &theme,
+            28,
+            theme.surface.panel,
+        )
+        .lines;
+        let plain = lines
+            .iter()
+            .map(|line| line_to_plain_text(line.clone()))
+            .collect::<Vec<_>>()
+            .join("");
+
+        assert_eq!(
+            lines.len(),
+            1,
+            "unbroken sidebar footer words should not split"
+        );
+        assert!(
+            !plain.contains('…'),
+            "Opencode sidebar footer does not ellipsize"
+        );
+        assert!(plain.ends_with("golden_path_interactive-run_1234567890abcdef:dev"));
+    }
 
     #[test]
     fn structured_diff_rows_respect_display_width_for_wide_glyphs() {

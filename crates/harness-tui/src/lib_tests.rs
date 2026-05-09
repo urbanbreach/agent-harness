@@ -467,6 +467,7 @@ delegate_test!(live_composer_reserves_right_gap => ui::exact_test_live_composer_
 delegate_test!(live_composer_disclosure_summarizes_compaction_metrics => ui::exact_test_live_composer_disclosure_summarizes_compaction_metrics);
 delegate_test!(startup_disclosure_matches_opencode_hint_row => ui::exact_test_startup_disclosure_matches_opencode_hint_row);
 delegate_test!(composer_viewport_wraps_by_display_width => ui::exact_test_composer_viewport_wraps_by_display_width);
+delegate_test!(composer_viewport_wraps_at_word_boundaries => ui::exact_test_composer_viewport_wraps_at_word_boundaries);
 delegate_test!(tool_status_summary_uses_effective_tool_identity => ui::exact_test_tool_status_summary_uses_effective_tool_identity);
 delegate_test!(wheel_target_hits_transcript_when_hovered => ui::exact_test_wheel_target_hits_transcript_when_hovered);
 delegate_test!(wheel_target_hits_inspector_inside_live_overlay => ui::exact_test_wheel_target_hits_inspector_inside_live_overlay);
@@ -7072,6 +7073,9 @@ fn post_run_handoff_disables_prompt_submission() {
         &*intents,
         &[UiIntent::SubmitPrompt {
             text: "blocked prompt".to_string(),
+            selected_file_tags: Vec::new(),
+            selected_agent_tags: Vec::new(),
+            selected_resource_tags: Vec::new(),
             launch_metadata: app::LaunchMetadata::default(),
         }]
     );
@@ -7790,6 +7794,9 @@ fn composer_enter_submits_and_shift_enter_inserts_newline() {
         intents.as_slice(),
         &[UiIntent::SubmitPrompt {
             text: "hello\nworld".to_string(),
+            selected_file_tags: Vec::new(),
+            selected_agent_tags: Vec::new(),
+            selected_resource_tags: Vec::new(),
             launch_metadata: app::LaunchMetadata::default(),
         }]
     );
@@ -7888,10 +7895,16 @@ fn composer_submits_queued_followup_while_streaming() {
         &[
             UiIntent::SubmitPrompt {
                 text: "first".to_string(),
+                selected_file_tags: Vec::new(),
+                selected_agent_tags: Vec::new(),
+                selected_resource_tags: Vec::new(),
                 launch_metadata: app::LaunchMetadata::default(),
             },
             UiIntent::SubmitPrompt {
                 text: "next".to_string(),
+                selected_file_tags: Vec::new(),
+                selected_agent_tags: Vec::new(),
+                selected_resource_tags: Vec::new(),
                 launch_metadata: app::LaunchMetadata::default(),
             },
         ]

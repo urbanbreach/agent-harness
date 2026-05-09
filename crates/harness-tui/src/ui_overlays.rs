@@ -19,6 +19,9 @@ pub(super) fn render_overlays(
             OverlayKind::SlashCommands => {
                 render_slash_commands_overlay(frame, app, theme, plan.slash_overlay)
             }
+            OverlayKind::FileMentions => {
+                render_file_mentions_overlay(frame, app, theme, plan.slash_overlay)
+            }
             OverlayKind::CommandPalette => {
                 render_command_palette_overlay(frame, app, theme, plan.root, plan.palette_overlay)
             }
@@ -564,6 +567,109 @@ fn render_slash_commands_overlay(
     frame.render_widget(Clear, overlay);
     let inner = crate::layout::slash_command_overlay_content_area(overlay);
     render_slash_commands_list(frame, app, theme, inner);
+}
+
+fn render_file_mentions_overlay(
+    frame: &mut Frame,
+    app: &AppState,
+    theme: &Theme,
+    overlay: Option<Rect>,
+) {
+    let Some(overlay) = overlay else {
+        return;
+    };
+    if overlay.width <= 2 || overlay.height == 0 {
+        return;
+    }
+
+    frame.render_widget(Clear, overlay);
+    let inner = crate::layout::completion_overlay_content_area(overlay);
+    render_file_mentions_list(frame, app, theme, inner);
+}
+
+fn render_file_mentions_list(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    let surface = ui_chrome::slash_command_surface(theme);
+    frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
+
+    if app.file_mention_entries.is_empty() {
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(" ", Style::default().bg(surface)),
+                Span::styled(
+                    "No matching items",
+                    Style::default()
+                        .fg(ui_chrome::command_palette_muted(theme))
+                        .bg(surface),
+                ),
+                Span::styled(" ", Style::default().bg(surface)),
+            ])),
+            area,
+        );
+        return;
+    }
+
+    let visible_rows = usize::from(area.height);
+    let selected = app
+        .file_mention_selected
+        .min(app.file_mention_entries.len().saturating_sub(1));
+    let scroll = selected.saturating_sub(visible_rows.saturating_sub(1));
+    for (row, entry) in app
+        .file_mention_entries
+        .iter()
+        .enumerate()
+        .skip(scroll)
+        .take(visible_rows)
+    {
+        let row_y = area
+            .y
+            .saturating_add(u16::try_from(row - scroll).unwrap_or(u16::MAX));
+        let row_area = Rect::new(area.x, row_y, area.width, 1);
+        let is_selected = row == selected;
+        frame.render_widget(
+            Block::default().style(ui_chrome::slash_command_row_style(theme, is_selected)),
+            row_area,
+        );
+        frame.render_widget(
+            Paragraph::new(file_mention_row(entry, is_selected, theme, row_area.width)),
+            row_area,
+        );
+    }
+}
+
+fn file_mention_row(
+    entry: &crate::app::FileMentionEntry,
+    is_selected: bool,
+    theme: &Theme,
+    width: u16,
+) -> Line<'static> {
+    let row_width = usize::from(width);
+    let row_style = ui_chrome::slash_command_row_style(theme, is_selected);
+    let label_style = if is_selected {
+        row_style.fg(ui_chrome::slash_command_selection_fg(theme))
+    } else {
+        row_style.fg(ui_chrome::command_palette_title(theme))
+    };
+    let side_padding = usize::from(row_width > 0);
+    let available_width = row_width.saturating_sub(side_padding.saturating_mul(2));
+    let label = truncate_plain_text(&entry.display, available_width);
+    let consumed = side_padding.saturating_add(label.chars().count());
+    let trailing = row_width.saturating_sub(consumed);
+
+    let mut spans = Vec::new();
+    if side_padding > 0 {
+        spans.push(Span::styled(" ".repeat(side_padding), row_style));
+    }
+    if !label.is_empty() {
+        spans.push(Span::styled(label, label_style));
+    }
+    if trailing > 0 {
+        spans.push(Span::styled(" ".repeat(trailing), row_style));
+    }
+    Line::from(spans)
 }
 
 fn render_slash_commands_list(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {

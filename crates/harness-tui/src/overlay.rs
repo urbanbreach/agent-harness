@@ -2,6 +2,7 @@
 pub enum OverlayKind {
     DetailsDrawer,
     SlashCommands,
+    FileMentions,
     CommandPalette,
     LineageBrowser,
     ForkSelector,
@@ -13,6 +14,7 @@ pub enum OverlayKind {
 pub struct OverlayState {
     pub details_drawer_open: bool,
     pub slash_visible: bool,
+    pub file_mention_visible: bool,
     pub palette_visible: bool,
     pub status_dialog_visible: bool,
     pub session_history_visible: bool,
@@ -46,6 +48,9 @@ impl OverlayStack {
         if state.slash_visible && !state.permission_pending {
             overlays.push(OverlayKind::SlashCommands);
         }
+        if state.file_mention_visible && !state.permission_pending {
+            overlays.push(OverlayKind::FileMentions);
+        }
         if state.command_palette_channel_visible() && !state.permission_pending {
             if state.lineage_browser_visible {
                 overlays.push(OverlayKind::LineageBrowser);
@@ -77,6 +82,7 @@ impl OverlayStack {
             self.top(),
             Some(
                 OverlayKind::SlashCommands
+                    | OverlayKind::FileMentions
                     | OverlayKind::CommandPalette
                     | OverlayKind::LineageBrowser
                     | OverlayKind::ForkSelector
