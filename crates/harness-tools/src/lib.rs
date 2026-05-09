@@ -605,6 +605,11 @@ impl ShellProcessOutput {
         metadata.insert("stderr_bytes".to_string(), json!(self.stderr.len()));
     }
 
+    fn insert_execution_status(&self, metadata: &mut serde_json::Map<String, serde_json::Value>) {
+        metadata.insert("status".to_string(), json!(self.status));
+        metadata.insert("success".to_string(), json!(self.success));
+    }
+
     fn insert_full_streams(self, metadata: &mut serde_json::Map<String, serde_json::Value>) {
         metadata.insert("stdout".to_string(), json!(self.stdout));
         metadata.insert("stderr".to_string(), json!(self.stderr));
@@ -1129,7 +1134,7 @@ impl DirectShellInvocation {
         metadata.insert("cmd".to_string(), json!(self.cmd));
         metadata.insert("args".to_string(), json!(self.args));
         metadata.insert("cwd".to_string(), json!(self.cwd));
-        insert_shell_execution_status(&mut metadata, output);
+        output.insert_execution_status(&mut metadata);
         metadata
     }
 }
@@ -1143,7 +1148,7 @@ impl WrapperShellInvocation {
         metadata.insert("description".to_string(), json!(self.description));
         metadata.insert("command".to_string(), json!(self.command));
         metadata.insert("workdir".to_string(), json!(self.workdir));
-        insert_shell_execution_status(&mut metadata, output);
+        output.insert_execution_status(&mut metadata);
         metadata
     }
 }
@@ -1193,14 +1198,6 @@ fn shell_invocation_selection_error() -> ToolError {
 
 fn normalized_shell_command(command: Option<String>) -> Option<String> {
     command.and_then(|command| trimmed_non_empty(&command).map(str::to_string))
-}
-
-fn insert_shell_execution_status(
-    metadata: &mut serde_json::Map<String, serde_json::Value>,
-    output: &ShellProcessOutput,
-) {
-    metadata.insert("status".to_string(), json!(output.status));
-    metadata.insert("success".to_string(), json!(output.success));
 }
 
 impl ShellRunTool {
