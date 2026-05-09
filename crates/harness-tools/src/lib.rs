@@ -399,7 +399,12 @@ struct OutputPreview {
     total_lines: usize,
     inline_bytes: usize,
     inline_lines: usize,
-    truncated: bool,
+}
+
+impl OutputPreview {
+    fn is_truncated(&self) -> bool {
+        self.inline_bytes < self.total_bytes
+    }
 }
 
 fn preview_tool_output(text: &str, max_lines: usize, max_bytes: usize) -> OutputPreview {
@@ -409,7 +414,6 @@ fn preview_tool_output(text: &str, max_lines: usize, max_bytes: usize) -> Output
     let byte_limited_end = preview_end_for_byte_limit(text, max_bytes);
     let line_limited_end = preview_end_for_line_limit(text, max_lines);
     let preview_end = byte_limited_end.min(line_limited_end);
-    let truncated = preview_end < text.len();
 
     let preview = text[..preview_end].to_string();
     let inline_lines = rendered_line_count(&preview);
@@ -420,7 +424,6 @@ fn preview_tool_output(text: &str, max_lines: usize, max_bytes: usize) -> Output
         text: preview,
         total_bytes,
         total_lines,
-        truncated,
     }
 }
 
@@ -584,7 +587,7 @@ fn build_shell_run_result(
         TOOL_OUTPUT_INLINE_BYTE_LIMIT,
     );
 
-    if !preview.truncated {
+    if !preview.is_truncated() {
         return Ok(build_inline_shell_run_result(
             output,
             structured_json,
@@ -1506,7 +1509,7 @@ mod tests {
         let preview =
             super::preview_tool_output(&output, super::TOOL_OUTPUT_INLINE_LINE_LIMIT, usize::MAX);
 
-        assert!(preview.truncated);
+        assert!(preview.is_truncated());
         assert_eq!(preview.inline_lines, super::TOOL_OUTPUT_INLINE_LINE_LIMIT);
         assert_eq!(preview.total_lines, 2_001);
         assert!(preview.text.trim_end_matches('\n').ends_with("line 2000"));
@@ -1523,7 +1526,7 @@ mod tests {
         let preview =
             super::preview_tool_output(&output, super::TOOL_OUTPUT_INLINE_LINE_LIMIT, usize::MAX);
 
-        assert!(!preview.truncated);
+        assert!(!preview.is_truncated());
         assert_eq!(preview.inline_lines, super::TOOL_OUTPUT_INLINE_LINE_LIMIT);
         assert_eq!(preview.total_lines, super::TOOL_OUTPUT_INLINE_LINE_LIMIT);
         assert_eq!(preview.text, output);
@@ -1533,7 +1536,7 @@ mod tests {
     fn preview_tool_output_byte_limit_keeps_utf8_boundaries() {
         let preview = super::preview_tool_output("ééx", usize::MAX, 3);
 
-        assert!(preview.truncated);
+        assert!(preview.is_truncated());
         assert_eq!(preview.text, "é");
         assert_eq!(preview.inline_bytes, "é".len());
         assert_eq!(preview.total_bytes, "ééx".len());
