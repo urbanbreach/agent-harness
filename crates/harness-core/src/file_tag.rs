@@ -294,11 +294,7 @@ fn materialize_resolved_path(
         Ok(CanonicalFileTagPath::Missing) => return FileTagReadOutcome::Missing,
         Err(reason) => return FileTagReadOutcome::Failure(reason),
     };
-    file_tag_read_outcome(read_canonical_file_tag_path(&canonical, line_range))
-}
-
-fn file_tag_read_outcome(result: Result<String, String>) -> FileTagReadOutcome {
-    match result {
+    match read_canonical_file_tag_path(&canonical, line_range) {
         Ok(output) => FileTagReadOutcome::Output(output),
         Err(reason) => FileTagReadOutcome::Failure(reason),
     }
