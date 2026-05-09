@@ -410,6 +410,40 @@ struct ShellOutputPreviewLimits {
     max_bytes: usize,
 }
 
+impl ShellOutputPreviewLimits {
+    fn preview_end(self, text: &str) -> usize {
+        let byte_limited_end = self.byte_limited_end(text);
+        let line_limited_end = self.line_limited_end(text);
+        byte_limited_end.min(line_limited_end)
+    }
+
+    fn byte_limited_end(self, text: &str) -> usize {
+        let mut preview_end = 0usize;
+
+        for (idx, ch) in text.char_indices() {
+            let next_end = idx + ch.len_utf8();
+            if next_end > self.max_bytes {
+                break;
+            }
+            preview_end = next_end;
+        }
+
+        preview_end
+    }
+
+    fn line_limited_end(self, text: &str) -> usize {
+        if text.is_empty() || self.max_lines == 0 {
+            return 0;
+        }
+
+        let mut line_end = 0usize;
+        for segment in text.split_inclusive('\n').take(self.max_lines) {
+            line_end += segment.len();
+        }
+        line_end
+    }
+}
+
 impl ShellOutputPreview {
     fn is_truncated(&self) -> bool {
         self.inline_bytes() < self.total_bytes
@@ -463,7 +497,7 @@ impl ShellOutputPreview {
 fn preview_shell_output(text: &str, limits: ShellOutputPreviewLimits) -> ShellOutputPreview {
     let total_bytes = text.len();
     let total_lines = count_shell_output_lines(text);
-    let preview_end = shell_output_preview_end(text, limits);
+    let preview_end = limits.preview_end(text);
 
     let inline_text = text[..preview_end].to_string();
     let inline_lines = count_shell_output_lines(&inline_text);
@@ -476,44 +510,12 @@ fn preview_shell_output(text: &str, limits: ShellOutputPreviewLimits) -> ShellOu
     }
 }
 
-fn shell_output_preview_end(text: &str, limits: ShellOutputPreviewLimits) -> usize {
-    let byte_limited_end = shell_output_preview_end_for_byte_limit(text, limits.max_bytes);
-    let line_limited_end = shell_output_preview_end_for_line_limit(text, limits.max_lines);
-    byte_limited_end.min(line_limited_end)
-}
-
-fn shell_output_preview_end_for_byte_limit(text: &str, max_bytes: usize) -> usize {
-    let mut preview_end = 0usize;
-
-    for (idx, ch) in text.char_indices() {
-        let next_end = idx + ch.len_utf8();
-        if next_end > max_bytes {
-            break;
-        }
-        preview_end = next_end;
-    }
-
-    preview_end
-}
-
 fn count_shell_output_lines(text: &str) -> usize {
     if text.is_empty() {
         0
     } else {
         text.split_inclusive('\n').count()
     }
-}
-
-fn shell_output_preview_end_for_line_limit(text: &str, max_lines: usize) -> usize {
-    if text.is_empty() || max_lines == 0 {
-        return 0;
-    }
-
-    let mut line_end = 0usize;
-    for segment in text.split_inclusive('\n').take(max_lines) {
-        line_end += segment.len();
-    }
-    line_end
 }
 
 fn join_shell_streams(stdout: &str, stderr: &str) -> String {
