@@ -1108,6 +1108,27 @@ fn shell_structured_json(value: serde_json::Value) -> serde_json::Map<String, se
 }
 
 impl ShellRunTool {
+    async fn run_request(
+        &self,
+        ctx: &ToolContext,
+        request: ShellRunRequest,
+    ) -> Result<ExecutedShellInvocation, ToolError> {
+        match request.invocation {
+            ShellInvocation::Direct { cmd, args, workdir } => {
+                self.run_direct_invocation(ctx, cmd, args, workdir, request.timeout_ms)
+                    .await
+            }
+            ShellInvocation::Wrapper {
+                command,
+                workdir,
+                description,
+            } => {
+                self.run_wrapper_invocation(ctx, command, workdir, description, request.timeout_ms)
+                    .await
+            }
+        }
+    }
+
     async fn run_direct_invocation(
         &self,
         ctx: &ToolContext,
@@ -1199,20 +1220,7 @@ impl Tool for ShellRunTool {
     ) -> Result<ToolResult, ToolError> {
         let args: ShellRunArgs = parse_tool_args(args_json)?;
         let request = args.into_request()?;
-        let executed = match request.invocation {
-            ShellInvocation::Direct { cmd, args, workdir } => {
-                self.run_direct_invocation(&ctx, cmd, args, workdir, request.timeout_ms)
-                    .await?
-            }
-            ShellInvocation::Wrapper {
-                command,
-                workdir,
-                description,
-            } => {
-                self.run_wrapper_invocation(&ctx, command, workdir, description, request.timeout_ms)
-                    .await?
-            }
-        };
+        let executed = self.run_request(&ctx, request).await?;
 
         build_shell_run_result(
             &ctx,
