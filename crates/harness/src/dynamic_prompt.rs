@@ -1,7 +1,7 @@
-use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use harness_core::config::ResolvedModelTarget;
+use harness_core::workspace::WorkspaceEnvironment;
 
 pub struct DynamicPromptContext<'a> {
     pub configured_prompt: Option<&'a str>,
@@ -55,30 +55,26 @@ fn provider_prompt(model_id: &str) -> &'static str {
 }
 
 fn environment_prompt(model: &ResolvedModelTarget) -> String {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let worktree = workspace_root(&cwd);
-    let is_git = has_git_dir(&worktree);
+    let environment = WorkspaceEnvironment::current();
+    let branch = environment
+        .git_branch
+        .as_deref()
+        .map(|branch| format!("\n  Git branch: {branch}"))
+        .unwrap_or_default();
     format!(
-        "You are powered by the model named {model_name}. The exact model ID is {provider}/{model_name}\nHere is some useful information about the environment you are running in:\n<env>\n  Working directory: {cwd}\n  Workspace root folder: {worktree}\n  Is directory a git repo: {is_git}\n  Platform: {platform}\n  Today's date: {date}\n</env>",
+        "You are powered by the model named {model_name}. The exact model ID is {provider}/{model_name}\nHere is some useful information about the environment you are running in:\n<env>\n  Working directory: {cwd}\n  Workspace root folder: {worktree}\n  Is directory a git repo: {is_git}{branch}\n  Platform: {platform}\n  Today's date: {date}\n</env>",
         model_name = model.model,
         provider = model.provider,
-        cwd = cwd.display(),
-        worktree = worktree.display(),
-        is_git = if is_git { "yes" } else { "no" },
+        cwd = environment.working_directory.display(),
+        worktree = environment.workspace_root.display(),
+        is_git = if environment.is_git_repository {
+            "yes"
+        } else {
+            "no"
+        },
         platform = std::env::consts::OS,
         date = today_date_string(),
     )
-}
-
-fn workspace_root(cwd: &Path) -> PathBuf {
-    cwd.ancestors()
-        .find(|path| has_git_dir(path))
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| cwd.to_path_buf())
-}
-
-fn has_git_dir(path: &Path) -> bool {
-    path.join(".git").exists()
 }
 
 fn today_date_string() -> String {

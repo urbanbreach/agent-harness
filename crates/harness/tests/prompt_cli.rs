@@ -291,6 +291,75 @@ async fn prompt_cli_calls_responses_endpoint() {
 }
 
 #[tokio::test]
+async fn prompt_cli_expands_at_file_and_directory_tags_for_provider() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    deterministic_responses_sse_transcript(),
+                    "text/event-stream",
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.test.jsonc");
+    let session_dir = temp.path().join("sessions");
+    fs::write(temp.path().join("alpha.txt"), "alpha one\nalpha two\n").expect("write file");
+    fs::create_dir(temp.path().join("src")).expect("create src");
+    fs::write(temp.path().join("src/lib.rs"), "pub fn demo() {}\n").expect("write nested file");
+
+    let config = prompt_cli_config(&format!("{}/v1", server.uri()), &session_dir, &[]);
+    fs::write(&config_path, config).expect("write config");
+
+    let config_arg = config_path.clone();
+    let temp_path = temp.path().to_path_buf();
+    let output = tokio::task::spawn_blocking(move || {
+        Command::new(env!("CARGO_BIN_EXE_harness"))
+            .current_dir(temp_path)
+            .args([
+                "--config",
+                config_arg.to_str().expect("config path utf-8"),
+                "prompt",
+                "--text",
+                "Summarize @alpha.txt and list @src",
+            ])
+            .output()
+            .expect("run harness prompt")
+    })
+    .await
+    .expect("join blocking command");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let requests = server
+        .received_requests()
+        .await
+        .expect("request recording must be enabled");
+    let body = requests
+        .iter()
+        .find(|req| req.url.path() == "/v1/responses")
+        .map(|req| String::from_utf8_lossy(&req.body).into_owned())
+        .expect("responses request");
+
+    assert!(body.contains("Summarize @alpha.txt and list @src"));
+    assert!(body.contains("Called the Read tool with the following input"));
+    assert!(body.contains("alpha.txt"));
+    assert!(body.contains("1: alpha one"));
+    assert!(body.contains("2: alpha two"));
+    assert!(body.contains("lib.rs"));
+}
+
+#[tokio::test]
 async fn prompt_cli_generates_harness_session_title() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
