@@ -484,16 +484,16 @@ pub fn split_line_range(value: &str) -> (&str, Option<FileTagLineRange>) {
     let Some((path, suffix)) = value.rsplit_once('#') else {
         return (value, None);
     };
-    let Some(line_range) = parse_line_range(suffix) else {
+    let Some(line_range) = parse_line_range_suffix(suffix) else {
         return (path, None);
     };
     (path, Some(line_range))
 }
 
-fn parse_line_range(value: &str) -> Option<FileTagLineRange> {
-    let (start, end) = match value.split_once('-') {
+fn parse_line_range_suffix(suffix: &str) -> Option<FileTagLineRange> {
+    let (start, end) = match suffix.split_once('-') {
         Some((start, end)) => (start, (!end.is_empty()).then_some(end)),
-        None => (value, None),
+        None => (suffix, None),
     };
     let start = start.parse::<usize>().ok()?;
     let end = end.and_then(|end| end.parse::<usize>().ok());

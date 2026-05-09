@@ -1,7 +1,7 @@
 use harness_core::file_tag::{
     files, materialize_file_tag_context, materialize_file_tag_context_with_selected,
-    materialize_prompt_part_context, FileTagLineRange, FileTagSource, SelectedAgentTag,
-    SelectedFileTag, SelectedResourceTag,
+    materialize_prompt_part_context, split_line_range, FileTagLineRange, FileTagSource,
+    SelectedAgentTag, SelectedFileTag, SelectedResourceTag,
 };
 
 #[test]
@@ -132,6 +132,48 @@ fn materialize_file_tag_context_clamps_reversed_line_ranges_to_start() {
     assert!(context.contains("3: three"));
     assert!(!context.contains("2: two"));
     assert!(!context.contains("4: four"));
+}
+
+#[test]
+fn split_line_range_parses_optional_end_line_suffixes() {
+    assert_eq!(
+        split_line_range("alpha.txt#2"),
+        (
+            "alpha.txt",
+            Some(FileTagLineRange {
+                start: 2,
+                end: None
+            })
+        )
+    );
+    assert_eq!(
+        split_line_range("alpha.txt#2-4"),
+        (
+            "alpha.txt",
+            Some(FileTagLineRange {
+                start: 2,
+                end: Some(4),
+            })
+        )
+    );
+    assert_eq!(
+        split_line_range("alpha.txt#2-"),
+        (
+            "alpha.txt",
+            Some(FileTagLineRange {
+                start: 2,
+                end: None
+            })
+        )
+    );
+}
+
+#[test]
+fn split_line_range_strips_invalid_hash_suffixes_without_selecting_lines() {
+    assert_eq!(
+        split_line_range("alpha.txt#not-a-line"),
+        ("alpha.txt", None)
+    );
 }
 
 #[test]
