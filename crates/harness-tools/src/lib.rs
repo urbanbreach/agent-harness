@@ -1044,6 +1044,11 @@ enum ShellInvocation {
     },
 }
 
+struct ExecutedShellInvocation {
+    output: ShellProcessOutput,
+    structured_json: serde_json::Map<String, serde_json::Value>,
+}
+
 impl ShellRunArgs {
     fn into_invocation(self) -> Result<ShellInvocation, ToolError> {
         let cmd = normalized_shell_command(self.cmd);
@@ -1073,6 +1078,77 @@ fn normalized_shell_command(command: Option<String>) -> Option<String> {
     command.and_then(|command| trimmed_non_empty(&command).map(str::to_string))
 }
 
+fn shell_structured_json(value: serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
+    value.as_object().cloned().expect("shell json object")
+}
+
+impl ShellRunTool {
+    async fn run_direct_invocation(
+        &self,
+        ctx: &ToolContext,
+        cmd: String,
+        args: Vec<String>,
+        workdir: Option<String>,
+        timeout_ms: u64,
+    ) -> Result<ExecutedShellInvocation, ToolError> {
+        if !self.is_executable_allowed(&cmd) {
+            return Err(ToolError::CommandBlocked(blocked_shell_command_message(
+                &cmd,
+            )));
+        }
+
+        let cwd = self.resolve_cwd(ctx, workdir.as_deref())?;
+        let mut command = tokio::process::Command::new(&cmd);
+        command.args(&args).current_dir(cwd);
+        let output = run_shell_process(command, timeout_ms).await?;
+        let structured_json = shell_structured_json(json!({
+            "cmd": cmd,
+            "args": args,
+            "cwd": workdir,
+            "status": output.status,
+            "success": output.success,
+        }));
+
+        Ok(ExecutedShellInvocation {
+            output,
+            structured_json,
+        })
+    }
+
+    async fn run_wrapper_invocation(
+        &self,
+        ctx: &ToolContext,
+        command: String,
+        workdir: Option<String>,
+        description: Option<String>,
+        timeout_ms: u64,
+    ) -> Result<ExecutedShellInvocation, ToolError> {
+        let cwd = self.resolve_cwd(ctx, workdir.as_deref())?;
+        crate::native_tools::validate_bash_command(
+            &command,
+            &cwd,
+            &ctx.workspace_root,
+            &self.allowlist,
+        )?;
+        let shell = resolve_bash_executable();
+        let mut shell_command = tokio::process::Command::new(&shell);
+        shell_command.arg("-lc").arg(&command).current_dir(cwd);
+        let output = run_shell_process(shell_command, timeout_ms).await?;
+        let structured_json = shell_structured_json(json!({
+            "description": description,
+            "command": command,
+            "workdir": workdir,
+            "status": output.status,
+            "success": output.success,
+        }));
+
+        Ok(ExecutedShellInvocation {
+            output,
+            structured_json,
+        })
+    }
+}
+
 #[async_trait]
 impl Tool for ShellRunTool {
     fn id(&self) -> &str {
@@ -1098,61 +1174,27 @@ impl Tool for ShellRunTool {
     ) -> Result<ToolResult, ToolError> {
         let args: ShellRunArgs = parse_tool_args(args_json)?;
         let timeout_ms = args.timeout.unwrap_or(120_000);
-        match args.into_invocation()? {
+        let executed = match args.into_invocation()? {
             ShellInvocation::Direct { cmd, args, workdir } => {
-                if !self.is_executable_allowed(&cmd) {
-                    return Err(ToolError::CommandBlocked(blocked_shell_command_message(
-                        &cmd,
-                    )));
-                }
-
-                let cwd = self.resolve_cwd(&ctx, workdir.as_deref())?;
-                let mut command = tokio::process::Command::new(&cmd);
-                command.args(&args).current_dir(cwd);
-                let output = run_shell_process(command, timeout_ms).await?;
-                let structured_json = json!({
-                    "cmd": cmd,
-                    "args": args,
-                    "cwd": workdir,
-                    "status": output.status,
-                    "success": output.success,
-                })
-                .as_object()
-                .cloned()
-                .expect("shell json object");
-
-                build_shell_run_result(&ctx, structured_json, output.stdout, output.stderr)
+                self.run_direct_invocation(&ctx, cmd, args, workdir, timeout_ms)
+                    .await?
             }
             ShellInvocation::Wrapper {
                 command,
                 workdir,
                 description,
             } => {
-                let cwd = self.resolve_cwd(&ctx, workdir.as_deref())?;
-                crate::native_tools::validate_bash_command(
-                    &command,
-                    &cwd,
-                    &ctx.workspace_root,
-                    &self.allowlist,
-                )?;
-                let shell = resolve_bash_executable();
-                let mut shell_command = tokio::process::Command::new(&shell);
-                shell_command.arg("-lc").arg(&command).current_dir(cwd);
-                let output = run_shell_process(shell_command, timeout_ms).await?;
-                let structured_json = json!({
-                    "description": description,
-                    "command": command,
-                    "workdir": workdir,
-                    "status": output.status,
-                    "success": output.success,
-                })
-                .as_object()
-                .cloned()
-                .expect("shell json object");
-
-                build_shell_run_result(&ctx, structured_json, output.stdout, output.stderr)
+                self.run_wrapper_invocation(&ctx, command, workdir, description, timeout_ms)
+                    .await?
             }
-        }
+        };
+
+        build_shell_run_result(
+            &ctx,
+            executed.structured_json,
+            executed.output.stdout,
+            executed.output.stderr,
+        )
     }
 }
 
