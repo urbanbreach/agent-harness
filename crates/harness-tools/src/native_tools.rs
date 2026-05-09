@@ -1375,12 +1375,7 @@ fn resolve_shell_cd_target(
         ));
     }
 
-    let candidate = if Path::new(&target).is_absolute() {
-        PathBuf::from(&target)
-    } else {
-        cwd.join(&target)
-    };
-    let candidate = normalize_workspace_target_path(workspace_root, &candidate)?;
+    let candidate = normalize_shell_workspace_path(&target, cwd, workspace_root)?;
     if allowlist.cwd_roots.is_empty() {
         return Ok(candidate);
     }
@@ -1422,15 +1417,23 @@ fn validate_shell_path_arguments(
             continue;
         }
 
-        let candidate = if Path::new(&token).is_absolute() {
-            PathBuf::from(&token)
-        } else {
-            cwd.join(&token)
-        };
-        let _ = normalize_workspace_target_path(workspace_root, &candidate)?;
+        let _ = normalize_shell_workspace_path(&token, cwd, workspace_root)?;
     }
 
     Ok(())
+}
+
+fn normalize_shell_workspace_path(
+    token: &str,
+    cwd: &Path,
+    workspace_root: &Path,
+) -> Result<PathBuf, ToolError> {
+    let candidate = if Path::new(token).is_absolute() {
+        PathBuf::from(token)
+    } else {
+        cwd.join(token)
+    };
+    normalize_workspace_target_path(workspace_root, &candidate)
 }
 
 fn parse_shell_segment_tokens(segment: &str) -> Result<Vec<String>, ToolError> {
@@ -1515,6 +1518,23 @@ mod tests {
             }
             other => panic!("expected command blocked error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn validate_bash_command_checks_relative_paths_after_cd() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let allowlist = ShellAllowlist {
+            executables: vec!["ls".to_string()],
+            cwd_roots: vec![".".to_string()],
+        };
+
+        validate_bash_command(
+            "cd subdir && ls ../sibling",
+            tempdir.path(),
+            tempdir.path(),
+            &allowlist,
+        )
+        .expect("relative path should be checked from virtual cd cwd");
     }
 
     #[tokio::test]
