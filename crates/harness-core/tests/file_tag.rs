@@ -80,6 +80,21 @@ fn materialize_file_tag_context_ignores_missing_paths() {
 }
 
 #[test]
+fn materialize_file_tag_context_reports_paths_outside_workspace() {
+    let workspace = tempfile::tempdir().expect("workspace tempdir");
+    let external = tempfile::NamedTempFile::new().expect("external file");
+
+    let context = materialize_file_tag_context(
+        workspace.path(),
+        &format!("read @{}", external.path().display()),
+    )
+    .expect("context");
+
+    assert!(context.contains("Read tool failed to read"));
+    assert!(context.contains("path escapes workspace root"));
+}
+
+#[test]
 fn materialize_file_tag_context_honors_line_ranges() {
     let tempdir = tempfile::tempdir().expect("tempdir");
     let root = tempdir.path();

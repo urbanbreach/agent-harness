@@ -283,26 +283,11 @@ fn materialize_resolved_path(
     resolved: &Path,
     line_range: Option<FileTagLineRange>,
 ) -> Option<Result<String, String>> {
-    let workspace = match workspace_root.canonicalize() {
-        Ok(workspace) => workspace,
-        Err(err) => return Some(Err(format!("failed to resolve workspace root: {err}"))),
+    let canonical = match canonicalize_file_tag_path(workspace_root, resolved) {
+        Ok(Some(canonical)) => canonical,
+        Ok(None) => return None,
+        Err(reason) => return Some(Err(reason)),
     };
-    let canonical = if resolved == workspace {
-        workspace.clone()
-    } else {
-        match resolved.canonicalize() {
-            Ok(canonical) => canonical,
-            Err(_) => return None,
-        }
-    };
-    if !canonical.starts_with(&workspace) {
-        return Some(Err(format!(
-            "path escapes workspace root {}: {}",
-            workspace.display(),
-            canonical.display()
-        )));
-    }
-
     let metadata = match std::fs::metadata(&canonical) {
         Ok(metadata) => metadata,
         Err(err) => return Some(Err(err.to_string())),
@@ -312,6 +297,31 @@ fn materialize_resolved_path(
     } else {
         Some(read_text_file(&canonical, line_range))
     }
+}
+
+fn canonicalize_file_tag_path(
+    workspace_root: &Path,
+    resolved: &Path,
+) -> Result<Option<PathBuf>, String> {
+    let workspace = workspace_root
+        .canonicalize()
+        .map_err(|err| format!("failed to resolve workspace root: {err}"))?;
+    let canonical = if resolved == workspace {
+        workspace.clone()
+    } else {
+        match resolved.canonicalize() {
+            Ok(canonical) => canonical,
+            Err(_) => return Ok(None),
+        }
+    };
+    if !canonical.starts_with(&workspace) {
+        return Err(format!(
+            "path escapes workspace root {}: {}",
+            workspace.display(),
+            canonical.display()
+        ));
+    }
+    Ok(Some(canonical))
 }
 
 fn read_directory_entries(directory: &Path) -> Result<Vec<String>, String> {
