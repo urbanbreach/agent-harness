@@ -525,6 +525,17 @@ struct ShellProcessOutput {
     success: bool,
 }
 
+impl From<std::process::Output> for ShellProcessOutput {
+    fn from(output: std::process::Output) -> Self {
+        Self {
+            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+            status: output.status.code().unwrap_or(-1),
+            success: output.status.success(),
+        }
+    }
+}
+
 async fn run_shell_process(
     mut command: tokio::process::Command,
     timeout_ms: u64,
@@ -534,16 +545,7 @@ async fn run_shell_process(
         .map_err(|_| ToolError::Execution(format!("command timed out after {timeout_ms} ms")))?
         .map_err(|err| ToolError::Execution(format!("failed to execute command: {err}")))?;
 
-    Ok(shell_process_output(output))
-}
-
-fn shell_process_output(output: std::process::Output) -> ShellProcessOutput {
-    ShellProcessOutput {
-        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-        status: output.status.code().unwrap_or(-1),
-        success: output.status.success(),
-    }
+    Ok(output.into())
 }
 
 fn build_shell_run_result(
