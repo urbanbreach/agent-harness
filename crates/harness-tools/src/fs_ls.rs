@@ -82,23 +82,7 @@ impl Tool for FsLsTool {
 fn list_directory_entries(directory: &Path, limit: usize) -> Result<ListResult, ToolError> {
     let mut entries = std::fs::read_dir(directory)
         .map_err(|err| ToolError::Execution(format!("failed to list directory: {err}")))?
-        .map(|entry| {
-            entry
-                .map_err(|err| {
-                    ToolError::Execution(format!("failed to read directory entry: {err}"))
-                })
-                .and_then(|entry| {
-                    let file_type = entry.file_type().map_err(|err| {
-                        ToolError::Execution(format!("failed to read directory entry type: {err}"))
-                    })?;
-
-                    let mut name = entry.file_name().to_string_lossy().to_string();
-                    if file_type.is_dir() {
-                        name.push('/');
-                    }
-                    Ok(name)
-                })
-        })
+        .map(directory_entry_display_name)
         .collect::<Result<Vec<_>, _>>()?;
 
     entries.sort();
@@ -123,6 +107,22 @@ fn list_directory_entries(directory: &Path, limit: usize) -> Result<ListResult, 
         is_truncated: limit_summary.is_truncated,
         entries: returned_entries,
     })
+}
+
+fn directory_entry_display_name(
+    entry: std::io::Result<std::fs::DirEntry>,
+) -> Result<String, ToolError> {
+    let entry = entry
+        .map_err(|err| ToolError::Execution(format!("failed to read directory entry: {err}")))?;
+    let file_type = entry.file_type().map_err(|err| {
+        ToolError::Execution(format!("failed to read directory entry type: {err}"))
+    })?;
+
+    let mut name = entry.file_name().to_string_lossy().to_string();
+    if file_type.is_dir() {
+        name.push('/');
+    }
+    Ok(name)
 }
 
 #[cfg(test)]
