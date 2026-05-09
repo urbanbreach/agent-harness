@@ -613,6 +613,31 @@ fn build_truncated_shell_run_result(
             ToolError::Execution(format!("failed to write shell output artifact: {err}"))
         })?;
 
+    insert_truncated_shell_output_metadata(&mut structured_json, &preview, &artifact);
+
+    let marker = format!(
+        "... [truncated: showing {} of {} lines and {} of {} bytes; full output: {}]",
+        preview.inline_lines,
+        preview.total_lines,
+        preview.inline_bytes,
+        preview.total_bytes,
+        artifact.path
+    );
+    let mut display_text = preview.text;
+    append_truncation_marker(&mut display_text, &marker);
+
+    Ok(text_json_artifacts_tool_result(
+        display_text,
+        serde_json::Value::Object(structured_json),
+        vec![artifact],
+    ))
+}
+
+fn insert_truncated_shell_output_metadata(
+    structured_json: &mut serde_json::Map<String, serde_json::Value>,
+    preview: &OutputPreview,
+    artifact: &ArtifactRef,
+) {
     structured_json.insert("truncated".to_string(), json!(true));
     structured_json.insert(
         "inline_output_bytes".to_string(),
@@ -631,23 +656,6 @@ fn build_truncated_shell_run_result(
             "digest": artifact.digest,
         }),
     );
-
-    let marker = format!(
-        "... [truncated: showing {} of {} lines and {} of {} bytes; full output: {}]",
-        preview.inline_lines,
-        preview.total_lines,
-        preview.inline_bytes,
-        preview.total_bytes,
-        artifact.path
-    );
-    let mut display_text = preview.text;
-    append_truncation_marker(&mut display_text, &marker);
-
-    Ok(text_json_artifacts_tool_result(
-        display_text,
-        serde_json::Value::Object(structured_json),
-        vec![artifact],
-    ))
 }
 
 #[async_trait]
