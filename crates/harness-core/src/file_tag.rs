@@ -294,16 +294,7 @@ fn materialize_resolved_path(
         Ok(None) => return FileTagReadOutcome::Missing,
         Err(reason) => return FileTagReadOutcome::Failure(reason),
     };
-    let metadata = match std::fs::metadata(&canonical) {
-        Ok(metadata) => metadata,
-        Err(err) => return FileTagReadOutcome::Failure(err.to_string()),
-    };
-    let read_result = if metadata.is_dir() {
-        read_directory_entries(&canonical).map(|entries| entries.join("\n"))
-    } else {
-        read_text_file(&canonical, line_range)
-    };
-    file_tag_read_outcome(read_result)
+    file_tag_read_outcome(read_canonical_file_tag_path(&canonical, line_range))
 }
 
 fn file_tag_read_outcome(result: Result<String, String>) -> FileTagReadOutcome {
@@ -336,6 +327,17 @@ fn canonicalize_file_tag_path(
         ));
     }
     Ok(Some(canonical))
+}
+
+fn read_canonical_file_tag_path(
+    canonical: &Path,
+    line_range: Option<FileTagLineRange>,
+) -> Result<String, String> {
+    let metadata = std::fs::metadata(canonical).map_err(|err| err.to_string())?;
+    if metadata.is_dir() {
+        return read_directory_entries(canonical).map(|entries| entries.join("\n"));
+    }
+    read_text_file(canonical, line_range)
 }
 
 fn read_directory_entries(directory: &Path) -> Result<Vec<String>, String> {
