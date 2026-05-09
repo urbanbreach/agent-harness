@@ -419,14 +419,14 @@ impl ShellOutputPreview {
 
 fn preview_shell_output(text: &str, limits: ShellOutputPreviewLimits) -> ShellOutputPreview {
     let total_bytes = text.len();
-    let total_lines = rendered_line_count(text);
+    let total_lines = count_shell_output_lines(text);
 
-    let byte_limited_end = preview_end_for_byte_limit(text, limits.max_bytes);
-    let line_limited_end = preview_end_for_line_limit(text, limits.max_lines);
+    let byte_limited_end = shell_output_preview_end_for_byte_limit(text, limits.max_bytes);
+    let line_limited_end = shell_output_preview_end_for_line_limit(text, limits.max_lines);
     let preview_end = byte_limited_end.min(line_limited_end);
 
     let preview = text[..preview_end].to_string();
-    let inline_lines = rendered_line_count(&preview);
+    let inline_lines = count_shell_output_lines(&preview);
 
     ShellOutputPreview {
         inline_bytes: preview.len(),
@@ -437,7 +437,7 @@ fn preview_shell_output(text: &str, limits: ShellOutputPreviewLimits) -> ShellOu
     }
 }
 
-fn preview_end_for_byte_limit(text: &str, max_bytes: usize) -> usize {
+fn shell_output_preview_end_for_byte_limit(text: &str, max_bytes: usize) -> usize {
     let mut preview_end = 0usize;
 
     for (idx, ch) in text.char_indices() {
@@ -451,7 +451,7 @@ fn preview_end_for_byte_limit(text: &str, max_bytes: usize) -> usize {
     preview_end
 }
 
-fn rendered_line_count(text: &str) -> usize {
+fn count_shell_output_lines(text: &str) -> usize {
     if text.is_empty() {
         0
     } else {
@@ -459,7 +459,7 @@ fn rendered_line_count(text: &str) -> usize {
     }
 }
 
-fn preview_end_for_line_limit(text: &str, max_lines: usize) -> usize {
+fn shell_output_preview_end_for_line_limit(text: &str, max_lines: usize) -> usize {
     if text.is_empty() || max_lines == 0 {
         return 0;
     }
