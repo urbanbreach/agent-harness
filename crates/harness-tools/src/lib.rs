@@ -1060,6 +1060,34 @@ struct ShellRunExecution {
     metadata: serde_json::Map<String, serde_json::Value>,
 }
 
+impl DirectShellInvocation {
+    fn into_metadata(
+        self,
+        output: &ShellProcessOutput,
+    ) -> serde_json::Map<String, serde_json::Value> {
+        let mut metadata = serde_json::Map::new();
+        metadata.insert("cmd".to_string(), json!(self.cmd));
+        metadata.insert("args".to_string(), json!(self.args));
+        metadata.insert("cwd".to_string(), json!(self.cwd));
+        insert_shell_execution_status(&mut metadata, output);
+        metadata
+    }
+}
+
+impl WrapperShellInvocation {
+    fn into_metadata(
+        self,
+        output: &ShellProcessOutput,
+    ) -> serde_json::Map<String, serde_json::Value> {
+        let mut metadata = serde_json::Map::new();
+        metadata.insert("description".to_string(), json!(self.description));
+        metadata.insert("command".to_string(), json!(self.command));
+        metadata.insert("workdir".to_string(), json!(self.workdir));
+        insert_shell_execution_status(&mut metadata, output);
+        metadata
+    }
+}
+
 impl ShellRunArgs {
     fn into_request(self) -> Result<ShellRunRequest, ToolError> {
         let timeout_ms = self.timeout.unwrap_or(DEFAULT_SHELL_TIMEOUT_MS);
@@ -1107,34 +1135,6 @@ fn normalized_shell_command(command: Option<String>) -> Option<String> {
     command.and_then(|command| trimmed_non_empty(&command).map(str::to_string))
 }
 
-fn build_direct_shell_metadata(
-    cmd: String,
-    args: Vec<String>,
-    cwd: Option<String>,
-    output: &ShellProcessOutput,
-) -> serde_json::Map<String, serde_json::Value> {
-    let mut metadata = serde_json::Map::new();
-    metadata.insert("cmd".to_string(), json!(cmd));
-    metadata.insert("args".to_string(), json!(args));
-    metadata.insert("cwd".to_string(), json!(cwd));
-    insert_shell_execution_status(&mut metadata, output);
-    metadata
-}
-
-fn build_wrapper_shell_metadata(
-    description: Option<String>,
-    command: String,
-    workdir: Option<String>,
-    output: &ShellProcessOutput,
-) -> serde_json::Map<String, serde_json::Value> {
-    let mut metadata = serde_json::Map::new();
-    metadata.insert("description".to_string(), json!(description));
-    metadata.insert("command".to_string(), json!(command));
-    metadata.insert("workdir".to_string(), json!(workdir));
-    insert_shell_execution_status(&mut metadata, output);
-    metadata
-}
-
 fn insert_shell_execution_status(
     metadata: &mut serde_json::Map<String, serde_json::Value>,
     output: &ShellProcessOutput,
@@ -1167,19 +1167,17 @@ impl ShellRunTool {
         invocation: DirectShellInvocation,
         timeout_ms: u64,
     ) -> Result<ShellRunExecution, ToolError> {
-        let DirectShellInvocation { cmd, args, cwd } = invocation;
-
-        if !self.is_executable_allowed(&cmd) {
+        if !self.is_executable_allowed(&invocation.cmd) {
             return Err(ToolError::CommandBlocked(blocked_shell_command_message(
-                &cmd,
+                &invocation.cmd,
             )));
         }
 
-        let resolved_cwd = self.resolve_cwd(ctx, cwd.as_deref())?;
-        let mut command = tokio::process::Command::new(&cmd);
-        command.args(&args).current_dir(resolved_cwd);
+        let resolved_cwd = self.resolve_cwd(ctx, invocation.cwd.as_deref())?;
+        let mut command = tokio::process::Command::new(&invocation.cmd);
+        command.args(&invocation.args).current_dir(resolved_cwd);
         let output = run_shell_process(command, timeout_ms).await?;
-        let metadata = build_direct_shell_metadata(cmd, args, cwd, &output);
+        let metadata = invocation.into_metadata(&output);
 
         Ok(ShellRunExecution { output, metadata })
     }
@@ -1190,24 +1188,21 @@ impl ShellRunTool {
         invocation: WrapperShellInvocation,
         timeout_ms: u64,
     ) -> Result<ShellRunExecution, ToolError> {
-        let WrapperShellInvocation {
-            command,
-            workdir,
-            description,
-        } = invocation;
-
-        let cwd = self.resolve_cwd(ctx, workdir.as_deref())?;
+        let cwd = self.resolve_cwd(ctx, invocation.workdir.as_deref())?;
         crate::native_tools::validate_bash_command(
-            &command,
+            &invocation.command,
             &cwd,
             &ctx.workspace_root,
             &self.allowlist,
         )?;
         let shell = resolve_bash_executable();
         let mut shell_command = tokio::process::Command::new(&shell);
-        shell_command.arg("-lc").arg(&command).current_dir(cwd);
+        shell_command
+            .arg("-lc")
+            .arg(&invocation.command)
+            .current_dir(cwd);
         let output = run_shell_process(shell_command, timeout_ms).await?;
-        let metadata = build_wrapper_shell_metadata(description, command, workdir, &output);
+        let metadata = invocation.into_metadata(&output);
 
         Ok(ShellRunExecution { output, metadata })
     }
