@@ -113,9 +113,11 @@ pub fn materialize_file_tag_context_with_selected(
             &mut sections,
             &mut seen,
             workspace_root,
-            &tag.filename,
-            &tag.path,
-            tag.line_range,
+            FileTagMaterialization {
+                dedupe_key: &tag.filename,
+                path_name: &tag.path,
+                line_range: tag.line_range,
+            },
         );
     }
 
@@ -125,9 +127,11 @@ pub fn materialize_file_tag_context_with_selected(
             &mut sections,
             &mut seen,
             workspace_root,
-            &file_match.name,
-            path_name,
-            line_range,
+            FileTagMaterialization {
+                dedupe_key: &file_match.name,
+                path_name,
+                line_range,
+            },
         );
     }
 
@@ -227,22 +231,26 @@ fn consume_file_tag_segment(indices: &mut FileTagChars<'_>, end: &mut usize, nam
     }
 }
 
+struct FileTagMaterialization<'a> {
+    dedupe_key: &'a str,
+    path_name: &'a str,
+    line_range: Option<FileTagLineRange>,
+}
+
 fn append_materialized_file_tag(
     sections: &mut Vec<String>,
     seen: &mut BTreeSet<String>,
     workspace_root: &Path,
-    dedupe_key: &str,
-    path_name: &str,
-    line_range: Option<FileTagLineRange>,
+    tag: FileTagMaterialization<'_>,
 ) {
-    if !seen.insert(dedupe_key.to_string()) {
+    if !seen.insert(tag.dedupe_key.to_string()) {
         return;
     }
-    let resolved = resolve_tag_path(workspace_root, path_name);
+    let resolved = resolve_tag_path(workspace_root, tag.path_name);
     sections.extend(materialized_file_section(
         workspace_root,
         &resolved,
-        line_range,
+        tag.line_range,
     ));
 }
 
