@@ -359,8 +359,7 @@ fn format_fs_read_line(line: &str, line_number: usize, line_numbers: bool) -> St
     }
 }
 
-fn format_fs_read_hashline_line(line: &str, line_number: usize) -> String {
-    let anchor = build_fs_read_line_anchor(line_number, line);
+fn format_fs_read_hashline_line(anchor: &LineAnchor, line: &str) -> String {
     format!(
         "{}#{}|{}",
         anchor.line,
@@ -386,7 +385,8 @@ fn format_fs_read_output_line(
     render: FsReadRenderOptions,
 ) -> String {
     if render.hashline_anchors {
-        format_fs_read_hashline_line(line, line_number)
+        let anchor = build_fs_read_line_anchor(line_number, line);
+        format_fs_read_hashline_line(&anchor, line)
     } else {
         format_fs_read_line(line, line_number, render.line_numbers)
     }
@@ -740,10 +740,15 @@ impl FsReadWindowBuilder {
             return;
         }
 
-        let rendered = format_fs_read_output_line(&line, line_number, self.render);
-        if let Some(anchors) = self.anchors.as_mut() {
-            anchors.push(build_fs_read_line_anchor(line_number, &line));
-        }
+        let rendered = match self.anchors.as_mut() {
+            Some(anchors) => {
+                let anchor = build_fs_read_line_anchor(line_number, &line);
+                let rendered = format_fs_read_hashline_line(&anchor, &line);
+                anchors.push(anchor);
+                rendered
+            }
+            None => format_fs_read_line(&line, line_number, self.render.line_numbers),
+        };
         self.shown_lines.push(line);
         self.display_parts.push(rendered);
     }
