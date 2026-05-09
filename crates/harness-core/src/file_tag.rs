@@ -432,19 +432,25 @@ struct LineSelection {
 
 fn line_selection(total_lines: usize, line_range: Option<FileTagLineRange>) -> LineSelection {
     let start_line = line_range.map(|range| range.start.max(1)).unwrap_or(1);
-    let end_line = match line_range {
-        Some(range) => range
-            .end
-            .map(|end| end.max(start_line))
-            .unwrap_or(start_line),
-        None => total_lines,
-    }
-    .min(total_lines);
+    let end_line = line_selection_end_line(total_lines, start_line, line_range);
+    let skip_lines = start_line.saturating_sub(1);
     LineSelection {
         start_line,
-        skip_lines: start_line.saturating_sub(1),
-        requested_lines: end_line.saturating_sub(start_line.saturating_sub(1)),
+        skip_lines,
+        requested_lines: end_line.saturating_sub(skip_lines),
     }
+}
+
+fn line_selection_end_line(
+    total_lines: usize,
+    start_line: usize,
+    line_range: Option<FileTagLineRange>,
+) -> usize {
+    let requested_end_line = match line_range {
+        Some(range) => range.end.unwrap_or(start_line).max(start_line),
+        None => total_lines,
+    };
+    requested_end_line.min(total_lines)
 }
 
 fn attachment_mime(path: &Path) -> &'static str {

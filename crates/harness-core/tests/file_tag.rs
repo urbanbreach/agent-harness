@@ -122,6 +122,19 @@ fn materialize_file_tag_context_honors_line_ranges() {
 }
 
 #[test]
+fn materialize_file_tag_context_clamps_reversed_line_ranges_to_start() {
+    let tempdir = tempfile::tempdir().expect("tempdir");
+    let root = tempdir.path();
+    std::fs::write(root.join("alpha.txt"), "one\ntwo\nthree\nfour\n").expect("write file");
+
+    let context = materialize_file_tag_context(root, "read @alpha.txt#3-1").expect("context");
+
+    assert!(context.contains("3: three"));
+    assert!(!context.contains("2: two"));
+    assert!(!context.contains("4: four"));
+}
+
+#[test]
 fn materialize_file_tag_context_omits_binary_files_by_mime() {
     let tempdir = tempfile::tempdir().expect("tempdir");
     let root = tempdir.path();
