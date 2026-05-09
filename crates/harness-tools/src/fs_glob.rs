@@ -168,6 +168,14 @@ mod tests {
         GlobSearch { pattern, limit }
     }
 
+    fn create_dir(root: &Path, path: &str) {
+        fs::create_dir_all(root.join(path)).expect("create test directory");
+    }
+
+    fn write_file(root: &Path, path: &str, contents: &str) {
+        fs::write(root.join(path), contents).expect("write test file");
+    }
+
     fn test_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
         let coordinator = spawn_coordinator(
             CoordinatorConfig::default(),
@@ -192,27 +200,19 @@ mod tests {
         let tempdir = tempfile::tempdir().expect("tempdir");
         let root = tempdir.path();
 
-        fs::create_dir_all(root.join("src/nested")).expect("create src tree");
-        fs::create_dir_all(root.join("tests")).expect("create tests dir");
-        fs::create_dir_all(root.join("target/build")).expect("create target dir");
-        fs::create_dir_all(root.join(".git/objects")).expect("create .git dir");
-        fs::create_dir_all(root.join(".agent-harness/sessions/run-1"))
-            .expect("create sessions dir");
+        create_dir(root, "src/nested");
+        create_dir(root, "tests");
+        create_dir(root, "target/build");
+        create_dir(root, ".git/objects");
+        create_dir(root, ".agent-harness/sessions/run-1");
 
-        fs::write(root.join("src/lib.rs"), "pub fn lib() {}").expect("write src/lib.rs");
-        fs::write(root.join("src/nested/mod.rs"), "pub fn nested() {}")
-            .expect("write src/nested/mod.rs");
-        fs::write(root.join("tests/glob.rs"), "#[test] fn t() {}").expect("write tests/glob.rs");
-        fs::write(root.join("src/readme.md"), "# docs").expect("write src/readme.md");
-        fs::write(root.join("target/build/generated.rs"), "ignored")
-            .expect("write target/build/generated.rs");
-        fs::write(root.join(".git/objects/cache.rs"), "ignored")
-            .expect("write .git/objects/cache.rs");
-        fs::write(
-            root.join(".agent-harness/sessions/run-1/session.rs"),
-            "ignored",
-        )
-        .expect("write session.rs");
+        write_file(root, "src/lib.rs", "pub fn lib() {}");
+        write_file(root, "src/nested/mod.rs", "pub fn nested() {}");
+        write_file(root, "tests/glob.rs", "#[test] fn t() {}");
+        write_file(root, "src/readme.md", "# docs");
+        write_file(root, "target/build/generated.rs", "ignored");
+        write_file(root, ".git/objects/cache.rs", "ignored");
+        write_file(root, ".agent-harness/sessions/run-1/session.rs", "ignored");
 
         let result =
             collect_glob_matches(root, root, glob_search("**/*.rs", 100)).expect("collect matches");
@@ -232,10 +232,10 @@ mod tests {
         let tempdir = tempfile::tempdir().expect("tempdir");
         let root = tempdir.path();
 
-        fs::create_dir_all(root.join("src")).expect("create src dir");
-        fs::write(root.join("src/c.rs"), "").expect("write c");
-        fs::write(root.join("src/a.rs"), "").expect("write a");
-        fs::write(root.join("src/b.rs"), "").expect("write b");
+        create_dir(root, "src");
+        write_file(root, "src/c.rs", "");
+        write_file(root, "src/a.rs", "");
+        write_file(root, "src/b.rs", "");
 
         let result =
             collect_glob_matches(root, root, glob_search("**/*.rs", 2)).expect("collect matches");
@@ -251,8 +251,8 @@ mod tests {
     async fn fs_glob_accepts_absolute_workspace_paths() {
         let tempdir = tempfile::tempdir().expect("tempdir");
         let workspace = tempdir.path().join("workspace");
-        fs::create_dir_all(workspace.join("src")).expect("create workspace/src");
-        fs::write(workspace.join("src/lib.rs"), "pub fn lib() {}\n").expect("write src/lib.rs");
+        create_dir(&workspace, "src");
+        write_file(&workspace, "src/lib.rs", "pub fn lib() {}\n");
 
         let result = FsGlobTool
             .call(
