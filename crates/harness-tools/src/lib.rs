@@ -766,22 +766,32 @@ fn write_fs_read_artifact_streaming(
 
     visit_fs_read_lines(&mut reader, start_line_index, |line_number, line| {
         let rendered = format_fs_read_output_line(&line, line_number, render);
-        if wrote_any {
-            artifact.write_all(b"\n").map_err(|err| {
-                ToolError::Execution(format!("failed to write fs.read artifact: {err}"))
-            })?;
-        }
-        artifact.write_all(rendered.as_bytes()).map_err(|err| {
-            ToolError::Execution(format!("failed to write fs.read artifact: {err}"))
-        })?;
-        wrote_any = true;
-        Ok(())
+        write_fs_read_artifact_line(&mut artifact, &mut wrote_any, &rendered)
     })?;
 
     Ok(ArtifactRef {
         path: format!("artifacts/{relative}"),
         digest: None,
     })
+}
+
+fn write_fs_read_artifact_line(
+    artifact: &mut impl Write,
+    wrote_any: &mut bool,
+    rendered: &str,
+) -> Result<(), ToolError> {
+    if *wrote_any {
+        write_fs_read_artifact_bytes(artifact, b"\n")?;
+    }
+    write_fs_read_artifact_bytes(artifact, rendered.as_bytes())?;
+    *wrote_any = true;
+    Ok(())
+}
+
+fn write_fs_read_artifact_bytes(artifact: &mut impl Write, bytes: &[u8]) -> Result<(), ToolError> {
+    artifact
+        .write_all(bytes)
+        .map_err(|err| ToolError::Execution(format!("failed to write fs.read artifact: {err}")))
 }
 
 fn open_fs_read_file(path: &Path) -> Result<std::io::BufReader<std::fs::File>, ToolError> {
