@@ -269,19 +269,26 @@ fn append_rendered_lines(
         return;
     }
 
+    for line_idx in context_line_indexes(lines.len(), match_line_indexes, context) {
+        output.push(render_grep_line(relative_path, lines, line_idx));
+    }
+}
+
+fn context_line_indexes(
+    line_count: usize,
+    match_line_indexes: &[usize],
+    context: usize,
+) -> BTreeSet<usize> {
     let mut line_indexes = BTreeSet::<usize>::new();
     for &match_idx in match_line_indexes {
         let start = match_idx.saturating_sub(context);
-        let end = (match_idx + context).min(lines.len().saturating_sub(1));
+        let end = (match_idx + context).min(line_count.saturating_sub(1));
 
         for line_idx in start..=end {
             line_indexes.insert(line_idx);
         }
     }
-
-    for line_idx in line_indexes {
-        output.push(render_grep_line(relative_path, lines, line_idx));
-    }
+    line_indexes
 }
 
 fn render_grep_line(relative_path: &str, lines: &[String], line_idx: usize) -> String {
