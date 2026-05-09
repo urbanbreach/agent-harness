@@ -602,27 +602,10 @@ fn build_truncated_shell_run_result(
     full_output: &str,
     preview: OutputPreview,
 ) -> Result<ToolResult, ToolError> {
-    let artifact = ctx
-        .artifact_store()
-        .map_err(|err| ToolError::Execution(format!("failed to access artifact store: {err}")))?
-        .write_text(
-            &format!("toolcalls/{}/shell.output.txt", ctx.tool_call_id),
-            full_output,
-        )
-        .map_err(|err| {
-            ToolError::Execution(format!("failed to write shell output artifact: {err}"))
-        })?;
-
+    let artifact = write_shell_output_artifact(ctx, full_output)?;
     insert_truncated_shell_output_metadata(&mut structured_json, &preview, &artifact);
 
-    let marker = format!(
-        "... [truncated: showing {} of {} lines and {} of {} bytes; full output: {}]",
-        preview.inline_lines,
-        preview.total_lines,
-        preview.inline_bytes,
-        preview.total_bytes,
-        artifact.path
-    );
+    let marker = shell_output_truncation_marker(&preview, &artifact);
     let mut display_text = preview.text;
     append_truncation_marker(&mut display_text, &marker);
 
@@ -631,6 +614,32 @@ fn build_truncated_shell_run_result(
         serde_json::Value::Object(structured_json),
         vec![artifact],
     ))
+}
+
+fn write_shell_output_artifact(
+    ctx: &ToolContext,
+    full_output: &str,
+) -> Result<ArtifactRef, ToolError> {
+    ctx.artifact_store()
+        .map_err(|err| ToolError::Execution(format!("failed to access artifact store: {err}")))?
+        .write_text(
+            &format!("toolcalls/{}/shell.output.txt", ctx.tool_call_id),
+            full_output,
+        )
+        .map_err(|err| {
+            ToolError::Execution(format!("failed to write shell output artifact: {err}"))
+        })
+}
+
+fn shell_output_truncation_marker(preview: &OutputPreview, artifact: &ArtifactRef) -> String {
+    format!(
+        "... [truncated: showing {} of {} lines and {} of {} bytes; full output: {}]",
+        preview.inline_lines,
+        preview.total_lines,
+        preview.inline_bytes,
+        preview.total_bytes,
+        artifact.path
+    )
 }
 
 fn insert_truncated_shell_output_metadata(
