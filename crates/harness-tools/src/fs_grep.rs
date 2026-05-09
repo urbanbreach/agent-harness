@@ -37,6 +37,22 @@ struct FsGrepArgs {
     context: Option<u32>,
 }
 
+impl FsGrepArgs {
+    fn search(&self) -> GrepSearch<'_> {
+        GrepSearch {
+            pattern: &self.pattern,
+            literal: self.literal,
+            include: self.include.as_deref(),
+            limit: self
+                .limit
+                .map_or(DEFAULT_GREP_LIMIT, |value| value as usize),
+            context: self
+                .context
+                .map_or(DEFAULT_GREP_CONTEXT, |value| value as usize),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct GrepMatches {
     lines: Vec<String>,
@@ -97,24 +113,10 @@ impl Tool for FsGrepTool {
             ));
         }
 
-        let limit = args
-            .limit
-            .map_or(DEFAULT_GREP_LIMIT, |value| value as usize);
-        let context = args
-            .context
-            .map_or(DEFAULT_GREP_CONTEXT, |value| value as usize);
-
-        let matches = collect_grep_matches(
-            &workspace_root,
-            &resolved_base,
-            GrepSearch {
-                pattern: &args.pattern,
-                literal: args.literal,
-                include: args.include.as_deref(),
-                limit,
-                context,
-            },
-        )?;
+        let search = args.search();
+        let limit = search.limit;
+        let context = search.context;
+        let matches = collect_grep_matches(&workspace_root, &resolved_base, search)?;
 
         Ok(crate::text_json_tool_result(
             matches.lines.join("\n"),
