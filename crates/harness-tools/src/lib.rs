@@ -1042,7 +1042,7 @@ enum ShellInvocation {
     Direct {
         cmd: String,
         args: Vec<String>,
-        workdir: Option<String>,
+        cwd: Option<String>,
     },
     Wrapper {
         command: String,
@@ -1079,7 +1079,7 @@ impl ShellRunArgs {
             return Ok(ShellInvocation::Direct {
                 cmd,
                 args: self.args,
-                workdir: self.cwd.or(self.workdir),
+                cwd: self.cwd.or(self.workdir),
             });
         }
 
@@ -1114,8 +1114,8 @@ impl ShellRunTool {
         request: ShellRunRequest,
     ) -> Result<ExecutedShellInvocation, ToolError> {
         match request.invocation {
-            ShellInvocation::Direct { cmd, args, workdir } => {
-                self.run_direct_invocation(ctx, cmd, args, workdir, request.timeout_ms)
+            ShellInvocation::Direct { cmd, args, cwd } => {
+                self.run_direct_invocation(ctx, cmd, args, cwd, request.timeout_ms)
                     .await
             }
             ShellInvocation::Wrapper {
@@ -1134,7 +1134,7 @@ impl ShellRunTool {
         ctx: &ToolContext,
         cmd: String,
         args: Vec<String>,
-        workdir: Option<String>,
+        cwd: Option<String>,
         timeout_ms: u64,
     ) -> Result<ExecutedShellInvocation, ToolError> {
         if !self.is_executable_allowed(&cmd) {
@@ -1143,14 +1143,14 @@ impl ShellRunTool {
             )));
         }
 
-        let cwd = self.resolve_cwd(ctx, workdir.as_deref())?;
+        let resolved_cwd = self.resolve_cwd(ctx, cwd.as_deref())?;
         let mut command = tokio::process::Command::new(&cmd);
-        command.args(&args).current_dir(cwd);
+        command.args(&args).current_dir(resolved_cwd);
         let output = run_shell_process(command, timeout_ms).await?;
         let structured_json = shell_structured_json(json!({
             "cmd": cmd,
             "args": args,
-            "cwd": workdir,
+            "cwd": cwd,
             "status": output.status,
             "success": output.success,
         }));
