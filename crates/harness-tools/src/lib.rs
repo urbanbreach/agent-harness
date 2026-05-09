@@ -418,6 +418,46 @@ impl ShellOutputPreview {
     fn inline_bytes(&self) -> usize {
         self.inline_text.len()
     }
+
+    fn insert_truncation_metadata(
+        &self,
+        structured_json: &mut serde_json::Map<String, serde_json::Value>,
+        artifact: &ArtifactRef,
+    ) {
+        structured_json.insert("truncated".to_string(), json!(true));
+        structured_json.insert(
+            "inline_output_bytes".to_string(),
+            json!(self.inline_bytes()),
+        );
+        structured_json.insert("inline_output_lines".to_string(), json!(self.inline_lines));
+        structured_json.insert("total_output_bytes".to_string(), json!(self.total_bytes));
+        structured_json.insert("total_output_lines".to_string(), json!(self.total_lines));
+        structured_json.insert(
+            "output_artifact".to_string(),
+            json!({
+                "path": artifact.path,
+                "digest": artifact.digest,
+            }),
+        );
+    }
+
+    fn truncation_marker(&self, artifact: &ArtifactRef) -> String {
+        format!(
+            "... [truncated: showing {} of {} lines and {} of {} bytes; full output: {}]",
+            self.inline_lines,
+            self.total_lines,
+            self.inline_bytes(),
+            self.total_bytes,
+            artifact.path
+        )
+    }
+
+    fn into_truncated_display_text(self, artifact: &ArtifactRef) -> String {
+        let marker = self.truncation_marker(artifact);
+        let mut display_text = self.inline_text;
+        append_truncation_marker(&mut display_text, &marker);
+        display_text
+    }
 }
 
 fn preview_shell_output(text: &str, limits: ShellOutputPreviewLimits) -> ShellOutputPreview {
@@ -626,11 +666,8 @@ fn build_truncated_shell_run_result(
     preview: ShellOutputPreview,
 ) -> Result<ToolResult, ToolError> {
     let artifact = write_shell_output_artifact(ctx, full_output)?;
-    insert_truncated_shell_output_metadata(&mut structured_json, &preview, &artifact);
-
-    let marker = shell_output_truncation_marker(&preview, &artifact);
-    let mut display_text = preview.inline_text;
-    append_truncation_marker(&mut display_text, &marker);
+    preview.insert_truncation_metadata(&mut structured_json, &artifact);
+    let display_text = preview.into_truncated_display_text(&artifact);
 
     Ok(text_json_artifacts_tool_result(
         display_text,
@@ -652,42 +689,6 @@ fn write_shell_output_artifact(
         .map_err(|err| {
             ToolError::Execution(format!("failed to write shell output artifact: {err}"))
         })
-}
-
-fn shell_output_truncation_marker(preview: &ShellOutputPreview, artifact: &ArtifactRef) -> String {
-    format!(
-        "... [truncated: showing {} of {} lines and {} of {} bytes; full output: {}]",
-        preview.inline_lines,
-        preview.total_lines,
-        preview.inline_bytes(),
-        preview.total_bytes,
-        artifact.path
-    )
-}
-
-fn insert_truncated_shell_output_metadata(
-    structured_json: &mut serde_json::Map<String, serde_json::Value>,
-    preview: &ShellOutputPreview,
-    artifact: &ArtifactRef,
-) {
-    structured_json.insert("truncated".to_string(), json!(true));
-    structured_json.insert(
-        "inline_output_bytes".to_string(),
-        json!(preview.inline_bytes()),
-    );
-    structured_json.insert(
-        "inline_output_lines".to_string(),
-        json!(preview.inline_lines),
-    );
-    structured_json.insert("total_output_bytes".to_string(), json!(preview.total_bytes));
-    structured_json.insert("total_output_lines".to_string(), json!(preview.total_lines));
-    structured_json.insert(
-        "output_artifact".to_string(),
-        json!({
-            "path": artifact.path,
-            "digest": artifact.digest,
-        }),
-    );
 }
 
 #[async_trait]
