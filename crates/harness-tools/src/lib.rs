@@ -1117,8 +1117,7 @@ fn build_direct_shell_metadata(
     metadata.insert("cmd".to_string(), json!(cmd));
     metadata.insert("args".to_string(), json!(args));
     metadata.insert("cwd".to_string(), json!(cwd));
-    metadata.insert("status".to_string(), json!(output.status));
-    metadata.insert("success".to_string(), json!(output.success));
+    insert_shell_execution_status(&mut metadata, output);
     metadata
 }
 
@@ -1132,9 +1131,16 @@ fn build_wrapper_shell_metadata(
     metadata.insert("description".to_string(), json!(description));
     metadata.insert("command".to_string(), json!(command));
     metadata.insert("workdir".to_string(), json!(workdir));
+    insert_shell_execution_status(&mut metadata, output);
+    metadata
+}
+
+fn insert_shell_execution_status(
+    metadata: &mut serde_json::Map<String, serde_json::Value>,
+    output: &ShellProcessOutput,
+) {
     metadata.insert("status".to_string(), json!(output.status));
     metadata.insert("success".to_string(), json!(output.success));
-    metadata
 }
 
 impl ShellRunTool {
