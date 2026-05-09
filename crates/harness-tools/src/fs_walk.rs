@@ -119,23 +119,30 @@ pub(crate) fn workspace_file_from_path(
     workspace_root: &Path,
     path: &Path,
 ) -> Result<WorkspaceFile, ToolError> {
-    Ok(WorkspaceFile {
-        relative_path: normalize_workspace_relative_entry(workspace_root, path)?,
-        file_name: path
-            .file_name()
-            .map(|name| name.to_string_lossy().to_string())
-            .unwrap_or_default(),
-        path: path.to_path_buf(),
-    })
+    let file_name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_default();
+    workspace_file(workspace_root, path.to_path_buf(), file_name)
 }
 
 fn workspace_file_from_entry(
     workspace_root: &Path,
     entry: DirEntry,
 ) -> Result<WorkspaceFile, ToolError> {
+    let file_name = entry.file_name().to_string_lossy().to_string();
+    let path = entry.into_path();
+    workspace_file(workspace_root, path, file_name)
+}
+
+fn workspace_file(
+    workspace_root: &Path,
+    path: PathBuf,
+    file_name: String,
+) -> Result<WorkspaceFile, ToolError> {
     Ok(WorkspaceFile {
-        relative_path: normalize_workspace_relative_entry(workspace_root, entry.path())?,
-        file_name: entry.file_name().to_string_lossy().to_string(),
-        path: entry.into_path(),
+        relative_path: normalize_workspace_relative_entry(workspace_root, &path)?,
+        file_name,
+        path,
     })
 }
