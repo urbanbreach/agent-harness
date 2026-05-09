@@ -46,6 +46,11 @@ struct GrepMatches {
     is_truncated: bool,
 }
 
+struct FileMatchSelection {
+    selected_line_indexes: Vec<usize>,
+    total_count: usize,
+}
+
 #[async_trait]
 impl Tool for FsGrepTool {
     fn id(&self) -> &str {
@@ -141,7 +146,7 @@ fn collect_grep_matches(
 
     let mut rendered_lines = Vec::new();
     let mut total_count = 0usize;
-    let mut returned_count = 0usize;
+    let mut selected_count = 0usize;
 
     for file in files {
         let Some(lines) = read_utf8_lines(&file.path)? else {
@@ -151,18 +156,12 @@ fn collect_grep_matches(
             continue;
         }
 
-        let mut selected_matches = Vec::new();
-        for (line_idx, line) in lines.iter().enumerate() {
-            if regex.is_match(line) {
-                total_count += 1;
-                if returned_count < limit {
-                    selected_matches.push(line_idx);
-                    returned_count += 1;
-                }
-            }
-        }
+        let file_matches =
+            select_file_matches(&regex, &lines, limit.saturating_sub(selected_count));
+        total_count += file_matches.total_count;
+        selected_count += file_matches.selected_line_indexes.len();
 
-        if selected_matches.is_empty() {
+        if file_matches.selected_line_indexes.is_empty() {
             continue;
         }
 
@@ -170,7 +169,7 @@ fn collect_grep_matches(
             &mut rendered_lines,
             &file.relative_path,
             &lines,
-            &selected_matches,
+            &file_matches.selected_line_indexes,
             context,
         );
     }
@@ -183,6 +182,29 @@ fn collect_grep_matches(
         truncated_count: limit_summary.truncated_count,
         is_truncated: limit_summary.is_truncated,
     })
+}
+
+fn select_file_matches(
+    regex: &Regex,
+    lines: &[String],
+    remaining_limit: usize,
+) -> FileMatchSelection {
+    let mut selected_line_indexes = Vec::new();
+    let mut total_count = 0usize;
+
+    for (line_idx, line) in lines.iter().enumerate() {
+        if regex.is_match(line) {
+            total_count += 1;
+            if selected_line_indexes.len() < remaining_limit {
+                selected_line_indexes.push(line_idx);
+            }
+        }
+    }
+
+    FileMatchSelection {
+        selected_line_indexes,
+        total_count,
+    }
 }
 
 fn compile_grep_regex(pattern: &str, literal: bool) -> Result<Regex, ToolError> {
