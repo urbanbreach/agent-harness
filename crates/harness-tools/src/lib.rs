@@ -585,15 +585,24 @@ fn build_shell_run_result(
     );
 
     if !preview.truncated {
-        output.insert_full_streams(&mut structured_json);
-        structured_json.insert("truncated".to_string(), json!(false));
-        return Ok(text_json_tool_result(
+        return Ok(build_inline_shell_run_result(
+            output,
+            structured_json,
             full_output,
-            serde_json::Value::Object(structured_json),
         ));
     }
 
     build_truncated_shell_run_result(ctx, structured_json, &full_output, preview)
+}
+
+fn build_inline_shell_run_result(
+    output: ShellProcessOutput,
+    mut structured_json: serde_json::Map<String, serde_json::Value>,
+    full_output: String,
+) -> ToolResult {
+    output.insert_full_streams(&mut structured_json);
+    structured_json.insert("truncated".to_string(), json!(false));
+    text_json_tool_result(full_output, serde_json::Value::Object(structured_json))
 }
 
 fn build_truncated_shell_run_result(
