@@ -2344,6 +2344,9 @@ async fn handle_ui_intents(
             }
             UiIntent::SubmitPrompt {
                 text,
+                selected_file_tags,
+                selected_agent_tags,
+                selected_resource_tags,
                 launch_metadata,
             } => {
                 let agent_id = live_agent_target.as_ref().and_then(|target| {
@@ -2355,10 +2358,15 @@ async fn handle_ui_intents(
 
                 if let Some(agent_id) = agent_id {
                     let request_id = coordinator
-                        .request_agent_turn_with_model(
+                        .request_agent_turn_with_model_and_selected_tags(
                             user_actor.clone(),
                             agent_id,
                             text,
+                            harness_core::file_tag::SelectedPromptTags {
+                                files: selected_file_tags,
+                                agents: selected_agent_tags,
+                                resources: selected_resource_tags,
+                            },
                             launch_metadata_model_ref(&launch_metadata),
                             Some(launch_metadata_model_settings(&launch_metadata)),
                         )

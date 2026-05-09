@@ -1,5 +1,5 @@
 use std::cell::Cell;
-use std::collections::{hash_map::DefaultHasher, BTreeSet};
+use std::collections::{hash_map::DefaultHasher, BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
@@ -18,6 +18,7 @@ use harness_core::event::{
     ToolCallLifecycleState, ToolCallMetadata, ToolCallStatus, UserMessageSubmittedEvent,
 };
 use harness_core::perm::{PermissionDecision, PermissionGrantScope};
+use harness_core::workspace::WorkspaceEnvironment;
 use ratatui::layout::Rect;
 
 use crate::keybindings::{Action, KeyMap};
@@ -34,6 +35,7 @@ use crate::ui::{
 use crate::view_model;
 use crate::{clipboard, ui};
 
+mod file_mentions;
 mod lineage;
 mod pending_live;
 pub(crate) mod permissions;
@@ -51,6 +53,11 @@ use self::session_projection::SessionProjection;
 use self::terminal_panel::terminal_panel_event_is_shell;
 pub use self::terminal_panel::{TerminalPanelEntry, TerminalPanelStatus};
 pub use crate::view_model::{ForkSelectorViewModel, LineageBrowserViewModel};
+#[cfg(test)]
+pub(crate) use file_mentions::FileMentionSelectedTag;
+pub(crate) use file_mentions::{
+    FileMentionEntry, FileMentionFrecency, FileMentionIndex, FileMentionTag,
+};
 pub use lineage::{ForkSelectorState, LineageBrowserState};
 pub use pending_live::{
     set_pending_live_launch_metadata, set_pending_live_prompt_auto_submit,
@@ -63,7 +70,7 @@ use permissions::permission_display_summary;
 pub use permissions::{
     ActivePermissionView, PermissionEntry, QuestionOptionView, QuestionPromptView,
 };
-pub use session_navigation::{LaunchMetadata, ModelOption, SessionHistoryEntry};
+pub use session_navigation::{LaunchMetadata, McpResourceOption, ModelOption, SessionHistoryEntry};
 
 /// Truncation limit for tool output display in the TUI (chars)
 const TOOL_OUTPUT_DISPLAY_MAX_CHARS: usize = 100;
@@ -935,6 +942,9 @@ pub enum UiIntent {
     },
     SubmitPrompt {
         text: String,
+        selected_file_tags: Vec<harness_core::file_tag::SelectedFileTag>,
+        selected_agent_tags: Vec<harness_core::file_tag::SelectedAgentTag>,
+        selected_resource_tags: Vec<harness_core::file_tag::SelectedResourceTag>,
         launch_metadata: LaunchMetadata,
     },
     CompactSession,
@@ -989,6 +999,49 @@ impl StartupLauncherAction {
             Self::ReplaySession => Self::NewSession,
         }
     }
+}
+
+fn workspace_context_labels(environment: &WorkspaceEnvironment) -> Vec<String> {
+    let full = directory_branch_label(environment, false);
+    let short = directory_branch_label(environment, true);
+    if full == short {
+        vec![full]
+    } else {
+        vec![full, short]
+    }
+}
+
+fn directory_branch_label(environment: &WorkspaceEnvironment, short: bool) -> String {
+    let path = if short {
+        environment
+            .working_directory
+            .file_name()
+            .and_then(|name| name.to_str())
+            .filter(|name| !name.is_empty())
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| home_shortened_path(&environment.working_directory))
+    } else {
+        home_shortened_path(&environment.working_directory)
+    };
+
+    match environment.git_branch.as_deref() {
+        Some(branch) if !branch.trim().is_empty() => format!("{path}:{branch}"),
+        _ => path,
+    }
+}
+
+fn home_shortened_path(path: &std::path::Path) -> String {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    if let Some(home) = home.as_deref().filter(|home| !home.as_os_str().is_empty()) {
+        if path == home {
+            return "~".to_string();
+        }
+        if let Ok(stripped) = path.strip_prefix(home) {
+            return format!("~/{}", stripped.display());
+        }
+    }
+
+    path.display().to_string()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -1101,6 +1154,15 @@ pub struct AppState {
     pub slash_filtered: Vec<String>,
     pub slash_selected: usize,
     slash_draft_snapshot: Option<String>,
+    pub(crate) file_mention_visible: bool,
+    pub(crate) file_mention_entries: Vec<FileMentionEntry>,
+    pub(crate) file_mention_selected: usize,
+    file_mention_trigger: Option<usize>,
+    file_mention_workspace_root: Option<PathBuf>,
+    workspace_context_labels: Vec<String>,
+    file_mention_index: Option<FileMentionIndex>,
+    pub(crate) file_mention_tags: Vec<FileMentionTag>,
+    file_mention_frecency: BTreeMap<String, FileMentionFrecency>,
     pub continue_disabled_banner: Option<String>,
     pub keymap: KeyMap,
     theme: Theme,
@@ -1208,6 +1270,15 @@ impl Default for AppState {
             slash_filtered: Vec::new(),
             slash_selected: 0,
             slash_draft_snapshot: None,
+            file_mention_visible: false,
+            file_mention_entries: Vec::new(),
+            file_mention_selected: 0,
+            file_mention_trigger: None,
+            file_mention_workspace_root: None,
+            workspace_context_labels: Vec::new(),
+            file_mention_index: None,
+            file_mention_tags: Vec::new(),
+            file_mention_frecency: BTreeMap::new(),
             continue_disabled_banner: None,
             keymap: KeyMap::default(),
             theme: Theme::default(),
@@ -1417,11 +1488,20 @@ impl AppState {
         if matches!(&event.payload, EventV1::PermissionRequested(_)) {
             self.close_palette();
             self.clear_slash_menu();
+            self.clear_file_mention_menu();
+        }
+
+        if let EventV1::RunStarted(data) = &event.payload {
+            self.file_mention_workspace_root = Some(PathBuf::from(&data.workspace_root));
+            let environment = WorkspaceEnvironment::discover(&data.workspace_root);
+            self.workspace_context_labels = workspace_context_labels(&environment);
+            self.file_mention_index = None;
         }
 
         if matches!(&event.payload, EventV1::EditApplied(_)) {
             self.collapsed_operator_sidebar_sections
                 .remove(&OperatorSidebarSection::ModifiedFiles);
+            self.file_mention_index = None;
         }
 
         let terminal_panel_follow_event = terminal_panel_event_is_shell(&event.payload);
@@ -1665,6 +1745,17 @@ impl AppState {
             .events
             .first()
             .map(|event| event.run_id.as_str())
+    }
+
+    pub(crate) fn startup_directory_branch_label(&self) -> String {
+        directory_branch_label(&WorkspaceEnvironment::current(), false)
+    }
+
+    pub(crate) fn sidebar_directory_branch_label(&self) -> Option<&str> {
+        if self.replay_mode {
+            return None;
+        }
+        self.workspace_context_labels.last().map(String::as_str)
     }
 
     pub fn launch_mode_label(&self) -> Option<&str> {
@@ -2117,6 +2208,7 @@ impl AppState {
         OverlayStack::from_state(OverlayState {
             details_drawer_open: self.details_drawer_open(),
             slash_visible: self.slash_overlay_should_render(),
+            file_mention_visible: self.file_mention_overlay_should_render(),
             palette_visible: self.palette_visible,
             status_dialog_visible: self.status_dialog_visible,
             session_history_visible: self.session_history_visible,
@@ -2247,18 +2339,22 @@ impl AppState {
     fn clear_prompt_input(&mut self) {
         self.prompt_buffer.clear();
         self.prompt_cursor = 0;
+        self.clear_file_mention_tags();
         self.prompt_history_index = None;
         self.continued_live_reopen_surface_active = false;
         self.slash_draft_snapshot = None;
         self.sync_slash_overlay();
+        self.sync_file_mention_overlay();
     }
 
     fn replace_prompt_input(&mut self, prompt: String) {
         self.prompt_cursor = prompt.chars().count();
         self.prompt_buffer = prompt;
+        self.clear_file_mention_tags();
         self.continued_live_reopen_surface_active = false;
         self.slash_draft_snapshot = None;
         self.sync_slash_overlay();
+        self.sync_file_mention_overlay();
     }
 
     fn apply_pending_live_prompt(&mut self, pending_prompt: PendingLivePrompt) {
@@ -2275,9 +2371,11 @@ impl AppState {
             self.slash_draft_snapshot = Some(self.prompt_buffer.clone());
         }
         let byte_idx = self.prompt_cursor_byte_index();
+        self.adjust_file_mention_tags_for_insert(self.prompt_cursor, 1);
         self.prompt_buffer.insert(byte_idx, c);
         self.prompt_cursor += 1;
         self.sync_slash_overlay();
+        self.sync_file_mention_overlay();
     }
 
     fn insert_prompt_text(&mut self, text: &str) {
@@ -2310,9 +2408,11 @@ impl AppState {
 
         self.continued_live_reopen_surface_active = false;
         self.prompt_cursor -= 1;
+        self.adjust_file_mention_tags_for_delete(self.prompt_cursor, self.prompt_cursor + 1);
         let byte_idx = self.prompt_cursor_byte_index();
         self.prompt_buffer.remove(byte_idx);
         self.sync_slash_overlay();
+        self.sync_file_mention_overlay();
     }
 
     fn delete_prompt_char(&mut self) {
@@ -2321,9 +2421,11 @@ impl AppState {
         }
 
         self.continued_live_reopen_surface_active = false;
+        self.adjust_file_mention_tags_for_delete(self.prompt_cursor, self.prompt_cursor + 1);
         let byte_idx = self.prompt_cursor_byte_index();
         self.prompt_buffer.remove(byte_idx);
         self.sync_slash_overlay();
+        self.sync_file_mention_overlay();
     }
 
     fn active_turn_in_progress(&self) -> bool {
@@ -2446,9 +2548,15 @@ impl AppState {
     }
 
     fn dispatch_submitted_prompt(&mut self, text: String) {
+        let selected_file_tags = self.selected_file_tags();
+        let selected_agent_tags = self.selected_agent_tags();
+        let selected_resource_tags = self.selected_resource_tags();
         self.record_submitted_prompt_locally(text.clone());
         self.emit_ui_intent(UiIntent::SubmitPrompt {
             text,
+            selected_file_tags,
+            selected_agent_tags,
+            selected_resource_tags,
             launch_metadata: self.launch_metadata.clone(),
         });
     }
@@ -2517,6 +2625,17 @@ impl AppState {
         clicked_operator_sidebar_section: Option<OperatorSidebarSection>,
         transcript_scrollbar_hit: Option<TranscriptScrollbarHit>,
     ) -> bool {
+        if self.file_mention_visible {
+            let mention_overlay =
+                crate::layout::FrameLayoutPlan::for_app(self, frame_area).slash_overlay;
+            if let Some(overlay) =
+                mention_overlay.filter(|overlay| rect_contains(*overlay, mouse.column, mouse.row))
+            {
+                self.handle_file_mention_mouse(mouse, overlay);
+                return true;
+            }
+        }
+
         if self.slash_visible {
             let slash_overlay =
                 crate::layout::FrameLayoutPlan::for_app(self, frame_area).slash_overlay;
@@ -3242,6 +3361,7 @@ impl AppState {
                 }
                 Action::HistoryUp => {
                     if self.move_prompt_cursor_up() {
+                        self.sync_file_mention_overlay();
                         return;
                     }
 
@@ -3252,6 +3372,7 @@ impl AppState {
                 }
                 Action::HistoryDown => {
                     if self.move_prompt_cursor_down() {
+                        self.sync_file_mention_overlay();
                         return;
                     }
 
@@ -3264,12 +3385,14 @@ impl AppState {
                     if self.prompt_cursor > 0 {
                         self.prompt_cursor -= 1;
                     }
+                    self.sync_file_mention_overlay();
                     return;
                 }
                 Action::CursorRight => {
                     if self.prompt_cursor < self.prompt_char_count() {
                         self.prompt_cursor += 1;
                     }
+                    self.sync_file_mention_overlay();
                     return;
                 }
                 Action::Backspace => {

@@ -276,6 +276,15 @@ pub struct LaunchMetadata {
     recommended_for: Option<String>,
     mode_label: Option<String>,
     available_models: Vec<ModelOption>,
+    mcp_resources: Vec<McpResourceOption>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpResourceOption {
+    pub name: String,
+    pub uri: String,
+    pub mime: String,
+    pub description: Option<String>,
 }
 
 impl LaunchMetadata {
@@ -308,6 +317,7 @@ impl LaunchMetadata {
             recommended_for: None,
             mode_label: None,
             available_models: Vec::new(),
+            mcp_resources: Vec::new(),
         };
         metadata.apply_registered_metadata();
         metadata
@@ -341,6 +351,7 @@ impl LaunchMetadata {
             recommended_for: option.recommended_for.clone(),
             mode_label: None,
             available_models: Vec::new(),
+            mcp_resources: Vec::new(),
         }
     }
 
@@ -356,6 +367,11 @@ impl LaunchMetadata {
 
     pub fn with_available_models(mut self, available_models: Vec<ModelOption>) -> Self {
         self.available_models = available_models;
+        self
+    }
+
+    pub fn with_mcp_resources(mut self, mcp_resources: Vec<McpResourceOption>) -> Self {
+        self.mcp_resources = mcp_resources;
         self
     }
 
@@ -462,6 +478,10 @@ impl LaunchMetadata {
 
     pub fn available_models(&self) -> &[ModelOption] {
         &self.available_models
+    }
+
+    pub fn mcp_resources(&self) -> &[McpResourceOption] {
+        &self.mcp_resources
     }
 
     pub(super) fn to_model_option(&self) -> Option<ModelOption> {
@@ -1088,6 +1108,10 @@ impl AppState {
 
         if self.palette_visible {
             return self.handle_palette_key(key);
+        }
+
+        if self.file_mention_overlay_should_render() {
+            return self.handle_file_mention_key(key);
         }
 
         self.slash_overlay_should_render() && self.handle_slash_key(key)
@@ -1734,6 +1758,7 @@ impl AppState {
             self.focus = previous_focus;
         }
         self.sync_slash_overlay();
+        self.sync_file_mention_overlay();
     }
 
     pub(in crate::app) fn open_palette(&mut self) {
@@ -1754,6 +1779,7 @@ impl AppState {
         self.model_filtered.clear();
         self.palette_selected = 0;
         self.sync_slash_overlay();
+        self.sync_file_mention_overlay();
     }
 
     fn palette_commands(&self) -> Vec<crate::keybindings::PaletteCommand> {
