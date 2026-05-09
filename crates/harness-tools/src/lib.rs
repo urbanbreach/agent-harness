@@ -326,6 +326,19 @@ fn format_fs_read_hashline_line(line: &str, line_number: usize) -> String {
     )
 }
 
+fn format_fs_read_output_line(
+    line: &str,
+    line_number: usize,
+    line_numbers: bool,
+    hashline_anchors: bool,
+) -> String {
+    if hashline_anchors {
+        format_fs_read_hashline_line(line, line_number)
+    } else {
+        format_fs_read_line(line, line_number, line_numbers)
+    }
+}
+
 #[derive(Debug, Clone)]
 struct OutputPreview {
     text: String,
@@ -660,11 +673,8 @@ fn read_fs_window(
 
         available_lines += 1;
         let line_number = total_lines;
-        let rendered = if hashline_anchors {
-            format_fs_read_hashline_line(&line, line_number)
-        } else {
-            format_fs_read_line(&line, line_number, line_numbers)
-        };
+        let rendered =
+            format_fs_read_output_line(&line, line_number, line_numbers, hashline_anchors);
 
         if shown_lines.len() < line_limit {
             if let Some(anchors) = anchors.as_mut() {
@@ -730,11 +740,8 @@ fn write_fs_read_artifact_streaming(
         }
 
         let line = decode_fs_read_line(&raw_line)?;
-        let rendered = if hashline_anchors {
-            format_fs_read_hashline_line(&line, line_number)
-        } else {
-            format_fs_read_line(&line, line_number, line_numbers)
-        };
+        let rendered =
+            format_fs_read_output_line(&line, line_number, line_numbers, hashline_anchors);
         if wrote_any {
             artifact.write_all(b"\n").map_err(|err| {
                 ToolError::Execution(format!("failed to write fs.read artifact: {err}"))
