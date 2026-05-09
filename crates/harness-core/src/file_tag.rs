@@ -145,24 +145,28 @@ pub fn materialize_prompt_part_context(
         materialize_file_tag_context_with_selected(workspace_root, prompt, selected_files)
             .into_iter()
             .collect::<Vec<_>>();
-    for agent in selected_agents {
-        sections.push(format!(
-            "Selected agent mention: @{}. Use the task tool with subagent `{}` if delegation is appropriate.",
-            agent.name, agent.name
-        ));
-    }
-    for resource in selected_resources {
-        let description = resource
-            .description
-            .as_deref()
-            .map(|description| format!("\nDescription: {description}"))
-            .unwrap_or_default();
-        sections.push(format!(
-            "Selected MCP resource: {}\nURI: {}\nMIME: {}{}",
-            resource.name, resource.uri, resource.mime, description
-        ));
-    }
+    sections.extend(selected_agents.iter().map(selected_agent_section));
+    sections.extend(selected_resources.iter().map(selected_resource_section));
     (!sections.is_empty()).then(|| sections.join("\n\n"))
+}
+
+fn selected_agent_section(agent: &SelectedAgentTag) -> String {
+    format!(
+        "Selected agent mention: @{}. Use the task tool with subagent `{}` if delegation is appropriate.",
+        agent.name, agent.name
+    )
+}
+
+fn selected_resource_section(resource: &SelectedResourceTag) -> String {
+    let description = resource
+        .description
+        .as_deref()
+        .map(|description| format!("\nDescription: {description}"))
+        .unwrap_or_default();
+    format!(
+        "Selected MCP resource: {}\nURI: {}\nMIME: {}{}",
+        resource.name, resource.uri, resource.mime, description
+    )
 }
 
 fn is_forbidden_file_tag_prefix(ch: char) -> bool {
