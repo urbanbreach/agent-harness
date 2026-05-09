@@ -365,6 +365,10 @@ fn read_text_file(path: &Path, line_range: Option<FileTagLineRange>) -> Result<S
     })?;
     let total = content.lines().count();
     let selection = line_selection(total, line_range);
+    Ok(render_selected_lines(&content, selection))
+}
+
+fn render_selected_lines(content: &str, selection: LineSelection) -> String {
     let mut lines = content
         .lines()
         .skip(selection.skip_lines)
@@ -379,7 +383,7 @@ fn read_text_file(path: &Path, line_range: Option<FileTagLineRange>) -> Result<S
             "... [truncated: showing {READ_DEFAULT_LIMIT} of {requested_lines} requested lines from line {start_line}]",
         ));
     }
-    Ok(lines.join("\n"))
+    lines.join("\n")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
