@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 
 const READ_DEFAULT_LIMIT: usize = 2_000;
 
+type FileTagChars<'a> = std::iter::Peekable<std::str::CharIndices<'a>>;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileTagMatch {
     pub start: usize,
@@ -89,15 +91,7 @@ pub fn files(template: &str) -> Vec<FileTagMatch> {
             name.push(dot);
         }
 
-        while let Some(&(next_idx, next)) = indices.peek() {
-            if is_file_tag_separator(next) || next == '.' {
-                end = next_idx;
-                break;
-            }
-            let (_, consumed) = indices.next().expect("peeked char");
-            end += consumed.len_utf8();
-            name.push(consumed);
-        }
+        consume_file_tag_segment(&mut indices, &mut end, &mut name);
 
         loop {
             let Some(&(_, '.')) = indices.peek() else {
@@ -116,15 +110,7 @@ pub fn files(template: &str) -> Vec<FileTagMatch> {
             end += dot.len_utf8();
             name.push(dot);
 
-            while let Some(&(next_idx, next)) = indices.peek() {
-                if is_file_tag_separator(next) || next == '.' {
-                    end = next_idx;
-                    break;
-                }
-                let (_, consumed) = indices.next().expect("peeked char");
-                end += consumed.len_utf8();
-                name.push(consumed);
-            }
+            consume_file_tag_segment(&mut indices, &mut end, &mut name);
         }
 
         matches.push(FileTagMatch {
@@ -214,6 +200,18 @@ fn is_forbidden_file_tag_prefix(ch: char) -> bool {
 
 fn is_file_tag_separator(ch: char) -> bool {
     ch.is_whitespace() || ch == '`' || ch == ','
+}
+
+fn consume_file_tag_segment(indices: &mut FileTagChars<'_>, end: &mut usize, name: &mut String) {
+    while let Some(&(next_idx, next)) = indices.peek() {
+        if is_file_tag_separator(next) || next == '.' {
+            *end = next_idx;
+            break;
+        }
+        let (_, consumed) = indices.next().expect("peeked char");
+        *end += consumed.len_utf8();
+        name.push(consumed);
+    }
 }
 
 fn append_materialized_file_tag(
