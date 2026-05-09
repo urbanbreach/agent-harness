@@ -131,7 +131,7 @@ pub fn materialize_file_tag_context_with_selected(
         );
     }
 
-    (!sections.is_empty()).then(|| sections.join("\n\n"))
+    join_context_sections(sections)
 }
 
 pub fn materialize_prompt_part_context(
@@ -147,6 +147,10 @@ pub fn materialize_prompt_part_context(
             .collect::<Vec<_>>();
     sections.extend(selected_agents.iter().map(selected_agent_section));
     sections.extend(selected_resources.iter().map(selected_resource_section));
+    join_context_sections(sections)
+}
+
+fn join_context_sections(sections: Vec<String>) -> Option<String> {
     (!sections.is_empty()).then(|| sections.join("\n\n"))
 }
 
