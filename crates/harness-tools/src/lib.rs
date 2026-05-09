@@ -360,12 +360,24 @@ fn format_fs_read_line(line: &str, line_number: usize, line_numbers: bool) -> St
 }
 
 fn format_fs_read_hashline_line(line: &str, line_number: usize) -> String {
+    let anchor = build_fs_read_line_anchor(line_number, line);
     format!(
         "{}#{}|{}",
-        line_number,
-        compute_line_hash(line),
-        line.strip_suffix('\r').unwrap_or(line)
+        anchor.line,
+        anchor.hash,
+        fs_read_hashline_text(line)
     )
+}
+
+fn build_fs_read_line_anchor(line_number: usize, line: &str) -> LineAnchor {
+    LineAnchor {
+        line: line_number as u32,
+        hash: compute_line_hash(line),
+    }
+}
+
+fn fs_read_hashline_text(line: &str) -> &str {
+    line.strip_suffix('\r').unwrap_or(line)
 }
 
 fn format_fs_read_output_line(
@@ -714,10 +726,7 @@ impl FsReadWindowBuilder {
 
         let rendered = format_fs_read_output_line(&line, line_number, self.render);
         if let Some(anchors) = self.anchors.as_mut() {
-            anchors.push(LineAnchor {
-                line: line_number as u32,
-                hash: compute_line_hash(&line),
-            });
+            anchors.push(build_fs_read_line_anchor(line_number, &line));
         }
         self.shown_lines.push(line);
         self.display_parts.push(rendered);
@@ -880,11 +889,14 @@ fn build_fs_read_anchor_payload_from_owned(
     json!(lines
         .iter()
         .enumerate()
-        .map(|(index, line)| json!({
-            "line": start_line_index + index + 1,
-            "hash": compute_line_hash(line),
-            "text": line.strip_suffix('\r').unwrap_or(line),
-        }))
+        .map(|(index, line)| {
+            let anchor = build_fs_read_line_anchor(start_line_index + index + 1, line);
+            json!({
+                "line": anchor.line,
+                "hash": anchor.hash,
+                "text": fs_read_hashline_text(line),
+            })
+        })
         .collect::<Vec<_>>())
 }
 
