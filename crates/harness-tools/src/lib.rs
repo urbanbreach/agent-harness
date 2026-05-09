@@ -620,17 +620,25 @@ impl Tool for FsReadTool {
         let display = build_fs_read_display(&ctx, &resolved, &read, start_line_index, render)?;
         let structured_json = build_fs_read_structured_json(&request, &resolved, &read);
 
-        if let Some(anchors) = read.anchors {
-            record_file_hashline_read(&ctx, &resolved, anchors)?;
-        } else {
-            record_file_read(&ctx, &resolved)?;
-        }
+        record_fs_read_access(&ctx, &resolved, read.anchors)?;
 
         Ok(text_json_artifacts_tool_result(
             display.text,
             structured_json,
             display.artifacts,
         ))
+    }
+}
+
+fn record_fs_read_access(
+    ctx: &ToolContext,
+    resolved: &Path,
+    anchors: Option<Vec<LineAnchor>>,
+) -> Result<(), ToolError> {
+    if let Some(anchors) = anchors {
+        record_file_hashline_read(ctx, resolved, anchors)
+    } else {
+        record_file_read(ctx, resolved)
     }
 }
 
