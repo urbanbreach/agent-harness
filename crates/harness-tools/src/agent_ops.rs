@@ -351,6 +351,12 @@ pub(crate) struct AgentSpawnRequest {
     pub(crate) command: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AgentSelection {
+    pub(crate) profile_name: String,
+    pub(crate) category_selector: Option<String>,
+}
+
 impl AgentSpawnRequest {
     fn category_fallback_profile(&self) -> Option<&'static str> {
         self.category_selector
@@ -613,13 +619,14 @@ fn category_fallback_disabled(ctx: &ToolContext) -> bool {
     ctx.category.as_deref() == Some(harness_core::plan::PLAN_AGENT_NAME)
 }
 
-pub(crate) fn select_profile_name(
+pub(crate) fn select_agent_selection(
     category: Option<&str>,
     subagent_type: Option<&str>,
-) -> Result<String, ToolError> {
+) -> Result<AgentSelection, ToolError> {
     let category = normalize_profile_selector(category).map(str::to_string);
     let subagent_type = normalize_subagent_selector(subagent_type);
-    match (category, subagent_type) {
+    let category_selector = category_selector_for(&category, &subagent_type);
+    let profile_name = match (category, subagent_type) {
         (Some(category), Some(subagent_type)) if category == subagent_type => Ok(category),
         (Some(_), Some(subagent_type)) => Ok(subagent_type),
         (Some(category), None) => Ok(category),
@@ -627,7 +634,18 @@ pub(crate) fn select_profile_name(
         (None, None) => Err(ToolError::InvalidArguments(
             "category or subagent_type is required".to_string(),
         )),
-    }
+    }?;
+    Ok(AgentSelection {
+        profile_name,
+        category_selector,
+    })
+}
+
+fn category_selector_for(
+    category: &Option<String>,
+    subagent_type: &Option<String>,
+) -> Option<String> {
+    subagent_type.is_none().then(|| category.clone()).flatten()
 }
 
 fn normalize_profile_selector(selector: Option<&str>) -> Option<&str> {
@@ -1386,34 +1404,66 @@ fn parameter_keys(parameters: &Value) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        map_request_agent_turn_error, map_spawn_agent_error, select_profile_name, AgentSpawnRequest,
+        map_request_agent_turn_error, map_spawn_agent_error, select_agent_selection,
+        AgentSelection, AgentSpawnRequest,
     };
     use harness_core::coord::CoordinatorError;
     use harness_core::tool::ToolError;
 
     #[test]
-    fn select_profile_name_accepts_matching_category_and_subagent_type() {
+    fn select_agent_selection_accepts_matching_category_and_subagent_type() {
         assert_eq!(
-            select_profile_name(Some("child"), Some("child")).expect("matching selectors"),
+            select_agent_selection(Some("child"), Some("child"))
+                .expect("matching selectors")
+                .profile_name,
             "child"
         );
     }
 
     #[test]
-    fn select_profile_name_prefers_subagent_type_over_category_hint() {
+    fn select_agent_selection_prefers_subagent_type_over_category_hint() {
         assert_eq!(
-            select_profile_name(Some("quick"), Some("child"))
+            select_agent_selection(Some("quick"), Some("child"))
                 .expect("direct subagent selector should win"),
+            AgentSelection {
+                profile_name: "child".to_string(),
+                category_selector: None,
+            }
+        );
+    }
+
+    #[test]
+    fn select_agent_selection_uses_category_as_fallback_hint_for_category_only_request() {
+        assert_eq!(
+            select_agent_selection(Some("quick"), None).expect("category-only selector should win"),
+            AgentSelection {
+                profile_name: "quick".to_string(),
+                category_selector: Some("quick".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn select_agent_selection_ignores_blank_selectors() {
+        assert_eq!(
+            select_agent_selection(Some("  "), Some("child"))
+                .expect("blank category is ignored")
+                .profile_name,
             "child"
         );
     }
 
     #[test]
-    fn select_profile_name_ignores_blank_selectors() {
-        assert_eq!(
-            select_profile_name(Some("  "), Some("child")).expect("blank category is ignored"),
-            "child"
-        );
+    fn select_agent_selection_preserves_category_fallback_only_for_category_requests() {
+        let category_only = select_agent_selection(Some("quick"), None)
+            .expect("category-only selection should be accepted");
+        assert_eq!(category_only.profile_name, "quick");
+        assert_eq!(category_only.category_selector.as_deref(), Some("quick"));
+
+        let explicit_subagent = select_agent_selection(Some("quick"), Some("child"))
+            .expect("explicit subagent should be accepted");
+        assert_eq!(explicit_subagent.profile_name, "child");
+        assert_eq!(explicit_subagent.category_selector, None);
     }
 
     #[test]

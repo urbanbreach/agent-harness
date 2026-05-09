@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::agent_ops::{
-    select_profile_name, AgentOpsExecutor, AgentSpawnRequest, BackgroundOutputRequest, BatchCall,
+    select_agent_selection, AgentOpsExecutor, AgentSpawnRequest, BackgroundOutputRequest, BatchCall,
 };
 use crate::code_lsp::{code_lsp_parameters_json_schema, parse_code_lsp_request, CodeLspExecutor};
 use crate::control_plane::{
@@ -802,27 +802,15 @@ impl Tool for TaskTool {
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: TaskArgs = parse_tool_args(args_json)?;
-        let category_selector = args
-            .subagent_type
-            .as_deref()
-            .and_then(trimmed_non_empty)
-            .is_none()
-            .then(|| {
-                args.category
-                    .as_deref()
-                    .and_then(trimmed_non_empty)
-                    .map(str::to_string)
-            })
-            .flatten();
-        let profile_name =
-            select_profile_name(args.category.as_deref(), args.subagent_type.as_deref())?;
+        let selection =
+            select_agent_selection(args.category.as_deref(), args.subagent_type.as_deref())?;
         self.executor
             .spawn_agent(
                 &ctx,
                 AgentSpawnRequest {
                     description: args.description,
-                    profile_name,
-                    category_selector,
+                    profile_name: selection.profile_name,
+                    category_selector: selection.category_selector,
                     prompt: args.prompt,
                     task_id: args.task_id,
                     session_id: args.session_id,
