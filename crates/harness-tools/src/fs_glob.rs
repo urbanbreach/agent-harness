@@ -107,28 +107,40 @@ fn collect_glob_matches(
     search: GlobSearch<'_>,
 ) -> Result<GlobMatches, ToolError> {
     let matcher = compile_glob_matcher(search.pattern)?;
+    let matched_paths = collect_matching_glob_paths(workspace_root, base_dir, &matcher)?;
 
+    Ok(limit_glob_matches(matched_paths, search.limit))
+}
+
+fn collect_matching_glob_paths(
+    workspace_root: &Path,
+    base_dir: &Path,
+    matcher: &GlobMatcher,
+) -> Result<BTreeSet<String>, ToolError> {
     let mut matched_paths = BTreeSet::new();
     for file in collect_workspace_files(workspace_root, base_dir)? {
         if matcher.is_match(&file.relative_path) {
             matched_paths.insert(file.relative_path);
         }
     }
+    Ok(matched_paths)
+}
 
+fn limit_glob_matches(matched_paths: BTreeSet<String>, limit: usize) -> GlobMatches {
     let total_count = matched_paths.len();
-    let limit_summary = summarize_limit(total_count, search.limit);
+    let limit_summary = summarize_limit(total_count, limit);
     let paths = matched_paths
         .into_iter()
         .take(limit_summary.returned_count)
         .collect::<Vec<_>>();
 
-    Ok(GlobMatches {
+    GlobMatches {
         returned_count: limit_summary.returned_count,
         is_truncated: limit_summary.is_truncated,
         paths,
         total_count,
         truncated_count: limit_summary.truncated_count,
-    })
+    }
 }
 
 fn compile_glob_matcher(pattern: &str) -> Result<GlobMatcher, ToolError> {
