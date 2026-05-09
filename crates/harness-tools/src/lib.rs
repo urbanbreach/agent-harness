@@ -452,6 +452,18 @@ fn join_command_output(stdout: &str, stderr: &str) -> String {
     }
 }
 
+fn append_truncation_marker(display_text: &mut String, marker: &str) {
+    if display_text.is_empty() {
+        display_text.push_str(marker);
+        return;
+    }
+
+    if !display_text.ends_with('\n') {
+        display_text.push('\n');
+    }
+    display_text.push_str(marker);
+}
+
 fn resolve_bash_executable() -> String {
     for candidate in ["/bin/bash", "/usr/bin/bash"] {
         if is_usable_bash_path(Path::new(candidate)) {
@@ -554,14 +566,7 @@ fn build_shell_run_result(
         artifact.path
     );
     let mut display_text = preview.text;
-    if display_text.is_empty() {
-        display_text = marker;
-    } else if display_text.ends_with('\n') {
-        display_text.push_str(&marker);
-    } else {
-        display_text.push('\n');
-        display_text.push_str(&marker);
-    }
+    append_truncation_marker(&mut display_text, &marker);
 
     Ok(text_json_artifacts_tool_result(
         display_text,
@@ -616,12 +621,7 @@ impl Tool for FsReadTool {
                 artifact.path
             );
 
-            if display_text.is_empty() {
-                display_text = marker;
-            } else {
-                display_text.push('\n');
-                display_text.push_str(&marker);
-            }
+            append_truncation_marker(&mut display_text, &marker);
 
             artifacts.push(artifact);
         }
