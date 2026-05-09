@@ -326,16 +326,21 @@ fn format_fs_read_hashline_line(line: &str, line_number: usize) -> String {
     )
 }
 
+#[derive(Debug, Clone, Copy)]
+struct FsReadRenderOptions {
+    line_numbers: bool,
+    hashline_anchors: bool,
+}
+
 fn format_fs_read_output_line(
     line: &str,
     line_number: usize,
-    line_numbers: bool,
-    hashline_anchors: bool,
+    render: FsReadRenderOptions,
 ) -> String {
-    if hashline_anchors {
+    if render.hashline_anchors {
         format_fs_read_hashline_line(line, line_number)
     } else {
-        format_fs_read_line(line, line_number, line_numbers)
+        format_fs_read_line(line, line_number, render.line_numbers)
     }
 }
 
@@ -563,25 +568,18 @@ impl Tool for FsReadTool {
         let resolved = ctx.resolve_workspace_path(path)?;
         let start_line_index = (offset - 1) as usize;
         let line_limit = limit as usize;
-        let read = read_fs_window(
-            &resolved,
-            start_line_index,
-            line_limit,
-            args.line_numbers,
+        let render = FsReadRenderOptions {
+            line_numbers: args.line_numbers,
             hashline_anchors,
-        )?;
+        };
+        let read = read_fs_window(&resolved, start_line_index, line_limit, render)?;
         let shown_count = read.shown_lines.len();
         let mut display_text = read.display_text.clone();
         let mut artifacts = Vec::new();
 
         if read.truncated {
-            let artifact = write_fs_read_artifact_streaming(
-                &ctx,
-                &resolved,
-                start_line_index,
-                args.line_numbers,
-                hashline_anchors,
-            )?;
+            let artifact =
+                write_fs_read_artifact_streaming(&ctx, &resolved, start_line_index, render)?;
 
             let marker = format!(
                 "... [truncated: showing {} of {} lines from line {}; full output: {}]",
@@ -643,8 +641,7 @@ fn read_fs_window(
     path: &Path,
     start_line_index: usize,
     line_limit: usize,
-    line_numbers: bool,
-    hashline_anchors: bool,
+    render: FsReadRenderOptions,
 ) -> Result<FsReadWindow, ToolError> {
     let file = std::fs::File::open(path)
         .map_err(|err| ToolError::Execution(format!("failed to read file: {err}")))?;
@@ -654,7 +651,7 @@ fn read_fs_window(
     let mut available_lines = 0usize;
     let mut shown_lines = Vec::new();
     let mut display_parts = Vec::new();
-    let mut anchors = hashline_anchors.then(Vec::new);
+    let mut anchors = render.hashline_anchors.then(Vec::new);
 
     loop {
         raw_line.clear();
@@ -673,8 +670,7 @@ fn read_fs_window(
 
         available_lines += 1;
         let line_number = total_lines;
-        let rendered =
-            format_fs_read_output_line(&line, line_number, line_numbers, hashline_anchors);
+        let rendered = format_fs_read_output_line(&line, line_number, render);
 
         if shown_lines.len() < line_limit {
             if let Some(anchors) = anchors.as_mut() {
@@ -703,8 +699,7 @@ fn write_fs_read_artifact_streaming(
     ctx: &ToolContext,
     path: &Path,
     start_line_index: usize,
-    line_numbers: bool,
-    hashline_anchors: bool,
+    render: FsReadRenderOptions,
 ) -> Result<ArtifactRef, ToolError> {
     let relative = format!("toolcalls/{}/fs.read.redacted.txt", ctx.tool_call_id);
     let target = ctx.artifacts_dir.join(&relative);
@@ -740,8 +735,7 @@ fn write_fs_read_artifact_streaming(
         }
 
         let line = decode_fs_read_line(&raw_line)?;
-        let rendered =
-            format_fs_read_output_line(&line, line_number, line_numbers, hashline_anchors);
+        let rendered = format_fs_read_output_line(&line, line_number, render);
         if wrote_any {
             artifact.write_all(b"\n").map_err(|err| {
                 ToolError::Execution(format!("failed to write fs.read artifact: {err}"))
