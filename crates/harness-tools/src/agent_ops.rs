@@ -38,7 +38,7 @@ impl AgentOpsExecutor {
         let supervisor = EventActor::new(ActorKind::Supervisor, None);
         let existing_session_id = request.session_id.clone().or(request.task_id.clone());
         let resumed_existing_session = existing_session_id.is_some();
-        let agent_id = if let Some(session_id) = existing_session_id {
+        let (agent_id, runtime) = if let Some(session_id) = existing_session_id {
             let target_info = ctx
                 .coordinator
                 .agent_runtime_info(session_id.clone())
@@ -46,13 +46,28 @@ impl AgentOpsExecutor {
                 .map_err(|err| map_request_agent_turn_error(err, &request))?;
             apply_category_fallback_for_existing_session(ctx, &mut request, &target_info);
             authorize_existing_child_session(ctx, &request, &target_info)?;
-            session_id
+            (session_id, target_info)
         } else {
-            spawn_new_child_agent(ctx, &mut request, supervisor.clone()).await?
+            let agent_id = spawn_new_child_agent(ctx, &mut request, supervisor.clone()).await?;
+            let runtime = ctx
+                .coordinator
+                .agent_runtime_info(agent_id.clone())
+                .await
+                .map_err(|err| map_request_agent_turn_error(err, &request))?;
+            (agent_id, runtime)
         };
+        let model_override = inherited_model_override(ctx, &runtime);
         let request_id = ctx
             .coordinator
-            .request_agent_turn(supervisor, agent_id.clone(), build_child_prompt(&request))
+            .request_agent_turn_with_model(
+                supervisor,
+                agent_id.clone(),
+                build_child_prompt(&request),
+                model_override
+                    .as_ref()
+                    .map(|(model_ref, _)| model_ref.clone()),
+                model_override.map(|(_, settings)| settings),
+            )
             .await
             .map_err(|err| map_request_agent_turn_error(err, &request))?;
 
@@ -71,6 +86,7 @@ impl AgentOpsExecutor {
                 &request,
                 resumed_existing_session,
                 &permissions,
+                child_runtime_metadata(&runtime),
                 ChildRequestObservability {
                     status: "scheduled",
                     duration_ms: None,
@@ -100,6 +116,7 @@ impl AgentOpsExecutor {
             &request,
             resumed_existing_session,
             &permissions,
+            child_runtime_metadata(&runtime),
             child_observability,
         );
         let task_result = child_session
@@ -249,6 +266,35 @@ impl AgentOpsExecutor {
         }
         let request_ref = resolve_background_request_ref(ctx, &request).await?;
         let mut summary = summarize_background_request(ctx, &request_ref).await?;
+        let mut cancel_requested_before_terminal = false;
+        if request.cancel && !summary.terminal {
+            let scheduler_task_id = summary.scheduler_task_id.clone().ok_or_else(|| {
+                ToolError::InvalidArguments(format!(
+                    "cannot cancel background request `{}` because no scheduler task id was observed yet",
+                    request_ref.request_id
+                ))
+            })?;
+            let reason = request
+                .reason
+                .as_deref()
+                .and_then(|reason| trimmed_selector(Some(reason)))
+                .unwrap_or("cancelled by background_output")
+                .to_string();
+            ctx.coordinator
+                .cancel_task(scheduler_task_id, reason.clone())
+                .await
+                .map_err(|err| {
+                    ToolError::Execution(format!("failed to cancel child task: {err}"))
+                })?;
+            cancel_requested_before_terminal = true;
+            summary = summarize_background_request(ctx, &request_ref).await?;
+            if summary.status == "cancelled" {
+                summary.cancel_reason = summary.failure_summary.clone().or(Some(reason));
+            }
+        }
+        summary.cancel_requested = request.cancel;
+        summary.cancel_performed =
+            cancel_requested_before_terminal && summary.status == "cancelled";
         let mut timed_out = false;
         if request.block && !summary.terminal {
             let observed_terminal = wait_for_background_request_terminal(
@@ -260,6 +306,7 @@ impl AgentOpsExecutor {
             summary = summarize_background_request(ctx, &request_ref).await?;
             timed_out = !observed_terminal && !summary.terminal;
         }
+        let child_runtime = background_child_runtime_metadata(ctx, &summary).await?;
 
         Ok(text_json_tool_result(
             format_background_output(&summary, timed_out),
@@ -279,6 +326,12 @@ impl AgentOpsExecutor {
                 "child_tool_call_count": summary.tool_calls.requested,
                 "child_tool_call_counts": summary.tool_calls,
                 "late_result": summary.late_result,
+                "cancel_requested": summary.cancel_requested,
+                "cancel_performed": summary.cancel_performed,
+                "cancel_reason": summary.cancel_reason,
+                "runtime": child_runtime,
+                "child_runtime": child_runtime,
+                "next_actions": background_next_actions(&summary),
                 "source": "event_replay",
             }),
         ))
@@ -314,6 +367,8 @@ pub(crate) struct BackgroundOutputRequest {
     pub(crate) request_id: Option<String>,
     pub(crate) block: bool,
     pub(crate) timeout_ms: u64,
+    pub(crate) cancel: bool,
+    pub(crate) reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -350,6 +405,18 @@ struct ChildPermissionMetadata {
 }
 
 #[derive(Debug, Clone, Serialize)]
+struct ChildRuntimeMetadata {
+    profile: String,
+    category: String,
+    model_ref: String,
+    toolset: Vec<String>,
+    can_redelegate: bool,
+    has_background_output: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parent_agent_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct ChildSessionObservability {
     session_id: String,
     request_id: String,
@@ -366,6 +433,7 @@ struct ChildSessionObservability {
     failure_summary: Option<String>,
     tool_calls: ChildToolCallCounts,
     permissions: ChildPermissionMetadata,
+    runtime: ChildRuntimeMetadata,
 }
 
 #[derive(Debug, Clone)]
@@ -395,6 +463,9 @@ struct BackgroundRequestSummary {
     failure_summary: Option<String>,
     tool_calls: ChildToolCallCounts,
     late_result: bool,
+    cancel_requested: bool,
+    cancel_performed: bool,
+    cancel_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -522,6 +593,20 @@ fn apply_category_fallback_for_existing_session(
     if request.category_fallback_profile() == Some(target_info.profile_name.as_str()) {
         request.profile_name = target_info.profile_name.clone();
     }
+}
+
+fn inherited_model_override(
+    ctx: &ToolContext,
+    runtime: &AgentRuntimeInfo,
+) -> Option<(String, harness_core::agent::AgentModelSettings)> {
+    if runtime.model_ref_explicit {
+        return None;
+    }
+
+    Some((
+        ctx.current_model_ref.clone()?,
+        ctx.current_model_settings.clone().unwrap_or_default(),
+    ))
 }
 
 fn category_fallback_disabled(ctx: &ToolContext) -> bool {
@@ -772,6 +857,21 @@ fn background_request_authorized(
     false
 }
 
+async fn background_child_runtime_metadata(
+    ctx: &ToolContext,
+    summary: &BackgroundRequestSummary,
+) -> Result<Option<ChildRuntimeMetadata>, ToolError> {
+    let Some(session_id) = summary.session_id.as_ref() else {
+        return Ok(None);
+    };
+    let runtime = ctx
+        .coordinator
+        .agent_runtime_info(session_id.clone())
+        .await
+        .map_err(|err| ToolError::Execution(format!("failed to inspect child runtime: {err}")))?;
+    Ok(Some(child_runtime_metadata(&runtime)))
+}
+
 async fn summarize_background_request(
     ctx: &ToolContext,
     request_ref: &BackgroundRequestRef,
@@ -868,6 +968,9 @@ async fn summarize_background_request(
         failure_summary,
         tool_calls,
         late_result,
+        cancel_requested: false,
+        cancel_performed: false,
+        cancel_reason: None,
     })
 }
 
@@ -889,6 +992,13 @@ fn format_background_output(summary: &BackgroundRequestSummary, timed_out: bool)
     } else {
         ""
     };
+    let cancel_note = if summary.cancel_performed {
+        "\nCancellation requested through the coordinator."
+    } else if summary.cancel_requested && summary.terminal {
+        "\nCancellation was requested after the child task was already terminal."
+    } else {
+        ""
+    };
     let body = match summary.status.as_str() {
         "completed" => summary
             .result_summary
@@ -905,8 +1015,8 @@ fn format_background_output(summary: &BackgroundRequestSummary, timed_out: bool)
     };
 
     format!(
-        "Task Result\n\nTask ID: {task_id}\nRequest ID: {}\nStatus: {}{}{}\n\n---\n\n{}",
-        summary.request_id, summary.status, duration, timeout_note, body
+        "Task Result\n\nTask ID: {task_id}\nRequest ID: {}\nStatus: {}{}{}{}\n\n---\n\n{}",
+        summary.request_id, summary.status, duration, timeout_note, cancel_note, body
     )
 }
 
@@ -1040,12 +1150,91 @@ fn child_permission_metadata(
     }
 }
 
+fn child_runtime_metadata(runtime: &AgentRuntimeInfo) -> ChildRuntimeMetadata {
+    ChildRuntimeMetadata {
+        profile: runtime.profile_name.clone(),
+        category: runtime.profile_category.clone(),
+        model_ref: runtime.model_ref.clone(),
+        can_redelegate: runtime.toolset.iter().any(|tool| tool == "task"),
+        has_background_output: runtime
+            .toolset
+            .iter()
+            .any(|tool| tool == "background_output"),
+        toolset: runtime.toolset.clone(),
+        parent_agent_id: runtime.parent_agent_id.clone(),
+    }
+}
+
+fn background_next_actions(summary: &BackgroundRequestSummary) -> Value {
+    let mut actions = Vec::new();
+    actions.push(json!({
+        "action": "check_status",
+        "tool": "background_output",
+        "parameters": { "request_id": summary.request_id, "block": false },
+    }));
+    if !summary.terminal {
+        actions.push(json!({
+            "action": "wait_for_result",
+            "tool": "background_output",
+            "parameters": { "request_id": summary.request_id, "block": true },
+        }));
+        actions.push(json!({
+            "action": "cancel",
+            "tool": "background_output",
+            "parameters": {
+                "request_id": summary.request_id,
+                "cancel": true,
+                "reason": "cancelled by parent request"
+            },
+        }));
+    }
+    Value::Array(actions)
+}
+
+fn child_next_actions(request: &AgentSpawnRequest, agent_id: &str, request_id: &str) -> Value {
+    let mut actions = Vec::new();
+    if request.run_in_background {
+        actions.push(json!({
+            "action": "check_status",
+            "tool": "background_output",
+            "parameters": { "request_id": request_id, "block": false },
+        }));
+        actions.push(json!({
+            "action": "wait_for_result",
+            "tool": "background_output",
+            "parameters": { "request_id": request_id, "block": true },
+        }));
+        actions.push(json!({
+            "action": "cancel",
+            "tool": "background_output",
+            "parameters": {
+                "request_id": request_id,
+                "cancel": true,
+                "reason": "cancelled by parent request"
+            },
+        }));
+    }
+    actions.push(json!({
+        "action": "continue_task",
+        "tool": "task",
+        "parameters": {
+            "session_id": agent_id,
+            "subagent_type": request.profile_name,
+            "description": format!("Continue {}", request.description),
+            "prompt": "Continue this child task with additional instructions.",
+            "load_skills": []
+        },
+    }));
+    Value::Array(actions)
+}
+
 fn child_session_observability(
     session_id: &str,
     request_id: &str,
     request: &AgentSpawnRequest,
     resumed_existing_session: bool,
     permissions: &ChildPermissionMetadata,
+    runtime: ChildRuntimeMetadata,
     observability: ChildRequestObservability,
 ) -> ChildSessionObservability {
     ChildSessionObservability {
@@ -1065,6 +1254,7 @@ fn child_session_observability(
         failure_summary: observability.failure_summary,
         tool_calls: observability.tool_calls,
         permissions: permissions.clone(),
+        runtime,
     }
 }
 
@@ -1097,6 +1287,13 @@ fn spawn_result_json(
         "child_tool_call_counts": child_session.tool_calls,
         "resumed_existing_session": child_session.resumed_existing_session,
         "permissions": child_session.permissions,
+        "runtime": child_session.runtime,
+        "child_runtime": child_session.runtime,
+        "effective_model_ref": child_session.runtime.model_ref,
+        "child_toolset": child_session.runtime.toolset,
+        "can_redelegate": child_session.runtime.can_redelegate,
+        "has_background_output": child_session.runtime.has_background_output,
+        "next_actions": child_next_actions(request, agent_id, request_id),
         "child_session": child_session,
     })
 }

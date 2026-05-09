@@ -10,7 +10,7 @@ use common::{
     anonymous_supervisor_actor, find_finished, read_events, setup_workspace,
     wait_for_request_terminal, wait_for_tool_call_finish, worker_actor, EnvGuard,
 };
-use harness_core::agent::AgentProfile;
+use harness_core::agent::{AgentModelSettings, AgentProfile};
 use harness_core::clock::RealClock;
 use harness_core::config::{PermissionMode, ShellAllowlist};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, CoordinatorHandle, RunInfo};
@@ -23,6 +23,7 @@ use harness_providers::{
 use harness_tools::coordinator_registry;
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
+use tokio_stream::StreamExt as _;
 
 #[derive(Debug)]
 struct StaticProvider;
@@ -44,11 +45,85 @@ impl Provider for StaticProvider {
     }
 }
 
+#[derive(Debug)]
+struct BlockingProvider;
+
+#[async_trait]
+impl Provider for BlockingProvider {
+    async fn stream_completion(&self, _req: CompletionRequest) -> ProviderEventStream {
+        Box::pin(
+            tokio_stream::iter(vec![ProviderStreamEvent::Start])
+                .chain(tokio_stream::pending::<ProviderStreamEvent>()),
+        )
+    }
+}
+
+#[derive(Debug, Default)]
+struct TaskCallingProvider {
+    requests: Mutex<Vec<CompletionRequest>>,
+}
+
+impl TaskCallingProvider {
+    async fn requests(&self) -> Vec<CompletionRequest> {
+        self.requests.lock().await.clone()
+    }
+}
+
+#[async_trait]
+impl Provider for TaskCallingProvider {
+    async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
+        let mut requests = self.requests.lock().await;
+        requests.push(req);
+        let call_count = requests.len();
+        drop(requests);
+
+        let events = if call_count == 1 {
+            vec![
+                ProviderStreamEvent::Start,
+                ProviderStreamEvent::ToolCallComplete {
+                    tool_call_id: "call_task".to_string(),
+                    function_name: "task".to_string(),
+                    arguments_json: json!({
+                        "description": "inherit model",
+                        "prompt": "report child model",
+                        "subagent_type": "general",
+                        "run_in_background": false,
+                        "load_skills": []
+                    })
+                    .to_string(),
+                },
+                ProviderStreamEvent::Done {
+                    usage: CompletionUsage {
+                        prompt_tokens: 1,
+                        completion_tokens: 1,
+                        total_tokens: 2,
+                    },
+                },
+            ]
+        } else {
+            vec![
+                ProviderStreamEvent::Start,
+                ProviderStreamEvent::TextDelta("done".to_string()),
+                ProviderStreamEvent::Done {
+                    usage: CompletionUsage {
+                        prompt_tokens: 1,
+                        completion_tokens: 1,
+                        total_tokens: 2,
+                    },
+                },
+            ]
+        };
+
+        Box::pin(tokio_stream::iter(events))
+    }
+}
+
 fn worker_profile(toolset: &[&str]) -> AgentProfile {
     AgentProfile {
         name: "deep".to_string(),
         category: "deep".to_string(),
         model_ref: "default:deep".to_string(),
+        model_ref_explicit: true,
         system_prompt: "deep prompt".to_string(),
         max_iters: Some(12),
         temperature: Some(0.0),
@@ -62,6 +137,7 @@ fn named_worker_profile(name: &str, toolset: &[&str]) -> AgentProfile {
         name: name.to_string(),
         category: name.to_string(),
         model_ref: "default:deep".to_string(),
+        model_ref_explicit: true,
         system_prompt: format!("{name} prompt"),
         max_iters: Some(12),
         temperature: Some(0.0),
@@ -113,6 +189,13 @@ fn plan_task_profiles() -> BTreeMap<String, AgentProfile> {
 }
 
 async fn spawn_run(workspace: &Path) -> (CoordinatorHandle, RunInfo, String) {
+    spawn_run_with_provider(workspace, Arc::new(StaticProvider)).await
+}
+
+async fn spawn_run_with_provider(
+    workspace: &Path,
+    provider: Arc<dyn Provider>,
+) -> (CoordinatorHandle, RunInfo, String) {
     let session_dir = workspace.join("sessions");
     fs::create_dir_all(&session_dir).expect("session dir");
 
@@ -122,7 +205,7 @@ async fn spawn_run(workspace: &Path) -> (CoordinatorHandle, RunInfo, String) {
         PermissionMode::Deny,
         PermissionMode::Allow,
     );
-    config.provider = Arc::new(StaticProvider);
+    config.provider = provider;
     config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
     config.agent_profiles = BTreeMap::from([
         (
@@ -149,11 +232,153 @@ async fn spawn_run(workspace: &Path) -> (CoordinatorHandle, RunInfo, String) {
         .await
         .expect("start run");
     let worker_id = handle
-        .spawn_agent(anonymous_supervisor_actor(), "deep", None)
+        .spawn_agent_idle(anonymous_supervisor_actor(), "deep", None)
         .await
         .expect("spawn worker");
 
     (handle, run, worker_id)
+}
+
+#[tokio::test]
+async fn task_subagent_inherits_parent_turn_model_when_profile_model_is_defaulted() {
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let session_dir = workspace.join("sessions");
+    fs::create_dir_all(&session_dir).expect("session dir");
+
+    let provider = Arc::new(TaskCallingProvider::default());
+    let mut config = CoordinatorConfig::new(session_dir);
+    config.permission_policy = PermissionPolicy::new(
+        PermissionMode::Allow,
+        PermissionMode::Deny,
+        PermissionMode::Allow,
+    );
+    config.provider = provider.clone();
+    config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
+    let mut general = named_worker_profile("general", &["read", "bash"]);
+    general.model_ref_explicit = false;
+    let mut general = named_worker_profile("general", &["read", "bash"]);
+    general.model_ref_explicit = false;
+    config.agent_profiles = BTreeMap::from([
+        (
+            "deep".to_string(),
+            worker_profile(&["task", "background_output", "batch", "read", "bash"]),
+        ),
+        ("general".to_string(), general),
+    ]);
+
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(RealClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = handle
+        .start_run("native_task_model_inheritance", &workspace)
+        .await
+        .expect("start run");
+    let worker_id = handle
+        .spawn_agent_idle(anonymous_supervisor_actor(), "deep", None)
+        .await
+        .expect("spawn worker");
+    let request_id = handle
+        .request_agent_turn_with_model(
+            anonymous_supervisor_actor(),
+            worker_id,
+            "delegate to general",
+            Some("default:parent-model".to_string()),
+            Some(AgentModelSettings {
+                variant: Some("parent-variant".to_string()),
+                reasoning_effort: Some("high".to_string()),
+                text_verbosity: Some("low".to_string()),
+                reasoning_summary: Some("auto".to_string()),
+            }),
+        )
+        .await
+        .expect("request parent turn");
+
+    wait_for_request_terminal(&run.events_path, &request_id).await;
+
+    let requests = provider.requests().await;
+    assert!(
+        requests.len() >= 2,
+        "expected parent and child provider requests, got {requests:#?}"
+    );
+    assert_eq!(requests[0].model_id, "parent-model");
+    assert_eq!(requests[1].model_id, "parent-model");
+    assert_eq!(requests[1].variant.as_deref(), Some("parent-variant"));
+    assert_eq!(requests[1].reasoning_effort.as_deref(), Some("high"));
+    assert_eq!(requests[1].text_verbosity.as_deref(), Some("low"));
+    assert_eq!(requests[1].reasoning_summary.as_deref(), Some("auto"));
+}
+
+#[tokio::test]
+async fn task_subagent_keeps_explicit_profile_model_over_parent_turn_model() {
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let session_dir = workspace.join("sessions");
+    fs::create_dir_all(&session_dir).expect("session dir");
+
+    let provider = Arc::new(TaskCallingProvider::default());
+    let mut config = CoordinatorConfig::new(session_dir);
+    config.permission_policy = PermissionPolicy::new(
+        PermissionMode::Allow,
+        PermissionMode::Deny,
+        PermissionMode::Allow,
+    );
+    config.provider = provider.clone();
+    config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
+    let mut general = named_worker_profile("general", &["read", "bash"]);
+    general.model_ref = "default:general".to_string();
+    config.agent_profiles = BTreeMap::from([
+        (
+            "deep".to_string(),
+            worker_profile(&["task", "background_output", "batch", "read", "bash"]),
+        ),
+        ("general".to_string(), general),
+    ]);
+
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(RealClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = handle
+        .start_run("native_task_model_override", &workspace)
+        .await
+        .expect("start run");
+    let worker_id = handle
+        .spawn_agent_idle(anonymous_supervisor_actor(), "deep", None)
+        .await
+        .expect("spawn worker");
+    let request_id = handle
+        .request_agent_turn_with_model(
+            anonymous_supervisor_actor(),
+            worker_id,
+            "delegate to general",
+            Some("default:parent-model".to_string()),
+            Some(AgentModelSettings {
+                variant: Some("parent-variant".to_string()),
+                reasoning_effort: Some("high".to_string()),
+                text_verbosity: Some("low".to_string()),
+                reasoning_summary: Some("auto".to_string()),
+            }),
+        )
+        .await
+        .expect("request parent turn");
+
+    wait_for_request_terminal(&run.events_path, &request_id).await;
+
+    let requests = provider.requests().await;
+    assert!(
+        requests.len() >= 2,
+        "expected parent and child provider requests, got {requests:#?}"
+    );
+    assert_eq!(requests[0].model_id, "parent-model");
+    assert_eq!(requests[1].model_id, "general");
+    assert_eq!(requests[1].variant, None);
+    assert_eq!(requests[1].reasoning_effort, None);
+    assert_eq!(requests[1].text_verbosity, None);
+    assert_eq!(requests[1].reasoning_summary, None);
 }
 
 #[tokio::test]
@@ -361,6 +586,18 @@ async fn task_subagent_type_selects_explore_and_general_profiles() {
         assert_eq!(finished.status, ToolCallStatus::Succeeded);
         let output = finished.output_json.expect("task structured output");
         assert_eq!(output["profile"], json!(profile));
+        assert_eq!(output["runtime"]["profile"], json!(profile));
+        assert_eq!(output["runtime"]["category"], json!(profile));
+        assert_eq!(output["effective_model_ref"], json!("default:deep"));
+        assert_eq!(output["can_redelegate"], json!(false));
+        assert_eq!(output["has_background_output"], json!(false));
+        assert!(output["child_toolset"].is_array());
+        assert!(output["next_actions"]
+            .as_array()
+            .expect("next actions")
+            .iter()
+            .any(|action| action["action"] == json!("cancel")
+                && action["tool"] == json!("background_output")));
         let child_session_id = output["child_session_id"]
             .as_str()
             .expect("child session id");
@@ -513,6 +750,152 @@ async fn background_output_retrieves_completed_child_result_by_request_id() {
     assert!(output["result_summary"]
         .as_str()
         .is_some_and(|value| !value.is_empty()));
+    assert_eq!(output["runtime"]["profile"], json!("deep"));
+    assert_eq!(output["runtime"]["model_ref"], json!("default:deep"));
+    assert_eq!(output["runtime"]["can_redelegate"], json!(true));
+    assert!(output["next_actions"]
+        .as_array()
+        .expect("next actions")
+        .iter()
+        .any(|action| action["action"] == json!("check_status")));
+}
+
+#[tokio::test]
+async fn background_output_can_cancel_authorized_child_request() {
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+
+    let (handle, run, worker_id) =
+        spawn_run_with_provider(&workspace, Arc::new(BlockingProvider)).await;
+
+    let task_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "task",
+            json!({
+                "category": "deep",
+                "description": "Cancellable child",
+                "prompt": "Keep running until cancelled",
+                "run_in_background": true,
+                "load_skills": []
+            }),
+        )
+        .await
+        .expect("request task");
+    wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
+
+    let task_events = read_events(&run.events_path);
+    let task_finished = find_finished(&task_events, &task_tool_call_id);
+    let task_output = task_finished.output_json.expect("task structured output");
+    let request_id = task_output["child_request_id"]
+        .as_str()
+        .expect("child request id")
+        .to_string();
+
+    let cancel_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "background_output",
+            json!({
+                "request_id": request_id,
+                "cancel": true,
+                "reason": "test requested cancellation"
+            }),
+        )
+        .await
+        .expect("request background cancellation");
+    wait_for_tool_call_finish(&run.events_path, &cancel_tool_call_id).await;
+
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &cancel_tool_call_id);
+    assert_eq!(finished.status, ToolCallStatus::Succeeded);
+    let output = finished
+        .output_json
+        .expect("background cancel structured json");
+    assert_eq!(output["request_id"], json!(request_id));
+    assert_eq!(output["status"], json!("cancelled"));
+    assert_eq!(output["terminal"], json!(true));
+    assert_eq!(output["cancel_requested"], json!(true));
+    assert_eq!(output["cancel_performed"], json!(true));
+    assert_eq!(
+        output["cancel_reason"],
+        json!("test requested cancellation")
+    );
+    assert_eq!(output["runtime"]["profile"], json!("deep"));
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::TaskCancelled(payload)
+            if event.correlation_id.as_deref() == Some(request_id.as_str())
+                && payload.reason == "test requested cancellation"
+    )));
+}
+
+#[tokio::test]
+async fn background_output_cancel_after_terminal_does_not_report_performed() {
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+
+    let (handle, run, worker_id) = spawn_run(&workspace).await;
+
+    let task_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "task",
+            json!({
+                "category": "deep",
+                "description": "Completed child",
+                "prompt": "Return before cancellation",
+                "run_in_background": true,
+                "load_skills": []
+            }),
+        )
+        .await
+        .expect("request task");
+    wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
+
+    let task_events = read_events(&run.events_path);
+    let task_finished = find_finished(&task_events, &task_tool_call_id);
+    let task_output = task_finished.output_json.expect("task structured output");
+    let request_id = task_output["child_request_id"]
+        .as_str()
+        .expect("child request id")
+        .to_string();
+    wait_for_request_terminal(&run.events_path, &request_id).await;
+
+    let cancel_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "background_output",
+            json!({
+                "request_id": request_id,
+                "cancel": true,
+                "reason": "too late to cancel"
+            }),
+        )
+        .await
+        .expect("request terminal cancellation status");
+    wait_for_tool_call_finish(&run.events_path, &cancel_tool_call_id).await;
+
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &cancel_tool_call_id);
+    assert_eq!(finished.status, ToolCallStatus::Succeeded);
+    let output = finished
+        .output_json
+        .expect("terminal cancel structured json");
+    assert_eq!(output["request_id"], json!(request_id));
+    assert_eq!(output["status"], json!("completed"));
+    assert_eq!(output["terminal"], json!(true));
+    assert_eq!(output["cancel_requested"], json!(true));
+    assert_eq!(output["cancel_performed"], json!(false));
+    assert!(output["cancel_reason"].is_null());
+    assert!(!events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::TaskCancelled(_) if event.correlation_id.as_deref() == Some(request_id.as_str())
+    )));
 }
 
 #[tokio::test]

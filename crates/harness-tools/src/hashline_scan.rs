@@ -191,6 +191,8 @@ mod tests {
             actor: EventActor::new(ActorKind::Worker, Some("worker-1".to_string())),
             category: Some("deep".to_string()),
             tool_call_id: "tool-call-1".to_string(),
+            current_model_ref: None,
+            current_model_settings: None,
             coordinator,
         }
     }

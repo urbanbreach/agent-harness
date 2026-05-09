@@ -70,6 +70,8 @@ fn tool_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
         actor: anonymous_supervisor_actor(),
         category: Some("deep".to_string()),
         tool_call_id: tool_call_id.to_string(),
+        current_model_ref: None,
+        current_model_settings: None,
         coordinator,
     }
 }
@@ -119,6 +121,7 @@ fn worker_profile(name: &str, toolset: &[&str]) -> AgentProfile {
         name: name.to_string(),
         category: name.to_string(),
         model_ref: format!("default:{name}"),
+        model_ref_explicit: true,
         system_prompt: format!("{name} prompt"),
         temperature: None,
         max_iters: Some(12),

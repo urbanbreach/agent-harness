@@ -391,6 +391,10 @@ pub enum Command {
 pub struct AgentRuntimeInfo {
     pub agent_id: String,
     pub profile_name: String,
+    pub profile_category: String,
+    pub model_ref: String,
+    pub model_ref_explicit: bool,
+    pub toolset: Vec<String>,
     pub parent_agent_id: Option<String>,
 }
 
@@ -945,6 +949,10 @@ impl Coordinator {
         Ok(AgentRuntimeInfo {
             agent_id: agent_id.clone(),
             profile_name: profile.name.clone(),
+            profile_category: profile.category.clone(),
+            model_ref: profile.model_ref.clone(),
+            model_ref_explicit: profile.model_ref_explicit,
+            toolset: profile.toolset.clone(),
             parent_agent_id: run_state.subagent_parent_by_id.get(&agent_id).cloned(),
         })
     }
@@ -4604,6 +4612,7 @@ struct RunningAgentTurn {
     request_prompt: String,
     profile_name: String,
     model_ref: String,
+    model_settings: AgentModelSettings,
     category: Option<String>,
     queue_key: ConcurrencyKey,
     cancellation_token: CancellationToken,
@@ -5598,6 +5607,13 @@ where
     let workspace_root = run_state.info.workspace_root.clone();
     let artifacts_dir = run_state.info.artifacts_dir.clone();
     let coordinator = CoordinatorHandle { tx: job_tx.clone() };
+    let current_model = actor.agent_id.as_deref().and_then(|agent_id| {
+        run_state
+            .running_agent_turns
+            .values()
+            .find(|turn| turn.agent_id == agent_id)
+            .map(|turn| (turn.model_ref.clone(), turn.model_settings.clone()))
+    });
     run_state.tasks.insert(
         task_id.clone(),
         TaskState {
@@ -5639,6 +5655,10 @@ where
             actor,
             category,
             tool_call_id: tool_call_id.clone(),
+            current_model_ref: current_model
+                .as_ref()
+                .map(|(model_ref, _)| model_ref.clone()),
+            current_model_settings: current_model.as_ref().map(|(_, settings)| settings.clone()),
             coordinator,
         };
 
@@ -5674,6 +5694,32 @@ where
     Ok(())
 }
 
+fn nested_provider_model_queue_key(
+    run_state: &RunState,
+    agent_id: &str,
+    provider_id: String,
+    model_id: String,
+    base_queue_key: ConcurrencyKey,
+) -> ConcurrencyKey {
+    let Some(parent_agent_id) = run_state.subagent_parent_by_id.get(agent_id) else {
+        return base_queue_key;
+    };
+    let base_queue_key_display = base_queue_key.queue_key();
+    let parent_holds_same_model = run_state.running_agent_turns.values().any(|turn| {
+        turn.agent_id == *parent_agent_id && turn.queue_key.queue_key() == base_queue_key_display
+    });
+    if !parent_holds_same_model {
+        return base_queue_key;
+    }
+
+    ConcurrencyKey::NestedProviderModel {
+        provider_id,
+        model_id,
+        parent_agent_id: parent_agent_id.clone(),
+        agent_id: agent_id.to_string(),
+    }
+}
+
 async fn schedule_agent_turn<C, R>(
     clock: &C,
     redactor: &R,
@@ -5699,10 +5745,19 @@ where
     let task_id = format!("task_{:06}", run_state.next_task_id);
     run_state.next_task_id += 1;
 
-    let queue_key = ConcurrencyKey::ProviderModel {
+    let provider_id = model.provider_id.clone();
+    let model_id = model.model_id.clone();
+    let base_queue_key = ConcurrencyKey::ProviderModel {
         provider_id: model.provider_id,
         model_id: model.model_id,
     };
+    let queue_key = nested_provider_model_queue_key(
+        run_state,
+        &agent_id,
+        provider_id,
+        model_id,
+        base_queue_key,
+    );
 
     if agent_has_active_or_queued_turn(run_state, &agent_id) {
         append_agent_turn_task_scheduled_event(
@@ -5927,6 +5982,7 @@ where
             request_prompt: task.request.prompt.clone(),
             profile_name: task.profile.name.clone(),
             model_ref: task.request.model_ref.clone(),
+            model_settings: task.request.model_settings.clone(),
             category,
             queue_key: task.queue_key.clone(),
             cancellation_token: cancellation_token.clone(),

@@ -37,6 +37,8 @@ fn question_tool_context(
         actor: worker_actor("agent-worker"),
         category: Some("deep".to_string()),
         tool_call_id: tool_call_id.to_string(),
+        current_model_ref: None,
+        current_model_settings: None,
         coordinator,
     }
 }

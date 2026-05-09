@@ -24,6 +24,7 @@ fn profile(name: &str, category: &str, toolset: &[&str]) -> AgentProfile {
         name: name.to_string(),
         category: category.to_string(),
         model_ref: "default:default".to_string(),
+        model_ref_explicit: true,
         system_prompt: format!("{name} prompt"),
         max_iters: Some(12),
         temperature: Some(0.0),

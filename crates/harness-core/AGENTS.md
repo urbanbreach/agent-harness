@@ -1,25 +1,26 @@
 # AGENTS: crates/harness-core
 
 ## OVERVIEW
-Core runtime crate: event schema, coordinator, scheduling, permissions, config, projections, hashline edit engine, redaction, and deterministic storage.
+Core runtime crate: event schema, coordinator, scheduling, permissions, config, projections, transcript state, hashline edits, redaction, and deterministic storage.
 
 Read the workspace root `AGENTS.md` first for search scope, commands, and cross-crate invariants.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |------|----------|-------|
-| Coordinator runtime | `src/coord.rs`, `src/coord/` | Single scheduling authority; provider loop, permissions, staleness, compaction. |
+| Coordinator runtime | `src/coord.rs`, `src/coord/` | Single scheduling authority; provider loop, permissions, hooks, staleness, compaction. |
 | Event schema | `src/event.rs` | `EventEnvelopeV1`, payload variants, actor/correlation/causation metadata. |
 | Event stores | `src/store.rs` | In-memory + JSONL persistence; append-only sequencing expectations. |
 | Permissions | `src/perm.rs` | Capability → permission-kind mapping and policy resolution. |
 | Tool contracts | `src/tool.rs` | Tool traits, capabilities, canonical ids, artifacts. |
 | Config | `src/config.rs`, `src/config/` | Discovery, validation, public schema shape, compatibility inputs. |
-| Projections/replay state | `src/proj.rs` | Pure derived state for replay/UI/resume. |
+| Projections/replay state | `src/proj.rs`, `src/transcript_projection.rs` | Pure derived state for replay/UI/resume/export/debugging surfaces. |
+| Agent/session metadata | `src/agent.rs`, `src/session_lineage.rs`, `src/session_title.rs`, `src/session_paths.rs` | Runtime identity, lineage, titles, and storage layout. |
 | Hashline edits | `src/edit/hashline.rs` | Anchor hashing, overlap rejection, atomic apply semantics. |
 | Scheduler | `src/sched.rs` | Concurrency keys, slots, progress/staleness snapshots. |
 
 ## INVARIANTS
-- Coordinator owns all event appends, task scheduling, permission resolution, and run/agent lifecycle transitions.
+- Coordinator owns all event appends, task scheduling, permission resolution, hooks, and run/agent lifecycle transitions.
 - Events are immutable and append-only; replay rebuilds state from `seq`-ordered JSONL without side effects.
 - Late task results after cancellation become `TaskResultLate`; discard side effects.
 - Slot gates are coordinator-managed counters; avoid semaphore-in-`select!` cancellation footguns.
@@ -42,6 +43,7 @@ cargo test -p harness-core --test coord_auth
 cargo test -p harness-core --test mcp_config
 cargo test -p harness-core --test permission_policy_supports_native_tool_permission_kinds
 cargo test -p harness-core --test replay_preserves_batch_and_child_task_metadata_for_native_and_compat_paths
+cargo test -p harness-core --test transcript_projection
 ```
 
 Run root drift checks when event/config public contracts change:

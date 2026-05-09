@@ -211,6 +211,7 @@ fn profile_metadata_config() -> HarnessConfig {
             {PROFILE_NAME}: {{
               description: "Deep work",
               model_ref: "{MODEL_REF}",
+              model_ref_explicit: true,
               variant: "deterministic",
               tools: ["fs.read"],
             }},
@@ -265,6 +266,7 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             name: PROFILE_NAME.to_string(),
             category: "deep".to_string(),
             model_ref: MODEL_REF.to_string(),
+            model_ref_explicit: true,
             system_prompt: "system prompt".to_string(),
             max_iters: Some(12),
             temperature: Some(0.0),

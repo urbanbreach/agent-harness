@@ -25,6 +25,7 @@ fn provider_boundary_preserves_existing_message_shape() {
         agent_id: "agent_1".to_string(),
         prompt: "Use a tool".to_string(),
         model_ref: "mock:model-1".to_string(),
+        model_ref_explicit: true,
         model_settings: AgentModelSettings {
             variant: Some("gpt-5.4".to_string()),
             reasoning_effort: Some("high".to_string()),
@@ -623,6 +624,7 @@ fn boundary_profile() -> AgentProfile {
         name: "worker".to_string(),
         category: "deep".to_string(),
         model_ref: "mock:model-1".to_string(),
+        model_ref_explicit: true,
         system_prompt: "sys".to_string(),
         temperature: Some(0.1),
         max_iters: Some(12),

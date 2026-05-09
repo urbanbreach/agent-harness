@@ -6,6 +6,12 @@ pub enum ConcurrencyKey {
         provider_id: String,
         model_id: String,
     },
+    NestedProviderModel {
+        provider_id: String,
+        model_id: String,
+        parent_agent_id: String,
+        agent_id: String,
+    },
     Tool {
         tool_id: String,
     },
@@ -17,6 +23,11 @@ impl ConcurrencyKey {
             Self::ProviderModel {
                 provider_id,
                 model_id,
+            }
+            | Self::NestedProviderModel {
+                provider_id,
+                model_id,
+                ..
             } => {
                 format!("provider_model:{provider_id}:{model_id}")
             }
@@ -196,7 +207,9 @@ impl Scheduler {
 
     fn limit_for(&self, key: &ConcurrencyKey) -> usize {
         match key {
-            ConcurrencyKey::ProviderModel { .. } => self.limits.provider_model.max(1),
+            ConcurrencyKey::ProviderModel { .. } | ConcurrencyKey::NestedProviderModel { .. } => {
+                self.limits.provider_model.max(1)
+            }
             ConcurrencyKey::Tool { .. } => self.limits.tool.max(1),
         }
     }

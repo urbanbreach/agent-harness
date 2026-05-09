@@ -79,6 +79,7 @@ fn merge_markdown_agent_with_config(
         description: config.description.clone(),
         system_prompt: prompt,
         model_ref: config.model_ref.clone(),
+        model_ref_explicit: config.model_ref_explicit,
         variant: config.variant.clone(),
         temperature: config.temperature,
         permissions: config.permissions.clone(),
@@ -105,6 +106,7 @@ fn profile_from_markdown_agent(
             .clone()
             .or_else(|| markdown.frontmatter.system_prompt.clone()),
         model_ref,
+        model_ref_explicit: true,
         variant: markdown.frontmatter.variant.clone(),
         temperature: markdown.frontmatter.temperature,
         permissions: markdown.frontmatter.permissions.clone(),

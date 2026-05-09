@@ -34,6 +34,8 @@ pub struct AgentProfile {
     pub name: String,
     pub category: String,
     pub model_ref: String,
+    #[serde(default)]
+    pub model_ref_explicit: bool,
     pub system_prompt: String,
     #[serde(default)]
     pub temperature: Option<f32>,
@@ -49,6 +51,7 @@ impl AgentProfile {
         Self {
             category: name.clone(),
             model_ref: "default:default".to_string(),
+            model_ref_explicit: false,
             system_prompt: String::new(),
             temperature: None,
             max_iters: None,
@@ -2328,6 +2331,7 @@ mod tests {
             name: "worker".to_string(),
             category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
+            model_ref_explicit: true,
             system_prompt: "sys".to_string(),
             max_iters: Some(max_iters),
             temperature: Some(0.1),
@@ -2341,6 +2345,7 @@ mod tests {
             agent_id: "agent_1".to_string(),
             prompt: "Use a tool".to_string(),
             model_ref: "mock:model-1".to_string(),
+            model_ref_explicit: true,
             model_settings: AgentModelSettings::default(),
         }
     }

@@ -303,6 +303,10 @@ struct BackgroundOutputArgs {
     block: bool,
     #[serde(default = "default_background_output_timeout_ms", alias = "timeout_ms")]
     timeout: u64,
+    #[serde(default)]
+    cancel: bool,
+    #[serde(default)]
+    reason: Option<String>,
 }
 
 fn default_background_output_timeout_ms() -> u64 {
@@ -838,7 +842,7 @@ impl Tool for BackgroundOutputTool {
     }
 
     fn description(&self) -> &str {
-        "Retrieves the current status or terminal result for a child task scheduled with task(run_in_background=true). Prefer request_id from the task result; task_id/session_id resolve to the latest child request for compatibility."
+        "Retrieves the current status or terminal result for a child task scheduled with task(run_in_background=true). Prefer request_id from the task result; task_id/session_id resolve to the latest child request for compatibility. Set cancel=true to request coordinator cancellation for a non-terminal child task."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -860,6 +864,8 @@ impl Tool for BackgroundOutputTool {
                     request_id: args.request_id,
                     block: args.block,
                     timeout_ms: args.timeout,
+                    cancel: args.cancel,
+                    reason: args.reason,
                 },
             )
             .await
@@ -1545,6 +1551,8 @@ mod tests {
             actor: EventActor::new(ActorKind::Worker, Some("worker-1".to_string())),
             category: Some("quick".to_string()),
             tool_call_id: "tree-test".to_string(),
+            current_model_ref: None,
+            current_model_settings: None,
             coordinator,
         };
 

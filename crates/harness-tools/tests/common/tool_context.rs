@@ -20,6 +20,8 @@ pub fn test_context(workspace_root: &Path, run_id: &str, tool_call_id: &str) -> 
         actor: worker_actor("worker-1"),
         category: Some("deep".to_string()),
         tool_call_id: tool_call_id.to_string(),
+        current_model_ref: None,
+        current_model_settings: None,
         coordinator,
     }
 }

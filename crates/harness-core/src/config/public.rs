@@ -439,6 +439,7 @@ fn default_shipped_agents(
                         .to_string(),
                 system_prompt: None,
                 model_ref: model_ref.to_string(),
+                model_ref_explicit: false,
                 variant: None,
                 temperature: None,
                 permissions: Some(ProfilePermissions {
@@ -487,6 +488,7 @@ fn default_shipped_agents(
                     .to_string(),
                 system_prompt: None,
                 model_ref: model_ref.to_string(),
+                model_ref_explicit: false,
                 variant: None,
                 temperature: None,
                 permissions: Some(ProfilePermissions {
@@ -553,6 +555,7 @@ fn default_shipped_agents(
                         .to_string(),
                 ),
                 model_ref: model_ref.to_string(),
+                model_ref_explicit: false,
                 variant: None,
                 temperature: None,
                 permissions: Some(ProfilePermissions {
@@ -587,6 +590,7 @@ fn default_shipped_agents(
                         .to_string(),
                 ),
                 model_ref: model_ref.to_string(),
+                model_ref_explicit: false,
                 variant: None,
                 temperature: None,
                 permissions: Some(ProfilePermissions {
@@ -630,6 +634,7 @@ fn default_shipped_agents(
                 description: "Hidden title generation agent.".to_string(),
                 system_prompt: Some(crate::session_title::TITLE_AGENT_SYSTEM_PROMPT.to_string()),
                 model_ref: small_model_ref.unwrap_or(model_ref).to_string(),
+                model_ref_explicit: small_model_ref.is_some(),
                 variant: None,
                 temperature: Some(crate::session_title::TITLE_AGENT_TEMPERATURE),
                 permissions: Some(ProfilePermissions {
@@ -678,6 +683,12 @@ fn public_agent_to_profile(
     small_model_ref: Option<&str>,
     base: Option<ProfileConfig>,
 ) -> Result<ProfileConfig, ConfigError> {
+    let model_ref_explicit = agent.model.is_some()
+        || agent.use_small_model
+        || base
+            .as_ref()
+            .map(|profile| profile.model_ref_explicit)
+            .unwrap_or(false);
     let selected_model = agent.model.clone().or_else(|| {
         if agent.use_small_model {
             small_model_ref.map(str::to_string)
@@ -704,6 +715,7 @@ fn public_agent_to_profile(
                 .and_then(|profile| profile.system_prompt.clone())
         }),
         model_ref,
+        model_ref_explicit,
         variant: agent
             .variant
             .or_else(|| base.as_ref().and_then(|profile| profile.variant.clone())),
@@ -896,14 +908,20 @@ pub(super) fn translate_public_runtime_root(
 
     let mut agents = BTreeMap::new();
     if let Some(value) = object.get("agents") {
-        let legacy: BTreeMap<String, ProfileConfig> = serde_json::from_value(value.clone())
+        let mut legacy: BTreeMap<String, ProfileConfig> = serde_json::from_value(value.clone())
             .map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
+        for profile in legacy.values_mut() {
+            profile.model_ref_explicit = true;
+        }
         agents.extend(legacy);
     }
     for alias in ["categories", "profiles"] {
         if let Some(value) = object.get(alias) {
-            let legacy: BTreeMap<String, ProfileConfig> = serde_json::from_value(value.clone())
+            let mut legacy: BTreeMap<String, ProfileConfig> = serde_json::from_value(value.clone())
                 .map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
+            for profile in legacy.values_mut() {
+                profile.model_ref_explicit = true;
+            }
             agents.extend(legacy);
         }
     }

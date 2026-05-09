@@ -137,6 +137,10 @@ fn default_hashline_edit() -> bool {
     true
 }
 
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UiConfig {
@@ -1226,6 +1230,9 @@ pub struct ProfileConfig {
     pub system_prompt: Option<String>,
     #[serde(rename = "model_ref", alias = "modelRef")]
     pub model_ref: String,
+    #[serde(default, skip_serializing_if = "is_false")]
+    #[schemars(skip)]
+    pub model_ref_explicit: bool,
     #[serde(default)]
     pub variant: Option<String>,
     #[serde(default)]

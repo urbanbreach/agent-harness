@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use thiserror::Error;
 
+use crate::agent::AgentModelSettings;
 use crate::coord::CoordinatorHandle;
 use crate::event::{ActorKind, EventActor};
 use crate::session_paths::ARTIFACTS_DIR_NAME;
@@ -91,6 +92,8 @@ pub struct ToolContext {
     pub actor: EventActor,
     pub category: Option<String>,
     pub tool_call_id: String,
+    pub current_model_ref: Option<String>,
+    pub current_model_settings: Option<AgentModelSettings>,
     pub coordinator: CoordinatorHandle,
 }
 
@@ -523,6 +526,8 @@ mod tests {
             actor: EventActor::new(ActorKind::Supervisor, None),
             category: Some("deep".to_string()),
             tool_call_id: tool_call_id.to_string(),
+            current_model_ref: None,
+            current_model_settings: None,
             coordinator,
         }
     }
