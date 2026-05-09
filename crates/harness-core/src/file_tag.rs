@@ -145,10 +145,12 @@ pub fn materialize_prompt_part_context(
     selected_agents: &[SelectedAgentTag],
     selected_resources: &[SelectedResourceTag],
 ) -> Option<String> {
-    let mut sections =
+    let mut sections = Vec::new();
+    if let Some(file_context) =
         materialize_file_tag_context_with_selected(workspace_root, prompt, selected_files)
-            .into_iter()
-            .collect::<Vec<_>>();
+    {
+        sections.push(file_context);
+    }
     sections.extend(selected_agents.iter().map(selected_agent_section));
     sections.extend(selected_resources.iter().map(selected_resource_section));
     join_context_sections(sections)
