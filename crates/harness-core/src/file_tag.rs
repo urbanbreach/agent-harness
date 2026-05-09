@@ -156,17 +156,11 @@ pub fn materialize_file_tag_context_with_selected(
             continue;
         }
         let resolved = resolve_tag_path(workspace_root, &tag.path);
-        let args = serde_json::json!({ "filePath": resolved.display().to_string() }).to_string();
-        match materialize_resolved_path(workspace_root, &resolved, tag.line_range) {
-            Some(Ok(output)) => sections.push(format!(
-                "Called the Read tool with the following input: {args}\n{output}"
-            )),
-            Some(Err(reason)) => sections.push(format!(
-                "Read tool failed to read {} with the following error: {reason}",
-                resolved.display()
-            )),
-            None => {}
-        }
+        sections.extend(materialized_file_section(
+            workspace_root,
+            &resolved,
+            tag.line_range,
+        ));
     }
 
     for file_match in files(prompt) {
@@ -175,23 +169,11 @@ pub fn materialize_file_tag_context_with_selected(
         }
         let (path_name, line_range) = split_line_range(&file_match.name);
         let resolved = resolve_tag_path(workspace_root, path_name);
-        let display_path = resolved.display().to_string();
-        let args = serde_json::json!({ "filePath": display_path }).to_string();
-
-        match materialize_resolved_path(workspace_root, &resolved, line_range) {
-            Some(Ok(output)) => {
-                sections.push(format!(
-                    "Called the Read tool with the following input: {args}\n{output}"
-                ));
-            }
-            Some(Err(reason)) => {
-                sections.push(format!(
-                    "Read tool failed to read {} with the following error: {reason}",
-                    resolved.display()
-                ));
-            }
-            None => {}
-        }
+        sections.extend(materialized_file_section(
+            workspace_root,
+            &resolved,
+            line_range,
+        ));
     }
 
     (!sections.is_empty()).then(|| sections.join("\n\n"))
@@ -248,6 +230,24 @@ fn resolve_tag_path(workspace_root: &Path, name: &str) -> PathBuf {
         return normalize_path(path);
     }
     normalize_path(&workspace_root.join(path))
+}
+
+fn materialized_file_section(
+    workspace_root: &Path,
+    resolved: &Path,
+    line_range: Option<FileTagLineRange>,
+) -> Option<String> {
+    let args = serde_json::json!({ "filePath": resolved.display().to_string() }).to_string();
+    match materialize_resolved_path(workspace_root, resolved, line_range) {
+        Some(Ok(output)) => Some(format!(
+            "Called the Read tool with the following input: {args}\n{output}"
+        )),
+        Some(Err(reason)) => Some(format!(
+            "Read tool failed to read {} with the following error: {reason}",
+            resolved.display()
+        )),
+        None => None,
+    }
 }
 
 fn materialize_resolved_path(
