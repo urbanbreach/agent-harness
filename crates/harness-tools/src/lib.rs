@@ -569,9 +569,13 @@ async fn run_shell_process(
 
 fn build_shell_run_result(
     ctx: &ToolContext,
-    mut structured_json: serde_json::Map<String, serde_json::Value>,
-    output: ShellProcessOutput,
+    execution: ShellRunExecution,
 ) -> Result<ToolResult, ToolError> {
+    let ShellRunExecution {
+        output,
+        mut structured_json,
+    } = execution;
+
     output.insert_stream_byte_metadata(&mut structured_json);
     let full_output = output.combined_output();
     let preview = preview_tool_output(
@@ -1074,7 +1078,7 @@ struct WrapperShellInvocation {
 
 struct ShellRunExecution {
     output: ShellProcessOutput,
-    metadata: serde_json::Map<String, serde_json::Value>,
+    structured_json: serde_json::Map<String, serde_json::Value>,
 }
 
 impl DirectShellInvocation {
@@ -1194,9 +1198,12 @@ impl ShellRunTool {
         let mut command = tokio::process::Command::new(&invocation.cmd);
         command.args(&invocation.args).current_dir(resolved_cwd);
         let output = run_shell_process(command, timeout_ms).await?;
-        let metadata = invocation.into_metadata(&output);
+        let structured_json = invocation.into_metadata(&output);
 
-        Ok(ShellRunExecution { output, metadata })
+        Ok(ShellRunExecution {
+            output,
+            structured_json,
+        })
     }
 
     async fn run_wrapper_invocation(
@@ -1219,9 +1226,12 @@ impl ShellRunTool {
             .arg(&invocation.command)
             .current_dir(cwd);
         let output = run_shell_process(shell_command, timeout_ms).await?;
-        let metadata = invocation.into_metadata(&output);
+        let structured_json = invocation.into_metadata(&output);
 
-        Ok(ShellRunExecution { output, metadata })
+        Ok(ShellRunExecution {
+            output,
+            structured_json,
+        })
     }
 }
 
@@ -1252,7 +1262,7 @@ impl Tool for ShellRunTool {
         let request = args.into_request()?;
         let executed = self.run_request(&ctx, request).await?;
 
-        build_shell_run_result(&ctx, executed.metadata, executed.output)
+        build_shell_run_result(&ctx, executed)
     }
 }
 
