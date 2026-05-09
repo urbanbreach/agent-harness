@@ -740,17 +740,21 @@ impl FsReadWindowBuilder {
             return;
         }
 
-        let rendered = match self.anchors.as_mut() {
+        let rendered = self.render_visible_line(line_number, &line);
+        self.shown_lines.push(line);
+        self.display_parts.push(rendered);
+    }
+
+    fn render_visible_line(&mut self, line_number: usize, line: &str) -> String {
+        match self.anchors.as_mut() {
             Some(anchors) => {
-                let anchor = build_fs_read_line_anchor(line_number, &line);
-                let rendered = format_fs_read_hashline_line(&anchor, &line);
+                let anchor = build_fs_read_line_anchor(line_number, line);
+                let rendered = format_fs_read_hashline_line(&anchor, line);
                 anchors.push(anchor);
                 rendered
             }
-            None => format_fs_read_line(&line, line_number, self.render.line_numbers),
-        };
-        self.shown_lines.push(line);
-        self.display_parts.push(rendered);
+            None => format_fs_read_line(line, line_number, self.render.line_numbers),
+        }
     }
 
     fn finish(self, total_lines: usize, available_lines: usize) -> FsReadWindow {
