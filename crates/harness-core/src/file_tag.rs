@@ -327,26 +327,34 @@ fn canonicalize_file_tag_path(
 fn read_directory_entries(directory: &Path) -> Result<Vec<String>, String> {
     let mut entries = std::fs::read_dir(directory)
         .map_err(|err| format!("failed to list directory: {err}"))?
-        .map(|entry| {
-            let entry = entry.map_err(|err| format!("failed to read directory entry: {err}"))?;
-            let file_type = entry
-                .file_type()
-                .map_err(|err| format!("failed to read directory entry type: {err}"))?;
-            let mut name = entry.file_name().to_string_lossy().to_string();
-            if file_type.is_dir() {
-                name.push('/');
-            }
-            Ok(name)
-        })
+        .map(directory_entry_display_name)
         .collect::<Result<Vec<_>, String>>()?;
     entries.sort();
+    truncate_directory_entries(&mut entries);
+    Ok(entries)
+}
+
+fn directory_entry_display_name(
+    entry: std::io::Result<std::fs::DirEntry>,
+) -> Result<String, String> {
+    let entry = entry.map_err(|err| format!("failed to read directory entry: {err}"))?;
+    let file_type = entry
+        .file_type()
+        .map_err(|err| format!("failed to read directory entry type: {err}"))?;
+    let mut name = entry.file_name().to_string_lossy().to_string();
+    if file_type.is_dir() {
+        name.push('/');
+    }
+    Ok(name)
+}
+
+fn truncate_directory_entries(entries: &mut Vec<String>) {
     let total = entries.len();
     if total > READ_DEFAULT_LIMIT {
         let truncated = total - READ_DEFAULT_LIMIT;
         entries.truncate(READ_DEFAULT_LIMIT);
         entries.push(format!("... (truncated, {truncated} more)"));
     }
-    Ok(entries)
 }
 
 fn read_text_file(path: &Path, line_range: Option<FileTagLineRange>) -> Result<String, String> {

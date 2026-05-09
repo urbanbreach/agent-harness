@@ -70,6 +70,20 @@ fn materialize_file_tag_context_reads_files_and_directories_once() {
 }
 
 #[test]
+fn materialize_file_tag_context_sorts_directory_entries_and_marks_directories() {
+    let tempdir = tempfile::tempdir().expect("tempdir");
+    let root = tempdir.path();
+    std::fs::create_dir(root.join("src")).expect("create src dir");
+    std::fs::create_dir(root.join("src/nested")).expect("create nested dir");
+    std::fs::write(root.join("src/zeta.rs"), "pub fn zeta() {}\n").expect("write zeta");
+    std::fs::write(root.join("src/alpha.rs"), "pub fn alpha() {}\n").expect("write alpha");
+
+    let context = materialize_file_tag_context(root, "inspect @src").expect("context");
+
+    assert!(context.contains("alpha.rs\nnested/\nzeta.rs"));
+}
+
+#[test]
 fn materialize_file_tag_context_ignores_missing_paths() {
     let tempdir = tempfile::tempdir().expect("tempdir");
 
