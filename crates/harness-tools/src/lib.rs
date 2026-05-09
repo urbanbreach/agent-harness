@@ -1039,16 +1039,20 @@ struct ShellRunRequest {
 }
 
 enum ShellInvocation {
-    Direct {
-        cmd: String,
-        args: Vec<String>,
-        cwd: Option<String>,
-    },
-    Wrapper {
-        command: String,
-        workdir: Option<String>,
-        description: Option<String>,
-    },
+    Direct(DirectShellInvocation),
+    Wrapper(WrapperShellInvocation),
+}
+
+struct DirectShellInvocation {
+    cmd: String,
+    args: Vec<String>,
+    cwd: Option<String>,
+}
+
+struct WrapperShellInvocation {
+    command: String,
+    workdir: Option<String>,
+    description: Option<String>,
 }
 
 struct ExecutedShellInvocation {
@@ -1076,19 +1080,19 @@ impl ShellRunArgs {
                 return Err(shell_invocation_conflict_error());
             }
 
-            return Ok(ShellInvocation::Direct {
+            return Ok(ShellInvocation::Direct(DirectShellInvocation {
                 cmd,
                 args: self.args,
                 cwd: self.cwd.or(self.workdir),
-            });
+            }));
         }
 
         if let Some(command) = command {
-            Ok(ShellInvocation::Wrapper {
+            Ok(ShellInvocation::Wrapper(WrapperShellInvocation {
                 command,
                 workdir: self.workdir.or(self.cwd),
                 description: self.description,
-            })
+            }))
         } else {
             Err(shell_invocation_conflict_error())
         }
@@ -1114,16 +1118,12 @@ impl ShellRunTool {
         request: ShellRunRequest,
     ) -> Result<ExecutedShellInvocation, ToolError> {
         match request.invocation {
-            ShellInvocation::Direct { cmd, args, cwd } => {
-                self.run_direct_invocation(ctx, cmd, args, cwd, request.timeout_ms)
+            ShellInvocation::Direct(invocation) => {
+                self.run_direct_invocation(ctx, invocation, request.timeout_ms)
                     .await
             }
-            ShellInvocation::Wrapper {
-                command,
-                workdir,
-                description,
-            } => {
-                self.run_wrapper_invocation(ctx, command, workdir, description, request.timeout_ms)
+            ShellInvocation::Wrapper(invocation) => {
+                self.run_wrapper_invocation(ctx, invocation, request.timeout_ms)
                     .await
             }
         }
@@ -1132,11 +1132,11 @@ impl ShellRunTool {
     async fn run_direct_invocation(
         &self,
         ctx: &ToolContext,
-        cmd: String,
-        args: Vec<String>,
-        cwd: Option<String>,
+        invocation: DirectShellInvocation,
         timeout_ms: u64,
     ) -> Result<ExecutedShellInvocation, ToolError> {
+        let DirectShellInvocation { cmd, args, cwd } = invocation;
+
         if !self.is_executable_allowed(&cmd) {
             return Err(ToolError::CommandBlocked(blocked_shell_command_message(
                 &cmd,
@@ -1164,11 +1164,15 @@ impl ShellRunTool {
     async fn run_wrapper_invocation(
         &self,
         ctx: &ToolContext,
-        command: String,
-        workdir: Option<String>,
-        description: Option<String>,
+        invocation: WrapperShellInvocation,
         timeout_ms: u64,
     ) -> Result<ExecutedShellInvocation, ToolError> {
+        let WrapperShellInvocation {
+            command,
+            workdir,
+            description,
+        } = invocation;
+
         let cwd = self.resolve_cwd(ctx, workdir.as_deref())?;
         crate::native_tools::validate_bash_command(
             &command,
