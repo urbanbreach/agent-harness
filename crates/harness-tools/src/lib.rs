@@ -659,19 +659,27 @@ fn build_fs_read_display(
 
     if read.truncated {
         let artifact = write_fs_read_artifact_streaming(ctx, resolved, start_line_index, render)?;
-        let marker = format!(
-            "... [truncated: showing {} of {} lines from line {}; full output: {}]",
-            read.shown_lines.len(),
-            read.available_lines,
-            start_line_index + 1,
-            artifact.path
-        );
-
-        append_truncation_marker(&mut text, &marker);
+        append_fs_read_truncation_marker(&mut text, read, start_line_index, &artifact);
         artifacts.push(artifact);
     }
 
     Ok(FsReadDisplay { text, artifacts })
+}
+
+fn append_fs_read_truncation_marker(
+    display_text: &mut String,
+    read: &FsReadWindow,
+    start_line_index: usize,
+    artifact: &ArtifactRef,
+) {
+    let marker = format!(
+        "... [truncated: showing {} of {} lines from line {}; full output: {}]",
+        read.shown_lines.len(),
+        read.available_lines,
+        start_line_index + 1,
+        artifact.path
+    );
+    append_truncation_marker(display_text, &marker);
 }
 
 fn build_fs_read_structured_json(
