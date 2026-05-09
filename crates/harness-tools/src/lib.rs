@@ -543,12 +543,21 @@ fn build_shell_run_result(
         ));
     }
 
+    build_truncated_shell_run_result(ctx, structured_json, &full_output, preview)
+}
+
+fn build_truncated_shell_run_result(
+    ctx: &ToolContext,
+    mut structured_json: serde_json::Map<String, serde_json::Value>,
+    full_output: &str,
+    preview: OutputPreview,
+) -> Result<ToolResult, ToolError> {
     let artifact = ctx
         .artifact_store()
         .map_err(|err| ToolError::Execution(format!("failed to access artifact store: {err}")))?
         .write_text(
             &format!("toolcalls/{}/shell.output.txt", ctx.tool_call_id),
-            &full_output,
+            full_output,
         )
         .map_err(|err| {
             ToolError::Execution(format!("failed to write shell output artifact: {err}"))
