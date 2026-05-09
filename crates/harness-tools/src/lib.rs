@@ -517,6 +517,35 @@ fn is_usable_bash_path(path: &Path) -> bool {
             .unwrap_or(false)
 }
 
+#[derive(Debug)]
+struct ShellProcessOutput {
+    stdout: String,
+    stderr: String,
+    status: i32,
+    success: bool,
+}
+
+async fn run_shell_process(
+    mut command: tokio::process::Command,
+    timeout_ms: u64,
+) -> Result<ShellProcessOutput, ToolError> {
+    let output = tokio::time::timeout(Duration::from_millis(timeout_ms), command.output())
+        .await
+        .map_err(|_| ToolError::Execution(format!("command timed out after {timeout_ms} ms")))?
+        .map_err(|err| ToolError::Execution(format!("failed to execute command: {err}")))?;
+
+    Ok(shell_process_output(output))
+}
+
+fn shell_process_output(output: std::process::Output) -> ShellProcessOutput {
+    ShellProcessOutput {
+        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        status: output.status.code().unwrap_or(-1),
+        success: output.status.success(),
+    }
+}
+
 fn build_shell_run_result(
     ctx: &ToolContext,
     mut structured_json: serde_json::Map<String, serde_json::Value>,
@@ -1057,32 +1086,21 @@ impl Tool for ShellRunTool {
 
             let workdir = args.cwd.or(args.workdir);
             let cwd = self.resolve_cwd(&ctx, workdir.as_deref())?;
-            let output = tokio::time::timeout(
-                Duration::from_millis(timeout_ms),
-                tokio::process::Command::new(&cmd)
-                    .args(&args.args)
-                    .current_dir(cwd)
-                    .output(),
-            )
-            .await
-            .map_err(|_| ToolError::Execution(format!("command timed out after {timeout_ms} ms")))?
-            .map_err(|err| ToolError::Execution(format!("failed to execute command: {err}")))?;
-
-            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-            let status = output.status.code().unwrap_or(-1);
+            let mut command = tokio::process::Command::new(&cmd);
+            command.args(&args.args).current_dir(cwd);
+            let output = run_shell_process(command, timeout_ms).await?;
             let structured_json = json!({
                 "cmd": cmd,
                 "args": args.args,
                 "cwd": workdir,
-                "status": status,
-                "success": output.status.success(),
+                "status": output.status,
+                "success": output.success,
             })
             .as_object()
             .cloned()
             .expect("shell json object");
 
-            build_shell_run_result(&ctx, structured_json, stdout, stderr)
+            build_shell_run_result(&ctx, structured_json, output.stdout, output.stderr)
         } else {
             let command = command.expect("validated shell command presence");
             let workdir = args.workdir.or(args.cwd);
@@ -1094,33 +1112,21 @@ impl Tool for ShellRunTool {
                 &self.allowlist,
             )?;
             let shell = resolve_bash_executable();
-            let output = tokio::time::timeout(
-                Duration::from_millis(timeout_ms),
-                tokio::process::Command::new(&shell)
-                    .arg("-lc")
-                    .arg(&command)
-                    .current_dir(cwd)
-                    .output(),
-            )
-            .await
-            .map_err(|_| ToolError::Execution(format!("command timed out after {timeout_ms} ms")))?
-            .map_err(|err| ToolError::Execution(format!("failed to execute command: {err}")))?;
-
-            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-            let status = output.status.code().unwrap_or(-1);
+            let mut shell_command = tokio::process::Command::new(&shell);
+            shell_command.arg("-lc").arg(&command).current_dir(cwd);
+            let output = run_shell_process(shell_command, timeout_ms).await?;
             let structured_json = json!({
                 "description": args.description,
                 "command": command,
                 "workdir": workdir,
-                "status": status,
-                "success": output.status.success(),
+                "status": output.status,
+                "success": output.success,
             })
             .as_object()
             .cloned()
             .expect("shell json object");
 
-            build_shell_run_result(&ctx, structured_json, stdout, stderr)
+            build_shell_run_result(&ctx, structured_json, output.stdout, output.stderr)
         }
     }
 }
