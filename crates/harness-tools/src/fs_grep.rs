@@ -133,16 +133,7 @@ fn collect_grep_matches(
 ) -> Result<GrepMatches, ToolError> {
     let regex = compile_grep_regex(pattern, literal)?;
     let include_matcher = compile_include_matcher(include)?;
-
-    let mut files = collect_candidate_files(workspace_root, search_path)?;
-
-    if let Some(matcher) = include_matcher.as_ref() {
-        files.retain(|file| {
-            matcher.is_match(&file.file_name) || matcher.is_match(&file.relative_path)
-        });
-    }
-
-    files.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+    let files = collect_sorted_grep_files(workspace_root, search_path, include_matcher.as_ref())?;
 
     let mut rendered_lines = Vec::new();
     let mut total_count = 0usize;
@@ -182,6 +173,23 @@ fn collect_grep_matches(
         truncated_count: limit_summary.truncated_count,
         is_truncated: limit_summary.is_truncated,
     })
+}
+
+fn collect_sorted_grep_files(
+    workspace_root: &Path,
+    search_path: &Path,
+    include_matcher: Option<&GlobMatcher>,
+) -> Result<Vec<WorkspaceFile>, ToolError> {
+    let mut files = collect_candidate_files(workspace_root, search_path)?;
+
+    if let Some(matcher) = include_matcher {
+        files.retain(|file| {
+            matcher.is_match(&file.file_name) || matcher.is_match(&file.relative_path)
+        });
+    }
+
+    files.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+    Ok(files)
 }
 
 fn select_file_matches(
