@@ -896,15 +896,16 @@ fn visit_fs_read_lines(
 }
 
 fn decode_fs_read_line(raw_line: &[u8]) -> Result<String, ToolError> {
-    let mut line = raw_line;
-    if let Some(stripped) = line.strip_suffix(b"\n") {
-        line = stripped;
-        if let Some(stripped) = line.strip_suffix(b"\r") {
-            line = stripped;
-        }
-    }
+    let line = strip_fs_read_line_terminator(raw_line);
     String::from_utf8(line.to_vec())
         .map_err(|_| ToolError::Execution("binary file not supported".to_string()))
+}
+
+fn strip_fs_read_line_terminator(raw_line: &[u8]) -> &[u8] {
+    let Some(without_lf) = raw_line.strip_suffix(b"\n") else {
+        return raw_line;
+    };
+    without_lf.strip_suffix(b"\r").unwrap_or(without_lf)
 }
 
 fn build_fs_read_anchor_payload(anchors: &[LineAnchor], lines: &[String]) -> serde_json::Value {
@@ -1439,6 +1440,25 @@ mod tests {
             json!(super::compute_line_hash("beta"))
         );
         assert_eq!(metadata["anchors"][1]["text"], json!("beta"));
+    }
+
+    #[tokio::test]
+    async fn fs_read_strips_crlf_line_endings() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        write_workspace_file(temp.path(), "fixture.txt", "alpha\r\nbeta\r\n");
+
+        let tool = FsReadTool::new(false);
+        let result = tool
+            .call(
+                fs_read_context(temp.path(), "toolcall-crlf-read"),
+                json!({
+                    "path": "fixture.txt",
+                }),
+            )
+            .await
+            .expect("fs.read should read CRLF text");
+
+        assert_eq!(result.display_text, "1: alpha\n2: beta");
     }
 
     #[tokio::test]
