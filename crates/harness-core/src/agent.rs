@@ -23,6 +23,7 @@ use crate::event::{
     EventArtifactRef, ProviderAssistantMessageMetadata, ProviderRequestFinishedMetadata,
     ProviderRequestStartedMetadata, ProviderThinkingMetadata,
 };
+use crate::file_tag::{SelectedAgentTag, SelectedFileTag, SelectedResourceTag};
 use crate::provider_args::provider_tool_arguments_json;
 use crate::text::{non_empty_trimmed, truncate_with_ellipsis};
 use crate::tool::{
@@ -66,9 +67,26 @@ impl AgentProfile {
 pub struct AgentRequest {
     pub agent_id: String,
     pub prompt: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_context: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub selected_file_tags: Vec<SelectedFileTag>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub selected_agent_tags: Vec<SelectedAgentTag>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub selected_resource_tags: Vec<SelectedResourceTag>,
     pub model_ref: String,
     #[serde(default)]
     pub model_settings: AgentModelSettings,
+}
+
+impl AgentRequest {
+    pub fn provider_prompt(&self) -> String {
+        match self.prompt_context.as_deref().and_then(non_empty_trimmed) {
+            Some(context) => format!("{}\n\n{context}", self.prompt),
+            None => self.prompt.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -690,7 +708,8 @@ where
     Fut: Future<Output = ()>,
 {
     let model = AgentModelRef::parse(&request.model_ref);
-    let projected_context = project_provider_context_for_prompt(prior_context, &request.prompt);
+    let provider_prompt = request.provider_prompt();
+    let projected_context = project_provider_context_for_prompt(prior_context, &provider_prompt);
     let provider_boundary = transform_context_for_provider(ProviderBoundaryInput {
         profile,
         model: model.clone(),
@@ -1071,7 +1090,8 @@ where
         Err(reason) => return AgentTurnOutcome::failed(reason),
     };
 
-    let projected_context = project_provider_context_for_prompt(prior_context, &request.prompt);
+    let provider_prompt = request.provider_prompt();
+    let projected_context = project_provider_context_for_prompt(prior_context, &provider_prompt);
     let provider_request_id = match next_provider_request_id().await {
         Ok(request_id) => request_id,
         Err(reason) => return AgentTurnOutcome::failed(reason),
@@ -2110,8 +2130,9 @@ mod tests {
         let tool_defs = build_provider_tool_defs(&profile, test_tool_registry().as_ref())
             .expect("build provider tool defs");
 
+        let provider_prompt = request.provider_prompt();
         let projected_context =
-            project_provider_context_for_prompt(&prior_context, &request.prompt);
+            project_provider_context_for_prompt(&prior_context, &provider_prompt);
         let boundary = transform_context_for_provider(ProviderBoundaryInput {
             profile: &profile,
             model: AgentModelRef::parse(&request.model_ref),
@@ -2125,7 +2146,7 @@ mod tests {
         });
 
         let existing_messages =
-            build_provider_context_messages(&profile, &prior_context, &request.prompt);
+            build_provider_context_messages(&profile, &prior_context, &request.provider_prompt());
         assert_eq!(boundary.messages, existing_messages);
 
         assert_eq!(boundary.messages[0], completion_system_message("sys"));
@@ -2344,8 +2365,11 @@ mod tests {
         AgentRequest {
             agent_id: "agent_1".to_string(),
             prompt: "Use a tool".to_string(),
+            prompt_context: None,
+            selected_file_tags: Vec::new(),
+            selected_agent_tags: Vec::new(),
+            selected_resource_tags: Vec::new(),
             model_ref: "mock:model-1".to_string(),
-            model_ref_explicit: true,
             model_settings: AgentModelSettings::default(),
         }
     }

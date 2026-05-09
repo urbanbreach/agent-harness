@@ -607,6 +607,7 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             name: "alpha".to_string(),
             category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
+            model_ref_explicit: true,
             system_prompt: "alpha-prompt".to_string(),
             max_iters: Some(12),
             temperature: Some(0.0),

@@ -274,6 +274,9 @@ pub enum Command {
         actor: EventActor,
         agent_id: String,
         prompt: String,
+        selected_file_tags: Vec<crate::file_tag::SelectedFileTag>,
+        selected_agent_tags: Vec<crate::file_tag::SelectedAgentTag>,
+        selected_resource_tags: Vec<crate::file_tag::SelectedResourceTag>,
         model_ref_override: Option<String>,
         model_settings_override: Option<AgentModelSettings>,
         respond_to: oneshot::Sender<Result<String, CoordinatorError>>,
@@ -733,10 +736,33 @@ impl CoordinatorHandle {
         model_ref_override: Option<String>,
         model_settings_override: Option<AgentModelSettings>,
     ) -> Result<String, CoordinatorError> {
+        self.request_agent_turn_with_model_and_selected_tags(
+            actor,
+            agent_id,
+            prompt,
+            crate::file_tag::SelectedPromptTags::default(),
+            model_ref_override,
+            model_settings_override,
+        )
+        .await
+    }
+
+    pub async fn request_agent_turn_with_model_and_selected_tags(
+        &self,
+        actor: EventActor,
+        agent_id: impl Into<String>,
+        prompt: impl Into<String>,
+        selected_tags: crate::file_tag::SelectedPromptTags,
+        model_ref_override: Option<String>,
+        model_settings_override: Option<AgentModelSettings>,
+    ) -> Result<String, CoordinatorError> {
         self.request(|respond_to| Command::RequestAgentTurn {
             actor,
             agent_id: agent_id.into(),
             prompt: prompt.into(),
+            selected_file_tags: selected_tags.files,
+            selected_agent_tags: selected_tags.agents,
+            selected_resource_tags: selected_tags.resources,
             model_ref_override,
             model_settings_override,
             respond_to,
@@ -1032,6 +1058,9 @@ impl Coordinator {
                 actor,
                 agent_id,
                 prompt,
+                selected_file_tags,
+                selected_agent_tags,
+                selected_resource_tags,
                 model_ref_override,
                 model_settings_override,
                 respond_to,
@@ -1041,6 +1070,11 @@ impl Coordinator {
                         actor,
                         agent_id,
                         prompt,
+                        crate::file_tag::SelectedPromptTags {
+                            files: selected_file_tags,
+                            agents: selected_agent_tags,
+                            resources: selected_resource_tags,
+                        },
                         model_ref_override,
                         model_settings_override,
                     )
@@ -1822,6 +1856,10 @@ impl Coordinator {
                 } else {
                     profile_cfg.system_prompt.clone()
                 },
+                prompt_context: None,
+                selected_file_tags: Vec::new(),
+                selected_agent_tags: Vec::new(),
+                selected_resource_tags: Vec::new(),
                 model_ref: profile_cfg.model_ref.clone(),
                 model_settings: default_model_settings_for_profile(&profile_cfg.name),
             };
@@ -1852,6 +1890,7 @@ impl Coordinator {
         actor: EventActor,
         agent_id: String,
         prompt: String,
+        selected_tags: crate::file_tag::SelectedPromptTags,
         model_ref_override: Option<String>,
         model_settings_override: Option<AgentModelSettings>,
     ) -> Result<String, CoordinatorError> {
@@ -1896,9 +1935,21 @@ impl Coordinator {
             prompt
         };
 
+        let prompt_context = crate::file_tag::materialize_prompt_part_context(
+            &run_state.info.workspace_root,
+            &prompt,
+            &selected_tags.files,
+            &selected_tags.agents,
+            &selected_tags.resources,
+        );
+
         let request = AgentRequest {
             agent_id,
             prompt,
+            prompt_context,
+            selected_file_tags: selected_tags.files,
+            selected_agent_tags: selected_tags.agents,
+            selected_resource_tags: selected_tags.resources,
             model_ref: model_ref_override.unwrap_or_else(|| profile.model_ref.clone()),
             model_settings: model_settings_override
                 .unwrap_or_else(|| default_model_settings_for_profile(&profile.name)),
@@ -6476,7 +6527,8 @@ fn prepare_provider_transform_phase(
 ) -> Result<AgentProviderTurnState, String> {
     let model = AgentModelRef::parse(&request.model_ref);
     let tool_defs = build_provider_tool_defs(profile, tool_registry)?;
-    let messages = build_provider_context_messages(profile, prior_context, &request.prompt);
+    let provider_prompt = request.provider_prompt();
+    let messages = build_provider_context_messages(profile, prior_context, &provider_prompt);
 
     Ok(AgentProviderTurnState {
         model,

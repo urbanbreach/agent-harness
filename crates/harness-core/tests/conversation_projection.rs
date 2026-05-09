@@ -24,8 +24,11 @@ fn provider_boundary_preserves_existing_message_shape() {
     let request = AgentRequest {
         agent_id: "agent_1".to_string(),
         prompt: "Use a tool".to_string(),
+        prompt_context: None,
+        selected_file_tags: Vec::new(),
+        selected_agent_tags: Vec::new(),
+        selected_resource_tags: Vec::new(),
         model_ref: "mock:model-1".to_string(),
-        model_ref_explicit: true,
         model_settings: AgentModelSettings {
             variant: Some("gpt-5.4".to_string()),
             reasoning_effort: Some("high".to_string()),
@@ -85,7 +88,7 @@ fn provider_boundary_preserves_existing_message_shape() {
     });
 
     let existing_messages =
-        build_provider_context_messages(&profile, &prior_context, &request.prompt);
+        build_provider_context_messages(&profile, &prior_context, &request.provider_prompt());
     assert_eq!(boundary.messages, existing_messages);
 
     assert_eq!(

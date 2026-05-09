@@ -1545,6 +1545,7 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
         name: "alpha".to_string(),
         category: "deep".to_string(),
         model_ref: "mock:model-1".to_string(),
+        model_ref_explicit: true,
         system_prompt: "single-call-system".to_string(),
         temperature: Some(0.0),
         max_iters: Some(12),
@@ -1554,14 +1555,21 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
     let request = AgentRequest {
         agent_id: "agent_1".to_string(),
         prompt: "single provider call".to_string(),
+        prompt_context: None,
+        selected_file_tags: Vec::new(),
+        selected_agent_tags: Vec::new(),
+        selected_resource_tags: Vec::new(),
         model_ref: "mock:model-1".to_string(),
         model_settings: AgentModelSettings::default(),
     };
     let tool_defs = build_provider_tool_defs(&profile, tool_registry.as_ref())
         .expect("build provider tool defs");
     let function_name = tool_defs.first().expect("tool def").function_name.clone();
-    let messages =
-        build_provider_context_messages(&profile, &ProviderContext::default(), &request.prompt);
+    let messages = build_provider_context_messages(
+        &profile,
+        &ProviderContext::default(),
+        &request.provider_prompt(),
+    );
     let expected_request = CompletionRequest {
         provider_id: Some("mock".to_string()),
         model_id: "model-1".to_string(),
@@ -9587,6 +9595,7 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             name: "alpha".to_string(),
             category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
+            model_ref_explicit: true,
             system_prompt: "alpha-prompt".to_string(),
             max_iters: Some(12),
             temperature: Some(0.0),
@@ -9600,6 +9609,7 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             name: "beta".to_string(),
             category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
+            model_ref_explicit: true,
             system_prompt: "beta-prompt".to_string(),
             max_iters: Some(12),
             temperature: Some(0.0),
@@ -9618,6 +9628,7 @@ fn agent_profiles_with_title_agent() -> BTreeMap<String, AgentProfile> {
             name: harness_core::session_title::TITLE_AGENT_NAME.to_string(),
             category: harness_core::session_title::TITLE_AGENT_NAME.to_string(),
             model_ref: "mock:title-model".to_string(),
+            model_ref_explicit: true,
             system_prompt: harness_core::session_title::TITLE_AGENT_SYSTEM_PROMPT.to_string(),
             max_iters: None,
             temperature: Some(harness_core::session_title::TITLE_AGENT_TEMPERATURE),
