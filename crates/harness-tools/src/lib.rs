@@ -671,11 +671,11 @@ fn build_fs_read_structured_json(
     resolved: &Path,
     read: &FsReadWindow,
 ) -> serde_json::Value {
-    let anchors = if request.render.hashline_anchors {
-        build_fs_read_anchor_payload_from_owned(&read.shown_lines, request.start_line_index())
-    } else {
-        serde_json::Value::Null
-    };
+    let anchors = read
+        .anchors
+        .as_ref()
+        .map(|anchors| build_fs_read_anchor_payload(anchors, &read.shown_lines))
+        .unwrap_or(serde_json::Value::Null);
 
     json!({
         "path": request.path.as_str(),
@@ -882,15 +882,13 @@ fn decode_fs_read_line(raw_line: &[u8]) -> Result<String, ToolError> {
         .map_err(|_| ToolError::Execution("binary file not supported".to_string()))
 }
 
-fn build_fs_read_anchor_payload_from_owned(
-    lines: &[String],
-    start_line_index: usize,
-) -> serde_json::Value {
-    json!(lines
+fn build_fs_read_anchor_payload(anchors: &[LineAnchor], lines: &[String]) -> serde_json::Value {
+    debug_assert_eq!(anchors.len(), lines.len());
+
+    json!(anchors
         .iter()
-        .enumerate()
-        .map(|(index, line)| {
-            let anchor = build_fs_read_line_anchor(start_line_index + index + 1, line);
+        .zip(lines)
+        .map(|(anchor, line)| {
             json!({
                 "line": anchor.line,
                 "hash": anchor.hash,
