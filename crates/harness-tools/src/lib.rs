@@ -250,6 +250,10 @@ impl FsReadTool {
 
 const TOOL_OUTPUT_INLINE_LINE_LIMIT: usize = 2_000;
 const TOOL_OUTPUT_INLINE_BYTE_LIMIT: usize = 51_200;
+const SHELL_OUTPUT_PREVIEW_LIMITS: OutputPreviewLimits = OutputPreviewLimits {
+    max_lines: TOOL_OUTPUT_INLINE_LINE_LIMIT,
+    max_bytes: TOOL_OUTPUT_INLINE_BYTE_LIMIT,
+};
 
 #[derive(Debug, Clone, Copy)]
 struct FsReadRenderOptions {
@@ -401,18 +405,24 @@ struct OutputPreview {
     inline_lines: usize,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct OutputPreviewLimits {
+    max_lines: usize,
+    max_bytes: usize,
+}
+
 impl OutputPreview {
     fn is_truncated(&self) -> bool {
         self.inline_bytes < self.total_bytes
     }
 }
 
-fn preview_tool_output(text: &str, max_lines: usize, max_bytes: usize) -> OutputPreview {
+fn preview_tool_output(text: &str, limits: OutputPreviewLimits) -> OutputPreview {
     let total_bytes = text.len();
     let total_lines = rendered_line_count(text);
 
-    let byte_limited_end = preview_end_for_byte_limit(text, max_bytes);
-    let line_limited_end = preview_end_for_line_limit(text, max_lines);
+    let byte_limited_end = preview_end_for_byte_limit(text, limits.max_bytes);
+    let line_limited_end = preview_end_for_line_limit(text, limits.max_lines);
     let preview_end = byte_limited_end.min(line_limited_end);
 
     let preview = text[..preview_end].to_string();
@@ -581,11 +591,7 @@ fn build_shell_run_result(
 
     output.insert_stream_byte_metadata(&mut structured_json);
     let full_output = output.combined_output();
-    let preview = preview_tool_output(
-        &full_output,
-        TOOL_OUTPUT_INLINE_LINE_LIMIT,
-        TOOL_OUTPUT_INLINE_BYTE_LIMIT,
-    );
+    let preview = preview_tool_output(&full_output, SHELL_OUTPUT_PREVIEW_LIMITS);
 
     if !preview.is_truncated() {
         return Ok(build_inline_shell_run_result(
@@ -1506,8 +1512,13 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
 
-        let preview =
-            super::preview_tool_output(&output, super::TOOL_OUTPUT_INLINE_LINE_LIMIT, usize::MAX);
+        let preview = super::preview_tool_output(
+            &output,
+            super::OutputPreviewLimits {
+                max_lines: super::TOOL_OUTPUT_INLINE_LINE_LIMIT,
+                max_bytes: usize::MAX,
+            },
+        );
 
         assert!(preview.is_truncated());
         assert_eq!(preview.inline_lines, super::TOOL_OUTPUT_INLINE_LINE_LIMIT);
@@ -1523,8 +1534,13 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
 
-        let preview =
-            super::preview_tool_output(&output, super::TOOL_OUTPUT_INLINE_LINE_LIMIT, usize::MAX);
+        let preview = super::preview_tool_output(
+            &output,
+            super::OutputPreviewLimits {
+                max_lines: super::TOOL_OUTPUT_INLINE_LINE_LIMIT,
+                max_bytes: usize::MAX,
+            },
+        );
 
         assert!(!preview.is_truncated());
         assert_eq!(preview.inline_lines, super::TOOL_OUTPUT_INLINE_LINE_LIMIT);
@@ -1534,7 +1550,13 @@ mod tests {
 
     #[test]
     fn preview_tool_output_byte_limit_keeps_utf8_boundaries() {
-        let preview = super::preview_tool_output("ééx", usize::MAX, 3);
+        let preview = super::preview_tool_output(
+            "ééx",
+            super::OutputPreviewLimits {
+                max_lines: usize::MAX,
+                max_bytes: 3,
+            },
+        );
 
         assert!(preview.is_truncated());
         assert_eq!(preview.text, "é");
