@@ -471,7 +471,7 @@ fn shell_output_preview_end_for_line_limit(text: &str, max_lines: usize) -> usiz
     line_end
 }
 
-fn join_command_output(stdout: &str, stderr: &str) -> String {
+fn join_shell_streams(stdout: &str, stderr: &str) -> String {
     if stderr.is_empty() {
         stdout.to_string()
     } else if stdout.is_empty() {
@@ -551,7 +551,7 @@ impl From<std::process::Output> for ShellProcessOutput {
 
 impl ShellProcessOutput {
     fn combined_output(&self) -> String {
-        join_command_output(&self.stdout, &self.stderr)
+        join_shell_streams(&self.stdout, &self.stderr)
     }
 
     fn insert_stream_byte_metadata(
