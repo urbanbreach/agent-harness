@@ -51,6 +51,11 @@ struct FileMatchSelection {
     total_count: usize,
 }
 
+enum Utf8FileLines {
+    Lines(Vec<String>),
+    NonUtf8,
+}
+
 #[async_trait]
 impl Tool for FsGrepTool {
     fn id(&self) -> &str {
@@ -140,8 +145,9 @@ fn collect_grep_matches(
     let mut selected_count = 0usize;
 
     for file in files {
-        let Some(lines) = read_utf8_lines(&file.path)? else {
-            continue;
+        let lines = match read_utf8_lines(&file.path)? {
+            Utf8FileLines::Lines(lines) => lines,
+            Utf8FileLines::NonUtf8 => continue,
         };
         if lines.is_empty() {
             continue;
@@ -303,7 +309,7 @@ fn render_grep_line(relative_path: &str, lines: &[String], line_idx: usize) -> S
     format!("{relative_path}:{}: {}", line_idx + 1, lines[line_idx])
 }
 
-fn read_utf8_lines(path: &Path) -> Result<Option<Vec<String>>, ToolError> {
+fn read_utf8_lines(path: &Path) -> Result<Utf8FileLines, ToolError> {
     let file = std::fs::File::open(path).map_err(|err| {
         ToolError::Execution(format!("failed to read file {}: {err}", path.display()))
     })?;
@@ -320,12 +326,12 @@ fn read_utf8_lines(path: &Path) -> Result<Option<Vec<String>>, ToolError> {
             break;
         }
         let Some(line) = decode_utf8_line(raw_line.as_slice()) else {
-            return Ok(None);
+            return Ok(Utf8FileLines::NonUtf8);
         };
         lines.push(line);
     }
 
-    Ok(Some(lines))
+    Ok(Utf8FileLines::Lines(lines))
 }
 
 fn decode_utf8_line(raw_line: &[u8]) -> Option<String> {
