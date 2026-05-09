@@ -248,11 +248,11 @@ impl FsReadTool {
     }
 }
 
-const TOOL_OUTPUT_INLINE_LINE_LIMIT: usize = 2_000;
-const TOOL_OUTPUT_INLINE_BYTE_LIMIT: usize = 51_200;
-const SHELL_OUTPUT_PREVIEW_LIMITS: OutputPreviewLimits = OutputPreviewLimits {
-    max_lines: TOOL_OUTPUT_INLINE_LINE_LIMIT,
-    max_bytes: TOOL_OUTPUT_INLINE_BYTE_LIMIT,
+const SHELL_OUTPUT_INLINE_LINE_LIMIT: usize = 2_000;
+const SHELL_OUTPUT_INLINE_BYTE_LIMIT: usize = 51_200;
+const SHELL_OUTPUT_PREVIEW_LIMITS: ShellOutputPreviewLimits = ShellOutputPreviewLimits {
+    max_lines: SHELL_OUTPUT_INLINE_LINE_LIMIT,
+    max_bytes: SHELL_OUTPUT_INLINE_BYTE_LIMIT,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -397,7 +397,7 @@ fn format_fs_read_output_line(
 }
 
 #[derive(Debug, Clone)]
-struct OutputPreview {
+struct ShellOutputPreview {
     text: String,
     total_bytes: usize,
     total_lines: usize,
@@ -406,18 +406,18 @@ struct OutputPreview {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct OutputPreviewLimits {
+struct ShellOutputPreviewLimits {
     max_lines: usize,
     max_bytes: usize,
 }
 
-impl OutputPreview {
+impl ShellOutputPreview {
     fn is_truncated(&self) -> bool {
         self.inline_bytes < self.total_bytes
     }
 }
 
-fn preview_tool_output(text: &str, limits: OutputPreviewLimits) -> OutputPreview {
+fn preview_shell_output(text: &str, limits: ShellOutputPreviewLimits) -> ShellOutputPreview {
     let total_bytes = text.len();
     let total_lines = rendered_line_count(text);
 
@@ -428,7 +428,7 @@ fn preview_tool_output(text: &str, limits: OutputPreviewLimits) -> OutputPreview
     let preview = text[..preview_end].to_string();
     let inline_lines = rendered_line_count(&preview);
 
-    OutputPreview {
+    ShellOutputPreview {
         inline_bytes: preview.len(),
         inline_lines,
         text: preview,
@@ -591,7 +591,7 @@ fn build_shell_run_result(
 
     output.insert_stream_byte_metadata(&mut structured_json);
     let full_output = output.combined_output();
-    let preview = preview_tool_output(&full_output, SHELL_OUTPUT_PREVIEW_LIMITS);
+    let preview = preview_shell_output(&full_output, SHELL_OUTPUT_PREVIEW_LIMITS);
 
     if !preview.is_truncated() {
         return Ok(build_inline_shell_run_result(
@@ -618,7 +618,7 @@ fn build_truncated_shell_run_result(
     ctx: &ToolContext,
     mut structured_json: serde_json::Map<String, serde_json::Value>,
     full_output: &str,
-    preview: OutputPreview,
+    preview: ShellOutputPreview,
 ) -> Result<ToolResult, ToolError> {
     let artifact = write_shell_output_artifact(ctx, full_output)?;
     insert_truncated_shell_output_metadata(&mut structured_json, &preview, &artifact);
@@ -649,7 +649,7 @@ fn write_shell_output_artifact(
         })
 }
 
-fn shell_output_truncation_marker(preview: &OutputPreview, artifact: &ArtifactRef) -> String {
+fn shell_output_truncation_marker(preview: &ShellOutputPreview, artifact: &ArtifactRef) -> String {
     format!(
         "... [truncated: showing {} of {} lines and {} of {} bytes; full output: {}]",
         preview.inline_lines,
@@ -662,7 +662,7 @@ fn shell_output_truncation_marker(preview: &OutputPreview, artifact: &ArtifactRe
 
 fn insert_truncated_shell_output_metadata(
     structured_json: &mut serde_json::Map<String, serde_json::Value>,
-    preview: &OutputPreview,
+    preview: &ShellOutputPreview,
     artifact: &ArtifactRef,
 ) {
     structured_json.insert("truncated".to_string(), json!(true));
@@ -1506,53 +1506,53 @@ mod tests {
     }
 
     #[test]
-    fn preview_tool_output_enforces_line_limit_without_trailing_newline() {
+    fn preview_shell_output_enforces_line_limit_without_trailing_newline() {
         let output = (1..=2_001)
             .map(|idx| format!("line {idx}"))
             .collect::<Vec<_>>()
             .join("\n");
 
-        let preview = super::preview_tool_output(
+        let preview = super::preview_shell_output(
             &output,
-            super::OutputPreviewLimits {
-                max_lines: super::TOOL_OUTPUT_INLINE_LINE_LIMIT,
+            super::ShellOutputPreviewLimits {
+                max_lines: super::SHELL_OUTPUT_INLINE_LINE_LIMIT,
                 max_bytes: usize::MAX,
             },
         );
 
         assert!(preview.is_truncated());
-        assert_eq!(preview.inline_lines, super::TOOL_OUTPUT_INLINE_LINE_LIMIT);
+        assert_eq!(preview.inline_lines, super::SHELL_OUTPUT_INLINE_LINE_LIMIT);
         assert_eq!(preview.total_lines, 2_001);
         assert!(preview.text.trim_end_matches('\n').ends_with("line 2000"));
         assert!(!preview.text.contains("line 2001"));
     }
 
     #[test]
-    fn preview_tool_output_allows_exact_line_limit_without_trailing_newline() {
-        let output = (1..=super::TOOL_OUTPUT_INLINE_LINE_LIMIT)
+    fn preview_shell_output_allows_exact_line_limit_without_trailing_newline() {
+        let output = (1..=super::SHELL_OUTPUT_INLINE_LINE_LIMIT)
             .map(|idx| format!("line {idx}"))
             .collect::<Vec<_>>()
             .join("\n");
 
-        let preview = super::preview_tool_output(
+        let preview = super::preview_shell_output(
             &output,
-            super::OutputPreviewLimits {
-                max_lines: super::TOOL_OUTPUT_INLINE_LINE_LIMIT,
+            super::ShellOutputPreviewLimits {
+                max_lines: super::SHELL_OUTPUT_INLINE_LINE_LIMIT,
                 max_bytes: usize::MAX,
             },
         );
 
         assert!(!preview.is_truncated());
-        assert_eq!(preview.inline_lines, super::TOOL_OUTPUT_INLINE_LINE_LIMIT);
-        assert_eq!(preview.total_lines, super::TOOL_OUTPUT_INLINE_LINE_LIMIT);
+        assert_eq!(preview.inline_lines, super::SHELL_OUTPUT_INLINE_LINE_LIMIT);
+        assert_eq!(preview.total_lines, super::SHELL_OUTPUT_INLINE_LINE_LIMIT);
         assert_eq!(preview.text, output);
     }
 
     #[test]
-    fn preview_tool_output_byte_limit_keeps_utf8_boundaries() {
-        let preview = super::preview_tool_output(
+    fn preview_shell_output_byte_limit_keeps_utf8_boundaries() {
+        let preview = super::preview_shell_output(
             "ééx",
-            super::OutputPreviewLimits {
+            super::ShellOutputPreviewLimits {
                 max_lines: usize::MAX,
                 max_bytes: 3,
             },
