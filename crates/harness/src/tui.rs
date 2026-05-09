@@ -959,10 +959,7 @@ async fn run_interactive_mode(
                 )
             }
         },
-        |run_dir| async move {
-            run_replay_tui(run_dir, cmd.exit_on_finish).await?;
-            Ok(InteractiveWorkflow::Startup)
-        },
+        |run_dir| async move { run_replay_tui(run_dir, cmd.exit_on_finish).await },
     )
     .await;
 
@@ -1098,10 +1095,7 @@ async fn run_direct_continue_mode(
                 )
             }
         },
-        |run_dir| async move {
-            run_replay_tui(run_dir, cmd.exit_on_finish).await?;
-            Ok(InteractiveWorkflow::Startup)
-        },
+        |run_dir| async move { run_replay_tui(run_dir, cmd.exit_on_finish).await },
     )
     .await;
 
@@ -1164,6 +1158,7 @@ async fn run_startup_launcher(
                 | UiIntent::ContinueSession { .. }
                 | UiIntent::SubmitPrompt { .. }
                 | UiIntent::CompactSession
+                | UiIntent::InterruptSession { .. }
                 | UiIntent::QuitRequested
         ) {
             return;
@@ -1214,27 +1209,41 @@ fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> InteractiveWorkfl
         | None
         | Some(UiIntent::ResolvePermission { .. })
         | Some(UiIntent::CompactSession)
+        | Some(UiIntent::InterruptSession { .. })
         | Some(UiIntent::ForkSession { .. })
         | Some(UiIntent::CloneSession { .. })
         | Some(UiIntent::SwitchModel { .. }) => InteractiveWorkflow::Quit,
     }
 }
 
-async fn run_replay_tui(run_dir: PathBuf, exit_on_finish: bool) -> Result<(), String> {
+async fn run_replay_tui(
+    run_dir: PathBuf,
+    exit_on_finish: bool,
+) -> Result<InteractiveWorkflow, String> {
     let events = load_events_from_run_dir(&run_dir).map_err(|err| err.to_string())?;
     set_pending_replay_launch_metadata(Some(replay_launch_metadata_for_run(&run_dir, &events)));
+    let selected_workflow = Arc::new(Mutex::new(None::<InteractiveWorkflow>));
+    let selected_workflow_sink = Arc::clone(&selected_workflow);
+    let on_ui_intent = Arc::new(move |intent: UiIntent| {
+        if let Some(workflow) = live_workflow_from_intent(&intent) {
+            capture_first_workflow(&selected_workflow_sink, workflow);
+        }
+    });
+
     tokio::task::spawn_blocking(move || {
         run_tui_with_options(TuiOptions {
             mode: TuiMode::Replay { run_dir, events },
             exit_on_finish,
-            on_ui_intent: None,
+            on_ui_intent: Some(on_ui_intent),
             keybindings: None,
-            preserve_terminal_on_exit: false,
+            preserve_terminal_on_exit: true,
         })
     })
     .await
     .map_err(|err| format!("replay tui task failed: {err}"))?
-    .map_err(|err| format!("replay tui error: {err}"))
+    .map_err(|err| format!("replay tui error: {err}"))?;
+
+    take_selected_workflow_or(&selected_workflow, InteractiveWorkflow::Startup)
 }
 
 async fn run_continue_session_bootstrap(
@@ -1550,6 +1559,7 @@ fn live_workflow_from_intent(intent: &UiIntent) -> Option<InteractiveWorkflow> {
         UiIntent::ResolvePermission { .. }
         | UiIntent::SubmitPrompt { .. }
         | UiIntent::CompactSession
+        | UiIntent::InterruptSession { .. }
         | UiIntent::ForkSession { .. }
         | UiIntent::CloneSession { .. }
         | UiIntent::SwitchModel { .. } => None,
@@ -1562,6 +1572,7 @@ fn forward_intent_to_live_run(intent: &UiIntent) -> bool {
         UiIntent::ResolvePermission { .. }
             | UiIntent::SubmitPrompt { .. }
             | UiIntent::CompactSession
+            | UiIntent::InterruptSession { .. }
             | UiIntent::ForkSession { .. }
             | UiIntent::CloneSession { .. }
             | UiIntent::SwitchModel { .. }
@@ -1580,10 +1591,17 @@ fn capture_first_workflow(selected_workflow: &SelectedWorkflow, workflow: Intera
 fn take_selected_workflow(
     selected_workflow: &SelectedWorkflow,
 ) -> Result<InteractiveWorkflow, String> {
+    take_selected_workflow_or(selected_workflow, InteractiveWorkflow::Quit)
+}
+
+fn take_selected_workflow_or(
+    selected_workflow: &SelectedWorkflow,
+    default: InteractiveWorkflow,
+) -> Result<InteractiveWorkflow, String> {
     selected_workflow
         .lock()
         .map_err(|_| "live workflow selection lock poisoned".to_string())
-        .map(|mut slot| slot.take().unwrap_or(InteractiveWorkflow::Quit))
+        .map(|mut slot| slot.take().unwrap_or(default))
 }
 
 async fn stop_live_source_run(coordinator: &CoordinatorHandle) -> Result<(), String> {
@@ -2403,6 +2421,16 @@ async fn handle_ui_intents(
                 };
                 let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
             }
+            UiIntent::InterruptSession { task_ids } => {
+                for task_id in task_ids {
+                    if let Err(err) = coordinator.cancel_task(task_id, "interrupted").await {
+                        let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                            message: format!("interrupt failed: {err}"),
+                            level: OperatorNoticeLevel::Error,
+                        });
+                    }
+                }
+            }
             UiIntent::ForkSession {
                 source_run_dir,
                 events,
@@ -3197,6 +3225,26 @@ mod tests {
 
         assert!(recover_mutex_lock(&selected_workflow).is_none());
         assert_eq!(intent_rx.try_recv().ok(), Some(UiIntent::CompactSession));
+    }
+
+    #[test]
+    fn live_ui_router_forwards_interrupt_intent_without_switching_workflow() {
+        let (intent_tx, mut intent_rx) = mpsc::unbounded_channel::<UiIntent>();
+        let launch_selection = Arc::new(Mutex::new(LaunchMetadata::default()));
+        let (selected_workflow, sink) =
+            build_live_ui_intent_router(intent_tx, Arc::clone(&launch_selection), false);
+
+        sink(UiIntent::InterruptSession {
+            task_ids: vec!["task_active".to_string()],
+        });
+
+        assert!(recover_mutex_lock(&selected_workflow).is_none());
+        assert_eq!(
+            intent_rx.try_recv().ok(),
+            Some(UiIntent::InterruptSession {
+                task_ids: vec!["task_active".to_string()],
+            })
+        );
     }
 
     #[test]

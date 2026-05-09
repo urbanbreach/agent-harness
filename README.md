@@ -7,6 +7,10 @@
 - `skills` and `load_skills` are equivalent aliases for the same list.
 - `command`, when provided, is prepended to the child prompt as delegation context.
 - Skill/command context is delivered as prompt instructions before the original task body.
+- Task results include child runtime metadata and `next_actions` for status checks,
+  waiting, cancellation, and continuation.
+- `background_output(cancel: true, request_id: ...)` requests coordinator-owned
+  cancellation for an authorized non-terminal background child task.
 
 Rust workspace for an event-sourced agent harness with:
 

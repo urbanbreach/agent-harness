@@ -193,6 +193,7 @@ fn interactive_agent_profiles_with_extra_tools(
                 name: profile_name.clone(),
                 category: profile_name.clone(),
                 model_ref: model_selection.primary.model_ref,
+                model_ref_explicit: profile_cfg.model_ref_explicit,
                 system_prompt,
                 max_iters: profile_cfg.max_iters,
                 temperature: profile_cfg.temperature,

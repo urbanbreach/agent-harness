@@ -145,10 +145,18 @@ read-only local codebase search profile for `task(subagent_type: "explore")`.
 `general` is a broader focused implementation/research profile for
 `task(subagent_type: "general")`; it intentionally omits `task` by default so
 subagents do not recursively redelegate unless a project opts into that tool.
+When a subagent profile does not configure its own `model`, task delegation
+inherits the invoking parent turn's active model and model settings. If the
+subagent profile has an explicit `model`, that configured model wins.
 `task(run_in_background: true)` returns a child `request_id`; use the
 `background_output` tool with that `request_id` to inspect completion status or
-the terminal result. Retrieval is event-replay based and does not cancel or
-advance the child task.
+the terminal result. Retrieval is event-replay based and does not advance the
+child task. To stop an authorized non-terminal child request, call
+`background_output` with the same `request_id`, `cancel: true`, and an optional
+`reason`; the coordinator records cancellation through the normal task lifecycle.
+Task and background-output results also include child runtime metadata such as
+profile, category, model ref, toolset, redelegation capability, and exact
+follow-up tool actions for status checks, waiting, cancellation, or continuation.
 
 Agent `max_iters` / `maxIters` is optional. When unset, the runtime does not add
 a profile-specific iteration cap; the agent continues until the model stops, the
