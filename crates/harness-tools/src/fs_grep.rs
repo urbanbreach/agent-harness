@@ -319,20 +319,25 @@ fn read_utf8_lines(path: &Path) -> Result<Option<Vec<String>>, ToolError> {
         if bytes_read == 0 {
             break;
         }
-        let mut line = raw_line.as_slice();
-        if let Some(stripped) = line.strip_suffix(b"\n") {
-            line = stripped;
-            if let Some(stripped) = line.strip_suffix(b"\r") {
-                line = stripped;
-            }
-        }
-        let Ok(line) = String::from_utf8(line.to_vec()) else {
+        let Some(line) = decode_utf8_line(raw_line.as_slice()) else {
             return Ok(None);
         };
         lines.push(line);
     }
 
     Ok(Some(lines))
+}
+
+fn decode_utf8_line(raw_line: &[u8]) -> Option<String> {
+    let mut line = raw_line;
+    if let Some(stripped) = line.strip_suffix(b"\n") {
+        line = stripped;
+        if let Some(stripped) = line.strip_suffix(b"\r") {
+            line = stripped;
+        }
+    }
+
+    std::str::from_utf8(line).ok().map(ToOwned::to_owned)
 }
 
 #[cfg(test)]
