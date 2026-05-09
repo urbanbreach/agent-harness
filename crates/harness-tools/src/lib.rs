@@ -605,26 +605,7 @@ impl Tool for FsReadTool {
         let line_limit = request.line_limit();
         let render = request.render;
         let read = read_fs_window(&resolved, start_line_index, line_limit, render)?;
-        let shown_count = read.shown_lines.len();
-        let mut display_text = read.display_text.clone();
-        let mut artifacts = Vec::new();
-
-        if read.truncated {
-            let artifact =
-                write_fs_read_artifact_streaming(&ctx, &resolved, start_line_index, render)?;
-
-            let marker = format!(
-                "... [truncated: showing {} of {} lines from line {}; full output: {}]",
-                shown_count,
-                read.available_lines,
-                start_line_index + 1,
-                artifact.path
-            );
-
-            append_truncation_marker(&mut display_text, &marker);
-
-            artifacts.push(artifact);
-        }
+        let display = build_fs_read_display(&ctx, &resolved, &read, start_line_index, render)?;
 
         if let Some(anchors) = read.anchors {
             record_file_hashline_read(&ctx, &resolved, anchors)?;
@@ -633,7 +614,7 @@ impl Tool for FsReadTool {
         }
 
         Ok(text_json_artifacts_tool_result(
-            display_text,
+            display.text,
             json!({
                 "path": request.path.as_str(),
                 "resolved_path": resolved.display().to_string(),
@@ -649,9 +630,41 @@ impl Tool for FsReadTool {
                 },
                 "truncated": read.truncated,
             }),
-            artifacts,
+            display.artifacts,
         ))
     }
+}
+
+struct FsReadDisplay {
+    text: String,
+    artifacts: Vec<ArtifactRef>,
+}
+
+fn build_fs_read_display(
+    ctx: &ToolContext,
+    resolved: &Path,
+    read: &FsReadWindow,
+    start_line_index: usize,
+    render: FsReadRenderOptions,
+) -> Result<FsReadDisplay, ToolError> {
+    let mut text = read.display_text.clone();
+    let mut artifacts = Vec::new();
+
+    if read.truncated {
+        let artifact = write_fs_read_artifact_streaming(ctx, resolved, start_line_index, render)?;
+        let marker = format!(
+            "... [truncated: showing {} of {} lines from line {}; full output: {}]",
+            read.shown_lines.len(),
+            read.available_lines,
+            start_line_index + 1,
+            artifact.path
+        );
+
+        append_truncation_marker(&mut text, &marker);
+        artifacts.push(artifact);
+    }
+
+    Ok(FsReadDisplay { text, artifacts })
 }
 
 #[derive(Debug)]
