@@ -1158,7 +1158,7 @@ mod tests {
     use serde::Deserialize;
     use serde_json::json;
     use std::collections::BTreeSet;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use std::sync::Arc;
 
     fn fs_read_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
@@ -1186,6 +1186,16 @@ mod tests {
             .expect("artifact path prefix");
         std::fs::read_to_string(context.artifacts_dir.join(relative))
             .expect("read spilled artifact")
+    }
+
+    fn write_workspace_file(
+        workspace_root: &Path,
+        relative_path: &str,
+        contents: impl AsRef<[u8]>,
+    ) -> PathBuf {
+        let path = workspace_root.join(relative_path);
+        std::fs::write(&path, contents).expect("write workspace fixture");
+        path
     }
 
     #[test]
@@ -1351,8 +1361,11 @@ mod tests {
     #[tokio::test]
     async fn fs_read_supports_offset_and_limit_with_line_numbers() {
         let temp = tempfile::tempdir().expect("tempdir");
-        let source = temp.path().join("fixture.txt");
-        std::fs::write(&source, "line one\nline two\nline three\n").expect("write fixture");
+        write_workspace_file(
+            temp.path(),
+            "fixture.txt",
+            "line one\nline two\nline three\n",
+        );
 
         let tool = FsReadTool::new(false);
         let result = tool
@@ -1380,8 +1393,7 @@ mod tests {
     #[tokio::test]
     async fn fs_read_can_render_hashline_anchors() {
         let temp = tempfile::tempdir().expect("tempdir");
-        let source = temp.path().join("fixture.txt");
-        std::fs::write(&source, "alpha\nbeta\n").expect("write fixture");
+        write_workspace_file(temp.path(), "fixture.txt", "alpha\nbeta\n");
 
         let tool = FsReadTool::new(false);
         let result = tool
@@ -1423,8 +1435,11 @@ mod tests {
     #[tokio::test]
     async fn fs_read_normalizes_zero_offset_and_limit_to_defaults() {
         let temp = tempfile::tempdir().expect("tempdir");
-        let source = temp.path().join("fixture.txt");
-        std::fs::write(&source, "line one\nline two\nline three\n").expect("write fixture");
+        write_workspace_file(
+            temp.path(),
+            "fixture.txt",
+            "line one\nline two\nline three\n",
+        );
 
         let tool = FsReadTool::new(false);
         let result = tool
@@ -1453,8 +1468,11 @@ mod tests {
     #[tokio::test]
     async fn read_tool_normalizes_zero_offset_and_limit_for_model_compatibility() {
         let temp = tempfile::tempdir().expect("tempdir");
-        let source = temp.path().join("fixture.txt");
-        std::fs::write(&source, "line one\nline two\nline three\n").expect("write fixture");
+        write_workspace_file(
+            temp.path(),
+            "fixture.txt",
+            "line one\nline two\nline three\n",
+        );
 
         let registry = coordinator_registry(ShellAllowlist::default());
         let read = registry.get("read").expect("read tool");
@@ -1489,8 +1507,7 @@ mod tests {
     #[tokio::test]
     async fn read_tool_exposes_hashline_anchor_mode_for_model_workflows() {
         let temp = tempfile::tempdir().expect("tempdir");
-        let source = temp.path().join("fixture.txt");
-        std::fs::write(&source, "alpha\nbeta\n").expect("write fixture");
+        write_workspace_file(temp.path(), "fixture.txt", "alpha\nbeta\n");
 
         let registry = coordinator_registry(ShellAllowlist::default());
         let read = registry.get("read").expect("read tool");
@@ -1519,8 +1536,7 @@ mod tests {
     #[tokio::test]
     async fn read_tool_accepts_absolute_workspace_paths() {
         let temp = tempfile::tempdir().expect("tempdir");
-        let source = temp.path().join("fixture.txt");
-        std::fs::write(&source, "alpha\nbeta\n").expect("write fixture");
+        let source = write_workspace_file(temp.path(), "fixture.txt", "alpha\nbeta\n");
 
         let registry = coordinator_registry(ShellAllowlist::default());
         let read = registry.get("read").expect("read tool");
@@ -1568,8 +1584,7 @@ mod tests {
     #[tokio::test]
     async fn fs_read_adds_truncation_marker_and_spills_full_output_artifact() {
         let temp = tempfile::tempdir().expect("tempdir");
-        let source = temp.path().join("fixture.txt");
-        std::fs::write(&source, "alpha\nbeta\ngamma\ndelta\n").expect("write fixture");
+        write_workspace_file(temp.path(), "fixture.txt", "alpha\nbeta\ngamma\ndelta\n");
 
         let context = fs_read_context(temp.path(), "toolcall-truncated");
         let tool = FsReadTool::new(false);
@@ -1600,8 +1615,7 @@ mod tests {
     #[tokio::test]
     async fn fs_read_rejects_binary_files() {
         let temp = tempfile::tempdir().expect("tempdir");
-        let source = temp.path().join("fixture.bin");
-        std::fs::write(&source, [0xff_u8, 0xfe, 0x00]).expect("write binary fixture");
+        write_workspace_file(temp.path(), "fixture.bin", [0xff_u8, 0xfe, 0x00]);
 
         let tool = FsReadTool::new(false);
         let error = tool
