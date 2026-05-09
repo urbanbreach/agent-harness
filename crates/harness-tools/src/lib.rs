@@ -398,7 +398,7 @@ fn format_fs_read_output_line(
 
 #[derive(Debug, Clone)]
 struct ShellOutputPreview {
-    text: String,
+    inline_text: String,
     total_bytes: usize,
     total_lines: usize,
     inline_bytes: usize,
@@ -425,13 +425,13 @@ fn preview_shell_output(text: &str, limits: ShellOutputPreviewLimits) -> ShellOu
     let line_limited_end = shell_output_preview_end_for_line_limit(text, limits.max_lines);
     let preview_end = byte_limited_end.min(line_limited_end);
 
-    let preview = text[..preview_end].to_string();
-    let inline_lines = count_shell_output_lines(&preview);
+    let inline_text = text[..preview_end].to_string();
+    let inline_lines = count_shell_output_lines(&inline_text);
 
     ShellOutputPreview {
-        inline_bytes: preview.len(),
+        inline_bytes: inline_text.len(),
         inline_lines,
-        text: preview,
+        inline_text,
         total_bytes,
         total_lines,
     }
@@ -624,7 +624,7 @@ fn build_truncated_shell_run_result(
     insert_truncated_shell_output_metadata(&mut structured_json, &preview, &artifact);
 
     let marker = shell_output_truncation_marker(&preview, &artifact);
-    let mut display_text = preview.text;
+    let mut display_text = preview.inline_text;
     append_truncation_marker(&mut display_text, &marker);
 
     Ok(text_json_artifacts_tool_result(
@@ -1523,8 +1523,11 @@ mod tests {
         assert!(preview.is_truncated());
         assert_eq!(preview.inline_lines, super::SHELL_OUTPUT_INLINE_LINE_LIMIT);
         assert_eq!(preview.total_lines, 2_001);
-        assert!(preview.text.trim_end_matches('\n').ends_with("line 2000"));
-        assert!(!preview.text.contains("line 2001"));
+        assert!(preview
+            .inline_text
+            .trim_end_matches('\n')
+            .ends_with("line 2000"));
+        assert!(!preview.inline_text.contains("line 2001"));
     }
 
     #[test]
@@ -1545,7 +1548,7 @@ mod tests {
         assert!(!preview.is_truncated());
         assert_eq!(preview.inline_lines, super::SHELL_OUTPUT_INLINE_LINE_LIMIT);
         assert_eq!(preview.total_lines, super::SHELL_OUTPUT_INLINE_LINE_LIMIT);
-        assert_eq!(preview.text, output);
+        assert_eq!(preview.inline_text, output);
     }
 
     #[test]
@@ -1559,7 +1562,7 @@ mod tests {
         );
 
         assert!(preview.is_truncated());
-        assert_eq!(preview.text, "é");
+        assert_eq!(preview.inline_text, "é");
         assert_eq!(preview.inline_bytes, "é".len());
         assert_eq!(preview.total_bytes, "ééx".len());
     }
