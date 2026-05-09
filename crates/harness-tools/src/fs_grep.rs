@@ -126,14 +126,7 @@ fn collect_grep_matches(
     limit: usize,
     context: usize,
 ) -> Result<GrepMatches, ToolError> {
-    let compiled_pattern = if literal {
-        regex::escape(pattern)
-    } else {
-        pattern.to_string()
-    };
-    let regex = Regex::new(&compiled_pattern).map_err(|err| {
-        ToolError::InvalidArguments(format_invalid_regex_pattern_error(pattern, err))
-    })?;
+    let regex = compile_grep_regex(pattern, literal)?;
     let include_matcher = compile_include_matcher(include)?;
 
     let mut files = collect_candidate_files(workspace_root, search_path)?;
@@ -189,6 +182,18 @@ fn collect_grep_matches(
         returned_count: limit_summary.returned_count,
         truncated_count: limit_summary.truncated_count,
         is_truncated: limit_summary.is_truncated,
+    })
+}
+
+fn compile_grep_regex(pattern: &str, literal: bool) -> Result<Regex, ToolError> {
+    let compiled_pattern = if literal {
+        regex::escape(pattern)
+    } else {
+        pattern.to_string()
+    };
+
+    Regex::new(&compiled_pattern).map_err(|err| {
+        ToolError::InvalidArguments(format_invalid_regex_pattern_error(pattern, err))
     })
 }
 
