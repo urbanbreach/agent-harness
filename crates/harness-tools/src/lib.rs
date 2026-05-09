@@ -760,18 +760,9 @@ fn write_fs_read_artifact_streaming(
     start_line_index: usize,
     render: FsReadRenderOptions,
 ) -> Result<ArtifactRef, ToolError> {
-    let relative = format!("toolcalls/{}/fs.read.redacted.txt", ctx.tool_call_id);
-    let target = ctx.artifacts_dir.join(&relative);
-    if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent).map_err(|err| {
-            ToolError::Execution(format!(
-                "failed to create fs.read artifact directory: {err}"
-            ))
-        })?;
-    }
-
+    let target = prepare_fs_read_artifact_target(ctx)?;
     let mut reader = open_fs_read_file(path)?;
-    let artifact = std::fs::File::create(&target)
+    let artifact = std::fs::File::create(&target.file_path)
         .map_err(|err| ToolError::Execution(format!("failed to write fs.read artifact: {err}")))?;
     let mut artifact_writer = FsReadArtifactWriter::new(artifact);
 
@@ -781,8 +772,30 @@ fn write_fs_read_artifact_streaming(
     })?;
 
     Ok(ArtifactRef {
-        path: format!("artifacts/{relative}"),
+        path: target.artifact_path,
         digest: None,
+    })
+}
+
+struct FsReadArtifactTarget {
+    file_path: PathBuf,
+    artifact_path: String,
+}
+
+fn prepare_fs_read_artifact_target(ctx: &ToolContext) -> Result<FsReadArtifactTarget, ToolError> {
+    let relative = format!("toolcalls/{}/fs.read.redacted.txt", ctx.tool_call_id);
+    let file_path = ctx.artifacts_dir.join(&relative);
+    if let Some(parent) = file_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| {
+            ToolError::Execution(format!(
+                "failed to create fs.read artifact directory: {err}"
+            ))
+        })?;
+    }
+
+    Ok(FsReadArtifactTarget {
+        file_path,
+        artifact_path: format!("artifacts/{relative}"),
     })
 }
 
