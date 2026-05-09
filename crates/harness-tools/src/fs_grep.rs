@@ -398,36 +398,39 @@ mod tests {
         }
     }
 
+    fn create_dir(root: &Path, path: &str) {
+        fs::create_dir_all(root.join(path)).expect("create test directory");
+    }
+
+    fn write_file(root: &Path, path: &str, contents: impl AsRef<[u8]>) {
+        fs::write(root.join(path), contents).expect("write test file");
+    }
+
     #[test]
     fn collect_grep_matches_finds_matches_with_context_and_skips_ignored_directories() {
         let tempdir = tempfile::tempdir().expect("tempdir");
         let root = tempdir.path();
 
-        fs::create_dir_all(root.join("docs")).expect("create docs");
-        fs::create_dir_all(root.join("src")).expect("create src");
-        fs::create_dir_all(root.join("target/build")).expect("create target dir");
-        fs::create_dir_all(root.join(".git/objects")).expect("create .git dir");
-        fs::create_dir_all(root.join(".agent-harness/sessions/run-1")).expect("create sessions");
+        create_dir(root, "docs");
+        create_dir(root, "src");
+        create_dir(root, "target/build");
+        create_dir(root, ".git/objects");
+        create_dir(root, ".agent-harness/sessions/run-1");
 
-        fs::write(root.join("docs/todo.md"), "TODO docs\nnote\n").expect("write docs/todo.md");
-        fs::write(
-            root.join("src/main.txt"),
+        write_file(root, "docs/todo.md", "TODO docs\nnote\n");
+        write_file(
+            root,
+            "src/main.txt",
             "alpha\nTODO first\nbeta\nTODO second\ngamma\n",
-        )
-        .expect("write src/main.txt");
-        fs::write(root.join("target/build/generated.txt"), "TODO hidden")
-            .expect("write target file");
-        fs::write(root.join(".git/objects/cache.txt"), "TODO hidden").expect("write git file");
-        fs::write(
-            root.join(".agent-harness/sessions/run-1/log.txt"),
-            "TODO hidden",
-        )
-        .expect("write sessions file");
-        fs::write(
-            root.join("src/binary.bin"),
+        );
+        write_file(root, "target/build/generated.txt", "TODO hidden");
+        write_file(root, ".git/objects/cache.txt", "TODO hidden");
+        write_file(root, ".agent-harness/sessions/run-1/log.txt", "TODO hidden");
+        write_file(
+            root,
+            "src/binary.bin",
             [0xff_u8, 0xfe, 0x00, 0x54, 0x4f, 0x44, 0x4f],
-        )
-        .expect("write binary");
+        );
 
         let result = collect_grep_matches(
             root,
@@ -462,9 +465,9 @@ mod tests {
         let tempdir = tempfile::tempdir().expect("tempdir");
         let root = tempdir.path();
 
-        fs::write(root.join("a.txt"), "TODO a\n").expect("write a.txt");
-        fs::write(root.join("b.log"), "TODO b\n").expect("write b.log");
-        fs::write(root.join("c.txt"), "TODO c\n").expect("write c.txt");
+        write_file(root, "a.txt", "TODO a\n");
+        write_file(root, "b.log", "TODO b\n");
+        write_file(root, "c.txt", "TODO c\n");
 
         let result = collect_grep_matches(
             root,
@@ -488,10 +491,9 @@ mod tests {
     async fn fs_grep_accepts_exact_file_path_without_searching_siblings() {
         let tempdir = tempfile::tempdir().expect("tempdir");
         let root = tempdir.path();
-        fs::create_dir_all(root.join("src")).expect("create src");
-        fs::write(root.join("src/session_lineage.rs"), "fn fork_point() {}\n")
-            .expect("write target file");
-        fs::write(root.join("src/other.rs"), "fn fork_point() {}\n").expect("write sibling file");
+        create_dir(root, "src");
+        write_file(root, "src/session_lineage.rs", "fn fork_point() {}\n");
+        write_file(root, "src/other.rs", "fn fork_point() {}\n");
 
         let result = FsGrepTool
             .call(
@@ -521,7 +523,7 @@ mod tests {
     fn collect_grep_matches_invalid_regex_suggests_literal_search() {
         let tempdir = tempfile::tempdir().expect("tempdir");
         let root = tempdir.path();
-        fs::write(root.join("notes.txt"), "task(run_in_background\n").expect("write notes");
+        write_file(root, "notes.txt", "task(run_in_background\n");
 
         let err = collect_grep_matches(root, root, grep_search("task(run_in_background"))
             .expect_err("unescaped regex group should fail");
@@ -536,8 +538,7 @@ mod tests {
     fn collect_grep_matches_literal_search_escapes_regex_metacharacters() {
         let tempdir = tempfile::tempdir().expect("tempdir");
         let root = tempdir.path();
-        fs::write(root.join("notes.txt"), "task(run_in_background\ntaskXrun\n")
-            .expect("write notes");
+        write_file(root, "notes.txt", "task(run_in_background\ntaskXrun\n");
 
         let result = collect_grep_matches(
             root,
@@ -557,7 +558,7 @@ mod tests {
     async fn fs_grep_accepts_absolute_workspace_path() {
         let tempdir = tempfile::tempdir().expect("tempdir");
         let root = tempdir.path();
-        fs::write(root.join("main.rs"), "#[tokio::main]\nfn main() {}\n").expect("write main.rs");
+        write_file(root, "main.rs", "#[tokio::main]\nfn main() {}\n");
 
         let result = FsGrepTool
             .call(
