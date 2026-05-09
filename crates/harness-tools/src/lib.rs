@@ -760,13 +760,13 @@ fn write_fs_read_artifact_streaming(
     }
 
     let mut reader = open_fs_read_file(path)?;
-    let mut artifact = std::fs::File::create(&target)
+    let artifact = std::fs::File::create(&target)
         .map_err(|err| ToolError::Execution(format!("failed to write fs.read artifact: {err}")))?;
-    let mut wrote_any = false;
+    let mut artifact_writer = FsReadArtifactWriter::new(artifact);
 
     visit_fs_read_lines(&mut reader, start_line_index, |line_number, line| {
         let rendered = format_fs_read_output_line(&line, line_number, render);
-        write_fs_read_artifact_line(&mut artifact, &mut wrote_any, &rendered)
+        artifact_writer.write_rendered_line(&rendered)
     })?;
 
     Ok(ArtifactRef {
@@ -775,23 +775,33 @@ fn write_fs_read_artifact_streaming(
     })
 }
 
-fn write_fs_read_artifact_line(
-    artifact: &mut impl Write,
-    wrote_any: &mut bool,
-    rendered: &str,
-) -> Result<(), ToolError> {
-    if *wrote_any {
-        write_fs_read_artifact_bytes(artifact, b"\n")?;
-    }
-    write_fs_read_artifact_bytes(artifact, rendered.as_bytes())?;
-    *wrote_any = true;
-    Ok(())
+struct FsReadArtifactWriter<W> {
+    artifact: W,
+    wrote_any: bool,
 }
 
-fn write_fs_read_artifact_bytes(artifact: &mut impl Write, bytes: &[u8]) -> Result<(), ToolError> {
-    artifact
-        .write_all(bytes)
-        .map_err(|err| ToolError::Execution(format!("failed to write fs.read artifact: {err}")))
+impl<W: Write> FsReadArtifactWriter<W> {
+    fn new(artifact: W) -> Self {
+        Self {
+            artifact,
+            wrote_any: false,
+        }
+    }
+
+    fn write_rendered_line(&mut self, rendered: &str) -> Result<(), ToolError> {
+        if self.wrote_any {
+            self.write_bytes(b"\n")?;
+        }
+        self.write_bytes(rendered.as_bytes())?;
+        self.wrote_any = true;
+        Ok(())
+    }
+
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), ToolError> {
+        self.artifact
+            .write_all(bytes)
+            .map_err(|err| ToolError::Execution(format!("failed to write fs.read artifact: {err}")))
+    }
 }
 
 fn open_fs_read_file(path: &Path) -> Result<std::io::BufReader<std::fs::File>, ToolError> {
