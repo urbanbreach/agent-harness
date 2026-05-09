@@ -1107,8 +1107,34 @@ fn normalized_shell_command(command: Option<String>) -> Option<String> {
     command.and_then(|command| trimmed_non_empty(&command).map(str::to_string))
 }
 
-fn shell_metadata_object(value: serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
-    value.as_object().cloned().expect("shell json object")
+fn build_direct_shell_metadata(
+    cmd: String,
+    args: Vec<String>,
+    cwd: Option<String>,
+    output: &ShellProcessOutput,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut metadata = serde_json::Map::new();
+    metadata.insert("cmd".to_string(), json!(cmd));
+    metadata.insert("args".to_string(), json!(args));
+    metadata.insert("cwd".to_string(), json!(cwd));
+    metadata.insert("status".to_string(), json!(output.status));
+    metadata.insert("success".to_string(), json!(output.success));
+    metadata
+}
+
+fn build_wrapper_shell_metadata(
+    description: Option<String>,
+    command: String,
+    workdir: Option<String>,
+    output: &ShellProcessOutput,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut metadata = serde_json::Map::new();
+    metadata.insert("description".to_string(), json!(description));
+    metadata.insert("command".to_string(), json!(command));
+    metadata.insert("workdir".to_string(), json!(workdir));
+    metadata.insert("status".to_string(), json!(output.status));
+    metadata.insert("success".to_string(), json!(output.success));
+    metadata
 }
 
 impl ShellRunTool {
@@ -1147,13 +1173,7 @@ impl ShellRunTool {
         let mut command = tokio::process::Command::new(&cmd);
         command.args(&args).current_dir(resolved_cwd);
         let output = run_shell_process(command, timeout_ms).await?;
-        let metadata = shell_metadata_object(json!({
-            "cmd": cmd,
-            "args": args,
-            "cwd": cwd,
-            "status": output.status,
-            "success": output.success,
-        }));
+        let metadata = build_direct_shell_metadata(cmd, args, cwd, &output);
 
         Ok(ShellRunExecution { output, metadata })
     }
@@ -1181,13 +1201,7 @@ impl ShellRunTool {
         let mut shell_command = tokio::process::Command::new(&shell);
         shell_command.arg("-lc").arg(&command).current_dir(cwd);
         let output = run_shell_process(shell_command, timeout_ms).await?;
-        let metadata = shell_metadata_object(json!({
-            "description": description,
-            "command": command,
-            "workdir": workdir,
-            "status": output.status,
-            "success": output.success,
-        }));
+        let metadata = build_wrapper_shell_metadata(description, command, workdir, &output);
 
         Ok(ShellRunExecution { output, metadata })
     }
