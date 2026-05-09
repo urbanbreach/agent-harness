@@ -551,9 +551,10 @@ async fn run_shell_process(
 fn build_shell_run_result(
     ctx: &ToolContext,
     mut structured_json: serde_json::Map<String, serde_json::Value>,
-    stdout: String,
-    stderr: String,
+    output: ShellProcessOutput,
 ) -> Result<ToolResult, ToolError> {
+    let ShellProcessOutput { stdout, stderr, .. } = output;
+
     structured_json.insert("stdout_bytes".to_string(), json!(stdout.len()));
     structured_json.insert("stderr_bytes".to_string(), json!(stderr.len()));
 
@@ -1237,12 +1238,7 @@ impl Tool for ShellRunTool {
         let request = args.into_request()?;
         let executed = self.run_request(&ctx, request).await?;
 
-        build_shell_run_result(
-            &ctx,
-            executed.metadata,
-            executed.output.stdout,
-            executed.output.stderr,
-        )
+        build_shell_run_result(&ctx, executed.metadata, executed.output)
     }
 }
 
