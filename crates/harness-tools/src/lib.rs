@@ -1053,25 +1053,33 @@ impl ShellRunArgs {
     fn into_invocation(self) -> Result<ShellInvocation, ToolError> {
         let cmd = normalized_shell_command(self.cmd);
         let command = normalized_shell_command(self.command);
-        let duplicate_wrapper_command =
-            matches!((&cmd, &command), (Some(cmd), Some(command)) if cmd == command);
 
-        match (cmd, command, duplicate_wrapper_command) {
-            (Some(cmd), _, true) | (Some(cmd), None, false) => Ok(ShellInvocation::Direct {
+        if let Some(cmd) = cmd {
+            if command.as_ref().is_some_and(|command| command != &cmd) {
+                return Err(shell_invocation_conflict_error());
+            }
+
+            return Ok(ShellInvocation::Direct {
                 cmd,
                 args: self.args,
                 workdir: self.cwd.or(self.workdir),
-            }),
-            (None, Some(command), false) => Ok(ShellInvocation::Wrapper {
+            });
+        }
+
+        if let Some(command) = command {
+            Ok(ShellInvocation::Wrapper {
                 command,
                 workdir: self.workdir.or(self.cwd),
                 description: self.description,
-            }),
-            _ => Err(ToolError::InvalidArguments(
-                "provide exactly one of cmd or command".to_string(),
-            )),
+            })
+        } else {
+            Err(shell_invocation_conflict_error())
         }
     }
+}
+
+fn shell_invocation_conflict_error() -> ToolError {
+    ToolError::InvalidArguments("provide exactly one of cmd or command".to_string())
 }
 
 fn normalized_shell_command(command: Option<String>) -> Option<String> {
@@ -1856,5 +1864,29 @@ mod tests {
         assert_eq!(structured.get("cmd"), Some(&json!("bash")));
         assert_eq!(structured.get("stdout"), Some(&json!("shell-ok")));
         assert_eq!(structured.get("success"), Some(&json!(true)));
+    }
+
+    #[tokio::test]
+    async fn shell_run_rejects_conflicting_cmd_and_command() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let shell = super::ShellRunTool::new(ShellAllowlist::default());
+
+        let error = shell
+            .call(
+                fs_read_context(temp.path(), "toolcall-shell-run-conflicting"),
+                json!({
+                    "cmd": "printf",
+                    "command": "echo shell-ok",
+                }),
+            )
+            .await
+            .expect_err("conflicting cmd and command should be rejected");
+
+        match error {
+            ToolError::InvalidArguments(message) => {
+                assert_eq!(message, "provide exactly one of cmd or command");
+            }
+            other => panic!("unexpected error variant: {other}"),
+        }
     }
 }
