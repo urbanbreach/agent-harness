@@ -670,36 +670,17 @@ fn read_fs_window(
     line_limit: usize,
     render: FsReadRenderOptions,
 ) -> Result<FsReadWindow, ToolError> {
-    let file = std::fs::File::open(path)
-        .map_err(|err| ToolError::Execution(format!("failed to read file: {err}")))?;
-    let mut reader = std::io::BufReader::new(file);
-    let mut raw_line = Vec::new();
-    let mut total_lines = 0usize;
     let mut available_lines = 0usize;
     let mut shown_lines = Vec::new();
     let mut display_parts = Vec::new();
     let mut anchors = render.hashline_anchors.then(Vec::new);
+    let mut reader = open_fs_read_file(path)?;
 
-    loop {
-        raw_line.clear();
-        let bytes_read = reader
-            .read_until(b'\n', &mut raw_line)
-            .map_err(|err| ToolError::Execution(format!("failed to read file: {err}")))?;
-        if bytes_read == 0 {
-            break;
-        }
-
-        total_lines += 1;
-        let line = decode_fs_read_line(&raw_line)?;
-        if total_lines <= start_line_index {
-            continue;
-        }
-
+    let total_lines = visit_fs_read_lines(&mut reader, start_line_index, |line_number, line| {
         available_lines += 1;
-        let line_number = total_lines;
-        let rendered = format_fs_read_output_line(&line, line_number, render);
 
         if shown_lines.len() < line_limit {
+            let rendered = format_fs_read_output_line(&line, line_number, render);
             if let Some(anchors) = anchors.as_mut() {
                 anchors.push(LineAnchor {
                     line: line_number as u32,
@@ -707,9 +688,10 @@ fn read_fs_window(
                 });
             }
             shown_lines.push(line);
-            display_parts.push(rendered.clone());
+            display_parts.push(rendered);
         }
-    }
+        Ok(())
+    })?;
 
     let truncated = available_lines > line_limit;
     Ok(FsReadWindow {
@@ -738,30 +720,12 @@ fn write_fs_read_artifact_streaming(
         })?;
     }
 
-    let source = std::fs::File::open(path)
-        .map_err(|err| ToolError::Execution(format!("failed to read file: {err}")))?;
-    let mut reader = std::io::BufReader::new(source);
+    let mut reader = open_fs_read_file(path)?;
     let mut artifact = std::fs::File::create(&target)
         .map_err(|err| ToolError::Execution(format!("failed to write fs.read artifact: {err}")))?;
-    let mut raw_line = Vec::new();
-    let mut line_number = 0usize;
     let mut wrote_any = false;
 
-    loop {
-        raw_line.clear();
-        let bytes_read = reader
-            .read_until(b'\n', &mut raw_line)
-            .map_err(|err| ToolError::Execution(format!("failed to read file: {err}")))?;
-        if bytes_read == 0 {
-            break;
-        }
-
-        line_number += 1;
-        if line_number <= start_line_index {
-            continue;
-        }
-
-        let line = decode_fs_read_line(&raw_line)?;
+    visit_fs_read_lines(&mut reader, start_line_index, |line_number, line| {
         let rendered = format_fs_read_output_line(&line, line_number, render);
         if wrote_any {
             artifact.write_all(b"\n").map_err(|err| {
@@ -772,12 +736,46 @@ fn write_fs_read_artifact_streaming(
             ToolError::Execution(format!("failed to write fs.read artifact: {err}"))
         })?;
         wrote_any = true;
-    }
+        Ok(())
+    })?;
 
     Ok(ArtifactRef {
         path: format!("artifacts/{relative}"),
         digest: None,
     })
+}
+
+fn open_fs_read_file(path: &Path) -> Result<std::io::BufReader<std::fs::File>, ToolError> {
+    let file = std::fs::File::open(path)
+        .map_err(|err| ToolError::Execution(format!("failed to read file: {err}")))?;
+    Ok(std::io::BufReader::new(file))
+}
+
+fn visit_fs_read_lines(
+    reader: &mut impl BufRead,
+    start_line_index: usize,
+    mut visit: impl FnMut(usize, String) -> Result<(), ToolError>,
+) -> Result<usize, ToolError> {
+    let mut raw_line = Vec::new();
+    let mut total_lines = 0usize;
+
+    loop {
+        raw_line.clear();
+        let bytes_read = reader
+            .read_until(b'\n', &mut raw_line)
+            .map_err(|err| ToolError::Execution(format!("failed to read file: {err}")))?;
+        if bytes_read == 0 {
+            break;
+        }
+
+        total_lines += 1;
+        let line = decode_fs_read_line(&raw_line)?;
+        if total_lines > start_line_index {
+            visit(total_lines, line)?;
+        }
+    }
+
+    Ok(total_lines)
 }
 
 fn decode_fs_read_line(raw_line: &[u8]) -> Result<String, ToolError> {
