@@ -536,6 +536,25 @@ impl From<std::process::Output> for ShellProcessOutput {
     }
 }
 
+impl ShellProcessOutput {
+    fn combined_output(&self) -> String {
+        join_command_output(&self.stdout, &self.stderr)
+    }
+
+    fn insert_stream_byte_metadata(
+        &self,
+        metadata: &mut serde_json::Map<String, serde_json::Value>,
+    ) {
+        metadata.insert("stdout_bytes".to_string(), json!(self.stdout.len()));
+        metadata.insert("stderr_bytes".to_string(), json!(self.stderr.len()));
+    }
+
+    fn insert_full_streams(self, metadata: &mut serde_json::Map<String, serde_json::Value>) {
+        metadata.insert("stdout".to_string(), json!(self.stdout));
+        metadata.insert("stderr".to_string(), json!(self.stderr));
+    }
+}
+
 async fn run_shell_process(
     mut command: tokio::process::Command,
     timeout_ms: u64,
@@ -553,12 +572,8 @@ fn build_shell_run_result(
     mut structured_json: serde_json::Map<String, serde_json::Value>,
     output: ShellProcessOutput,
 ) -> Result<ToolResult, ToolError> {
-    let ShellProcessOutput { stdout, stderr, .. } = output;
-
-    structured_json.insert("stdout_bytes".to_string(), json!(stdout.len()));
-    structured_json.insert("stderr_bytes".to_string(), json!(stderr.len()));
-
-    let full_output = join_command_output(&stdout, &stderr);
+    output.insert_stream_byte_metadata(&mut structured_json);
+    let full_output = output.combined_output();
     let preview = preview_tool_output(
         &full_output,
         TOOL_OUTPUT_INLINE_LINE_LIMIT,
@@ -566,8 +581,7 @@ fn build_shell_run_result(
     );
 
     if !preview.truncated {
-        structured_json.insert("stdout".to_string(), json!(stdout));
-        structured_json.insert("stderr".to_string(), json!(stderr));
+        output.insert_full_streams(&mut structured_json);
         structured_json.insert("truncated".to_string(), json!(false));
         return Ok(text_json_tool_result(
             full_output,
