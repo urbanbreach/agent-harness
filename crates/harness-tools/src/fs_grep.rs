@@ -242,11 +242,7 @@ fn append_rendered_lines(
 ) {
     if context == 0 {
         for &line_idx in match_line_indexes {
-            output.push(format!(
-                "{relative_path}:{}: {}",
-                line_idx + 1,
-                lines[line_idx]
-            ));
+            output.push(render_grep_line(relative_path, lines, line_idx));
         }
         return;
     }
@@ -262,12 +258,12 @@ fn append_rendered_lines(
     }
 
     for line_idx in line_indexes {
-        output.push(format!(
-            "{relative_path}:{}: {}",
-            line_idx + 1,
-            lines[line_idx]
-        ));
+        output.push(render_grep_line(relative_path, lines, line_idx));
     }
+}
+
+fn render_grep_line(relative_path: &str, lines: &[String], line_idx: usize) -> String {
+    format!("{relative_path}:{}: {}", line_idx + 1, lines[line_idx])
 }
 
 fn read_utf8_lines(path: &Path) -> Result<Option<Vec<String>>, ToolError> {
