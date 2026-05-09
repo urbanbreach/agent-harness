@@ -122,6 +122,29 @@ fn materialize_file_tag_context_honors_line_ranges() {
 }
 
 #[test]
+fn materialize_file_tag_context_omits_binary_files_by_mime() {
+    let tempdir = tempfile::tempdir().expect("tempdir");
+    let root = tempdir.path();
+    std::fs::write(root.join("image.png"), b"\x89PNG\0binary").expect("write binary file");
+
+    let context = materialize_file_tag_context(root, "read @image.png").expect("context");
+
+    assert!(context.contains("[binary file omitted: MIME image/png]"));
+}
+
+#[test]
+fn materialize_file_tag_context_reports_non_utf8_files() {
+    let tempdir = tempfile::tempdir().expect("tempdir");
+    let root = tempdir.path();
+    std::fs::write(root.join("bad.txt"), b"\xff\xfe").expect("write non-utf8 file");
+
+    let context = materialize_file_tag_context(root, "read @bad.txt").expect("context");
+
+    assert!(context.contains("Read tool failed to read"));
+    assert!(context.contains("binary or non-UTF-8 file omitted: MIME text/plain"));
+}
+
+#[test]
 fn selected_file_tags_are_materialized_once_with_structured_metadata() {
     let tempdir = tempfile::tempdir().expect("tempdir");
     let root = tempdir.path();

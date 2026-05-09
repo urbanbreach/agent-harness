@@ -372,22 +372,29 @@ fn truncate_directory_entries(entries: &mut Vec<String>) {
 }
 
 fn read_text_file(path: &Path, line_range: Option<FileTagLineRange>) -> Result<String, String> {
+    let Some(content) = read_utf8_file_content(path)? else {
+        return Ok(binary_file_omission(path));
+    };
+    let total = content.lines().count();
+    let selection = line_selection(total, line_range);
+    Ok(render_selected_lines(&content, selection))
+}
+
+fn read_utf8_file_content(path: &Path) -> Result<Option<String>, String> {
     let bytes = std::fs::read(path).map_err(|err| format!("failed to read file: {err}"))?;
     if bytes.contains(&0) {
-        return Ok(format!(
-            "[binary file omitted: MIME {}]",
-            attachment_mime(path)
-        ));
+        return Ok(None);
     }
-    let content = String::from_utf8(bytes).map_err(|_| {
+    String::from_utf8(bytes).map(Some).map_err(|_| {
         format!(
             "binary or non-UTF-8 file omitted: MIME {}",
             attachment_mime(path)
         )
-    })?;
-    let total = content.lines().count();
-    let selection = line_selection(total, line_range);
-    Ok(render_selected_lines(&content, selection))
+    })
+}
+
+fn binary_file_omission(path: &Path) -> String {
+    format!("[binary file omitted: MIME {}]", attachment_mime(path))
 }
 
 fn render_selected_lines(content: &str, selection: LineSelection) -> String {
