@@ -518,16 +518,6 @@ fn count_shell_output_lines(text: &str) -> usize {
     }
 }
 
-fn join_shell_streams(stdout: &str, stderr: &str) -> String {
-    if stderr.is_empty() {
-        stdout.to_string()
-    } else if stdout.is_empty() {
-        stderr.to_string()
-    } else {
-        format!("{stdout}\n{stderr}")
-    }
-}
-
 fn append_truncation_marker(display_text: &mut String, marker: &str) {
     if display_text.is_empty() {
         display_text.push_str(marker);
@@ -598,7 +588,13 @@ impl From<std::process::Output> for ShellProcessOutput {
 
 impl ShellProcessOutput {
     fn combined_output(&self) -> String {
-        join_shell_streams(&self.stdout, &self.stderr)
+        if self.stderr.is_empty() {
+            self.stdout.clone()
+        } else if self.stdout.is_empty() {
+            self.stderr.clone()
+        } else {
+            format!("{}\n{}", self.stdout, self.stderr)
+        }
     }
 
     fn insert_stream_byte_metadata(
