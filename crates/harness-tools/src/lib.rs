@@ -1055,9 +1055,9 @@ struct WrapperShellInvocation {
     description: Option<String>,
 }
 
-struct ExecutedShellInvocation {
+struct ShellRunExecution {
     output: ShellProcessOutput,
-    structured_json: serde_json::Map<String, serde_json::Value>,
+    metadata: serde_json::Map<String, serde_json::Value>,
 }
 
 impl ShellRunArgs {
@@ -1077,7 +1077,7 @@ impl ShellRunArgs {
 
         if let Some(cmd) = cmd {
             if command.as_ref().is_some_and(|command| command != &cmd) {
-                return Err(shell_invocation_conflict_error());
+                return Err(shell_invocation_selection_error());
             }
 
             return Ok(ShellInvocation::Direct(DirectShellInvocation {
@@ -1094,12 +1094,12 @@ impl ShellRunArgs {
                 description: self.description,
             }))
         } else {
-            Err(shell_invocation_conflict_error())
+            Err(shell_invocation_selection_error())
         }
     }
 }
 
-fn shell_invocation_conflict_error() -> ToolError {
+fn shell_invocation_selection_error() -> ToolError {
     ToolError::InvalidArguments("provide exactly one of cmd or command".to_string())
 }
 
@@ -1107,7 +1107,7 @@ fn normalized_shell_command(command: Option<String>) -> Option<String> {
     command.and_then(|command| trimmed_non_empty(&command).map(str::to_string))
 }
 
-fn shell_structured_json(value: serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
+fn shell_metadata_object(value: serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
     value.as_object().cloned().expect("shell json object")
 }
 
@@ -1116,7 +1116,7 @@ impl ShellRunTool {
         &self,
         ctx: &ToolContext,
         request: ShellRunRequest,
-    ) -> Result<ExecutedShellInvocation, ToolError> {
+    ) -> Result<ShellRunExecution, ToolError> {
         match request.invocation {
             ShellInvocation::Direct(invocation) => {
                 self.run_direct_invocation(ctx, invocation, request.timeout_ms)
@@ -1134,7 +1134,7 @@ impl ShellRunTool {
         ctx: &ToolContext,
         invocation: DirectShellInvocation,
         timeout_ms: u64,
-    ) -> Result<ExecutedShellInvocation, ToolError> {
+    ) -> Result<ShellRunExecution, ToolError> {
         let DirectShellInvocation { cmd, args, cwd } = invocation;
 
         if !self.is_executable_allowed(&cmd) {
@@ -1147,7 +1147,7 @@ impl ShellRunTool {
         let mut command = tokio::process::Command::new(&cmd);
         command.args(&args).current_dir(resolved_cwd);
         let output = run_shell_process(command, timeout_ms).await?;
-        let structured_json = shell_structured_json(json!({
+        let metadata = shell_metadata_object(json!({
             "cmd": cmd,
             "args": args,
             "cwd": cwd,
@@ -1155,10 +1155,7 @@ impl ShellRunTool {
             "success": output.success,
         }));
 
-        Ok(ExecutedShellInvocation {
-            output,
-            structured_json,
-        })
+        Ok(ShellRunExecution { output, metadata })
     }
 
     async fn run_wrapper_invocation(
@@ -1166,7 +1163,7 @@ impl ShellRunTool {
         ctx: &ToolContext,
         invocation: WrapperShellInvocation,
         timeout_ms: u64,
-    ) -> Result<ExecutedShellInvocation, ToolError> {
+    ) -> Result<ShellRunExecution, ToolError> {
         let WrapperShellInvocation {
             command,
             workdir,
@@ -1184,7 +1181,7 @@ impl ShellRunTool {
         let mut shell_command = tokio::process::Command::new(&shell);
         shell_command.arg("-lc").arg(&command).current_dir(cwd);
         let output = run_shell_process(shell_command, timeout_ms).await?;
-        let structured_json = shell_structured_json(json!({
+        let metadata = shell_metadata_object(json!({
             "description": description,
             "command": command,
             "workdir": workdir,
@@ -1192,10 +1189,7 @@ impl ShellRunTool {
             "success": output.success,
         }));
 
-        Ok(ExecutedShellInvocation {
-            output,
-            structured_json,
-        })
+        Ok(ShellRunExecution { output, metadata })
     }
 }
 
@@ -1228,7 +1222,7 @@ impl Tool for ShellRunTool {
 
         build_shell_run_result(
             &ctx,
-            executed.structured_json,
+            executed.metadata,
             executed.output.stdout,
             executed.output.stderr,
         )
