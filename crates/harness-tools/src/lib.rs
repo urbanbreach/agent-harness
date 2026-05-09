@@ -251,6 +251,12 @@ impl FsReadTool {
 const TOOL_OUTPUT_INLINE_LINE_LIMIT: usize = 2_000;
 const TOOL_OUTPUT_INLINE_BYTE_LIMIT: usize = 51_200;
 
+#[derive(Debug, Clone, Copy)]
+struct FsReadRenderOptions {
+    line_numbers: bool,
+    hashline_anchors: bool,
+}
+
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct FsReadArgs {
@@ -263,6 +269,42 @@ struct FsReadArgs {
     line_numbers: bool,
     #[serde(default)]
     hashline_anchors: Option<bool>,
+}
+
+#[derive(Debug)]
+struct FsReadRequest {
+    path: String,
+    offset: u32,
+    limit: u32,
+    render: FsReadRenderOptions,
+}
+
+impl FsReadArgs {
+    fn into_request(self, default_hashline_anchors: bool) -> FsReadRequest {
+        FsReadRequest {
+            path: self.path,
+            offset: normalize_read_offset(self.offset),
+            limit: normalize_read_limit(self.limit),
+            render: FsReadRenderOptions {
+                line_numbers: self.line_numbers,
+                hashline_anchors: self.hashline_anchors.unwrap_or(default_hashline_anchors),
+            },
+        }
+    }
+}
+
+impl FsReadRequest {
+    fn path(&self) -> &Path {
+        Path::new(&self.path)
+    }
+
+    fn start_line_index(&self) -> usize {
+        (self.offset - 1) as usize
+    }
+
+    fn line_limit(&self) -> usize {
+        self.limit as usize
+    }
 }
 
 fn default_fs_read_offset() -> u32 {
@@ -324,12 +366,6 @@ fn format_fs_read_hashline_line(line: &str, line_number: usize) -> String {
         compute_line_hash(line),
         line.strip_suffix('\r').unwrap_or(line)
     )
-}
-
-#[derive(Debug, Clone, Copy)]
-struct FsReadRenderOptions {
-    line_numbers: bool,
-    hashline_anchors: bool,
 }
 
 fn format_fs_read_output_line(
@@ -557,21 +593,12 @@ impl Tool for FsReadTool {
         ctx: ToolContext,
         args_json: serde_json::Value,
     ) -> Result<ToolResult, ToolError> {
-        let args: FsReadArgs = parse_tool_args(args_json)?;
-        let offset = normalize_read_offset(args.offset);
-        let limit = normalize_read_limit(args.limit);
-        let hashline_anchors = args
-            .hashline_anchors
-            .unwrap_or(self.default_hashline_anchors);
-
-        let path = Path::new(&args.path);
-        let resolved = ctx.resolve_workspace_path(path)?;
-        let start_line_index = (offset - 1) as usize;
-        let line_limit = limit as usize;
-        let render = FsReadRenderOptions {
-            line_numbers: args.line_numbers,
-            hashline_anchors,
-        };
+        let request =
+            parse_tool_args::<FsReadArgs>(args_json)?.into_request(self.default_hashline_anchors);
+        let resolved = ctx.resolve_workspace_path(request.path())?;
+        let start_line_index = request.start_line_index();
+        let line_limit = request.line_limit();
+        let render = request.render;
         let read = read_fs_window(&resolved, start_line_index, line_limit, render)?;
         let shown_count = read.shown_lines.len();
         let mut display_text = read.display_text.clone();
@@ -608,14 +635,14 @@ impl Tool for FsReadTool {
         Ok(text_json_artifacts_tool_result(
             display_text,
             json!({
-                "path": args.path,
+                "path": request.path.as_str(),
                 "resolved_path": resolved.display().to_string(),
-                "offset": offset,
-                "limit": limit,
+                "offset": request.offset,
+                "limit": request.limit,
                 "total_lines": read.total_lines,
-                "line_numbers": args.line_numbers,
-                "hashline_anchors": hashline_anchors,
-                "anchors": if hashline_anchors {
+                "line_numbers": request.render.line_numbers,
+                "hashline_anchors": request.render.hashline_anchors,
+                "anchors": if request.render.hashline_anchors {
                     build_fs_read_anchor_payload_from_owned(&read.shown_lines, start_line_index)
                 } else {
                     serde_json::Value::Null
