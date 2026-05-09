@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use async_trait::async_trait;
-use globset::Glob;
+use globset::{Glob, GlobMatcher};
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResult};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -22,6 +22,23 @@ struct FsGlobArgs {
     path: Option<String>,
     #[serde(default)]
     limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct GlobSearch<'a> {
+    pattern: &'a str,
+    limit: usize,
+}
+
+impl FsGlobArgs {
+    fn search(&self) -> GlobSearch<'_> {
+        GlobSearch {
+            pattern: &self.pattern,
+            limit: self
+                .limit
+                .map_or(DEFAULT_GLOB_LIMIT, |value| value as usize),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,11 +82,7 @@ impl Tool for FsGlobTool {
                 "path must resolve to a directory".to_string(),
             ));
         }
-        let limit = args
-            .limit
-            .map_or(DEFAULT_GLOB_LIMIT, |value| value as usize);
-
-        let matches = collect_glob_matches(&workspace_root, &resolved_base, &args.pattern, limit)?;
+        let matches = collect_glob_matches(&workspace_root, &resolved_base, args.search())?;
 
         Ok(crate::text_json_tool_result(
             matches.paths.join("\n"),
@@ -91,12 +104,9 @@ impl Tool for FsGlobTool {
 fn collect_glob_matches(
     workspace_root: &Path,
     base_dir: &Path,
-    pattern: &str,
-    limit: usize,
+    search: GlobSearch<'_>,
 ) -> Result<GlobMatches, ToolError> {
-    let matcher = Glob::new(pattern)
-        .map_err(|err| ToolError::InvalidArguments(format!("invalid glob pattern: {err}")))?
-        .compile_matcher();
+    let matcher = compile_glob_matcher(search.pattern)?;
 
     let mut matched_paths = BTreeSet::new();
     for file in collect_workspace_files(workspace_root, base_dir)? {
@@ -106,7 +116,7 @@ fn collect_glob_matches(
     }
 
     let total_count = matched_paths.len();
-    let limit_summary = summarize_limit(total_count, limit);
+    let limit_summary = summarize_limit(total_count, search.limit);
     let paths = matched_paths
         .into_iter()
         .take(limit_summary.returned_count)
@@ -119,6 +129,12 @@ fn collect_glob_matches(
         total_count,
         truncated_count: limit_summary.truncated_count,
     })
+}
+
+fn compile_glob_matcher(pattern: &str) -> Result<GlobMatcher, ToolError> {
+    Glob::new(pattern)
+        .map_err(|err| ToolError::InvalidArguments(format!("invalid glob pattern: {err}")))
+        .map(|glob| glob.compile_matcher())
 }
 
 #[cfg(test)]
@@ -134,7 +150,11 @@ mod tests {
     use harness_core::tool::{Tool, ToolContext};
     use serde_json::json;
 
-    use super::{collect_glob_matches, FsGlobTool};
+    use super::{collect_glob_matches, FsGlobTool, GlobSearch};
+
+    fn glob_search(pattern: &str, limit: usize) -> GlobSearch<'_> {
+        GlobSearch { pattern, limit }
+    }
 
     fn test_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
         let coordinator = spawn_coordinator(
@@ -182,7 +202,8 @@ mod tests {
         )
         .expect("write session.rs");
 
-        let result = collect_glob_matches(root, root, "**/*.rs", 100).expect("collect matches");
+        let result =
+            collect_glob_matches(root, root, glob_search("**/*.rs", 100)).expect("collect matches");
 
         assert_eq!(
             result.paths,
@@ -204,7 +225,8 @@ mod tests {
         fs::write(root.join("src/a.rs"), "").expect("write a");
         fs::write(root.join("src/b.rs"), "").expect("write b");
 
-        let result = collect_glob_matches(root, root, "**/*.rs", 2).expect("collect matches");
+        let result =
+            collect_glob_matches(root, root, glob_search("**/*.rs", 2)).expect("collect matches");
 
         assert_eq!(result.paths, vec!["src/a.rs", "src/b.rs"]);
         assert_eq!(result.total_count, 3);
