@@ -677,6 +677,53 @@ struct FsReadWindow {
     truncated: bool,
 }
 
+struct FsReadWindowBuilder {
+    shown_lines: Vec<String>,
+    display_parts: Vec<String>,
+    anchors: Option<Vec<LineAnchor>>,
+    line_limit: usize,
+    render: FsReadRenderOptions,
+}
+
+impl FsReadWindowBuilder {
+    fn new(line_limit: usize, render: FsReadRenderOptions) -> Self {
+        Self {
+            shown_lines: Vec::new(),
+            display_parts: Vec::new(),
+            anchors: render.hashline_anchors.then(Vec::new),
+            line_limit,
+            render,
+        }
+    }
+
+    fn push_visible_line(&mut self, line_number: usize, line: String) {
+        if self.shown_lines.len() >= self.line_limit {
+            return;
+        }
+
+        let rendered = format_fs_read_output_line(&line, line_number, self.render);
+        if let Some(anchors) = self.anchors.as_mut() {
+            anchors.push(LineAnchor {
+                line: line_number as u32,
+                hash: compute_line_hash(&line),
+            });
+        }
+        self.shown_lines.push(line);
+        self.display_parts.push(rendered);
+    }
+
+    fn finish(self, total_lines: usize, available_lines: usize) -> FsReadWindow {
+        FsReadWindow {
+            shown_lines: self.shown_lines,
+            display_text: self.display_parts.join("\n"),
+            anchors: self.anchors,
+            total_lines,
+            available_lines,
+            truncated: available_lines > self.line_limit,
+        }
+    }
+}
+
 fn read_fs_window(
     path: &Path,
     start_line_index: usize,
@@ -684,37 +731,16 @@ fn read_fs_window(
     render: FsReadRenderOptions,
 ) -> Result<FsReadWindow, ToolError> {
     let mut available_lines = 0usize;
-    let mut shown_lines = Vec::new();
-    let mut display_parts = Vec::new();
-    let mut anchors = render.hashline_anchors.then(Vec::new);
+    let mut window = FsReadWindowBuilder::new(line_limit, render);
     let mut reader = open_fs_read_file(path)?;
 
     let total_lines = visit_fs_read_lines(&mut reader, start_line_index, |line_number, line| {
         available_lines += 1;
-
-        if shown_lines.len() < line_limit {
-            let rendered = format_fs_read_output_line(&line, line_number, render);
-            if let Some(anchors) = anchors.as_mut() {
-                anchors.push(LineAnchor {
-                    line: line_number as u32,
-                    hash: compute_line_hash(&line),
-                });
-            }
-            shown_lines.push(line);
-            display_parts.push(rendered);
-        }
+        window.push_visible_line(line_number, line);
         Ok(())
     })?;
 
-    let truncated = available_lines > line_limit;
-    Ok(FsReadWindow {
-        shown_lines,
-        display_text: display_parts.join("\n"),
-        anchors,
-        total_lines,
-        available_lines,
-        truncated,
-    })
+    Ok(window.finish(total_lines, available_lines))
 }
 
 fn write_fs_read_artifact_streaming(
