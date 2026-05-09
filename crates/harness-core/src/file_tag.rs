@@ -267,35 +267,49 @@ fn materialized_file_section(
 ) -> Option<String> {
     let args = serde_json::json!({ "filePath": resolved.display().to_string() }).to_string();
     match materialize_resolved_path(workspace_root, resolved, line_range) {
-        Some(Ok(output)) => Some(format!(
+        FileTagReadOutcome::Output(output) => Some(format!(
             "Called the Read tool with the following input: {args}\n{output}"
         )),
-        Some(Err(reason)) => Some(format!(
+        FileTagReadOutcome::Failure(reason) => Some(format!(
             "Read tool failed to read {} with the following error: {reason}",
             resolved.display()
         )),
-        None => None,
+        FileTagReadOutcome::Missing => None,
     }
+}
+
+enum FileTagReadOutcome {
+    Missing,
+    Output(String),
+    Failure(String),
 }
 
 fn materialize_resolved_path(
     workspace_root: &Path,
     resolved: &Path,
     line_range: Option<FileTagLineRange>,
-) -> Option<Result<String, String>> {
+) -> FileTagReadOutcome {
     let canonical = match canonicalize_file_tag_path(workspace_root, resolved) {
         Ok(Some(canonical)) => canonical,
-        Ok(None) => return None,
-        Err(reason) => return Some(Err(reason)),
+        Ok(None) => return FileTagReadOutcome::Missing,
+        Err(reason) => return FileTagReadOutcome::Failure(reason),
     };
     let metadata = match std::fs::metadata(&canonical) {
         Ok(metadata) => metadata,
-        Err(err) => return Some(Err(err.to_string())),
+        Err(err) => return FileTagReadOutcome::Failure(err.to_string()),
     };
-    if metadata.is_dir() {
-        Some(read_directory_entries(&canonical).map(|entries| entries.join("\n")))
+    let read_result = if metadata.is_dir() {
+        read_directory_entries(&canonical).map(|entries| entries.join("\n"))
     } else {
-        Some(read_text_file(&canonical, line_range))
+        read_text_file(&canonical, line_range)
+    };
+    file_tag_read_outcome(read_result)
+}
+
+fn file_tag_read_outcome(result: Result<String, String>) -> FileTagReadOutcome {
+    match result {
+        Ok(output) => FileTagReadOutcome::Output(output),
+        Err(reason) => FileTagReadOutcome::Failure(reason),
     }
 }
 
