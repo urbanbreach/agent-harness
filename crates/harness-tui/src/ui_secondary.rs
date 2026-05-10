@@ -1943,7 +1943,7 @@ fn operator_sidebar_directory_footer_text(
     width: u16,
     surface: ratatui::style::Color,
 ) -> Text<'static> {
-    let (parent, name) = opencode_sidebar_path_parts(label);
+    let (parent, name) = harness_sidebar_path_parts(label);
     let line = Line::from(vec![
         Span::styled(
             format!("{parent}/"),
@@ -1955,7 +1955,7 @@ fn operator_sidebar_directory_footer_text(
     Text::from(wrapped_lines)
 }
 
-fn opencode_sidebar_path_parts(text: &str) -> (String, String) {
+fn harness_sidebar_path_parts(text: &str) -> (String, String) {
     let mut parts = text.split('/').collect::<Vec<_>>();
     let name = parts.pop().unwrap_or_default().to_string();
     (parts.join("/"), name)
@@ -4554,7 +4554,7 @@ mod tests {
     fn sidebar_directory_footer_keeps_unbroken_path_segments_on_one_row() {
         let theme = Theme::default();
         let lines = operator_sidebar_directory_footer_text(
-            "/tmp/harness-opencode-sidebar-overflow/workspaces/golden_path_interactive-run_1234567890abcdef:dev",
+            "/tmp/harness-sidebar-overflow/workspaces/golden_path_interactive-run_1234567890abcdef:dev",
             &theme,
             28,
             theme.surface.panel,
@@ -4573,7 +4573,7 @@ mod tests {
         );
         assert!(
             !plain.contains('…'),
-            "Opencode sidebar footer does not ellipsize"
+            "Harness sidebar footer does not ellipsize"
         );
         assert!(plain.ends_with("golden_path_interactive-run_1234567890abcdef:dev"));
     }

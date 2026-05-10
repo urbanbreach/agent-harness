@@ -1651,7 +1651,7 @@ fn default_skills_walk_to_git_root() -> bool {
 fn default_skills_project_roots() -> Vec<PathBuf> {
     vec![
         PathBuf::from(".agent-harness/skills"),
-        PathBuf::from(".codex/skills"),
+        PathBuf::from(".harness/skills"),
     ]
 }
 

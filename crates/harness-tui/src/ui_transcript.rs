@@ -10310,7 +10310,7 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
             interaction.as_ref().map(|row| &row.target),
             Some(TranscriptMouseTarget::SubagentSession { session_id }) if session_id == "agent_worker"
         )),
-        "task inline rows should navigate to the child session, matching Opencode's clickable task card"
+        "task inline rows should navigate to the child session, matching Harness's clickable task card"
     );
     assert!(
         task_render

@@ -343,7 +343,7 @@ impl AppState {
                 source.end += len;
                 adjusted.push(tag);
             } else if at < tag.end {
-                // Opencode extmarks represent selected parts. If the user edits inside a
+                // Harness extmarks represent selected parts. If the user edits inside a
                 // selected part, stop treating that stale range as a selected tag.
             } else {
                 adjusted.push(tag);
@@ -939,7 +939,7 @@ mod tests {
     use super::{extract_line_range, search_file_mentions, FileMentionFrecency, FileMentionIndex};
 
     #[test]
-    fn line_range_parser_matches_opencode_suffix_behavior() {
+    fn line_range_parser_matches_harness_suffix_behavior() {
         let parsed = extract_line_range("src/main.rs#12-20");
         assert_eq!(parsed.base_query, "src/main.rs");
         assert_eq!(parsed.suffix, Some("#12-20"));
@@ -980,12 +980,12 @@ mod tests {
     #[test]
     fn search_file_mentions_prefers_shallow_workspace_directory_over_hidden_nested_match() {
         let tempdir = tempfile::tempdir().expect("tempdir");
-        std::fs::create_dir_all(tempdir.path().join(".codex/skills/.system/openai-docs"))
+        std::fs::create_dir_all(tempdir.path().join(".harness/skills/.system/openai-docs"))
             .expect("create hidden docs dir");
         std::fs::write(
             tempdir
                 .path()
-                .join(".codex/skills/.system/openai-docs/readme.md"),
+                .join(".harness/skills/.system/openai-docs/readme.md"),
             "hidden docs",
         )
         .expect("write hidden docs file");

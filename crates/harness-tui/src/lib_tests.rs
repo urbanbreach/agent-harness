@@ -31,7 +31,7 @@ delegate_test!(transcript_edit_tool_matches_inline_diff_shape => ui::exact_test_
 delegate_test!(transcript_native_edit_renders_inline_diff_from_artifact => ui::exact_test_transcript_native_edit_renders_inline_diff_from_artifact);
 delegate_test!(transcript_harness_tool_progress_indicators => ui::exact_test_transcript_harness_tool_progress_indicators);
 delegate_test!(transcript_apply_patch_multifile_uses_output_edit_paths => ui::exact_test_transcript_apply_patch_multifile_uses_output_edit_paths);
-delegate_test!(subagent_footer_matches_opencode_layout => ui::exact_test_subagent_footer_matches_opencode_layout);
+delegate_test!(subagent_footer_matches_harness_layout => ui::exact_test_subagent_footer_matches_harness_layout);
 delegate_test!(subagent_replay_suppresses_parent_replay_dock => ui::exact_test_subagent_replay_suppresses_parent_replay_dock);
 delegate_test!(transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs => ui::exact_test_transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs);
 delegate_test!(transcript_inline_diff_stays_compact_between_tool_rows => ui::exact_test_transcript_inline_diff_stays_compact_between_tool_rows);
@@ -465,7 +465,7 @@ delegate_test!(live_control_dock_collapses_disclosure_before_status => ui::exact
 delegate_test!(live_composer_metadata_omits_success_without_variant => ui::exact_test_live_composer_metadata_omits_success_without_variant);
 delegate_test!(live_composer_reserves_right_gap => ui::exact_test_live_composer_reserves_right_gap);
 delegate_test!(live_composer_disclosure_summarizes_compaction_metrics => ui::exact_test_live_composer_disclosure_summarizes_compaction_metrics);
-delegate_test!(startup_disclosure_matches_opencode_hint_row => ui::exact_test_startup_disclosure_matches_opencode_hint_row);
+delegate_test!(startup_disclosure_matches_harness_hint_row => ui::exact_test_startup_disclosure_matches_harness_hint_row);
 delegate_test!(composer_viewport_wraps_by_display_width => ui::exact_test_composer_viewport_wraps_by_display_width);
 delegate_test!(composer_viewport_wraps_at_word_boundaries => ui::exact_test_composer_viewport_wraps_at_word_boundaries);
 delegate_test!(tool_status_summary_uses_effective_tool_identity => ui::exact_test_tool_status_summary_uses_effective_tool_identity);
@@ -7084,7 +7084,7 @@ fn post_run_handoff_disables_prompt_submission() {
 
 #[cfg(test)]
 #[test]
-fn double_escape_interrupts_active_live_turn_after_opencode_confirmation() {
+fn double_escape_interrupts_active_live_turn_after_harness_confirmation() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let intent_sink = {
         let intents = Arc::clone(&intents);

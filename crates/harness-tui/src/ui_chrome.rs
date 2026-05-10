@@ -536,7 +536,7 @@ fn compact_footer_hints(
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_subagent_footer_matches_opencode_layout() {
+pub(crate) fn exact_test_subagent_footer_matches_harness_layout() {
     use ratatui::{backend::TestBackend, Terminal};
 
     let app = AppState::new_replay(std::path::PathBuf::from("/tmp/subagent"), Vec::new());
@@ -586,7 +586,7 @@ pub(crate) fn exact_test_subagent_footer_matches_opencode_layout() {
     );
     assert!(
         rows[2].starts_with("┃  Researcher (2 of 3) 12,345 (8%) · $0.42"),
-        "content should start after OpenCode's left border plus padding\n{}",
+        "content should start after Harness's left border plus padding\n{}",
         rows[2]
     );
     assert!(
@@ -596,7 +596,7 @@ pub(crate) fn exact_test_subagent_footer_matches_opencode_layout() {
             app.keymap.get_binding_str(Action::SessionChildCycleReverse),
             app.keymap.get_binding_str(Action::SessionChildCycle),
         )),
-        "content row should expose OpenCode subagent footer actions\n{}",
+        "content row should expose Harness subagent footer actions\n{}",
         rows[2]
     );
 }
@@ -3613,7 +3613,7 @@ pub(crate) fn exact_test_live_composer_disclosure_summarizes_compaction_metrics(
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_startup_disclosure_matches_opencode_hint_row() {
+pub(crate) fn exact_test_startup_disclosure_matches_harness_hint_row() {
     let app = AppState::new_startup(Vec::new(), None);
     let theme = app.theme();
     let surface = control_dock_surface(theme, crate::view_model::ControlDockVariant::Startup);

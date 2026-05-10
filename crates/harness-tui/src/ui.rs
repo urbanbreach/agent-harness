@@ -48,7 +48,7 @@ use ui_chrome::{
 };
 #[cfg(test)]
 pub(crate) use ui_chrome::{
-    exact_test_subagent_footer_matches_opencode_layout,
+    exact_test_subagent_footer_matches_harness_layout,
     exact_test_subagent_replay_suppresses_parent_replay_dock,
 };
 pub(super) use ui_lifecycle::render_startup_lifecycle_surface;
@@ -90,7 +90,7 @@ pub(crate) use ui_chrome::{
     exact_test_live_composer_reserves_right_gap,
     exact_test_live_control_dock_collapses_disclosure_before_status,
     exact_test_live_control_dock_renders_shared_surface,
-    exact_test_startup_disclosure_matches_opencode_hint_row,
+    exact_test_startup_disclosure_matches_harness_hint_row,
     exact_test_tool_status_summary_uses_effective_tool_identity,
 };
 #[cfg(test)]

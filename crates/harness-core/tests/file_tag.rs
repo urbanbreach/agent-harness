@@ -15,7 +15,7 @@ fn write_fixture(root: &Path, relative: &str, contents: impl AsRef<[u8]>) {
 }
 
 #[test]
-fn files_matches_opencode_markdown_file_regex_examples() {
+fn files_matches_harness_markdown_file_regex_examples() {
     let template = r#"This is a @valid/path/to/a/file and it should also match at
   the beginning of a line:
 

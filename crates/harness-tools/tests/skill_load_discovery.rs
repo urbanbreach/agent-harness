@@ -451,7 +451,7 @@ async fn shipped_starter_skill_pack_is_discoverable_from_repo_checkout() {
     clippy::await_holding_lock,
     reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
 )]
-async fn codex_skill_pack_is_discoverable_from_repo_checkout() {
+async fn harness_skill_pack_is_discoverable_from_repo_checkout() {
     let _guard = env_test_lock();
     let repo = repo_root();
     let _cwd = CurrentDirGuard::set(&repo);
@@ -460,19 +460,19 @@ async fn codex_skill_pack_is_discoverable_from_repo_checkout() {
     let skill = skill_tool
         .call(
             tool_context(&repo, "toolcall-shipped-analyze"),
-            json!({"name": "analyze"}),
+            json!({"name": "rust-best-practices"}),
         )
         .await
-        .expect("shipped analyze skill");
-    assert!(skill.display_text.contains("# Skill: analyze"));
-    assert!(skill.display_text.contains("Read-Only Deep Analysis"));
+        .expect("shipped rust best practices skill");
+    assert!(skill.display_text.contains("# Rust best practices"));
+    assert!(skill.display_text.contains("harness workspace"));
     assert_eq!(
         skill
             .structured_json
             .as_ref()
             .and_then(|value| value.get("location")),
         Some(&json!(repo
-            .join(".codex/skills/analyze/SKILL.md")
+            .join(".agent-harness/skills/rust-best-practices/SKILL.md")
             .display()
             .to_string()))
     );

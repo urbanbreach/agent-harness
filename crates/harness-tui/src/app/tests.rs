@@ -323,7 +323,7 @@ fn mouse_click_on_task_inline_row_opens_subagent_session() {
     assert_ne!(
         rendered_cell_bg(&app, column, row),
         Theme::default().surface.panel_elevated,
-        "OpenCode inline task rows keep a flat surface on hover"
+        "Harness inline task rows keep a flat surface on hover"
     );
 
     app.handle_mouse(
@@ -806,7 +806,7 @@ fn mouse_up_on_completed_general_task_row_opens_child_session() {
 }
 
 #[test]
-fn mouse_click_on_task_row_uses_opencode_session_metadata() {
+fn mouse_click_on_task_row_uses_harness_session_metadata() {
     let run_dir = tempfile::tempdir().expect("create run dir");
     let parent_path = run_dir.path().join("parent_run");
     fs::create_dir_all(&parent_path).expect("create parent run dir");
@@ -826,12 +826,12 @@ fn mouse_click_on_task_row_uses_opencode_session_metadata() {
         4,
         "req_parent",
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tc_opencode_child".to_string(),
+            tool_call_id: "tc_harness_child".to_string(),
             tool_id: "task".to_string(),
             args_summary:
                 r#"{"description":"Smoke test subagent dispatch","subagent_type":"plan"}"#
                     .to_string(),
-            args_digest: "digest-opencode-child".to_string(),
+            args_digest: "digest-harness-child".to_string(),
             metadata: Some(ToolCallMetadata {
                 canonical_tool_id: Some("task".to_string()),
                 ..ToolCallMetadata::default()
@@ -856,10 +856,10 @@ fn mouse_click_on_task_row_uses_opencode_session_metadata() {
         7,
         "req_parent",
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: "tc_opencode_child".to_string(),
+            tool_call_id: "tc_harness_child".to_string(),
             status: ToolCallStatus::Succeeded,
             output_summary: Some("child completed".to_string()),
-            output_digest: Some("digest-opencode-child-result".to_string()),
+            output_digest: Some("digest-harness-child-result".to_string()),
             output_json: Some(serde_json::json!({
                 "description": "Smoke test subagent dispatch",
                 "metadata": {

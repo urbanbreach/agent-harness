@@ -112,7 +112,7 @@
         },
         "project_roots": [
           ".agent-harness/skills",
-          ".codex/skills"
+          ".harness/skills"
         ],
         "walk_to_git_root": true
       },
