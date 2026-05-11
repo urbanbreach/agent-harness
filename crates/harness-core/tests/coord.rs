@@ -427,6 +427,99 @@ async fn coord_supervisor_first_turn_does_not_generate_session_title() {
 }
 
 #[tokio::test]
+async fn coord_plan_mode_prompt_includes_workflow_and_plan_file_lifecycle() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+    let provider = CapturingProvider::new(vec!["first plan turn", "second plan turn"]);
+    let mut config = CoordinatorConfig::new(temp_dir.path().join("sessions"));
+    config.provider = Arc::new(provider.clone());
+    config.agent_profiles = BTreeMap::from([(
+        harness_core::plan::PLAN_AGENT_NAME.to_string(),
+        AgentProfile {
+            name: harness_core::plan::PLAN_AGENT_NAME.to_string(),
+            category: harness_core::plan::PLAN_AGENT_NAME.to_string(),
+            model_ref: "mock:model-1".to_string(),
+            model_ref_explicit: true,
+            system_prompt: "plan-prompt".to_string(),
+            max_iters: Some(12),
+            temperature: Some(0.0),
+            tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+            toolset: vec![],
+        },
+    )]);
+
+    let coordinator = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = coordinator
+        .start_run("coord_plan_prompt", &workspace)
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(
+            supervisor_actor(),
+            harness_core::plan::PLAN_AGENT_NAME,
+            None,
+        )
+        .await
+        .expect("spawn plan agent");
+
+    coordinator
+        .request_agent_turn(
+            EventActor::new(ActorKind::User, Some("user".to_string())),
+            agent_id.clone(),
+            "plan a careful change",
+        )
+        .await
+        .expect("request first plan turn");
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let plan_file = harness_core::plan::plan_file_display_path(&run.run_id);
+    let first_requests = provider.requests();
+    let first_prompt = &first_requests
+        .first()
+        .expect("first provider request")
+        .messages
+        .last()
+        .expect("first user message")
+        .content;
+    assert!(first_prompt.contains("No plan file exists yet"));
+    assert!(first_prompt.contains(&plan_file));
+    assert!(first_prompt.contains("Launch zero to three `explore` subagents"));
+    assert!(first_prompt.contains("final recommended approach"));
+    assert!(first_prompt.contains("call `plan_exit`"));
+    assert!(first_prompt.contains("run non-readonly tools, change configs, or make commits"));
+
+    let plan_path = workspace.join(harness_core::plan::plan_file_relative_path(&run.run_id));
+    fs::create_dir_all(plan_path.parent().expect("plan parent")).expect("plan dir");
+    fs::write(&plan_path, "# Plan\n").expect("write plan");
+
+    coordinator
+        .request_agent_turn(
+            EventActor::new(ActorKind::User, Some("user".to_string())),
+            agent_id,
+            "update the existing plan",
+        )
+        .await
+        .expect("request second plan turn");
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let second_requests = provider.requests();
+    let second_prompt = &second_requests
+        .get(1)
+        .expect("second provider request")
+        .messages
+        .last()
+        .expect("second user message")
+        .content;
+    assert!(second_prompt.contains("An active plan file already exists"));
+    assert!(second_prompt.contains(&plan_file));
+}
+
+#[tokio::test]
 async fn coord_start_run_appends_run_started() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let coordinator = test_coordinator(temp_dir.path());

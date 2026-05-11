@@ -1,3 +1,4 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -11,7 +12,7 @@ use harness_core::config::{
 use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle,
 };
-use harness_core::event::{ActorKind, EventActor, EventV1, PermissionDecision};
+use harness_core::event::{ActorKind, EventActor, EventV1, PermissionDecision, ToolCallStatus};
 use harness_core::perm::PermissionPolicy;
 use harness_core::redact::DefaultRedactor;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
@@ -19,7 +20,9 @@ use serde_json::json;
 
 mod common;
 
-use common::{allow_all_permission_policy, load_events, supervisor_actor};
+use common::{
+    allow_all_permission_policy, load_events, supervisor_actor, wait_for_tool_call_finish,
+};
 
 const SHELL_RUN_TOOL_ID: &str = "shell.run";
 const EDIT_TOOL_ID: &str = "edit";
@@ -252,6 +255,7 @@ async fn edit_rename_requires_permission_for_destination_path() {
         .spawn_agent(supervisor_actor(), "worker", None)
         .await
         .expect("spawn worker");
+    let active_plan = harness_core::plan::plan_file_display_path(&run.run_id);
 
     let error = coordinator
         .request_tool_call(
@@ -259,7 +263,7 @@ async fn edit_rename_requires_permission_for_destination_path() {
             Some("spoof-allow".to_string()),
             EDIT_TOOL_ID,
             json!({
-                "filePath": ".agent-harness/plans/run_123.md",
+                "filePath": active_plan,
                 "rename": "src/new.rs"
             }),
         )
@@ -279,7 +283,11 @@ async fn edit_rename_requires_permission_for_destination_path() {
             &event.payload,
             EventV1::PermissionResolved(data)
                 if data.decision == PermissionDecision::Deny
-                    && data.reason.as_deref() == Some("policy denied request (edit_fs)")
+                    && data.reason.as_deref().is_some_and(|reason|
+                        reason.contains("plan mode may edit only the active plan file")
+                            && reason.contains("src/new.rs")
+                            && reason.contains("edit_fs")
+                    )
         )
     }));
     assert!(!events.iter().any(|event| {
@@ -288,6 +296,169 @@ async fn edit_rename_requires_permission_for_destination_path() {
             EventV1::ToolCallStarted(data) if data.tool_call_id == denied_tool_call_id
         )
     }));
+}
+
+#[tokio::test]
+async fn plan_mode_edit_requires_active_plan_file_not_sibling_plan() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let policy = allow_all_permission_policy().with_category_override(
+        "plan",
+        CategoryPermissions {
+            edit: Some(PermissionMode::Deny),
+            rules: PermissionRuleSet {
+                edit: vec![
+                    PermissionSelectorRule {
+                        selector: PermissionSelector::CatchAll,
+                        mode: PermissionMode::Deny,
+                    },
+                    PermissionSelectorRule {
+                        selector: PermissionSelector::Prefix(".agent-harness/plans/".to_string()),
+                        mode: PermissionMode::Allow,
+                    },
+                ],
+                ..PermissionRuleSet::default()
+            },
+            ..CategoryPermissions::default()
+        },
+    );
+
+    let workspace = temp_dir.path().join("workspace");
+    let coordinator = test_coordinator(
+        temp_dir.path(),
+        worker_profile("plan", vec![EDIT_TOOL_ID.to_string()]),
+        policy,
+    );
+
+    let run = coordinator
+        .start_run("active_plan_edit", &workspace)
+        .await
+        .expect("start run");
+    let worker_agent_id = coordinator
+        .spawn_agent(supervisor_actor(), "worker", None)
+        .await
+        .expect("spawn worker");
+    let active_plan = harness_core::plan::plan_file_display_path(&run.run_id);
+
+    let allowed_tool_call_id = coordinator
+        .request_tool_call(
+            EventActor::new(ActorKind::Worker, Some(worker_agent_id.clone())),
+            Some("spoof-allow".to_string()),
+            EDIT_TOOL_ID,
+            json!({ "filePath": active_plan }),
+        )
+        .await
+        .expect("active plan file edit should be allowed");
+    wait_for_tool_call_finish(&run.events_path, &allowed_tool_call_id).await;
+
+    let denied_error = coordinator
+        .request_tool_call(
+            EventActor::new(ActorKind::Worker, Some(worker_agent_id)),
+            Some("spoof-allow".to_string()),
+            EDIT_TOOL_ID,
+            json!({ "filePath": ".agent-harness/plans/other-run.md" }),
+        )
+        .await
+        .expect_err("sibling plan file edit must be denied");
+
+    let denied_tool_call_id = match denied_error {
+        CoordinatorError::PermissionDenied(tool_call_id) => tool_call_id,
+        other => panic!("expected PermissionDenied, got {other:?}"),
+    };
+
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::ToolCallFinished(data)
+            if data.tool_call_id == allowed_tool_call_id && data.status == ToolCallStatus::Succeeded
+    )));
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::PermissionResolved(data)
+            if data.decision == PermissionDecision::Deny
+                && data.reason.as_deref().is_some_and(|reason|
+                    reason.contains("plan mode may edit only the active plan file")
+                        && reason.contains("edit_fs")
+                )
+    )));
+    assert!(!events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::ToolCallStarted(data) if data.tool_call_id == denied_tool_call_id
+    )));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn plan_mode_edit_rejects_symlinked_active_plan_directory() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    let redirected_agent_harness = temp_dir.path().join("redirected-agent-harness");
+    fs::create_dir_all(&redirected_agent_harness).expect("create redirected target");
+    fs::create_dir_all(&workspace).expect("create workspace");
+    std::os::unix::fs::symlink(&redirected_agent_harness, workspace.join(".agent-harness"))
+        .expect("symlink .agent-harness");
+
+    let policy = allow_all_permission_policy().with_category_override(
+        "plan",
+        CategoryPermissions {
+            edit: Some(PermissionMode::Deny),
+            rules: PermissionRuleSet {
+                edit: vec![PermissionSelectorRule {
+                    selector: PermissionSelector::Prefix(".agent-harness/plans/".to_string()),
+                    mode: PermissionMode::Allow,
+                }],
+                ..PermissionRuleSet::default()
+            },
+            ..CategoryPermissions::default()
+        },
+    );
+    let coordinator = test_coordinator(
+        temp_dir.path(),
+        worker_profile("plan", vec![EDIT_TOOL_ID.to_string()]),
+        policy,
+    );
+
+    let run = coordinator
+        .start_run("symlinked_active_plan_edit", &workspace)
+        .await
+        .expect("start run");
+    let worker_agent_id = coordinator
+        .spawn_agent(supervisor_actor(), "worker", None)
+        .await
+        .expect("spawn worker");
+    let active_plan = harness_core::plan::plan_file_display_path(&run.run_id);
+
+    let denied_error = coordinator
+        .request_tool_call(
+            EventActor::new(ActorKind::Worker, Some(worker_agent_id)),
+            Some("spoof-allow".to_string()),
+            EDIT_TOOL_ID,
+            json!({ "filePath": active_plan }),
+        )
+        .await
+        .expect_err("symlinked active plan path must be denied");
+    let denied_tool_call_id = match denied_error {
+        CoordinatorError::PermissionDenied(tool_call_id) => tool_call_id,
+        other => panic!("expected PermissionDenied, got {other:?}"),
+    };
+
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::PermissionResolved(data)
+            if data.decision == PermissionDecision::Deny
+                && data.reason.as_deref().is_some_and(|reason|
+                    reason.contains("must not contain symlink component")
+                        && reason.contains("edit_fs")
+                )
+    )));
+    assert!(!events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::ToolCallStarted(data) if data.tool_call_id == denied_tool_call_id
+    )));
 }
 
 fn worker_profile(category: &str, toolset: Vec<String>) -> AgentProfile {

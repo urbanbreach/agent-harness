@@ -1930,7 +1930,11 @@ impl Coordinator {
         }
 
         let prompt = if profile.name == crate::plan::PLAN_AGENT_NAME {
-            Self::plan_mode_prompt(&run_state.info.run_id, &prompt)
+            Self::plan_mode_prompt(
+                &run_state.info.run_id,
+                &run_state.info.workspace_root,
+                &prompt,
+            )
         } else {
             prompt
         };
@@ -2059,11 +2063,22 @@ impl Coordinator {
         Ok(allocate_provider_request_id(run_state))
     }
 
-    fn plan_mode_prompt(run_id: &str, prompt: &str) -> String {
-        let plan_file = crate::plan::plan_file_display_path(run_id);
-        format!(
-                "{prompt}\n\n<system-reminder>\nPlan mode is active. You MUST NOT make edits except to the plan file at {plan_file}, run non-readonly tools, change configs, or make commits. This supersedes all other instructions.\n\n## Plan Workflow\n1. Understand the request using read-only tools.\n2. You may launch up to 3 `explore` subagents for read-only codebase research. Runtime policy only permits the read-only `explore` profile in plan mode; do not launch `general`, `build`, or other write-capable agents.\n3. Ask clarifying questions only when exploration cannot resolve ambiguity.\n4. Write or update the plan at {plan_file}.\n</system-reminder>"
+    fn plan_mode_prompt(run_id: &str, workspace_root: &Path, prompt: &str) -> String {
+        let plan_path = crate::plan::plan_file_relative_path(run_id);
+        let plan_file = plan_path.to_string_lossy();
+        let plan_file_status = if workspace_root.join(&plan_path).is_file() {
+            format!(
+                "An active plan file already exists at {plan_file}. Read it first, then make incremental edits only to that file."
             )
+        } else {
+            format!(
+                "No plan file exists yet. Create your final plan at {plan_file}. This workspace-relative path is the only writable target during Plan mode."
+            )
+        };
+
+        format!(
+            "{prompt}\n\n<system-reminder>\nPlan mode is active. The user does not want execution yet. You MUST NOT make edits except to the active plan file at {plan_file}, run non-readonly tools, change configs, or make commits. This supersedes all other instructions. Harness enforces this with runtime permissions; do not rely on prompt text alone.\n\n## Plan File Info\n{plan_file_status}\nBuild the plan incrementally by writing or editing only {plan_file}. The plan file should contain your final recommended approach, not an exhaustive transcript of alternatives considered. Keep it concise enough to scan and detailed enough to execute.\n\n## Plan Workflow\n### Phase 1: Initial Understanding\nUse read-only tools to understand the request, relevant code paths, constraints, and existing tests. Native read/search/LSP tools are allowed when exposed. Bash, when exposed by the active profile, is permission-gated and additionally restricted by runtime policy to a small read-only inspection subset; never use bash to modify files, configs, git state, or the environment.\n\n### Phase 2: Parallel Exploration\nLaunch zero to three `explore` subagents only when useful for read-only codebase research. Use one agent for isolated or known-file work; use multiple agents when scope is uncertain, several modules are involved, or separate searches for implementation, call sites, and tests would improve the plan. Runtime policy only permits the read-only `explore` profile in Plan mode; do not launch `general`, `build`, or user-defined write-capable agents.\n\n### Phase 3: Synthesis\nSynthesize the findings into one recommended implementation approach. Ask a clarifying question only when read-only exploration cannot resolve a requirement, tradeoff, or safety concern.\n\n### Phase 4: Final Plan\nUpdate {plan_file} with the recommended approach, critical files to modify, key risks or constraints, and a verification section describing focused tests or end-to-end checks.\n\n### Phase 5: Terminal Action\nAt the end of the turn, either ask a necessary clarifying question or call `plan_exit` to request approval to switch to Build. Do NOT ask whether the plan is okay with the question tool; use `plan_exit` for plan approval.\n</system-reminder>"
+        )
     }
 
     async fn request_tool_call_internal(
@@ -2232,6 +2247,64 @@ impl Coordinator {
             )
         });
         let hashline_edit = hashline_edit_metadata(&tool_id, &args_json, &tool_call_id);
+
+        if let Some(reason) = plan_mode_edit_boundary_denial(
+            effective_category.as_deref(),
+            maybe_kind,
+            &run_state.info.run_id,
+            &run_state.info.workspace_root,
+            &args_json,
+        ) {
+            finalize_permission_denied(
+                clock.as_ref(),
+                redactor.as_ref(),
+                &self.config.hook_runtime_config,
+                run_state,
+                PermissionDeniedArgs {
+                    actor: actor.clone(),
+                    category: effective_category.clone(),
+                    tool_id: &tool_id,
+                    args_json: &args_json,
+                    tool_call_id: &tool_call_id,
+                    hashline_edit: hashline_edit.as_ref(),
+                    kind: PermissionKind::EditFs,
+                    reason: &reason,
+                    request_correlation_id: request_correlation_id.as_deref(),
+                },
+            )
+            .await?;
+            if let Some(respond_to) = respond_to {
+                let _ = respond_to.send(Err(format!("tool call denied: {reason}")));
+            }
+            return Err(CoordinatorError::PermissionDenied(tool_call_id));
+        }
+
+        if let Some(reason) =
+            plan_mode_shell_boundary_denial(effective_category.as_deref(), maybe_kind, &args_json)
+        {
+            finalize_permission_denied(
+                clock.as_ref(),
+                redactor.as_ref(),
+                &self.config.hook_runtime_config,
+                run_state,
+                PermissionDeniedArgs {
+                    actor: actor.clone(),
+                    category: effective_category.clone(),
+                    tool_id: &tool_id,
+                    args_json: &args_json,
+                    tool_call_id: &tool_call_id,
+                    hashline_edit: hashline_edit.as_ref(),
+                    kind: PermissionKind::Shell,
+                    reason: &reason,
+                    request_correlation_id: request_correlation_id.as_deref(),
+                },
+            )
+            .await?;
+            if let Some(respond_to) = respond_to {
+                let _ = respond_to.send(Err(format!("tool call denied: {reason}")));
+            }
+            return Err(CoordinatorError::PermissionDenied(tool_call_id));
+        }
 
         match decision {
             Some(PolicyDecision::Deny) => {
@@ -10739,14 +10812,205 @@ fn permission_rule_request_selectors(
     match kind {
         PermissionKind::Shell => shell_command_rule_selector(args_json).into_iter().collect(),
         PermissionKind::EditFs => workspace_path_rule_selectors(workspace_root, args_json),
+        PermissionKind::Task => task_agent_rule_selectors(args_json),
         PermissionKind::Network
         | PermissionKind::Question
-        | PermissionKind::Task
         | PermissionKind::WebFetch
         | PermissionKind::WebSearch
         | PermissionKind::CodeSearch
         | PermissionKind::Lsp => Vec::new(),
     }
+}
+
+fn plan_mode_edit_boundary_denial(
+    category: Option<&str>,
+    kind: Option<PermissionKind>,
+    run_id: &str,
+    workspace_root: &Path,
+    args_json: &Value,
+) -> Option<String> {
+    if category != Some(crate::plan::PLAN_AGENT_NAME) || kind != Some(PermissionKind::EditFs) {
+        return None;
+    }
+
+    let active_plan = crate::plan::plan_file_relative_path(run_id)
+        .to_string_lossy()
+        .to_string();
+    let paths = workspace_path_selector_paths(workspace_root, args_json);
+    if !paths.is_empty() && paths.iter().all(|path| path == &active_plan) {
+        return active_plan_symlink_denial(workspace_root, &active_plan);
+    }
+
+    let requested = if paths.is_empty() {
+        "<unresolved path>".to_string()
+    } else {
+        paths.join(", ")
+    };
+    Some(format!(
+        "plan mode may edit only the active plan file `{active_plan}`; requested `{requested}`"
+    ))
+}
+
+fn plan_mode_shell_boundary_denial(
+    category: Option<&str>,
+    kind: Option<PermissionKind>,
+    args_json: &Value,
+) -> Option<String> {
+    if category != Some(crate::plan::PLAN_AGENT_NAME) || kind != Some(PermissionKind::Shell) {
+        return None;
+    }
+
+    let command = args_json
+        .get("command")
+        .or_else(|| args_json.get("cmd"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|command| !command.is_empty());
+    let Some(command) = command else {
+        return Some("plan mode bash requires a read-only inspection command".to_string());
+    };
+
+    if is_plan_mode_read_only_shell_command(command) {
+        None
+    } else {
+        Some(format!(
+            "plan mode bash may only run read-only inspection commands; requested `{command}`"
+        ))
+    }
+}
+
+fn is_plan_mode_read_only_shell_command(command: &str) -> bool {
+    let trimmed = command.trim();
+    if trimmed.is_empty() || contains_shell_control_operator(trimmed) {
+        return false;
+    }
+
+    let tokens = trimmed.split_whitespace().collect::<Vec<_>>();
+    match tokens.as_slice() {
+        ["pwd"] => true,
+        ["ls", ..] => true,
+        ["git", subcommand, args @ ..] => is_plan_mode_read_only_git_command(subcommand, args),
+        _ => false,
+    }
+}
+
+fn is_plan_mode_read_only_git_command(subcommand: &str, args: &[&str]) -> bool {
+    match subcommand {
+        "status" | "diff" | "log" | "show" | "rev-parse" | "merge-base" => {
+            !contains_git_write_output_arg(args)
+        }
+        "branch" => is_plan_mode_read_only_git_branch(args),
+        _ => false,
+    }
+}
+
+fn contains_git_write_output_arg(args: &[&str]) -> bool {
+    args.iter()
+        .any(|arg| *arg == "-o" || *arg == "--output" || arg.starts_with("--output="))
+}
+
+fn is_plan_mode_read_only_git_branch(args: &[&str]) -> bool {
+    const MUTATING_FLAGS: &[&str] = &[
+        "-d",
+        "-D",
+        "-m",
+        "-M",
+        "-c",
+        "-C",
+        "--copy",
+        "--create-reflog",
+        "--delete",
+        "--edit-description",
+        "--move",
+        "--no-track",
+        "--set-upstream-to",
+        "--track",
+        "--unset-upstream",
+    ];
+
+    !args.iter().any(|arg| {
+        MUTATING_FLAGS.contains(arg)
+            || arg.starts_with("--set-upstream-to=")
+            || !arg.starts_with('-')
+    })
+}
+
+fn contains_shell_control_operator(command: &str) -> bool {
+    command
+        .chars()
+        .any(|ch| matches!(ch, '>' | '<' | '|' | '&' | ';' | '`'))
+        || command.contains("$(")
+}
+
+fn active_plan_symlink_denial(workspace_root: &Path, active_plan: &str) -> Option<String> {
+    let mut current = workspace_root.to_path_buf();
+    for component in Path::new(active_plan).components() {
+        match component {
+            std::path::Component::Normal(segment) => current.push(segment),
+            std::path::Component::CurDir => continue,
+            std::path::Component::ParentDir
+            | std::path::Component::RootDir
+            | std::path::Component::Prefix(_) => {
+                return Some(format!(
+                    "plan mode active plan path `{active_plan}` contains an invalid component"
+                ));
+            }
+        }
+
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Some(format!(
+                    "plan mode active plan path `{active_plan}` must not contain symlink component `{}`",
+                    current.display()
+                ));
+            }
+            Ok(_) => {}
+            Err(err) if err.kind() == io::ErrorKind::NotFound => return None,
+            Err(err) => {
+                return Some(format!(
+                    "plan mode could not verify active plan path `{active_plan}`: {err}"
+                ));
+            }
+        }
+    }
+    None
+}
+
+fn task_agent_rule_selectors(args_json: &Value) -> Vec<PermissionRuleRequest> {
+    const CATEGORY_FALLBACK_PROFILE: &str = "general";
+
+    let category = trimmed_arg(args_json, "category");
+    let subagent_type = ["subagent_type", "agent", "profile", "profileName"]
+        .into_iter()
+        .find_map(|key| trimmed_arg(args_json, key));
+
+    match (category, subagent_type) {
+        (Some(category), Some(subagent_type)) if category == subagent_type => {
+            vec![PermissionRuleRequest::TaskAgent(category)]
+        }
+        (Some(_), Some(subagent_type)) | (None, Some(subagent_type)) => {
+            vec![PermissionRuleRequest::TaskAgent(subagent_type)]
+        }
+        (Some(category), None) => {
+            let mut selectors = vec![PermissionRuleRequest::TaskAgent(category.clone())];
+            if category != CATEGORY_FALLBACK_PROFILE {
+                selectors.push(PermissionRuleRequest::TaskAgent(
+                    CATEGORY_FALLBACK_PROFILE.to_string(),
+                ));
+            }
+            selectors
+        }
+        (None, None) => Vec::new(),
+    }
+}
+
+fn trimmed_arg(args_json: &Value, key: &str) -> Option<String> {
+    args_json
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
 
 fn shell_command_rule_selector(args_json: &Value) -> Option<PermissionRuleRequest> {
