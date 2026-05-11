@@ -1014,6 +1014,7 @@ dependencies = [
  "harness-tools",
  "harness-tui",
  "json5",
+ "reqwest",
  "serde",
  "serde_json",
  "sha2",
