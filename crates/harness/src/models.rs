@@ -1,14 +1,35 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::Args;
+use clap::{Args, Subcommand};
 use harness_core::config::{configured_model_catalog, load_resolved_config};
 
+use crate::model_probe::{GeneratedModelCatalogCommand, ModelGenerateCommand, ModelProbeCommand};
+
 #[derive(Debug, Args, Clone, Default)]
-pub struct ModelsCommand {}
+pub struct ModelsCommand {
+    #[command(subcommand)]
+    command: Option<ModelsSubcommand>,
+}
+
+#[derive(Debug, Subcommand, Clone)]
+enum ModelsSubcommand {
+    /// Write the Pi-style generated provider catalog artifact.
+    Generate(ModelGenerateCommand),
+    /// Print the generated provider catalog embedded in this build.
+    Generated(GeneratedModelCatalogCommand),
+    /// Probe models.dev capability data and emit a harness provider catalog fragment.
+    Probe(ModelProbeCommand),
+}
 
 pub fn execute(cmd: ModelsCommand, config_path: Option<PathBuf>) -> ExitCode {
-    let _ = cmd;
+    if let Some(command) = cmd.command {
+        return match command {
+            ModelsSubcommand::Generate(command) => crate::model_probe::execute_generate(command),
+            ModelsSubcommand::Generated(command) => crate::model_probe::execute_generated(command),
+            ModelsSubcommand::Probe(command) => crate::model_probe::execute(command),
+        };
+    }
 
     let Some(loaded) = (match load_resolved_config(config_path.as_deref()) {
         Ok(loaded) => loaded,
