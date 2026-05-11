@@ -522,6 +522,7 @@ async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
     let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
         project_roots: vec![PathBuf::from(".custom/skills")],
         global_roots: vec![PathBuf::from("~/.company/skills")],
+        urls: Vec::new(),
         walk_to_git_root: false,
         permissions: std::collections::BTreeMap::from([
             ("*".to_string(), PermissionMode::Allow),
