@@ -525,6 +525,9 @@ mod tests {
         assert!(profiles["build"].toolset.contains(&"task".to_string()));
         assert!(profiles["build"]
             .toolset
+            .contains(&"plan_enter".to_string()));
+        assert!(profiles["build"]
+            .toolset
             .contains(&"background_output".to_string()));
         assert!(profiles["build"].toolset.contains(&"todowrite".to_string()));
         assert!(profiles["plan"].toolset.contains(&"edit".to_string()));
@@ -533,7 +536,8 @@ mod tests {
         assert!(profiles["plan"]
             .toolset
             .contains(&"background_output".to_string()));
-        assert!(!profiles["plan"].toolset.contains(&"bash".to_string()));
+        assert!(profiles["plan"].toolset.contains(&"bash".to_string()));
+        assert!(!profiles["plan"].toolset.contains(&"plan_enter".to_string()));
         assert!(profiles["explore"].toolset.contains(&"read".to_string()));
         assert!(profiles["explore"].toolset.contains(&"grep".to_string()));
         assert!(!profiles["explore"].toolset.contains(&"edit".to_string()));
