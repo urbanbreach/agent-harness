@@ -12,10 +12,9 @@ The generated JSON schemas are the source of truth:
 ## Minimal starter
 
 Start with `configs/harness.example.jsonc`. It keeps the happy path small: one
-OpenAI-compatible provider, one default model, scalar permission mode, and
-optional MCP. The runtime fills in the standard `build`, `plan`, `explore`, and
-`general` agents plus provider-context compaction defaults unless you override
-them explicitly.
+OpenAI-compatible provider, one default model, explicit built-in agents you can
+toggle with `enable`, scalar permission mode, and optional MCP. The runtime still
+fills in the default details for each listed agent unless you override them.
 
 ```jsonc
 {
@@ -31,20 +30,42 @@ them explicitly.
       "models": {
         "gpt-5.4-mini": {
           "name": "GPT 5.4 Mini",
-          "limit": { "context": 272000, "input": 272000, "output": 128000 }
+          "limit": { "context": 272000, "input": 272000, "output": 128000 },
+          "variants": {
+            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
+            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
+            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } }
+          }
         }
       }
     }
   },
   "model": "default/gpt-5.4-mini",
+  "agent": {
+    "build": { "enable": true },
+    "plan": { "enable": true },
+    "general": { "enable": true },
+    "explore": { "enable": true },
+    "title": { "enable": true, "hidden": true },
+    "summary": { "enable": true, "hidden": true },
+    "compaction": { "enable": true, "hidden": true }
+  },
   "default_agent": "build",
   "permission": "ask"
 }
 ```
 
-Only write the settings you want to own. Model catalog metadata, agent tool
-lists, background-task knobs, and compaction defaults are runtime concerns; keep
-them out of day-to-day configs unless a project needs a deliberate override.
+Only write the settings you want to own. The example lists built-in agents for
+discoverability, but each `{ "enable": true }` entry still inherits the shipped
+description, prompt, permissions, and tools. Keep model catalog metadata, agent
+tool lists, background-task knobs, and compaction defaults out of day-to-day
+configs unless a project needs a deliberate override.
+
+Reasoning-effort presets use the same explicit `variants` shape as OpenCode.
+Each variant is a named model option preset; for OpenAI-compatible reasoning
+models, set `metadata.reasoningEffort` so the TUI can display and select variants
+like `low`, `medium`, or `high`. Use additional variant fields only for
+non-standard names or per-variant limits, modalities, or options.
 
 The larger provider catalog lives in `configs/provider-catalog.reference.jsonc`.
 That file is a reference and validation fixture for provider and model metadata,
@@ -55,13 +76,37 @@ discovery. Validate it explicitly when you want to check the catalog:
 cargo run -p harness -- --config configs/provider-catalog.reference.jsonc config validate
 ```
 
+You can also update the checked-in generated provider catalog from the public
+models.dev capability dataset, similar to Pi's generated model registry:
+
+```bash
+cargo run -p harness -- models generate
+```
+
+`models generate` is an explicit offline-maintenance command, not runtime
+discovery. By default it fetches `https://models.dev/api.json`, filters to
+non-deprecated tool-call-capable models, and writes
+`configs/provider-catalog.generated.json`. The harness binary embeds that file
+with `include_str!`, so `models generated` can print the static registry without
+network access, matching Pi's generate-then-bundle workflow. Use
+`--input <file>` or `--stdin` for deterministic runs from a saved API response,
+`--provider <id>` to restrict output, `--include-non-tool` /
+`--include-deprecated` to broaden the catalog. `models generate` always emits
+low/medium/high reasoning presets for models that advertise reasoning support;
+`models probe` uses `--emit-reasoning-variants` when you want the same presets in
+scratch output to stdout or `--output`. Committed updates should go through
+`models generate`.
+Review generated provider `baseURL` values before merging; models.dev describes
+many providers, while the harness currently executes only OpenAI-compatible
+transports.
+
 ## Public contract summary
 
 | Area | Canonical shape | Notes |
 | --- | --- | --- |
 | Runtime config file | `harness.json` / `harness.jsonc` | Shared defaults live under the matching XDG harness directory. |
 | TUI config file | `tui.json` / `tui.jsonc` | Runtime and TUI settings are intentionally split. |
-| Core runtime keys | `provider`, `model`, `small_model`, `model_profile`, `agent`, `default_agent`, `permission`, `runtime`, `mcp`, `skills`, `instructions` | Unsupported product-level areas are rejected explicitly. |
+| Core runtime keys | OpenCode-compatible `provider`, `model`, `small_model`, `agent`, `default_agent`, `permission`, `mcp`, `skills`, `instructions`, plus harness runtime extensions | Side-effectful OpenCode product areas are accepted only when inactive and rejected when active. |
 | TUI surface | `keybinds` | Unsupported TUI-only fields fail validation. |
 | Permission naming | `bash`, `edit`, `question`, `task`, `webfetch`, `websearch`, `codesearch`, `lsp` | Legacy `shell` / `network` remain compatibility-only. |
 | Prompt asset discovery | `.agent-harness/agents/*.md` | `AGENTS.md` is still auto-discovered separately. |
@@ -77,16 +122,38 @@ for those settings instead of mixing them into runtime config.
 | --- | --- |
 | `$schema` | Optional schema URI for editor integration. |
 | `agent` | Optional agent overrides or custom agent definitions. |
+| `autoshare` | OpenCode-compatible sharing flag; inactive `false` is accepted, active sharing is rejected. |
+| `autoupdate` | OpenCode-compatible update flag; inactive `false` is accepted, active updates are rejected. |
+| `command` | OpenCode command configuration; accepted only when empty because the harness does not execute configured commands. |
+| `compaction` | OpenCode-compatible compaction settings accepted as inert compatibility input; harness compaction knobs live under `runtime.compaction`. |
 | `default_agent` | Default interactive agent selected at startup; the shipped example keeps `build` as the default while `plan` remains selectable. |
+| `disabled_providers` | OpenCode-compatible provider filter accepted as inert compatibility input. |
+| `enabled_providers` | OpenCode-compatible provider filter accepted as inert compatibility input. |
+| `enterprise` | OpenCode enterprise configuration; accepted only when empty because the harness does not implement enterprise product integration. |
+| `experimental` | OpenCode-compatible experimental settings accepted as inert compatibility input. |
+| `formatter` | OpenCode-compatible formatter settings accepted as inert compatibility input. |
 | `instructions` | Optional inline instructions or instruction file paths prepended before agent prompts. |
+| `layout` | Deprecated OpenCode layout setting accepted as inert compatibility input. |
+| `logLevel` | OpenCode-compatible log-level setting accepted as inert compatibility input. |
+| `lsp` | OpenCode-compatible LSP setting; `false` disables harness LSP overrides, object values map to harness LSP servers when possible. |
 | `mcp` | MCP server definitions keyed by server name. |
+| `mode` | Deprecated OpenCode alias for `agent`; entries are translated as agent definitions. |
 | `model` | Default full-capability model reference. |
 | `model_profile` | Named model selectors that resolve to configured provider/model targets plus optional fallback targets. |
 | `permission` | Default permission policy for the supported tool subset plus optional shell allowlist. |
+| `plugin` | OpenCode plugin list; accepted only when empty because plugins are not loaded by the harness. |
 | `provider` | Provider definitions keyed by provider id. |
 | `runtime` | Runtime knobs that are not provider/model/agent definitions, currently including provider-context compaction settings. |
+| `server` | OpenCode server configuration; accepted only when empty because server commands are outside this runtime config. |
+| `share` | OpenCode sharing mode; only `disabled` is accepted. |
+| `shell` | OpenCode-compatible default-shell setting accepted as inert compatibility input. |
 | `small_model` | Optional smaller model reference for custom secondary profiles. |
+| `snapshot` | OpenCode-compatible snapshot setting accepted as inert compatibility input. |
 | `skills` | Shared skill discovery roots and permission overrides for skill loading. |
+| `tool_output` | OpenCode-compatible tool-output truncation setting accepted as inert compatibility input. |
+| `tools` | OpenCode-compatible top-level tool map accepted as inert compatibility input. |
+| `username` | OpenCode-compatible username setting accepted as inert compatibility input. |
+| `watcher` | OpenCode-compatible watcher settings accepted as inert compatibility input. |
 
 ## TUI top-level keys
 
@@ -127,24 +194,39 @@ catalog reference must be passed with `--config` or read as documentation.
 The runtime config stays focused on provider/model/agent selection. Prompt prose
 and repository instructions still come from files:
 
-1. inline `agent.<name>.system_prompt`
+1. inline `agent.<name>.system_prompt` / `agent.<name>.prompt`
 2. discovered `.agent-harness/agents/<name>.md`
-3. markdown frontmatter `system_prompt` in `.agent-harness/agents/<name>.md`
+3. markdown frontmatter `system_prompt` / `prompt` in `.agent-harness/agents/<name>.md`
 
 Project instructions are still auto-discovered from `AGENTS.md`. If
 `instructions` is set in the runtime config, those entries are prepended ahead
 of the discovered `AGENTS.md` content.
 
-The shipped `plan` agent provides a two-phase planning mode: it can read/search,
-ask questions, write only under `.agent-harness/plans/`, and call `plan_exit` to
-ask whether to switch to `build`. The edit boundary is enforced by per-agent
-permission rules, not just prompt text.
+The shipped `plan` agent provides a stable planning mode, not an experimental
+feature flag. It can read/search, ask questions, write only the active
+workspace-relative `.agent-harness/plans/<run>.md` plan file, and call
+`plan_exit` to ask whether to switch to `build`. The coordinator reminder tells
+Plan whether that active plan file already exists: the first Plan turn creates
+the file, while later turns should read and update the same path. The edit
+boundary is enforced by per-agent permission rules, not just prompt text.
 
-The shipped subagent profiles are available without extra config. `explore` is a
-read-only local codebase search profile for `task(subagent_type: "explore")`.
-`general` is a broader focused implementation/research profile for
-`task(subagent_type: "general")`; it intentionally omits `task` by default so
-subagents do not recursively redelegate unless a project opts into that tool.
+The shipped `build` agent exposes `plan_enter`, which asks whether to switch to
+Plan before complex implementation work and schedules a coordinator-owned Plan
+continuation when approved. To match the reference Plan workflow, the shipped
+Plan profile exposes `bash` behind shell permission prompts; Plan instructions
+and a coordinator-side shell guard still restrict bash to read-only inspection and
+forbid edits, config changes, commits, or other mutations. Plan-mode delegation
+remains restricted to the read-only `explore` profile by default; `general` and
+user-defined write-capable subagents are rejected before spawn unless a future
+profile deliberately adds parent-permission inheritance and tests for it.
+
+The shipped agent names are available without extra config: primary
+`build` and `plan`, subagents `general` and `explore`, plus hidden `title`,
+`summary`, and `compaction` profiles. `explore` is a read-only local codebase
+search profile for `task(subagent_type: "explore")`. `general` is a broader
+focused implementation/research profile for `task(subagent_type: "general")`; it
+intentionally omits `task` by default so subagents do not recursively redelegate
+unless a project opts into that tool.
 When a subagent profile does not configure its own `model`, task delegation
 inherits the invoking parent turn's active model and model settings. If the
 subagent profile has an explicit `model`, that configured model wins.
@@ -158,10 +240,18 @@ Task and background-output results also include child runtime metadata such as
 profile, category, model ref, toolset, redelegation capability, and exact
 follow-up tool actions for status checks, waiting, cancellation, or continuation.
 
-Agent `max_iters` / `maxIters` is optional. When unset, the runtime does not add
-a profile-specific iteration cap; the agent continues until the model stops, the
-user interrupts, or another runtime safety limit applies. Set `max_iters` on an
-agent only when a profile needs an explicit per-turn budget.
+Agent `model` selects a provider/model target for that profile. `prompt` is the
+public prompt alias for `system_prompt`. `tools` accepts either a list of tool ids
+or a map of `{ tool_id: enabled }`; disabled map entries are omitted. `mode` may
+be `primary`, `subagent`, or `all`; the default agent must not be `subagent`-only
+or `hidden`. Agent `max_iters` / `maxIters` / `steps` / `maxSteps` is optional.
+When unset, the runtime does not add a profile-specific iteration cap; the agent
+continues until the model stops, the user interrupts, or another runtime safety
+limit applies. Set an iteration cap only when a profile needs an explicit
+per-turn budget. `name`, `top_p` / `topP`, `color`, and `options` are accepted as
+agent metadata for consumers that need them. `enable: false` / `enabled: false`
+or `disable: true` removes a configured or shipped agent from the resolved
+runtime config; `enable: true` documents that a shipped default remains active.
 
 ## Permission policy
 
@@ -187,7 +277,7 @@ Per-tool scalar modes use the same values:
 }
 ```
 
-`bash` and `edit` also support bounded selector maps. They are not a general
+`bash`, `edit`, and `task` also support bounded selector maps. They are not a general
 policy language:
 
 ```jsonc
@@ -202,6 +292,11 @@ policy language:
       "docs/**": "allow",
       "crates/harness-core/src/config.rs": "ask",
       "*": "deny"
+    },
+    "task": {
+      "explore": "allow",
+      "review-*": "ask",
+      "*": "deny"
     }
   }
 }
@@ -210,7 +305,9 @@ policy language:
 Bash selectors are either an exact command string, a trailing `*` prefix such as
 `cargo test*`, or the `*` catch-all. Edit selectors are either an exact
 workspace-relative path, a trailing `/**` path prefix such as `docs/**`, or the
-`*` catch-all. Regex and general glob syntax are not supported.
+`*` catch-all. Task selectors match the requested subagent/profile/category name;
+they accept exact names, `*` catch-all, and simple `*` glob patterns such as
+`review-*`. Regex is not supported.
 
 `shell_allowlist` remains supported inside `permission` for the existing shell
 allowlist checks. Permission decisions improve operator UX by deciding whether a
@@ -235,7 +332,8 @@ values, config loading rejects the file instead of silently choosing one.
 
 ## Validation behavior
 
-- Unsupported top-level areas such as `server`, `command`, `plugin`, `share`, `autoupdate`, `enterprise`, `experimental`, and top-level `tools` are rejected explicitly.
+- Unsupported top-level areas are limited to active OpenCode product features and unknown keys.
+- OpenCode top-level areas that would trigger product side effects (`server`, `command`, `plugin`, `share`, `autoshare`, `autoupdate`, `enterprise`) are rejected when active; inactive forms such as empty maps/lists, `share: "disabled"`, or `autoupdate: false` are accepted.
 - Unsupported TUI fields are rejected explicitly.
 - `{env:VAR}` resolves to an empty string when `VAR` is unset.
 - `{file:path}` is supported for string references and resolves relative to the config file when the config comes from disk.

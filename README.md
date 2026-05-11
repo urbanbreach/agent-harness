@@ -43,7 +43,7 @@ Primary agents are discovered from `.agent-harness/agents/*.md` and use the
 runtime config's `model` default:
 
 - `build` — default implementation lane
-- `plan` — read-only planning lane with runtime-enforced edits limited to `.agent-harness/plans/`, plus `plan_exit` to hand off to Build
+- `plan` — stable read-only planning lane with runtime-enforced edits limited to the active `.agent-harness/plans/<run>.md` file, plus `plan_exit` to hand off to Build
 - `explore` — shipped read-only subagent profile for local codebase search via `task(subagent_type: "explore")`
 - `general` — shipped focused implementation/research subagent profile via `task(subagent_type: "general")`
 
@@ -64,12 +64,20 @@ The older broad runtime shape plus `$XDG_CONFIG_HOME/harness/config.jsonc` still
 load for compatibility, but `harness.json{,c}` and the matching XDG runtime paths
 are the canonical public contract.
 
-Launch the interactive harness with Build selected by default and Plan available
-through the agent/model switcher:
+Launch the interactive harness with Build selected by default. Press `Tab` to
+cycle primary agents, so the shipped profile set switches between Build and Plan:
 
 ```bash
 cargo run -p harness -- --config configs/harness.example.jsonc
 ```
+
+Plan mode is an operator workflow, not an experimental feature flag: switch to
+Plan for analysis, let it create or update `.agent-harness/plans/<run>.md`, and
+approve `plan_exit` when the plan is ready to continue in Build. Build can also
+call `plan_enter` to ask whether complex work should switch into Plan first.
+Plan uses native read/search/LSP tools for inspection, exposes `bash` only behind
+permission prompts plus a read-only shell guard, and may delegate only to the
+read-only `explore` profile under the current runtime policy.
 
 Run the harness headlessly from the terminal with the provider-backed `prompt` command:
 

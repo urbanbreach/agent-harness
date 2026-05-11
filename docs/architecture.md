@@ -323,9 +323,11 @@ guard when a checkpoint cannot reduce active context.
 Provider and tool exposure is selected per agent by its configured `tools` list. The harness ships
 a single native tool surface, so profiles opt in by naming canonical tool ids such as `read`,
 `edit`, `bash`, `task`, `background_output`, and `plan_exit` directly. The shipped `plan` profile
-includes `edit` only for `.agent-harness/plans/**` through runtime permission rules, may delegate
-read-only exploration through `task`/`background_output`, and uses `plan_exit` to ask before the
-coordinator schedules a `build` continuation. By default, `read` emits
+includes `edit` only for the active workspace-relative `.agent-harness/plans/<run>.md` file through
+runtime permission rules, exposes `bash` only behind shell permission and an additional runtime
+read-only inspection guard, may delegate read-only exploration only through the `explore` profile via
+`task`/`background_output`, and uses `plan_exit` approval before the coordinator schedules a `build`
+continuation with the active plan-file path. By default, `read` emits
 `LINE#HASH|text` anchors and `edit` consumes hashline operations on that anchored view.
 
 ## Hashline Spec
