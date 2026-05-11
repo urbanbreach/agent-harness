@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 pub const BUILD_AGENT_NAME: &str = "build";
 pub const PLAN_AGENT_NAME: &str = "plan";
+pub const PLAN_ENTER_TOOL_ID: &str = "plan_enter";
 pub const PLAN_EXIT_TOOL_ID: &str = "plan_exit";
 pub const PLAN_DIR: &str = ".agent-harness/plans";
 
