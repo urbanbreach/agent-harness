@@ -5,15 +5,22 @@ use super::*;
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 struct MarkdownAgentFrontmatter {
+    pub name: Option<String>,
     pub description: Option<String>,
-    #[serde(alias = "systemPrompt")]
+    #[serde(alias = "systemPrompt", alias = "prompt")]
     pub system_prompt: Option<String>,
-    #[serde(rename = "model_ref", alias = "modelRef")]
+    #[serde(rename = "model_ref", alias = "modelRef", alias = "model")]
     pub model_ref: Option<String>,
     pub variant: Option<String>,
     pub temperature: Option<f32>,
+    #[serde(alias = "topP")]
+    pub top_p: Option<f32>,
+    pub mode: Option<AgentMode>,
+    pub hidden: Option<bool>,
+    pub color: Option<String>,
+    pub options: BTreeMap<String, serde_json::Value>,
     pub permissions: Option<ProfilePermissions>,
-    #[serde(alias = "maxIters")]
+    #[serde(alias = "maxIters", alias = "steps", alias = "maxSteps")]
     pub max_iters: Option<usize>,
     #[serde(alias = "toolFailureMode")]
     pub tool_failure_mode: Option<ToolFailureMode>,
@@ -53,7 +60,13 @@ fn merge_configured_and_markdown_agents(
                 Some(merge_markdown_agent_with_config(config, markdown))
             }
             (None, Some(config)) => Some(config.clone()),
-            (Some(markdown), None) => profile_from_markdown_agent(markdown)?,
+            (Some(markdown), None) => {
+                let fallback_model_ref = configured
+                    .values()
+                    .next()
+                    .map(|profile| profile.model_ref.as_str());
+                profile_from_markdown_agent(markdown, fallback_model_ref)?
+            }
             (None, None) => None,
         };
 
@@ -76,12 +89,32 @@ fn merge_markdown_agent_with_config(
         .or_else(|| markdown.frontmatter.system_prompt.clone());
 
     ProfileConfig {
+        name: config
+            .name
+            .clone()
+            .or_else(|| markdown.frontmatter.name.clone()),
         description: config.description.clone(),
         system_prompt: prompt,
         model_ref: config.model_ref.clone(),
         model_ref_explicit: config.model_ref_explicit,
         variant: config.variant.clone(),
         temperature: config.temperature,
+        top_p: config.top_p.or(markdown.frontmatter.top_p),
+        mode: if matches!(config.mode, AgentMode::All) {
+            markdown.frontmatter.mode.unwrap_or(config.mode)
+        } else {
+            config.mode
+        },
+        hidden: config.hidden || markdown.frontmatter.hidden.unwrap_or(false),
+        color: config
+            .color
+            .clone()
+            .or_else(|| markdown.frontmatter.color.clone()),
+        options: if config.options.is_empty() {
+            markdown.frontmatter.options.clone()
+        } else {
+            config.options.clone()
+        },
         permissions: config.permissions.clone(),
         max_iters: config.max_iters,
         tool_failure_mode: config.tool_failure_mode,
@@ -91,24 +124,34 @@ fn merge_markdown_agent_with_config(
 
 fn profile_from_markdown_agent(
     markdown: &MarkdownAgentFile,
+    fallback_model_ref: Option<&str>,
 ) -> Result<Option<ProfileConfig>, ConfigError> {
     let Some(description) = markdown.frontmatter.description.clone() else {
         return Ok(None);
     };
-    let Some(model_ref) = markdown.frontmatter.model_ref.clone() else {
-        return Ok(None);
-    };
+    let model_ref = markdown
+        .frontmatter
+        .model_ref
+        .clone()
+        .or_else(|| fallback_model_ref.map(str::to_string))
+        .unwrap_or_else(|| "default:default".to_string());
 
     Ok(Some(ProfileConfig {
+        name: markdown.frontmatter.name.clone(),
         description,
         system_prompt: markdown
             .prompt_body
             .clone()
             .or_else(|| markdown.frontmatter.system_prompt.clone()),
         model_ref,
-        model_ref_explicit: true,
+        model_ref_explicit: markdown.frontmatter.model_ref.is_some(),
         variant: markdown.frontmatter.variant.clone(),
         temperature: markdown.frontmatter.temperature,
+        top_p: markdown.frontmatter.top_p,
+        mode: markdown.frontmatter.mode.unwrap_or_default(),
+        hidden: markdown.frontmatter.hidden.unwrap_or(false),
+        color: markdown.frontmatter.color.clone(),
+        options: markdown.frontmatter.options.clone(),
         permissions: markdown.frontmatter.permissions.clone(),
         max_iters: markdown.frontmatter.max_iters,
         tool_failure_mode: markdown.frontmatter.tool_failure_mode.unwrap_or_default(),

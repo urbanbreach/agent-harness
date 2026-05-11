@@ -315,15 +315,28 @@ impl HarnessConfig {
             resolve_agent_model_selection(self, agent_name, agent)?;
         }
 
-        if let Some(default_profile) = self.ui.default_profile.as_deref() {
-            if !self.agents.contains_key(default_profile) {
+        if let Some(mut default_profile) = self.ui.default_profile.clone() {
+            if !self.agents.contains_key(default_profile.as_str()) {
                 if self.agents.contains_key("build") {
                     self.ui.default_profile = Some("build".to_string());
                     self.default_agent = Some("build".to_string());
+                    default_profile = "build".to_string();
                 } else {
                     return Err(ConfigError::InvalidReference(format!(
                         "ui.default_profile references unknown agent `{default_profile}`; available agents: {}",
                         format_name_list(self.agents.keys().map(|name| name.as_str()))
+                    )));
+                }
+            }
+            if let Some(profile) = self.agents.get(default_profile.as_str()) {
+                if profile.mode.is_subagent_only() {
+                    return Err(ConfigError::InvalidReference(format!(
+                        "default_agent `{default_profile}` must not reference a subagent-only profile"
+                    )));
+                }
+                if profile.hidden {
+                    return Err(ConfigError::InvalidReference(format!(
+                        "default_agent `{default_profile}` must not reference a hidden profile"
                     )));
                 }
             }
@@ -809,10 +822,12 @@ pub struct HookRuntimeConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SkillsConfig {
-    #[serde(default, alias = "projectRoots")]
+    #[serde(default, alias = "projectRoots", alias = "paths")]
     pub project_roots: Vec<PathBuf>,
     #[serde(default, alias = "globalRoots")]
     pub global_roots: Vec<PathBuf>,
+    #[serde(default)]
+    pub urls: Vec<String>,
     #[serde(default = "default_skills_walk_to_git_root", alias = "walkToGitRoot")]
     pub walk_to_git_root: bool,
     #[serde(default)]
@@ -824,6 +839,7 @@ impl Default for SkillsConfig {
         Self {
             project_roots: default_skills_project_roots(),
             global_roots: default_skills_global_roots(),
+            urls: Vec::new(),
             walk_to_git_root: default_skills_walk_to_git_root(),
             permissions: default_skills_permissions(),
         }
@@ -1225,10 +1241,12 @@ pub enum ModelVariantTextVerbosity {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ProfileConfig {
+    #[serde(default)]
+    pub name: Option<String>,
     pub description: String,
-    #[serde(default, alias = "systemPrompt")]
+    #[serde(default, alias = "systemPrompt", alias = "prompt")]
     pub system_prompt: Option<String>,
-    #[serde(rename = "model_ref", alias = "modelRef")]
+    #[serde(rename = "model_ref", alias = "modelRef", alias = "model")]
     pub model_ref: String,
     #[serde(default, skip_serializing_if = "is_false")]
     #[schemars(skip)]
@@ -1239,11 +1257,21 @@ pub struct ProfileConfig {
     /// When unset, the runtime omits `temperature` from provider requests so
     /// the provider default applies.
     pub temperature: Option<f32>,
+    #[serde(default, alias = "topP")]
+    pub top_p: Option<f32>,
+    #[serde(default)]
+    pub mode: AgentMode,
+    #[serde(default)]
+    pub hidden: bool,
+    #[serde(default)]
+    pub color: Option<String>,
+    #[serde(default)]
+    pub options: BTreeMap<String, serde_json::Value>,
     #[serde(default)]
     pub permissions: Option<ProfilePermissions>,
     /// Optional per-profile multi-turn budget. When unset, the runtime does not
     /// impose a profile-specific iteration cap.
-    #[serde(default, alias = "maxIters")]
+    #[serde(default, alias = "maxIters", alias = "steps", alias = "maxSteps")]
     pub max_iters: Option<usize>,
     #[serde(
         default = "default_runtime_tool_failure_mode",
@@ -1252,6 +1280,21 @@ pub struct ProfileConfig {
     pub tool_failure_mode: ToolFailureMode,
     #[serde(default)]
     pub tools: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentMode {
+    Primary,
+    Subagent,
+    #[default]
+    All,
+}
+
+impl AgentMode {
+    pub fn is_subagent_only(self) -> bool {
+        matches!(self, Self::Subagent)
+    }
 }
 
 /// Legacy compatibility alias kept for migration shims and older category-named call sites.
@@ -1360,6 +1403,8 @@ pub struct PermissionRuleSet {
     pub shell: Vec<PermissionSelectorRule>,
     #[serde(default)]
     pub edit: Vec<PermissionSelectorRule>,
+    #[serde(default)]
+    pub task: Vec<PermissionSelectorRule>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1374,6 +1419,7 @@ pub struct PermissionSelectorRule {
 pub enum PermissionSelector {
     Exact(String),
     Prefix(String),
+    Glob(String),
     CatchAll,
 }
 
@@ -3526,14 +3572,189 @@ mod tests {
             ToolFailureMode::ContinueAsToolMessage
         );
         assert!(parsed.agents.contains_key("plan"));
+        assert_eq!(parsed.agents["plan"].mode, AgentMode::Primary);
         let plan = parsed.agents["plan"].permissions.as_ref().unwrap();
-        assert_eq!(plan.shell, Some(PermissionMode::Deny));
+        assert_eq!(plan.shell, Some(PermissionMode::Ask));
         assert_eq!(plan.task, Some(PermissionMode::Allow));
-        assert!(parsed.agents["plan"]
+        assert!(plan.rules.edit.iter().any(|rule| matches!(
+            (&rule.selector, &rule.mode),
+            (PermissionSelector::CatchAll, PermissionMode::Deny)
+        )));
+        assert!(plan.rules.edit.iter().any(|rule| matches!(
+            (&rule.selector, &rule.mode),
+            (PermissionSelector::Prefix(prefix), PermissionMode::Allow)
+                if prefix == ".agent-harness/plans/"
+        )));
+
+        let tools = &parsed.agents["plan"].tools;
+        for required_tool in [
+            "read",
+            "glob",
+            "grep",
+            "list",
+            "lsp",
+            "question",
+            "task",
+            "background_output",
+            "edit",
+            "bash",
+            "plan_exit",
+        ] {
+            assert!(
+                tools.contains(&required_tool.to_string()),
+                "plan profile should expose required tool {required_tool}"
+            );
+        }
+        assert!(tools.contains(&"bash".to_string()));
+        assert!(parsed.agents["build"]
             .tools
-            .contains(&"plan_exit".to_string()));
-        assert!(parsed.agents["plan"].tools.contains(&"task".to_string()));
-        assert!(!parsed.agents["plan"].tools.contains(&"bash".to_string()));
+            .contains(&"plan_enter".to_string()));
+        assert!(!tools.contains(&"plan_enter".to_string()));
+    }
+
+    #[test]
+    fn public_agent_schema_accepts_prompt_model_tool_map_and_metadata() {
+        let cfg = r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              options: {
+                baseURL: "http://127.0.0.1:8317/v1",
+                apiKey: "test-key",
+              },
+              models: {
+                "gpt-4o-mini": { name: "GPT-4o mini" }
+              }
+            }
+          },
+          model: "default/gpt-4o-mini",
+          agent: {
+            build: {
+              name: "Builder",
+              prompt: "Build work",
+              model: "default/gpt-4o-mini",
+              topP: 0.8,
+              mode: "primary",
+              hidden: false,
+              color: "blue",
+              options: { reasoningEffort: "low" },
+              steps: 12,
+              tools: {
+                read: true,
+                bash: false,
+                task: true
+              }
+            },
+            explore: {
+              disable: true
+            },
+            reviewer: {
+              name: "Reviewer",
+              description: "Review work",
+              model: "default/gpt-4o-mini",
+              mode: "subagent",
+              hidden: true,
+              maxSteps: 4,
+              tools: ["read"]
+            }
+          },
+          default_agent: "build",
+          permission: "allow"
+        }
+        "#;
+
+        let parsed = load_config_from_str(cfg).expect("public agent schema should parse");
+        let build = &parsed.agents["build"];
+        assert_eq!(build.name.as_deref(), Some("Builder"));
+        assert_eq!(build.system_prompt.as_deref(), Some("Build work"));
+        assert_eq!(build.model_ref, "default/gpt-4o-mini");
+        assert_eq!(build.top_p, Some(0.8));
+        assert_eq!(build.mode, AgentMode::Primary);
+        assert!(!build.hidden);
+        assert_eq!(build.color.as_deref(), Some("blue"));
+        assert!(build.options.contains_key("reasoningEffort"));
+        assert_eq!(build.max_iters, Some(12));
+        assert_eq!(build.tools, vec!["read".to_string(), "task".to_string()]);
+        assert!(!parsed.agents.contains_key("explore"));
+        let reviewer = &parsed.agents["reviewer"];
+        assert_eq!(reviewer.name.as_deref(), Some("Reviewer"));
+        assert_eq!(reviewer.mode, AgentMode::Subagent);
+        assert!(reviewer.hidden);
+        assert_eq!(reviewer.max_iters, Some(4));
+    }
+
+    #[test]
+    fn default_agent_rejects_subagent_only_and_hidden_profiles() {
+        for (field, value, expected) in [
+            (
+                "mode",
+                "\"subagent\"",
+                "must not reference a subagent-only profile",
+            ),
+            ("hidden", "true", "must not reference a hidden profile"),
+        ] {
+            let cfg = format!(
+                r#"
+        {{
+          provider: {{
+            default: {{
+              type: "openai_compatible",
+              options: {{
+                baseURL: "http://127.0.0.1:8317/v1",
+                apiKey: "test-key",
+              }},
+              models: {{
+                "gpt-4o-mini": {{ name: "GPT-4o mini" }}
+              }}
+            }}
+          }},
+          model: "default/gpt-4o-mini",
+          agent: {{
+            build: {{
+              prompt: "Build work",
+              {field}: {value}
+            }}
+          }},
+          default_agent: "build",
+          permission: "allow"
+        }}
+        "#
+            );
+            let err = load_config_from_str(&cfg).expect_err("invalid default agent must fail");
+            assert!(err.to_string().contains(expected));
+        }
+    }
+
+    #[test]
+    fn default_agent_rejects_disabled_profile() {
+        let cfg = r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              options: {
+                baseURL: "http://127.0.0.1:8317/v1",
+                apiKey: "test-key",
+              },
+              models: {
+                "gpt-4o-mini": { name: "GPT-4o mini" }
+              }
+            }
+          },
+          model: "default/gpt-4o-mini",
+          agent: {
+            explore: { disable: true }
+          },
+          default_agent: "explore",
+          permission: "allow"
+        }
+        "#;
+
+        let err = load_config_from_str(cfg).expect_err("disabled default agent must fail");
+        assert!(err
+            .to_string()
+            .contains("default_agent `explore` references a disabled agent"));
     }
 
     fn public_minimal_config_with_permission(permission: &str) -> String {
@@ -3632,6 +3853,7 @@ mod tests {
         assert_eq!(parsed.permissions.defaults.lsp, Some(PermissionMode::Allow));
         assert!(parsed.permissions.rules.shell.is_empty());
         assert!(parsed.permissions.rules.edit.is_empty());
+        assert!(parsed.permissions.rules.task.is_empty());
     }
 
     #[test]
@@ -3647,6 +3869,11 @@ mod tests {
                 edit: {
                   "docs/**": "allow",
                   "crates/harness-core/src/config.rs": "ask",
+                  "*": "deny"
+                },
+                task: {
+                  "explore": "allow",
+                  "review-*": "ask",
                   "*": "deny"
                 },
                 shell_allowlist: {
@@ -3665,6 +3892,7 @@ mod tests {
         assert_eq!(parsed.permissions.shell_allowlist.cwd_roots, vec!["."]);
         assert_eq!(parsed.permissions.rules.shell.len(), 3);
         assert_eq!(parsed.permissions.rules.edit.len(), 3);
+        assert_eq!(parsed.permissions.rules.task.len(), 3);
     }
 
     #[test]
@@ -3678,6 +3906,7 @@ mod tests {
             r#"{ bash: { "git status": "sometimes" } }"#,
             r#"{ bash: { "git status": { mode: "allow" } } }"#,
             r#"{ edit: { "docs/**": 1 } }"#,
+            r#"{ task: { "/explore/": "allow" } }"#,
             r#"{ question: { "*": "allow" } }"#,
         ] {
             let cfg = public_minimal_config_with_permission(permission);

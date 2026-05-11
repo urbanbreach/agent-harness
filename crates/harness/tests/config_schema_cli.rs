@@ -6,7 +6,8 @@ use std::sync::{Mutex, OnceLock};
 
 use harness_core::config::{
     harness_schema_pretty_json, harness_tui_schema_pretty_json, load_config_from_file,
-    OpenAiApiMode, PermissionMode, ProviderConfig, PublicRuntimeConfig, PublicTuiConfig,
+    load_config_from_str, OpenAiApiMode, PermissionMode, ProviderConfig, PublicRuntimeConfig,
+    PublicTuiConfig,
 };
 use serde_json::Value;
 use tempfile::tempdir;
@@ -48,6 +49,14 @@ fn write_config(path: &Path, config: &serde_json::Value) {
         serde_json::to_string_pretty(config).expect("serialize config"),
     )
     .expect("write config");
+}
+
+fn write_json(path: &Path, value: &serde_json::Value) {
+    fs::write(
+        path,
+        serde_json::to_string_pretty(value).expect("serialize json"),
+    )
+    .expect("write json");
 }
 
 fn harness_command() -> Command {
@@ -98,6 +107,222 @@ fn canonical_runtime_config() -> serde_json::Value {
             }
         }
     })
+}
+
+#[test]
+fn models_probe_generates_harness_catalog_fragment_from_models_dev_json() {
+    let temp = tempdir().expect("create tempdir");
+    let source_path = temp.path().join("models-dev.json");
+    write_json(
+        &source_path,
+        &serde_json::json!({
+            "openai": {
+                "id": "openai",
+                "name": "OpenAI",
+                "env": ["OPENAI_API_KEY"],
+                "npm": "@ai-sdk/openai",
+                "doc": "https://platform.openai.com/docs",
+                "api": "https://api.openai.com/v1",
+                "models": {
+                    "gpt-5-mini": {
+                        "id": "gpt-5-mini",
+                        "name": "GPT-5 mini",
+                        "attachment": true,
+                        "reasoning": true,
+                        "temperature": false,
+                        "tool_call": true,
+                        "structured_output": true,
+                        "release_date": "2026-01-15",
+                        "last_updated": "2026-02-01",
+                        "cost": {
+                            "input": 0.25,
+                            "output": 2.0,
+                            "cache_read": 0.025,
+                            "cache_write": 0.25
+                        },
+                        "limit": {
+                            "context": 128000,
+                            "input": 120000,
+                            "output": 16000
+                        },
+                        "modalities": {
+                            "input": ["text", "image"],
+                            "output": ["text"]
+                        }
+                    },
+                    "gpt-old": {
+                        "id": "gpt-old",
+                        "name": "GPT old",
+                        "reasoning": false,
+                        "tool_call": true,
+                        "status": "deprecated",
+                        "limit": { "context": 4096, "output": 1024 }
+                    },
+                    "gpt-text-only": {
+                        "id": "gpt-text-only",
+                        "name": "GPT text only",
+                        "reasoning": false,
+                        "tool_call": false,
+                        "limit": { "context": 8192, "output": 2048 }
+                    }
+                }
+            },
+            "anthropic": {
+                "id": "anthropic",
+                "name": "Anthropic",
+                "env": ["ANTHROPIC_API_KEY"],
+                "models": {
+                    "claude-sonnet": {
+                        "id": "claude-sonnet",
+                        "name": "Claude Sonnet",
+                        "reasoning": true,
+                        "tool_call": true,
+                        "limit": { "context": 200000, "output": 8192 }
+                    }
+                }
+            }
+        }),
+    );
+
+    let output = harness_command()
+        .args([
+            "models",
+            "probe",
+            "--input",
+            source_path.to_str().expect("utf8 source path"),
+            "--provider",
+            "openai",
+            "--emit-reasoning-variants",
+        ])
+        .output()
+        .expect("run harness models probe");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let catalog: Value = serde_json::from_slice(&output.stdout).expect("catalog json");
+    assert_eq!(catalog["$schema"], "./config.json");
+    assert!(catalog["provider"].get("anthropic").is_none());
+
+    let openai = &catalog["provider"]["openai"];
+    assert_eq!(openai["type"], "openai_compatible");
+    assert_eq!(openai["name"], "OpenAI");
+    assert_eq!(openai["options"]["baseURL"], "https://api.openai.com/v1");
+    assert_eq!(openai["options"]["apiKeyEnv"][0], "OPENAI_API_KEY");
+
+    let models = openai["models"].as_object().expect("models object");
+    assert!(models.contains_key("gpt-5-mini"));
+    assert!(!models.contains_key("gpt-old"));
+    assert!(!models.contains_key("gpt-text-only"));
+
+    let model = &models["gpt-5-mini"];
+    assert_eq!(model["metadata"]["contextWindowTokens"], 128000);
+    assert_eq!(model["metadata"]["supportsToolCalls"], true);
+    assert_eq!(model["limit"]["input"], 120000);
+    assert_eq!(model["limit"]["output"], 16000);
+    assert_eq!(model["modalities"]["input"][1], "image");
+    assert_eq!(
+        model["options"]["modelsDev"]["source"],
+        format!("file://{}", source_path.display())
+    );
+    assert_eq!(
+        model["options"]["modelsDev"]["capabilities"]["reasoning"],
+        true
+    );
+    assert_eq!(model["options"]["modelsDev"]["cost"]["cache_read"], 0.025);
+    assert_eq!(
+        model["variants"]["high"]["metadata"]["reasoningEffort"],
+        "high"
+    );
+}
+
+#[test]
+fn models_generate_updates_static_catalog_artifact_from_models_dev_json() {
+    let temp = tempdir().expect("create tempdir");
+    let source_path = temp.path().join("models-dev.json");
+    let output_path = temp.path().join("provider-catalog.generated.json");
+    write_json(
+        &source_path,
+        &serde_json::json!({
+            "openai": {
+                "id": "openai",
+                "name": "OpenAI",
+                "env": ["OPENAI_API_KEY"],
+                "api": "https://api.openai.com/v1",
+                "models": {
+                    "gpt-5-mini": {
+                        "id": "gpt-5-mini",
+                        "name": "GPT-5 mini",
+                        "reasoning": true,
+                        "tool_call": true,
+                        "limit": { "context": 128000, "input": 120000, "output": 16000 },
+                        "modalities": { "input": ["text"], "output": ["text"] }
+                    }
+                }
+            }
+        }),
+    );
+
+    let output = harness_command()
+        .args([
+            "models",
+            "generate",
+            "--input",
+            source_path.to_str().expect("utf8 source path"),
+            "--output",
+            output_path.to_str().expect("utf8 output path"),
+            "--emit-reasoning-variants",
+        ])
+        .output()
+        .expect("run harness models generate");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "generate should write the artifact instead of stdout"
+    );
+
+    let generated = fs::read_to_string(&output_path).expect("read generated catalog");
+    let catalog: Value = serde_json::from_str(&generated).expect("generated catalog json");
+    assert_eq!(
+        catalog["provider"]["openai"]["models"]["gpt-5-mini"]["name"],
+        "GPT-5 mini"
+    );
+    assert_eq!(
+        catalog["provider"]["openai"]["models"]["gpt-5-mini"]["variants"]["medium"]["metadata"]
+            ["reasoningEffort"],
+        "medium"
+    );
+}
+
+#[test]
+fn models_generated_prints_embedded_static_catalog() {
+    let output = harness_command()
+        .args(["models", "generated"])
+        .output()
+        .expect("run harness models generated");
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let catalog: Value = serde_json::from_slice(&output.stdout).expect("embedded catalog json");
+    assert_eq!(catalog["$schema"], "./config.json");
+    assert!(catalog["provider"]
+        .as_object()
+        .expect("provider object")
+        .contains_key("openai"));
+    serde_json::from_slice::<PublicRuntimeConfig>(&output.stdout)
+        .expect("embedded generated catalog should parse as public runtime config fragment");
 }
 
 fn legacy_runtime_config(session_dir: &Path) -> serde_json::Value {
@@ -180,12 +405,37 @@ fn schema_cli_prints_runtime_json_schema() {
     assert!(root_properties.contains_key("permission"));
     assert!(root_properties.contains_key("mcp"));
     assert!(root_properties.contains_key("runtime"));
+    assert!(root_properties.contains_key("mode"));
+    assert!(root_properties.contains_key("server"));
+    assert!(root_properties.contains_key("command"));
+    assert!(root_properties.contains_key("plugin"));
+    assert!(root_properties.contains_key("formatter"));
+    assert!(root_properties.contains_key("tool_output"));
     assert!(!root_properties.contains_key("integrations"));
 
     let definitions = schema
         .get("definitions")
         .and_then(Value::as_object)
         .expect("schema definitions");
+
+    let agent_map_properties = definitions["PublicAgentMap"]
+        .get("properties")
+        .and_then(Value::as_object)
+        .expect("PublicAgentMap properties");
+    for agent in [
+        "build",
+        "plan",
+        "general",
+        "explore",
+        "title",
+        "summary",
+        "compaction",
+    ] {
+        assert!(
+            agent_map_properties.contains_key(agent),
+            "agent schema should expose built-in agent `{agent}`"
+        );
+    }
 
     let model_properties = definitions["ModelConfig"]
         .get("properties")
@@ -195,6 +445,8 @@ fn schema_cli_prints_runtime_json_schema() {
     assert!(model_properties.contains_key("limit"));
     assert!(model_properties.contains_key("modalities"));
     assert!(model_properties.contains_key("options"));
+    assert!(model_properties.contains_key("variants"));
+    assert!(!model_properties.contains_key("reasoningEfforts"));
     assert!(!model_properties.contains_key("display_name"));
 
     let variant_properties = definitions["ModelVariantConfig"]
@@ -236,8 +488,34 @@ fn schema_cli_prints_runtime_json_schema() {
         .and_then(Value::as_object)
         .expect("PublicPermissionConfig properties");
     assert!(permission_properties.contains_key("bash"));
+    assert!(permission_properties.contains_key("task"));
     assert!(!permission_properties.contains_key("shell"));
     assert!(!permission_properties.contains_key("network"));
+
+    let agent_properties = definitions["PublicAgentConfig"]
+        .get("properties")
+        .and_then(Value::as_object)
+        .expect("PublicAgentConfig properties");
+    for key in [
+        "name",
+        "description",
+        "system_prompt",
+        "model",
+        "top_p",
+        "mode",
+        "hidden",
+        "color",
+        "options",
+        "enable",
+        "disable",
+        "max_iters",
+        "tools",
+    ] {
+        assert!(
+            agent_properties.contains_key(key),
+            "missing agent schema key {key}"
+        );
+    }
 }
 
 #[test]
@@ -313,7 +591,8 @@ fn config_validate_cli_accepts_shipped_example_config() {
         .providers
         .get("default")
         .expect("default provider present in shipped example config");
-    assert_eq!(provider.models.len(), 1);
+    assert_eq!(provider.models.len(), 2);
+    assert!(provider.models.contains_key("gpt-5.5"));
     assert!(provider.models.contains_key("gpt-5.4-mini"));
     assert!(parsed.agents.contains_key("build"));
     assert!(!parsed.runtime.compaction.model_backed);
@@ -680,10 +959,9 @@ fn config_validate_cli_rejects_unsupported_upstream_top_level_keys() {
         "command",
         "plugin",
         "share",
+        "autoshare",
         "autoupdate",
         "enterprise",
-        "experimental",
-        "tools",
     ] {
         let temp = tempdir().expect("tempdir");
         let config_path = temp.path().join("harness.jsonc");
@@ -705,14 +983,111 @@ fn config_validate_cli_rejects_unsupported_upstream_top_level_keys() {
         );
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(
-            stderr.contains("unknown top-level config keys:"),
-            "unsupported key {key} stderr did not mention unknown keys:\n{stderr}"
+            stderr.contains("unsupported active OpenCode config keys:"),
+            "unsupported key {key} stderr did not mention unsupported active OpenCode keys:\n{stderr}"
         );
         assert!(
             stderr.contains(&format!("`{key}`")),
             "unsupported key {key} stderr did not name the key:\n{stderr}"
         );
     }
+}
+
+#[test]
+fn opencode_config_shape_accepts_subagents_and_safe_inert_keys() {
+    let parsed = load_config_from_str(
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              options: {
+                baseURL: "http://127.0.0.1:1/v1",
+                apiKey: "DUMMY"
+              },
+              models: {
+                "gpt-4o": { name: "GPT-4o" }
+              }
+            }
+          },
+          model: "default/gpt-4o",
+          default_agent: "build",
+          shell: "bash",
+          logLevel: "INFO",
+          username: "operator",
+          watcher: { ignore: ["target/**"] },
+          snapshot: false,
+          disabled_providers: ["unused"],
+          enabled_providers: ["default"],
+          formatter: false,
+          lsp: false,
+          layout: "stretch",
+          tools: { bash: true },
+          tool_output: { max_lines: 20 },
+          compaction: { auto: true, tail_turns: 2 },
+          experimental: { batch_tool: true },
+          skills: { paths: [".opencode/skill"], urls: ["https://example.test/skills"] },
+          mcp: {
+            local_docs: {
+              type: "local",
+              command: ["docs-mcp"],
+              enabled: false
+            },
+            disabled_only: { enabled: false }
+          },
+          mode: {
+            legacy: {
+              description: "Legacy mode alias",
+              mode: "subagent"
+            }
+          },
+          agent: {
+            general: {
+              description: "Configured general subagent",
+              mode: "subagent",
+              reasoningEffort: "high"
+            },
+            reviewer: {
+              description: "Review work",
+              mode: "subagent",
+              customFlag: true
+            },
+            summary: { enable: false },
+            compaction: { enabled: false }
+          },
+          permission: "allow"
+        }
+        "#,
+    )
+    .expect("OpenCode-compatible config shape should parse");
+
+    assert!(parsed.agents.contains_key("build"));
+    assert_eq!(
+        parsed.agents["general"].mode,
+        harness_core::config::AgentMode::Subagent
+    );
+    assert_eq!(
+        parsed.agents["general"].options.get("reasoningEffort"),
+        Some(&serde_json::json!("high"))
+    );
+    assert_eq!(
+        parsed.agents["reviewer"].options.get("customFlag"),
+        Some(&serde_json::json!(true))
+    );
+    assert!(parsed.agents.contains_key("legacy"));
+    assert!(!parsed.agents.contains_key("summary"));
+    assert!(!parsed.agents.contains_key("compaction"));
+    assert!(parsed.lsp.disabled);
+    assert!(parsed
+        .skills
+        .project_roots
+        .contains(&Path::new(".opencode/skill").to_path_buf()));
+    assert!(parsed.integrations.mcp.servers.contains_key("local_docs"));
+    assert!(!parsed
+        .integrations
+        .mcp
+        .servers
+        .contains_key("disabled_only"));
 }
 
 #[test]
@@ -790,7 +1165,7 @@ fn shipped_tui_example_parses_as_public_tui_config() {
 
     assert_eq!(
         parsed.keybindings.get("variant_cycle"),
-        Some(&"tab".to_string())
+        Some(&"ctrl+t".to_string())
     );
     assert_eq!(
         parsed.keybindings.get("session_child_first"),
@@ -815,17 +1190,37 @@ fn shipped_runtime_example_parses_as_public_runtime_config() {
         .provider
         .get("default")
         .expect("default provider present in public example");
-    assert_eq!(provider.models.len(), 1);
+    assert_eq!(provider.models.len(), 2);
+    assert!(provider.models.contains_key("gpt-5.5"));
     assert!(provider.models.contains_key("gpt-5.4-mini"));
-    assert!(parsed.agent.is_empty());
+    assert!(parsed.agent.build.is_some());
+    assert!(parsed.agent.plan.is_some());
+    assert!(parsed.agent.general.is_some());
+    assert!(parsed.agent.explore.is_some());
+    assert!(parsed.agent.title.is_some());
+    assert!(parsed.agent.summary.is_some());
+    assert!(parsed.agent.compaction.is_some());
+    assert_eq!(
+        parsed.agent.general.as_ref().and_then(|agent| agent.enable),
+        Some(true)
+    );
+    assert_eq!(
+        parsed.agent.title.as_ref().and_then(|agent| agent.hidden),
+        Some(true)
+    );
+    let mut variants = provider.models["gpt-5.4-mini"]
+        .variants
+        .keys()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    variants.sort_unstable();
+    assert_eq!(variants, vec!["high", "low", "medium"]);
     assert!(!parsed.provider.contains_key("providers"));
     assert!(!shipped.contains("\"base_url\""));
     assert!(!shipped.contains("\"api_key\""));
     assert!(!shipped.contains("sk-zerolimit"));
     assert!(!shipped.contains("\"api_mode\""));
     assert!(!shipped.contains("\"timeout_ms\""));
-    assert!(!shipped.contains("\"metadata\""));
-    assert!(!shipped.contains("\"variants\""));
     assert!(!shipped.contains("\"model_backed\""));
     assert!(!shipped.contains("\"split_oversized_turns\""));
     assert!(!shipped.contains("\"auto_retry_overflow\""));
@@ -923,6 +1318,13 @@ fn root_runtime_example_uses_canonical_public_keys() {
     assert_eq!(parsed.default_agent.as_deref(), Some("build"));
     assert_eq!(parsed.model.as_deref(), Some("default/gpt-5.4"));
     assert_eq!(parsed.small_model.as_deref(), Some("default/gpt-5.4-mini"));
+    assert!(parsed.agent.build.is_some());
+    assert!(parsed.agent.plan.is_some());
+    assert!(parsed.agent.general.is_some());
+    assert!(parsed.agent.explore.is_some());
+    assert!(parsed.agent.title.is_some());
+    assert!(parsed.agent.summary.is_some());
+    assert!(parsed.agent.compaction.is_some());
     assert!(!root_example.contains("\"base_url\""));
     assert!(!root_example.contains("\"api_key\""));
     assert!(!root_example.contains("\"api_mode\""));

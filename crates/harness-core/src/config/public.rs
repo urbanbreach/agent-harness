@@ -4,6 +4,18 @@ use super::*;
 
 const ALLOWED_PUBLIC_TOP_LEVEL_CONFIG_KEYS: &[&str] = &[
     "$schema",
+    "autoshare",
+    "autoupdate",
+    "command",
+    "compaction",
+    "disabled_providers",
+    "enabled_providers",
+    "enterprise",
+    "experimental",
+    "formatter",
+    "layout",
+    "logLevel",
+    "plugin",
     "providers",
     "provider",
     "model",
@@ -14,12 +26,17 @@ const ALLOWED_PUBLIC_TOP_LEVEL_CONFIG_KEYS: &[&str] = &[
     "model_profiles",
     "agents",
     "agent",
+    "mode",
     "categories",
     "profiles",
     "default_agent",
     "defaultAgent",
     "permissions",
     "permission",
+    "server",
+    "share",
+    "shell",
+    "snapshot",
     "runtime",
     "backgroundTask",
     "paths",
@@ -34,7 +51,43 @@ const ALLOWED_PUBLIC_TOP_LEVEL_CONFIG_KEYS: &[&str] = &[
     "hashline_edit",
     "hashlineEdit",
     "instructions",
+    "tool_output",
+    "tools",
+    "username",
+    "watcher",
 ];
+
+const UNSUPPORTED_ACTIVE_OPENCODE_TOP_LEVEL_CONFIG_KEYS: &[&str] = &[
+    "autoshare",
+    "autoupdate",
+    "command",
+    "enterprise",
+    "plugin",
+    "server",
+    "share",
+];
+
+const SUMMARY_AGENT_SYSTEM_PROMPT: &str = r#"Summarize what was done in this conversation. Write like a pull request description.
+
+Rules:
+- 2-3 sentences max
+- Describe the changes made, not the process
+- Do not mention running tests, builds, or other validation steps
+- Do not explain what the user asked for
+- Write in first person (I added..., I fixed...)
+- Never ask questions or add new questions
+- If the conversation ends with an unanswered question to the user, preserve that exact question
+- If the conversation ends with an imperative statement or request to the user, always include that exact request in the summary"#;
+
+const COMPACTION_AGENT_SYSTEM_PROMPT: &str = r#"You are an anchored context summarization assistant for coding sessions.
+
+Summarize only the conversation history you are given. The newest turns may be kept verbatim outside your summary, so focus on the older context that still matters for continuing the work.
+
+If the prompt includes a previous summary, treat it as the current anchored summary. Update it with the new history by preserving still-true details, removing stale details, and merging in new facts.
+
+Always follow the exact output structure requested by the user prompt. Keep every section, preserve exact file paths and identifiers when known, and prefer terse bullets over paragraphs.
+
+Do not answer the conversation itself. Do not mention that you are summarizing, compacting, or merging context. Respond in the same language as the conversation."#;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -55,19 +108,63 @@ pub struct PublicRuntimeConfig {
     )]
     pub model_profiles: BTreeMap<String, ModelProfileConfig>,
     #[serde(default)]
-    pub agent: BTreeMap<String, PublicAgentConfig>,
+    pub agent: PublicAgentMap,
+    #[serde(default)]
+    pub mode: PublicAgentMap,
     #[serde(default, alias = "defaultAgent")]
     pub default_agent: Option<String>,
     #[serde(default)]
     pub permission: PublicPermissionValue,
     #[serde(default)]
-    pub mcp: BTreeMap<String, McpServerConfig>,
+    pub mcp: BTreeMap<String, serde_json::Value>,
     #[serde(default)]
     pub runtime: PublicRuntimeSettingsConfig,
     #[serde(default)]
     pub skills: SkillsConfig,
     #[serde(default)]
     pub instructions: Option<InstructionList>,
+    #[serde(default)]
+    pub shell: Option<String>,
+    #[serde(default, rename = "logLevel")]
+    pub log_level: Option<String>,
+    #[serde(default)]
+    pub server: Option<serde_json::Value>,
+    #[serde(default)]
+    pub command: Option<serde_json::Value>,
+    #[serde(default)]
+    pub watcher: Option<serde_json::Value>,
+    #[serde(default)]
+    pub snapshot: Option<bool>,
+    #[serde(default)]
+    pub plugin: Option<serde_json::Value>,
+    #[serde(default)]
+    pub share: Option<serde_json::Value>,
+    #[serde(default)]
+    pub autoshare: Option<bool>,
+    #[serde(default)]
+    pub autoupdate: Option<serde_json::Value>,
+    #[serde(default)]
+    pub disabled_providers: Option<Vec<String>>,
+    #[serde(default)]
+    pub enabled_providers: Option<Vec<String>>,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub formatter: Option<serde_json::Value>,
+    #[serde(default)]
+    pub lsp: Option<serde_json::Value>,
+    #[serde(default)]
+    pub layout: Option<String>,
+    #[serde(default)]
+    pub tools: Option<BTreeMap<String, bool>>,
+    #[serde(default)]
+    pub enterprise: Option<serde_json::Value>,
+    #[serde(default)]
+    pub tool_output: Option<serde_json::Value>,
+    #[serde(default)]
+    pub compaction: Option<serde_json::Value>,
+    #[serde(default)]
+    pub experimental: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
@@ -77,12 +174,68 @@ pub struct PublicRuntimeSettingsConfig {
     pub compaction: CompactionRuntimeConfig,
 }
 
+/// Named agent definitions. Built-in OpenCode-compatible agents are explicit so
+/// editors can complete them, and custom names are accepted through the same
+/// shape.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
+pub struct PublicAgentMap {
+    #[serde(default)]
+    pub build: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub plan: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub general: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub explore: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub title: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub summary: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub compaction: Option<PublicAgentConfig>,
+    #[serde(default, flatten)]
+    pub custom: BTreeMap<String, PublicAgentConfig>,
+}
+
+impl PublicAgentMap {
+    pub fn is_empty(&self) -> bool {
+        self.build.is_none()
+            && self.plan.is_none()
+            && self.general.is_none()
+            && self.explore.is_none()
+            && self.title.is_none()
+            && self.summary.is_none()
+            && self.compaction.is_none()
+            && self.custom.is_empty()
+    }
+
+    fn into_entries(self) -> BTreeMap<String, PublicAgentConfig> {
+        let mut agents = self.custom;
+        for (name, agent) in [
+            ("build", self.build),
+            ("plan", self.plan),
+            ("general", self.general),
+            ("explore", self.explore),
+            ("title", self.title),
+            ("summary", self.summary),
+            ("compaction", self.compaction),
+        ] {
+            if let Some(agent) = agent {
+                agents.insert(name.to_string(), agent);
+            }
+        }
+        agents
+    }
+}
+
+/// Agent override or custom agent definition.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct PublicAgentConfig {
     #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
     pub description: Option<String>,
-    #[serde(default, alias = "systemPrompt")]
+    #[serde(default, alias = "systemPrompt", alias = "prompt")]
     pub system_prompt: Option<String>,
     #[serde(default, alias = "model_ref", alias = "modelRef")]
     pub model: Option<String>,
@@ -92,14 +245,58 @@ pub struct PublicAgentConfig {
     pub variant: Option<String>,
     #[serde(default)]
     pub temperature: Option<f32>,
+    #[serde(default, alias = "topP")]
+    pub top_p: Option<f32>,
+    #[serde(default)]
+    pub mode: Option<AgentMode>,
+    #[serde(default)]
+    pub hidden: Option<bool>,
+    #[serde(default)]
+    pub color: Option<String>,
+    #[serde(default)]
+    pub options: BTreeMap<String, serde_json::Value>,
+    /// Set false to disable this agent. Set true to document that a shipped
+    /// default remains active. `enabled` is accepted as an alias.
+    #[serde(default, alias = "enabled")]
+    pub enable: Option<bool>,
+    /// OpenCode-compatible negative toggle. Equivalent to `enable: false`.
+    #[serde(default)]
+    pub disable: bool,
     #[serde(default, alias = "permissions")]
     pub permission: Option<PublicProfilePermissions>,
-    #[serde(default, alias = "maxIters")]
+    #[serde(default, alias = "maxIters", alias = "steps", alias = "maxSteps")]
     pub max_iters: Option<usize>,
     #[serde(default, alias = "toolFailureMode")]
     pub tool_failure_mode: ToolFailureMode,
     #[serde(default)]
-    pub tools: Vec<String>,
+    pub tools: PublicAgentTools,
+    #[serde(default, flatten)]
+    pub extra_options: BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum PublicAgentTools {
+    List(Vec<String>),
+    Map(BTreeMap<String, bool>),
+}
+
+impl Default for PublicAgentTools {
+    fn default() -> Self {
+        Self::List(Vec::new())
+    }
+}
+
+impl PublicAgentTools {
+    fn tool_ids(self) -> Vec<String> {
+        match self {
+            Self::List(tools) => tools,
+            Self::Map(tools) => tools
+                .into_iter()
+                .filter_map(|(tool, enabled)| enabled.then_some(tool))
+                .collect(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -134,7 +331,7 @@ pub struct PublicPermissionConfig {
     #[serde(default)]
     pub question: Option<PermissionMode>,
     #[serde(default)]
-    pub task: Option<PermissionMode>,
+    pub task: Option<PublicRulePermissionValue>,
     #[serde(default, alias = "webFetch")]
     pub webfetch: Option<PermissionMode>,
     #[serde(default, alias = "webSearch")]
@@ -162,7 +359,7 @@ pub struct PublicProfilePermissions {
     #[serde(default)]
     pub question: Option<PermissionMode>,
     #[serde(default)]
-    pub task: Option<PermissionMode>,
+    pub task: Option<PublicRulePermissionValue>,
     #[serde(default, alias = "webFetch")]
     pub webfetch: Option<PermissionMode>,
     #[serde(default, alias = "webSearch")]
@@ -224,7 +421,36 @@ pub(super) fn validate_public_root_config_object(
         )));
     }
 
+    let mut unsupported_active = UNSUPPORTED_ACTIVE_OPENCODE_TOP_LEVEL_CONFIG_KEYS
+        .iter()
+        .copied()
+        .filter(|key| {
+            object
+                .get(*key)
+                .is_some_and(|value| !is_inactive_opencode_unsupported_value(key, value))
+        })
+        .collect::<Vec<_>>();
+    if !unsupported_active.is_empty() {
+        unsupported_active.sort_unstable();
+        return Err(ConfigError::RetiredConfigKeys(format!(
+            "unsupported active OpenCode config keys: {}; this harness accepts the OpenCode config shape, but does not execute server, command, plugin, sharing, update, or enterprise product features",
+            format_backticked_list(unsupported_active)
+        )));
+    }
+
     Ok(())
+}
+
+fn is_inactive_opencode_unsupported_value(key: &str, value: &serde_json::Value) -> bool {
+    match key {
+        "autoshare" | "autoupdate" => matches!(value, serde_json::Value::Bool(false)),
+        "share" => matches!(value, serde_json::Value::String(mode) if mode == "disabled"),
+        "command" | "enterprise" | "server" => {
+            value.as_object().is_some_and(|object| object.is_empty())
+        }
+        "plugin" => value.as_array().is_some_and(|items| items.is_empty()),
+        _ => false,
+    }
 }
 
 fn default_internal_permissions_config() -> PermissionsConfig {
@@ -278,10 +504,27 @@ fn public_permission_selector(
     match kind {
         "bash" => public_bash_selector(selector),
         "edit" => public_edit_selector(selector),
+        "task" => public_task_selector(selector),
         _ => Err(ConfigError::InvalidReference(format!(
-            "permission selector rules are only supported for `bash` and `edit`, not `{kind}`"
+            "permission selector rules are only supported for `bash`, `edit`, and `task`, not `{kind}`"
         ))),
     }
+}
+
+fn public_task_selector(selector: &str) -> Result<PermissionSelector, ConfigError> {
+    let trimmed = selector.trim();
+    if trimmed == "*" {
+        return Ok(PermissionSelector::CatchAll);
+    }
+    if trimmed.is_empty() || trimmed.starts_with('/') {
+        return Err(ConfigError::InvalidReference(format!(
+            "invalid task permission selector `{selector}`; use an agent name, glob pattern, or `*`"
+        )));
+    }
+    if trimmed.contains('*') {
+        return Ok(PermissionSelector::Glob(trimmed.to_string()));
+    }
+    Ok(PermissionSelector::Exact(trimmed.to_string()))
 }
 
 fn public_bash_selector(selector: &str) -> Result<PermissionSelector, ConfigError> {
@@ -434,6 +677,7 @@ fn default_shipped_agents(
         (
             crate::plan::BUILD_AGENT_NAME.to_string(),
             ProfileConfig {
+                name: None,
                 description:
                     "Implementation lane: execute the requested work and verify the result."
                         .to_string(),
@@ -442,6 +686,11 @@ fn default_shipped_agents(
                 model_ref_explicit: false,
                 variant: None,
                 temperature: None,
+                top_p: None,
+                mode: AgentMode::Primary,
+                hidden: false,
+                color: None,
+                options: BTreeMap::new(),
                 permissions: Some(ProfilePermissions {
                     fallback: None,
                     edit: Some(PermissionMode::Allow),
@@ -461,6 +710,7 @@ fn default_shipped_agents(
                     "todowrite",
                     "todoread",
                     "question",
+                    crate::plan::PLAN_ENTER_TOOL_ID,
                     "task",
                     "background_output",
                     "skill",
@@ -484,6 +734,7 @@ fn default_shipped_agents(
         (
             crate::plan::PLAN_AGENT_NAME.to_string(),
             ProfileConfig {
+                name: None,
                 description: "Plan mode. Disallows all edit tools except the active plan file."
                     .to_string(),
                 system_prompt: None,
@@ -491,10 +742,15 @@ fn default_shipped_agents(
                 model_ref_explicit: false,
                 variant: None,
                 temperature: None,
+                top_p: None,
+                mode: AgentMode::Primary,
+                hidden: false,
+                color: None,
+                options: BTreeMap::new(),
                 permissions: Some(ProfilePermissions {
                     fallback: None,
                     edit: None,
-                    shell: Some(PermissionMode::Deny),
+                    shell: Some(PermissionMode::Ask),
                     network: Some(PermissionMode::Allow),
                     question: Some(PermissionMode::Allow),
                     task: Some(PermissionMode::Allow),
@@ -517,6 +773,7 @@ fn default_shipped_agents(
                             },
                         ],
                         shell: Vec::new(),
+                        task: Vec::new(),
                     },
                 }),
                 max_iters: None,
@@ -537,6 +794,7 @@ fn default_shipped_agents(
                     "grep",
                     "list",
                     "edit",
+                    "bash",
                     crate::plan::PLAN_EXIT_TOOL_ID,
                 ]
                 .into_iter()
@@ -547,6 +805,7 @@ fn default_shipped_agents(
         (
             "explore".to_string(),
             ProfileConfig {
+                name: None,
                 description:
                     "Read-only contextual codebase search agent for finding files, patterns, and conventions."
                         .to_string(),
@@ -558,6 +817,11 @@ fn default_shipped_agents(
                 model_ref_explicit: false,
                 variant: None,
                 temperature: None,
+                top_p: None,
+                mode: AgentMode::Subagent,
+                hidden: false,
+                color: None,
+                options: BTreeMap::new(),
                 permissions: Some(ProfilePermissions {
                     fallback: None,
                     edit: Some(PermissionMode::Deny),
@@ -582,6 +846,7 @@ fn default_shipped_agents(
         (
             "general".to_string(),
             ProfileConfig {
+                name: None,
                 description:
                     "General-purpose implementation and research subagent for focused multi-step work."
                         .to_string(),
@@ -593,6 +858,11 @@ fn default_shipped_agents(
                 model_ref_explicit: false,
                 variant: None,
                 temperature: None,
+                top_p: None,
+                mode: AgentMode::Subagent,
+                hidden: false,
+                color: None,
+                options: BTreeMap::new(),
                 permissions: Some(ProfilePermissions {
                     fallback: None,
                     edit: Some(PermissionMode::Allow),
@@ -631,12 +901,84 @@ fn default_shipped_agents(
         (
             crate::session_title::TITLE_AGENT_NAME.to_string(),
             ProfileConfig {
+                name: None,
                 description: "Hidden title generation agent.".to_string(),
                 system_prompt: Some(crate::session_title::TITLE_AGENT_SYSTEM_PROMPT.to_string()),
                 model_ref: small_model_ref.unwrap_or(model_ref).to_string(),
                 model_ref_explicit: small_model_ref.is_some(),
                 variant: None,
                 temperature: Some(crate::session_title::TITLE_AGENT_TEMPERATURE),
+                top_p: None,
+                mode: AgentMode::Primary,
+                hidden: true,
+                color: None,
+                options: BTreeMap::new(),
+                permissions: Some(ProfilePermissions {
+                    fallback: Some(PermissionMode::Deny),
+                    edit: Some(PermissionMode::Deny),
+                    shell: Some(PermissionMode::Deny),
+                    network: Some(PermissionMode::Deny),
+                    question: Some(PermissionMode::Deny),
+                    task: Some(PermissionMode::Deny),
+                    webfetch: Some(PermissionMode::Deny),
+                    websearch: Some(PermissionMode::Deny),
+                    codesearch: Some(PermissionMode::Deny),
+                    lsp: Some(PermissionMode::Deny),
+                    rules: PermissionRuleSet::default(),
+                }),
+                max_iters: None,
+                tool_failure_mode: ToolFailureMode::FailTurn,
+                tools: Vec::new(),
+            },
+        ),
+        (
+            "summary".to_string(),
+            ProfileConfig {
+                name: None,
+                description: "Hidden session summary agent.".to_string(),
+                system_prompt: Some(SUMMARY_AGENT_SYSTEM_PROMPT.to_string()),
+                model_ref: small_model_ref.unwrap_or(model_ref).to_string(),
+                model_ref_explicit: small_model_ref.is_some(),
+                variant: None,
+                temperature: None,
+                top_p: None,
+                mode: AgentMode::Primary,
+                hidden: true,
+                color: None,
+                options: BTreeMap::new(),
+                permissions: Some(ProfilePermissions {
+                    fallback: Some(PermissionMode::Deny),
+                    edit: Some(PermissionMode::Deny),
+                    shell: Some(PermissionMode::Deny),
+                    network: Some(PermissionMode::Deny),
+                    question: Some(PermissionMode::Deny),
+                    task: Some(PermissionMode::Deny),
+                    webfetch: Some(PermissionMode::Deny),
+                    websearch: Some(PermissionMode::Deny),
+                    codesearch: Some(PermissionMode::Deny),
+                    lsp: Some(PermissionMode::Deny),
+                    rules: PermissionRuleSet::default(),
+                }),
+                max_iters: None,
+                tool_failure_mode: ToolFailureMode::FailTurn,
+                tools: Vec::new(),
+            },
+        ),
+        (
+            "compaction".to_string(),
+            ProfileConfig {
+                name: None,
+                description: "Hidden provider-context compaction agent.".to_string(),
+                system_prompt: Some(COMPACTION_AGENT_SYSTEM_PROMPT.to_string()),
+                model_ref: model_ref.to_string(),
+                model_ref_explicit: false,
+                variant: None,
+                temperature: None,
+                top_p: None,
+                mode: AgentMode::Primary,
+                hidden: true,
+                color: None,
+                options: BTreeMap::new(),
                 permissions: Some(ProfilePermissions {
                     fallback: Some(PermissionMode::Deny),
                     edit: Some(PermissionMode::Deny),
@@ -707,8 +1049,26 @@ fn public_agent_to_profile(
                 "agent `{name}` is missing `model`; provide `agent.{name}.model`, set `small_model`, or add a top-level `model`"
             ))
         })?;
+    let configured_tools = agent.tools.tool_ids();
+    let mut configured_options = agent.options;
+    configured_options.extend(agent.extra_options);
+    let options = if configured_options.is_empty() {
+        base.as_ref()
+            .map(|profile| profile.options.clone())
+            .unwrap_or_default()
+    } else {
+        let mut options = base
+            .as_ref()
+            .map(|profile| profile.options.clone())
+            .unwrap_or_default();
+        options.extend(configured_options);
+        options
+    };
 
     Ok(ProfileConfig {
+        name: agent
+            .name
+            .or_else(|| base.as_ref().and_then(|profile| profile.name.clone())),
         description,
         system_prompt: agent.system_prompt.or_else(|| {
             base.as_ref()
@@ -722,6 +1082,21 @@ fn public_agent_to_profile(
         temperature: agent
             .temperature
             .or_else(|| base.as_ref().and_then(|profile| profile.temperature)),
+        top_p: agent
+            .top_p
+            .or_else(|| base.as_ref().and_then(|profile| profile.top_p)),
+        mode: agent
+            .mode
+            .or_else(|| base.as_ref().map(|profile| profile.mode))
+            .unwrap_or_default(),
+        hidden: agent
+            .hidden
+            .or_else(|| base.as_ref().map(|profile| profile.hidden))
+            .unwrap_or(false),
+        color: agent
+            .color
+            .or_else(|| base.as_ref().and_then(|profile| profile.color.clone())),
+        options,
         permissions: agent
             .permission
             .map(translate_public_profile_permissions)
@@ -740,12 +1115,12 @@ fn public_agent_to_profile(
         } else {
             agent.tool_failure_mode
         },
-        tools: if agent.tools.is_empty() {
+        tools: if configured_tools.is_empty() {
             base.as_ref()
                 .map(|profile| profile.tools.clone())
                 .unwrap_or_default()
         } else {
-            agent.tools
+            configured_tools
         },
     })
 }
@@ -755,8 +1130,10 @@ fn translate_public_profile_permissions(
 ) -> Result<ProfilePermissions, ConfigError> {
     let edit = public_rule_mode(&permissions.edit);
     let shell = public_rule_mode(&permissions.bash);
+    let task = public_rule_mode(&permissions.task);
     let edit_rules = public_selector_rules("edit", permissions.edit)?;
     let shell_rules = public_selector_rules("bash", permissions.bash)?;
+    let task_rules = public_selector_rules("task", permissions.task)?;
 
     Ok(ProfilePermissions {
         fallback: permissions.fallback,
@@ -764,7 +1141,7 @@ fn translate_public_profile_permissions(
         shell,
         network: permissions.network,
         question: permissions.question,
-        task: permissions.task,
+        task,
         webfetch: permissions.webfetch,
         websearch: permissions.websearch,
         codesearch: permissions.codesearch,
@@ -772,6 +1149,7 @@ fn translate_public_profile_permissions(
         rules: PermissionRuleSet {
             shell: shell_rules,
             edit: edit_rules,
+            task: task_rules,
         },
     })
 }
@@ -821,8 +1199,12 @@ fn translate_public_permission_value(
     let shell = public_rule_mode(&parsed.bash)
         .or_else(|| global.clone())
         .unwrap_or(fallback.defaults.shell);
+    let task = public_rule_mode(&parsed.task)
+        .or_else(|| global.clone())
+        .or(fallback.defaults.task);
     let edit_rules = public_selector_rules("edit", parsed.edit)?;
     let shell_rules = public_selector_rules("bash", parsed.bash)?;
+    let task_rules = public_selector_rules("task", parsed.task)?;
 
     serde_json::to_value(PermissionsConfig {
         defaults: PermissionDefaultsConfig {
@@ -836,10 +1218,7 @@ fn translate_public_permission_value(
                 .question
                 .or_else(|| global.clone())
                 .or(fallback.defaults.question),
-            task: parsed
-                .task
-                .or_else(|| global.clone())
-                .or(fallback.defaults.task),
+            task,
             webfetch: parsed
                 .webfetch
                 .or_else(|| global.clone())
@@ -861,10 +1240,77 @@ fn translate_public_permission_value(
         rules: PermissionRuleSet {
             shell: shell_rules,
             edit: edit_rules,
+            task: task_rules,
         },
         shell_allowlist: parsed.shell_allowlist.unwrap_or(fallback.shell_allowlist),
     })
     .map_err(|err| ConfigError::ParseJson5(err.to_string()))
+}
+
+fn normalize_public_mcp_servers(value: serde_json::Value) -> serde_json::Value {
+    let serde_json::Value::Object(servers) = value else {
+        return value;
+    };
+
+    let mut normalized_servers = serde_json::Map::new();
+    for (name, server) in servers {
+        let mut normalized = server;
+        let Some(server_object) = normalized.as_object_mut() else {
+            normalized_servers.insert(name, normalized);
+            continue;
+        };
+
+        if server_object.len() == 1
+            && matches!(
+                server_object.get("enabled"),
+                Some(serde_json::Value::Bool(false))
+            )
+        {
+            continue;
+        }
+
+        if !server_object.contains_key("transport") {
+            if let Some(kind) = server_object.remove("type") {
+                let transport = match kind.as_str() {
+                    Some("local") => "stdio",
+                    Some("remote") => "http",
+                    Some(other) => other,
+                    None => "",
+                };
+                if !transport.is_empty() {
+                    server_object.insert(
+                        "transport".to_string(),
+                        serde_json::Value::String(transport.to_string()),
+                    );
+                }
+            }
+        }
+
+        normalized_servers.insert(name, normalized);
+    }
+
+    serde_json::Value::Object(normalized_servers)
+}
+
+fn normalize_public_lsp_config(value: &serde_json::Value) -> Option<serde_json::Value> {
+    match value {
+        serde_json::Value::Bool(false) => Some(serde_json::json!({ "disabled": true })),
+        serde_json::Value::Bool(true) | serde_json::Value::Null => None,
+        serde_json::Value::Object(object) if object.contains_key("servers") => Some(value.clone()),
+        serde_json::Value::Object(object) => {
+            Some(serde_json::json!({ "servers": serde_json::Value::Object(object.clone()) }))
+        }
+        _ => None,
+    }
+}
+
+fn normalize_public_skills_config(value: &serde_json::Value) -> serde_json::Value {
+    let mut normalized = value.clone();
+    let Some(object) = normalized.as_object_mut() else {
+        return normalized;
+    };
+    object.remove("urls");
+    normalized
 }
 
 pub(super) fn translate_public_runtime_root(
@@ -931,24 +1377,33 @@ pub(super) fn translate_public_runtime_root(
         .map(|model_ref| default_shipped_agents(model_ref, small_model.as_deref()))
         .unwrap_or_default();
 
-    if let Some(value) = object.get("agent") {
-        let public_agents: BTreeMap<String, PublicAgentConfig> =
-            serde_json::from_value(value.clone())
+    let mut disabled_agents = BTreeSet::new();
+    for key in ["mode", "agent"] {
+        if let Some(value) = object.get(key) {
+            let public_agents: PublicAgentMap = serde_json::from_value(value.clone())
                 .map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
-        for (name, public_agent) in public_agents {
-            let base = agents.remove(&name).or_else(|| shipped.get(&name).cloned());
-            let profile = public_agent_to_profile(
-                &name,
-                public_agent,
-                model.as_deref(),
-                small_model.as_deref(),
-                base,
-            )?;
-            agents.insert(name, profile);
+            for (name, public_agent) in public_agents.into_entries() {
+                if public_agent.disable || public_agent.enable == Some(false) {
+                    agents.remove(&name);
+                    disabled_agents.insert(name);
+                    continue;
+                }
+                let base = agents.remove(&name).or_else(|| shipped.get(&name).cloned());
+                let profile = public_agent_to_profile(
+                    &name,
+                    public_agent,
+                    model.as_deref(),
+                    small_model.as_deref(),
+                    base,
+                )?;
+                agents.insert(name, profile);
+            }
         }
     }
     for (name, profile) in shipped {
-        agents.entry(name).or_insert(profile);
+        if !disabled_agents.contains(&name) {
+            agents.entry(name).or_insert(profile);
+        }
     }
 
     translated.insert(
@@ -961,6 +1416,14 @@ pub(super) fn translate_public_runtime_root(
         .or_else(|| object.get("defaultAgent"))
         .cloned()
     {
+        if let Some(default_agent_name) = default_agent.as_str() {
+            if disabled_agents.contains(default_agent_name.trim()) {
+                return Err(ConfigError::InvalidReference(format!(
+                    "default_agent `{}` references a disabled agent",
+                    default_agent_name.trim()
+                )));
+            }
+        }
         translated.insert("default_agent".to_string(), default_agent);
     }
 
@@ -1037,7 +1500,8 @@ pub(super) fn translate_public_runtime_root(
         merge_config_value(&mut integrations, value.clone());
     }
     if let Some(value) = object.get("mcp") {
-        let mcp_value = serde_json::json!({ "servers": value.clone() });
+        let mcp_value =
+            serde_json::json!({ "servers": normalize_public_mcp_servers(value.clone()) });
         if let Some(integrations_object) = integrations.as_object_mut() {
             match integrations_object.get_mut("mcp") {
                 Some(existing) => merge_config_value(existing, mcp_value),
@@ -1051,8 +1515,6 @@ pub(super) fn translate_public_runtime_root(
 
     for (key, value) in [
         ("hooks", object.get("hooks")),
-        ("skills", object.get("skills")),
-        ("lsp", object.get("lsp")),
         ("logging", object.get("logging")),
         ("ui", object.get("ui")),
         (
@@ -1065,6 +1527,14 @@ pub(super) fn translate_public_runtime_root(
         if let Some(value) = value {
             translated.insert(key.to_string(), value.clone());
         }
+    }
+
+    if let Some(value) = object.get("skills") {
+        translated.insert("skills".to_string(), normalize_public_skills_config(value));
+    }
+
+    if let Some(value) = object.get("lsp").and_then(normalize_public_lsp_config) {
+        translated.insert("lsp".to_string(), value);
     }
 
     let instructions = object
