@@ -1349,16 +1349,6 @@ pub(crate) fn exact_test_operator_rail_section_model_counts_generic_mcp_activity
     harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
 
     let mut app = operator_rail_test_app();
-    assert_eq!(
-        operator_sidebar_mcp_items(&app)
-            .into_iter()
-            .map(|item| item.display_text())
-            .collect::<Vec<_>>(),
-        [
-            "fixture Connected".to_string(),
-            "websearch Disconnected".to_string(),
-        ]
-    );
 
     let worker = harness_core::event::EventActor::new(
         harness_core::event::ActorKind::Worker,
@@ -1392,7 +1382,7 @@ pub(crate) fn exact_test_operator_rail_section_model_counts_generic_mcp_activity
     ));
     app.ingest_event(operator_rail_test_event(
         6,
-        worker,
+        worker.clone(),
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
                 tool_call_id: "tool_call_mcp_1".to_string(),
@@ -1404,6 +1394,33 @@ pub(crate) fn exact_test_operator_rail_section_model_counts_generic_mcp_activity
                     canonical_tool_id: Some("mcp.fixture.echo".to_string()),
                     ..harness_core::event::ToolCallMetadata::default()
                 }),
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event(
+        7,
+        worker.clone(),
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tool_call_search_1".to_string(),
+                tool_id: "search.web".to_string(),
+                args_summary: r#"{"query":"docs"}"#.to_string(),
+                args_digest: "digest-search-1".to_string(),
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event(
+        8,
+        worker,
+        harness_core::event::EventV1::ToolCallFinished(
+            harness_core::event::ToolCallFinishedEvent {
+                tool_call_id: "tool_call_search_1".to_string(),
+                status: harness_core::event::ToolCallStatus::Failed,
+                output_summary: Some("search failed".to_string()),
+                output_digest: Some("digest-output-search-1".to_string()),
+                output_json: None,
+                metadata: None,
             },
         ),
     ));

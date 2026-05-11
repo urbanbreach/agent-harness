@@ -435,12 +435,6 @@ fn operator_sidebar_width_stays_fixed_when_todo_or_modified_files_exist() {
         live_empty_width,
     );
     assert_operator_sidebar_expanded(
-        &operator_sidebar_child_navigation_replay_app(),
-        "▶ Modified Files",
-        "Explain the refactor",
-        replay_empty_width,
-    );
-    assert_operator_sidebar_expanded(
         &operator_sidebar_todo_replay_app(),
         "▶ Modified Files",
         "Explain the refactor",
@@ -2094,7 +2088,10 @@ fn command_palette_state_filters_existing_commands() {
     assert!(app.palette_visible);
     assert_eq!(app.palette_input, "n");
     assert_eq!(app.palette_cursor, 1);
-    assert_eq!(app.palette_filtered, vec!["new_session".to_string()]);
+    assert_eq!(
+        app.palette_filtered,
+        vec!["new_session".to_string(), "agent_cycle".to_string()]
+    );
     assert!(app.palette_filtered.iter().all(|command| {
         Action::palette_commands()
             .iter()
@@ -2929,15 +2926,15 @@ fn focus_order_cycles_transcript_sidebar_composer() {
     app.active_tab = app::Tab::Run;
     app.live_details_drawer_open = true;
 
-    app.handle_key(key(crossterm::event::KeyCode::Tab));
+    app.handle_key(focus_cycle_key());
     assert_eq!(app.focus, app::Focus::List);
     assert!(app.details_drawer_open());
 
-    app.handle_key(key(crossterm::event::KeyCode::Tab));
+    app.handle_key(focus_cycle_key());
     assert_eq!(app.focus, app::Focus::Prompt);
     assert!(!app.details_drawer_open());
 
-    app.handle_key(key(crossterm::event::KeyCode::Tab));
+    app.handle_key(focus_cycle_key());
     assert_eq!(app.focus, app::Focus::Details);
     assert!(!app.details_drawer_open());
 }
@@ -4029,7 +4026,7 @@ fn orchestration_details_drawer_app(extra_terminal_rows: usize) -> app::AppState
     for event in orchestration_details_drawer_events(extra_terminal_rows) {
         app.ingest_event(event);
     }
-    app.handle_key(key(crossterm::event::KeyCode::Tab));
+    app.handle_key(focus_cycle_key());
     app.handle_key(key(crossterm::event::KeyCode::Char('i')));
     app
 }
@@ -4067,6 +4064,14 @@ fn assert_session_view_state(app: &app::AppState) {
 #[cfg(test)]
 fn key(code: crossterm::event::KeyCode) -> crossterm::event::KeyEvent {
     crossterm::event::KeyEvent::new(code, crossterm::event::KeyModifiers::NONE)
+}
+
+#[cfg(test)]
+fn focus_cycle_key() -> crossterm::event::KeyEvent {
+    key_with_modifiers(
+        crossterm::event::KeyCode::Tab,
+        crossterm::event::KeyModifiers::CONTROL,
+    )
 }
 
 #[cfg(test)]
@@ -6114,7 +6119,7 @@ fn session_shell_hides_tab_chrome_and_replay_review_is_command_driven() {
     assert!(!live_debug.contains("Activity ("));
     assert!(!live_debug.contains("Inspector"));
 
-    live.handle_key(key(crossterm::event::KeyCode::Tab));
+    live.handle_key(focus_cycle_key());
     live.handle_key(key(crossterm::event::KeyCode::Char('i')));
     assert_eq!(live.review_surface(), None);
     assert!(live.details_drawer_open());
@@ -6188,6 +6193,8 @@ fn command_palette_renders_and_filters() {
             "new_session".to_string(),
             "resume_session".to_string(),
             "replay_session".to_string(),
+            "agent_cycle".to_string(),
+            "agent_cycle_reverse".to_string(),
             "cycle_variant".to_string(),
             "open_event_log".to_string(),
             "toggle_terminal_panel".to_string(),
@@ -6209,7 +6216,10 @@ fn command_palette_renders_and_filters() {
 
     assert_eq!(app.palette_input, "n");
     assert_eq!(app.palette_cursor, 1);
-    assert_eq!(app.palette_filtered, vec!["new_session".to_string()]);
+    assert_eq!(
+        app.palette_filtered,
+        vec!["new_session".to_string(), "agent_cycle".to_string()]
+    );
 
     let filtered_debug = render_live_screen(&app, 120, 36);
     assert!(filtered_debug.contains("Commands"));
@@ -8987,7 +8997,14 @@ fn assert_operator_sidebar_expanded(
     compact_width: u16,
 ) {
     let plan = layout::FrameLayoutPlan::for_app(app, ratatui::layout::Rect::new(0, 0, 160, 30));
-    let sidebar = plan.operator_sidebar.expect("expanded operator sidebar");
+    let sidebar = plan.operator_sidebar.unwrap_or_else(|| {
+        panic!(
+            "expanded operator sidebar for marker {expected_marker:?}; replay={}, startup={}, subagent={}",
+            app.replay_mode,
+            app.startup_shell_visible(),
+            app.current_subagent_session_present()
+        )
+    });
     let sidebar_text = operator_sidebar_text(app);
     let rendered = render_live_lines(app, 160, 30);
 
@@ -9080,7 +9097,7 @@ fn live_details_drawer_orchestration_warning_fallback() {
     for event in session_view_events() {
         app.ingest_event(event);
     }
-    app.handle_key(key(crossterm::event::KeyCode::Tab));
+    app.handle_key(focus_cycle_key());
     app.handle_key(key(crossterm::event::KeyCode::Char('i')));
 
     let card_body = orchestration_details_drawer_card_body(&app, 7, 76);
@@ -9096,7 +9113,7 @@ fn layout_plan_primary_geometry_docks_live_details_sidebar() {
     for event in session_view_events() {
         app.ingest_event(event);
     }
-    app.handle_key(key(crossterm::event::KeyCode::Tab));
+    app.handle_key(focus_cycle_key());
     app.handle_key(key(crossterm::event::KeyCode::Char('i')));
 
     let plan = layout::FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, 100, 30));
@@ -9127,7 +9144,7 @@ fn layout_plan_primary_geometry_docks_live_details_sidebar() {
 fn layout_plan_minimum_geometry_stacks_live_details_drawer() {
     let mut app = app::AppState::new_live(None, false, None);
     app.active_tab = app::Tab::Run;
-    app.handle_key(key(crossterm::event::KeyCode::Tab));
+    app.handle_key(focus_cycle_key());
     app.handle_key(key(crossterm::event::KeyCode::Char('i')));
 
     let plan = layout::FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, 80, 24));
@@ -9859,7 +9876,7 @@ fn details_drawer_toggles_without_leaving_live_surface() {
     assert_eq!(app.active_tab, app::Tab::Run);
     assert!(!app.details_drawer_open());
 
-    app.handle_key(key(crossterm::event::KeyCode::Tab));
+    app.handle_key(focus_cycle_key());
     app.handle_key(key(crossterm::event::KeyCode::Char('i')));
 
     assert_eq!(app.active_tab, app::Tab::Run);

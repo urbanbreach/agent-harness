@@ -636,7 +636,7 @@ fn pty_live_details_drawer_remains_reachable() {
         )
         .expect("wait for startup before operator sidebar flow");
 
-        send_key(helper.writer.as_mut(), b'\t')
+        send_ctrl_tab(helper.writer.as_mut())
             .expect("focus transcript before opening operator sidebar");
         send_key(helper.writer.as_mut(), b'i').expect("open operator sidebar");
 
@@ -854,8 +854,8 @@ fn replay_mode_never_emits_submit_prompt_intent() {
     )
     .expect("wait for replay startup render");
 
-    send_key(helper.writer.as_mut(), b'\t').expect("focus replay details surface");
-    send_key(helper.writer.as_mut(), b'\t').expect("attempt replay prompt focus");
+    send_ctrl_tab(helper.writer.as_mut()).expect("focus replay details surface");
+    send_ctrl_tab(helper.writer.as_mut()).expect("attempt replay prompt focus");
     helper
         .writer
         .write_all(b"blocked in replay")
@@ -2323,7 +2323,7 @@ fn capture_permission_with_draft_snapshot(geometry: PtyGeometry) -> String {
 fn capture_events_tab_snapshot(geometry: PtyGeometry) -> String {
     let mut helper = spawn_helper_pty(HelperScenario::ToolLifecycle, geometry);
     wait_for_live_startup(&mut helper);
-    send_key(helper.writer.as_mut(), b'\t')
+    send_ctrl_tab(helper.writer.as_mut())
         .expect("move review helper off prompt before opening palette");
     send_key(helper.writer.as_mut(), 0x10).expect("open command palette before event log review");
     wait_for_screen_contains(
@@ -2383,7 +2383,7 @@ fn wait_for_live_startup(helper: &mut SpawnedHelper) {
 }
 
 fn show_live_operator_sidebar(helper: &mut SpawnedHelper) {
-    send_key(helper.writer.as_mut(), b'\t')
+    send_ctrl_tab(helper.writer.as_mut())
         .expect("focus transcript before opening operator sidebar");
     send_key(helper.writer.as_mut(), b'i').expect("open operator sidebar");
 }
@@ -2672,6 +2672,11 @@ fn drain_output(parser: &mut Parser, output_rx: &Receiver<Vec<u8>>) {
 
 fn send_key(writer: &mut dyn Write, key: u8) -> std::io::Result<()> {
     writer.write_all(&[key])?;
+    writer.flush()
+}
+
+fn send_ctrl_tab(writer: &mut dyn Write) -> std::io::Result<()> {
+    writer.write_all(b"\x1b[9;5u")?;
     writer.flush()
 }
 
