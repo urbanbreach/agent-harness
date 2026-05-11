@@ -25,7 +25,7 @@ Buffer {
         "                                                                                ",
         "                                                                                ",
         "â Replay is read-only.                                                          ",
-        "  ? shortcuts  Â·  tab focus  Â·  r reload  Â·  q quit                             ",
+        "  ? shortcuts  Â·  ctrl+tab focus  Â·  r reload  Â·  q quit                        ",
         "                                                                                ",
         "                                                                                ",
         "                                                                                ",
@@ -121,6 +121,6 @@ Buffer {
         x: 0, y: 19, fg: Rgb(128, 128, 128), bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
         x: 22, y: 19, fg: Reset, bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
         x: 2, y: 20, fg: Rgb(128, 128, 128), bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
-        x: 51, y: 20, fg: Reset, bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
+        x: 56, y: 20, fg: Reset, bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
     ]
 }

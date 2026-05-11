@@ -28,7 +28,7 @@ Buffer {
         "  â                                                                             ",
         "  â  model-1 mock                                                               ",
         "  â¹âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ  ",
-        "  turn 1 Â· ready for next turn        Tab focus  Â·  Ctrl+p commands  Â·  q quit  ",
+        "  turn 1 Â· ready for next turn   Ctrl+Tab focus  Â·  Ctrl+p commands  Â·  q quit  ",
     ],
     styles: [
         x: 0, y: 0, fg: Reset, bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
@@ -62,7 +62,7 @@ Buffer {
         x: 78, y: 22, fg: Reset, bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
         x: 2, y: 23, fg: Rgb(245, 167, 66), bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
         x: 30, y: 23, fg: Reset, bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
-        x: 38, y: 23, fg: Rgb(238, 238, 238), bg: Rgb(10, 10, 10), underline: Reset, modifier: BOLD,
+        x: 33, y: 23, fg: Rgb(238, 238, 238), bg: Rgb(10, 10, 10), underline: Reset, modifier: BOLD,
         x: 41, y: 23, fg: Rgb(128, 128, 128), bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
         x: 52, y: 23, fg: Rgb(238, 238, 238), bg: Rgb(10, 10, 10), underline: Reset, modifier: BOLD,
         x: 58, y: 23, fg: Rgb(128, 128, 128), bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,

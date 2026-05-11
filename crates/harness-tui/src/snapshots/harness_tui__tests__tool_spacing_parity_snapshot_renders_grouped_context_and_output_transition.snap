@@ -34,7 +34,7 @@ Buffer {
         "â                                                                                                                       ",
         "â  gpt-5-codex openai                                                                                                   ",
         "â¹âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ",
-        "turn 1 Â· ready for next turn                                                    Tab focus  Â·  Ctrl+p commands  Â·  q quit",
+        "turn 1 Â· ready for next turn                                               Ctrl+Tab focus  Â·  Ctrl+p commands  Â·  q quit",
     ],
     styles: [
         x: 0, y: 0, fg: Reset, bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
@@ -99,7 +99,7 @@ Buffer {
         x: 1, y: 28, fg: Rgb(30, 30, 30), bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
         x: 0, y: 29, fg: Rgb(245, 167, 66), bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
         x: 28, y: 29, fg: Reset, bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
-        x: 80, y: 29, fg: Rgb(238, 238, 238), bg: Rgb(10, 10, 10), underline: Reset, modifier: BOLD,
+        x: 75, y: 29, fg: Rgb(238, 238, 238), bg: Rgb(10, 10, 10), underline: Reset, modifier: BOLD,
         x: 83, y: 29, fg: Rgb(128, 128, 128), bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
         x: 94, y: 29, fg: Rgb(238, 238, 238), bg: Rgb(10, 10, 10), underline: Reset, modifier: BOLD,
         x: 100, y: 29, fg: Rgb(128, 128, 128), bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
