@@ -6,7 +6,6 @@
 
 
 
-
                 /exit    Quit Harness
                 /model   Switch model
                 /new     Return to the home shell
@@ -20,3 +19,12 @@
             ┃
             ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
                                            ctrl+t variants  tab agents  ctrl+p commands
+
+
+
+
+
+
+
+
+~                                                                    Enter send  Ctrl+p open  q quit
