@@ -1,5 +1,8 @@
 {
   "$schema": "./config.json",
+
+  // Provider and model catalog. Most projects only need one provider and one
+  // default model here; keep larger catalogs in provider-catalog.reference.jsonc.
   "provider": {
     "default": {
       "type": "openai_compatible",
@@ -10,16 +13,77 @@
         "timeoutMs": 1800000
       },
       "models": {
+        "gpt-5.5": {
+          "name": "GPT 5.5",
+          "limit": { "context": 272000, "input": 272000, "output": 128000 },
+          "variants": {
+            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
+            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
+            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } },
+            "xhigh": { "name": "XHigh", "metadata": { "reasoningEffort": "xhigh" } }
+          }
+        },
         "gpt-5.4-mini": {
           "name": "GPT 5.4 Mini",
-          "limit": { "context": 272000, "input": 272000, "output": 128000 }
+          "limit": { "context": 272000, "input": 272000, "output": 128000 },
+          "variants": {
+            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
+            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
+            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } }
+          }
         }
       }
     }
   },
+
+  // Active default model. Use provider/model, optionally provider/model/variant.
   "model": "default/gpt-5.4-mini",
+
+  // Built-in agents are listed so they are easy to discover and toggle.
+  // Set enable:false (or enabled:false) to remove one from the runtime.
+  // Add model, prompt, tools, or permission here only when overriding defaults.
+  "agent": {
+    "build": {
+      "enable": true,
+      "model": "default/gpt-5.4-mini",
+      "variant": "high",
+    },
+    "plan": {
+      "enable": true,
+      "model": "default/gpt-5.5",
+      "variant": "xhigh",
+    },
+    "general": {
+      "enable": true,
+      "model": "default/gpt-5.4-mini",
+      "variant": "medium",
+    },
+    "explore": {
+      "enable": true,
+      "model": "default/gpt-5.4-mini",
+      "variant": "low",
+    },
+    "title": {
+      "enable": true,
+      "hidden": true,
+    },
+    "summary": {
+      "enable": true,
+      "hidden": true,
+    },
+    "compaction": {
+      "enable": true,
+      "hidden": true,
+    }
+  },
+
   "default_agent": "build",
+
+  // One scalar applies to all supported tool permissions; switch to an object
+  // when a project needs per-tool rules.
   "permission": "ask",
+
+  // Optional MCP servers. Disabled entries stay documented but do not launch.
   "mcp": {
     "cargo-mcp": {
       "transport": "stdio",

@@ -1,5 +1,7 @@
 {
   "$schema": "./configs/config.json",
+
+  // Provider and model catalog for this workspace.
   "provider": {
     "default": {
       "type": "openai_compatible",
@@ -7,176 +9,339 @@
       "options": {
         "baseURL": "http://127.0.0.1:8317/v1",
         "apiKey": "sk-zerolimit",
-        "timeoutMs": 1800000
+        "timeoutMs": 1800000,
       },
       "models": {
         "gpt-5.3-codex": {
           "name": "GPT 5.3 Codex",
           "limit": { "context": 272000, "output": 128000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "modalities": {
+            "input": ["text", "image", "pdf"],
+            "output": ["text"],
+          },
           "options": { "serviceTier": "priority" },
           "variants": {
-            "none": { "name": "None", "metadata": { "reasoningEffort": "none" } },
+            "none": {
+              "name": "None",
+              "metadata": { "reasoningEffort": "none" },
+            },
             "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
-            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
-            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } },
-            "xhigh": { "name": "XHigh", "metadata": { "reasoningEffort": "xhigh" } }
-          }
+            "medium": {
+              "name": "Medium",
+              "metadata": { "reasoningEffort": "medium" },
+            },
+            "high": {
+              "name": "High",
+              "metadata": { "reasoningEffort": "high" },
+            },
+            "xhigh": {
+              "name": "XHigh",
+              "metadata": { "reasoningEffort": "xhigh" },
+            },
+          },
         },
         "gpt-5.5": {
           "name": "GPT 5.5",
           "limit": { "context": 272000, "input": 272000, "output": 128000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "modalities": {
+            "input": ["text", "image", "pdf"],
+            "output": ["text"],
+          },
           "options": { "serviceTier": "priority" },
           "variants": {
             "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
-            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
-            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } },
-            "xhigh": { "name": "XHigh", "metadata": { "reasoningEffort": "xhigh" } }
-          }
+            "medium": {
+              "name": "Medium",
+              "metadata": { "reasoningEffort": "medium" },
+            },
+            "high": {
+              "name": "High",
+              "metadata": { "reasoningEffort": "high" },
+            },
+            "xhigh": {
+              "name": "XHigh",
+              "metadata": { "reasoningEffort": "xhigh" },
+            },
+          },
         },
         "gpt-5.4": {
           "name": "GPT 5.4 (272k)",
           "limit": { "context": 272000, "input": 272000, "output": 128000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "modalities": {
+            "input": ["text", "image", "pdf"],
+            "output": ["text"],
+          },
           "options": { "serviceTier": "priority" },
           "variants": {
             "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
-            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
-            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } },
-            "xhigh": { "name": "XHigh", "metadata": { "reasoningEffort": "xhigh" } }
-          }
+            "medium": {
+              "name": "Medium",
+              "metadata": { "reasoningEffort": "medium" },
+            },
+            "high": {
+              "name": "High",
+              "metadata": { "reasoningEffort": "high" },
+            },
+            "xhigh": {
+              "name": "XHigh",
+              "metadata": { "reasoningEffort": "xhigh" },
+            },
+          },
         },
         "gpt-5.4-1m": {
           "name": "GPT 5.4 (1M)",
           "limit": { "context": 922000, "input": 922000, "output": 128000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "modalities": {
+            "input": ["text", "image", "pdf"],
+            "output": ["text"],
+          },
           "options": { "serviceTier": "priority" },
           "variants": {
             "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
-            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
-            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } },
-            "xhigh": { "name": "XHigh", "metadata": { "reasoningEffort": "xhigh" } }
-          }
+            "medium": {
+              "name": "Medium",
+              "metadata": { "reasoningEffort": "medium" },
+            },
+            "high": {
+              "name": "High",
+              "metadata": { "reasoningEffort": "high" },
+            },
+            "xhigh": {
+              "name": "XHigh",
+              "metadata": { "reasoningEffort": "xhigh" },
+            },
+          },
         },
         "gpt-5.4-mini": {
           "name": "GPT 5.4 Mini",
           "limit": { "context": 272000, "output": 128000 },
-          "options": { "serviceTier": "priority", "reasoningSummary": "auto", "include": ["reasoning.encrypted_content"] },
+          "options": {
+            "serviceTier": "priority",
+            "reasoningSummary": "auto",
+            "include": ["reasoning.encrypted_content"],
+          },
           "variants": {
             "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
-            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
-            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } },
-            "xhigh": { "name": "XHigh", "metadata": { "reasoningEffort": "xhigh" } }
-          }
+            "medium": {
+              "name": "Medium",
+              "metadata": { "reasoningEffort": "medium" },
+            },
+            "high": {
+              "name": "High",
+              "metadata": { "reasoningEffort": "high" },
+            },
+            "xhigh": {
+              "name": "XHigh",
+              "metadata": { "reasoningEffort": "xhigh" },
+            },
+          },
         },
         "gpt-5.2": {
           "name": "GPT 5.2",
           "limit": { "context": 272000, "output": 128000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "modalities": {
+            "input": ["text", "image", "pdf"],
+            "output": ["text"],
+          },
           "options": { "serviceTier": "priority" },
           "variants": {
             "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
-            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
-            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } },
-            "xhigh": { "name": "XHigh", "metadata": { "reasoningEffort": "xhigh" } },
-            "max": { "name": "Max", "metadata": { "reasoningEffort": "xhigh" } }
-          }
+            "medium": {
+              "name": "Medium",
+              "metadata": { "reasoningEffort": "medium" },
+            },
+            "high": {
+              "name": "High",
+              "metadata": { "reasoningEffort": "high" },
+            },
+            "xhigh": {
+              "name": "XHigh",
+              "metadata": { "reasoningEffort": "xhigh" },
+            },
+            "max": {
+              "name": "Max",
+              "metadata": { "reasoningEffort": "xhigh" },
+            },
+          },
         },
         "gpt-5.1-codex-max": {
           "name": "GPT 5.1 Codex Max",
           "limit": { "context": 272000, "output": 128000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "modalities": {
+            "input": ["text", "image", "pdf"],
+            "output": ["text"],
+          },
           "options": { "serviceTier": "priority" },
           "variants": {
             "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
-            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
-            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } },
-            "xhigh": { "name": "XHigh", "metadata": { "reasoningEffort": "xhigh" } }
-          }
+            "medium": {
+              "name": "Medium",
+              "metadata": { "reasoningEffort": "medium" },
+            },
+            "high": {
+              "name": "High",
+              "metadata": { "reasoningEffort": "high" },
+            },
+            "xhigh": {
+              "name": "XHigh",
+              "metadata": { "reasoningEffort": "xhigh" },
+            },
+          },
         },
         "gpt-5.1-codex": {
           "name": "GPT 5.1 Codex",
           "limit": { "context": 272000, "output": 128000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "modalities": {
+            "input": ["text", "image", "pdf"],
+            "output": ["text"],
+          },
           "options": { "serviceTier": "priority" },
           "variants": {
             "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
-            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
-            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } }
-          }
+            "medium": {
+              "name": "Medium",
+              "metadata": { "reasoningEffort": "medium" },
+            },
+            "high": {
+              "name": "High",
+              "metadata": { "reasoningEffort": "high" },
+            },
+          },
         },
         "gpt-5.1-codex-mini": {
           "name": "GPT 5.1 Codex Mini",
           "limit": { "context": 272000, "output": 128000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "modalities": {
+            "input": ["text", "image", "pdf"],
+            "output": ["text"],
+          },
           "options": { "serviceTier": "priority" },
           "variants": {
-            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
-            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } }
-          }
+            "medium": {
+              "name": "Medium",
+              "metadata": { "reasoningEffort": "medium" },
+            },
+            "high": {
+              "name": "High",
+              "metadata": { "reasoningEffort": "high" },
+            },
+          },
         },
         "gpt-5.1": {
           "name": "GPT 5.1",
           "limit": { "context": 272000, "output": 128000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "modalities": {
+            "input": ["text", "image", "pdf"],
+            "output": ["text"],
+          },
           "options": { "serviceTier": "priority" },
           "variants": {
-            "none": { "name": "None", "metadata": { "reasoningEffort": "none" } },
+            "none": {
+              "name": "None",
+              "metadata": { "reasoningEffort": "none" },
+            },
             "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
-            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
-            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } }
-          }
-        }
-      }
-    }
+            "medium": {
+              "name": "Medium",
+              "metadata": { "reasoningEffort": "medium" },
+            },
+            "high": {
+              "name": "High",
+              "metadata": { "reasoningEffort": "high" },
+            },
+          },
+        },
+      },
+    },
   },
+
+  // Default primary model and smaller model used by hidden/background agents.
   "model": "default/gpt-5.4",
   "small_model": "default/gpt-5.4-mini",
+
+  // Built-in agents are listed explicitly for discoverability. Use enable:false
+  // (or enabled:false) to remove one; add model/prompt/tools only for overrides.
   "agent": {
-    "build": { "model": "default/gpt-5.4-mini" },
-    "plan": { "model": "default/gpt-5.5" }
+    "build": {
+      "enable": true,
+      "model": "default/gpt-5.5",
+      "variant": "high",
+    },
+    "plan": {
+      "enable": true,
+      "model": "default/gpt-5.5",
+      "variant": "xhigh",
+    },
+    "general": {
+      "enable": true,
+      "model": "default/gpt-5.4-mini",
+      "variant": "medium",
+    },
+    "explore": {
+      "enable": true,
+      "model": "default/gpt-5.4-mini",
+      "variant": "low",
+    },
+    "title": {
+      "enable": true,
+      "model": "default/gpt-5.4-mini",
+      "variant": "low",
+      "hidden": true,
+    },
+    "summary": {
+      "enable": true,
+      "hidden": true,
+    },
+    "compaction": {
+      "enable": true,
+      "hidden": true,
+    },
   },
   "default_agent": "build",
+
+  // Default tool permission policy for this workspace.
   "permission": {
     "*": "ask",
     "shell_allowlist": {
       "executables": ["bash", "git", "cargo", "ls", "rg"],
-      "cwd_roots": ["."]
-    }
+      "cwd_roots": ["."],
+    },
   },
+
+  // MCP servers available to configured agents/tools. Disabled entries stay as
+  // documented options but do not launch.
   "mcp": {
     "gh_grep": {
       "transport": "http",
-      "endpoint": "https://mcp.grep.app"
+      "endpoint": "https://mcp.grep.app",
     },
     "docs-rs": {
       "transport": "stdio",
-      "command": ["bunx", "-y", "@nuskey8/docs-rs-mcp@latest"]
+      "command": ["bunx", "-y", "@nuskey8/docs-rs-mcp@latest"],
     },
     "cargo-mcp": {
       "transport": "stdio",
       "command": ["/home/ubere/.cargo/bin/cargo-mcp", "serve"],
-      "enabled": false
+      "enabled": false,
     },
     "pty-mcp": {
       "transport": "stdio",
-      "command": ["bunx", "-y", "pty-mcp"]
+      "command": ["bunx", "-y", "pty-mcp"],
     },
     "playwright": {
       "transport": "stdio",
       "command": ["bunx", "-y", "@playwright/mcp@latest"],
-      "enabled": false
+      "enabled": false,
     },
     "svelte": {
       "transport": "stdio",
       "command": ["bunx", "-y", "@sveltejs/mcp"],
-      "enabled": false
+      "enabled": false,
     },
     "tauri": {
       "transport": "stdio",
       "command": ["bunx", "-y", "@hypothesi/tauri-mcp-server"],
-      "enabled": false
-    }
-  }
+      "enabled": false,
+    },
+  },
 }
