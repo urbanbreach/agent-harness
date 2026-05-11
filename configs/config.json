@@ -11,11 +11,36 @@
       ]
     },
     "agent": {
-      "default": {},
-      "type": "object",
-      "additionalProperties": {
-        "$ref": "#/definitions/PublicAgentConfig"
-      }
+      "default": {
+        "build": null,
+        "compaction": null,
+        "explore": null,
+        "general": null,
+        "plan": null,
+        "summary": null,
+        "title": null
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/PublicAgentMap"
+        }
+      ]
+    },
+    "autoshare": {
+      "default": null,
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "autoupdate": {
+      "default": null
+    },
+    "command": {
+      "default": null
+    },
+    "compaction": {
+      "default": null
     },
     "default_agent": {
       "default": null,
@@ -23,6 +48,35 @@
         "string",
         "null"
       ]
+    },
+    "disabled_providers": {
+      "default": null,
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "enabled_providers": {
+      "default": null,
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "enterprise": {
+      "default": null
+    },
+    "experimental": {
+      "default": null
+    },
+    "formatter": {
+      "default": null
     },
     "instructions": {
       "default": null,
@@ -35,12 +89,43 @@
         }
       ]
     },
+    "layout": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "logLevel": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "lsp": {
+      "default": null
+    },
     "mcp": {
       "default": {},
       "type": "object",
-      "additionalProperties": {
-        "$ref": "#/definitions/McpServerConfig"
-      }
+      "additionalProperties": true
+    },
+    "mode": {
+      "default": {
+        "build": null,
+        "compaction": null,
+        "explore": null,
+        "general": null,
+        "plan": null,
+        "summary": null,
+        "title": null
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/PublicAgentMap"
+        }
+      ]
     },
     "model": {
       "default": null,
@@ -75,6 +160,9 @@
         }
       ]
     },
+    "plugin": {
+      "default": null
+    },
     "provider": {
       "default": {},
       "type": "object",
@@ -100,6 +188,19 @@
         }
       ]
     },
+    "server": {
+      "default": null
+    },
+    "share": {
+      "default": null
+    },
+    "shell": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "skills": {
       "default": {
         "global_roots": [
@@ -114,6 +215,7 @@
           ".agent-harness/skills",
           ".harness/skills"
         ],
+        "urls": [],
         "walk_to_git_root": true
       },
       "allOf": [
@@ -128,10 +230,48 @@
         "string",
         "null"
       ]
+    },
+    "snapshot": {
+      "default": null,
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "tool_output": {
+      "default": null
+    },
+    "tools": {
+      "default": null,
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "username": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "watcher": {
+      "default": null
     }
   },
   "additionalProperties": false,
   "definitions": {
+    "AgentMode": {
+      "type": "string",
+      "enum": [
+        "primary",
+        "subagent",
+        "all"
+      ]
+    },
     "CompactionRuntimeConfig": {
       "type": "object",
       "properties": {
@@ -181,92 +321,6 @@
           "items": {
             "type": "string"
           }
-        }
-      ]
-    },
-    "McpServerConfig": {
-      "oneOf": [
-        {
-          "type": "object",
-          "required": [
-            "command",
-            "transport"
-          ],
-          "properties": {
-            "command": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "cwd": {
-              "default": null,
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "enabled": {
-              "default": true,
-              "type": "boolean"
-            },
-            "env": {
-              "default": {},
-              "type": "object",
-              "additionalProperties": {
-                "type": "string"
-              }
-            },
-            "timeout_secs": {
-              "default": 30,
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            },
-            "transport": {
-              "type": "string",
-              "enum": [
-                "stdio"
-              ]
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": [
-            "endpoint",
-            "transport"
-          ],
-          "properties": {
-            "enabled": {
-              "default": true,
-              "type": "boolean"
-            },
-            "endpoint": {
-              "type": "string"
-            },
-            "headers": {
-              "default": {},
-              "type": "object",
-              "additionalProperties": {
-                "type": "string"
-              }
-            },
-            "timeout_secs": {
-              "default": 30,
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            },
-            "transport": {
-              "type": "string",
-              "enum": [
-                "http"
-              ]
-            }
-          },
-          "additionalProperties": false
         }
       ]
     },
@@ -810,12 +864,40 @@
       ]
     },
     "PublicAgentConfig": {
+      "description": "Agent override or custom agent definition.",
       "type": "object",
       "properties": {
+        "color": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "description": {
           "default": null,
           "type": [
             "string",
+            "null"
+          ]
+        },
+        "disable": {
+          "description": "OpenCode-compatible negative toggle. Equivalent to `enable: false`.",
+          "default": false,
+          "type": "boolean"
+        },
+        "enable": {
+          "description": "Set false to disable this agent. Set true to document that a shipped default remains active. `enabled` is accepted as an alias.",
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "hidden": {
+          "default": null,
+          "type": [
+            "boolean",
             "null"
           ]
         },
@@ -828,12 +910,35 @@
           "format": "uint",
           "minimum": 0.0
         },
+        "mode": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AgentMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "model": {
           "default": null,
           "type": [
             "string",
             "null"
           ]
+        },
+        "name": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "options": {
+          "default": {},
+          "type": "object",
+          "additionalProperties": true
         },
         "permission": {
           "default": null,
@@ -871,10 +976,19 @@
         },
         "tools": {
           "default": [],
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+          "allOf": [
+            {
+              "$ref": "#/definitions/PublicAgentTools"
+            }
+          ]
+        },
+        "top_p": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
         },
         "use_small_model": {
           "default": false,
@@ -888,7 +1002,106 @@
           ]
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
+    },
+    "PublicAgentMap": {
+      "description": "Named agent definitions. Built-in OpenCode-compatible agents are explicit so editors can complete them, and custom names are accepted through the same shape.",
+      "type": "object",
+      "properties": {
+        "build": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "compaction": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "explore": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "general": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "plan": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "summary": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "PublicAgentTools": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "type": "boolean"
+          }
+        }
+      ]
     },
     "PublicPermissionConfig": {
       "type": "object",
@@ -974,7 +1187,7 @@
           "default": null,
           "anyOf": [
             {
-              "$ref": "#/definitions/PermissionMode"
+              "$ref": "#/definitions/PublicRulePermissionValue"
             },
             {
               "type": "null"
@@ -1089,7 +1302,7 @@
           "default": null,
           "anyOf": [
             {
-              "$ref": "#/definitions/PermissionMode"
+              "$ref": "#/definitions/PublicRulePermissionValue"
             },
             {
               "type": "null"
@@ -1194,6 +1407,13 @@
           }
         },
         "project_roots": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "urls": {
           "default": [],
           "type": "array",
           "items": {
