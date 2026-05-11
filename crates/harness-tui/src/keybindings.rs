@@ -73,6 +73,8 @@ pub enum Action {
     SessionChildCycle,
     SessionChildCycleReverse,
     SessionParent,
+    AgentCycle,
+    AgentCycleReverse,
     VariantCycle,
     AllowPermission,
     /// Deny permission in modal
@@ -124,6 +126,20 @@ impl Action {
                 label: "Switch model",
                 description: "Browse available provider/model options",
                 shortcut: "model",
+                section: PaletteCommandSection::Agent,
+            },
+            PaletteCommand {
+                id: "agent_cycle",
+                label: "Next agent",
+                description: "Cycle to the next primary agent",
+                shortcut: "tab",
+                section: PaletteCommandSection::Agent,
+            },
+            PaletteCommand {
+                id: "agent_cycle_reverse",
+                label: "Previous agent",
+                description: "Cycle to the previous primary agent",
+                shortcut: "shift+tab",
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -280,6 +296,8 @@ impl Action {
             Action::SessionChildCycle => "session_child_cycle",
             Action::SessionChildCycleReverse => "session_child_cycle_reverse",
             Action::SessionParent => "session_parent",
+            Action::AgentCycle => "agent_cycle",
+            Action::AgentCycleReverse => "agent_cycle_reverse",
             Action::VariantCycle => "variant_cycle",
             Action::AllowPermission => "allow_permission",
             Action::DenyPermission => "deny_permission",
@@ -301,6 +319,8 @@ impl Action {
             ("resume_session", "Continue a prior session when resumable"),
             ("replay_session", "Replay a previous session as read-only"),
             ("switch_model", "Browse available provider/model options"),
+            ("agent_cycle", "Cycle to the next primary agent"),
+            ("agent_cycle_reverse", "Cycle to the previous primary agent"),
             (
                 "cycle_variant",
                 "Cycle the configured model variant/reasoning preset",
@@ -427,6 +447,8 @@ impl FromStr for Action {
             "session_child_cycle" => Ok(Action::SessionChildCycle),
             "session_child_cycle_reverse" => Ok(Action::SessionChildCycleReverse),
             "session_parent" => Ok(Action::SessionParent),
+            "agent_cycle" => Ok(Action::AgentCycle),
+            "agent_cycle_reverse" => Ok(Action::AgentCycleReverse),
             "variant_cycle" => Ok(Action::VariantCycle),
             "allow_permission" => Ok(Action::AllowPermission),
             "deny_permission" => Ok(Action::DenyPermission),
@@ -562,13 +584,23 @@ impl KeyMap {
             Action::MoveUp,
         );
 
-        // Focus cycling
+        // Agent cycling (Opencode-compatible primary-agent switching)
         keymap.bind(
             KeyBinding::new(KeyCode::Tab, KeyModifiers::NONE),
-            Action::FocusNext,
+            Action::AgentCycle,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::BackTab, KeyModifiers::NONE),
+            Action::AgentCycleReverse,
+        );
+
+        // Focus cycling remains available on explicit control chords.
+        keymap.bind(
+            KeyBinding::new(KeyCode::Tab, KeyModifiers::CONTROL),
+            Action::FocusNext,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::BackTab, KeyModifiers::CONTROL),
             Action::FocusPrev,
         );
 
@@ -987,6 +1019,39 @@ mod tests {
         assert_eq!(
             keymap.get_action(&KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
             Some(Action::VariantCycle)
+        );
+    }
+
+    #[test]
+    fn keymap_binds_tab_to_agent_cycle_by_default() {
+        let keymap = KeyMap::with_defaults();
+
+        assert_eq!(
+            keymap.get_action(&KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
+            Some(Action::AgentCycle)
+        );
+        assert_eq!(
+            keymap.get_action(&KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE)),
+            Some(Action::AgentCycleReverse)
+        );
+        assert_eq!(keymap.get_binding_str(Action::AgentCycle), "Tab");
+        assert_eq!(
+            keymap.get_binding_str(Action::AgentCycleReverse),
+            "Shift-Tab"
+        );
+    }
+
+    #[test]
+    fn keymap_keeps_focus_cycle_on_control_tab() {
+        let keymap = KeyMap::with_defaults();
+
+        assert_eq!(
+            keymap.get_action(&KeyEvent::new(KeyCode::Tab, KeyModifiers::CONTROL)),
+            Some(Action::FocusNext)
+        );
+        assert_eq!(
+            keymap.get_action(&KeyEvent::new(KeyCode::BackTab, KeyModifiers::CONTROL)),
+            Some(Action::FocusPrev)
         );
     }
 

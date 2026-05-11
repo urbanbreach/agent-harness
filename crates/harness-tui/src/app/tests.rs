@@ -2553,6 +2553,61 @@ fn live_switch_model_labels_next_turn_only() {
 }
 
 #[test]
+fn tab_cycles_build_and_plan_primary_agents() {
+    let build_option =
+        runtime_context_model_option("build", "default", "gpt-5.4-mini", None, "GPT-5.4 Mini");
+    let plan_option =
+        runtime_context_model_option("plan", "default", "gpt-5.4-mini", None, "GPT-5.4 Mini");
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(None, false, None);
+    app.on_ui_intent = Some(sink);
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_option(&build_option)
+            .with_available_models(vec![build_option.clone(), plan_option])
+            .with_switchable_profiles(vec!["build".to_string(), "plan".to_string()]),
+    );
+
+    app.handle_key(key(KeyCode::Tab));
+
+    assert_eq!(app.active_profile(), "plan");
+    assert_eq!(app.current_agent_label().as_deref(), Some("Plan"));
+    {
+        let intents = intents.lock().expect("lock intents");
+        let [UiIntent::SwitchModel {
+            profile,
+            launch_metadata,
+        }] = intents.as_slice()
+        else {
+            panic!("expected one switch-model intent: {intents:?}");
+        };
+        assert_eq!(profile, "plan");
+        assert_eq!(launch_metadata.profile(), "plan");
+        assert_eq!(launch_metadata.switchable_profiles(), &["build", "plan"]);
+    }
+
+    app.handle_key(key(KeyCode::BackTab));
+
+    assert_eq!(app.active_profile(), "build");
+    let intents = intents.lock().expect("lock intents");
+    let Some(UiIntent::SwitchModel {
+        profile,
+        launch_metadata,
+    }) = intents.get(1)
+    else {
+        panic!("expected second switch-model intent: {intents:?}");
+    };
+    assert_eq!(profile, "build");
+    assert_eq!(launch_metadata.profile(), "build");
+}
+
+#[test]
 fn focus_returns_after_palette_close() {
     let mut app = AppState::new_live(None, false, None);
     app.focus = Focus::Details;

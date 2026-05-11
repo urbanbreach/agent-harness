@@ -3470,6 +3470,12 @@ impl AppState {
             Action::SessionParent => {
                 self.navigate_to_parent_session();
             }
+            Action::AgentCycle => {
+                self.cycle_agent(false);
+            }
+            Action::AgentCycleReverse => {
+                self.cycle_agent(true);
+            }
             Action::VariantCycle => {
                 self.cycle_variant();
             }
@@ -4324,15 +4330,15 @@ pub(crate) fn exact_test_compact_operator_rail_skips_focus_cycle() {
     assert_eq!(live.focus, Focus::Prompt);
     assert!(!live.details_drawer_open());
 
-    live.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    live.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::CONTROL));
     assert_eq!(live.focus, Focus::Details);
     assert!(!live.details_drawer_open());
 
-    live.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    live.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::CONTROL));
     assert_eq!(live.focus, Focus::Prompt);
     assert!(!live.details_drawer_open());
 
-    live.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE));
+    live.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::CONTROL));
     assert_eq!(live.focus, Focus::Details);
     assert!(!live.details_drawer_open());
 
@@ -4341,16 +4347,16 @@ pub(crate) fn exact_test_compact_operator_rail_skips_focus_cycle() {
     live_overlay.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
     assert!(live_overlay.details_drawer_open());
 
-    live_overlay.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    live_overlay.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::CONTROL));
     assert_eq!(live_overlay.focus, Focus::List);
     assert!(live_overlay.details_drawer_open());
 
     let mut replay = AppState::new_replay(PathBuf::from("/tmp/replay-session"), Vec::new());
     assert_eq!(replay.focus, Focus::Details);
 
-    replay.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    replay.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::CONTROL));
     assert_eq!(replay.focus, Focus::Details);
 
-    replay.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE));
+    replay.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::CONTROL));
     assert_eq!(replay.focus, Focus::Details);
 }

@@ -276,6 +276,7 @@ pub struct LaunchMetadata {
     recommended_for: Option<String>,
     mode_label: Option<String>,
     available_models: Vec<ModelOption>,
+    switchable_profiles: Vec<String>,
     mcp_resources: Vec<McpResourceOption>,
 }
 
@@ -317,6 +318,7 @@ impl LaunchMetadata {
             recommended_for: None,
             mode_label: None,
             available_models: Vec::new(),
+            switchable_profiles: Vec::new(),
             mcp_resources: Vec::new(),
         };
         metadata.apply_registered_metadata();
@@ -351,6 +353,7 @@ impl LaunchMetadata {
             recommended_for: option.recommended_for.clone(),
             mode_label: None,
             available_models: Vec::new(),
+            switchable_profiles: Vec::new(),
             mcp_resources: Vec::new(),
         }
     }
@@ -367,6 +370,11 @@ impl LaunchMetadata {
 
     pub fn with_available_models(mut self, available_models: Vec<ModelOption>) -> Self {
         self.available_models = available_models;
+        self
+    }
+
+    pub fn with_switchable_profiles(mut self, switchable_profiles: Vec<String>) -> Self {
+        self.switchable_profiles = switchable_profiles;
         self
     }
 
@@ -478,6 +486,10 @@ impl LaunchMetadata {
 
     pub fn available_models(&self) -> &[ModelOption] {
         &self.available_models
+    }
+
+    pub fn switchable_profiles(&self) -> &[String] {
+        &self.switchable_profiles
     }
 
     pub fn mcp_resources(&self) -> &[McpResourceOption] {
@@ -2188,7 +2200,8 @@ impl AppState {
 
     fn build_launch_metadata_for_option(&self, selected_model: &ModelOption) -> LaunchMetadata {
         let mut launch_metadata = LaunchMetadata::from_model_option(selected_model)
-            .with_available_models(self.launch_metadata.available_models().to_vec());
+            .with_available_models(self.launch_metadata.available_models().to_vec())
+            .with_switchable_profiles(self.launch_metadata.switchable_profiles().to_vec());
         if let Some(mode_label) = self.launch_metadata.mode_label().map(str::to_owned) {
             launch_metadata = launch_metadata.with_mode_label(mode_label);
         }
@@ -2284,6 +2297,109 @@ impl AppState {
             None => variants[0].clone(),
         };
         self.apply_selected_model_option(selected_model, !self.replay_mode);
+    }
+
+    pub(super) fn cycle_agent(&mut self, reverse: bool) {
+        if self.replay_mode {
+            return;
+        }
+
+        let profiles = self.switchable_agent_profiles();
+        if profiles.len() < 2 {
+            return;
+        }
+
+        let current_profile = self.active_profile();
+        let current_index = profiles
+            .iter()
+            .position(|profile| profile == current_profile)
+            .unwrap_or(0);
+        let next_index = if reverse {
+            current_index
+                .checked_sub(1)
+                .unwrap_or_else(|| profiles.len().saturating_sub(1))
+        } else {
+            (current_index + 1) % profiles.len()
+        };
+
+        let Some(selected_model) = self.model_option_for_agent_profile(&profiles[next_index])
+        else {
+            return;
+        };
+        self.apply_selected_model_option(selected_model, true);
+    }
+
+    fn switchable_agent_profiles(&self) -> Vec<String> {
+        let mut profiles = self
+            .launch_metadata
+            .switchable_profiles()
+            .iter()
+            .filter_map(|profile| non_empty_trimmed(profile))
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+
+        if profiles.is_empty() {
+            for candidate in ["build", "plan"] {
+                if self
+                    .launch_metadata
+                    .available_models()
+                    .iter()
+                    .any(|option| option.profile == candidate)
+                {
+                    profiles.push(candidate.to_string());
+                }
+            }
+        }
+
+        if profiles.is_empty() {
+            profiles.push(self.active_profile().to_string());
+        }
+
+        let mut deduped = Vec::new();
+        for profile in profiles {
+            if !deduped.contains(&profile) {
+                deduped.push(profile);
+            }
+        }
+        deduped
+    }
+
+    fn model_option_for_agent_profile(&self, profile: &str) -> Option<ModelOption> {
+        let available = self.launch_metadata.available_models();
+        let provider = self.launch_metadata.provider();
+        let model = self.launch_metadata.model();
+        let variant = self.current_model_variant();
+
+        available
+            .iter()
+            .find(|option| {
+                option.profile == profile
+                    && option.provider == provider
+                    && Some(option.model.as_str()) == model
+                    && option.variant() == variant
+            })
+            .cloned()
+            .or_else(|| {
+                available
+                    .iter()
+                    .find(|option| {
+                        option.profile == profile
+                            && option.provider == provider
+                            && Some(option.model.as_str()) == model
+                    })
+                    .cloned()
+            })
+            .or_else(|| {
+                available
+                    .iter()
+                    .find(|option| option.profile == profile)
+                    .cloned()
+            })
+            .or_else(|| {
+                self.launch_metadata
+                    .to_model_option()
+                    .map(|option| option.with_profile(profile.to_string()))
+            })
     }
 
     fn current_session_snapshot(&self) -> Option<SessionNavigationSnapshot> {
@@ -3333,7 +3449,8 @@ fn infer_launch_metadata_from_events(
         });
 
     let mut launch_metadata = LaunchMetadata::new(profile, provider, model)
-        .with_available_models(fallback.available_models().to_vec());
+        .with_available_models(fallback.available_models().to_vec())
+        .with_switchable_profiles(fallback.switchable_profiles().to_vec());
     if let Some(mode_label) = fallback.mode_label().map(str::to_owned) {
         launch_metadata = launch_metadata.with_mode_label(mode_label);
     }
@@ -3380,7 +3497,8 @@ fn launch_metadata_from_recorded_runtime_context(
         text_verbosity: recorded_runtime_context.text_verbosity.clone(),
         recommended_for: recorded_runtime_context.recommended_for.clone(),
     })
-    .with_available_models(fallback.available_models().to_vec());
+    .with_available_models(fallback.available_models().to_vec())
+    .with_switchable_profiles(fallback.switchable_profiles().to_vec());
     if let Some(mode_label) = fallback.mode_label().map(str::to_owned) {
         launch_metadata = launch_metadata.with_mode_label(mode_label);
     }
