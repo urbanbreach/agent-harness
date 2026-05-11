@@ -599,6 +599,7 @@ fn apply_model_selection_to_launch_metadata(
     };
     LaunchMetadata::from_model_option(option)
         .with_available_models(launch_metadata.available_models().to_vec())
+        .with_switchable_profiles(launch_metadata.switchable_profiles().to_vec())
 }
 
 fn matching_persisted_model_option<'a>(
@@ -667,7 +668,57 @@ fn interactive_launch_metadata(
             )
         });
 
-    Ok(launch_metadata.with_available_models(available_models))
+    Ok(launch_metadata
+        .with_available_models(available_models)
+        .with_switchable_profiles(switchable_profile_names(config, agent_profiles, profile)))
+}
+
+fn switchable_profile_names(
+    config: Option<&HarnessConfig>,
+    agent_profiles: &BTreeMap<String, AgentProfile>,
+    selected_profile: &str,
+) -> Vec<String> {
+    let mut profiles = config
+        .map(|config| {
+            config
+                .agents
+                .iter()
+                .filter(|(name, profile)| {
+                    agent_profiles.contains_key(name.as_str())
+                        && !profile.hidden
+                        && !profile.mode.is_subagent_only()
+                        && name.as_str() != harness_core::session_title::TITLE_AGENT_NAME
+                })
+                .map(|(name, _)| name.clone())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    if profiles.is_empty() {
+        profiles = ["build", "plan"]
+            .into_iter()
+            .filter(|profile| agent_profiles.contains_key(*profile))
+            .map(str::to_string)
+            .collect();
+    }
+
+    if profiles.is_empty() && agent_profiles.contains_key(selected_profile) {
+        profiles.push(selected_profile.to_string());
+    }
+
+    let mut ordered = Vec::new();
+    if let Some(index) = profiles
+        .iter()
+        .position(|profile| profile == selected_profile)
+    {
+        ordered.push(profiles.remove(index));
+    }
+    for profile in profiles {
+        if !ordered.contains(&profile) {
+            ordered.push(profile);
+        }
+    }
+    ordered
 }
 
 fn model_options_for_profiles(
@@ -3851,6 +3902,31 @@ mod tests {
         assert_eq!(restored.model(), Some("gpt-5.4-mini"));
         assert_eq!(restored.variant(), Some("high"));
         assert_eq!(restored.reasoning_effort(), Some("high"));
+    }
+
+    #[test]
+    fn persisted_model_selection_preserves_switchable_profiles() {
+        let base = LaunchMetadata::from_model_ref("ops", "default:gpt-5.4")
+            .with_available_models(vec![ModelOption::from_model_ref("ops", "default:gpt-5.4")])
+            .with_switchable_profiles(vec![
+                "ops".to_string(),
+                "build".to_string(),
+                "plan".to_string(),
+            ]);
+
+        let restored = apply_model_selection_to_launch_metadata(
+            base,
+            &PersistedModelSelection {
+                schema_version: 1,
+                profile: "ops".to_string(),
+                provider: "default".to_string(),
+                model: "gpt-5.4".to_string(),
+                variant: None,
+            },
+        );
+
+        assert_eq!(restored.profile(), "ops");
+        assert_eq!(restored.switchable_profiles(), ["ops", "build", "plan"]);
     }
 
     #[test]
