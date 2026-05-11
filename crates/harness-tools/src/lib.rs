@@ -83,7 +83,7 @@ use native_tools::{
 };
 
 mod plan;
-use plan::PlanExitTool;
+use plan::{PlanEnterTool, PlanExitTool};
 
 pub use harness_core::tool::canonical_tool_id_for;
 
@@ -160,6 +160,7 @@ pub fn coordinator_registry_with_mcp_and_editing(
     registry.register(Arc::new(BackgroundOutputTool::new(
         agent_ops_executor.clone(),
     )));
+    registry.register(Arc::new(PlanEnterTool));
     registry.register(Arc::new(PlanExitTool));
     registry.register(Arc::new(HashlineEditTool));
     registry.register(Arc::new(ShellRunTool::new(shell_allowlist.clone())));

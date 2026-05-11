@@ -13,7 +13,9 @@ use common::{
 use harness_core::agent::{AgentModelSettings, AgentProfile};
 use harness_core::clock::RealClock;
 use harness_core::config::{PermissionMode, ShellAllowlist};
-use harness_core::coord::{spawn_coordinator, CoordinatorConfig, CoordinatorHandle, RunInfo};
+use harness_core::coord::{
+    spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle, RunInfo,
+};
 use harness_core::event::{EventV1, PermissionDecision as EventPermissionDecision, ToolCallStatus};
 use harness_core::perm::PermissionPolicy;
 use harness_core::redact::DefaultRedactor;
@@ -175,7 +177,7 @@ fn plan_task_profiles() -> BTreeMap<String, AgentProfile> {
     BTreeMap::from([
         (
             "plan".to_string(),
-            named_worker_profile("plan", &["task", "background_output"]),
+            named_worker_profile("plan", &["task", "background_output", "bash"]),
         ),
         (
             "explore".to_string(),
@@ -184,6 +186,10 @@ fn plan_task_profiles() -> BTreeMap<String, AgentProfile> {
         (
             "general".to_string(),
             named_worker_profile("general", &["read", "bash"]),
+        ),
+        (
+            "custom_writer".to_string(),
+            named_worker_profile("custom_writer", &["read", "edit"]),
         ),
     ])
 }
@@ -435,10 +441,12 @@ async fn native_plan_exit_switches_to_build_agent_after_approval() {
         output["plan_file"],
         format!(".agent-harness/plans/{}.md", run.run_id)
     );
+    assert_eq!(output["approved"], true);
     let build_agent_id = output["build_agent_id"]
         .as_str()
         .expect("build agent id")
         .to_string();
+    assert!(output["request_id"].as_str().is_some());
 
     assert!(events.iter().any(|event| matches!(
         &event.payload,
@@ -451,12 +459,226 @@ async fn native_plan_exit_switches_to_build_agent_after_approval() {
         &event.payload,
         EventV1::UserMessageSubmitted(payload)
             if payload.text.contains("Your operational mode has changed from plan to build")
+                && payload.text.contains("has been approved, and you can now edit files")
                 && payload.text.contains(".agent-harness/plans/")
     )));
 }
 
 #[tokio::test]
-async fn plan_profile_can_spawn_explore_but_cannot_use_bash() {
+async fn native_plan_exit_decline_leaves_plan_agent_active_without_spawning_build() {
+    let _guard = env_lock().lock().await;
+    let _answers = EnvGuard::set(&[("HARNESS_QUESTION_ANSWERS", Some(r#"[["No"]]"#))]);
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let session_dir = workspace.join("sessions");
+    fs::create_dir_all(&session_dir).expect("session dir");
+
+    let mut config = CoordinatorConfig::new(session_dir);
+    config.permission_policy = plan_mode_permission_policy();
+    config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
+    config.agent_profiles = BTreeMap::from([
+        (
+            "plan".to_string(),
+            named_worker_profile("plan", &["plan_exit"]),
+        ),
+        ("build".to_string(), named_worker_profile("build", &[])),
+    ]);
+
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(RealClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = handle
+        .start_run("native_plan_exit_decline", &workspace)
+        .await
+        .expect("start run");
+    let plan_agent_id = handle
+        .spawn_agent_idle(anonymous_supervisor_actor(), "plan", None)
+        .await
+        .expect("spawn plan");
+
+    let tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&plan_agent_id),
+            Some("plan".to_string()),
+            "plan_exit",
+            json!({}),
+        )
+        .await
+        .expect("request plan_exit");
+    wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
+
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &tool_call_id);
+    assert_eq!(finished.status, ToolCallStatus::Succeeded);
+    let output = finished.output_json.expect("plan_exit structured output");
+    assert_eq!(output["agent"], "plan");
+    assert_eq!(output["approved"], false);
+    assert_eq!(
+        output["plan_file"],
+        format!(".agent-harness/plans/{}.md", run.run_id)
+    );
+    assert!(!events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::AgentSpawned(payload) if payload.profile == "build"
+    )));
+    assert!(!events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::UserMessageSubmitted(payload)
+            if payload.text.contains("Your operational mode has changed from plan to build")
+    )));
+}
+
+#[tokio::test]
+async fn native_plan_enter_switches_to_plan_agent_after_approval() {
+    let _guard = env_lock().lock().await;
+    let _answers = EnvGuard::set(&[("HARNESS_QUESTION_ANSWERS", Some(r#"[["Yes"]]"#))]);
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let session_dir = workspace.join("sessions");
+    fs::create_dir_all(&session_dir).expect("session dir");
+
+    let mut config = CoordinatorConfig::new(session_dir);
+    config.permission_policy = plan_mode_permission_policy();
+    config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
+    config.agent_profiles = BTreeMap::from([
+        (
+            "build".to_string(),
+            named_worker_profile("build", &["plan_enter"]),
+        ),
+        (
+            "plan".to_string(),
+            named_worker_profile("plan", &["plan_exit"]),
+        ),
+    ]);
+
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(RealClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = handle
+        .start_run("native_plan_enter", &workspace)
+        .await
+        .expect("start run");
+    let build_agent_id = handle
+        .spawn_agent_idle(anonymous_supervisor_actor(), "build", None)
+        .await
+        .expect("spawn build");
+
+    let tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&build_agent_id),
+            Some("build".to_string()),
+            "plan_enter",
+            json!({"goal": "implement parity", "reason": "multi-file change"}),
+        )
+        .await
+        .expect("request plan_enter");
+    wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
+
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &tool_call_id);
+    assert_eq!(finished.status, ToolCallStatus::Succeeded);
+    let output = finished.output_json.expect("plan_enter structured output");
+    assert_eq!(output["agent"], "plan");
+    assert_eq!(output["goal"], "implement parity");
+    assert_eq!(output["approved"], true);
+    assert_eq!(
+        output["plan_file"],
+        format!(".agent-harness/plans/{}.md", run.run_id)
+    );
+    let plan_agent_id = output["plan_agent_id"]
+        .as_str()
+        .expect("plan agent id")
+        .to_string();
+    assert!(output["request_id"].as_str().is_some());
+
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::AgentSpawned(payload)
+            if payload.agent_id == plan_agent_id
+                && payload.profile == "plan"
+                && payload.parent_agent_id.as_deref() == Some(build_agent_id.as_str())
+    )));
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::UserMessageSubmitted(payload)
+            if payload.text.contains("Your operational mode has changed from build to plan")
+                && payload.text.contains("Original goal to plan: implement parity")
+                && payload.text.contains(".agent-harness/plans/")
+    )));
+}
+
+#[tokio::test]
+async fn native_plan_enter_decline_leaves_build_agent_active_without_spawning_plan() {
+    let _guard = env_lock().lock().await;
+    let _answers = EnvGuard::set(&[("HARNESS_QUESTION_ANSWERS", Some(r#"[["No"]]"#))]);
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let session_dir = workspace.join("sessions");
+    fs::create_dir_all(&session_dir).expect("session dir");
+
+    let mut config = CoordinatorConfig::new(session_dir);
+    config.permission_policy = plan_mode_permission_policy();
+    config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
+    config.agent_profiles = BTreeMap::from([
+        (
+            "build".to_string(),
+            named_worker_profile("build", &["plan_enter"]),
+        ),
+        (
+            "plan".to_string(),
+            named_worker_profile("plan", &["plan_exit"]),
+        ),
+    ]);
+
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(RealClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = handle
+        .start_run("native_plan_enter_decline", &workspace)
+        .await
+        .expect("start run");
+    let build_agent_id = handle
+        .spawn_agent_idle(anonymous_supervisor_actor(), "build", None)
+        .await
+        .expect("spawn build");
+
+    let tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&build_agent_id),
+            Some("build".to_string()),
+            "plan_enter",
+            json!({"goal": "implement parity"}),
+        )
+        .await
+        .expect("request plan_enter");
+    wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
+
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &tool_call_id);
+    assert_eq!(finished.status, ToolCallStatus::Succeeded);
+    let output = finished.output_json.expect("plan_enter structured output");
+    assert_eq!(output["agent"], "build");
+    assert_eq!(output["approved"], false);
+    assert_eq!(output["goal"], "implement parity");
+    assert!(!events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::AgentSpawned(payload) if payload.profile == "plan"
+    )));
+    assert!(!events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::UserMessageSubmitted(payload)
+            if payload.text.contains("Your operational mode has changed from build to plan")
+    )));
+}
+
+#[tokio::test]
+async fn plan_profile_can_spawn_explore_but_bash_is_permission_denied() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let session_dir = workspace.join("sessions");
@@ -486,13 +708,22 @@ async fn plan_profile_can_spawn_explore_but_cannot_use_bash() {
             worker_actor(&plan_agent_id),
             Some("plan".to_string()),
             "bash",
-            json!({"command": "true", "description": "try bash"}),
+            json!({"command": "touch outside-plan", "description": "try mutating bash"}),
         )
         .await
-        .expect_err("plan profile must not be able to call bash");
-    assert!(denied
-        .to_string()
-        .contains("tool `bash` is not in worker toolset"));
+        .expect_err("plan profile mutating bash must be permission denied");
+    match denied {
+        CoordinatorError::PermissionDenied(_) => {}
+        other => panic!("expected PermissionDenied, got {other:?}"),
+    }
+    let events = read_events(&run.events_path);
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::PermissionResolved(data)
+            if data.decision == EventPermissionDecision::Deny
+                && data.reason.as_deref().is_some_and(|reason|
+                    reason.contains("read-only inspection commands"))
+    )));
 
     let task_tool_call_id = handle
         .request_tool_call(
@@ -553,6 +784,36 @@ async fn plan_profile_can_spawn_explore_but_cannot_use_bash() {
     assert!(!events.iter().any(|event| matches!(
         &event.payload,
         EventV1::AgentSpawned(payload) if payload.profile == "general"
+    )));
+
+    let denied_custom = handle
+        .request_tool_call(
+            worker_actor(&plan_agent_id),
+            Some("plan".to_string()),
+            "task",
+            json!({
+                "subagent_type": "custom_writer",
+                "description": "Custom child",
+                "prompt": "Try user-defined write-capable delegation",
+                "run_in_background": true,
+                "load_skills": []
+            }),
+        )
+        .await
+        .expect("plan profile can request custom task policy denial");
+    wait_for_tool_call_finish(&run.events_path, &denied_custom).await;
+
+    let events = read_events(&run.events_path);
+    let denied_custom_finished = find_finished(&events, &denied_custom);
+    assert_eq!(denied_custom_finished.status, ToolCallStatus::Failed);
+    assert!(denied_custom_finished
+        .output_summary
+        .as_deref()
+        .unwrap_or_default()
+        .contains("Plan mode may only delegate to the read-only `explore` profile"));
+    assert!(!events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::AgentSpawned(payload) if payload.profile == "custom_writer"
     )));
 }
 
