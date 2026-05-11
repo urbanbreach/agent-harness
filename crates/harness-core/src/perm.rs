@@ -203,6 +203,7 @@ pub enum PolicyDecision {
 pub enum PermissionRuleRequest {
     ShellCommand(String),
     WorkspacePath(String),
+    TaskAgent(String),
 }
 
 #[derive(Debug, Clone)]
@@ -391,19 +392,30 @@ fn rule_mode_for_kind<'a>(
             &rules.shell,
             selector.and_then(|selector| match selector {
                 PermissionRuleRequest::ShellCommand(command) => Some(command.as_str()),
-                PermissionRuleRequest::WorkspacePath(_) => None,
+                PermissionRuleRequest::WorkspacePath(_) | PermissionRuleRequest::TaskAgent(_) => {
+                    None
+                }
             }),
         ),
         PermissionKind::EditFs => selector_rule_mode(
             &rules.edit,
             selector.and_then(|selector| match selector {
                 PermissionRuleRequest::WorkspacePath(path) => Some(path.as_str()),
-                PermissionRuleRequest::ShellCommand(_) => None,
+                PermissionRuleRequest::ShellCommand(_) | PermissionRuleRequest::TaskAgent(_) => {
+                    None
+                }
+            }),
+        ),
+        PermissionKind::Task => selector_rule_mode(
+            &rules.task,
+            selector.and_then(|selector| match selector {
+                PermissionRuleRequest::TaskAgent(agent) => Some(agent.as_str()),
+                PermissionRuleRequest::ShellCommand(_)
+                | PermissionRuleRequest::WorkspacePath(_) => None,
             }),
         ),
         PermissionKind::Network
         | PermissionKind::Question
-        | PermissionKind::Task
         | PermissionKind::WebFetch
         | PermissionKind::WebSearch
         | PermissionKind::CodeSearch
@@ -422,29 +434,50 @@ fn selector_rule_mode<'a>(
             .map(|rule| &rule.mode);
     };
 
-    if let Some(rule) = rules.iter().find(
-        |rule| matches!(&rule.selector, PermissionSelector::Exact(selector) if selector == value),
-    ) {
-        return Some(&rule.mode);
-    }
-
-    if let Some(rule) = rules
-        .iter()
-        .filter(|rule| {
-            matches!(&rule.selector, PermissionSelector::Prefix(prefix) if value.starts_with(prefix))
-        })
-        .max_by_key(|rule| match &rule.selector {
-            PermissionSelector::Prefix(prefix) => prefix.len(),
-            PermissionSelector::Exact(_) | PermissionSelector::CatchAll => 0,
-        })
-    {
-        return Some(&rule.mode);
-    }
-
     rules
         .iter()
-        .find(|rule| matches!(rule.selector, PermissionSelector::CatchAll))
+        .rfind(|rule| permission_selector_matches(&rule.selector, value))
         .map(|rule| &rule.mode)
+}
+
+fn permission_selector_matches(selector: &PermissionSelector, value: &str) -> bool {
+    match selector {
+        PermissionSelector::Exact(selector) => selector == value,
+        PermissionSelector::Prefix(prefix) => value.starts_with(prefix),
+        PermissionSelector::Glob(pattern) => glob_matches(pattern, value),
+        PermissionSelector::CatchAll => true,
+    }
+}
+
+fn glob_matches(pattern: &str, value: &str) -> bool {
+    if pattern == "*" {
+        return true;
+    }
+    let mut remainder = value;
+    let mut parts = pattern.split('*').peekable();
+    let mut anchored_start = !pattern.starts_with('*');
+    while let Some(part) = parts.next() {
+        if part.is_empty() {
+            anchored_start = false;
+            continue;
+        }
+        if anchored_start {
+            let Some(next) = remainder.strip_prefix(part) else {
+                return false;
+            };
+            remainder = next;
+            anchored_start = false;
+            continue;
+        }
+        let Some(index) = remainder.find(part) else {
+            return false;
+        };
+        remainder = &remainder[index + part.len()..];
+        if parts.peek().is_none() && !pattern.ends_with('*') {
+            return remainder.is_empty();
+        }
+    }
+    pattern.ends_with('*') || remainder.is_empty()
 }
 
 impl Default for PermissionPolicy {
@@ -680,6 +713,7 @@ mod tests {
                         },
                     ],
                     edit: Vec::new(),
+                    task: Vec::new(),
                 },
                 ..CategoryPermissions::default()
             },
@@ -712,6 +746,64 @@ mod tests {
                 Some(&PermissionRuleRequest::ShellCommand(
                     "git status".to_string()
                 ))
+            ),
+            PolicyDecision::Deny
+        );
+    }
+
+    #[test]
+    fn permission_rule_precedence_for_task_exact_glob_and_catch_all() {
+        let policy = PermissionPolicy::new(
+            PermissionMode::Allow,
+            PermissionMode::Allow,
+            PermissionMode::Deny,
+        )
+        .with_category_override(
+            "build",
+            CategoryPermissions {
+                rules: PermissionRuleSet {
+                    shell: Vec::new(),
+                    edit: Vec::new(),
+                    task: vec![
+                        PermissionSelectorRule {
+                            selector: PermissionSelector::CatchAll,
+                            mode: PermissionMode::Deny,
+                        },
+                        PermissionSelectorRule {
+                            selector: PermissionSelector::Glob("review-*".to_string()),
+                            mode: PermissionMode::Ask,
+                        },
+                        PermissionSelectorRule {
+                            selector: PermissionSelector::Exact("review-code".to_string()),
+                            mode: PermissionMode::Allow,
+                        },
+                    ],
+                },
+                ..CategoryPermissions::default()
+            },
+        );
+
+        assert_eq!(
+            policy.evaluate_request(
+                Some("build"),
+                PermissionKind::Task,
+                Some(&PermissionRuleRequest::TaskAgent("review-code".to_string()))
+            ),
+            PolicyDecision::Allow
+        );
+        assert_eq!(
+            policy.evaluate_request(
+                Some("build"),
+                PermissionKind::Task,
+                Some(&PermissionRuleRequest::TaskAgent("review-docs".to_string()))
+            ),
+            ask_decision(0)
+        );
+        assert_eq!(
+            policy.evaluate_request(
+                Some("build"),
+                PermissionKind::Task,
+                Some(&PermissionRuleRequest::TaskAgent("build".to_string()))
             ),
             PolicyDecision::Deny
         );
@@ -758,6 +850,7 @@ mod tests {
                             mode: PermissionMode::Ask,
                         },
                     ],
+                    task: Vec::new(),
                 },
                 ..CategoryPermissions::default()
             },
