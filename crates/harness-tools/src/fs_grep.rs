@@ -1,5 +1,4 @@
 use std::collections::BTreeSet;
-use std::io::BufRead;
 use std::path::Path;
 
 use async_trait::async_trait;
@@ -318,40 +317,17 @@ fn render_grep_line(relative_path: &str, lines: &[String], line_idx: usize) -> S
 }
 
 fn read_utf8_lines(path: &Path) -> Result<Utf8FileLines, ToolError> {
-    let file = std::fs::File::open(path).map_err(|err| {
+    let bytes = std::fs::read(path).map_err(|err| {
         ToolError::Execution(format!("failed to read file {}: {err}", path.display()))
     })?;
-    let mut reader = std::io::BufReader::new(file);
-    let mut raw_line = Vec::new();
-    let mut lines = Vec::new();
 
-    loop {
-        raw_line.clear();
-        let bytes_read = reader.read_until(b'\n', &mut raw_line).map_err(|err| {
-            ToolError::Execution(format!("failed to read file {}: {err}", path.display()))
-        })?;
-        if bytes_read == 0 {
-            break;
-        }
-        let Some(line) = decode_utf8_line(raw_line.as_slice()) else {
-            return Ok(Utf8FileLines::NonUtf8);
-        };
-        lines.push(line);
-    }
+    let Ok(text) = String::from_utf8(bytes) else {
+        return Ok(Utf8FileLines::NonUtf8);
+    };
 
-    Ok(Utf8FileLines::Lines(lines))
-}
-
-fn decode_utf8_line(raw_line: &[u8]) -> Option<String> {
-    let mut line = raw_line;
-    if let Some(stripped) = line.strip_suffix(b"\n") {
-        line = stripped;
-        if let Some(stripped) = line.strip_suffix(b"\r") {
-            line = stripped;
-        }
-    }
-
-    std::str::from_utf8(line).ok().map(ToOwned::to_owned)
+    Ok(Utf8FileLines::Lines(
+        text.lines().map(str::to_owned).collect(),
+    ))
 }
 
 #[cfg(test)]
