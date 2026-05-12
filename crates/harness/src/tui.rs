@@ -14,7 +14,8 @@ use clap::Args;
 use harness_core::agent::{AgentModelSettings, AgentProfile};
 use harness_core::clock::{Clock, Determinism, FakeClock, RealClock};
 use harness_core::config::{
-    configured_model_catalog, resolve_profile_model_metadata, HarnessConfig, ShellAllowlist,
+    configured_model_catalog, resolve_profile_model_metadata, AgentMode, HarnessConfig,
+    ShellAllowlist,
 };
 use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle,
@@ -33,7 +34,7 @@ use harness_core::store::{EventStore, EventStoreError};
 use harness_tools::coordinator_registry;
 use harness_tui::app::{
     set_pending_live_launch_metadata, set_pending_live_prompt_auto_submit, LaunchMetadata,
-    ModelOption, SessionHistoryEntry,
+    ModelOption, SessionHistoryEntry, ToggleEntryConfig, ToggleEntryKind, TogglesConfig,
 };
 use harness_tui::{
     close_preserved_terminal_session, run_tui_with_options, set_pending_replay_launch_metadata,
@@ -151,6 +152,7 @@ struct LiveSettings {
     config_digest: String,
     launch_metadata: LaunchMetadata,
     launch_mode_label: Option<String>,
+    toggles: TogglesConfig,
 }
 
 struct LiveBootstrap {
@@ -373,6 +375,7 @@ fn execute_replay_mode(run_dir: &Path, exit_on_finish: bool) -> ExitCode {
         exit_on_finish,
         on_ui_intent: None,
         keybindings: None,
+        toggles: None,
         preserve_terminal_on_exit: false,
     }) {
         eprintln!("TUI error: {err}");
@@ -468,6 +471,7 @@ fn resolve_live_settings(
     } else {
         launch_metadata
     };
+    let toggles = runtime_toggles_config(live_config.as_ref());
 
     Ok(LiveSettings {
         config: live_config,
@@ -479,7 +483,90 @@ fn resolve_live_settings(
         config_digest,
         launch_metadata,
         launch_mode_label,
+        toggles,
     })
+}
+
+fn runtime_toggles_config(config: Option<&HarnessConfig>) -> TogglesConfig {
+    let mut toggles = TogglesConfig::default();
+    let Some(config) = config else {
+        return toggles;
+    };
+
+    for (name, profile) in &config.agents {
+        if profile.hidden {
+            continue;
+        }
+        if !matches!(profile.mode, AgentMode::Subagent) {
+            toggles.entries.push(ToggleEntryConfig {
+                kind: ToggleEntryKind::Agent { name: name.clone() },
+                label: name.clone(),
+                description: profile.description.clone(),
+                enabled: true,
+            });
+        }
+        if !matches!(profile.mode, AgentMode::Primary) {
+            toggles.entries.push(ToggleEntryConfig {
+                kind: ToggleEntryKind::Subagent { name: name.clone() },
+                label: name.clone(),
+                description: profile.description.clone(),
+                enabled: true,
+            });
+        }
+        for tool in &profile.tools {
+            toggles.entries.push(ToggleEntryConfig {
+                kind: ToggleEntryKind::AgentTool {
+                    agent: name.clone(),
+                    tool: tool.clone(),
+                },
+                label: format!("{name}: {tool}"),
+                description: format!("Configured tool `{tool}` for `{name}`"),
+                enabled: true,
+            });
+        }
+        if profile.tools.iter().any(|tool| tool == "skill") {
+            let skills = if config.skills.permissions.is_empty() {
+                vec!["skill loading".to_string()]
+            } else {
+                config.skills.permissions.keys().cloned().collect()
+            };
+            for skill in skills {
+                toggles.entries.push(ToggleEntryConfig {
+                    kind: ToggleEntryKind::AgentSkill {
+                        agent: name.clone(),
+                        skill: skill.clone(),
+                    },
+                    label: format!("{name}: {skill}"),
+                    description: format!("Configured skill `{skill}` for `{name}`"),
+                    enabled: true,
+                });
+            }
+        }
+    }
+
+    for (index, hook) in config.hooks.lifecycle.iter().enumerate() {
+        let id = hook
+            .id
+            .clone()
+            .unwrap_or_else(|| format!("{} #{index}", hook.event.as_str()));
+        toggles.entries.push(ToggleEntryConfig {
+            kind: ToggleEntryKind::Hook { id: id.clone() },
+            label: id,
+            description: format!("{} lifecycle hook", hook.event.as_str()),
+            enabled: true,
+        });
+    }
+
+    for (name, server) in &config.integrations.mcp.servers {
+        toggles.entries.push(ToggleEntryConfig {
+            kind: ToggleEntryKind::McpServer { name: name.clone() },
+            label: name.clone(),
+            description: "Configured MCP server state".to_string(),
+            enabled: server.enabled(),
+        });
+    }
+
+    toggles
 }
 
 fn model_selection_state_path() -> Option<PathBuf> {
@@ -1229,6 +1316,7 @@ async fn run_startup_launcher(
             exit_on_finish,
             on_ui_intent: Some(on_ui_intent),
             keybindings: None,
+            toggles: None,
             preserve_terminal_on_exit: true,
         })
     })
@@ -1287,6 +1375,7 @@ async fn run_replay_tui(
             exit_on_finish,
             on_ui_intent: Some(on_ui_intent),
             keybindings: None,
+            toggles: None,
             preserve_terminal_on_exit: true,
         })
     })
@@ -1417,6 +1506,7 @@ async fn run_continue_session_bootstrap(
     );
 
     let exit_on_finish = cmd.exit_on_finish;
+    let toggles = Some(settings.toggles.clone());
     set_pending_live_launch_metadata(continue_metadata);
     let session_history_entries =
         load_live_session_history_entries(&run.run_dir, &settings.session_dir)?;
@@ -1430,6 +1520,7 @@ async fn run_continue_session_bootstrap(
             exit_on_finish,
             ui_intent_sender,
             true,
+            toggles,
         ))
     })
     .await
@@ -1461,6 +1552,7 @@ fn continue_live_tui_options(
     exit_on_finish: bool,
     ui_intent_sender: UiIntentSink,
     compact_session_supported: bool,
+    toggles: Option<TogglesConfig>,
 ) -> TuiOptions {
     TuiOptions {
         mode: TuiMode::Live {
@@ -1473,6 +1565,7 @@ fn continue_live_tui_options(
         exit_on_finish,
         on_ui_intent: Some(ui_intent_sender),
         keybindings: None,
+        toggles,
         preserve_terminal_on_exit: true,
     }
 }
@@ -1484,6 +1577,7 @@ fn new_live_tui_options(
     exit_on_finish: bool,
     ui_intent_sender: UiIntentSink,
     compact_session_supported: bool,
+    toggles: Option<TogglesConfig>,
 ) -> TuiOptions {
     TuiOptions {
         mode: TuiMode::Live {
@@ -1496,6 +1590,7 @@ fn new_live_tui_options(
         exit_on_finish,
         on_ui_intent: Some(ui_intent_sender),
         keybindings: None,
+        toggles,
         preserve_terminal_on_exit: true,
     }
 }
@@ -1773,6 +1868,7 @@ async fn run_new_live_session(
     );
 
     let exit_on_finish = cmd.exit_on_finish;
+    let toggles = Some(settings.toggles.clone());
     set_pending_live_launch_metadata(launch_metadata);
 
     let tui_result = tokio::task::spawn_blocking(move || {
@@ -1784,6 +1880,7 @@ async fn run_new_live_session(
             exit_on_finish,
             ui_intent_sender,
             true,
+            toggles,
         ))
     })
     .await;
@@ -2109,6 +2206,7 @@ async fn run_live_mode(
     };
 
     let exit_on_finish = cmd.exit_on_finish;
+    let toggles = Some(settings.toggles.clone());
     set_pending_live_launch_metadata(scenario_launch_metadata());
     let session_history_entries =
         load_live_session_history_entries(&run_dir, &settings.session_dir)?;
@@ -2122,6 +2220,7 @@ async fn run_live_mode(
             exit_on_finish,
             ui_intent_sender,
             false,
+            toggles,
         ))
     })
     .await
@@ -2922,6 +3021,7 @@ mod tests {
             false,
             Arc::clone(&sink),
             true,
+            None,
         );
         assert!(fresh.preserve_terminal_on_exit);
         assert!(matches!(
@@ -2941,6 +3041,7 @@ mod tests {
             false,
             sink,
             true,
+            None,
         );
         assert!(resumed.preserve_terminal_on_exit);
         assert!(matches!(
@@ -2959,7 +3060,8 @@ mod tests {
         let (_tx, rx) = std_mpsc::channel::<LiveUpdate>();
         let sink: UiIntentSink = Arc::new(|_| {});
 
-        let options = new_live_tui_options(run_dir.clone(), Vec::new(), rx, false, sink, true);
+        let options =
+            new_live_tui_options(run_dir.clone(), Vec::new(), rx, false, sink, true, None);
 
         let TuiMode::Live {
             run_dir: configured_run_dir,
@@ -3024,7 +3126,7 @@ mod tests {
         let (_tx, rx) = std_mpsc::channel::<LiveUpdate>();
         let sink: UiIntentSink = Arc::new(|_| {});
         let options =
-            continue_live_tui_options(child_dir, Vec::new(), entries, rx, false, sink, true);
+            continue_live_tui_options(child_dir, Vec::new(), entries, rx, false, sink, true, None);
 
         let TuiMode::Live {
             session_history_entries,
@@ -4057,6 +4159,7 @@ mod tests {
             launch_metadata: interactive_launch_metadata(None, &agent_profiles, "build")
                 .expect("launch metadata should build"),
             launch_mode_label: None,
+            toggles: TogglesConfig::default(),
         };
 
         let runtime = tokio::runtime::Builder::new_current_thread()
