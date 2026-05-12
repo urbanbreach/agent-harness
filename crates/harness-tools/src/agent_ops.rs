@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
-use harness_core::coord::{AgentRuntimeInfo, CoordinatorError};
+use harness_core::coord::{AgentRuntimeInfo, ChildTaskRequestMetadata, CoordinatorError};
 use harness_core::event::{ActorKind, EventActor, EventV1, TaskScheduleState, ToolCallStatus};
 use harness_core::store::{EventStoreError, EventStream};
 use harness_core::tool::{canonical_tool_id_for, ToolContext, ToolError, ToolResult};
@@ -59,7 +59,7 @@ impl AgentOpsExecutor {
         let model_override = inherited_model_override(ctx, &runtime);
         let request_id = ctx
             .coordinator
-            .request_agent_turn_with_model(
+            .request_child_agent_turn_with_model(
                 supervisor,
                 agent_id.clone(),
                 build_child_prompt(&request),
@@ -67,6 +67,15 @@ impl AgentOpsExecutor {
                     .as_ref()
                     .map(|(model_ref, _)| model_ref.clone()),
                 model_override.map(|(_, settings)| settings),
+                ChildTaskRequestMetadata {
+                    parent_tool_call_id: ctx.tool_call_id.clone(),
+                    parent_session_id: ctx.run_id.clone(),
+                    parent_agent_id: ctx.actor.agent_id.clone(),
+                    child_session_id: agent_id.clone(),
+                    task_id: agent_id.clone(),
+                    description: request.description.clone(),
+                    run_in_background: request.run_in_background,
+                },
             )
             .await
             .map_err(|err| map_request_agent_turn_error(err, &request))?;

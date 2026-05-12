@@ -263,8 +263,6 @@ async fn task_subagent_inherits_parent_turn_model_when_profile_model_is_defaulte
     config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
     let mut general = named_worker_profile("general", &["read", "bash"]);
     general.model_ref_explicit = false;
-    let mut general = named_worker_profile("general", &["read", "bash"]);
-    general.model_ref_explicit = false;
     config.agent_profiles = BTreeMap::from([
         (
             "deep".to_string(),

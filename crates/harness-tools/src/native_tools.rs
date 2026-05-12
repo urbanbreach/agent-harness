@@ -789,7 +789,7 @@ impl Tool for TaskTool {
     }
 
     fn description(&self) -> &str {
-        "Delegates work to another configured harness profile/category (legacy `category` alias supported). `load_skills` and `command` are prepended to the child prompt as explicit delegation instructions."
+        "Delegates work to another configured harness profile/category (legacy `category` alias supported). By default the parent waits and receives the child result synchronously. With run_in_background=true, the tool returns task_id/request_id immediately; use background_output with that request_id whenever you need status, result, or cancellation. The coordinator may also send a completion reminder later, but do not wait for that reminder when the result is needed. `load_skills` and `command` are prepended to the child prompt as explicit delegation instructions."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -830,7 +830,7 @@ impl Tool for BackgroundOutputTool {
     }
 
     fn description(&self) -> &str {
-        "Retrieves the current status or terminal result for a child task scheduled with task(run_in_background=true). Prefer request_id from the task result; task_id/session_id resolve to the latest child request for compatibility. Set cancel=true to request coordinator cancellation for a non-terminal child task."
+        "Provides durable retrieval of the current status or terminal result for a child task scheduled with task(run_in_background=true). Use this tool when you need the background result; completion reminders are notifications only and do not replace explicit retrieval. Prefer request_id from the task result; task_id/session_id resolve to the latest child request for compatibility. Set cancel=true to request coordinator cancellation for a non-terminal child task."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -1455,8 +1455,8 @@ fn looks_like_shell_path_argument(token: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        blocked_shell_command_message, build_recursive_tree, validate_bash_command, BatchArgs,
-        QuestionArgs, TaskArgs,
+        blocked_shell_command_message, build_recursive_tree, validate_bash_command,
+        AgentOpsExecutor, BackgroundOutputTool, BatchArgs, QuestionArgs, TaskArgs, TaskTool,
     };
     use std::sync::Arc;
 
@@ -1465,7 +1465,7 @@ mod tests {
     use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
     use harness_core::event::{ActorKind, EventActor};
     use harness_core::redact::DefaultRedactor;
-    use harness_core::tool::{ToolContext, ToolError};
+    use harness_core::tool::{Tool, ToolContext, ToolError};
     use serde_json::json;
 
     #[test]
@@ -1653,6 +1653,24 @@ mod tests {
         .expect("task args should accept skills alias");
 
         assert_eq!(args.load_skills, vec!["rust-best-practices".to_string()]);
+    }
+
+    #[test]
+    fn task_and_background_output_descriptions_prefer_explicit_retrieval() {
+        let executor = Arc::new(AgentOpsExecutor::new());
+        let task = TaskTool::new(executor.clone());
+        let background_output = BackgroundOutputTool::new(executor);
+
+        let task_description = task.description();
+        assert!(task_description.contains("run_in_background=true"));
+        assert!(task_description.contains("returns task_id/request_id immediately"));
+        assert!(task_description.contains("use background_output"));
+        assert!(task_description.contains("do not wait for that reminder"));
+
+        let background_output_description = background_output.description();
+        assert!(background_output_description.contains("Use this tool when you need"));
+        assert!(background_output_description.contains("do not replace explicit retrieval"));
+        assert!(background_output_description.contains("cancel=true"));
     }
 
     #[test]
