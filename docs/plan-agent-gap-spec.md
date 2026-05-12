@@ -134,16 +134,16 @@ schedules a Plan continuation with the original goal and active plan-file path.
 
 **Desired Harness behavior:**
 
-- Add a `plan_enter` workflow if Harness wants reference-level two-way agent
-  switching.
-- Build should be able to ask the user whether to switch into Plan for complex,
-  ambiguous, or high-risk changes.
-- If approved, the coordinator should spawn/switch to `plan`, pass the original
-  user goal, and keep Plan under the same read-only guardrails.
+- Document and regression-test the existing `plan_enter` workflow so Build can
+  ask the user whether to switch into Plan for complex, ambiguous, or high-risk
+  changes.
+- If approved, the coordinator should continue to spawn/switch to `plan`, pass
+  the original user goal, and keep Plan under the same read-only guardrails.
 
 **Acceptance criteria:**
 
-- `build` exposes `plan_enter` when the shipped profile/tool surface enables it.
+- `build` exposes `plan_enter` in the shipped profile/tool surface, and coverage
+  locks that contract down.
 - `plan` denies `plan_enter` to avoid recursive or nonsensical switching.
 - Approval creates or selects a Plan agent and schedules a Plan turn with the
   original goal and active plan-file path.
@@ -275,7 +275,8 @@ documented as an operator workflow.
   Build.
 - Ensure TUI/headless surfaces show enough metadata for the active agent,
   plan-file path, and `plan_exit` question.
-- If a `plan_enter` tool is added, document when Build should use it.
+- Document and test the existing `plan_enter` workflow so Build-to-Plan
+  switching stays covered as an existing behavior.
 
 **Acceptance criteria:**
 
@@ -313,8 +314,9 @@ examples could diverge from the profile as Plan evolves.
    prompt assertions. This improves behavior without changing permissions.
 2. **Docs and operator workflow:** document Plan lifecycle, stability, guarded
    Plan shell inspection, and the stricter no-write-capable-subagent stance.
-3. **Plan-enter design:** decide whether Harness should add Build-to-Plan
-   switching. If yes, implement as a separate tool with approval and tests.
+3. **Plan-enter regression coverage:** keep the existing Build-to-Plan switching
+   behavior documented and tested so it stays aligned with the shipped tool
+   surface.
 4. **Optional permission inheritance:** only needed if Harness relaxes the current
    `explore`-only Plan delegation allowlist.
 5. **Additional drift tests:** lock the public Plan profile contract so future
