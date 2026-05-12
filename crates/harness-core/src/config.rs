@@ -1482,15 +1482,12 @@ pub enum McpServerConnectionState {
 
 /// Settings for the built-in remote search bridge.
 ///
-/// The current runtime expects an Exa-compatible MCP endpoint for native
-/// `web_search` and `code_search` requests.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RemoteSearchConfig {
     /// Endpoint used by the built-in remote search bridge.
+    /// Exa-compatible MCP endpoint for native `web_search` and `code_search`.
     ///
-    /// The current runtime expects an Exa-compatible MCP endpoint for native
-    /// `web_search` and `code_search` requests.
     #[serde(default = "default_remote_search_endpoint")]
     pub endpoint: String,
     /// Optional bearer token for the remote search endpoint.
