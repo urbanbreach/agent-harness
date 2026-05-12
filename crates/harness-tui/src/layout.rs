@@ -234,6 +234,7 @@ impl FrameLayoutPlan {
             app.overlay_stack().top(),
             Some(
                 OverlayKind::CommandPalette
+                    | OverlayKind::TogglesMenu
                     | OverlayKind::LineageBrowser
                     | OverlayKind::ForkSelector
             )
@@ -1193,22 +1194,30 @@ fn command_palette_overlay_width(shell: LiveShellLayout, app: &AppState) -> u16 
 
 fn command_palette_overlay_height(app: &AppState, terminal_height: u16) -> u16 {
     const COMMAND_OVERLAY_ROWS: u16 = 6;
-    const SESSION_HISTORY_OVERLAY_ROWS: u16 = 5;
+    const SESSION_HISTORY_OVERLAY_ROWS: u16 = 8;
     const MODEL_SWITCHER_OVERLAY_ROWS: u16 = 6;
     const MAX_LIST_ROWS: usize = 7;
 
     if app.session_history_visible {
-        let history_rows = app.session_history_filtered.len().clamp(1, MAX_LIST_ROWS);
+        let max_height_rows = usize::from(terminal_height.saturating_div(2).saturating_sub(6));
+        let history_rows = app
+            .session_history_visual_row_count()
+            .clamp(1, max_height_rows.max(1));
         let history_rows = u16::try_from(history_rows).unwrap_or(u16::MAX);
-        SESSION_HISTORY_OVERLAY_ROWS
-            .saturating_add(u16::from(app.continue_disabled_banner.is_some()))
-            .saturating_add(history_rows)
+        SESSION_HISTORY_OVERLAY_ROWS.saturating_add(history_rows)
     } else if app.model_switcher_visible {
         let model_rows = app
             .model_switcher_visual_row_count()
             .clamp(1, MAX_LIST_ROWS + 2);
         let model_rows = u16::try_from(model_rows).unwrap_or(u16::MAX);
         MODEL_SWITCHER_OVERLAY_ROWS.saturating_add(model_rows)
+    } else if app.toggles_menu_visible {
+        let max_height_rows = usize::from(terminal_height.saturating_div(2).saturating_sub(6));
+        let toggle_rows = toggles_menu_visible_rows(app)
+            .max(1)
+            .min(max_height_rows.max(1));
+        let toggle_rows = u16::try_from(toggle_rows).unwrap_or(u16::MAX);
+        COMMAND_OVERLAY_ROWS.saturating_add(toggle_rows)
     } else {
         let max_height_rows = usize::from(terminal_height.saturating_div(2).saturating_sub(6));
         let command_rows = command_palette_visible_rows(app)
@@ -1290,6 +1299,25 @@ fn command_palette_visible_rows(app: &AppState) -> usize {
         .fold((0usize, None), |(rows, last_section), command| {
             let section = crate::Action::palette_command_section(command.as_str());
             let section_rows = if section.is_some() && section != last_section {
+                if last_section.is_some() {
+                    2
+                } else {
+                    1
+                }
+            } else {
+                0
+            };
+            (rows.saturating_add(section_rows).saturating_add(1), section)
+        })
+        .0
+}
+
+fn toggles_menu_visible_rows(app: &AppState) -> usize {
+    app.toggle_menu_rows()
+        .iter()
+        .fold((0usize, None), |(rows, last_section), toggle| {
+            let section = Some(toggle.section);
+            let section_rows = if section != last_section {
                 if last_section.is_some() {
                     2
                 } else {

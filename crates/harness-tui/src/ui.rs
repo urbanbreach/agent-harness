@@ -7,13 +7,12 @@ use ratatui::{
 };
 
 use crate::app::session_navigation::{
-    session_history_artifact_label, session_history_lineage_label, session_history_profile_label,
-    session_history_provider_model_label, session_history_resumability_label,
-    session_history_run_name, session_history_status_label,
+    session_history_category_label, session_history_current_marker, session_history_display_title,
+    session_history_footer_label,
 };
 use crate::app::{
-    ActivityEntry, ActivityStatus, AppState, Focus, ReviewSurface, RuntimeStateKind,
-    StartupLauncherAction, Tab, ToastVariant, ToolCallDisplayStatus,
+    ActivityEntry, ActivityStatus, AppState, Focus, ReviewSurface, RuntimeStateKind, Tab,
+    ToastVariant, ToolCallDisplayStatus,
 };
 use crate::keybindings::Action;
 use crate::layout::{
@@ -210,6 +209,7 @@ pub(crate) use ui_secondary::{
     exact_test_operator_rail_section_model_separates_mcp_from_native_tool_activity,
     exact_test_operator_rail_section_model_surfaces_pending_permissions_first,
     exact_test_operator_rail_section_model_uses_runtime_mcp_activity_without_config,
+    exact_test_operator_rail_uses_generated_session_title,
     exact_test_operator_sidebar_hit_target_maps_section_headers,
 };
 #[cfg(test)]

@@ -25,7 +25,7 @@ pub(super) fn render_overlays(
             OverlayKind::CommandPalette => {
                 render_command_palette_overlay(frame, app, theme, plan.root, plan.palette_overlay)
             }
-            OverlayKind::LineageBrowser | OverlayKind::ForkSelector => {
+            OverlayKind::TogglesMenu | OverlayKind::LineageBrowser | OverlayKind::ForkSelector => {
                 render_command_palette_overlay(frame, app, theme, plan.root, plan.palette_overlay)
             }
             OverlayKind::StatusDialog => render_status_dialog_overlay(frame, app, theme, plan.root),
@@ -481,7 +481,7 @@ fn status_dialog_lsp_root(
 fn sanitize_status_dialog_text(value: &str) -> String {
     value
         .chars()
-        .filter(|ch| !ch.is_control())
+        .map(|ch| if ch.is_control() { ' ' } else { ch })
         .collect::<String>()
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -505,6 +505,8 @@ fn render_command_palette_overlay(
         session_history_overlay_title(app)
     } else if app.model_switcher_visible {
         model_switcher_overlay_title(app)
+    } else if app.toggles_menu_visible {
+        "Toggles".to_string()
     } else if app.lineage_browser_visible {
         "Harness session tree".to_string()
     } else if app.fork_selector_visible {
@@ -514,15 +516,28 @@ fn render_command_palette_overlay(
     };
 
     if app.session_history_visible {
-        let Some(inner) = render_command_palette_surface(frame, theme, overlay) else {
+        if !paint_command_palette_panel(frame, theme, overlay) {
             return;
-        };
-        render_session_history_overlay(frame, app, theme, inner, &title);
+        }
+        render_session_history_overlay(frame, app, theme, overlay, &title);
     } else if app.model_switcher_visible {
         if !paint_model_select_panel(frame, theme, overlay) {
             return;
         }
         render_model_switcher_overlay(frame, app, theme, overlay, &title);
+    } else if app.toggles_menu_visible {
+        if !paint_command_palette_panel(frame, theme, overlay) {
+            return;
+        }
+        let Some((header, input, list)) = command_palette_dialog_layout(overlay) else {
+            return;
+        };
+        render_command_palette_header(frame, theme, header, &title);
+        render_command_palette_input(frame, app, theme, input);
+        render_toggles_menu_list(frame, app, theme, list);
+        if app.toggles_yolo_confirmation_visible() {
+            render_yolo_warning_popup(frame, theme, overlay);
+        }
     } else if app.lineage_browser_visible {
         let Some(inner) = render_command_palette_surface(frame, theme, overlay) else {
             return;
@@ -878,46 +893,36 @@ fn render_session_history_overlay(
     frame: &mut Frame,
     app: &AppState,
     theme: &Theme,
-    area: Rect,
+    overlay: Rect,
     title: &str,
 ) {
-    let show_banner = app.continue_disabled_banner.is_some();
-    let sections = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(if show_banner { 1 } else { 0 }),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Min(0),
-        ])
-        .split(area);
-    let surface = ui_chrome::command_palette_surface(theme);
-
-    if let Some(banner) = app.continue_disabled_banner.as_deref() {
-        frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                truncate_plain_text(
-                    &overlay_continue_banner_text(banner),
-                    usize::from(sections[0].width),
-                ),
-                Style::default()
-                    .fg(theme.status.warning)
-                    .bg(surface)
-                    .add_modifier(Modifier::BOLD),
-            ))),
-            sections[0],
-        );
+    if overlay.width <= 8 || overlay.height <= 5 {
+        return;
     }
 
-    render_command_palette_header(frame, theme, sections[1], title);
-    render_command_palette_input(frame, app, theme, sections[2]);
-    frame.render_widget(
-        Paragraph::new(session_history_scope_line(app))
-            .style(Style::default().fg(theme.text.secondary).bg(surface)),
-        sections[3],
+    let content_x = overlay.x.saturating_add(4);
+    let content_width = overlay.width.saturating_sub(8);
+    let header = Rect::new(content_x, overlay.y.saturating_add(1), content_width, 1);
+    let input = Rect::new(content_x, overlay.y.saturating_add(3), content_width, 1);
+    let actions = Rect::new(
+        content_x,
+        overlay.y.saturating_add(overlay.height.saturating_sub(2)),
+        content_width,
+        1,
     );
-    render_session_history_list(frame, app, theme, sections[4]);
+    let list_y = overlay.y.saturating_add(5);
+    let list_bottom = actions.y.saturating_sub(1);
+    let list = Rect::new(
+        overlay.x.saturating_add(1),
+        list_y,
+        overlay.width.saturating_sub(2),
+        list_bottom.saturating_sub(list_y),
+    );
+
+    render_command_palette_header(frame, theme, header, title);
+    render_command_palette_input(frame, app, theme, input);
+    render_session_history_list(frame, app, theme, list);
+    render_session_history_actions(frame, theme, actions);
 }
 
 fn render_lineage_browser_overlay(
@@ -1236,9 +1241,11 @@ fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme
 
     let line = if app.palette_input.is_empty() {
         let placeholder = if app.session_history_visible {
-            "Filter saved runs"
+            "Search"
         } else if app.model_switcher_visible {
             "Filter models, providers"
+        } else if app.toggles_menu_visible {
+            "Filter toggles"
         } else if app.lineage_browser_visible {
             "Filter Harness session tree"
         } else {
@@ -1248,7 +1255,7 @@ fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme
             Span::styled(
                 "█",
                 Style::default()
-                    .fg(ui_chrome::command_palette_cursor(theme))
+                    .fg(command_palette_input_cursor(theme, app))
                     .bg(surface),
             ),
             Span::styled(
@@ -1277,7 +1284,7 @@ fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme
             Span::styled(
                 "█",
                 Style::default()
-                    .fg(ui_chrome::command_palette_cursor(theme))
+                    .fg(command_palette_input_cursor(theme, app))
                     .bg(surface),
             ),
             Span::styled(
@@ -1289,6 +1296,14 @@ fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme
         ])
     };
     frame.render_widget(Paragraph::new(line), area);
+}
+
+fn command_palette_input_cursor(theme: &Theme, app: &AppState) -> Color {
+    if app.session_history_visible {
+        ui_chrome::fork_selector_cursor()
+    } else {
+        ui_chrome::command_palette_cursor(theme)
+    }
 }
 
 fn render_fork_selector_input(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
@@ -1824,6 +1839,172 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
     }
 }
 
+fn render_toggles_menu_list(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    let list_area = inset_rect(area, 1.min(area.width.saturating_sub(1)), 0);
+    if list_area.width == 0 || list_area.height == 0 {
+        return;
+    }
+
+    frame.render_widget(
+        Block::default().style(Style::default().bg(ui_chrome::command_palette_surface(theme))),
+        list_area,
+    );
+
+    let rows = toggles_overlay_rows(app);
+    if rows.is_empty() {
+        render_palette_empty_message(frame, theme, list_area, "No toggles found");
+        return;
+    }
+
+    let visible_rows = usize::from(list_area.height);
+    let selected_row = rows
+        .iter()
+        .position(|row| matches!(row, TogglesOverlayRow::Toggle(toggle) if toggle.selected))
+        .unwrap_or(0);
+    let scroll = selected_row.saturating_sub(visible_rows.saturating_sub(1));
+
+    for (row, toggle_row) in rows.iter().enumerate().skip(scroll).take(visible_rows) {
+        let row_y = list_area
+            .y
+            .saturating_add(u16::try_from(row - scroll).unwrap_or(u16::MAX));
+        let row_area = Rect::new(list_area.x, row_y, list_area.width, 1);
+        match toggle_row {
+            TogglesOverlayRow::Spacer => {
+                frame.render_widget(
+                    Block::default()
+                        .style(Style::default().bg(ui_chrome::command_palette_surface(theme))),
+                    row_area,
+                );
+            }
+            TogglesOverlayRow::Section(section) => {
+                frame.render_widget(
+                    Paragraph::new(command_palette_section_row(section, theme, row_area.width)),
+                    row_area,
+                );
+            }
+            TogglesOverlayRow::Toggle(toggle) => {
+                if toggle.selected {
+                    frame.render_widget(
+                        Block::default().style(ui_chrome::overlay_focus_row_style(theme)),
+                        row_area,
+                    );
+                }
+                frame.render_widget(
+                    Paragraph::new(toggle_menu_row(toggle, theme, row_area.width)),
+                    row_area,
+                );
+            }
+        }
+    }
+}
+
+enum TogglesOverlayRow {
+    Spacer,
+    Section(&'static str),
+    Toggle(crate::app::ToggleMenuRow),
+}
+
+fn toggles_overlay_rows(app: &AppState) -> Vec<TogglesOverlayRow> {
+    let mut rows = Vec::new();
+    let mut last_section = None;
+    for toggle in app.toggle_menu_rows() {
+        if Some(toggle.section) != last_section {
+            if last_section.is_some() {
+                rows.push(TogglesOverlayRow::Spacer);
+            }
+            rows.push(TogglesOverlayRow::Section(toggle.section));
+            last_section = Some(toggle.section);
+        }
+        rows.push(TogglesOverlayRow::Toggle(toggle));
+    }
+    rows
+}
+
+fn toggle_menu_row(toggle: &crate::app::ToggleMenuRow, theme: &Theme, width: u16) -> Line<'static> {
+    let surface = ui_chrome::command_palette_surface(theme);
+    let row_style = if toggle.selected {
+        ui_chrome::overlay_focus_row_style(theme)
+    } else {
+        Style::default().bg(surface)
+    };
+    let label_style = if toggle.selected {
+        row_style.add_modifier(Modifier::BOLD)
+    } else {
+        row_style.fg(ui_chrome::command_palette_title(theme))
+    };
+    let description_style = if toggle.selected {
+        row_style
+    } else {
+        row_style.fg(ui_chrome::command_palette_muted(theme))
+    };
+    let state = if toggle.enabled { "●" } else { "○" };
+    let state_label = if toggle.enabled { "on" } else { "off" };
+    let label = format!(" {state} {}", sanitize_toggle_text(&toggle.label));
+    let meta = format!(
+        "{} · {state_label}",
+        sanitize_toggle_text(&toggle.description)
+    );
+    split_title_meta_row(
+        label,
+        meta,
+        label_style,
+        description_style,
+        row_style,
+        width,
+    )
+}
+
+fn sanitize_toggle_text(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| !ch.is_control())
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn render_yolo_warning_popup(frame: &mut Frame, theme: &Theme, overlay: Rect) {
+    let width = 54.min(overlay.width.saturating_sub(4));
+    let height = 7.min(overlay.height.saturating_sub(2));
+    if width < 32 || height < 5 {
+        return;
+    }
+    let area = Rect::new(
+        overlay.x + overlay.width.saturating_sub(width) / 2,
+        overlay.y + overlay.height.saturating_sub(height) / 2,
+        width,
+        height,
+    );
+    frame.render_widget(Clear, area);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Confirm YOLO mode ")
+        .style(
+            Style::default()
+                .fg(theme.status.warning)
+                .bg(ui_chrome::command_palette_surface(theme)),
+        );
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let text = Text::from(vec![
+        Line::from("YOLO marks every menu entry on."),
+        Line::from("Coordinator permissions still apply."),
+        Line::from(""),
+        Line::from("Enter confirm   Esc cancel"),
+    ]);
+    frame.render_widget(
+        Paragraph::new(text)
+            .style(Style::default().bg(ui_chrome::command_palette_surface(theme)))
+            .wrap(Wrap { trim: true }),
+        inner,
+    );
+}
+
 enum PaletteOverlayRow<'a> {
     Spacer,
     Section(crate::keybindings::PaletteCommandSection),
@@ -1962,148 +2143,111 @@ fn render_session_history_list(frame: &mut Frame, app: &AppState, theme: &Theme,
     }
 
     if app.session_history_filtered.is_empty() {
-        let empty = if app.session_history_entries.is_empty() {
-            "No saved runs yet — launch one and it will appear here."
-        } else {
-            "No saved runs match this filter."
-        };
-        frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                empty,
-                Style::default().fg(theme.text.secondary),
-            ))),
-            area,
-        );
+        render_palette_empty_message(frame, theme, area, "No results found");
         return;
     }
 
-    let row_height = 1usize;
-    let visible_rows = (usize::from(area.height) / row_height).max(1);
-    let selected = app
-        .session_history_selected
-        .min(app.session_history_filtered.len().saturating_sub(1));
-    let scroll = selected.saturating_sub(visible_rows.saturating_sub(1));
-
-    for (visible_index, entry_index) in app
-        .session_history_filtered
+    let rows = session_history_visual_rows(app);
+    let selected_row = rows
         .iter()
-        .enumerate()
-        .skip(scroll)
-        .take(visible_rows)
-    {
-        let entry = &app.session_history_entries[*entry_index];
-        let row_offset = (visible_index - scroll) * row_height;
-        let row_y = area
-            .y
-            .saturating_add(u16::try_from(row_offset).unwrap_or(u16::MAX));
-        if row_y >= area.y.saturating_add(area.height) {
-            break;
-        }
+        .position(|row| matches!(row, SessionHistoryVisualRow::Entry { selected: true, .. }))
+        .unwrap_or(0);
+    let visible_rows = usize::from(area.height).max(1);
+    let scroll = selected_row.saturating_sub(visible_rows.saturating_sub(1));
+    let surface = ui_chrome::command_palette_surface(theme);
+    frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
 
-        let remaining_height = area
-            .height
-            .saturating_sub(u16::try_from(row_offset).unwrap_or(u16::MAX));
-        let row_area = Rect::new(area.x, row_y, area.width, remaining_height.min(1));
-        let is_selected = visible_index == selected;
-        if is_selected {
-            frame.render_widget(
-                Block::default().style(ui_chrome::overlay_focus_row_style(theme)),
-                row_area,
-            );
-        }
-
-        frame.render_widget(
-            Paragraph::new(session_history_row(
-                entry,
-                app,
-                is_selected,
-                theme,
-                row_area.width,
-            )),
-            row_area,
+    for (row_index, row) in rows.iter().enumerate().skip(scroll).take(visible_rows) {
+        let row_area = Rect::new(
+            area.x,
+            area.y
+                .saturating_add(u16::try_from(row_index - scroll).unwrap_or(u16::MAX)),
+            area.width,
+            1,
         );
+        match row {
+            SessionHistoryVisualRow::Gap => {}
+            SessionHistoryVisualRow::Header(label) => {
+                frame.render_widget(
+                    Paragraph::new(Line::from(Span::styled(
+                        truncate_plain_text(label, usize::from(row_area.width.saturating_sub(3))),
+                        Style::default()
+                            .fg(ui_chrome::command_palette_section())
+                            .bg(surface)
+                            .add_modifier(Modifier::BOLD),
+                    )))
+                    .style(Style::default().bg(surface)),
+                    Rect::new(
+                        row_area.x.saturating_add(3),
+                        row_area.y,
+                        row_area.width.saturating_sub(3),
+                        1,
+                    ),
+                );
+            }
+            SessionHistoryVisualRow::Entry {
+                entry_index,
+                selected,
+            } => {
+                let Some(entry) = app.session_history_entries.get(*entry_index) else {
+                    continue;
+                };
+                let row_style = session_history_row_style(theme, *selected);
+                frame.render_widget(Block::default().style(row_style), row_area);
+                frame.render_widget(
+                    Paragraph::new(session_history_row(
+                        entry,
+                        app,
+                        *selected,
+                        theme,
+                        row_area.width,
+                    ))
+                    .style(row_style),
+                    row_area,
+                );
+            }
+        }
     }
 }
 
 fn session_history_overlay_title(app: &AppState) -> String {
-    let total = app.session_history_filtered.len();
-    let matches_label = format!("{total} match{}", if total == 1 { "" } else { "es" });
     match app.startup_launcher_action {
-        StartupLauncherAction::ReplaySession => format!("Replay session · {matches_label}"),
-        StartupLauncherAction::ContinueSession => {
-            let blocked = app
-                .session_history_filtered
-                .iter()
-                .filter(|entry_index| {
-                    !app.session_history_entries[**entry_index]
-                        .catalog
-                        .is_resumable
-                })
-                .count();
-            if blocked > 0 {
-                format!("Continue session · {matches_label} · {blocked} blocked")
-            } else {
-                format!("Continue session · {matches_label}")
-            }
-        }
-        StartupLauncherAction::NewSession => format!("Session history · {matches_label}"),
+        crate::app::StartupLauncherAction::ContinueSession => "Continue session".to_string(),
+        crate::app::StartupLauncherAction::ReplaySession => "Replay session".to_string(),
+        crate::app::StartupLauncherAction::NewSession => "Sessions".to_string(),
     }
 }
 
-fn session_history_scope_line(app: &AppState) -> String {
-    match app.startup_launcher_action {
-        StartupLauncherAction::ContinueSession => {
-            let ready = app
-                .session_history_filtered
-                .iter()
-                .filter(|entry_index| {
-                    app.session_history_entries[**entry_index]
-                        .catalog
-                        .is_resumable
-                })
-                .count();
-            let blocked = app.session_history_filtered.len().saturating_sub(ready);
-            if app.session_history_filtered.is_empty() {
-                "Interactive histories only · blocked rows stay visible when they match".to_string()
-            } else if blocked == 0 {
-                format!(
-                    "Interactive histories · {ready} ready · filter by run/profile/model/lineage"
-                )
-            } else {
-                format!(
-                    "Interactive histories · {ready} ready · {blocked} blocked · filter by run/profile/model/lineage"
-                )
+enum SessionHistoryVisualRow {
+    Gap,
+    Header(String),
+    Entry { entry_index: usize, selected: bool },
+}
+
+fn session_history_visual_rows(app: &AppState) -> Vec<SessionHistoryVisualRow> {
+    let mut rows = Vec::new();
+    let mut previous_category: Option<String> = None;
+    let selected = app
+        .session_history_selected
+        .min(app.session_history_filtered.len().saturating_sub(1));
+    for (filtered_index, entry_index) in app.session_history_filtered.iter().enumerate() {
+        let Some(entry) = app.session_history_entries.get(*entry_index) else {
+            continue;
+        };
+        let category = session_history_category_label(entry);
+        if previous_category.as_deref() != Some(category.as_str()) {
+            if previous_category.is_some() {
+                rows.push(SessionHistoryVisualRow::Gap);
             }
+            rows.push(SessionHistoryVisualRow::Header(category.clone()));
+            previous_category = Some(category);
         }
-        StartupLauncherAction::ReplaySession => {
-            let prompt_only = app
-                .session_history_filtered
-                .iter()
-                .filter(|entry_index| {
-                    matches!(
-                        app.session_history_entries[**entry_index]
-                            .catalog
-                            .mode_source,
-                        harness_core::proj::SessionModeSource::Prompt
-                    )
-                })
-                .count();
-            if prompt_only > 0 {
-                format!(
-                    "Read-only replays · {} matching · {prompt_only} prompt-only still visible",
-                    app.session_history_filtered.len()
-                )
-            } else {
-                format!(
-                    "Read-only replays · {} matching · interactive and prompt runs stay available",
-                    app.session_history_filtered.len()
-                )
-            }
-        }
-        StartupLauncherAction::NewSession => {
-            "Browse saved runs without losing the draft in the launcher".to_string()
-        }
+        rows.push(SessionHistoryVisualRow::Entry {
+            entry_index: *entry_index,
+            selected: filtered_index == selected,
+        });
     }
+    rows
 }
 
 fn session_history_row(
@@ -2113,275 +2257,96 @@ fn session_history_row(
     theme: &Theme,
     width: u16,
 ) -> Line<'static> {
-    let row_style = if is_selected {
-        ui_chrome::overlay_focus_row_style(theme)
-    } else {
-        Style::default()
-    };
-    let title_style = if is_selected {
+    let row_width = usize::from(width);
+    let current = session_history_current_marker(entry, app.current_session_id());
+    let row_style = session_history_row_style(theme, is_selected);
+    let text_style = if is_selected {
         row_style.add_modifier(Modifier::BOLD)
+    } else if current {
+        Style::default().fg(ui_chrome::fork_selector_cursor())
     } else {
-        Style::default()
-            .fg(theme.text.primary)
-            .add_modifier(Modifier::BOLD)
+        Style::default().fg(theme.text.primary)
     };
-    let meta_style = if is_selected {
+    let footer_style = if is_selected {
         row_style
     } else {
         Style::default().fg(theme.text.secondary)
     };
-    let action_style = if is_selected {
-        row_style.add_modifier(Modifier::BOLD)
-    } else {
-        Style::default()
-            .fg(session_history_action_color(app, entry, theme))
-            .add_modifier(Modifier::BOLD)
-    };
-    let status_style = if is_selected {
+    let marker_style = if is_selected {
         row_style
     } else {
-        Style::default().fg(session_history_status_color(entry, theme))
+        Style::default().fg(ui_chrome::fork_selector_cursor())
     };
-    let capability_style = if is_selected {
-        row_style
-    } else {
-        Style::default().fg(match app.startup_launcher_action {
-            StartupLauncherAction::ContinueSession | StartupLauncherAction::NewSession => {
-                if entry.catalog.is_resumable {
-                    theme.status.success
-                } else {
-                    theme.status.warning
-                }
-            }
-            StartupLauncherAction::ReplaySession => theme.status.info,
-        })
+    let left_padding = if current { 1usize } else { 3usize };
+    let marker = if current { "●" } else { "" };
+    let marker_gap = usize::from(current);
+    let footer = match app.startup_launcher_action {
+        crate::app::StartupLauncherAction::ContinueSession if !entry.catalog.is_resumable => entry
+            .catalog
+            .resume_disabled_reason
+            .clone()
+            .unwrap_or_else(|| "continue unavailable".to_string()),
+        crate::app::StartupLauncherAction::ContinueSession => "continue ready".to_string(),
+        crate::app::StartupLauncherAction::ReplaySession => "replay ready".to_string(),
+        crate::app::StartupLauncherAction::NewSession => session_history_footer_label(entry),
     };
+    let footer_width = footer.chars().count();
+    let title_padding = 3usize;
+    let fixed_width = left_padding
+        .saturating_add(marker.chars().count())
+        .saturating_add(marker_gap)
+        .saturating_add(title_padding)
+        .saturating_add(footer_width);
+    let title_width = row_width.saturating_sub(fixed_width).min(61);
+    let display_title = session_history_display_title(entry);
+    let title = truncate_plain_text(&display_title, title_width);
+    let used_width = fixed_width.saturating_add(title.chars().count());
+    let gap_width = row_width.saturating_sub(used_width);
 
-    let capability = overlay_session_history_capability_label(entry, app.startup_launcher_action);
-    let artifact_label = session_history_artifact_label(entry);
-    let lineage_label = session_history_lineage_label(entry);
-    let source = format!(
-        "{}/{}",
-        session_history_profile_label(entry),
-        session_history_provider_model_label(entry)
-    );
-
-    let row_width = usize::from(width);
-    let prefix = session_history_action_prefix(app, entry);
-    let reserved_capability_width = usize::from(row_width > 32) * 18;
-    let title_budget = row_width
-        .saturating_sub(
-            prefix
-                .chars()
-                .count()
-                .saturating_add(reserved_capability_width),
-        )
-        .max(12)
-        .min(row_width.saturating_sub(prefix.chars().count()));
-    let title = truncate_plain_text(session_history_run_name(entry), title_budget);
-
-    let mut spans = vec![
-        Span::styled(prefix.clone(), action_style),
-        Span::styled(title.clone(), title_style),
-    ];
-    let mut used_width = prefix.chars().count().saturating_add(title.chars().count());
-
-    append_session_history_segment(
-        &mut spans,
-        &mut used_width,
-        row_width,
-        &capability,
-        meta_style,
-        capability_style,
-        8,
-    );
-
-    if row_width >= 58 {
-        append_session_history_segment(
-            &mut spans,
-            &mut used_width,
-            row_width,
-            &artifact_label,
-            meta_style,
-            meta_style,
-            8,
-        );
+    let mut spans = vec![Span::styled(" ".repeat(left_padding), row_style)];
+    if current {
+        spans.push(Span::styled(marker.to_string(), marker_style));
+        spans.push(Span::styled(" ", row_style));
     }
-
-    if row_width >= 76 {
-        append_session_history_segment(
-            &mut spans,
-            &mut used_width,
-            row_width,
-            &lineage_label,
-            meta_style,
-            meta_style,
-            10,
-        );
-    }
-
-    if row_width >= 92 {
-        append_session_history_segment(
-            &mut spans,
-            &mut used_width,
-            row_width,
-            session_history_status_label(entry),
-            meta_style,
-            status_style,
-            6,
-        );
-    }
-
-    if row_width >= 112 {
-        append_session_history_segment(
-            &mut spans,
-            &mut used_width,
-            row_width,
-            &source,
-            meta_style,
-            meta_style,
-            10,
-        );
-    }
-
-    if is_selected && used_width < row_width {
-        spans.push(Span::styled(" ".repeat(row_width - used_width), row_style));
+    spans.push(Span::styled(" ".repeat(title_padding), row_style));
+    spans.push(Span::styled(title, text_style));
+    spans.push(Span::styled(" ".repeat(gap_width), row_style));
+    if !footer.is_empty() {
+        spans.push(Span::styled(footer, footer_style));
     }
 
     Line::from(spans)
 }
 
-fn append_session_history_segment(
-    spans: &mut Vec<Span<'static>>,
-    used_width: &mut usize,
-    row_width: usize,
-    text: &str,
-    separator_style: Style,
-    text_style: Style,
-    min_text_width: usize,
-) {
-    const SEPARATOR: &str = " · ";
+fn session_history_row_style(theme: &Theme, selected: bool) -> Style {
+    if selected {
+        ui_chrome::overlay_focus_row_style(theme)
+    } else {
+        Style::default().bg(ui_chrome::command_palette_surface(theme))
+    }
+}
 
-    let separator_width = SEPARATOR.chars().count();
-    let remaining = row_width.saturating_sub(*used_width);
-    if remaining <= separator_width.saturating_add(min_text_width) {
+fn render_session_history_actions(frame: &mut Frame, theme: &Theme, area: Rect) {
+    if area.width == 0 || area.height == 0 {
         return;
     }
 
-    let text = truncate_plain_text(text, remaining.saturating_sub(separator_width));
-    if text.is_empty() {
-        return;
-    }
-
-    spans.push(Span::styled(SEPARATOR.to_string(), separator_style));
-    spans.push(Span::styled(text.clone(), text_style));
-    *used_width = used_width
-        .saturating_add(separator_width)
-        .saturating_add(text.chars().count());
-}
-
-fn overlay_continue_banner_text(banner: &str) -> String {
-    banner
-        .strip_prefix("continue unavailable: ")
-        .map(|reason| format!("blocked · {reason}"))
-        .unwrap_or_else(|| banner.to_string())
-}
-
-fn overlay_session_history_capability_label(
-    entry: &crate::app::SessionHistoryEntry,
-    action: StartupLauncherAction,
-) -> String {
-    match action {
-        StartupLauncherAction::ContinueSession | StartupLauncherAction::NewSession => {
-            if entry.catalog.is_resumable {
-                "continue ready".to_string()
-            } else {
-                entry
-                    .catalog
-                    .resume_disabled_reason
-                    .as_deref()
-                    .map(|reason| format!("blocked · {reason}"))
-                    .unwrap_or_else(|| "blocked".to_string())
-            }
-        }
-        StartupLauncherAction::ReplaySession => session_history_capability_label(entry, action),
-    }
-}
-
-fn session_history_capability_label(
-    entry: &crate::app::SessionHistoryEntry,
-    action: StartupLauncherAction,
-) -> String {
-    match action {
-        StartupLauncherAction::ContinueSession | StartupLauncherAction::NewSession => {
-            session_history_resumability_label(entry)
-        }
-        StartupLauncherAction::ReplaySession => match entry.catalog.mode_source {
-            harness_core::proj::SessionModeSource::Prompt => "prompt-only replay ready".to_string(),
-            harness_core::proj::SessionModeSource::InteractiveLive
-            | harness_core::proj::SessionModeSource::InteractiveMock => {
-                if entry.catalog.is_resumable {
-                    "replay ready · continue ready".to_string()
-                } else {
-                    entry
-                        .catalog
-                        .resume_disabled_reason
-                        .as_deref()
-                        .map(|reason| format!("replay ready · blocked: {reason}"))
-                        .unwrap_or_else(|| "replay ready".to_string())
-                }
-            }
-            harness_core::proj::SessionModeSource::ScenarioFixture => {
-                "fixture replay ready".to_string()
-            }
-            harness_core::proj::SessionModeSource::ReplayOnly => {
-                "replay artifact ready".to_string()
-            }
-            harness_core::proj::SessionModeSource::Unknown => "saved replay ready".to_string(),
-        },
-    }
-}
-
-fn session_history_action_prefix(
-    app: &AppState,
-    entry: &crate::app::SessionHistoryEntry,
-) -> String {
-    match app.startup_launcher_action {
-        StartupLauncherAction::ReplaySession => "↺ replay ".to_string(),
-        StartupLauncherAction::ContinueSession | StartupLauncherAction::NewSession => {
-            if entry.catalog.is_resumable {
-                "▶ continue ".to_string()
-            } else {
-                "! blocked ".to_string()
-            }
-        }
-    }
-}
-
-fn session_history_action_color(
-    app: &AppState,
-    entry: &crate::app::SessionHistoryEntry,
-    theme: &Theme,
-) -> Color {
-    match app.startup_launcher_action {
-        StartupLauncherAction::ReplaySession => theme.status.info,
-        StartupLauncherAction::ContinueSession | StartupLauncherAction::NewSession => {
-            if entry.catalog.is_resumable {
-                theme.status.success
-            } else {
-                theme.status.warning
-            }
-        }
-    }
-}
-
-fn session_history_status_color(entry: &crate::app::SessionHistoryEntry, theme: &Theme) -> Color {
-    match entry.catalog.status {
-        Some(harness_core::proj::RunStatus::Running) => theme.status.info,
-        Some(harness_core::proj::RunStatus::Finished) => theme.status.success,
-        Some(harness_core::proj::RunStatus::Failed) => theme.status.error,
-        None => theme.text.secondary,
-    }
+    let surface = ui_chrome::command_palette_surface(theme);
+    let action_style = Style::default()
+        .fg(theme.text.primary)
+        .bg(surface)
+        .add_modifier(Modifier::BOLD);
+    let key_style = Style::default().fg(theme.text.secondary).bg(surface);
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("delete", action_style),
+            Span::styled(" ctrl+d  ", key_style),
+            Span::styled("rename", action_style),
+            Span::styled(" ctrl+r", key_style),
+        ]))
+        .style(Style::default().bg(surface)),
+        area,
+    );
 }
 
 fn palette_command_description(command: &str) -> &'static str {

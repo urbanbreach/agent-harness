@@ -103,8 +103,14 @@ enum OperatorSidebarChrome {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct OperatorRailModel {
-    title: Option<String>,
+    title: Option<OperatorRailTitle>,
     body: OperatorRailBody,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum OperatorRailTitle {
+    Generated(String),
+    Pending,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1126,6 +1132,69 @@ pub(crate) fn exact_test_operator_rail_renders_todo_items_from_tool_state() {
 }
 
 #[cfg(test)]
+pub(crate) fn exact_test_operator_rail_uses_generated_session_title() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        1,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::User, None),
+        "req-title",
+        harness_core::event::EventV1::UserMessageSubmitted(
+            harness_core::event::UserMessageSubmittedEvent {
+                request_id: "req-title".to_string(),
+                text: "Please implement the flaky retry button".to_string(),
+            },
+        ),
+    ));
+
+    let theme = *app.theme();
+    let pending =
+        build_operator_rail_title_text(build_operator_rail_model(&app).title.as_ref(), &theme, 80);
+    assert_eq!(
+        pending.lines[0]
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>(),
+        "Generating title..."
+    );
+    assert_eq!(
+        pending.lines[0].spans[0].style.fg,
+        Some(theme.text.secondary)
+    );
+
+    app.ingest_event(operator_rail_test_event(
+        2,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
+        harness_core::event::EventV1::SessionTitleUpdated(
+            harness_core::event::SessionTitleUpdatedEvent {
+                title: "Retry button implementation".to_string(),
+            },
+        ),
+    ));
+
+    let generated =
+        build_operator_rail_title_text(build_operator_rail_model(&app).title.as_ref(), &theme, 80);
+    assert_eq!(
+        generated.lines[0]
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>(),
+        "Retry button implementation"
+    );
+    assert_eq!(
+        generated.lines[0].spans[0].style.fg,
+        Some(theme.text.primary)
+    );
+    assert!(operator_sidebar_text_for_test(&app)
+        .join("\n")
+        .contains("Retry button implementation"));
+    assert!(!operator_sidebar_text_for_test(&app)
+        .join("\n")
+        .contains("Please implement the flaky retry button"));
+}
+
+#[cfg(test)]
 pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_state() {
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(operator_rail_test_event_with_correlation(
@@ -1370,7 +1439,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
         operator_sidebar_inner_area(&app, sidebar_area, theme, OperatorSidebarChrome::Persistent)
             .expect("sidebar inner area");
     let rail = build_operator_rail_model(&app);
-    let title_height = build_operator_rail_title_text(rail.title.as_deref(), theme, inner.width)
+    let title_height = build_operator_rail_title_text(rail.title.as_ref(), theme, inner.width)
         .lines
         .len()
         .min(usize::from(u16::MAX)) as u16;
@@ -1468,7 +1537,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
         operator_sidebar_inner_area(&app, sidebar_area, theme, OperatorSidebarChrome::Persistent)
             .expect("operator sidebar inner area");
     let rail = build_operator_rail_model(&app);
-    let body_area = operator_sidebar_body_area(&app, inner, theme, rail.title.as_deref())
+    let body_area = operator_sidebar_body_area(&app, inner, theme, rail.title.as_ref())
         .expect("operator sidebar body area");
     let layout = build_operator_rail_body_layout(&rail.body, theme, body_area.width, 0);
     let group_region = layout
@@ -2542,7 +2611,7 @@ fn render_operator_sidebar_surface(
     }
 
     let rail = build_operator_rail_model(app);
-    let title_text = build_operator_rail_title_text(rail.title.as_deref(), theme, inner.width);
+    let title_text = build_operator_rail_title_text(rail.title.as_ref(), theme, inner.width);
     let body_layout = build_operator_rail_body_layout(
         &rail.body,
         theme,
@@ -2602,7 +2671,7 @@ fn render_operator_sidebar_surface(
 #[cfg(test)]
 fn build_operator_sidebar_content(app: &AppState, theme: &Theme) -> Text<'static> {
     let rail = build_operator_rail_model(app);
-    let mut lines = build_operator_rail_title_text(rail.title.as_deref(), theme, 80).lines;
+    let mut lines = build_operator_rail_title_text(rail.title.as_ref(), theme, 80).lines;
     lines.extend(build_operator_rail_body_layout(&rail.body, theme, 80, 0).lines);
     if let Some(label) = app.sidebar_directory_branch_label() {
         lines.extend(
@@ -2731,17 +2800,33 @@ fn styled_chars_to_line(chars: &[StyledVisualChar]) -> Line<'static> {
     Line::from(spans)
 }
 
-fn build_operator_rail_title_text(title: Option<&str>, theme: &Theme, width: u16) -> Text<'static> {
-    let Some(title) = title.filter(|title| has_trimmed_content(title)) else {
+fn build_operator_rail_title_text(
+    title: Option<&OperatorRailTitle>,
+    theme: &Theme,
+    width: u16,
+) -> Text<'static> {
+    let Some(title) = title else {
         return Text::from(Vec::<Line<'static>>::new());
+    };
+
+    let (label, style) = match title {
+        OperatorRailTitle::Generated(title) if has_trimmed_content(title) => (
+            title.as_str(),
+            Style::default()
+                .fg(theme.text.primary)
+                .add_modifier(Modifier::BOLD),
+        ),
+        OperatorRailTitle::Generated(_) => return Text::from(Vec::<Line<'static>>::new()),
+        OperatorRailTitle::Pending => (
+            "Generating title...",
+            Style::default().fg(theme.text.secondary),
+        ),
     };
 
     Text::from(vec![
         Line::from(Span::styled(
-            truncate_plain_text(title, usize::from(width)),
-            Style::default()
-                .fg(theme.text.primary)
-                .add_modifier(Modifier::BOLD),
+            truncate_plain_text(label, usize::from(width)),
+            style,
         )),
         Line::from(""),
     ])
@@ -2877,7 +2962,7 @@ fn build_operator_sidebar_selection_snapshot(
     theme: &Theme,
 ) -> Option<OperatorSidebarSelectionSnapshot> {
     let rail = build_operator_rail_model(app);
-    let body_area = operator_sidebar_body_area(app, inner, theme, rail.title.as_deref())?;
+    let body_area = operator_sidebar_body_area(app, inner, theme, rail.title.as_ref())?;
 
     let body_layout = build_operator_rail_body_layout(
         &rail.body,
@@ -3563,7 +3648,7 @@ fn operator_sidebar_section_hit_target_in_surface(
     }
 
     let rail = build_operator_rail_model(app);
-    let body_area = operator_sidebar_body_area(app, inner, theme, rail.title.as_deref())?;
+    let body_area = operator_sidebar_body_area(app, inner, theme, rail.title.as_ref())?;
     rect_contains(body_area, column, row).then_some(())?;
 
     let layout = build_operator_rail_body_layout(
@@ -3595,7 +3680,7 @@ fn operator_sidebar_subagent_session_hit_target_in_surface(
     }
 
     let rail = build_operator_rail_model(app);
-    let body_area = operator_sidebar_body_area(app, inner, theme, rail.title.as_deref())?;
+    let body_area = operator_sidebar_body_area(app, inner, theme, rail.title.as_ref())?;
     rect_contains(body_area, column, row).then_some(())?;
 
     let layout = build_operator_rail_body_layout(
@@ -3627,7 +3712,7 @@ fn operator_sidebar_subagent_group_hit_target_in_surface(
     }
 
     let rail = build_operator_rail_model(app);
-    let body_area = operator_sidebar_body_area(app, inner, theme, rail.title.as_deref())?;
+    let body_area = operator_sidebar_body_area(app, inner, theme, rail.title.as_ref())?;
     rect_contains(body_area, column, row).then_some(())?;
 
     let layout = build_operator_rail_body_layout(
@@ -3653,7 +3738,7 @@ fn operator_sidebar_body_area(
     app: &AppState,
     inner: Rect,
     theme: &Theme,
-    title: Option<&str>,
+    title: Option<&OperatorRailTitle>,
 ) -> Option<Rect> {
     let title_text = build_operator_rail_title_text(title, theme, inner.width);
     let title_height = title_text.lines.len().min(usize::from(u16::MAX)) as u16;
@@ -3798,12 +3883,50 @@ fn append_operator_rail_item(
     }
 }
 
-fn operator_sidebar_session_title(app: &AppState) -> Option<String> {
-    app.activities
+fn operator_sidebar_session_title(app: &AppState) -> Option<OperatorRailTitle> {
+    if let Some(title) = app
+        .events
+        .iter()
+        .rev()
+        .find_map(|event| match &event.payload {
+            harness_core::event::EventV1::SessionTitleUpdated(data) => {
+                Some(sanitize_operator_sidebar_line(&data.title))
+            }
+            _ => None,
+        })
+    {
+        if !title.is_empty() {
+            return Some(OperatorRailTitle::Generated(title));
+        }
+    }
+
+    let user_title = app
+        .activities
         .iter()
         .find_map(|activity| activity.user_message.as_ref())
         .map(|message| sanitize_operator_sidebar_line(&message.text))
-        .filter(|text| !text.is_empty())
+        .filter(|text| !text.is_empty());
+
+    let prompt_submitted = app
+        .activities
+        .iter()
+        .any(|activity| activity.user_message.is_some());
+    let provider_started = app.events.iter().any(|event| {
+        matches!(
+            event.payload,
+            harness_core::event::EventV1::ProviderRequestStarted(_)
+        )
+    });
+
+    if !app.replay_mode && prompt_submitted && !provider_started {
+        return Some(OperatorRailTitle::Pending);
+    }
+
+    if let Some(title) = user_title {
+        return Some(OperatorRailTitle::Generated(title));
+    }
+
+    None
 }
 
 fn operator_sidebar_todo_items(app: &AppState) -> Option<Vec<OperatorRailItem>> {
