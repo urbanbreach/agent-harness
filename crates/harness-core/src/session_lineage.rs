@@ -588,6 +588,7 @@ fn collect_referenced_artifacts(
             | EventV1::TaskCancelled(_)
             | EventV1::TaskCompleted(_)
             | EventV1::TaskResultLate(_)
+            | EventV1::BackgroundTaskNotification(_)
             | EventV1::StaleDetected(_)
             | EventV1::UserMessageSubmitted(_)
             | EventV1::ProviderRequestStarted(_)
@@ -1338,6 +1339,9 @@ impl PrefixState {
                 self.tasks_in_flight.remove(&payload.task_id);
             }
             EventV1::ProviderRequestStarted(payload) => {
+                if let Some(turn_id) = provider_started_turn_id(payload) {
+                    self.user_requests_awaiting_provider.remove(turn_id);
+                }
                 self.user_requests_awaiting_provider
                     .remove(&payload.request_id);
                 self.provider_requests_in_flight
@@ -1390,12 +1394,15 @@ impl PrefixState {
                 self.complete_edit(&payload.edit_id, &payload.path);
             }
             EventV1::UserMessageSubmitted(payload) => {
-                self.user_requests_awaiting_provider
-                    .insert(payload.request_id.clone());
+                if !is_background_task_wakeup_message(&payload.text) {
+                    self.user_requests_awaiting_provider
+                        .insert(payload.request_id.clone());
+                }
             }
             EventV1::AgentSpawned(_)
             | EventV1::SessionTitleUpdated(_)
             | EventV1::AgentStopped(_)
+            | EventV1::BackgroundTaskNotification(_)
             | EventV1::StaleDetected(_)
             | EventV1::ProviderStreamDelta(_)
             | EventV1::ProviderReasoningDelta(_)
@@ -1480,6 +1487,19 @@ impl PrefixState {
         };
         self.edits_in_flight.remove(&matching_id);
     }
+}
+
+fn provider_started_turn_id(payload: &crate::event::ProviderRequestStartedEvent) -> Option<&str> {
+    payload
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.turn_id.as_deref())
+}
+
+fn is_background_task_wakeup_message(text: &str) -> bool {
+    let trimmed = text.trim_start();
+    trimmed.starts_with("<system-reminder>\n[BACKGROUND TASK ")
+        || trimmed.starts_with("<system-reminder>\r\n[BACKGROUND TASK ")
 }
 
 fn first_non_empty_reason(label: &str, values: &BTreeSet<String>) -> Option<String> {
@@ -1575,9 +1595,9 @@ mod tests {
         ActorKind, AgentSpawnedEvent, EditAppliedEvent, EditProposedEvent, EventActor,
         EventEnvelopeV1, EventV1, PermissionDecision, PermissionRequestedEvent,
         PermissionResolvedEvent, ProviderRequestFinishedEvent, ProviderRequestStartedEvent,
-        RunFinishedEvent, RunStartedEvent, TaskScheduleState, TaskScheduledEvent,
-        ToolCallFinishedEvent, ToolCallRequestedEvent, ToolCallStatus, UserMessageSubmittedEvent,
-        SCHEMA_VERSION,
+        ProviderRequestStartedMetadata, RunFinishedEvent, RunStartedEvent, TaskScheduleState,
+        TaskScheduledEvent, ToolCallFinishedEvent, ToolCallRequestedEvent, ToolCallStatus,
+        UserMessageSubmittedEvent, SCHEMA_VERSION,
     };
     use crate::proj::{RunStatus, SessionCatalogEntry, SessionModeSource};
 
@@ -1682,6 +1702,90 @@ mod tests {
         assert_eq!(fork.run_id.as_deref(), Some("run_session_lineage"));
         assert_eq!(fork.status, Some(RunStatus::Finished));
         assert_eq!(latest.cutoff_seq, 5);
+    }
+
+    #[test]
+    fn session_lineage_clears_user_prompt_by_provider_turn_metadata() {
+        let events = vec![
+            envelope(
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                2,
+                EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                    request_id: "req_turn".to_string(),
+                    text: "do work".to_string(),
+                }),
+            ),
+            envelope(
+                3,
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "provider_req".to_string(),
+                    provider_id: "default".to_string(),
+                    model_id: "gpt-5".to_string(),
+                    prompt_summary: "do work".to_string(),
+                    request_digest: "digest-req".to_string(),
+                    metadata: Some(ProviderRequestStartedMetadata {
+                        turn_id: Some("req_turn".to_string()),
+                        provider_call_id: Some("provider_req".to_string()),
+                        ..Default::default()
+                    }),
+                }),
+            ),
+            envelope(
+                4,
+                EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                    request_id: "provider_req".to_string(),
+                    finish_reason: "stop".to_string(),
+                    output_digest: Some("digest-out".to_string()),
+                    usage: None,
+                    metadata: None,
+                }),
+            ),
+            envelope(
+                5,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "finished".to_string(),
+                }),
+            ),
+        ];
+
+        let prefix = validate_stable_prefix(&events, 5).expect("turn id clears user prompt");
+        assert_eq!(prefix.cutoff_seq, 5);
+    }
+
+    #[test]
+    fn session_lineage_treats_background_wakeup_message_as_delivered() {
+        let events = vec![
+            envelope(
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/workspace".to_string(),
+                }),
+            ),
+            envelope(
+                2,
+                EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                    request_id: "req_background_wakeup".to_string(),
+                    text: "<system-reminder>\n[BACKGROUND TASK COMPLETED]\nID: agent_child\n</system-reminder>"
+                        .to_string(),
+                }),
+            ),
+            envelope(
+                3,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "finished".to_string(),
+                }),
+            ),
+        ];
+
+        let prefix = validate_stable_prefix(&events, 3).expect("background wakeup is delivered");
+        assert_eq!(prefix.cutoff_seq, 3);
     }
 
     #[test]

@@ -1593,6 +1593,7 @@ fn apply_run_summary_event(summary: &mut RunSummary, event: &EventEnvelopeV1) {
         EventV1::TaskCompleted(payload) => {
             summary.tasks_in_flight.remove(&payload.task_id);
         }
+        EventV1::BackgroundTaskNotification(_) => {}
         EventV1::PermissionRequested(payload) => {
             summary
                 .pending_permissions
@@ -1637,6 +1638,7 @@ fn event_type_name(event: &EventV1) -> String {
         EventV1::TaskCancelled(_) => "task_cancelled",
         EventV1::TaskCompleted(_) => "task_completed",
         EventV1::TaskResultLate(_) => "task_result_late",
+        EventV1::BackgroundTaskNotification(_) => "background_task_notification",
         EventV1::StaleDetected(_) => "stale_detected",
         EventV1::ProviderRequestStarted(_) => "provider_request_started",
         EventV1::ProviderStreamDelta(_) => "provider_stream_delta",

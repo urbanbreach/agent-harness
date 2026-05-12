@@ -428,6 +428,7 @@ where
 #[derive(Default)]
 pub struct ToolRegistry {
     tools: BTreeMap<ToolId, Arc<dyn Tool>>,
+    profile_tool_descriptions: BTreeMap<(ToolId, String), String>,
 }
 
 impl std::fmt::Debug for ToolRegistry {
@@ -446,6 +447,16 @@ impl ToolRegistry {
 
     pub fn register(&mut self, tool: Arc<dyn Tool>) {
         self.tools.insert(tool.id().to_string(), tool);
+    }
+
+    pub fn set_profile_tool_description(
+        &mut self,
+        tool_id: impl Into<String>,
+        profile_name: impl Into<String>,
+        description: impl Into<String>,
+    ) {
+        self.profile_tool_descriptions
+            .insert((tool_id.into(), profile_name.into()), description.into());
     }
 
     pub fn get(&self, tool_id: &str) -> Option<Arc<dyn Tool>> {
@@ -475,6 +486,12 @@ impl ToolRegistry {
 
     pub fn function_name_mapping(&self) -> ToolFunctionNameMapping {
         build_tool_function_name_mapping(self.tools.keys().map(String::as_str))
+    }
+
+    pub fn description_for_profile(&self, tool_id: &str, profile_name: &str) -> Option<&str> {
+        self.profile_tool_descriptions
+            .get(&(tool_id.to_string(), profile_name.to_string()))
+            .map(String::as_str)
     }
 
     pub fn tool_ids(&self) -> Vec<String> {

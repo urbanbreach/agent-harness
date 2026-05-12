@@ -1142,6 +1142,7 @@ pub fn project_transcript(
                 );
             }
             EventV1::StaleDetected(_)
+            | EventV1::BackgroundTaskNotification(_)
             | EventV1::PermissionGrantRecorded(_)
             | EventV1::EditProposed(_)
             | EventV1::EditApplied(_)

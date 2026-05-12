@@ -38,18 +38,19 @@ use crate::counter_id::parse_prefixed_counter;
 use crate::digest::{digest12, digest12_json};
 use crate::edit::hashline::HashlinePatch;
 use crate::event::{
-    ActorKind, AgentSpawnedEvent, ArtifactWrittenEvent, CompactionAppliedEvent,
-    CompactionFailedEvent, CompactionRequestedEvent, CompactionWrittenEvent, EditAppliedEvent,
-    EditProposedEvent, EditRejectedEvent, EventActor, EventArtifactRef, EventBuildError,
-    EventBuilder, EventContext, EventEnvelopeV1, EventV1, ExecutionTimingMetadata,
-    HookExecutionMetadata, HookExecutionStatus, PermissionDecision as EventPermissionDecision,
-    PermissionGrantRecordedEvent, PermissionRequestedArgs, PermissionResolvedEvent,
-    PolicyViolationDetectedEvent, ProviderAssistantMessageMetadata, ProviderReasoningDeltaEvent,
-    ProviderRequestFinishedMetadata, ProviderRequestStartedMetadata, ResolvedToolIdentity,
-    RunFinishedEvent, RunStartedEvent, StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent,
-    TaskCompletionMetadata, TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState,
-    TaskScheduledEvent, TaskTerminalScope, ToolCallFinishedEvent, ToolCallMetadata,
-    ToolCallStartedEvent, ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent,
+    ActorKind, AgentSpawnedEvent, ArtifactWrittenEvent, BackgroundTaskNotificationEvent,
+    BackgroundTaskNotificationStatus, CompactionAppliedEvent, CompactionFailedEvent,
+    CompactionRequestedEvent, CompactionWrittenEvent, EditAppliedEvent, EditProposedEvent,
+    EditRejectedEvent, EventActor, EventArtifactRef, EventBuildError, EventBuilder, EventContext,
+    EventEnvelopeV1, EventV1, ExecutionTimingMetadata, HookExecutionMetadata, HookExecutionStatus,
+    PermissionDecision as EventPermissionDecision, PermissionGrantRecordedEvent,
+    PermissionRequestedArgs, PermissionResolvedEvent, PolicyViolationDetectedEvent,
+    ProviderAssistantMessageMetadata, ProviderReasoningDeltaEvent, ProviderRequestFinishedMetadata,
+    ProviderRequestStartedMetadata, ResolvedToolIdentity, RunFinishedEvent, RunStartedEvent,
+    StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskCompletionMetadata,
+    TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState, TaskScheduledEvent,
+    TaskTerminalScope, ToolCallFinishedEvent, ToolCallMetadata, ToolCallStartedEvent,
+    ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent,
 };
 use crate::path_selector::workspace_relative_path_from_maybe_absolute;
 use crate::perm::{
@@ -98,6 +99,8 @@ const PROVIDER_CONTEXT_SPLIT_PREFIX_SUMMARY_MAX_CHARS: usize = 1_200;
 const PROVIDER_CONTEXT_FILE_OPERATION_FACT_LIMIT: usize = 50;
 const PROVIDER_CONTEXT_OPERATION_FACT_LIMIT: usize = 20;
 const PROVIDER_CONTEXT_SUMMARY_CONTRACT_VERSION: u32 = 2;
+const BACKGROUND_TASK_NOTIFICATION_SUMMARY_MAX_CHARS: usize = 511;
+const BACKGROUND_TASK_NOTIFICATION_DESCRIPTION_MAX_CHARS: usize = 160;
 const PROVIDER_CONTEXT_SPLIT_PREFIX_SUMMARY_HEADINGS: &[&str] = &[
     "## Original Request",
     "## Early Progress",
@@ -279,6 +282,7 @@ pub enum Command {
         selected_resource_tags: Vec<crate::file_tag::SelectedResourceTag>,
         model_ref_override: Option<String>,
         model_settings_override: Option<AgentModelSettings>,
+        child_task_metadata: Option<ChildTaskRequestMetadata>,
         respond_to: oneshot::Sender<Result<String, CoordinatorError>>,
     },
     AgentProviderReasoningDelta {
@@ -368,6 +372,10 @@ pub enum Command {
     AllocateProviderRequestId {
         respond_to: oneshot::Sender<Result<String, CoordinatorError>>,
     },
+    DrainAgentWakeups {
+        agent_id: String,
+        respond_to: oneshot::Sender<Vec<String>>,
+    },
     CompactAgentContext {
         task_id: String,
         agent_id: String,
@@ -399,6 +407,17 @@ pub struct AgentRuntimeInfo {
     pub model_ref_explicit: bool,
     pub toolset: Vec<String>,
     pub parent_agent_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChildTaskRequestMetadata {
+    pub parent_tool_call_id: String,
+    pub parent_session_id: String,
+    pub parent_agent_id: Option<String>,
+    pub child_session_id: String,
+    pub task_id: String,
+    pub description: String,
+    pub run_in_background: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -765,6 +784,31 @@ impl CoordinatorHandle {
             selected_resource_tags: selected_tags.resources,
             model_ref_override,
             model_settings_override,
+            child_task_metadata: None,
+            respond_to,
+        })
+        .await
+    }
+
+    pub async fn request_child_agent_turn_with_model(
+        &self,
+        actor: EventActor,
+        agent_id: impl Into<String>,
+        prompt: impl Into<String>,
+        model_ref_override: Option<String>,
+        model_settings_override: Option<AgentModelSettings>,
+        child_task_metadata: ChildTaskRequestMetadata,
+    ) -> Result<String, CoordinatorError> {
+        self.request(|respond_to| Command::RequestAgentTurn {
+            actor,
+            agent_id: agent_id.into(),
+            prompt: prompt.into(),
+            selected_file_tags: Vec::new(),
+            selected_agent_tags: Vec::new(),
+            selected_resource_tags: Vec::new(),
+            model_ref_override,
+            model_settings_override,
+            child_task_metadata: Some(child_task_metadata),
             respond_to,
         })
         .await
@@ -1063,6 +1107,7 @@ impl Coordinator {
                 selected_resource_tags,
                 model_ref_override,
                 model_settings_override,
+                child_task_metadata,
                 respond_to,
             } => {
                 let result = self
@@ -1077,6 +1122,7 @@ impl Coordinator {
                         },
                         model_ref_override,
                         model_settings_override,
+                        child_task_metadata,
                     )
                     .await;
                 warn_oneshot_send_failure(respond_to.send(result), "request_agent_turn");
@@ -1245,6 +1291,13 @@ impl Coordinator {
                 let result = self.allocate_provider_request_id_internal();
                 warn_oneshot_send_failure(respond_to.send(result), "allocate_provider_request_id");
             }
+            Command::DrainAgentWakeups {
+                agent_id,
+                respond_to,
+            } => {
+                let result = self.drain_agent_wakeups_internal(&agent_id);
+                warn_oneshot_send_failure(respond_to.send(result), "drain_agent_wakeups");
+            }
             Command::CompactAgentContext {
                 task_id,
                 agent_id,
@@ -1367,6 +1420,8 @@ impl Coordinator {
             subagent_parent_by_id: BTreeMap::new(),
             child_session_mirrors: BTreeMap::new(),
             child_request_session_by_id: BTreeMap::new(),
+            background_notification_child_requests: BTreeSet::new(),
+            pending_agent_wakeups: BTreeMap::new(),
             pending_permissions: BTreeMap::new(),
             active_permission_grants: PermissionGrantSet::default(),
             cancelled_running_tasks: BTreeSet::new(),
@@ -1583,6 +1638,8 @@ impl Coordinator {
             subagent_parent_by_id: restored_subagent_parent_by_id,
             child_session_mirrors: BTreeMap::new(),
             child_request_session_by_id: BTreeMap::new(),
+            background_notification_child_requests: BTreeSet::new(),
+            pending_agent_wakeups: BTreeMap::new(),
             pending_permissions: BTreeMap::new(),
             active_permission_grants: resume_plan.active_permission_grants,
             cancelled_running_tasks: BTreeSet::new(),
@@ -1877,6 +1934,7 @@ impl Coordinator {
                     profile: profile_cfg,
                     request,
                     request_id,
+                    child_task: None,
                 },
             )
             .await?;
@@ -1885,6 +1943,10 @@ impl Coordinator {
         Ok(agent_id)
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "agent turn requests pass explicit actor, target, prompt, tags, overrides, and child task metadata"
+    )]
     async fn request_agent_turn_internal(
         &mut self,
         actor: EventActor,
@@ -1893,6 +1955,7 @@ impl Coordinator {
         selected_tags: crate::file_tag::SelectedPromptTags,
         model_ref_override: Option<String>,
         model_settings_override: Option<AgentModelSettings>,
+        child_task_metadata: Option<ChildTaskRequestMetadata>,
     ) -> Result<String, CoordinatorError> {
         let run_state = self
             .run_state
@@ -1928,6 +1991,16 @@ impl Coordinator {
                 .child_request_session_by_id
                 .insert(request_id.clone(), agent_id.clone());
         }
+        let child_task = child_task_metadata.map(|metadata| ChildTaskTurnState {
+            parent_tool_call_id: metadata.parent_tool_call_id,
+            parent_session_id: metadata.parent_session_id,
+            parent_agent_id: metadata.parent_agent_id,
+            child_session_id: metadata.child_session_id,
+            child_request_id: request_id.clone(),
+            task_id: metadata.task_id,
+            description: metadata.description,
+            run_in_background: metadata.run_in_background,
+        });
 
         let prompt = if profile.name == crate::plan::PLAN_AGENT_NAME {
             Self::plan_mode_prompt(
@@ -1994,6 +2067,7 @@ impl Coordinator {
                 profile,
                 request,
                 request_id: request_id.clone(),
+                child_task,
             },
         )
         .await?;
@@ -2061,6 +2135,19 @@ impl Coordinator {
             .as_mut()
             .ok_or(CoordinatorError::RunNotStarted)?;
         Ok(allocate_provider_request_id(run_state))
+    }
+
+    fn drain_agent_wakeups_internal(&mut self, agent_id: &str) -> Vec<String> {
+        self.run_state
+            .as_mut()
+            .and_then(|run_state| run_state.pending_agent_wakeups.remove(agent_id))
+            .map(|wakeups| {
+                wakeups
+                    .into_iter()
+                    .map(|wakeup| wakeup.notification_text)
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     fn plan_mode_prompt(run_id: &str, workspace_root: &Path, prompt: &str) -> String {
@@ -3122,7 +3209,7 @@ impl Coordinator {
                 .running_agent_turns
                 .values()
                 .any(|running| running.agent_id == agent_id);
-            append_payload_event_with_correlation(
+            let terminal_event = append_payload_event_with_correlation(
                 self.clock.as_ref(),
                 self.redactor.as_ref(),
                 run_state,
@@ -3135,6 +3222,23 @@ impl Coordinator {
                     task_scope: Some(TaskTerminalScope::AgentTurn),
                 }),
             )?;
+            append_background_task_notification_and_schedule(
+                self.clock.as_ref(),
+                self.redactor.as_ref(),
+                self.job_tx.clone(),
+                run_state,
+                self.config.hook_runtime_config.clone(),
+                self.config.compaction.clone(),
+                self.config.provider.clone(),
+                self.config.tool_registry.clone(),
+                queued.child_task,
+                &terminal_event,
+                background_notification_status_for_cancel_reason(&terminal_event_summary(
+                    &terminal_event,
+                )),
+                &terminal_event_summary(&terminal_event),
+            )
+            .await?;
             if should_promote_next {
                 self.promote_next_agent_blocked_turn(&agent_id).await?;
             }
@@ -3162,7 +3266,7 @@ impl Coordinator {
                 }
                 run_state.cancelled_running_tasks.insert(child_task_id);
             }
-            append_payload_event_with_correlation(
+            let terminal_event = append_payload_event_with_correlation(
                 self.clock.as_ref(),
                 self.redactor.as_ref(),
                 run_state,
@@ -3175,6 +3279,23 @@ impl Coordinator {
                     task_scope: Some(TaskTerminalScope::AgentTurn),
                 }),
             )?;
+            append_background_task_notification_and_schedule(
+                self.clock.as_ref(),
+                self.redactor.as_ref(),
+                self.job_tx.clone(),
+                run_state,
+                self.config.hook_runtime_config.clone(),
+                self.config.compaction.clone(),
+                self.config.provider.clone(),
+                self.config.tool_registry.clone(),
+                running.child_task,
+                &terminal_event,
+                background_notification_status_for_cancel_reason(&terminal_event_summary(
+                    &terminal_event,
+                )),
+                &terminal_event_summary(&terminal_event),
+            )
+            .await?;
             return Ok(());
         }
 
@@ -4443,7 +4564,7 @@ impl Coordinator {
                                     running.latest_provider_request_id.clone(),
                                 ),
                             );
-                            append_payload_event_with_correlation(
+                            let terminal_event = append_payload_event_with_correlation(
                                 self.clock.as_ref(),
                                 self.redactor.as_ref(),
                                 run_state,
@@ -4456,6 +4577,21 @@ impl Coordinator {
                                     task_scope: Some(TaskTerminalScope::AgentTurn),
                                 }),
                             )?;
+                            append_background_task_notification_and_schedule(
+                                self.clock.as_ref(),
+                                self.redactor.as_ref(),
+                                self.job_tx.clone(),
+                                run_state,
+                                self.config.hook_runtime_config.clone(),
+                                self.config.compaction.clone(),
+                                self.config.provider.clone(),
+                                self.config.tool_registry.clone(),
+                                running.child_task.clone(),
+                                &terminal_event,
+                                BackgroundTaskNotificationStatus::Failed,
+                                &terminal_event_summary(&terminal_event),
+                            )
+                            .await?;
                             terminal_compaction = Some(FailedTerminalCompactionRequest::new(
                                 task_id.clone(),
                                 running.agent_id.clone(),
@@ -4463,15 +4599,8 @@ impl Coordinator {
                                 "failed_response",
                             ));
                         } else {
-                            let lineage = run_state
-                                .child_session_mirrors
-                                .contains_key(&running.agent_id)
-                                .then(|| TaskLineageMetadata {
-                                    parent_session_id: Some(run_state.info.run_id.clone()),
-                                    child_session_id: Some(running.agent_id.clone()),
-                                    child_request_id: Some(request_id.clone()),
-                                    ..TaskLineageMetadata::default()
-                                });
+                            let lineage =
+                                agent_turn_child_lineage(run_state, &running, &request_id);
                             run_state
                                 .provider_context_by_agent
                                 .entry(running.agent_id.clone())
@@ -4486,7 +4615,7 @@ impl Coordinator {
                                     messages,
                                     ..ProviderConversationTurn::default()
                                 });
-                            append_payload_event_with_correlation(
+                            let terminal_event = append_payload_event_with_correlation(
                                 self.clock.as_ref(),
                                 self.redactor.as_ref(),
                                 run_state,
@@ -4508,6 +4637,21 @@ impl Coordinator {
                                     }),
                                 }),
                             )?;
+                            append_background_task_notification_and_schedule(
+                                self.clock.as_ref(),
+                                self.redactor.as_ref(),
+                                self.job_tx.clone(),
+                                run_state,
+                                self.config.hook_runtime_config.clone(),
+                                self.config.compaction.clone(),
+                                self.config.provider.clone(),
+                                self.config.tool_registry.clone(),
+                                running.child_task.clone(),
+                                &terminal_event,
+                                BackgroundTaskNotificationStatus::Completed,
+                                &terminal_event_summary(&terminal_event),
+                            )
+                            .await?;
 
                             let proactive_trigger = ProviderCompactionTrigger {
                                 agent_id: running.agent_id.clone(),
@@ -4606,7 +4750,7 @@ impl Coordinator {
                         if let Some(memory) = memory {
                             push_incomplete_provider_turn(run_state, &running, &request_id, memory);
                         }
-                        append_payload_event_with_correlation(
+                        let terminal_event = append_payload_event_with_correlation(
                             self.clock.as_ref(),
                             self.redactor.as_ref(),
                             run_state,
@@ -4615,10 +4759,25 @@ impl Coordinator {
                             Some(request_id.clone()),
                             EventV1::TaskCancelled(TaskCancelledEvent {
                                 task_id: task_id.clone(),
-                                reason,
+                                reason: reason.clone(),
                                 task_scope: Some(TaskTerminalScope::AgentTurn),
                             }),
                         )?;
+                        append_background_task_notification_and_schedule(
+                            self.clock.as_ref(),
+                            self.redactor.as_ref(),
+                            self.job_tx.clone(),
+                            run_state,
+                            self.config.hook_runtime_config.clone(),
+                            self.config.compaction.clone(),
+                            self.config.provider.clone(),
+                            self.config.tool_registry.clone(),
+                            running.child_task.clone(),
+                            &terminal_event,
+                            background_notification_status_for_cancel_reason(&reason),
+                            &reason,
+                        )
+                        .await?;
                         if has_incomplete_memory {
                             terminal_compaction = Some(FailedTerminalCompactionRequest::new(
                                 task_id.clone(),
@@ -4675,6 +4834,19 @@ impl Coordinator {
             }
         }
 
+        schedule_pending_agent_wakeups_for_idle_agent(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            self.job_tx.clone(),
+            run_state,
+            self.config.hook_runtime_config.clone(),
+            self.config.compaction.clone(),
+            self.config.provider.clone(),
+            self.config.tool_registry.clone(),
+            &finished_agent_id,
+        )
+        .await?;
+
         self.promote_next_agent_blocked_turn(&finished_agent_id)
             .await?;
 
@@ -4699,6 +4871,8 @@ struct RunState {
     subagent_parent_by_id: BTreeMap<String, String>,
     child_session_mirrors: BTreeMap<String, ChildSessionMirror>,
     child_request_session_by_id: BTreeMap<String, String>,
+    background_notification_child_requests: BTreeSet<String>,
+    pending_agent_wakeups: BTreeMap<String, Vec<PendingAgentWakeup>>,
     pending_permissions: BTreeMap<String, PendingPermissionState>,
     active_permission_grants: PermissionGrantSet,
     cancelled_running_tasks: BTreeSet<String>,
@@ -4727,6 +4901,25 @@ struct QueuedAgentTurn {
     request: AgentRequest,
     queue_key: ConcurrencyKey,
     scheduler_queued: bool,
+    child_task: Option<ChildTaskTurnState>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ChildTaskTurnState {
+    parent_tool_call_id: String,
+    parent_session_id: String,
+    parent_agent_id: Option<String>,
+    child_session_id: String,
+    child_request_id: String,
+    task_id: String,
+    description: String,
+    run_in_background: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PendingAgentWakeup {
+    request_id: String,
+    notification_text: String,
 }
 
 #[derive(Debug, Clone)]
@@ -4747,6 +4940,7 @@ struct RunningAgentTurn {
     latest_assistant_output: Option<String>,
     latest_provider_id: Option<String>,
     latest_model_id: Option<String>,
+    child_task: Option<ChildTaskTurnState>,
 }
 
 fn cancelled_failure_memory_from_running(
@@ -4806,6 +5000,285 @@ fn truncated_failure_reason(reason: &str) -> Option<String> {
             reason,
             PROVIDER_CONTEXT_COMPACTION_TURN_EXCERPT_MAX_CHARS,
         ))
+    }
+}
+
+fn agent_turn_child_lineage(
+    run_state: &RunState,
+    running: &RunningAgentTurn,
+    request_id: &str,
+) -> Option<TaskLineageMetadata> {
+    if let Some(child_task) = running.child_task.as_ref() {
+        return Some(TaskLineageMetadata {
+            parent_tool_call_id: Some(child_task.parent_tool_call_id.clone()),
+            parent_task_id: None,
+            parent_request_id: None,
+            parent_session_id: Some(child_task.parent_session_id.clone()),
+            child_session_id: Some(child_task.child_session_id.clone()),
+            child_request_id: Some(child_task.child_request_id.clone()),
+            child_provider_id: running.latest_provider_id.clone(),
+            child_model_id: running.latest_model_id.clone(),
+        });
+    }
+
+    run_state
+        .child_session_mirrors
+        .contains_key(&running.agent_id)
+        .then(|| TaskLineageMetadata {
+            parent_session_id: Some(run_state.info.run_id.clone()),
+            child_session_id: Some(running.agent_id.clone()),
+            child_request_id: Some(request_id.to_string()),
+            ..TaskLineageMetadata::default()
+        })
+}
+
+fn background_notification_status_for_cancel_reason(
+    reason: &str,
+) -> BackgroundTaskNotificationStatus {
+    let lower = reason.to_ascii_lowercase();
+    if lower.contains("cancel") || lower.contains("aborted") {
+        BackgroundTaskNotificationStatus::Cancelled
+    } else {
+        BackgroundTaskNotificationStatus::Failed
+    }
+}
+
+fn terminal_event_summary(event: &EventEnvelopeV1) -> String {
+    match &event.payload {
+        EventV1::TaskCompleted(payload) => payload.result_summary.clone(),
+        EventV1::TaskCancelled(payload) => payload.reason.clone(),
+        _ => String::new(),
+    }
+}
+
+fn background_task_notification_text(notification: &BackgroundTaskNotificationEvent) -> String {
+    format!(
+        "[BACKGROUND TASK {}]\nID: {}\nRequest ID: {}\nDescription: {}\nStatus: {}\n\n{}\n\nUse background_output(request_id=\"{}\") for full details or to continue analysis from the child session.",
+        notification.status.as_str().to_ascii_uppercase(),
+        notification.task_id,
+        notification.child_request_id,
+        notification.description,
+        notification.status.as_str(),
+        notification.summary,
+        notification.child_request_id,
+    )
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "background notification scheduling needs explicit coordinator dependencies"
+)]
+async fn append_background_task_notification_and_schedule<C, R>(
+    clock: &C,
+    redactor: &R,
+    job_tx: mpsc::Sender<Command>,
+    run_state: &mut RunState,
+    hook_runtime_config: HookRuntimeConfig,
+    compaction_config: CompactionRuntimeConfig,
+    provider: Arc<dyn Provider>,
+    tool_registry: Arc<ToolRegistry>,
+    child_task: Option<ChildTaskTurnState>,
+    terminal_event: &EventEnvelopeV1,
+    status: BackgroundTaskNotificationStatus,
+    summary: &str,
+) -> Result<(), CoordinatorError>
+where
+    C: Clock + ?Sized,
+    R: Redactor + ?Sized,
+{
+    let Some(child_task) = child_task.filter(|metadata| metadata.run_in_background) else {
+        return Ok(());
+    };
+
+    if !run_state
+        .background_notification_child_requests
+        .insert(child_task.child_request_id.clone())
+    {
+        return Ok(());
+    }
+
+    let parent_agent_id = child_task.parent_agent_id.clone();
+    let parent_profile = parent_agent_id
+        .as_deref()
+        .and_then(|agent_id| run_state.agents.get(agent_id))
+        .cloned();
+    let delivered_turn_request_id = parent_profile
+        .as_ref()
+        .map(|_| allocate_provider_request_id(run_state));
+    let capped_description = truncate_with_ellipsis(
+        &redactor.redact_text(&child_task.description),
+        BACKGROUND_TASK_NOTIFICATION_DESCRIPTION_MAX_CHARS,
+    );
+    let capped_summary = truncate_with_ellipsis(
+        &redactor.redact_text(summary),
+        BACKGROUND_TASK_NOTIFICATION_SUMMARY_MAX_CHARS,
+    );
+    let notification = BackgroundTaskNotificationEvent {
+        parent_session_id: child_task.parent_session_id.clone(),
+        parent_agent_id: parent_agent_id.clone(),
+        child_session_id: child_task.child_session_id.clone(),
+        child_request_id: child_task.child_request_id.clone(),
+        task_id: child_task.task_id.clone(),
+        description: capped_description,
+        status,
+        summary: capped_summary,
+        terminal_event_id: terminal_event.event_id.clone(),
+        terminal_task_id: terminal_terminal_task_id(terminal_event),
+        delivered_turn_request_id: delivered_turn_request_id.clone(),
+    };
+    let notification_text = format!(
+        "<system-reminder>\n{}\n</system-reminder>",
+        background_task_notification_text(&notification)
+    );
+
+    append_payload_event_with_correlation(
+        clock,
+        redactor,
+        run_state,
+        system_actor(),
+        Some(format!(
+            "background_task_notification:{}",
+            notification.child_request_id
+        )),
+        Some(notification.child_request_id.clone()),
+        EventV1::BackgroundTaskNotification(notification),
+    )?;
+
+    let (Some(parent_agent_id), Some(parent_profile), Some(delivered_turn_request_id)) =
+        (parent_agent_id, parent_profile, delivered_turn_request_id)
+    else {
+        return Ok(());
+    };
+
+    append_payload_event_with_correlation(
+        clock,
+        redactor,
+        run_state,
+        system_actor(),
+        Some(format!("agent:{parent_agent_id}")),
+        Some(delivered_turn_request_id.clone()),
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: delivered_turn_request_id.clone(),
+            text: notification_text.clone(),
+        }),
+    )?;
+
+    if run_state
+        .running_agent_turns
+        .values()
+        .any(|running| running.agent_id == parent_agent_id)
+    {
+        run_state
+            .pending_agent_wakeups
+            .entry(parent_agent_id)
+            .or_default()
+            .push(PendingAgentWakeup {
+                request_id: delivered_turn_request_id,
+                notification_text,
+            });
+        return Ok(());
+    }
+
+    schedule_agent_turn(
+        clock,
+        redactor,
+        job_tx,
+        run_state,
+        hook_runtime_config,
+        compaction_config,
+        ScheduleAgentTurnArgs {
+            provider,
+            tool_registry,
+            profile: parent_profile.clone(),
+            request: AgentRequest {
+                agent_id: parent_agent_id,
+                prompt: notification_text,
+                prompt_context: None,
+                selected_file_tags: Vec::new(),
+                selected_agent_tags: Vec::new(),
+                selected_resource_tags: Vec::new(),
+                model_ref: parent_profile.model_ref.clone(),
+                model_settings: default_model_settings_for_profile(&parent_profile.name),
+            },
+            request_id: delivered_turn_request_id,
+            child_task: None,
+        },
+    )
+    .await
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "pending wakeup scheduling needs explicit coordinator dependencies"
+)]
+async fn schedule_pending_agent_wakeups_for_idle_agent<C, R>(
+    clock: &C,
+    redactor: &R,
+    job_tx: mpsc::Sender<Command>,
+    run_state: &mut RunState,
+    hook_runtime_config: HookRuntimeConfig,
+    compaction_config: CompactionRuntimeConfig,
+    provider: Arc<dyn Provider>,
+    tool_registry: Arc<ToolRegistry>,
+    agent_id: &str,
+) -> Result<(), CoordinatorError>
+where
+    C: Clock + ?Sized,
+    R: Redactor + ?Sized,
+{
+    if run_state
+        .running_agent_turns
+        .values()
+        .any(|running| running.agent_id == agent_id)
+    {
+        return Ok(());
+    }
+
+    let Some(wakeups) = run_state.pending_agent_wakeups.remove(agent_id) else {
+        return Ok(());
+    };
+    let Some(parent_profile) = run_state.agents.get(agent_id).cloned() else {
+        return Ok(());
+    };
+
+    for wakeup in wakeups {
+        schedule_agent_turn(
+            clock,
+            redactor,
+            job_tx.clone(),
+            run_state,
+            hook_runtime_config.clone(),
+            compaction_config.clone(),
+            ScheduleAgentTurnArgs {
+                provider: provider.clone(),
+                tool_registry: tool_registry.clone(),
+                profile: parent_profile.clone(),
+                request: AgentRequest {
+                    agent_id: agent_id.to_string(),
+                    prompt: wakeup.notification_text,
+                    prompt_context: None,
+                    selected_file_tags: Vec::new(),
+                    selected_agent_tags: Vec::new(),
+                    selected_resource_tags: Vec::new(),
+                    model_ref: parent_profile.model_ref.clone(),
+                    model_settings: default_model_settings_for_profile(&parent_profile.name),
+                },
+                request_id: wakeup.request_id,
+                child_task: None,
+            },
+        )
+        .await?;
+    }
+
+    Ok(())
+}
+
+fn terminal_terminal_task_id(event: &EventEnvelopeV1) -> String {
+    match &event.payload {
+        EventV1::TaskCompleted(payload) => payload.task_id.clone(),
+        EventV1::TaskCancelled(payload) => payload.task_id.clone(),
+        EventV1::TaskResultLate(payload) => payload.task_id.clone(),
+        _ => String::new(),
     }
 }
 
@@ -5094,6 +5567,15 @@ struct AgentTurnTaskScheduledEventArgs<'a> {
     state: TaskScheduleState,
 }
 
+struct ScheduleAgentTurnArgs {
+    provider: Arc<dyn Provider>,
+    tool_registry: Arc<ToolRegistry>,
+    profile: AgentProfile,
+    request: AgentRequest,
+    request_id: String,
+    child_task: Option<ChildTaskTurnState>,
+}
+
 struct PermissionDeniedArgs<'a> {
     actor: EventActor,
     category: Option<String>,
@@ -5175,14 +5657,6 @@ struct EditAppliedEventArgs<'a> {
     diff_rel_path: Option<String>,
     diff_digest: Option<String>,
     request_correlation_id: Option<&'a str>,
-}
-
-struct ScheduleAgentTurnArgs {
-    provider: Arc<dyn Provider>,
-    tool_registry: Arc<ToolRegistry>,
-    profile: AgentProfile,
-    request: AgentRequest,
-    request_id: String,
 }
 
 struct TurnStartPhaseResult {
@@ -5863,6 +6337,7 @@ where
         profile,
         request,
         request_id,
+        child_task,
     } = args;
     let model = crate::agent::AgentModelRef::parse(&request.model_ref);
     let agent_id = request.agent_id.clone();
@@ -5907,6 +6382,7 @@ where
                 request,
                 queue_key,
                 scheduler_queued: false,
+                child_task,
             },
         );
 
@@ -5948,6 +6424,7 @@ where
                     request,
                     queue_key,
                     scheduler_queued: false,
+                    child_task,
                 },
             )
             .await?;
@@ -5976,6 +6453,7 @@ where
                     request,
                     queue_key,
                     scheduler_queued: true,
+                    child_task,
                 },
             );
         }
@@ -6117,6 +6595,7 @@ where
             latest_assistant_output: None,
             latest_provider_id: None,
             latest_model_id: None,
+            child_task: task.child_task.clone(),
         },
     );
 
@@ -6414,6 +6893,11 @@ async fn run_agent_turn_phase_loop(request: AgentTurnPhaseLoopRequest<'_>) -> Ag
             );
         }
 
+        match drain_agent_wakeups_phase(&job_tx, &task.agent_id).await {
+            Ok(wakeups) => append_agent_wakeup_messages(&mut turn_state.messages, wakeups),
+            Err(reason) => return AgentTurnOutcome::failed(reason),
+        }
+
         let provider_request_id = match allocate_provider_request_id_phase(&job_tx).await {
             Ok(request_id) => request_id,
             Err(reason) => return AgentTurnOutcome::failed(reason),
@@ -6466,6 +6950,17 @@ async fn run_agent_turn_phase_loop(request: AgentTurnPhaseLoopRequest<'_>) -> Ag
                     Some(assistant_response.request_id.clone()),
                 ),
             );
+        }
+
+        if assistant_response.tool_intents.is_empty() {
+            match drain_agent_wakeups_phase(&job_tx, &task.agent_id).await {
+                Ok(wakeups) if !wakeups.is_empty() => {
+                    append_agent_wakeup_messages(&mut turn_state.messages, wakeups);
+                    continue;
+                }
+                Ok(_) => {}
+                Err(reason) => return AgentTurnOutcome::failed(reason),
+            }
         }
 
         match decide_tool_phase(&assistant_response, &mut turn_state.total_tool_calls) {
@@ -6623,6 +7118,33 @@ async fn allocate_provider_request_id_phase(
         .await
         .map_err(|_| "provider request id response channel closed".to_string())?
         .map_err(|err| err.to_string())
+}
+
+async fn drain_agent_wakeups_phase(
+    job_tx: &mpsc::Sender<Command>,
+    agent_id: &str,
+) -> Result<Vec<String>, String> {
+    let (respond_to, response_rx) = oneshot::channel();
+    job_tx
+        .send(Command::DrainAgentWakeups {
+            agent_id: agent_id.to_string(),
+            respond_to,
+        })
+        .await
+        .map_err(|_| "agent wakeup channel closed".to_string())?;
+    response_rx
+        .await
+        .map_err(|_| "agent wakeup response channel closed".to_string())
+}
+
+fn append_agent_wakeup_messages(messages: &mut Vec<CompletionMessage>, wakeups: Vec<String>) {
+    messages.extend(wakeups.into_iter().map(|wakeup| CompletionMessage {
+        role: MessageRole::User,
+        content: wakeup,
+        name: None,
+        tool_call_id: None,
+        assistant_tool_calls: None,
+    }));
 }
 
 async fn run_provider_stream_phase(
@@ -10881,7 +11403,10 @@ fn plan_mode_shell_boundary_denial(
 
 fn is_plan_mode_read_only_shell_command(command: &str) -> bool {
     let trimmed = command.trim();
-    if trimmed.is_empty() || contains_shell_control_operator(trimmed) {
+    if trimmed.is_empty()
+        || contains_shell_control_operator(trimmed)
+        || contains_shell_quote_or_escape(trimmed)
+    {
         return false;
     }
 
@@ -10897,7 +11422,7 @@ fn is_plan_mode_read_only_shell_command(command: &str) -> bool {
 fn is_plan_mode_read_only_git_command(subcommand: &str, args: &[&str]) -> bool {
     match subcommand {
         "status" | "diff" | "log" | "show" | "rev-parse" | "merge-base" => {
-            !contains_git_write_output_arg(args)
+            !contains_git_write_output_arg(args) && !contains_git_exec_capable_arg(args)
         }
         "branch" => is_plan_mode_read_only_git_branch(args),
         _ => false,
@@ -10907,6 +11432,14 @@ fn is_plan_mode_read_only_git_command(subcommand: &str, args: &[&str]) -> bool {
 fn contains_git_write_output_arg(args: &[&str]) -> bool {
     args.iter()
         .any(|arg| *arg == "-o" || *arg == "--output" || arg.starts_with("--output="))
+}
+
+fn contains_git_exec_capable_arg(args: &[&str]) -> bool {
+    args.iter().any(|arg| {
+        matches!(*arg, "--ext-diff" | "--textconv")
+            || arg.starts_with("--ext-diff=")
+            || arg.starts_with("--textconv=")
+    })
 }
 
 fn is_plan_mode_read_only_git_branch(args: &[&str]) -> bool {
@@ -10940,6 +11473,10 @@ fn contains_shell_control_operator(command: &str) -> bool {
         .chars()
         .any(|ch| matches!(ch, '>' | '<' | '|' | '&' | ';' | '`'))
         || command.contains("$(")
+}
+
+fn contains_shell_quote_or_escape(command: &str) -> bool {
+    command.chars().any(|ch| matches!(ch, '\'' | '"' | '\\'))
 }
 
 fn active_plan_symlink_denial(workspace_root: &Path, active_plan: &str) -> Option<String> {

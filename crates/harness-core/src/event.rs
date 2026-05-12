@@ -107,6 +107,7 @@ pub enum EventV1 {
     TaskCancelled(TaskCancelledEvent),
     TaskCompleted(TaskCompletedEvent),
     TaskResultLate(TaskResultLateEvent),
+    BackgroundTaskNotification(BackgroundTaskNotificationEvent),
     StaleDetected(StaleDetectedEvent),
     UserMessageSubmitted(UserMessageSubmittedEvent),
     ProviderRequestStarted(ProviderRequestStartedEvent),
@@ -349,6 +350,43 @@ pub struct TaskCompletedEvent {
 pub struct TaskResultLateEvent {
     pub task_id: String,
     pub result_digest: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackgroundTaskNotificationStatus {
+    Completed,
+    Cancelled,
+    Failed,
+    TimedOut,
+}
+
+impl BackgroundTaskNotificationStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Completed => "completed",
+            Self::Cancelled => "cancelled",
+            Self::Failed => "failed",
+            Self::TimedOut => "timed_out",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BackgroundTaskNotificationEvent {
+    pub parent_session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_agent_id: Option<String>,
+    pub child_session_id: String,
+    pub child_request_id: String,
+    pub task_id: String,
+    pub description: String,
+    pub status: BackgroundTaskNotificationStatus,
+    pub summary: String,
+    pub terminal_event_id: String,
+    pub terminal_task_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivered_turn_request_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -1023,7 +1023,7 @@ mod tests {
         );
         assert_eq!(
             policy.evaluate_request(Some("plan"), PermissionKind::Shell, None),
-            PolicyDecision::Deny
+            ask_decision(0)
         );
         assert_eq!(
             policy.evaluate_request(Some("plan"), PermissionKind::Task, None),

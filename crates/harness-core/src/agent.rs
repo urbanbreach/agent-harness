@@ -1665,7 +1665,12 @@ pub fn build_provider_tool_defs(
         tools.push(ToolDef {
             tool_id: tool_id.clone(),
             function_name: function_name.clone(),
-            description: Some(tool.description().to_string()),
+            description: Some(
+                tool_registry
+                    .description_for_profile(tool_id, &profile.name)
+                    .unwrap_or_else(|| tool.description())
+                    .to_string(),
+            ),
             parameters,
         });
     }
