@@ -18,8 +18,8 @@ impl PaletteCommandSection {
     pub const fn label(self) -> &'static str {
         match self {
             Self::Suggested => "Suggested",
-            Self::Session => "Session",
-            Self::Agent => "Agent",
+            Self::Session => "Sessions",
+            Self::Agent => "Agents",
             Self::System => "System",
         }
     }
@@ -147,6 +147,13 @@ impl Action {
                 label: "Cycle reasoning preset",
                 description: "Cycle the configured model variant/reasoning preset",
                 shortcut: "ctrl+t",
+                section: PaletteCommandSection::Agent,
+            },
+            PaletteCommand {
+                id: "toggles",
+                label: "Toggles",
+                description: "Toggle profiles, tools, hooks, MCP, YOLO",
+                shortcut: "toggles",
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -325,6 +332,7 @@ impl Action {
                 "cycle_variant",
                 "Cycle the configured model variant/reasoning preset",
             ),
+            ("toggles", "Toggle profiles, tools, hooks, MCP, YOLO"),
             (
                 "close_review_surface",
                 "Return to the transcript-first session shell",

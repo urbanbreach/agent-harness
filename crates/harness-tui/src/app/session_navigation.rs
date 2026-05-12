@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -10,6 +11,7 @@ use harness_core::proj::{
     inspect_resume_plan, load_run_metadata, SessionCatalogEntry, SessionModeSource,
 };
 use harness_core::session_lineage::{latest_clone_stable_prefix, StableSessionPrefix};
+use harness_core::session_title::is_parent_default_title;
 use serde_json::Value;
 
 use super::{
@@ -21,7 +23,7 @@ use super::{
 };
 use crate::keybindings::Action;
 use crate::text::{has_trimmed_content, non_empty_trimmed};
-use crate::time_format::iso_timestamp_minute;
+use crate::time_format::short_time_or_trimmed;
 
 const SLASH_COMMAND_RESULT_LIMIT: usize = 10;
 
@@ -69,22 +71,52 @@ pub(crate) fn session_history_run_name(entry: &SessionHistoryEntry) -> &str {
     entry.catalog.run_name.as_deref().unwrap_or("<unavailable>")
 }
 
-pub(crate) fn session_history_status_label(entry: &SessionHistoryEntry) -> &'static str {
-    match entry.catalog.status {
-        Some(harness_core::proj::RunStatus::Running) => "running",
-        Some(harness_core::proj::RunStatus::Finished) => "finished",
-        Some(harness_core::proj::RunStatus::Failed) => "failed",
-        None => "<unavailable>",
+pub(crate) fn session_history_display_title(entry: &SessionHistoryEntry) -> Cow<'_, str> {
+    let run_name = session_history_run_name(entry);
+    if is_parent_default_title(run_name) {
+        Cow::Borrowed("New session")
+    } else {
+        Cow::Borrowed(run_name)
     }
 }
 
-pub(crate) fn session_history_recency_label(entry: &SessionHistoryEntry) -> String {
+pub(crate) fn session_history_current_marker(
+    entry: &SessionHistoryEntry,
+    current_session_id: Option<&str>,
+) -> bool {
+    current_session_id == Some(entry.catalog.run_id.as_str())
+}
+
+pub(crate) fn session_history_category_label(entry: &SessionHistoryEntry) -> String {
+    let Some((year, month, day)) = entry
+        .catalog
+        .last_updated_at
+        .as_deref()
+        .and_then(session_history_date_parts)
+    else {
+        return "Unknown".to_string();
+    };
+
+    if current_utc_date() == Some((year, month, day)) {
+        return "Today".to_string();
+    }
+
+    format!(
+        "{} {} {:02} {}",
+        weekday_name(year, month, day),
+        month_name(month),
+        day,
+        year
+    )
+}
+
+pub(crate) fn session_history_footer_label(entry: &SessionHistoryEntry) -> String {
     entry
         .catalog
         .last_updated_at
         .as_deref()
-        .map(format_session_history_timestamp)
-        .unwrap_or_else(|| "updated <unavailable>".to_string())
+        .map(session_history_time_label)
+        .unwrap_or_default()
 }
 
 pub(crate) fn session_history_profile_label(entry: &SessionHistoryEntry) -> &str {
@@ -93,59 +125,6 @@ pub(crate) fn session_history_profile_label(entry: &SessionHistoryEntry) -> &str
         .profile_preset
         .as_deref()
         .unwrap_or("<unavailable>")
-}
-
-pub(crate) fn session_history_provider_model_label(entry: &SessionHistoryEntry) -> &str {
-    entry
-        .catalog
-        .provider_model
-        .as_deref()
-        .unwrap_or("<unavailable>")
-}
-
-pub(crate) fn session_history_resumability_label(entry: &SessionHistoryEntry) -> String {
-    if entry.catalog.is_resumable {
-        "continue ready".to_string()
-    } else {
-        entry
-            .catalog
-            .resume_disabled_reason
-            .as_deref()
-            .map(|reason| format!("continue blocked · {reason}"))
-            .unwrap_or_else(|| "continue blocked".to_string())
-    }
-}
-
-fn artifact_count_label(count: usize) -> String {
-    match count {
-        0 => "no artifacts".to_string(),
-        1 => "1 artifact".to_string(),
-        count => format!("{count} artifacts"),
-    }
-}
-
-fn lineage_label(child_session_count: usize, parent_session_id: Option<&str>) -> String {
-    let mut parts = Vec::new();
-    if child_session_count > 0 {
-        let child_label = if child_session_count == 1 {
-            "1 child".to_string()
-        } else {
-            format!("{child_session_count} children")
-        };
-        parts.push(child_label);
-    }
-    if let Some(parent_session_id) = parent_session_id
-        .map(str::trim)
-        .filter(|value| has_trimmed_content(value))
-    {
-        parts.push(format!("parent {parent_session_id}"));
-    }
-
-    if parts.is_empty() {
-        "root session".to_string()
-    } else {
-        parts.join(" · ")
-    }
 }
 
 fn non_empty_option(value: &Option<String>) -> Option<&str> {
@@ -173,21 +152,14 @@ macro_rules! model_option_label_accessors {
     };
 }
 
-pub(crate) fn session_history_artifact_label(entry: &SessionHistoryEntry) -> String {
-    artifact_count_label(entry.catalog.artifact_count)
-}
-
-pub(crate) fn session_history_lineage_label(entry: &SessionHistoryEntry) -> String {
-    lineage_label(
-        entry.catalog.child_session_count,
-        entry.catalog.parent_session_id.as_deref(),
-    )
-}
-
 fn session_history_entry_matches_action(
     entry: &SessionHistoryEntry,
     action: StartupLauncherAction,
 ) -> bool {
+    if entry.catalog.parent_session_id.is_some() {
+        return false;
+    }
+
     match action {
         StartupLauncherAction::ContinueSession => matches!(
             entry.catalog.mode_source,
@@ -210,37 +182,147 @@ const fn session_history_action_sort_bucket(
     }
 }
 
-fn format_session_history_timestamp(timestamp: &str) -> String {
-    if let Some(minute) = iso_timestamp_minute(timestamp) {
-        format!("updated {}", minute.replace('T', " "))
-    } else {
-        let trimmed = timestamp.trim();
-        if trimmed.is_empty() {
-            "updated <unavailable>".to_string()
-        } else {
-            format!("updated {trimmed}")
-        }
-    }
-}
-
 fn session_history_filter_matches(entry: &SessionHistoryEntry, input: &str) -> bool {
     if input.is_empty() {
         return true;
     }
 
-    let candidates = [
-        session_history_run_name(entry).to_lowercase(),
-        entry.catalog.run_id.to_lowercase(),
-        session_history_status_label(entry).to_string(),
-        session_history_recency_label(entry).to_lowercase(),
-        session_history_profile_label(entry).to_lowercase(),
-        session_history_provider_model_label(entry).to_lowercase(),
-        session_history_resumability_label(entry).to_lowercase(),
-        session_history_artifact_label(entry).to_lowercase(),
-        session_history_lineage_label(entry).to_lowercase(),
-    ];
+    session_history_display_title(entry)
+        .to_lowercase()
+        .contains(input)
+}
 
-    candidates.iter().any(|candidate| candidate.contains(input))
+fn session_history_time_label(timestamp: &str) -> String {
+    if let Some((hour, minute)) = epoch_millis_time_parts(timestamp) {
+        return format_twelve_hour_time(hour, minute);
+    }
+
+    let short = short_time_or_trimmed(timestamp);
+    let Some((hour, minute)) = short.split_once(':').and_then(|(hour, minute)| {
+        Some((
+            hour.parse::<u8>().ok()?,
+            minute.get(..2)?.parse::<u8>().ok()?,
+        ))
+    }) else {
+        return short;
+    };
+
+    format_twelve_hour_time(hour, minute)
+}
+
+fn format_twelve_hour_time(hour: u8, minute: u8) -> String {
+    let suffix = if hour < 12 { "AM" } else { "PM" };
+    let display_hour = match hour % 12 {
+        0 => 12,
+        hour => hour,
+    };
+    format!("{display_hour}:{minute:02} {suffix}")
+}
+
+fn session_history_date_parts(timestamp: &str) -> Option<(i32, u8, u8)> {
+    iso_date_parts(timestamp).or_else(|| epoch_millis_date_parts(timestamp))
+}
+
+fn epoch_millis_date_parts(timestamp: &str) -> Option<(i32, u8, u8)> {
+    let seconds = epoch_millis_seconds(timestamp)?;
+    civil_from_days(seconds.div_euclid(86_400))
+}
+
+fn epoch_millis_time_parts(timestamp: &str) -> Option<(u8, u8)> {
+    let seconds = epoch_millis_seconds(timestamp)?;
+    let seconds_of_day = seconds.rem_euclid(86_400);
+    Some((
+        u8::try_from(seconds_of_day / 3_600).ok()?,
+        u8::try_from((seconds_of_day % 3_600) / 60).ok()?,
+    ))
+}
+
+fn epoch_millis_seconds(timestamp: &str) -> Option<i64> {
+    let trimmed = timestamp.trim();
+    if trimmed.len() < 10 || !trimmed.chars().all(|ch| ch.is_ascii_digit()) {
+        return None;
+    }
+    let millis = trimmed.parse::<i64>().ok()?;
+    Some(millis / 1_000)
+}
+
+fn iso_date_parts(timestamp: &str) -> Option<(i32, u8, u8)> {
+    let trimmed = timestamp.trim();
+    if trimmed.len() < 10
+        || trimmed.as_bytes().get(4) != Some(&b'-')
+        || trimmed.as_bytes().get(7) != Some(&b'-')
+    {
+        return None;
+    }
+    let year = trimmed.get(0..4)?.parse::<i32>().ok()?;
+    let month = trimmed.get(5..7)?.parse::<u8>().ok()?;
+    let day = trimmed.get(8..10)?.parse::<u8>().ok()?;
+    (1..=12).contains(&month).then_some(())?;
+    (1..=31).contains(&day).then_some(())?;
+    Some((year, month, day))
+}
+
+fn current_utc_date() -> Option<(i32, u8, u8)> {
+    let duration = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?;
+    civil_from_days(i64::try_from(duration.as_secs() / 86_400).ok()?)
+}
+
+fn civil_from_days(days_since_unix_epoch: i64) -> Option<(i32, u8, u8)> {
+    let z = days_since_unix_epoch.checked_add(719_468)?;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let year = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = mp + if mp < 10 { 3 } else { -9 };
+    let year = year + i64::from(month <= 2);
+    Some((
+        i32::try_from(year).ok()?,
+        u8::try_from(month).ok()?,
+        u8::try_from(day).ok()?,
+    ))
+}
+
+fn days_from_civil(year: i32, month: u8, day: u8) -> i64 {
+    let mut year = i64::from(year);
+    let month = i64::from(month);
+    let day = i64::from(day);
+    year -= i64::from(month <= 2);
+    let era = if year >= 0 { year } else { year - 399 } / 400;
+    let yoe = year - era * 400;
+    let month_prime = month + if month > 2 { -3 } else { 9 };
+    let doy = (153 * month_prime + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+fn weekday_name(year: i32, month: u8, day: u8) -> &'static str {
+    const WEEKDAYS: [&str; 7] = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"];
+    let days = days_from_civil(year, month, day);
+    let index = days.rem_euclid(7) as usize;
+    WEEKDAYS[index]
+}
+
+const fn month_name(month: u8) -> &'static str {
+    match month {
+        1 => "Jan",
+        2 => "Feb",
+        3 => "Mar",
+        4 => "Apr",
+        5 => "May",
+        6 => "Jun",
+        7 => "Jul",
+        8 => "Aug",
+        9 => "Sep",
+        10 => "Oct",
+        11 => "Nov",
+        12 => "Dec",
+        _ => "???",
+    }
 }
 
 fn harness_lineage_parent_run_id(run_dir: &Path) -> Option<String> {
@@ -1118,6 +1200,10 @@ impl AppState {
             return self.handle_model_key(key);
         }
 
+        if self.toggles_menu_visible {
+            return self.handle_toggles_key(key);
+        }
+
         if self.palette_visible {
             return self.handle_palette_key(key);
         }
@@ -1156,6 +1242,7 @@ impl AppState {
             || self.palette_visible
             || self.session_history_visible
             || self.model_switcher_visible
+            || self.toggles_menu_visible
             || self.active_permission().is_some()
         {
             if !self.prompt_buffer.starts_with('/') {
@@ -1210,7 +1297,7 @@ impl AppState {
 
     fn slash_command_available(&self, command: &str) -> bool {
         match command {
-            "new" | "status" | "exit" => true,
+            "new" | "status" | "toggles" | "exit" => true,
             "resume" | "replay" => !self.replay_mode,
             "fork" => !self.startup_mode && !self.replay_mode,
             "clone" => !self.startup_mode && self.lineage_write_blocked_reason().is_none(),
@@ -1265,6 +1352,9 @@ impl AppState {
         self.model_switcher_visible = false;
         self.model_filtered.clear();
         self.model_selected = 0;
+        self.toggles_menu_visible = false;
+        self.toggles_selected = 0;
+        self.toggles_yolo_confirm_visible = false;
         self.lineage_browser_visible = false;
         self.fork_selector_visible = false;
         self.continued_post_run_handoff_active = false;
@@ -1291,6 +1381,10 @@ impl AppState {
         self.clear_slash_menu();
         match command {
             "new" => self.navigate_to_home_shell(preserved_draft.unwrap_or_default()),
+            "sessions" => {
+                self.restore_slash_draft(preserved_draft);
+                self.begin_session_history_picker(StartupLauncherAction::ContinueSession);
+            }
             "resume" => {
                 self.restore_slash_draft(preserved_draft);
                 self.begin_session_history_picker(StartupLauncherAction::ContinueSession);
@@ -1302,6 +1396,10 @@ impl AppState {
             "model" => {
                 self.restore_slash_draft(preserved_draft);
                 self.open_model_switcher();
+            }
+            "toggles" => {
+                self.restore_slash_draft(preserved_draft);
+                self.open_toggles_menu();
             }
             "status" => {
                 self.restore_slash_draft(preserved_draft);
@@ -1725,6 +1823,9 @@ impl AppState {
             "switch_model" => {
                 self.open_model_switcher();
             }
+            "toggles" => {
+                self.open_toggles_menu();
+            }
             "cycle_variant" => self.execute_action(Action::VariantCycle),
             "close_review_surface" => self.execute_action(Action::CloseReviewSurface),
             "open_event_log" => self.execute_action(Action::OpenEventLog),
@@ -1747,7 +1848,10 @@ impl AppState {
             "quit" => self.execute_action(Action::Quit),
             _ => {}
         }
-        if !self.session_history_visible && !self.model_switcher_visible {
+        if !self.session_history_visible
+            && !self.model_switcher_visible
+            && !self.toggles_menu_visible
+        {
             self.close_palette();
         }
     }
@@ -1756,6 +1860,7 @@ impl AppState {
         self.palette_visible = false;
         self.session_history_visible = false;
         self.model_switcher_visible = false;
+        self.toggles_menu_visible = false;
         self.lineage_browser_visible = false;
         self.fork_selector_visible = false;
         self.palette_input.clear();
@@ -1763,6 +1868,8 @@ impl AppState {
         self.palette_filtered.clear();
         self.session_history_filtered.clear();
         self.model_filtered.clear();
+        self.toggles_selected = 0;
+        self.toggles_yolo_confirm_visible = false;
         self.palette_selected = 0;
         self.session_history_selected = 0;
         self.model_selected = 0;
@@ -1780,6 +1887,8 @@ impl AppState {
         self.palette_visible = true;
         self.session_history_visible = false;
         self.model_switcher_visible = false;
+        self.toggles_menu_visible = false;
+        self.toggles_yolo_confirm_visible = false;
         self.palette_input.clear();
         self.palette_cursor = 0;
         self.palette_filtered = self
@@ -1814,7 +1923,7 @@ impl AppState {
         if self.startup_shell_visible() {
             matches!(
                 command_id,
-                "new_session" | "resume_session" | "replay_session" | "quit"
+                "new_session" | "resume_session" | "replay_session" | "toggles" | "quit"
             )
         } else if matches!(command_id, "show_timestamps" | "hide_timestamps") {
             self.active_review_surface.is_none()
@@ -2032,6 +2141,7 @@ impl AppState {
             || self.runtime_context_metadata.is_none()
             || (self.events.is_empty() && self.activities.is_empty());
         self.launch_metadata = launch_metadata.clone();
+        self.seed_toggles_from_launch_metadata();
         if refresh_runtime_context {
             self.runtime_context_metadata = Some(launch_metadata);
         }
@@ -2335,6 +2445,7 @@ impl AppState {
             .switchable_profiles()
             .iter()
             .filter_map(|profile| non_empty_trimmed(profile))
+            .filter(|profile| self.primary_agent_enabled(profile))
             .map(str::to_string)
             .collect::<Vec<_>>();
 
@@ -2345,6 +2456,7 @@ impl AppState {
                     .available_models()
                     .iter()
                     .any(|option| option.profile == candidate)
+                    && self.primary_agent_enabled(candidate)
                 {
                     profiles.push(candidate.to_string());
                 }
@@ -3072,12 +3184,33 @@ impl AppState {
                         .cmp(left_entry.catalog.last_updated_at.as_deref().unwrap_or(""))
                 })
                 .then_with(|| {
-                    session_history_run_name(left_entry).cmp(session_history_run_name(right_entry))
+                    session_history_display_title(left_entry)
+                        .cmp(&session_history_display_title(right_entry))
                 })
                 .then_with(|| left_entry.catalog.run_id.cmp(&right_entry.catalog.run_id))
         });
         self.session_history_filtered = filtered.into_iter().map(|(index, _)| index).collect();
         self.session_history_selected = 0;
+    }
+
+    pub(crate) fn session_history_visual_row_count(&self) -> usize {
+        let mut rows = 0usize;
+        let mut previous_category: Option<String> = None;
+        for entry_index in &self.session_history_filtered {
+            let Some(entry) = self.session_history_entries.get(*entry_index) else {
+                continue;
+            };
+            let category = session_history_category_label(entry);
+            if previous_category.as_deref() != Some(category.as_str()) {
+                if previous_category.is_some() {
+                    rows = rows.saturating_add(1);
+                }
+                rows = rows.saturating_add(1);
+                previous_category = Some(category);
+            }
+            rows = rows.saturating_add(1);
+        }
+        rows
     }
 
     pub(super) fn begin_session_history_picker(&mut self, action: StartupLauncherAction) {

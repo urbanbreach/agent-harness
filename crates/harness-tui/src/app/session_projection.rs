@@ -1312,13 +1312,26 @@ impl AppState {
             return false;
         }
 
-        let has_session_title = self.activities.iter().any(|activity| {
+        let has_generated_session_title = self
+            .events
+            .iter()
+            .any(|event| matches!(event.payload, EventV1::SessionTitleUpdated(_)));
+        let has_user_message_title = self.activities.iter().any(|activity| {
             activity
                 .user_message
                 .as_ref()
                 .map(|message| message.text.trim())
                 .is_some_and(|text| !text.is_empty())
         });
+        let title_generation_pending = !self.replay_mode
+            && self
+                .activities
+                .iter()
+                .any(|activity| activity.user_message.is_some())
+            && !self
+                .events
+                .iter()
+                .any(|event| matches!(event.payload, EventV1::ProviderRequestStarted(_)));
         let has_usage = self
             .activities
             .iter()
@@ -1331,6 +1344,12 @@ impl AppState {
         let lsp = harness_core::config::registered_lsp_config();
         let has_lsp = lsp.disabled || !lsp.servers.is_empty();
 
-        has_session_title || has_usage || has_modified_files || has_integrations || has_lsp
+        has_generated_session_title
+            || has_user_message_title
+            || title_generation_pending
+            || has_usage
+            || has_modified_files
+            || has_integrations
+            || has_lsp
     }
 }

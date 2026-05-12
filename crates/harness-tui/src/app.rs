@@ -44,6 +44,7 @@ mod session_projection;
 mod terminal_panel;
 #[cfg(test)]
 mod tests;
+mod toggles;
 
 use self::permissions::{
     PermissionConfirmSelection, PermissionModalSelection, PermissionModalStage,
@@ -71,14 +72,16 @@ pub use permissions::{
     ActivePermissionView, PermissionEntry, QuestionOptionView, QuestionPromptView,
 };
 pub use session_navigation::{LaunchMetadata, McpResourceOption, ModelOption, SessionHistoryEntry};
+pub use toggles::{ToggleEntryConfig, ToggleEntryKind, ToggleMenuRow, TogglesConfig};
 
 /// Truncation limit for tool output display in the TUI (chars)
 const TOOL_OUTPUT_DISPLAY_MAX_CHARS: usize = 100;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_CHARS: usize = 72;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_FIELDS: usize = 3;
 const INTERRUPT_CONFIRM_TIMEOUT: Duration = Duration::from_secs(5);
-pub(crate) const SLASH_COMMANDS: [(&str, &str); 13] = [
+pub(crate) const SLASH_COMMANDS: [(&str, &str); 15] = [
     ("new", "Return to the home shell"),
+    ("sessions", "Switch session"),
     ("resume", "Continue a saved session"),
     ("replay", "Replay a saved session"),
     ("fork", "Fork session"),
@@ -86,6 +89,7 @@ pub(crate) const SLASH_COMMANDS: [(&str, &str); 13] = [
     ("clone", "Prepare a Harness session clone"),
     ("model", "Switch model"),
     ("status", "View status"),
+    ("toggles", "Open toggles"),
     ("events", "Open the event log review"),
     ("shell", "Return to the session shell"),
     ("follow", "Toggle follow mode"),
@@ -1158,6 +1162,10 @@ pub struct AppState {
     pub model_options: Vec<ModelOption>,
     pub model_filtered: Vec<usize>,
     pub model_selected: usize,
+    pub toggles_menu_visible: bool,
+    pub toggles_selected: usize,
+    toggles_yolo_confirm_visible: bool,
+    runtime_toggles: toggles::RuntimeTogglesState,
     pub lineage_browser: LineageBrowserState,
     pub lineage_browser_visible: bool,
     pub fork_selector: ForkSelectorState,
@@ -1278,6 +1286,10 @@ impl Default for AppState {
             model_options: Vec::new(),
             model_filtered: Vec::new(),
             model_selected: 0,
+            toggles_menu_visible: false,
+            toggles_selected: 0,
+            toggles_yolo_confirm_visible: false,
+            runtime_toggles: toggles::RuntimeTogglesState::default(),
             lineage_browser: LineageBrowserState::default(),
             lineage_browser_visible: false,
             fork_selector: ForkSelectorState::default(),
@@ -2229,6 +2241,7 @@ impl AppState {
             status_dialog_visible: self.status_dialog_visible,
             session_history_visible: self.session_history_visible,
             model_switcher_visible: self.model_switcher_visible,
+            toggles_menu_visible: self.toggles_menu_visible,
             lineage_browser_visible: self.lineage_browser_visible,
             fork_selector_visible: self.fork_selector_visible,
             permission_pending: self.active_permission().is_some(),
@@ -4148,6 +4161,7 @@ pub(crate) fn exact_test_startup_slash_commands_execute_without_menu() {
             "replay".to_string(),
             "resume".to_string(),
             "status".to_string(),
+            "toggles".to_string(),
         ]
     );
 }

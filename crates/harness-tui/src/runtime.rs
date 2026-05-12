@@ -15,7 +15,7 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 
 use crate::app::{
     set_pending_live_prompt_draft, AppState, LaunchMetadata, SessionHistoryEntry, ToastVariant,
-    UiIntent,
+    TogglesConfig, UiIntent,
 };
 use crate::event::{self, poll};
 use crate::event_log;
@@ -110,6 +110,7 @@ pub struct TuiOptions {
     pub exit_on_finish: bool,
     pub on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
     pub keybindings: Option<std::collections::BTreeMap<String, String>>,
+    pub toggles: Option<TogglesConfig>,
     pub preserve_terminal_on_exit: bool,
 }
 
@@ -128,6 +129,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         exit_on_finish,
         on_ui_intent,
         keybindings: _,
+        toggles,
         preserve_terminal_on_exit,
     } = options;
 
@@ -177,6 +179,10 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             (app, Some(update_rx))
         }
     };
+
+    if let Some(toggles) = toggles {
+        app.set_toggles_config(toggles);
+    }
 
     let preserved_terminal = recover_mutex_lock(preserved_terminal_session()).clone();
     let reusing_terminal = preserved_terminal.active;
@@ -465,6 +471,7 @@ pub fn run_tui() -> Result<()> {
         exit_on_finish: false,
         on_ui_intent: None,
         keybindings: None,
+        toggles: None,
         preserve_terminal_on_exit: false,
     })
 }
