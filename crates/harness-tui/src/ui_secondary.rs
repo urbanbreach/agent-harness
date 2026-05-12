@@ -16,10 +16,14 @@ use syntect::parsing::SyntaxSet;
 
 use super::*;
 
-use crate::app::OperatorSidebarSection;
 #[cfg(test)]
-use crate::app::{ActiveContextUsage, ActivityUsage, OrchestrationTaskRow, OrchestrationTaskState};
-use crate::text::{has_trimmed_content, trimmed_json_nested_string_field};
+use crate::app::OrchestrationTaskRow;
+#[cfg(test)]
+use crate::app::{ActiveContextUsage, ActivityUsage};
+use crate::app::{OperatorSidebarSection, OrchestrationTaskState};
+use crate::text::{
+    has_trimmed_content, trimmed_json_nested_string_field, trimmed_json_string_field,
+};
 use crate::theme::DIFF_SIDE_BY_SIDE_MIN_WIDTH;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -129,6 +133,20 @@ enum OperatorRailItem {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SubagentRailGroup {
+    agent_name: String,
+    expanded: bool,
+    items: Vec<SubagentRailItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SubagentRailItem {
+    description: String,
+    status: SubagentRailStatus,
+    child_session_id: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RuntimeHealthState {
     Healthy,
@@ -142,6 +160,16 @@ enum TodoRailStatus {
     Completed,
     Cancelled,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SubagentRailStatus {
+    Queued,
+    Running,
+    Completed,
+    Error,
+}
+
+const SUBAGENT_SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 #[cfg(test)]
 fn operator_sidebar_config_test_guard() -> MutexGuard<'static, ()> {
@@ -217,6 +245,43 @@ impl TodoRailStatus {
     }
 }
 
+impl SubagentRailStatus {
+    fn from_orchestration_state(state: OrchestrationTaskState) -> Self {
+        match state {
+            OrchestrationTaskState::Queued => Self::Queued,
+            OrchestrationTaskState::Running | OrchestrationTaskState::Stale => Self::Running,
+            OrchestrationTaskState::Completed | OrchestrationTaskState::LateResult => {
+                Self::Completed
+            }
+            OrchestrationTaskState::Cancelled => Self::Error,
+        }
+    }
+
+    fn from_tool_call_status(status: crate::app::ToolCallDisplayStatus) -> Self {
+        match status {
+            crate::app::ToolCallDisplayStatus::PendingPermission
+            | crate::app::ToolCallDisplayStatus::Queued => Self::Queued,
+            crate::app::ToolCallDisplayStatus::Running => Self::Running,
+            crate::app::ToolCallDisplayStatus::Succeeded => Self::Completed,
+            crate::app::ToolCallDisplayStatus::Failed => Self::Error,
+        }
+    }
+
+    fn is_active(self) -> bool {
+        matches!(self, Self::Queued | Self::Running)
+    }
+
+    fn glyph(self, animation_phase: usize) -> &'static str {
+        match self {
+            Self::Queued | Self::Running => {
+                SUBAGENT_SPINNER_FRAMES[animation_phase % SUBAGENT_SPINNER_FRAMES.len()]
+            }
+            Self::Completed => "✓",
+            Self::Error => "✗",
+        }
+    }
+}
+
 fn sanitize_operator_sidebar_line(text: &str) -> String {
     let mut sanitized = String::with_capacity(text.len());
     let mut pending_space = false;
@@ -256,9 +321,60 @@ struct OperatorRailHeadingHitRegion {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct OperatorRailSubagentHitRegion {
+    session_id: String,
+    top_row: usize,
+    height: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OperatorRailSubagentGroupHitRegion {
+    agent_name: String,
+    top_row: usize,
+    height: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct OperatorRailBodyLayout {
     lines: Vec<Line<'static>>,
     heading_hit_regions: Vec<OperatorRailHeadingHitRegion>,
+    subagent_hit_regions: Vec<OperatorRailSubagentHitRegion>,
+    subagent_group_hit_regions: Vec<OperatorRailSubagentGroupHitRegion>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct OperatorSidebarSelectionCell {
+    pub row: usize,
+    pub column: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct OperatorSidebarSelection {
+    pub anchor: OperatorSidebarSelectionCell,
+    pub focus: OperatorSidebarSelectionCell,
+}
+
+impl OperatorSidebarSelection {
+    fn normalized(self) -> (OperatorSidebarSelectionCell, OperatorSidebarSelectionCell) {
+        if self.anchor <= self.focus {
+            (self.anchor, self.focus)
+        } else {
+            (self.focus, self.anchor)
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct OperatorSidebarSelectionSnapshot {
+    viewport: Rect,
+    scroll_top: usize,
+    rows: Vec<OperatorSidebarSelectionRow>,
+}
+
+#[derive(Debug, Clone)]
+struct OperatorSidebarSelectionRow {
+    cells: Vec<String>,
+    continues_previous: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -266,6 +382,10 @@ enum OperatorRailBodySection {
     Todo {
         items: Vec<OperatorRailItem>,
         disclosure: Option<OperatorRailSectionDisclosure>,
+    },
+    Subagents {
+        groups: Vec<SubagentRailGroup>,
+        disclosure: OperatorRailSectionDisclosure,
     },
     Mcp {
         items: Vec<OperatorRailItem>,
@@ -293,6 +413,9 @@ impl OperatorRailBodySection {
             Self::Todo { disclosure, .. } => disclosure
                 .map(|disclosure| format!("{} Todo", disclosure_glyph(disclosure)))
                 .unwrap_or_else(|| "Todo".to_string()),
+            Self::Subagents { disclosure, .. } => {
+                format!("{} Subagents", disclosure_glyph(*disclosure))
+            }
             Self::Mcp { disclosure, .. } => {
                 format!("{} MCP", disclosure_glyph(*disclosure))
             }
@@ -315,6 +438,19 @@ impl OperatorRailBodySection {
                 ]),
                 None => Line::from(Span::styled("Todo".to_string(), heading_style)),
             },
+            Self::Subagents { groups, disclosure } => {
+                let mut spans = vec![
+                    Span::styled(format!("{} ", disclosure_glyph(*disclosure)), heading_style),
+                    Span::styled("Subagents".to_string(), heading_style),
+                ];
+                if disclosure.collapsed {
+                    spans.push(Span::styled(
+                        format!(" ({} types)", groups.len()),
+                        Style::default().fg(theme.text.secondary),
+                    ));
+                }
+                Line::from(spans)
+            }
             Self::Mcp { items, disclosure } => {
                 let mut spans = vec![
                     Span::styled(format!("{} ", disclosure_glyph(*disclosure)), heading_style),
@@ -344,6 +480,7 @@ impl OperatorRailBodySection {
     fn heading_style(&self, theme: &Theme) -> Style {
         match self {
             Self::Todo { .. }
+            | Self::Subagents { .. }
             | Self::Mcp { .. }
             | Self::Lsp { .. }
             | Self::ModifiedFiles { .. } => Style::default()
@@ -355,7 +492,8 @@ impl OperatorRailBodySection {
     fn disclosure(&self) -> Option<OperatorRailSectionDisclosure> {
         match self {
             Self::Todo { disclosure, .. } => *disclosure,
-            Self::Mcp { disclosure, .. }
+            Self::Subagents { disclosure, .. }
+            | Self::Mcp { disclosure, .. }
             | Self::Lsp { disclosure, .. }
             | Self::ModifiedFiles { disclosure, .. } => Some(*disclosure),
         }
@@ -375,6 +513,38 @@ impl OperatorRailBodySection {
             | Self::ModifiedFiles { items, .. } => {
                 items.iter().map(OperatorRailItem::display_text).collect()
             }
+            Self::Subagents { groups, .. } => groups
+                .iter()
+                .flat_map(|group| {
+                    if group.items.len() == 1 {
+                        return group
+                            .items
+                            .iter()
+                            .map(|item| {
+                                format!(
+                                    "• {} {} {}",
+                                    group.agent_name,
+                                    item.status.glyph(0),
+                                    item.description
+                                )
+                            })
+                            .collect::<Vec<_>>();
+                    }
+
+                    let mut rows = vec![format!(
+                        "{} {} {}",
+                        if group.expanded { "▼" } else { "▶" },
+                        group.agent_name,
+                        subagent_group_summary(group)
+                    )];
+                    if group.expanded {
+                        rows.extend(group.items.iter().map(|item| {
+                            format!("  {} {}", item.status.glyph(0), item.description)
+                        }));
+                    }
+                    rows
+                })
+                .collect(),
         }
     }
 }
@@ -953,6 +1123,483 @@ pub(crate) fn exact_test_operator_rail_renders_todo_items_from_tool_state() {
         .expect("pending todo line");
     assert_eq!(pending.spans[0].style.fg, Some(theme.text.secondary));
     assert_eq!(pending.spans[1].style.fg, Some(theme.text.secondary));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_state() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        1,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::User, None),
+        "req_subagents",
+        harness_core::event::EventV1::UserMessageSubmitted(
+            harness_core::event::UserMessageSubmittedEvent {
+                request_id: "req_subagents".to_string(),
+                text: "Delegate the investigation".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        2,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+        "req_subagents",
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tool_call_task_running".to_string(),
+                tool_id: "task".to_string(),
+                args_summary: serde_json::json!({
+                    "description": "inspect README and summarize task background behavior in three bullets",
+                    "subagent_type": "explore"
+                })
+                .to_string(),
+                args_digest: "digest-task-running".to_string(),
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        3,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+        "req_subagents",
+        harness_core::event::EventV1::ToolCallStarted(harness_core::event::ToolCallStartedEvent {
+            tool_call_id: "tool_call_task_running".to_string(),
+        }),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        4,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+        "req_subagents",
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tool_call_task_explore_done".to_string(),
+                tool_id: "task".to_string(),
+                args_summary: serde_json::json!({
+                    "description": "cross-check docs",
+                    "subagent_type": "explore"
+                })
+                .to_string(),
+                args_digest: "digest-task-explore-done".to_string(),
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        5,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+        "req_subagents",
+        harness_core::event::EventV1::ToolCallFinished(
+            harness_core::event::ToolCallFinishedEvent {
+                tool_call_id: "tool_call_task_explore_done".to_string(),
+                status: harness_core::event::ToolCallStatus::Succeeded,
+                output_summary: Some("Task Result: cross-check docs".to_string()),
+                output_digest: Some("digest-task-explore-done-output".to_string()),
+                output_json: None,
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        6,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+        "req_subagents",
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tool_call_task_done".to_string(),
+                tool_id: "task".to_string(),
+                args_summary: serde_json::json!({
+                    "description": "summary",
+                    "subagent_type": "general"
+                })
+                .to_string(),
+                args_digest: "digest-task-done".to_string(),
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        7,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+        "req_subagents",
+        harness_core::event::EventV1::TaskCompleted(harness_core::event::TaskCompletedEvent {
+            task_id: "task_done".to_string(),
+            result_summary: "summarized an intentionally long repository behavior report"
+                .to_string(),
+            result_digest: "digest-done".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        8,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+        "req_subagents",
+        harness_core::event::EventV1::ToolCallFinished(
+            harness_core::event::ToolCallFinishedEvent {
+                tool_call_id: "tool_call_task_done".to_string(),
+                status: harness_core::event::ToolCallStatus::Succeeded,
+                output_summary: Some("Task Result: summary".to_string()),
+                output_digest: Some("digest-task-done-output".to_string()),
+                output_json: None,
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        9,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+        "req_subagents",
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tool_call_task_failed".to_string(),
+                tool_id: "task".to_string(),
+                args_summary: serde_json::json!({
+                    "description": "cancelled",
+                    "subagent_type": "plan"
+                })
+                .to_string(),
+                args_digest: "digest-task-failed".to_string(),
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        10,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+        "req_subagents",
+        harness_core::event::EventV1::ToolCallFinished(
+            harness_core::event::ToolCallFinishedEvent {
+                tool_call_id: "tool_call_task_failed".to_string(),
+                status: harness_core::event::ToolCallStatus::Failed,
+                output_summary: Some("operator cancelled".to_string()),
+                output_digest: Some("digest-task-failed-output".to_string()),
+                output_json: None,
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        11,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+        "req_subagents",
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tool_call_task_wrapped_child".to_string(),
+                tool_id: "task".to_string(),
+                args_summary: serde_json::json!({
+                    "description": "open wrapped child session after reviewing enough sidebar text to wrap cleanly",
+                    "subagent_type": "navigator"
+                })
+                .to_string(),
+                args_digest: "digest-task-wrapped-child".to_string(),
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        12,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+        "req_subagents",
+        harness_core::event::EventV1::ToolCallFinished(
+            harness_core::event::ToolCallFinishedEvent {
+                tool_call_id: "tool_call_task_wrapped_child".to_string(),
+                status: harness_core::event::ToolCallStatus::Succeeded,
+                output_summary: Some("Task Result: wrapped child".to_string()),
+                output_digest: Some("digest-task-wrapped-child-output".to_string()),
+                output_json: Some(serde_json::json!({
+                    "session_id": "child_running_session"
+                })),
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        13,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
+        "req_subagents",
+        harness_core::event::EventV1::RunStarted(harness_core::event::RunStartedEvent {
+            run_name: "subagent sidebar".to_string(),
+            workspace_root: "/tmp/subagent-sidebar-footer".to_string(),
+        }),
+    ));
+
+    let sidebar = operator_sidebar_text_for_test(&app).join("\n");
+    assert!(sidebar.contains("▼ Subagents"));
+    assert!(sidebar.contains("▶ explore ⠋ 2 tasks · 1 active"));
+    assert!(!sidebar.contains("  ⠋ inspect README"));
+    assert!(!sidebar.contains("  ✓ cross-check docs"));
+    assert!(!sidebar.contains("            bullets"));
+    assert!(sidebar.contains("• general ✓ summary"));
+    assert!(sidebar.contains("• plan ✗ cancelled"));
+    assert!(sidebar.contains("• navigator ⠋ open wrapped child session"));
+    assert!(!sidebar.contains("intentionally long repository"));
+
+    let theme = *app.theme();
+    let lines = operator_sidebar_lines_for_test(&app);
+    let explore_group = lines
+        .iter()
+        .find(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+                .contains("▶ explore ⠋ 2 tasks · 1 active")
+        })
+        .expect("collapsed explore group line");
+    assert_eq!(explore_group.spans[0].style.fg, Some(theme.status.success));
+    assert_eq!(explore_group.spans[1].style.fg, Some(theme.text.primary));
+    assert_eq!(explore_group.spans[2].style.fg, Some(theme.status.success));
+    assert_eq!(explore_group.spans[3].style.fg, Some(theme.text.primary));
+
+    let cancelled = lines
+        .iter()
+        .find(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+                .contains("• plan ✗ cancelled")
+        })
+        .expect("cancelled subagent line");
+    assert_eq!(cancelled.spans[0].style.fg, Some(theme.text.primary));
+    assert_eq!(cancelled.spans[1].style.fg, Some(theme.text.primary));
+    assert_eq!(cancelled.spans[3].style.fg, Some(theme.text.secondary));
+    assert_eq!(cancelled.spans[4].style.fg, Some(theme.text.secondary));
+
+    let sidebar_area = Rect::new(0, 0, 32, 40);
+    let theme = &theme;
+    let inner =
+        operator_sidebar_inner_area(&app, sidebar_area, theme, OperatorSidebarChrome::Persistent)
+            .expect("sidebar inner area");
+    let rail = build_operator_rail_model(&app);
+    let title_height = build_operator_rail_title_text(rail.title.as_deref(), theme, inner.width)
+        .lines
+        .len()
+        .min(usize::from(u16::MAX)) as u16;
+    let wrapped_layout = build_operator_rail_body_layout(&rail.body, theme, inner.width, 0);
+    let explore_group_region = wrapped_layout
+        .subagent_group_hit_regions
+        .iter()
+        .find(|region| region.agent_name == "explore")
+        .expect("explore group hit region");
+    assert_eq!(
+        operator_sidebar_subagent_group_hit_target_in_surface(
+            &app,
+            sidebar_area,
+            theme,
+            OperatorSidebarChrome::Persistent,
+            inner.x,
+            inner
+                .y
+                .saturating_add(title_height)
+                .saturating_add(explore_group_region.top_row as u16),
+        ),
+        Some("explore".to_string())
+    );
+    assert!(
+        wrapped_layout
+            .subagent_hit_regions
+            .iter()
+            .all(|region| region.session_id != "child_explore_session"),
+        "collapsed subagent group should hide child-session hit regions"
+    );
+    let wrapped_region = wrapped_layout
+        .subagent_hit_regions
+        .iter()
+        .find(|region| region.session_id == "child_running_session")
+        .expect("running child session hit region");
+    assert!(
+        wrapped_region.height == 1,
+        "long subagent row should stay compact and keep a one-row hit region"
+    );
+    let body_y = inner.y.saturating_add(title_height);
+    let wrapped_row = body_y.saturating_add(wrapped_region.top_row as u16);
+    assert_eq!(
+        operator_sidebar_subagent_session_hit_target_in_surface(
+            &app,
+            sidebar_area,
+            theme,
+            OperatorSidebarChrome::Persistent,
+            inner.x,
+            wrapped_row,
+        ),
+        Some("child_running_session".to_string())
+    );
+    assert_ne!(
+        operator_sidebar_subagent_session_hit_target_in_surface(
+            &app,
+            sidebar_area,
+            theme,
+            OperatorSidebarChrome::Persistent,
+            inner.x,
+            wrapped_row.saturating_add(1),
+        ),
+        Some("child_running_session".to_string())
+    );
+
+    let footer_height = operator_sidebar_footer_height(&app, theme, inner.width);
+    assert!(
+        footer_height > 0,
+        "test setup should render a sidebar footer"
+    );
+    let footer_sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(title_height),
+            Constraint::Min(0),
+            Constraint::Length(footer_height),
+        ])
+        .split(inner);
+    assert_eq!(
+        operator_sidebar_subagent_session_hit_target_in_surface(
+            &app,
+            sidebar_area,
+            theme,
+            OperatorSidebarChrome::Persistent,
+            inner.x,
+            footer_sections[2].y,
+        ),
+        None,
+        "footer clicks must not activate hidden subagent rows"
+    );
+
+    let frame_area = Rect::new(0, 0, 140, 40);
+    let plan = crate::layout::FrameLayoutPlan::for_app(&app, frame_area);
+    let sidebar_area = plan.operator_sidebar.expect("operator sidebar area");
+    let inner =
+        operator_sidebar_inner_area(&app, sidebar_area, theme, OperatorSidebarChrome::Persistent)
+            .expect("operator sidebar inner area");
+    let rail = build_operator_rail_model(&app);
+    let body_area = operator_sidebar_body_area(&app, inner, theme, rail.title.as_deref())
+        .expect("operator sidebar body area");
+    let layout = build_operator_rail_body_layout(&rail.body, theme, body_area.width, 0);
+    let group_region = layout
+        .subagent_group_hit_regions
+        .iter()
+        .find(|region| region.agent_name == "explore")
+        .expect("explore group hit region in frame layout");
+    let group_row = body_area.y.saturating_add(group_region.top_row as u16);
+    let group_col = body_area.x;
+    for kind in [
+        crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+        crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left),
+    ] {
+        app.handle_mouse(
+            crossterm::event::MouseEvent {
+                kind,
+                column: group_col,
+                row: group_row,
+                modifiers: crossterm::event::KeyModifiers::NONE,
+            },
+            frame_area,
+            None,
+            None,
+            None,
+        );
+    }
+
+    let expanded_sidebar = operator_sidebar_text_for_test(&app).join("\n");
+    assert!(expanded_sidebar.contains("▼ explore ⠋ 2 tasks · 1 active"));
+    assert!(expanded_sidebar.contains("  ⠋ inspect README"));
+    assert!(expanded_sidebar.contains("  ✓ cross-check docs"));
+    let expanded_lines = operator_sidebar_lines_for_test(&app);
+    let running = expanded_lines
+        .iter()
+        .find(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+                .contains("  ⠋ inspect README")
+        })
+        .expect("running subagent line after expanding group");
+    assert_eq!(running.spans[0].style.fg, Some(theme.status.success));
+    assert_eq!(running.spans[1].style.fg, Some(theme.status.success));
+    assert_eq!(running.spans[2].style.fg, Some(theme.text.primary));
+
+    app.handle_mouse(
+        crossterm::event::MouseEvent {
+            kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+            column: 0,
+            row: 0,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+        },
+        Rect::new(0, 0, 140, 40),
+        None,
+        Some(OperatorSidebarSection::Subagents),
+        None,
+    );
+
+    let collapsed_sidebar = operator_sidebar_text_for_test(&app).join("\n");
+    assert!(collapsed_sidebar.contains("▶ Subagents (4 types)"));
+    assert!(!collapsed_sidebar.contains("inspect README"));
+    assert!(!collapsed_sidebar.contains("✓ summary"));
+    assert!(!collapsed_sidebar.contains("✗ cancelled"));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_operator_rail_keeps_subagents_visible_in_replay() {
+    let events = vec![
+        operator_rail_test_event_with_correlation(
+            1,
+            harness_core::event::EventActor::new(harness_core::event::ActorKind::User, None),
+            "req_replay_subagent",
+            harness_core::event::EventV1::UserMessageSubmitted(
+                harness_core::event::UserMessageSubmittedEvent {
+                    request_id: "req_replay_subagent".to_string(),
+                    text: "Review replay sidebar parity".to_string(),
+                },
+            ),
+        ),
+        operator_rail_test_event_with_correlation(
+            2,
+            harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+            "req_replay_subagent",
+            harness_core::event::EventV1::ToolCallRequested(
+                harness_core::event::ToolCallRequestedEvent {
+                    tool_call_id: "tool_call_replay_subagent".to_string(),
+                    tool_id: "task".to_string(),
+                    args_summary: serde_json::json!({
+                        "description": "audit replay subagent sidebar",
+                        "subagent_type": "researcher"
+                    })
+                    .to_string(),
+                    args_digest: "digest-replay-subagent".to_string(),
+                    metadata: Some(harness_core::event::ToolCallMetadata {
+                        lineage: Some(harness_core::event::TaskLineageMetadata {
+                            child_session_id: Some("child_replay_session".to_string()),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    }),
+                },
+            ),
+        ),
+        operator_rail_test_event_with_correlation(
+            3,
+            harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+            "req_replay_subagent",
+            harness_core::event::EventV1::ToolCallFinished(
+                harness_core::event::ToolCallFinishedEvent {
+                    tool_call_id: "tool_call_replay_subagent".to_string(),
+                    status: harness_core::event::ToolCallStatus::Succeeded,
+                    output_summary: Some("Replay sidebar audited".to_string()),
+                    output_digest: Some("digest-replay-subagent-output".to_string()),
+                    output_json: None,
+                    metadata: Some(harness_core::event::ToolCallMetadata {
+                        lineage: Some(harness_core::event::TaskLineageMetadata {
+                            child_session_id: Some("child_replay_session".to_string()),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    }),
+                },
+            ),
+        ),
+    ];
+    let app = AppState::new_replay(std::path::PathBuf::from("/tmp/replay-subagent"), events);
+
+    let sidebar = operator_sidebar_text_for_test(&app).join("\n");
+    assert!(sidebar.contains("▼ Subagents"));
+    assert!(sidebar.contains("• researcher ✓ audit replay subagent sidebar"));
 }
 
 #[cfg(test)]
@@ -1896,7 +2543,12 @@ fn render_operator_sidebar_surface(
 
     let rail = build_operator_rail_model(app);
     let title_text = build_operator_rail_title_text(rail.title.as_deref(), theme, inner.width);
-    let body_layout = build_operator_rail_body_layout(&rail.body, theme, inner.width);
+    let body_layout = build_operator_rail_body_layout(
+        &rail.body,
+        theme,
+        inner.width,
+        app.transcript_animation_phase(),
+    );
     let footer = app
         .sidebar_directory_branch_label()
         .map(|label| operator_sidebar_directory_footer_text(label, theme, inner.width, surface));
@@ -1930,6 +2582,13 @@ fn render_operator_sidebar_surface(
             .wrap(Wrap { trim: true }),
         body_area,
     );
+    render_operator_sidebar_selection(
+        frame,
+        app.operator_sidebar_selection(),
+        operator_sidebar_selection_snapshot_in_surface(app, area, theme, chrome),
+        body_area,
+        theme,
+    );
     if let Some(footer) = footer {
         frame.render_widget(
             Paragraph::new(footer)
@@ -1944,7 +2603,7 @@ fn render_operator_sidebar_surface(
 fn build_operator_sidebar_content(app: &AppState, theme: &Theme) -> Text<'static> {
     let rail = build_operator_rail_model(app);
     let mut lines = build_operator_rail_title_text(rail.title.as_deref(), theme, 80).lines;
-    lines.extend(build_operator_rail_body_layout(&rail.body, theme, 80).lines);
+    lines.extend(build_operator_rail_body_layout(&rail.body, theme, 80, 0).lines);
     if let Some(label) = app.sidebar_directory_branch_label() {
         lines.extend(
             operator_sidebar_directory_footer_text(label, theme, 80, theme.surface.panel).lines,
@@ -2094,7 +2753,7 @@ fn build_operator_rail_body_text(
     theme: &Theme,
     width: u16,
 ) -> Text<'static> {
-    Text::from(build_operator_rail_body_layout(body, theme, width).lines)
+    Text::from(build_operator_rail_body_layout(body, theme, width, 0).lines)
 }
 
 fn build_operator_rail_model(app: &AppState) -> OperatorRailModel {
@@ -2106,6 +2765,17 @@ fn build_operator_rail_model(app: &AppState) -> OperatorRailModel {
             collapsed: app.operator_sidebar_section_collapsed(OperatorSidebarSection::Todo),
         });
         sections.push(OperatorRailBodySection::Todo { items, disclosure });
+    }
+    let subagent_groups = operator_sidebar_subagent_groups(app);
+    if !subagent_groups.is_empty() {
+        sections.push(OperatorRailBodySection::Subagents {
+            groups: subagent_groups,
+            disclosure: OperatorRailSectionDisclosure {
+                section: OperatorSidebarSection::Subagents,
+                collapsed: app
+                    .operator_sidebar_section_collapsed(OperatorSidebarSection::Subagents),
+            },
+        });
     }
     sections.extend([
         OperatorRailBodySection::Mcp {
@@ -2142,9 +2812,12 @@ fn build_operator_rail_body_layout(
     body: &OperatorRailBody,
     theme: &Theme,
     width: u16,
+    animation_phase: usize,
 ) -> OperatorRailBodyLayout {
     let mut lines = Vec::new();
     let mut heading_hit_regions = Vec::new();
+    let mut subagent_hit_regions = Vec::new();
+    let mut subagent_group_hit_regions = Vec::new();
     let mut visual_row = 0usize;
 
     let presentation = OperatorRailBodyPresentation::Regular;
@@ -2156,7 +2829,9 @@ fn build_operator_rail_body_layout(
                     visual_row = visual_row.saturating_add(visual_rows_for_line(&blank, width));
                     lines.push(blank);
                 }
-                let section_lines = build_operator_rail_section_lines(theme, section);
+                let section_top = visual_row;
+                let section_lines =
+                    build_operator_rail_section_lines(theme, section, width, animation_phase);
                 if let Some(disclosure) = section.disclosure() {
                     let heading_height = section_lines
                         .first()
@@ -2168,6 +2843,19 @@ fn build_operator_rail_body_layout(
                         height: heading_height,
                     });
                 }
+                if matches!(section, OperatorRailBodySection::Subagents { .. })
+                    && !section.collapsed()
+                {
+                    let subagent_regions = subagent_hit_regions_for_section(
+                        section,
+                        theme,
+                        width,
+                        section_top,
+                        animation_phase,
+                    );
+                    subagent_hit_regions.extend(subagent_regions.item_regions);
+                    subagent_group_hit_regions.extend(subagent_regions.group_regions);
+                }
                 visual_row =
                     visual_row.saturating_add(visual_rows_for_lines(&section_lines, width));
                 lines.extend(section_lines);
@@ -2178,16 +2866,345 @@ fn build_operator_rail_body_layout(
     OperatorRailBodyLayout {
         lines,
         heading_hit_regions,
+        subagent_hit_regions,
+        subagent_group_hit_regions,
     }
+}
+
+fn build_operator_sidebar_selection_snapshot(
+    app: &AppState,
+    inner: Rect,
+    theme: &Theme,
+) -> Option<OperatorSidebarSelectionSnapshot> {
+    let rail = build_operator_rail_model(app);
+    let body_area = operator_sidebar_body_area(app, inner, theme, rail.title.as_deref())?;
+
+    let body_layout = build_operator_rail_body_layout(
+        &rail.body,
+        theme,
+        body_area.width,
+        app.transcript_animation_phase(),
+    );
+    Some(OperatorSidebarSelectionSnapshot {
+        viewport: body_area,
+        scroll_top: usize::from(app.details_scroll),
+        rows: operator_sidebar_selection_rows(&body_layout.lines, body_area.width),
+    })
+}
+
+fn operator_sidebar_selection_snapshot_in_surface(
+    app: &AppState,
+    area: Rect,
+    theme: &Theme,
+    chrome: OperatorSidebarChrome,
+) -> Option<OperatorSidebarSelectionSnapshot> {
+    let inner = operator_sidebar_inner_area(app, area, theme, chrome)?;
+    build_operator_sidebar_selection_snapshot(app, inner, theme)
+}
+
+fn operator_sidebar_selection_snapshot(
+    app: &AppState,
+    frame_area: Rect,
+) -> Option<OperatorSidebarSelectionSnapshot> {
+    let plan = crate::layout::FrameLayoutPlan::for_app(app, frame_area);
+    let theme = app.theme();
+
+    plan.operator_sidebar
+        .and_then(|area| {
+            operator_sidebar_selection_snapshot_in_surface(
+                app,
+                area,
+                theme,
+                OperatorSidebarChrome::Persistent,
+            )
+        })
+        .or_else(|| {
+            plan.details_overlay.and_then(|area| {
+                operator_sidebar_selection_snapshot_in_surface(
+                    app,
+                    area,
+                    theme,
+                    OperatorSidebarChrome::Overlay,
+                )
+            })
+        })
+}
+
+fn operator_sidebar_selection_rows(
+    lines: &[Line<'static>],
+    width: u16,
+) -> Vec<OperatorSidebarSelectionRow> {
+    let width = usize::from(width.max(1));
+    let mut rows = Vec::new();
+    for line in lines {
+        rows.extend(
+            operator_sidebar_selection_line_rows(line, width)
+                .into_iter()
+                .enumerate()
+                .map(|(index, cells)| OperatorSidebarSelectionRow {
+                    cells,
+                    continues_previous: index > 0,
+                }),
+        );
+    }
+    rows
+}
+
+fn operator_sidebar_selection_line_rows(line: &Line<'static>, width: usize) -> Vec<Vec<String>> {
+    let mut row = Vec::new();
+    let mut rows = Vec::new();
+
+    for span in &line.spans {
+        for ch in span.content.chars() {
+            let display = ch.to_string();
+            let cell_width = display_width(&display).max(1);
+            if row.len() + cell_width > width {
+                row.resize(width, " ".to_string());
+                rows.push(std::mem::take(&mut row));
+            }
+
+            row.push(display);
+            for _ in 1..cell_width {
+                if row.len() == width {
+                    rows.push(std::mem::take(&mut row));
+                }
+                row.push(String::new());
+            }
+
+            if row.len() == width {
+                rows.push(std::mem::take(&mut row));
+            }
+        }
+    }
+
+    if rows.is_empty() && row.is_empty() {
+        row.resize(width, " ".to_string());
+        rows.push(row);
+        return rows;
+    }
+
+    if !row.is_empty() {
+        row.resize(width, " ".to_string());
+        rows.push(row);
+    }
+
+    rows
+}
+
+impl OperatorSidebarSelectionSnapshot {
+    fn hit(&self, column: u16, row: u16) -> Option<OperatorSidebarSelectionCell> {
+        if !rect_contains(self.viewport, column, row) {
+            return None;
+        }
+
+        let selection_cell = OperatorSidebarSelectionCell {
+            row: self
+                .scroll_top
+                .saturating_add(usize::from(row.saturating_sub(self.viewport.y))),
+            column: usize::from(column.saturating_sub(self.viewport.x)),
+        };
+        self.selectable_cell(selection_cell)
+            .then_some(selection_cell)
+    }
+
+    fn selectable_cell(&self, cell: OperatorSidebarSelectionCell) -> bool {
+        let Some(row) = self.rows.get(cell.row) else {
+            return false;
+        };
+        let Some(content_end) = operator_sidebar_selection_row_content_end(row) else {
+            return false;
+        };
+        cell.column <= content_end
+    }
+
+    fn selection_text(&self, selection: OperatorSidebarSelection) -> Option<String> {
+        let (start, end) = selection.normalized();
+        if start == end || self.rows.is_empty() {
+            return None;
+        }
+
+        let last_row = self.rows.len().saturating_sub(1);
+        let start_row = start.row.min(last_row);
+        let end_row = end.row.min(last_row);
+        if start_row > end_row {
+            return None;
+        }
+
+        let mut lines = Vec::new();
+        for row_idx in start_row..=end_row {
+            let row = self.rows.get(row_idx)?;
+            let Some(content_end) = operator_sidebar_selection_row_content_end(row) else {
+                if row_idx == start_row || !row.continues_previous || lines.is_empty() {
+                    lines.push(String::new());
+                }
+                continue;
+            };
+
+            let row_start = if row_idx == start_row {
+                start.column.min(row.cells.len().saturating_sub(1))
+            } else {
+                0
+            };
+            let row_end = if row_idx == end_row {
+                end.column.min(content_end)
+            } else {
+                content_end
+            };
+            if row_start > row_end {
+                lines.push(String::new());
+                continue;
+            }
+
+            let mut text = String::new();
+            for cell in row
+                .cells
+                .iter()
+                .skip(row_start)
+                .take(row_end - row_start + 1)
+            {
+                text.push_str(cell);
+            }
+            if row_idx != start_row && row.continues_previous && !lines.is_empty() {
+                let continuation = text.trim_start_matches(' ');
+                let current = lines.last_mut().expect("continuation has previous line");
+                if !continuation.is_empty() && !current.ends_with(char::is_whitespace) {
+                    current.push(' ');
+                }
+                current.push_str(continuation);
+            } else {
+                lines.push(text);
+            }
+        }
+
+        Some(lines.join("\n"))
+    }
+}
+
+fn operator_sidebar_selection_row_content_end(row: &OperatorSidebarSelectionRow) -> Option<usize> {
+    row.cells
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, cell)| !cell.is_empty() && cell.as_str() != " ")
+        .map(|(idx, _)| idx)
+}
+
+fn render_operator_sidebar_selection(
+    frame: &mut Frame,
+    selection: Option<OperatorSidebarSelection>,
+    snapshot: Option<OperatorSidebarSelectionSnapshot>,
+    area: Rect,
+    theme: &Theme,
+) {
+    let Some(selection) = selection else {
+        return;
+    };
+    let Some(snapshot) = snapshot else {
+        return;
+    };
+    if snapshot.rows.is_empty() {
+        return;
+    }
+
+    let (start, end) = selection.normalized();
+    if start == end {
+        return;
+    }
+
+    let visible_height = usize::from(area.height);
+    let max_row = snapshot.rows.len().saturating_sub(1);
+    let start_row = start.row.min(max_row);
+    let end_row = end.row.min(max_row);
+    let buffer = frame.buffer_mut();
+
+    for local_row in 0..visible_height {
+        let absolute_row = snapshot.scroll_top.saturating_add(local_row);
+        if absolute_row < start_row || absolute_row > end_row {
+            continue;
+        }
+
+        let row = &snapshot.rows[absolute_row];
+        let row_start = if absolute_row == start_row {
+            start.column.min(row.cells.len().saturating_sub(1))
+        } else {
+            0
+        };
+        let row_end = if absolute_row == end_row {
+            end.column.min(row.cells.len().saturating_sub(1))
+        } else {
+            row.cells.len().saturating_sub(1)
+        };
+        if row_start > row_end {
+            continue;
+        }
+
+        let y = area
+            .y
+            .saturating_add(u16::try_from(local_row).unwrap_or(u16::MAX));
+        for column in row_start..=row_end {
+            let x = area
+                .x
+                .saturating_add(u16::try_from(column).unwrap_or(u16::MAX));
+            if x >= area.right() || y >= area.bottom() {
+                continue;
+            }
+
+            let cell = &mut buffer[(x, y)];
+            cell.set_fg(theme.text.inverse);
+            cell.set_bg(theme.status.info);
+        }
+    }
+}
+
+pub(crate) fn operator_sidebar_selection_cell(
+    app: &AppState,
+    frame_area: Rect,
+    column: u16,
+    row: u16,
+) -> Option<OperatorSidebarSelectionCell> {
+    operator_sidebar_selection_snapshot(app, frame_area)
+        .and_then(|snapshot| snapshot.hit(column, row))
+}
+
+pub(crate) fn operator_sidebar_selection_text(
+    app: &AppState,
+    frame_area: Rect,
+    selection: OperatorSidebarSelection,
+) -> Option<String> {
+    operator_sidebar_selection_snapshot(app, frame_area)
+        .and_then(|snapshot| snapshot.selection_text(selection))
 }
 
 fn build_operator_rail_section_lines(
     theme: &Theme,
     section: &OperatorRailBodySection,
+    width: u16,
+    animation_phase: usize,
 ) -> Vec<Line<'static>> {
     let mut lines = vec![section.heading_line(theme)];
 
     if section.collapsed() {
+        return lines;
+    }
+
+    if let OperatorRailBodySection::Subagents { groups, .. } = section {
+        for group in groups {
+            if group.items.len() > 1 {
+                lines.push(subagent_group_line(theme, group, animation_phase, width));
+                if !group.expanded {
+                    continue;
+                }
+            }
+            for item in &group.items {
+                lines.push(subagent_item_line(
+                    theme,
+                    group,
+                    item,
+                    animation_phase,
+                    width,
+                ));
+            }
+        }
         return lines;
     }
 
@@ -2196,6 +3213,7 @@ fn build_operator_rail_section_lines(
         | OperatorRailBodySection::Mcp { items, .. }
         | OperatorRailBodySection::Lsp { items, .. }
         | OperatorRailBodySection::ModifiedFiles { items, .. } => items,
+        OperatorRailBodySection::Subagents { .. } => unreachable!("handled above"),
     };
 
     for item in items {
@@ -2203,6 +3221,210 @@ fn build_operator_rail_section_lines(
     }
 
     lines
+}
+
+struct OperatorRailSubagentRegions {
+    item_regions: Vec<OperatorRailSubagentHitRegion>,
+    group_regions: Vec<OperatorRailSubagentGroupHitRegion>,
+}
+
+fn subagent_hit_regions_for_section(
+    section: &OperatorRailBodySection,
+    theme: &Theme,
+    width: u16,
+    section_top: usize,
+    animation_phase: usize,
+) -> OperatorRailSubagentRegions {
+    let OperatorRailBodySection::Subagents { groups, .. } = section else {
+        return OperatorRailSubagentRegions {
+            item_regions: Vec::new(),
+            group_regions: Vec::new(),
+        };
+    };
+
+    let mut item_regions = Vec::new();
+    let mut group_regions = Vec::new();
+    let heading_height = visual_rows_for_line(&section.heading_line(theme), width);
+    let mut visual_row = section_top.saturating_add(heading_height);
+    for group in groups {
+        if group.items.len() > 1 {
+            let group_line = subagent_group_line(theme, group, animation_phase, width);
+            let height = visual_rows_for_line(&group_line, width);
+            group_regions.push(OperatorRailSubagentGroupHitRegion {
+                agent_name: group.agent_name.clone(),
+                top_row: visual_row,
+                height,
+            });
+            visual_row = visual_row.saturating_add(height);
+            if !group.expanded {
+                continue;
+            }
+        }
+        for item in &group.items {
+            let item_line = subagent_item_line(theme, group, item, animation_phase, width);
+            let height = visual_rows_for_line(&item_line, width);
+            if let Some(session_id) = item.child_session_id.as_ref() {
+                item_regions.push(OperatorRailSubagentHitRegion {
+                    session_id: session_id.clone(),
+                    top_row: visual_row,
+                    height,
+                });
+            }
+            visual_row = visual_row.saturating_add(height);
+        }
+    }
+    OperatorRailSubagentRegions {
+        item_regions,
+        group_regions,
+    }
+}
+
+fn subagent_group_line(
+    theme: &Theme,
+    group: &SubagentRailGroup,
+    animation_phase: usize,
+    width: u16,
+) -> Line<'static> {
+    let status = subagent_group_status(group);
+    let active = status.is_active();
+    subagent_compact_line(
+        vec![
+            StyledTextChunk {
+                text: format!("{} ", if group.expanded { "▼" } else { "▶" }),
+                style: subagent_bullet_style(theme, active),
+            },
+            StyledTextChunk {
+                text: group.agent_name.clone(),
+                style: Style::default().fg(theme.text.primary),
+            },
+            StyledTextChunk {
+                text: format!(" {} ", status.glyph(animation_phase)),
+                style: subagent_indicator_style(theme, status),
+            },
+            StyledTextChunk {
+                text: subagent_group_summary(group),
+                style: subagent_description_style(theme, status),
+            },
+        ],
+        width,
+    )
+}
+
+fn subagent_item_line(
+    theme: &Theme,
+    group: &SubagentRailGroup,
+    item: &SubagentRailItem,
+    animation_phase: usize,
+    width: u16,
+) -> Line<'static> {
+    let multi_item = group.items.len() > 1;
+    let leading = if multi_item { "  " } else { "• " };
+    let bullet_style = subagent_bullet_style(theme, item.status.is_active());
+    let mut chunks = Vec::new();
+    chunks.push(StyledTextChunk {
+        text: leading.to_string(),
+        style: bullet_style,
+    });
+    if !multi_item {
+        chunks.push(StyledTextChunk {
+            text: group.agent_name.clone(),
+            style: Style::default().fg(theme.text.primary),
+        });
+        chunks.push(StyledTextChunk {
+            text: " ".to_string(),
+            style: Style::default().fg(theme.text.secondary),
+        });
+    }
+    chunks.extend([
+        StyledTextChunk {
+            text: format!("{} ", item.status.glyph(animation_phase)),
+            style: subagent_indicator_style(theme, item.status),
+        },
+        StyledTextChunk {
+            text: item.description.clone(),
+            style: subagent_description_style(theme, item.status),
+        },
+    ]);
+    subagent_compact_line(chunks, width)
+}
+
+fn subagent_group_status(group: &SubagentRailGroup) -> SubagentRailStatus {
+    if let Some(status) = group
+        .items
+        .iter()
+        .find_map(|item| item.status.is_active().then_some(item.status))
+    {
+        return status;
+    }
+
+    if group
+        .items
+        .iter()
+        .any(|item| matches!(item.status, SubagentRailStatus::Error))
+    {
+        return SubagentRailStatus::Error;
+    }
+
+    SubagentRailStatus::Completed
+}
+
+fn subagent_group_summary(group: &SubagentRailGroup) -> String {
+    let total = group.items.len();
+    let active = group
+        .items
+        .iter()
+        .filter(|item| item.status.is_active())
+        .count();
+    let failed = group
+        .items
+        .iter()
+        .filter(|item| matches!(item.status, SubagentRailStatus::Error))
+        .count();
+
+    if active > 0 {
+        return format!("{} · {} active", subagent_task_count(total), active);
+    }
+    if failed > 0 {
+        return format!("{} · {} failed", subagent_task_count(total), failed);
+    }
+
+    format!("{} done", subagent_task_count(total))
+}
+
+fn subagent_task_count(count: usize) -> String {
+    if count == 1 {
+        "1 task".to_string()
+    } else {
+        format!("{count} tasks")
+    }
+}
+
+fn subagent_bullet_style(theme: &Theme, active: bool) -> Style {
+    if active {
+        Style::default().fg(theme.status.success)
+    } else {
+        Style::default().fg(theme.text.primary)
+    }
+}
+
+fn subagent_indicator_style(theme: &Theme, status: SubagentRailStatus) -> Style {
+    if status.is_active() {
+        Style::default().fg(theme.status.success)
+    } else {
+        Style::default().fg(theme.text.secondary)
+    }
+}
+
+fn subagent_description_style(theme: &Theme, status: SubagentRailStatus) -> Style {
+    if status.is_active() {
+        Style::default().fg(theme.text.primary)
+    } else {
+        Style::default().fg(theme.text.secondary)
+    }
+}
+
+fn subagent_compact_line(chunks: Vec<StyledTextChunk>, width: u16) -> Line<'static> {
+    Line::from(truncate_styled_chunks(&chunks, usize::from(width.max(1))))
 }
 
 fn visual_rows_for_lines(lines: &[Line<'static>], width: u16) -> usize {
@@ -2259,6 +3481,74 @@ pub(crate) fn operator_sidebar_section_hit_target(
         })
 }
 
+pub(crate) fn operator_sidebar_subagent_session_hit_target(
+    app: &AppState,
+    frame_area: Rect,
+    column: u16,
+    row: u16,
+) -> Option<String> {
+    let plan = crate::layout::FrameLayoutPlan::for_app(app, frame_area);
+    let theme = app.theme();
+
+    plan.operator_sidebar
+        .and_then(|area| {
+            operator_sidebar_subagent_session_hit_target_in_surface(
+                app,
+                area,
+                theme,
+                OperatorSidebarChrome::Persistent,
+                column,
+                row,
+            )
+        })
+        .or_else(|| {
+            plan.details_overlay.and_then(|area| {
+                operator_sidebar_subagent_session_hit_target_in_surface(
+                    app,
+                    area,
+                    theme,
+                    OperatorSidebarChrome::Overlay,
+                    column,
+                    row,
+                )
+            })
+        })
+}
+
+pub(crate) fn operator_sidebar_subagent_group_hit_target(
+    app: &AppState,
+    frame_area: Rect,
+    column: u16,
+    row: u16,
+) -> Option<String> {
+    let plan = crate::layout::FrameLayoutPlan::for_app(app, frame_area);
+    let theme = app.theme();
+
+    plan.operator_sidebar
+        .and_then(|area| {
+            operator_sidebar_subagent_group_hit_target_in_surface(
+                app,
+                area,
+                theme,
+                OperatorSidebarChrome::Persistent,
+                column,
+                row,
+            )
+        })
+        .or_else(|| {
+            plan.details_overlay.and_then(|area| {
+                operator_sidebar_subagent_group_hit_target_in_surface(
+                    app,
+                    area,
+                    theme,
+                    OperatorSidebarChrome::Overlay,
+                    column,
+                    row,
+                )
+            })
+        })
+}
+
 fn operator_sidebar_section_hit_target_in_surface(
     app: &AppState,
     area: Rect,
@@ -2273,18 +3563,15 @@ fn operator_sidebar_section_hit_target_in_surface(
     }
 
     let rail = build_operator_rail_model(app);
-    let title_text = build_operator_rail_title_text(rail.title.as_deref(), theme, inner.width);
-    let title_height = title_text.lines.len().min(usize::from(u16::MAX)) as u16;
-    let sections = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(title_height), Constraint::Min(0)])
-        .split(inner);
-    let body_area = sections[1];
-    if !rect_contains(body_area, column, row) {
-        return None;
-    }
+    let body_area = operator_sidebar_body_area(app, inner, theme, rail.title.as_deref())?;
+    rect_contains(body_area, column, row).then_some(())?;
 
-    let layout = build_operator_rail_body_layout(&rail.body, theme, inner.width);
+    let layout = build_operator_rail_body_layout(
+        &rail.body,
+        theme,
+        body_area.width,
+        app.transcript_animation_phase(),
+    );
     let visual_row =
         usize::from(row.saturating_sub(body_area.y)).saturating_add(app.details_scroll.into());
 
@@ -2292,6 +3579,105 @@ fn operator_sidebar_section_hit_target_in_surface(
         (visual_row >= region.top_row && visual_row < region.top_row.saturating_add(region.height))
             .then_some(region.section)
     })
+}
+
+fn operator_sidebar_subagent_session_hit_target_in_surface(
+    app: &AppState,
+    area: Rect,
+    theme: &Theme,
+    chrome: OperatorSidebarChrome,
+    column: u16,
+    row: u16,
+) -> Option<String> {
+    let inner = operator_sidebar_inner_area(app, area, theme, chrome)?;
+    if !rect_contains(inner, column, row) {
+        return None;
+    }
+
+    let rail = build_operator_rail_model(app);
+    let body_area = operator_sidebar_body_area(app, inner, theme, rail.title.as_deref())?;
+    rect_contains(body_area, column, row).then_some(())?;
+
+    let layout = build_operator_rail_body_layout(
+        &rail.body,
+        theme,
+        body_area.width,
+        app.transcript_animation_phase(),
+    );
+    let visual_row =
+        usize::from(row.saturating_sub(body_area.y)).saturating_add(app.details_scroll.into());
+
+    layout.subagent_hit_regions.into_iter().find_map(|region| {
+        (visual_row >= region.top_row && visual_row < region.top_row.saturating_add(region.height))
+            .then_some(region.session_id)
+    })
+}
+
+fn operator_sidebar_subagent_group_hit_target_in_surface(
+    app: &AppState,
+    area: Rect,
+    theme: &Theme,
+    chrome: OperatorSidebarChrome,
+    column: u16,
+    row: u16,
+) -> Option<String> {
+    let inner = operator_sidebar_inner_area(app, area, theme, chrome)?;
+    if !rect_contains(inner, column, row) {
+        return None;
+    }
+
+    let rail = build_operator_rail_model(app);
+    let body_area = operator_sidebar_body_area(app, inner, theme, rail.title.as_deref())?;
+    rect_contains(body_area, column, row).then_some(())?;
+
+    let layout = build_operator_rail_body_layout(
+        &rail.body,
+        theme,
+        body_area.width,
+        app.transcript_animation_phase(),
+    );
+    let visual_row =
+        usize::from(row.saturating_sub(body_area.y)).saturating_add(app.details_scroll.into());
+
+    layout
+        .subagent_group_hit_regions
+        .into_iter()
+        .find_map(|region| {
+            (visual_row >= region.top_row
+                && visual_row < region.top_row.saturating_add(region.height))
+            .then_some(region.agent_name)
+        })
+}
+
+fn operator_sidebar_body_area(
+    app: &AppState,
+    inner: Rect,
+    theme: &Theme,
+    title: Option<&str>,
+) -> Option<Rect> {
+    let title_text = build_operator_rail_title_text(title, theme, inner.width);
+    let title_height = title_text.lines.len().min(usize::from(u16::MAX)) as u16;
+    let footer_height = operator_sidebar_footer_height(app, theme, inner.width);
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(title_height),
+            Constraint::Min(0),
+            Constraint::Length(footer_height),
+        ])
+        .split(inner);
+    let body_area = sections[1];
+    (body_area.width > 0 && body_area.height > 0).then_some(body_area)
+}
+
+fn operator_sidebar_footer_height(app: &AppState, theme: &Theme, width: u16) -> u16 {
+    app.sidebar_directory_branch_label()
+        .map(|label| {
+            operator_sidebar_directory_footer_text(label, theme, width, theme.surface.panel)
+                .height()
+                .min(usize::from(u16::MAX)) as u16
+        })
+        .unwrap_or(0)
 }
 
 fn operator_sidebar_inner_area(
@@ -2429,6 +3815,129 @@ fn operator_sidebar_todo_items(app: &AppState) -> Option<Vec<OperatorRailItem>> 
         .find_map(|tool_call| todo_items_from_tool_call(tool_call, app.session_path.as_deref()))?;
 
     (!todos.is_empty()).then_some(todos)
+}
+
+fn operator_sidebar_subagent_groups(app: &AppState) -> Vec<SubagentRailGroup> {
+    let mut groups: Vec<SubagentRailGroup> = Vec::new();
+    for activity in &app.activities {
+        for tool_call in &activity.tool_calls {
+            if !operator_sidebar_tool_call_is_task_spawn(tool_call) {
+                continue;
+            }
+            let Some((agent_name, description)) = subagent_args_from_tool_call(tool_call) else {
+                continue;
+            };
+            let child_session_id = subagent_child_session_id(tool_call);
+            let item = SubagentRailItem {
+                description,
+                status: subagent_status_from_app(app, tool_call, child_session_id.as_deref()),
+                child_session_id,
+            };
+            if let Some(group) = groups
+                .iter_mut()
+                .find(|group| group.agent_name == agent_name)
+            {
+                group.items.push(item);
+            } else {
+                groups.push(SubagentRailGroup {
+                    expanded: app.operator_sidebar_subagent_group_expanded(&agent_name),
+                    agent_name,
+                    items: vec![item],
+                });
+            }
+        }
+    }
+
+    groups
+}
+
+fn subagent_status_from_app(
+    app: &AppState,
+    tool_call: &crate::app::ToolCallEntry,
+    child_session_id: Option<&str>,
+) -> SubagentRailStatus {
+    if let Some(row) = app.orchestration_visible_rows().into_iter().find(|row| {
+        row.parent_tool_call_id.as_deref() == Some(tool_call.tool_call_id.as_str())
+            || child_session_id.is_some_and(|child| {
+                row.effective_child_session_id() == Some(child) || row.task_id == child
+            })
+    }) {
+        return SubagentRailStatus::from_orchestration_state(row.state);
+    }
+
+    if tool_call
+        .lineage
+        .as_ref()
+        .and_then(|lineage| lineage.child_session_id.as_deref())
+        .is_none()
+        && child_session_id.is_some()
+        && matches!(
+            tool_call.status,
+            crate::app::ToolCallDisplayStatus::Succeeded
+        )
+    {
+        return SubagentRailStatus::Running;
+    }
+
+    SubagentRailStatus::from_tool_call_status(tool_call.status)
+}
+
+fn operator_sidebar_tool_call_is_task_spawn(tool_call: &crate::app::ToolCallEntry) -> bool {
+    matches!(tool_call.effective_tool_id(), "agent.spawn" | "task")
+        || matches!(tool_call.tool_id.as_str(), "agent.spawn" | "task")
+}
+
+fn subagent_args_from_tool_call(tool_call: &crate::app::ToolCallEntry) -> Option<(String, String)> {
+    let value = serde_json::from_str::<serde_json::Value>(&tool_call.args_summary).ok()?;
+    let agent_name = trimmed_json_string_field(
+        Some(&value),
+        &["subagent_type", "profile", "profile_name", "category"],
+    )?;
+    let description = trimmed_json_string_field(Some(&value), &["description"]).unwrap_or_default();
+    Some((
+        sanitize_operator_sidebar_line(&agent_name),
+        sanitize_operator_sidebar_line(&description),
+    ))
+}
+
+fn subagent_child_session_id(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
+    tool_call
+        .lineage
+        .as_ref()
+        .and_then(|lineage| lineage.child_session_id.clone())
+        .or_else(|| subagent_child_session_id_from_output(tool_call.output_json.as_ref()))
+}
+
+fn subagent_child_session_id_from_output(
+    output_json: Option<&serde_json::Value>,
+) -> Option<String> {
+    trimmed_json_string_field(
+        output_json,
+        &[
+            "child_session_id",
+            "session_id",
+            "task_id",
+            "childSessionId",
+            "sessionId",
+            "taskId",
+        ],
+    )
+    .or_else(|| trimmed_json_nested_string_field(output_json, &["child_session", "session_id"]))
+    .or_else(|| trimmed_json_nested_string_field(output_json, &["childSession", "sessionId"]))
+    .or_else(|| trimmed_json_nested_string_field(output_json, &["metadata", "sessionId"]))
+    .or_else(|| trimmed_json_nested_string_field(output_json, &["metadata", "session_id"]))
+    .or_else(|| trimmed_json_nested_string_field(output_json, &["lineage", "child_session_id"]))
+    .or_else(|| trimmed_json_nested_string_field(output_json, &["lineage", "session_id"]))
+    .or_else(|| trimmed_json_nested_string_field(output_json, &["lineage", "sessionId"]))
+    .or_else(|| {
+        trimmed_json_nested_string_field(output_json, &["_harness", "lineage", "child_session_id"])
+    })
+    .or_else(|| {
+        trimmed_json_nested_string_field(output_json, &["_harness", "lineage", "session_id"])
+    })
+    .or_else(|| {
+        trimmed_json_nested_string_field(output_json, &["_harness", "lineage", "sessionId"])
+    })
 }
 
 fn todo_items_from_tool_call(

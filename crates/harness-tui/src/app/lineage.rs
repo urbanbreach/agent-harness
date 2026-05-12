@@ -656,6 +656,7 @@ fn event_kind_label(event: &EventV1) -> &'static str {
         EventV1::TaskCancelled(_) => "task_cancelled",
         EventV1::TaskCompleted(_) => "task_completed",
         EventV1::TaskResultLate(_) => "task_result_late",
+        EventV1::BackgroundTaskNotification(_) => "background_task_notification",
         EventV1::StaleDetected(_) => "stale_detected",
         EventV1::UserMessageSubmitted(_) => "user_message_submitted",
         EventV1::ProviderRequestStarted(_) => "provider_request_started",

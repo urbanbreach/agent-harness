@@ -1412,6 +1412,51 @@ fn transcript_selection_test_app() -> AppState {
     transcript_selection_test_app_with_text("Copy this exact reply")
 }
 
+fn operator_sidebar_selection_test_app() -> AppState {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        "req_sidebar_copy",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_sidebar_copy".to_string(),
+            provider_id: "default".to_string(),
+            model_id: "model-sidebar".to_string(),
+            prompt_summary: "sidebar copy".to_string(),
+            request_digest: "digest-sidebar-copy".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_sidebar_copy",
+        EventV1::ToolCallRequested(ToolCallRequestedEvent {
+            tool_call_id: "tc_sidebar_todo".to_string(),
+            tool_id: "todo.write".to_string(),
+            args_summary: "update todo list".to_string(),
+            args_digest: "digest-sidebar-todo-args".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        3,
+        "req_sidebar_copy",
+        EventV1::ToolCallFinished(ToolCallFinishedEvent {
+            tool_call_id: "tc_sidebar_todo".to_string(),
+            status: ToolCallStatus::Succeeded,
+            output_summary: Some("todo list updated".to_string()),
+            output_digest: None,
+            output_json: Some(serde_json::json!({
+                "todos": [
+                    {"content": "Copy sidebar task", "status": "in_progress", "priority": "high"},
+                    {"content": "Keep existing sidebar clicks", "status": "pending", "priority": "medium"}
+                ]
+            })),
+            metadata: None,
+        }),
+    ));
+    app
+}
+
 fn transcript_selection_text_position(app: &AppState, needle: &str) -> (u16, u16) {
     let snapshot = transcript_selection_debug_snapshot(app, TEST_FRAME_AREA)
         .expect("transcript selection snapshot");
@@ -1434,6 +1479,35 @@ fn transcript_selection_text_bounds(app: &AppState, needle: &str) -> (u16, u16, 
         row,
         u16::try_from(needle.chars().count()).expect("needle width fits"),
     )
+}
+
+fn operator_sidebar_text_bounds(app: &AppState, needle: &str) -> (u16, u16, u16) {
+    let backend = TestBackend::new(TEST_FRAME_AREA.width, TEST_FRAME_AREA.height);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    terminal
+        .draw(|frame| render_app(frame, app))
+        .expect("draw app frame");
+    let buffer = terminal.backend().buffer();
+    let sidebar = FrameLayoutPlan::for_app(app, TEST_FRAME_AREA)
+        .operator_sidebar
+        .expect("operator sidebar visible");
+
+    for y in sidebar.y..sidebar.bottom() {
+        let row = (sidebar.x..sidebar.right())
+            .map(|x| buffer[(x, y)].symbol())
+            .collect::<String>();
+        if let Some(column) = row.find(needle) {
+            return (
+                sidebar.x.saturating_add(
+                    u16::try_from(row[..column].chars().count()).expect("column fits"),
+                ),
+                y,
+                u16::try_from(needle.chars().count()).expect("needle width fits"),
+            );
+        }
+    }
+
+    panic!("missing rendered text: {needle}");
 }
 
 fn drag_transcript_selection_range(app: &mut AppState, start: (u16, u16), end: (u16, u16)) {
@@ -1480,6 +1554,12 @@ fn drag_transcript_selection_range(app: &mut AppState, start: (u16, u16), end: (
 
 fn drag_transcript_selection(app: &mut AppState, needle: &str) -> (u16, u16, u16) {
     let (column, row, width) = transcript_selection_text_bounds(app, needle);
+    drag_transcript_selection_range(app, (column, row), (column + width.saturating_sub(1), row));
+    (column, row, width)
+}
+
+fn drag_operator_sidebar_selection(app: &mut AppState, needle: &str) -> (u16, u16, u16) {
+    let (column, row, width) = operator_sidebar_text_bounds(app, needle);
     drag_transcript_selection_range(app, (column, row), (column + width.saturating_sub(1), row));
     (column, row, width)
 }
@@ -2999,6 +3079,74 @@ fn mouse_drag_copy_on_select_copies_transcript_text_and_clears_selection() {
     );
 
     crate::clipboard::set_copy_override(None);
+}
+
+#[cfg(not(windows))]
+#[test]
+fn mouse_drag_copy_on_select_copies_operator_sidebar_text() {
+    let copied = Arc::new(Mutex::new(None::<String>));
+    let sink = Arc::clone(&copied);
+    crate::clipboard::set_copy_override(Some(Box::new(move |text| {
+        *sink.lock().expect("lock copied text") = Some(text.to_string());
+        Ok(())
+    })));
+
+    let mut app = operator_sidebar_selection_test_app();
+    drag_operator_sidebar_selection(&mut app, "Copy sidebar task");
+
+    assert_eq!(
+        copied.lock().expect("lock copied text").clone(),
+        Some("Copy sidebar task".to_string())
+    );
+    assert!(app.operator_sidebar_selection().is_none());
+    assert_eq!(
+        app.toast()
+            .map(|toast| (toast.message.as_str(), toast.variant)),
+        Some(("Copied to clipboard", ToastVariant::Info))
+    );
+
+    crate::clipboard::set_copy_override(None);
+}
+
+#[test]
+fn disabled_copy_on_select_keeps_operator_sidebar_selection_until_right_click_copy() {
+    let _guard = ClipboardModeGuard::disabled_copy_on_select();
+    let copied = Arc::new(Mutex::new(None::<String>));
+    let sink = Arc::clone(&copied);
+    crate::clipboard::set_copy_override(Some(Box::new(move |text| {
+        *sink.lock().expect("lock copied text") = Some(text.to_string());
+        Ok(())
+    })));
+
+    let mut app = operator_sidebar_selection_test_app();
+    let (column, row, _) = drag_operator_sidebar_selection(&mut app, "Copy sidebar task");
+
+    assert!(app.operator_sidebar_selection().is_some());
+    assert!(copied.lock().expect("lock copied text").is_none());
+
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Right),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+
+    assert_eq!(
+        copied.lock().expect("lock copied text").clone(),
+        Some("Copy sidebar task".to_string())
+    );
+    assert!(app.operator_sidebar_selection().is_none());
+    assert_eq!(
+        app.toast()
+            .map(|toast| (toast.message.as_str(), toast.variant)),
+        Some(("Copied to clipboard", ToastVariant::Info))
+    );
 }
 
 #[test]

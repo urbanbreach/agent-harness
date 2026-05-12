@@ -29,8 +29,8 @@ use crate::text::{
 };
 use crate::theme::Theme;
 use crate::ui::{
-    TranscriptMouseTarget, TranscriptScrollbarHit, TranscriptSelection, TranscriptSelectionCell,
-    WheelTarget,
+    OperatorSidebarSelection, OperatorSidebarSelectionCell, TranscriptMouseTarget,
+    TranscriptScrollbarHit, TranscriptSelection, TranscriptSelectionCell, WheelTarget,
 };
 use crate::view_model;
 use crate::{clipboard, ui};
@@ -119,6 +119,7 @@ pub enum ToolCallDisplayStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum OperatorSidebarSection {
     Todo,
+    Subagents,
     Mcp,
     Lsp,
     ModifiedFiles,
@@ -196,6 +197,13 @@ struct TranscriptScrollbarDragState {
     thumb_height: u16,
     pointer_offset_y: u16,
     max_scroll: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum OperatorSidebarPendingClick {
+    Section(OperatorSidebarSection),
+    SubagentGroup(String),
+    SubagentSession(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1107,6 +1115,9 @@ pub struct AppState {
     transcript_click_activated_on_down: bool,
     transcript_selection: Option<TranscriptSelection>,
     transcript_selection_dragging: bool,
+    operator_sidebar_selection: Option<OperatorSidebarSelection>,
+    operator_sidebar_selection_dragging: bool,
+    operator_sidebar_pending_click: Option<OperatorSidebarPendingClick>,
     transcript_cache_instance_id: u64,
     transcript_render_epoch: u64,
     transcript_render_key_cache: Cell<Option<(u64, u64)>>,
@@ -1133,6 +1144,7 @@ pub struct AppState {
     expanded_tool_outputs: BTreeSet<String>,
     expanded_patch_file_outputs: BTreeSet<String>,
     collapsed_operator_sidebar_sections: BTreeSet<OperatorSidebarSection>,
+    expanded_operator_sidebar_subagent_groups: BTreeSet<String>,
     pub startup_mode: bool,
     pub startup_launcher_action: StartupLauncherAction,
     post_run_handoff_action: PostRunHandoffAction,
@@ -1220,6 +1232,9 @@ impl Default for AppState {
             transcript_click_activated_on_down: false,
             transcript_selection: None,
             transcript_selection_dragging: false,
+            operator_sidebar_selection: None,
+            operator_sidebar_selection_dragging: false,
+            operator_sidebar_pending_click: None,
             transcript_cache_instance_id: NEXT_TRANSCRIPT_CACHE_INSTANCE_ID
                 .fetch_add(1, Ordering::Relaxed),
             transcript_render_epoch: 0,
@@ -1249,6 +1264,7 @@ impl Default for AppState {
             collapsed_operator_sidebar_sections: BTreeSet::from([
                 OperatorSidebarSection::ModifiedFiles,
             ]),
+            expanded_operator_sidebar_subagent_groups: BTreeSet::new(),
             startup_mode: false,
             startup_launcher_action: StartupLauncherAction::default(),
             post_run_handoff_action: PostRunHandoffAction::default(),
@@ -2574,6 +2590,20 @@ impl AppState {
         self.transcript_selection_dragging = false;
     }
 
+    fn set_operator_sidebar_selection(
+        &mut self,
+        anchor: OperatorSidebarSelectionCell,
+        focus: OperatorSidebarSelectionCell,
+    ) {
+        self.operator_sidebar_selection = Some(OperatorSidebarSelection { anchor, focus });
+    }
+
+    fn clear_operator_sidebar_selection(&mut self) {
+        self.operator_sidebar_selection = None;
+        self.operator_sidebar_selection_dragging = false;
+        self.operator_sidebar_pending_click = None;
+    }
+
     pub(crate) fn show_toast(&mut self, message: impl Into<String>, variant: ToastVariant) {
         self.toast = Some(ToastState {
             message: message.into(),
@@ -2599,6 +2629,28 @@ impl AppState {
         true
     }
 
+    fn copy_operator_sidebar_selection(&mut self, frame_area: Rect) -> bool {
+        let Some(selection) = self.operator_sidebar_selection else {
+            return false;
+        };
+        let Some(text) = ui::operator_sidebar_selection_text(self, frame_area, selection) else {
+            return false;
+        };
+
+        match clipboard::copy(&text) {
+            Ok(()) => self.show_toast("Copied to clipboard", ToastVariant::Info),
+            Err(err) => {
+                self.show_toast(format!("clipboard copy failed: {err}"), ToastVariant::Error)
+            }
+        }
+        true
+    }
+
+    fn copy_active_selection(&mut self, frame_area: Rect) -> bool {
+        self.copy_operator_sidebar_selection(frame_area)
+            || self.copy_transcript_selection(frame_area)
+    }
+
     fn maybe_clear_empty_transcript_selection(&mut self, frame_area: Rect) {
         if self
             .transcript_selection
@@ -2607,6 +2659,30 @@ impl AppState {
         {
             self.clear_transcript_selection();
         }
+    }
+
+    fn operator_sidebar_selection_has_text(&self, frame_area: Rect) -> bool {
+        self.operator_sidebar_selection
+            .and_then(|selection| ui::operator_sidebar_selection_text(self, frame_area, selection))
+            .is_some()
+    }
+
+    fn activate_operator_sidebar_pending_click(&mut self) -> bool {
+        let Some(target) = self.operator_sidebar_pending_click.take() else {
+            return false;
+        };
+        match target {
+            OperatorSidebarPendingClick::Section(section) => {
+                self.toggle_operator_sidebar_section(section)
+            }
+            OperatorSidebarPendingClick::SubagentGroup(agent_name) => {
+                self.toggle_operator_sidebar_subagent_group(agent_name)
+            }
+            OperatorSidebarPendingClick::SubagentSession(session_id) => {
+                self.navigate_to_child_session_id(session_id)
+            }
+        }
+        true
     }
 
     pub(crate) fn set_frame_area(&mut self, area: Rect) {
@@ -2651,11 +2727,13 @@ impl AppState {
             let changed = self.transcript_scrollbar_drag.is_some()
                 || self.hovered_transcript_target.is_some()
                 || self.hovered_subagent_footer_target.is_some()
-                || self.transcript_selection.is_some();
+                || self.transcript_selection.is_some()
+                || self.operator_sidebar_selection.is_some();
             self.transcript_scrollbar_drag = None;
             self.hovered_transcript_target = None;
             self.hovered_subagent_footer_target = None;
             self.clear_transcript_selection();
+            self.clear_operator_sidebar_selection();
             return changed;
         }
 
@@ -2675,7 +2753,8 @@ impl AppState {
             }
             MouseEventKind::Down(MouseButton::Right) => {
                 let copy_on_select_disabled = clipboard::copy_on_select_disabled();
-                if copy_on_select_disabled && self.copy_transcript_selection(frame_area) {
+                if copy_on_select_disabled && self.copy_active_selection(frame_area) {
+                    self.clear_operator_sidebar_selection();
                     self.clear_transcript_selection();
                 }
                 true
@@ -2691,6 +2770,7 @@ impl AppState {
                 {
                     self.begin_transcript_scrollbar_drag(scrollbar, mouse.row);
                     self.clear_transcript_selection();
+                    self.clear_operator_sidebar_selection();
                     return true;
                 }
 
@@ -2699,6 +2779,7 @@ impl AppState {
                     self.activate_subagent_footer_target(target);
                     self.transcript_click_activated_on_down = true;
                     self.clear_transcript_selection();
+                    self.clear_operator_sidebar_selection();
                     return true;
                 }
                 if let Some(target) =
@@ -2707,6 +2788,7 @@ impl AppState {
                     self.activate_transcript_mouse_target(target);
                     self.transcript_click_activated_on_down = true;
                     self.clear_transcript_selection();
+                    self.clear_operator_sidebar_selection();
                     return true;
                 }
                 let transcript_hit =
@@ -2714,11 +2796,42 @@ impl AppState {
                 if let Some(cell) = transcript_hit {
                     self.set_transcript_selection(cell, cell);
                     self.transcript_selection_dragging = true;
+                    self.clear_operator_sidebar_selection();
                     return true;
                 }
 
                 self.clear_transcript_selection();
+                let operator_sidebar_session = ui::operator_sidebar_subagent_session_hit_target(
+                    self,
+                    frame_area,
+                    mouse.column,
+                    mouse.row,
+                );
+                let operator_sidebar_group = ui::operator_sidebar_subagent_group_hit_target(
+                    self,
+                    frame_area,
+                    mouse.column,
+                    mouse.row,
+                );
+                let operator_sidebar_cell =
+                    ui::operator_sidebar_selection_cell(self, frame_area, mouse.column, mouse.row);
+                if let Some(cell) = operator_sidebar_cell {
+                    self.set_operator_sidebar_selection(cell, cell);
+                    self.operator_sidebar_selection_dragging = true;
+                    self.operator_sidebar_pending_click = operator_sidebar_session
+                        .map(OperatorSidebarPendingClick::SubagentSession)
+                        .or(operator_sidebar_group.map(OperatorSidebarPendingClick::SubagentGroup))
+                        .or(clicked_operator_sidebar_section
+                            .map(OperatorSidebarPendingClick::Section));
+                    return true;
+                }
+                if let Some(agent_name) = operator_sidebar_group {
+                    self.clear_operator_sidebar_selection();
+                    self.toggle_operator_sidebar_subagent_group(agent_name);
+                    return true;
+                }
                 if let Some(section) = clicked_operator_sidebar_section {
+                    self.clear_operator_sidebar_selection();
                     self.toggle_operator_sidebar_section(section);
                 }
                 true
@@ -2738,11 +2851,56 @@ impl AppState {
                         }
                     }
                     true
+                } else if self.operator_sidebar_selection_dragging {
+                    let sidebar_hit = ui::operator_sidebar_selection_cell(
+                        self,
+                        frame_area,
+                        mouse.column,
+                        mouse.row,
+                    );
+                    if let Some(cell) = sidebar_hit {
+                        if let Some(selection) = self.operator_sidebar_selection {
+                            self.set_operator_sidebar_selection(selection.anchor, cell);
+                        }
+                    }
+                    true
                 } else {
                     false
                 }
             }
             MouseEventKind::Up(MouseButton::Left) => {
+                let operator_sidebar_was_dragging = self.operator_sidebar_selection_dragging;
+                if self.operator_sidebar_selection_dragging {
+                    let sidebar_hit = ui::operator_sidebar_selection_cell(
+                        self,
+                        frame_area,
+                        mouse.column,
+                        mouse.row,
+                    );
+                    if let Some(cell) = sidebar_hit {
+                        if let Some(selection) = self.operator_sidebar_selection {
+                            self.set_operator_sidebar_selection(selection.anchor, cell);
+                        }
+                    }
+                    self.operator_sidebar_selection_dragging = false;
+                    let copy_on_select_disabled = clipboard::copy_on_select_disabled();
+                    if copy_on_select_disabled {
+                        if self.operator_sidebar_selection_has_text(frame_area) {
+                            self.operator_sidebar_pending_click = None;
+                        } else {
+                            self.activate_operator_sidebar_pending_click();
+                            self.clear_operator_sidebar_selection();
+                        }
+                    } else {
+                        let copied = self.copy_operator_sidebar_selection(frame_area);
+                        if copied {
+                            self.clear_operator_sidebar_selection();
+                        } else {
+                            self.activate_operator_sidebar_pending_click();
+                            self.clear_operator_sidebar_selection();
+                        }
+                    }
+                }
                 if self.transcript_selection_dragging {
                     let transcript_hit =
                         ui::transcript_selection_cell(self, frame_area, mouse.column, mouse.row);
@@ -2765,6 +2923,10 @@ impl AppState {
                 }
                 if self.transcript_click_activated_on_down {
                     self.transcript_click_activated_on_down = false;
+                    self.transcript_scrollbar_drag = None;
+                    return true;
+                }
+                if operator_sidebar_was_dragging {
                     self.transcript_scrollbar_drag = None;
                     return true;
                 }
@@ -2821,12 +2983,21 @@ impl AppState {
         self.collapsed_operator_sidebar_sections.contains(&section)
     }
 
+    pub(crate) fn operator_sidebar_subagent_group_expanded(&self, agent_name: &str) -> bool {
+        self.expanded_operator_sidebar_subagent_groups
+            .contains(agent_name)
+    }
+
     pub(crate) fn transcript_scrollbar_dragging(&self) -> bool {
         self.transcript_scrollbar_drag.is_some()
     }
 
     pub(crate) fn transcript_selection(&self) -> Option<TranscriptSelection> {
         self.transcript_selection
+    }
+
+    pub(crate) fn operator_sidebar_selection(&self) -> Option<OperatorSidebarSelection> {
+        self.operator_sidebar_selection
     }
 
     pub(crate) fn toast(&self) -> Option<&ToastState> {
@@ -2841,6 +3012,17 @@ impl AppState {
     fn toggle_operator_sidebar_section(&mut self, section: OperatorSidebarSection) {
         if !self.collapsed_operator_sidebar_sections.insert(section) {
             self.collapsed_operator_sidebar_sections.remove(&section);
+        }
+        self.details_scroll = 0;
+    }
+
+    fn toggle_operator_sidebar_subagent_group(&mut self, agent_name: String) {
+        if !self
+            .expanded_operator_sidebar_subagent_groups
+            .insert(agent_name.clone())
+        {
+            self.expanded_operator_sidebar_subagent_groups
+                .remove(&agent_name);
         }
         self.details_scroll = 0;
     }
@@ -2909,27 +3091,33 @@ impl AppState {
             return;
         }
 
-        if clipboard::copy_on_select_disabled() && self.transcript_selection.is_some() {
+        if clipboard::copy_on_select_disabled()
+            && (self.transcript_selection.is_some() || self.operator_sidebar_selection.is_some())
+        {
             if key.modifiers.contains(KeyModifiers::CONTROL)
                 && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('C'))
             {
                 if let Some(frame_area) = self.last_frame_area() {
-                    if !self.copy_transcript_selection(frame_area) {
+                    if !self.copy_active_selection(frame_area) {
+                        self.clear_operator_sidebar_selection();
                         self.clear_transcript_selection();
                         return;
                     }
                 }
+                self.clear_operator_sidebar_selection();
                 self.clear_transcript_selection();
                 self.maybe_auto_exit();
                 return;
             }
 
             if key.code == KeyCode::Esc {
+                self.clear_operator_sidebar_selection();
                 self.clear_transcript_selection();
                 self.maybe_auto_exit();
                 return;
             }
 
+            self.clear_operator_sidebar_selection();
             self.clear_transcript_selection();
         }
 

@@ -1,17 +1,17 @@
 
   ┃  Inspect tool activity                                                                                                                                                     █    Inspect tool activity
   ┃                                                                                                                                                                            █
-                                                                                                                                                                               █    ▼ MCP
-     → Read src/ui.rs [offset=1, limit=24]  ▸                                                                                                                                  █    • No MCP servers configured
+                                                                                                                                                                               █    ▼ Subagents
+     → Read src/ui.rs [offset=1, limit=24]  ▸                                                                                                                                  █    • researcher ✓ audit tool lifecycle p…
       ↳ Loaded src/ui.rs                                                                                                                                                       █
-      Compat alias · read → fs.read                                                                                                                                            █    ▼ LSP
-     ← Patch · ui.rs  ▸                                                                                                                                                        █    • No active LSP servers
+      Compat alias · read → fs.read                                                                                                                                            █    ▼ MCP
+     ← Patch · ui.rs  ▸                                                                                                                                                        █    • No MCP servers configured
       crates/harness-tui/src                                                                                                                                                   █
-        44   use ui_secondary::{                                                             44   use ui_secondary::{                                                          █    ▼ Modified Files
-        45 -     render_diff_tab, render_events_tab, render_help_tab,                        45 +     render_events_tab, render_help_tab, render_live_details_overlay,         █    • crates/harness-tui/src/ui.rs · +1 -1
+        44   use ui_secondary::{                                                             44   use ui_secondary::{                                                          █    ▼ LSP
+        45 -     render_diff_tab, render_events_tab, render_help_tab,                        45 +     render_events_tab, render_help_tab, render_live_details_overlay,         █    • No active LSP servers
         46       render_operator_sidebar,                                                    46       render_operator_sidebar,                                                 █
-        47   };                                                                              47   };                                                                           █
-     │ Researcher Task — audit tool lifecycle parity                                                                                                                           █
+        47   };                                                                              47   };                                                                           █    ▼ Modified Files
+     │ Researcher Task — audit tool lifecycle parity                                                                                                                           █    • crates/harness-tui/src/ui.rs · +1 -1
       └ 2 toolcalls · 2ms                                                                                                                                                      █
      $ cargo test -p harness-tui  ▸                                                                                                                                            █
       exit code: 1                                                                                                                                                             █

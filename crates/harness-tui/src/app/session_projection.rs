@@ -951,6 +951,27 @@ impl SessionProjection {
                     row.warning = Some("late result after stale cancellation".to_string());
                 });
             }
+            EventV1::BackgroundTaskNotification(data) => {
+                self.update_orchestration_task(event, &data.task_id, |row| {
+                    row.child_session_id = Some(data.child_session_id.clone());
+                    row.child_request_id = Some(data.child_request_id.clone());
+                    row.result_summary = non_empty_preserved_string(&data.summary);
+                    row.state = match data.status {
+                        harness_core::event::BackgroundTaskNotificationStatus::Completed => {
+                            OrchestrationTaskState::Completed
+                        }
+                        harness_core::event::BackgroundTaskNotificationStatus::Cancelled
+                        | harness_core::event::BackgroundTaskNotificationStatus::Failed
+                        | harness_core::event::BackgroundTaskNotificationStatus::TimedOut => {
+                            OrchestrationTaskState::Cancelled
+                        }
+                    };
+                    row.warning = match data.status {
+                        harness_core::event::BackgroundTaskNotificationStatus::Completed => None,
+                        _ => Some(data.status.as_str().replace('_', " ")),
+                    };
+                });
+            }
             EventV1::StaleDetected(data) => {
                 self.update_orchestration_task(event, &data.task_id, |row| {
                     row.state = OrchestrationTaskState::Stale;

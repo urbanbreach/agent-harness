@@ -59,7 +59,12 @@ pub(crate) use ui_overlays::{
     exact_test_status_dialog_mcp_rows_match_harness_states,
     exact_test_status_dialog_render_snapshot_covers_harness_sections,
 };
-pub(crate) use ui_secondary::operator_sidebar_section_hit_target;
+pub(crate) use ui_secondary::{
+    operator_sidebar_section_hit_target, operator_sidebar_selection_cell,
+    operator_sidebar_selection_text, operator_sidebar_subagent_group_hit_target,
+    operator_sidebar_subagent_session_hit_target, OperatorSidebarSelection,
+    OperatorSidebarSelectionCell,
+};
 use ui_secondary::{
     render_events_tab, render_help_tab, render_live_details_overlay, render_operator_sidebar,
 };
@@ -191,8 +196,10 @@ pub(crate) use ui_secondary::{
     exact_test_operator_rail_collapses_modified_files_section_body,
     exact_test_operator_rail_collapses_todo_section_body,
     exact_test_operator_rail_keeps_completed_todo_state_visible,
+    exact_test_operator_rail_keeps_subagents_visible_in_replay,
     exact_test_operator_rail_low_activity_presentation_prefers_primary_stack,
     exact_test_operator_rail_matches_sidebar_text_styles,
+    exact_test_operator_rail_renders_subagent_rows_from_orchestration_state,
     exact_test_operator_rail_renders_todo_items_from_artifact_state,
     exact_test_operator_rail_renders_todo_items_from_tool_state,
     exact_test_operator_rail_sanitizes_control_chars_in_sidebar_strings,
