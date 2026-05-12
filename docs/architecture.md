@@ -123,10 +123,19 @@ Events are the source of truth. All state is derived from events.
 - `TaskCancelled` - Best-effort cancellation
 - `TaskCompleted` - Normal completion
 - `TaskResultLate` - Result arrived after cancellation
+- `BackgroundTaskNotification` - Durable parent wakeup record for a `task(run_in_background=true)` child request after the child reaches a terminal state; carries parent/child ids, capped summary, terminal event id, and delivered parent turn request id. Replay projects this event only and must not schedule provider work.
 
 **Progress and Staleness**
 - `StaleDetected` - Task exceeded staleness timeout
 - `UserMessageSubmitted` - User prompt accepted into the event stream
+
+Background child-task completion wakeups are coordinator-owned. The child terminal
+`TaskCompleted` / `TaskCancelled` event is written first, then the coordinator appends one
+`BackgroundTaskNotification` per background child request and queues a parent
+system-reminder turn through the same agent scheduling path used for normal turns. Sync child
+tasks do not emit this notification because their result is returned directly through the `task`
+tool response. Notification summaries are capped; full child history remains available through
+`background_output` and the event/artifact log.
 
 **Provider Streaming**
 - `ProviderRequestStarted`

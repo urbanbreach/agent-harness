@@ -220,6 +220,35 @@ remains restricted to the read-only `explore` profile by default; `general` and
 user-defined write-capable subagents are rejected before spawn unless a future
 profile deliberately adds parent-permission inheritance and tests for it.
 
+### Plan operator workflow
+
+Use Plan when the operator wants a reviewed implementation plan before changing
+project files. Harness ships Plan as a stable public runtime surface, not an
+experimental OpenCode flag, and the safety boundary is enforced by coordinator
+permissions as well as prompt instructions.
+
+1. Start in the primary `build` agent for normal implementation work.
+2. Switch to the primary `plan` agent with the TUI primary-agent switcher, or let
+   Build call `plan_enter` and approve the coordinator-owned switch when the work
+   is complex enough to plan first.
+3. Let Plan inspect the workspace with read/search/LSP tools and, when useful,
+   delegate read-only codebase research only to `explore`. Plan cannot launch
+   `general`, `build`, or user-defined writer subagents under the shipped policy.
+4. Let Plan create or update only the active plan file at
+   `.agent-harness/plans/<run>.md`. The first Plan turn is expected to create this
+   file; later Plan turns should read and refine the same file after operator
+   feedback or clarifying answers.
+5. Review the plan file. If Plan needs information that read-only exploration
+   cannot determine, answer its clarifying question and let it update the plan.
+6. When the plan is ready, Plan calls `plan_exit`. Approving that prompt switches
+   back to Build with the approved plan-file path in the continuation prompt;
+   declining leaves the session in Plan so the plan can be revised further.
+
+This differs intentionally from OpenCode's broader experimental Plan behavior:
+Harness keeps `plan_exit` available in the shipped `plan` profile and keeps
+Plan-spawned child work restricted to `explore` unless a future policy adds tested
+parent-permission inheritance for write-capable subagents.
+
 The shipped agent names are available without extra config: primary
 `build` and `plan`, subagents `general` and `explore`, plus hidden `title`,
 `summary`, and `compaction` profiles. `explore` is a read-only local codebase

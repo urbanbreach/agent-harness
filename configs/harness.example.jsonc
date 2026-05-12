@@ -48,6 +48,9 @@
       "model": "default/gpt-5.4-mini",
       "variant": "high",
     },
+    // Stable read-only planning lane: Plan may inspect the workspace and write
+    // only .agent-harness/plans/<run>.md, then uses plan_exit to ask before
+    // continuing implementation in Build.
     "plan": {
       "enable": true,
       "model": "default/gpt-5.5",

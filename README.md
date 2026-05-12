@@ -77,7 +77,9 @@ approve `plan_exit` when the plan is ready to continue in Build. Build can also
 call `plan_enter` to ask whether complex work should switch into Plan first.
 Plan uses native read/search/LSP tools for inspection, exposes `bash` only behind
 permission prompts plus a read-only shell guard, and may delegate only to the
-read-only `explore` profile under the current runtime policy.
+read-only `explore` profile under the current runtime policy. See the
+[`docs/config.md` Plan operator workflow](docs/config.md#plan-operator-workflow)
+for the step-by-step Build → Plan → Build approval flow.
 
 Run the harness headlessly from the terminal with the provider-backed `prompt` command:
 

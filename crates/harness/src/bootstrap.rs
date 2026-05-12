@@ -3,11 +3,11 @@ use std::sync::Arc;
 
 use harness_core::agent::AgentProfile;
 use harness_core::config::{
-    refresh_profile_model_metadata_registry, resolve_model_selection, HarnessConfig,
+    refresh_profile_model_metadata_registry, resolve_model_selection, AgentMode, HarnessConfig,
     OpenAiApiMode as CoreOpenAiApiMode, ProviderConfig,
 };
 use harness_core::coord::CoordinatorConfig;
-use harness_core::perm::PermissionPolicy;
+use harness_core::perm::{PermissionKind, PermissionPolicy, PermissionRuleRequest, PolicyDecision};
 use harness_core::tool::ToolRegistry;
 use harness_providers::openai::{
     OpenAiApiMode as ProviderOpenAiApiMode, OpenAiCompatibleProvider,
@@ -39,13 +39,14 @@ pub fn build_interactive_coordinator_config(
 ) -> Result<CoordinatorConfig, String> {
     let mut coordinator_config = CoordinatorConfig::new(cfg.paths.session_dir.clone());
     coordinator_config.permission_policy = PermissionPolicy::from_config(cfg);
-    let tool_registry = coordinator_registry_with_mcp_and_editing(
+    let mut tool_registry = coordinator_registry_with_mcp_and_editing(
         cfg.permissions.shell_allowlist.clone(),
         cfg.integrations.mcp.clone(),
         EditingToolSurfaceConfig {
             hashline_edit: cfg.hashline_edit,
         },
     );
+    install_task_tool_subagent_descriptions(&mut tool_registry, cfg);
     let auto_tool_ids = auto_mcp_tool_ids(&tool_registry);
     coordinator_config.tool_registry = Arc::new(tool_registry);
     coordinator_config.tool_concurrency = cfg.background_task.default_concurrency;
@@ -73,6 +74,82 @@ pub fn interactive_profile_name(cfg: &HarnessConfig) -> String {
                 .cloned()
         })
         .unwrap_or_else(|| DEFAULT_INTERACTIVE_PROFILE.to_string())
+}
+
+fn install_task_tool_subagent_descriptions(tool_registry: &mut ToolRegistry, cfg: &HarnessConfig) {
+    let Some(task_tool) = tool_registry.get("task") else {
+        return;
+    };
+    let base_description = task_tool.description().to_string();
+    let permission_policy = PermissionPolicy::from_config(cfg);
+    let parent_profiles = cfg.agents.keys().cloned().collect::<Vec<_>>();
+
+    for parent_profile in parent_profiles {
+        let description = task_tool_description_for_profile(
+            &base_description,
+            cfg,
+            &permission_policy,
+            &parent_profile,
+        );
+        tool_registry.set_profile_tool_description("task", parent_profile, description);
+    }
+}
+
+fn task_tool_description_for_profile(
+    base_description: &str,
+    cfg: &HarnessConfig,
+    permission_policy: &PermissionPolicy,
+    parent_profile: &str,
+) -> String {
+    let mut subagents = cfg
+        .agents
+        .iter()
+        .filter(|(_, profile)| profile.mode != AgentMode::Primary)
+        .filter(|(name, _)| task_profile_allowed(parent_profile, name, permission_policy))
+        .map(|(name, profile)| {
+            let tools = if profile.tools.is_empty() {
+                "no tools".to_string()
+            } else {
+                profile.tools.join(", ")
+            };
+            format!("- {name}: {} Tools: {tools}.", profile.description)
+        })
+        .collect::<Vec<_>>();
+    subagents.sort();
+
+    let mut description = String::from(base_description);
+    description.push_str(
+        "\n\nAvailable subagents for this caller are listed below. Profiles omitted from this list are unavailable to this caller.",
+    );
+    if subagents.is_empty() {
+        description.push_str("\n\nAvailable subagents:\n- none");
+    } else {
+        description.push_str("\n\nAvailable subagents:");
+        for subagent in subagents {
+            description.push('\n');
+            description.push_str(&subagent);
+        }
+    }
+    description
+}
+
+fn task_profile_allowed(
+    parent_profile: &str,
+    child_profile: &str,
+    permission_policy: &PermissionPolicy,
+) -> bool {
+    if parent_profile == harness_core::plan::PLAN_AGENT_NAME && child_profile != "explore" {
+        return false;
+    }
+
+    !matches!(
+        permission_policy.evaluate_request(
+            Some(parent_profile),
+            PermissionKind::Task,
+            Some(&PermissionRuleRequest::TaskAgent(child_profile.to_string())),
+        ),
+        PolicyDecision::Deny
+    )
 }
 
 fn build_provider_router(cfg: &HarnessConfig) -> Result<ProviderRouter, String> {
@@ -259,6 +336,7 @@ fn auto_mcp_tool_ids(tool_registry: &ToolRegistry) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    use harness_core::agent::build_provider_tool_defs;
     use harness_core::config::{load_config_from_file, load_config_from_str};
 
     use super::*;
@@ -570,5 +648,90 @@ mod tests {
             .system_prompt
             .to_lowercase()
             .contains(&["open", "code"].concat()));
+    }
+
+    #[test]
+    fn task_tool_description_lists_available_subagents_for_build() {
+        let config_path = crate::cli_config::shipped_example_config_path();
+        let cfg = load_config_from_file(&config_path).expect("shipped example config should parse");
+        let coordinator_config =
+            build_interactive_coordinator_config(&cfg).expect("coordinator config");
+        let profile = &coordinator_config.agent_profiles["build"];
+        let task_description = task_description_for_profile(&coordinator_config, profile);
+
+        assert!(task_description.contains("Available subagents:"));
+        assert!(task_description.contains("- explore: Read-only contextual codebase search agent"));
+        assert!(task_description.contains("- general: General-purpose implementation"));
+        assert!(!task_description.contains("- build:"));
+        assert!(!task_description.contains("- plan:"));
+        assert!(!task_description.contains("- title:"));
+    }
+
+    #[test]
+    fn task_tool_description_respects_plan_delegation_boundary() {
+        let config_path = crate::cli_config::shipped_example_config_path();
+        let cfg = load_config_from_file(&config_path).expect("shipped example config should parse");
+        let coordinator_config =
+            build_interactive_coordinator_config(&cfg).expect("coordinator config");
+        let profile = &coordinator_config.agent_profiles["plan"];
+        let task_description = task_description_for_profile(&coordinator_config, profile);
+
+        assert!(task_description.contains("- explore: Read-only contextual codebase search agent"));
+        assert!(!task_description.contains("- general:"));
+    }
+
+    #[test]
+    fn task_tool_description_filters_denied_subagents() {
+        let cfg = config_fixture(
+            r#"
+            build: {
+              description: "Build lane",
+              system_prompt: "Build prompt",
+              model_ref: "default:gpt-5.4-mini",
+              permissions: {
+                rules: {
+                  task: [
+                    { selector: { type: "exact", value: "general" }, mode: "deny" },
+                  ],
+                },
+              },
+              tools: ["task"],
+            },
+            explore: {
+              description: "Explore lane",
+              system_prompt: "Explore prompt",
+              model_ref: "default:gpt-5.4-mini",
+              mode: "subagent",
+              tools: ["read"],
+            },
+            general: {
+              description: "General lane",
+              system_prompt: "General prompt",
+              model_ref: "default:gpt-5.4-mini",
+              mode: "subagent",
+              tools: ["read"],
+            },
+            "#,
+        );
+        let coordinator_config =
+            build_interactive_coordinator_config(&cfg).expect("coordinator config");
+        let profile = &coordinator_config.agent_profiles["build"];
+        let task_description = task_description_for_profile(&coordinator_config, profile);
+
+        assert!(task_description.contains("- explore: Explore lane"));
+        assert!(!task_description.contains("- general:"));
+    }
+
+    fn task_description_for_profile(
+        coordinator_config: &CoordinatorConfig,
+        profile: &AgentProfile,
+    ) -> String {
+        build_provider_tool_defs(profile, coordinator_config.tool_registry.as_ref())
+            .expect("tool defs")
+            .into_iter()
+            .find(|tool| tool.tool_id == "task")
+            .expect("task tool")
+            .description
+            .expect("task description")
     }
 }
