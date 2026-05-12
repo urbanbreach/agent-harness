@@ -946,6 +946,7 @@ fn run_helper_if_requested(scenario: HelperScenario) {
                 exit_on_finish: false,
                 on_ui_intent,
                 keybindings: None,
+                toggles: None,
                 preserve_terminal_on_exit: false,
             })
             .expect("run startup helper tui");
@@ -1087,6 +1088,7 @@ fn run_helper_if_requested(scenario: HelperScenario) {
                 exit_on_finish: false,
                 on_ui_intent,
                 keybindings: None,
+                toggles: None,
                 preserve_terminal_on_exit: false,
             })
             .expect("run disconnected helper tui");
@@ -1103,6 +1105,7 @@ fn run_helper_if_requested(scenario: HelperScenario) {
                 exit_on_finish: false,
                 on_ui_intent: marker_path.map(replay_intent_handler),
                 keybindings: None,
+                toggles: None,
                 preserve_terminal_on_exit: false,
             })
             .expect("run replay read-only helper tui");
@@ -1122,6 +1125,7 @@ fn run_helper_if_requested(scenario: HelperScenario) {
         exit_on_finish: false,
         on_ui_intent,
         keybindings: None,
+        toggles: None,
         preserve_terminal_on_exit: false,
     })
     .expect("run helper tui");

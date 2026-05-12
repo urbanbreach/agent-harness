@@ -318,6 +318,7 @@ delegate_test!(operator_rail_section_model_separates_mcp_from_native_tool_activi
 delegate_test!(operator_rail_section_model_uses_runtime_mcp_activity_without_config => ui::exact_test_operator_rail_section_model_uses_runtime_mcp_activity_without_config);
 delegate_test!(operator_rail_section_model_keeps_native_prefix_tools_out_of_mcp => ui::exact_test_operator_rail_section_model_keeps_native_prefix_tools_out_of_mcp);
 delegate_test!(operator_rail_matches_sidebar_text_styles => ui::exact_test_operator_rail_matches_sidebar_text_styles);
+delegate_test!(operator_rail_uses_generated_session_title => ui::exact_test_operator_rail_uses_generated_session_title);
 delegate_test!(operator_rail_renders_todo_items_from_tool_state => ui::exact_test_operator_rail_renders_todo_items_from_tool_state);
 delegate_test!(operator_rail_renders_todo_items_from_artifact_state => ui::exact_test_operator_rail_renders_todo_items_from_artifact_state);
 delegate_test!(operator_rail_renders_subagent_rows_from_orchestration_state => ui::exact_test_operator_rail_renders_subagent_rows_from_orchestration_state);
@@ -6198,6 +6199,7 @@ fn command_palette_renders_and_filters() {
             "agent_cycle".to_string(),
             "agent_cycle_reverse".to_string(),
             "cycle_variant".to_string(),
+            "toggles".to_string(),
             "open_event_log".to_string(),
             "toggle_terminal_panel".to_string(),
             "toggle_follow".to_string(),
@@ -6394,7 +6396,7 @@ fn session_history_picker_renders_resumable_and_replay_rows() {
         startup_session_entry_with_details(
             "run_resume",
             "/tmp/sessions/run_resume",
-            "alpha-run",
+            "New session - 2026-03-08T12:34:56.000Z",
             Some(harness_core::proj::RunStatus::Finished),
             Some("2026-03-08T12:34:56Z"),
             "deep",
@@ -6427,9 +6429,11 @@ fn session_history_picker_renders_resumable_and_replay_rows() {
     app.handle_key(key(crossterm::event::KeyCode::Enter));
     let resume_render = render_live_lines(&app, 120, 30);
     assert!(resume_render.contains("Continue session"));
-    assert!(resume_render.contains("continue ready"));
+    assert!(resume_render.contains("Search"));
+    assert!(resume_render.contains("New session"));
+    assert!(!resume_render.contains("New session - 2026-03-08T12:34:56.000Z"));
     assert!(!resume_render.contains("beta-prompt"));
-    assert!(resume_render.contains("Harness") || resume_render.contains("Continue session"));
+    assert!(resume_render.contains("continue ready"));
 
     app.handle_key(key(crossterm::event::KeyCode::Esc));
     app.handle_key(key_with_modifiers(
@@ -6443,8 +6447,8 @@ fn session_history_picker_renders_resumable_and_replay_rows() {
     let replay_render = render_live_lines(&app, 120, 30);
     assert!(replay_render.contains("Replay session"));
     assert!(replay_render.contains("beta-prompt"));
-    assert!(replay_render.contains("prompt-only replay ready"));
-    assert!(replay_render.contains("Harness") || replay_render.contains("Replay session"));
+    assert!(replay_render.contains("delete"));
+    assert!(replay_render.contains("rename"));
 }
 
 #[cfg(test)]
@@ -6491,48 +6495,23 @@ fn session_history_filter_uses_case_insensitive_substrings() {
         app
     }
 
-    let mut by_run_id = open_continue_picker();
-    for ch in "bc12".chars() {
-        by_run_id.handle_key(key(crossterm::event::KeyCode::Char(ch)));
-    }
-    assert_eq!(by_run_id.palette_input, "bc12");
-    assert_eq!(by_run_id.session_history_filtered, vec![0]);
-
     let mut by_run_name = open_continue_picker();
     for ch in "runner".chars() {
         by_run_name.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
     assert_eq!(by_run_name.session_history_filtered, vec![0]);
 
-    let mut by_status = open_continue_picker();
-    for ch in "finish".chars() {
-        by_status.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    let mut by_case_insensitive_title = open_continue_picker();
+    for ch in "ALPHA".chars() {
+        by_case_insensitive_title.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
-    assert_eq!(by_status.session_history_filtered, vec![0]);
+    assert_eq!(by_case_insensitive_title.session_history_filtered, vec![0]);
 
-    let mut by_timestamp = open_continue_picker();
-    for ch in "12:34".chars() {
-        by_timestamp.handle_key(key(crossterm::event::KeyCode::Char(ch)));
-    }
-    assert_eq!(by_timestamp.session_history_filtered, vec![0]);
-
-    let mut by_profile = open_continue_picker();
-    for ch in "ops".chars() {
-        by_profile.handle_key(key(crossterm::event::KeyCode::Char(ch)));
-    }
-    assert_eq!(by_profile.session_history_filtered, vec![1, 0]);
-
-    let mut by_provider = open_continue_picker();
+    let mut by_non_title_metadata = open_continue_picker();
     for ch in "gpt-5".chars() {
-        by_provider.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+        by_non_title_metadata.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
-    assert_eq!(by_provider.session_history_filtered, vec![0]);
-
-    let mut by_resumability = open_continue_picker();
-    for ch in "still active".chars() {
-        by_resumability.handle_key(key(crossterm::event::KeyCode::Char(ch)));
-    }
-    assert_eq!(by_resumability.session_history_filtered, vec![0]);
+    assert!(by_non_title_metadata.session_history_filtered.is_empty());
 
     let mut no_match = open_continue_picker();
     for ch in "missing".chars() {
@@ -6541,13 +6520,8 @@ fn session_history_filter_uses_case_insensitive_substrings() {
     no_match.handle_key(key(crossterm::event::KeyCode::Enter));
 
     assert!(no_match.session_history_filtered.is_empty());
-    assert_eq!(
-        no_match.continue_disabled_banner.as_deref(),
-        Some("no sessions match the current filter")
-    );
     let rendered = render_live_lines(&no_match, 120, 30);
-    assert!(rendered.contains("no sessions match the current filter"));
-    assert!(rendered.contains("No saved runs match this filter."));
+    assert!(rendered.contains("No results found"));
 }
 
 #[cfg(test)]
@@ -6743,7 +6717,7 @@ fn replay_picker_keeps_prompt_runs_visible() {
     let rendered = render_live_lines(&app, 120, 30);
     assert!(rendered.contains("Replay session"));
     assert!(rendered.contains("prompt-only"));
-    assert!(rendered.contains("prompt-only replay ready"));
+    assert!(rendered.contains("replay ready"));
     assert!(!rendered.contains("scenario-fixture"));
     assert!(!rendered.contains("replay-only"));
 }
@@ -7428,7 +7402,7 @@ fn lifecycle_shell_snapshots() {
     assert_eq!(picker.prompt_buffer, "keep this draft");
     assert!(replay_render.contains("Replay session"));
     assert!(replay_render.contains("beta-prompt"));
-    assert!(replay_render.contains("prompt-only replay ready"));
+    assert!(replay_render.contains("replay ready"));
     assert!(replay_render.contains("Harness") || replay_render.contains("Replay session"));
 
     let mut completed_shell = app::AppState::new_live(

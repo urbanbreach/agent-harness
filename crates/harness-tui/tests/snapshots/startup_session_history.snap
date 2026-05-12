@@ -8,16 +8,16 @@
 
 
 
-                                  ╻ ╻  ┏━┓  ┏━┓  ┏┓╻  ┏━╸  ┏━┓  ┏━┓
 
-        Continue session · 2 matches · 1 blocked                                         esc
-        █ Filter saved runs
-        Interactive histories · 1 ready · 1 blocked · filter by run/profile/model/lineage
-        ▶ continue alpha-run · continue ready · 2 artifacts · 1 child
-        ! blocked beta-blocked · blocked · run is still active · 1 artifact · parent run_pa…
+         Continue session                                                               esc
 
-            ┃
-            ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+         █ Search
+
+         Sun Mar 08 2026
+            alpha-run                                                           continue ready
+
+         delete ctrl+d  rename ctrl+r
+
                                            ctrl+t variants  tab agents  ctrl+p commands
 
 

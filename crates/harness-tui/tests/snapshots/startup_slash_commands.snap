@@ -5,13 +5,13 @@
 
 
 
-
-                /exit    Quit Harness
-                /model   Switch model
-                /new     Return to the home shell
-                /replay  Replay a saved session
-                /resume  Continue a saved session
-                /status  View status
+                /exit     Quit Harness
+                /model    Switch model
+                /new      Return to the home shell
+                /replay   Replay a saved session
+                /resume   Continue a saved session
+                /status   View status
+                /toggles  Open toggles
             ┃
             ┃  /
             ┃
