@@ -3,13 +3,13 @@ use std::fs;
 use std::io::{self, BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 use serde_json::{json, Value};
 use thiserror::Error;
 use tokio::sync::{mpsc, oneshot};
-use tokio::time::MissedTickBehavior;
+use tokio::time::{sleep, MissedTickBehavior};
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 
@@ -49,7 +49,11 @@ use crate::event::{
     ProviderRequestStartedMetadata, ResolvedToolIdentity, RunFinishedEvent, RunStartedEvent,
     StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskCompletionMetadata,
     TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState, TaskScheduledEvent,
-    TaskTerminalScope, ToolCallFinishedEvent, ToolCallMetadata, ToolCallStartedEvent,
+    TaskTerminalScope, TeamBounds, TeamCreatedEvent, TeamDeletedEvent, TeamMemberRole,
+    TeamMemberSelector, TeamMemberSpawnedEvent, TeamMemberSpec, TeamMessage, TeamMessageKind,
+    TeamMessageSentEvent, TeamShutdownApprovedEvent, TeamShutdownRejectedEvent,
+    TeamShutdownRequestedEvent, TeamSpec, TeamTask, TeamTaskCreatedEvent, TeamTaskStatus,
+    TeamTaskUpdatedEvent, ToolCallFinishedEvent, ToolCallMetadata, ToolCallStartedEvent,
     ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent,
 };
 use crate::path_selector::workspace_relative_path_from_maybe_absolute;
@@ -59,7 +63,11 @@ use crate::perm::{
     PermissionKind, PermissionPolicy, PermissionRuleRequest, PermissionToolSelector,
     PolicyDecision,
 };
-use crate::proj::{inspect_resume_plan, RecordedRuntimeContext, RunMetadata, SessionModeSource};
+use crate::proj::{
+    inspect_resume_plan, project_background_request, project_team_state,
+    resolve_background_request_ref, BackgroundRequestProjection, BackgroundRequestProjectionError,
+    RecordedRuntimeContext, RunMetadata, SessionModeSource, TeamProjection, TeamRunProjection,
+};
 use crate::provider_args::provider_tool_arguments_json;
 use crate::question_answers::{validate_question_answers, QuestionAnswerPrompt};
 use crate::redact::Redactor;
@@ -101,6 +109,12 @@ const PROVIDER_CONTEXT_OPERATION_FACT_LIMIT: usize = 20;
 const PROVIDER_CONTEXT_SUMMARY_CONTRACT_VERSION: u32 = 2;
 const BACKGROUND_TASK_NOTIFICATION_SUMMARY_MAX_CHARS: usize = 511;
 const BACKGROUND_TASK_NOTIFICATION_DESCRIPTION_MAX_CHARS: usize = 160;
+const TEAM_MESSAGE_BODY_MAX_BYTES: usize = 32 * 1024;
+const TEAM_TEXT_FIELD_MAX_CHARS: usize = 512;
+const TEAM_TASK_METADATA_MAX_ENTRIES: usize = 32;
+const TEAM_TASK_METADATA_MAX_CHARS: usize = 256;
+const TEAM_REFERENCE_LIMIT: usize = 32;
+const TEAM_MAX_MEMBERS: usize = 8;
 const PROVIDER_CONTEXT_SPLIT_PREFIX_SUMMARY_HEADINGS: &[&str] = &[
     "## Original Request",
     "## Early Progress",
@@ -330,6 +344,76 @@ pub enum Command {
         reason: String,
         respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
     },
+    GetBackgroundRequestProjection {
+        actor: EventActor,
+        request_id: Option<String>,
+        selector_hint: Option<String>,
+        respond_to: oneshot::Sender<Result<BackgroundRequestProjection, CoordinatorError>>,
+    },
+    CancelBackgroundRequest {
+        actor: EventActor,
+        request_id: Option<String>,
+        selector_hint: Option<String>,
+        reason: String,
+        respond_to: oneshot::Sender<Result<BackgroundRequestProjection, CoordinatorError>>,
+    },
+    CreateTeam {
+        actor: EventActor,
+        spec: TeamSpec,
+        team_run_id: Option<String>,
+        respond_to: oneshot::Sender<Result<TeamRunProjection, CoordinatorError>>,
+    },
+    GetTeamProjection {
+        respond_to: oneshot::Sender<Result<TeamProjection, CoordinatorError>>,
+    },
+    SendTeamMessage {
+        actor: EventActor,
+        team_run_id: String,
+        message: TeamMessage,
+        respond_to: oneshot::Sender<Result<TeamRunProjection, CoordinatorError>>,
+    },
+    CreateTeamTask {
+        actor: EventActor,
+        team_run_id: String,
+        task: TeamTask,
+        respond_to: oneshot::Sender<Result<TeamRunProjection, CoordinatorError>>,
+    },
+    UpdateTeamTask {
+        actor: EventActor,
+        team_run_id: String,
+        task_id: String,
+        status: TeamTaskStatus,
+        owner: Option<String>,
+        metadata: BTreeMap<String, String>,
+        respond_to: oneshot::Sender<Result<TeamRunProjection, CoordinatorError>>,
+    },
+    RequestTeamShutdown {
+        actor: EventActor,
+        team_run_id: String,
+        member_name: String,
+        requester: String,
+        respond_to: oneshot::Sender<Result<TeamRunProjection, CoordinatorError>>,
+    },
+    ApproveTeamShutdown {
+        actor: EventActor,
+        team_run_id: String,
+        member_name: String,
+        approver: String,
+        respond_to: oneshot::Sender<Result<TeamRunProjection, CoordinatorError>>,
+    },
+    RejectTeamShutdown {
+        actor: EventActor,
+        team_run_id: String,
+        member_name: String,
+        rejecter: String,
+        reason: String,
+        respond_to: oneshot::Sender<Result<TeamRunProjection, CoordinatorError>>,
+    },
+    DeleteTeam {
+        actor: EventActor,
+        team_run_id: String,
+        respond_to: oneshot::Sender<Result<TeamRunProjection, CoordinatorError>>,
+    },
     JobFinished {
         task_id: String,
         outcome: JobOutcome,
@@ -371,10 +455,6 @@ pub enum Command {
     },
     AllocateProviderRequestId {
         respond_to: oneshot::Sender<Result<String, CoordinatorError>>,
-    },
-    DrainAgentWakeups {
-        agent_id: String,
-        respond_to: oneshot::Sender<Vec<String>>,
     },
     CompactAgentContext {
         task_id: String,
@@ -896,6 +976,208 @@ impl CoordinatorHandle {
         .await
     }
 
+    pub async fn background_request_projection(
+        &self,
+        actor: EventActor,
+        request_id: Option<String>,
+        selector_hint: Option<String>,
+    ) -> Result<BackgroundRequestProjection, CoordinatorError> {
+        self.request(|respond_to| Command::GetBackgroundRequestProjection {
+            actor,
+            request_id,
+            selector_hint,
+            respond_to,
+        })
+        .await
+    }
+
+    pub async fn cancel_background_request(
+        &self,
+        actor: EventActor,
+        request_id: Option<String>,
+        selector_hint: Option<String>,
+        reason: impl Into<String>,
+    ) -> Result<BackgroundRequestProjection, CoordinatorError> {
+        self.request(|respond_to| Command::CancelBackgroundRequest {
+            actor,
+            request_id,
+            selector_hint,
+            reason: reason.into(),
+            respond_to,
+        })
+        .await
+    }
+
+    pub async fn create_team(
+        &self,
+        actor: EventActor,
+        spec: TeamSpec,
+        team_run_id: Option<String>,
+    ) -> Result<TeamRunProjection, CoordinatorError> {
+        self.request(|respond_to| Command::CreateTeam {
+            actor,
+            spec,
+            team_run_id,
+            respond_to,
+        })
+        .await
+    }
+
+    pub async fn team_projection(&self) -> Result<TeamProjection, CoordinatorError> {
+        self.request(|respond_to| Command::GetTeamProjection { respond_to })
+            .await
+    }
+
+    pub async fn send_team_message(
+        &self,
+        actor: EventActor,
+        team_run_id: impl Into<String>,
+        message: TeamMessage,
+    ) -> Result<TeamRunProjection, CoordinatorError> {
+        self.request(|respond_to| Command::SendTeamMessage {
+            actor,
+            team_run_id: team_run_id.into(),
+            message,
+            respond_to,
+        })
+        .await
+    }
+
+    pub async fn create_team_task(
+        &self,
+        actor: EventActor,
+        team_run_id: impl Into<String>,
+        task: TeamTask,
+    ) -> Result<TeamRunProjection, CoordinatorError> {
+        self.request(|respond_to| Command::CreateTeamTask {
+            actor,
+            team_run_id: team_run_id.into(),
+            task,
+            respond_to,
+        })
+        .await
+    }
+
+    pub async fn update_team_task(
+        &self,
+        actor: EventActor,
+        team_run_id: impl Into<String>,
+        task_id: impl Into<String>,
+        status: TeamTaskStatus,
+        owner: Option<String>,
+        metadata: BTreeMap<String, String>,
+    ) -> Result<TeamRunProjection, CoordinatorError> {
+        self.request(|respond_to| Command::UpdateTeamTask {
+            actor,
+            team_run_id: team_run_id.into(),
+            task_id: task_id.into(),
+            status,
+            owner,
+            metadata,
+            respond_to,
+        })
+        .await
+    }
+
+    pub async fn request_team_shutdown(
+        &self,
+        actor: EventActor,
+        team_run_id: impl Into<String>,
+        member_name: impl Into<String>,
+        requester: impl Into<String>,
+    ) -> Result<TeamRunProjection, CoordinatorError> {
+        self.request(|respond_to| Command::RequestTeamShutdown {
+            actor,
+            team_run_id: team_run_id.into(),
+            member_name: member_name.into(),
+            requester: requester.into(),
+            respond_to,
+        })
+        .await
+    }
+
+    pub async fn approve_team_shutdown(
+        &self,
+        actor: EventActor,
+        team_run_id: impl Into<String>,
+        member_name: impl Into<String>,
+        approver: impl Into<String>,
+    ) -> Result<TeamRunProjection, CoordinatorError> {
+        self.request(|respond_to| Command::ApproveTeamShutdown {
+            actor,
+            team_run_id: team_run_id.into(),
+            member_name: member_name.into(),
+            approver: approver.into(),
+            respond_to,
+        })
+        .await
+    }
+
+    pub async fn reject_team_shutdown(
+        &self,
+        actor: EventActor,
+        team_run_id: impl Into<String>,
+        member_name: impl Into<String>,
+        rejecter: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Result<TeamRunProjection, CoordinatorError> {
+        self.request(|respond_to| Command::RejectTeamShutdown {
+            actor,
+            team_run_id: team_run_id.into(),
+            member_name: member_name.into(),
+            rejecter: rejecter.into(),
+            reason: reason.into(),
+            respond_to,
+        })
+        .await
+    }
+
+    pub async fn delete_team(
+        &self,
+        actor: EventActor,
+        team_run_id: impl Into<String>,
+    ) -> Result<TeamRunProjection, CoordinatorError> {
+        self.request(|respond_to| Command::DeleteTeam {
+            actor,
+            team_run_id: team_run_id.into(),
+            respond_to,
+        })
+        .await
+    }
+
+    pub async fn wait_background_request_terminal(
+        &self,
+        request_id: impl Into<String>,
+        scheduler_task_id: impl Into<String>,
+        timeout_ms: u64,
+    ) -> Result<bool, CoordinatorError> {
+        let request_id = request_id.into();
+        let scheduler_task_id = scheduler_task_id.into();
+        let store = self.event_store().await?;
+        let mut stream = store.subscribe(1)?;
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+
+        while Instant::now() < deadline {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let next =
+                tokio::time::timeout(remaining.min(Duration::from_millis(250)), stream.next())
+                    .await;
+            match next {
+                Ok(Some(Ok(event))) => {
+                    if event.correlation_id.as_deref() == Some(request_id.as_str())
+                        && background_terminal_event_matches_task(&event, &scheduler_task_id)
+                    {
+                        return Ok(true);
+                    }
+                }
+                Ok(Some(Err(err))) => return Err(CoordinatorError::EventStore(err)),
+                Ok(None) | Err(_) => sleep(Duration::from_millis(10)).await,
+            }
+        }
+
+        Ok(false)
+    }
+
     pub async fn job_finished(
         &self,
         task_id: impl Into<String>,
@@ -1193,6 +1475,132 @@ impl Coordinator {
                 let result = self.cancel_task_internal(task_id, reason).await;
                 warn_oneshot_send_failure(respond_to.send(result), "cancel_task");
             }
+            Command::GetBackgroundRequestProjection {
+                actor,
+                request_id,
+                selector_hint,
+                respond_to,
+            } => {
+                let result = self
+                    .background_request_projection_internal(actor, request_id, selector_hint)
+                    .await;
+                warn_oneshot_send_failure(
+                    respond_to.send(result),
+                    "get_background_request_projection",
+                );
+            }
+            Command::CancelBackgroundRequest {
+                actor,
+                request_id,
+                selector_hint,
+                reason,
+                respond_to,
+            } => {
+                let result = self
+                    .cancel_background_request_internal(actor, request_id, selector_hint, reason)
+                    .await;
+                warn_oneshot_send_failure(respond_to.send(result), "cancel_background_request");
+            }
+            Command::CreateTeam {
+                actor,
+                spec,
+                team_run_id,
+                respond_to,
+            } => {
+                let result = self.create_team_internal(actor, spec, team_run_id).await;
+                warn_oneshot_send_failure(respond_to.send(result), "create_team");
+            }
+            Command::GetTeamProjection { respond_to } => {
+                let result = self.team_projection_internal().await;
+                warn_oneshot_send_failure(respond_to.send(result), "get_team_projection");
+            }
+            Command::SendTeamMessage {
+                actor,
+                team_run_id,
+                message,
+                respond_to,
+            } => {
+                let result = self
+                    .send_team_message_internal(actor, team_run_id, message)
+                    .await;
+                warn_oneshot_send_failure(respond_to.send(result), "send_team_message");
+            }
+            Command::CreateTeamTask {
+                actor,
+                team_run_id,
+                task,
+                respond_to,
+            } => {
+                let result = self
+                    .create_team_task_internal(actor, team_run_id, task)
+                    .await;
+                warn_oneshot_send_failure(respond_to.send(result), "create_team_task");
+            }
+            Command::UpdateTeamTask {
+                actor,
+                team_run_id,
+                task_id,
+                status,
+                owner,
+                metadata,
+                respond_to,
+            } => {
+                let result = self
+                    .update_team_task_internal(actor, team_run_id, task_id, status, owner, metadata)
+                    .await;
+                warn_oneshot_send_failure(respond_to.send(result), "update_team_task");
+            }
+            Command::RequestTeamShutdown {
+                actor,
+                team_run_id,
+                member_name,
+                requester,
+                respond_to,
+            } => {
+                let result = self
+                    .request_team_shutdown_internal(actor, team_run_id, member_name, requester)
+                    .await;
+                warn_oneshot_send_failure(respond_to.send(result), "request_team_shutdown");
+            }
+            Command::ApproveTeamShutdown {
+                actor,
+                team_run_id,
+                member_name,
+                approver,
+                respond_to,
+            } => {
+                let result = self
+                    .approve_team_shutdown_internal(actor, team_run_id, member_name, approver)
+                    .await;
+                warn_oneshot_send_failure(respond_to.send(result), "approve_team_shutdown");
+            }
+            Command::RejectTeamShutdown {
+                actor,
+                team_run_id,
+                member_name,
+                rejecter,
+                reason,
+                respond_to,
+            } => {
+                let result = self
+                    .reject_team_shutdown_internal(
+                        actor,
+                        team_run_id,
+                        member_name,
+                        rejecter,
+                        reason,
+                    )
+                    .await;
+                warn_oneshot_send_failure(respond_to.send(result), "reject_team_shutdown");
+            }
+            Command::DeleteTeam {
+                actor,
+                team_run_id,
+                respond_to,
+            } => {
+                let result = self.delete_team_internal(actor, team_run_id).await;
+                warn_oneshot_send_failure(respond_to.send(result), "delete_team");
+            }
             Command::JobFinished { task_id, outcome } => {
                 let _ = self.job_finished_internal_async(task_id, outcome).await;
             }
@@ -1290,13 +1698,6 @@ impl Coordinator {
             Command::AllocateProviderRequestId { respond_to } => {
                 let result = self.allocate_provider_request_id_internal();
                 warn_oneshot_send_failure(respond_to.send(result), "allocate_provider_request_id");
-            }
-            Command::DrainAgentWakeups {
-                agent_id,
-                respond_to,
-            } => {
-                let result = self.drain_agent_wakeups_internal(&agent_id);
-                warn_oneshot_send_failure(respond_to.send(result), "drain_agent_wakeups");
             }
             Command::CompactAgentContext {
                 task_id,
@@ -2135,19 +2536,6 @@ impl Coordinator {
             .as_mut()
             .ok_or(CoordinatorError::RunNotStarted)?;
         Ok(allocate_provider_request_id(run_state))
-    }
-
-    fn drain_agent_wakeups_internal(&mut self, agent_id: &str) -> Vec<String> {
-        self.run_state
-            .as_mut()
-            .and_then(|run_state| run_state.pending_agent_wakeups.remove(agent_id))
-            .map(|wakeups| {
-                wakeups
-                    .into_iter()
-                    .map(|wakeup| wakeup.notification_text)
-                    .collect()
-            })
-            .unwrap_or_default()
     }
 
     fn plan_mode_prompt(run_id: &str, workspace_root: &Path, prompt: &str) -> String {
@@ -3189,6 +3577,602 @@ impl Coordinator {
 
         task.last_progress_mono_ms = self.clock.mono_ms();
         task.last_progress_kind = kind;
+    }
+
+    async fn background_request_projection_internal(
+        &mut self,
+        actor: EventActor,
+        request_id: Option<String>,
+        selector_hint: Option<String>,
+    ) -> Result<BackgroundRequestProjection, CoordinatorError> {
+        let events = self.replay_current_run_events().await?;
+        let request_ref = resolve_background_request_ref(
+            events.iter(),
+            &actor,
+            request_id.as_deref(),
+            selector_hint.as_deref(),
+        )
+        .map_err(background_projection_error_to_coordinator_error)?;
+        project_background_request(events.iter(), &request_ref)
+            .map_err(background_projection_error_to_coordinator_error)
+    }
+
+    async fn cancel_background_request_internal(
+        &mut self,
+        actor: EventActor,
+        request_id: Option<String>,
+        selector_hint: Option<String>,
+        reason: String,
+    ) -> Result<BackgroundRequestProjection, CoordinatorError> {
+        let projection = self
+            .background_request_projection_internal(
+                actor.clone(),
+                request_id.clone(),
+                selector_hint.clone(),
+            )
+            .await?;
+        if projection.terminal {
+            return Ok(projection);
+        }
+
+        let scheduler_task_id = projection.scheduler_task_id.clone().ok_or_else(|| {
+            CoordinatorError::UnknownTask(format!(
+                "background request `{}` has no scheduler task id",
+                projection.request_id
+            ))
+        })?;
+        self.cancel_task_internal(scheduler_task_id, reason).await?;
+        self.background_request_projection_internal(actor, request_id, selector_hint)
+            .await
+    }
+
+    async fn team_projection_internal(&self) -> Result<TeamProjection, CoordinatorError> {
+        let events = self.replay_current_run_events().await?;
+        project_team_state(events.iter())
+            .map_err(|err| CoordinatorError::PolicyViolation(err.to_string()))
+    }
+
+    async fn create_team_internal(
+        &mut self,
+        actor: EventActor,
+        mut spec: TeamSpec,
+        team_run_id: Option<String>,
+    ) -> Result<TeamRunProjection, CoordinatorError> {
+        reject_nested_team_create(&actor, &self.team_projection_internal().await?)?;
+        if spec.bounds.max_members == 0 {
+            spec.bounds.max_members = TeamBounds::default().max_members;
+        }
+        validate_team_spec(&spec)?;
+
+        let team_run_id = team_run_id
+            .and_then(|value| non_empty_trimmed(&value).map(str::to_string))
+            .unwrap_or_else(|| {
+                self.run_state
+                    .as_ref()
+                    .map(|run_state| format!("team_{:06}", run_state.next_event_seq))
+                    .unwrap_or_else(|| "team_000001".to_string())
+            });
+
+        let existing = self.team_projection_internal().await?;
+        if existing.teams.contains_key(&team_run_id) {
+            return Err(CoordinatorError::PolicyViolation(format!(
+                "team `{team_run_id}` already exists"
+            )));
+        }
+
+        let resolved_lead = spec
+            .lead
+            .as_ref()
+            .map(|selector| self.resolve_team_selector_profile(selector, TeamParticipantRole::Lead))
+            .transpose()?;
+
+        let resolved_members = spec
+            .members
+            .iter()
+            .map(|member| {
+                self.resolve_team_member_profile(member)
+                    .map(|profile| (member, profile))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        {
+            let run_state = self
+                .run_state
+                .as_mut()
+                .ok_or(CoordinatorError::RunNotStarted)?;
+            append_payload_event(
+                self.clock.as_ref(),
+                self.redactor.as_ref(),
+                run_state,
+                actor.clone(),
+                Some(format!("team:{team_run_id}")),
+                EventV1::TeamCreated(TeamCreatedEvent {
+                    team_run_id: team_run_id.clone(),
+                    spec: spec.clone(),
+                }),
+            )?;
+        }
+
+        if let Some(profile) = resolved_lead {
+            let agent_id = self
+                .spawn_agent_internal(
+                    EventActor::new(ActorKind::Supervisor, None),
+                    profile.clone(),
+                    actor.agent_id.clone(),
+                    Some(format!("{} (@lead team lead)", spec.name)),
+                    false,
+                )
+                .await?;
+            let run_state = self
+                .run_state
+                .as_mut()
+                .ok_or(CoordinatorError::RunNotStarted)?;
+            append_payload_event(
+                self.clock.as_ref(),
+                self.redactor.as_ref(),
+                run_state,
+                actor.clone(),
+                Some(format!("team:{team_run_id}:lead")),
+                EventV1::TeamMemberSpawned(TeamMemberSpawnedEvent {
+                    team_run_id: team_run_id.clone(),
+                    member_name: "lead".to_string(),
+                    agent_id,
+                    profile,
+                }),
+            )?;
+        }
+
+        let activation_limit = spec.bounds.max_parallel_members as usize;
+        for (member, profile) in resolved_members.into_iter().take(activation_limit) {
+            let agent_id = self
+                .spawn_agent_internal(
+                    EventActor::new(ActorKind::Supervisor, None),
+                    profile.clone(),
+                    actor.agent_id.clone(),
+                    Some(format!("{} (@{} team member)", spec.name, member.name)),
+                    false,
+                )
+                .await?;
+            let run_state = self
+                .run_state
+                .as_mut()
+                .ok_or(CoordinatorError::RunNotStarted)?;
+            append_payload_event(
+                self.clock.as_ref(),
+                self.redactor.as_ref(),
+                run_state,
+                actor.clone(),
+                Some(format!("team:{team_run_id}:member:{}", member.name)),
+                EventV1::TeamMemberSpawned(TeamMemberSpawnedEvent {
+                    team_run_id: team_run_id.clone(),
+                    member_name: member.name.clone(),
+                    agent_id,
+                    profile,
+                }),
+            )?;
+        }
+
+        self.project_single_team(&team_run_id).await
+    }
+
+    fn resolve_team_selector_profile(
+        &self,
+        selector: &TeamMemberSelector,
+        role: TeamParticipantRole,
+    ) -> Result<String, CoordinatorError> {
+        let profile = match selector {
+            TeamMemberSelector::SubagentType { subagent_type } => {
+                let profile = non_empty_trimmed(subagent_type).ok_or_else(|| {
+                    CoordinatorError::PolicyViolation(
+                        "team participant subagent_type cannot be empty".to_string(),
+                    )
+                })?;
+                if !self.config.agent_profiles.contains_key(profile) {
+                    return Err(CoordinatorError::UnknownAgent(profile.to_string()));
+                }
+                profile.to_string()
+            }
+            TeamMemberSelector::Category { category } => {
+                let category = non_empty_trimmed(category).ok_or_else(|| {
+                    CoordinatorError::PolicyViolation(
+                        "team participant category cannot be empty".to_string(),
+                    )
+                })?;
+                if self.config.agent_profiles.contains_key(category) {
+                    category.to_string()
+                } else {
+                    self.config
+                        .agent_profiles
+                        .iter()
+                        .find_map(|(name, profile)| {
+                            (profile.category == category).then(|| name.clone())
+                        })
+                        .ok_or_else(|| CoordinatorError::UnknownAgent(category.to_string()))?
+                }
+            }
+        };
+        let profile_config = self.config.agent_profiles.get(&profile);
+        validate_team_profile_role(&profile, profile_config, role)?;
+        Ok(profile)
+    }
+
+    fn resolve_team_member_profile(
+        &self,
+        member: &TeamMemberSpec,
+    ) -> Result<String, CoordinatorError> {
+        self.resolve_team_selector_profile(
+            &member.selector,
+            TeamParticipantRole::Member(member.role),
+        )
+    }
+
+    async fn send_team_message_internal(
+        &mut self,
+        actor: EventActor,
+        team_run_id: String,
+        message: TeamMessage,
+    ) -> Result<TeamRunProjection, CoordinatorError> {
+        let projection = self.team_projection_internal().await?;
+        let team = require_active_team(&projection, &team_run_id)?;
+        validate_team_message(team, &message)?;
+        validate_team_action(
+            &actor,
+            team,
+            TeamActionKind::TeamWrite,
+            &message.from,
+            self.clock.mono_ms(),
+        )?;
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        append_payload_event(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            actor,
+            Some(format!("team:{team_run_id}:message:{}", message.message_id)),
+            EventV1::TeamMessageSent(TeamMessageSentEvent {
+                team_run_id: team_run_id.clone(),
+                message,
+            }),
+        )?;
+        self.project_single_team(&team_run_id).await
+    }
+
+    async fn create_team_task_internal(
+        &mut self,
+        actor: EventActor,
+        team_run_id: String,
+        task: TeamTask,
+    ) -> Result<TeamRunProjection, CoordinatorError> {
+        let projection = self.team_projection_internal().await?;
+        let team = require_active_team(&projection, &team_run_id)?;
+        validate_team_task_create(team, &task)?;
+        if let Some(owner) = task.owner.as_deref() {
+            validate_team_action(
+                &actor,
+                team,
+                TeamActionKind::TeamWrite,
+                owner,
+                self.clock.mono_ms(),
+            )?;
+        } else {
+            validate_team_actor_can_make_unowned_team_write(&actor, team, self.clock.mono_ms())?;
+        }
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        append_payload_event(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            actor,
+            Some(format!("team:{team_run_id}:task:{}", task.task_id)),
+            EventV1::TeamTaskCreated(TeamTaskCreatedEvent {
+                team_run_id: team_run_id.clone(),
+                task,
+            }),
+        )?;
+        self.project_single_team(&team_run_id).await
+    }
+
+    async fn update_team_task_internal(
+        &mut self,
+        actor: EventActor,
+        team_run_id: String,
+        task_id: String,
+        status: TeamTaskStatus,
+        owner: Option<String>,
+        metadata: BTreeMap<String, String>,
+    ) -> Result<TeamRunProjection, CoordinatorError> {
+        let projection = self.team_projection_internal().await?;
+        let team = require_active_team(&projection, &team_run_id)?;
+        validate_team_task_update(team, &task_id, status, owner.as_deref(), &metadata)?;
+        if let Some(owner) = owner.as_deref() {
+            validate_team_action(
+                &actor,
+                team,
+                TeamActionKind::TeamWrite,
+                owner,
+                self.clock.mono_ms(),
+            )?;
+        } else {
+            validate_team_actor_can_make_unowned_team_write(&actor, team, self.clock.mono_ms())?;
+        }
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        append_payload_event(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            actor,
+            Some(format!("team:{team_run_id}:task:{task_id}")),
+            EventV1::TeamTaskUpdated(TeamTaskUpdatedEvent {
+                team_run_id: team_run_id.clone(),
+                task_id,
+                status,
+                owner,
+                metadata,
+            }),
+        )?;
+        self.project_single_team(&team_run_id).await
+    }
+
+    async fn request_team_shutdown_internal(
+        &mut self,
+        actor: EventActor,
+        team_run_id: String,
+        member_name: String,
+        requester: String,
+    ) -> Result<TeamRunProjection, CoordinatorError> {
+        let projection = self.team_projection_internal().await?;
+        let team = require_active_team(&projection, &team_run_id)?;
+        validate_team_member(team, &member_name)?;
+        validate_team_shutdown_request_can_open(team, &member_name)?;
+        validate_team_participant(team, &requester)?;
+        validate_team_action(
+            &actor,
+            team,
+            TeamActionKind::Shutdown,
+            &requester,
+            self.clock.mono_ms(),
+        )?;
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        append_payload_event(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            actor,
+            Some(format!("team:{team_run_id}:shutdown:{member_name}")),
+            EventV1::TeamShutdownRequested(TeamShutdownRequestedEvent {
+                team_run_id: team_run_id.clone(),
+                member_name,
+                requester,
+            }),
+        )?;
+        self.project_single_team(&team_run_id).await
+    }
+
+    async fn approve_team_shutdown_internal(
+        &mut self,
+        actor: EventActor,
+        team_run_id: String,
+        member_name: String,
+        approver: String,
+    ) -> Result<TeamRunProjection, CoordinatorError> {
+        let projection = self.team_projection_internal().await?;
+        let team = require_active_team_or_shutdown(&projection, &team_run_id)?;
+        validate_team_member(team, &member_name)?;
+        validate_team_shutdown_request_pending(team, &member_name)?;
+        validate_team_participant(team, &approver)?;
+        validate_team_action(
+            &actor,
+            team,
+            TeamActionKind::Shutdown,
+            &approver,
+            self.clock.mono_ms(),
+        )?;
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        append_payload_event(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            actor.clone(),
+            Some(format!("team:{team_run_id}:shutdown:{member_name}")),
+            EventV1::TeamShutdownApproved(TeamShutdownApprovedEvent {
+                team_run_id: team_run_id.clone(),
+                member_name,
+                approver,
+            }),
+        )?;
+        self.activate_pending_team_members(&actor, &team_run_id)
+            .await?;
+        self.project_single_team(&team_run_id).await
+    }
+
+    async fn reject_team_shutdown_internal(
+        &mut self,
+        actor: EventActor,
+        team_run_id: String,
+        member_name: String,
+        rejecter: String,
+        reason: String,
+    ) -> Result<TeamRunProjection, CoordinatorError> {
+        let projection = self.team_projection_internal().await?;
+        let team = require_active_team_or_shutdown(&projection, &team_run_id)?;
+        validate_team_member(team, &member_name)?;
+        validate_team_shutdown_request_pending(team, &member_name)?;
+        validate_team_participant(team, &rejecter)?;
+        validate_team_action(
+            &actor,
+            team,
+            TeamActionKind::Shutdown,
+            &rejecter,
+            self.clock.mono_ms(),
+        )?;
+        if non_empty_trimmed(&reason).is_none() {
+            return Err(CoordinatorError::PolicyViolation(
+                "shutdown rejection reason cannot be empty".to_string(),
+            ));
+        }
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        append_payload_event(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            actor,
+            Some(format!("team:{team_run_id}:shutdown:{member_name}")),
+            EventV1::TeamShutdownRejected(TeamShutdownRejectedEvent {
+                team_run_id: team_run_id.clone(),
+                member_name,
+                rejecter,
+                reason,
+            }),
+        )?;
+        self.project_single_team(&team_run_id).await
+    }
+
+    async fn delete_team_internal(
+        &mut self,
+        actor: EventActor,
+        team_run_id: String,
+    ) -> Result<TeamRunProjection, CoordinatorError> {
+        let projection = self.team_projection_internal().await?;
+        let team = require_active_team_or_shutdown(&projection, &team_run_id)?;
+        let unapproved = team
+            .members
+            .values()
+            .filter(|member| member.status != crate::proj::TeamMemberStatus::ShutdownApproved)
+            .map(|member| member.name.clone())
+            .collect::<Vec<_>>();
+        if !unapproved.is_empty() {
+            return Err(CoordinatorError::PolicyViolation(format!(
+                "cannot delete team `{team_run_id}` before shutdown approval from: {}",
+                unapproved.join(", ")
+            )));
+        }
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        append_payload_event(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            actor,
+            Some(format!("team:{team_run_id}")),
+            EventV1::TeamDeleted(TeamDeletedEvent {
+                team_run_id: team_run_id.clone(),
+            }),
+        )?;
+        self.project_single_team(&team_run_id).await
+    }
+
+    async fn activate_pending_team_members(
+        &mut self,
+        actor: &EventActor,
+        team_run_id: &str,
+    ) -> Result<(), CoordinatorError> {
+        let projection = self.team_projection_internal().await?;
+        let Some(team) = projection.teams.get(team_run_id) else {
+            return Ok(());
+        };
+        if team.status == crate::proj::TeamRunStatus::Deleted {
+            return Ok(());
+        }
+        let running = team
+            .members
+            .values()
+            .filter(|member| {
+                matches!(
+                    member.status,
+                    crate::proj::TeamMemberStatus::Running
+                        | crate::proj::TeamMemberStatus::ShutdownRequested
+                )
+            })
+            .count();
+        let capacity = (team.bounds.max_parallel_members as usize).saturating_sub(running);
+        if capacity == 0 {
+            return Ok(());
+        }
+        let team_name = team.name.clone();
+        let pending = team
+            .members
+            .values()
+            .filter(|member| member.status == crate::proj::TeamMemberStatus::Pending)
+            .take(capacity)
+            .map(|member| member.spec.clone())
+            .collect::<Vec<_>>();
+
+        for member in pending {
+            let profile = self.resolve_team_member_profile(&member)?;
+            let agent_id = self
+                .spawn_agent_internal(
+                    EventActor::new(ActorKind::Supervisor, None),
+                    profile.clone(),
+                    actor.agent_id.clone(),
+                    Some(format!("{} (@{} team member)", team_name, member.name)),
+                    false,
+                )
+                .await?;
+            let run_state = self
+                .run_state
+                .as_mut()
+                .ok_or(CoordinatorError::RunNotStarted)?;
+            append_payload_event(
+                self.clock.as_ref(),
+                self.redactor.as_ref(),
+                run_state,
+                actor.clone(),
+                Some(format!("team:{team_run_id}:member:{}", member.name)),
+                EventV1::TeamMemberSpawned(TeamMemberSpawnedEvent {
+                    team_run_id: team_run_id.to_string(),
+                    member_name: member.name,
+                    agent_id,
+                    profile,
+                }),
+            )?;
+        }
+        Ok(())
+    }
+
+    async fn project_single_team(
+        &self,
+        team_run_id: &str,
+    ) -> Result<TeamRunProjection, CoordinatorError> {
+        let mut projection = self.team_projection_internal().await?;
+        projection
+            .teams
+            .remove(team_run_id)
+            .ok_or_else(|| CoordinatorError::UnknownTask(format!("team:{team_run_id}")))
+    }
+
+    async fn replay_current_run_events(&self) -> Result<Vec<EventEnvelopeV1>, CoordinatorError> {
+        let store = self
+            .run_state
+            .as_ref()
+            .ok_or(CoordinatorError::RunNotStarted)?
+            .event_store
+            .clone();
+        let mut stream = store.replay(1)?;
+        let mut events = Vec::new();
+        while let Some(next) = stream.next().await {
+            events.push(next?);
+        }
+        Ok(events)
     }
 
     async fn cancel_task_internal(
@@ -5032,6 +6016,584 @@ fn agent_turn_child_lineage(
         })
 }
 
+fn reject_nested_team_create(
+    actor: &EventActor,
+    projection: &TeamProjection,
+) -> Result<(), CoordinatorError> {
+    let Some(agent_id) = actor.agent_id.as_deref() else {
+        return Ok(());
+    };
+    let is_team_member = projection.teams.values().any(|team| {
+        team.members
+            .values()
+            .any(|member| member.agent_id.as_deref() == Some(agent_id))
+    });
+    if is_team_member {
+        return Err(CoordinatorError::PolicyViolation(
+            "team members cannot create nested teams".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_team_spec(spec: &TeamSpec) -> Result<(), CoordinatorError> {
+    if spec.version != 1 {
+        return Err(CoordinatorError::PolicyViolation(
+            "team spec version must be 1".to_string(),
+        ));
+    }
+    if non_empty_trimmed(&spec.name).is_none() {
+        return Err(CoordinatorError::PolicyViolation(
+            "team name cannot be empty".to_string(),
+        ));
+    }
+    validate_team_text_field("team name", &spec.name)?;
+    if let Some(description) = spec.description.as_deref() {
+        validate_team_text_field("team description", description)?;
+    }
+    if spec.members.is_empty() || spec.members.len() > TEAM_MAX_MEMBERS {
+        return Err(CoordinatorError::PolicyViolation(format!(
+            "team must have between 1 and {TEAM_MAX_MEMBERS} members"
+        )));
+    }
+    if spec.bounds.max_members == 0 || spec.bounds.max_members as usize > TEAM_MAX_MEMBERS {
+        return Err(CoordinatorError::PolicyViolation(format!(
+            "team max_members must be between 1 and {TEAM_MAX_MEMBERS}"
+        )));
+    }
+    if spec.bounds.max_parallel_members == 0
+        || spec.bounds.max_parallel_members > spec.bounds.max_members
+    {
+        return Err(CoordinatorError::PolicyViolation(
+            "team max_parallel_members must be between 1 and max_members".to_string(),
+        ));
+    }
+    if spec.bounds.max_messages_per_run == 0 {
+        return Err(CoordinatorError::PolicyViolation(
+            "team max_messages_per_run must be greater than zero".to_string(),
+        ));
+    }
+    if spec.bounds.max_wall_clock_minutes == 0 || spec.bounds.max_member_turns == 0 {
+        return Err(CoordinatorError::PolicyViolation(
+            "team wall-clock and member-turn bounds must be greater than zero".to_string(),
+        ));
+    }
+    if spec.members.len() > spec.bounds.max_members as usize {
+        return Err(CoordinatorError::PolicyViolation(format!(
+            "team member count exceeds max_members bound {}",
+            spec.bounds.max_members
+        )));
+    }
+    let mut names = BTreeSet::new();
+    for member in spec.members.iter() {
+        if non_empty_trimmed(&member.name).is_none() {
+            return Err(CoordinatorError::PolicyViolation(
+                "team member name cannot be empty".to_string(),
+            ));
+        }
+        if matches!(member.name.as_str(), "lead" | "*") {
+            return Err(CoordinatorError::PolicyViolation(format!(
+                "team member name `{}` is reserved",
+                member.name
+            )));
+        }
+        validate_team_text_field("team member name", &member.name)?;
+        if let Some(prompt) = member.prompt.as_deref() {
+            validate_team_text_field("team member prompt", prompt)?;
+        }
+        if !names.insert(member.name.clone()) {
+            return Err(CoordinatorError::PolicyViolation(format!(
+                "duplicate team member `{}`",
+                member.name
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_team_text_field(label: &str, value: &str) -> Result<(), CoordinatorError> {
+    if value.chars().count() > TEAM_TEXT_FIELD_MAX_CHARS {
+        return Err(CoordinatorError::PolicyViolation(format!(
+            "{label} exceeds {TEAM_TEXT_FIELD_MAX_CHARS} characters"
+        )));
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TeamParticipantRole {
+    Lead,
+    Member(TeamMemberRole),
+}
+
+fn validate_team_profile_role(
+    profile: &str,
+    profile_config: Option<&AgentProfile>,
+    role: TeamParticipantRole,
+) -> Result<(), CoordinatorError> {
+    let read_only = is_read_only_team_profile(profile, profile_config);
+    match role {
+        TeamParticipantRole::Lead if read_only => Err(CoordinatorError::PolicyViolation(format!(
+            "team lead profile `{profile}` is read-only or planning-only"
+        ))),
+        TeamParticipantRole::Member(TeamMemberRole::Member) if read_only => {
+            Err(CoordinatorError::PolicyViolation(format!(
+                "team member profile `{profile}` is read-only or planning-only; mark the member role as research or use task delegation for ad hoc research"
+            )))
+        }
+        TeamParticipantRole::Member(TeamMemberRole::Research) if !read_only => {
+            Err(CoordinatorError::PolicyViolation(format!(
+                "research team member profile `{profile}` must be read-only or planning-only"
+            )))
+        }
+        _ => Ok(()),
+    }
+}
+
+fn is_read_only_team_profile(profile: &str, profile_config: Option<&AgentProfile>) -> bool {
+    if matches!(
+        profile,
+        "oracle"
+            | "librarian"
+            | "explore"
+            | "metis"
+            | "momus"
+            | "multimodal-looker"
+            | "prometheus"
+            | "plan"
+    ) {
+        return true;
+    }
+    profile_config.is_some_and(|profile| {
+        matches!(
+            profile.category.as_str(),
+            "explore" | "oracle" | "librarian" | "plan" | "research" | "read_only"
+        )
+    })
+}
+
+fn require_active_team<'a>(
+    projection: &'a TeamProjection,
+    team_run_id: &str,
+) -> Result<&'a TeamRunProjection, CoordinatorError> {
+    let team = projection
+        .teams
+        .get(team_run_id)
+        .ok_or_else(|| CoordinatorError::UnknownTask(format!("team:{team_run_id}")))?;
+    if team.status == crate::proj::TeamRunStatus::Deleted {
+        return Err(CoordinatorError::PolicyViolation(format!(
+            "team `{team_run_id}` is deleted"
+        )));
+    }
+    Ok(team)
+}
+
+fn require_active_team_or_shutdown<'a>(
+    projection: &'a TeamProjection,
+    team_run_id: &str,
+) -> Result<&'a TeamRunProjection, CoordinatorError> {
+    require_active_team(projection, team_run_id)
+}
+
+fn validate_team_member(
+    team: &TeamRunProjection,
+    member_name: &str,
+) -> Result<(), CoordinatorError> {
+    if team.members.contains_key(member_name) {
+        Ok(())
+    } else {
+        Err(CoordinatorError::PolicyViolation(format!(
+            "unknown team member `{member_name}`"
+        )))
+    }
+}
+
+fn validate_team_participant(
+    team: &TeamRunProjection,
+    participant: &str,
+) -> Result<(), CoordinatorError> {
+    if participant == "lead" || team.members.contains_key(participant) {
+        Ok(())
+    } else {
+        Err(CoordinatorError::PolicyViolation(format!(
+            "unknown team participant `{participant}`"
+        )))
+    }
+}
+
+fn validate_team_actor_can_act_as(
+    actor: &EventActor,
+    team: &TeamRunProjection,
+    participant: &str,
+) -> Result<(), CoordinatorError> {
+    if actor.kind != ActorKind::Worker {
+        return Ok(());
+    }
+    let Some(actor_agent_id) = actor.agent_id.as_deref() else {
+        return Err(CoordinatorError::PolicyViolation(
+            "worker team action missing agent_id".to_string(),
+        ));
+    };
+    if participant == "lead" {
+        if team.lead.as_ref().and_then(|lead| lead.agent_id.as_deref()) == Some(actor_agent_id) {
+            return Ok(());
+        }
+        return Err(CoordinatorError::PolicyViolation(
+            "worker team members cannot act as lead".to_string(),
+        ));
+    }
+    let Some(member) = team.members.get(participant) else {
+        return Err(CoordinatorError::PolicyViolation(format!(
+            "unknown team participant `{participant}`"
+        )));
+    };
+    if member.agent_id.as_deref() != Some(actor_agent_id) {
+        return Err(CoordinatorError::PolicyViolation(format!(
+            "worker `{actor_agent_id}` cannot act as team participant `{participant}`"
+        )));
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TeamActionKind {
+    TeamWrite,
+    Shutdown,
+}
+
+fn validate_team_action(
+    actor: &EventActor,
+    team: &TeamRunProjection,
+    action: TeamActionKind,
+    participant: &str,
+    now_mono_ms: u64,
+) -> Result<(), CoordinatorError> {
+    validate_team_participant(team, participant)?;
+    validate_team_participant_can_perform(team, action, participant, now_mono_ms)?;
+    validate_team_actor_can_act_as(actor, team, participant)
+}
+
+fn validate_team_actor_can_make_unowned_team_write(
+    actor: &EventActor,
+    team: &TeamRunProjection,
+    now_mono_ms: u64,
+) -> Result<(), CoordinatorError> {
+    validate_team_wall_clock(team, now_mono_ms)?;
+    if actor.kind != ActorKind::Worker {
+        return Ok(());
+    }
+    let participant = team_participant_for_worker_actor(actor, team)?;
+    validate_team_participant_can_perform(
+        team,
+        TeamActionKind::TeamWrite,
+        &participant,
+        now_mono_ms,
+    )
+}
+
+fn validate_team_participant_can_perform(
+    team: &TeamRunProjection,
+    action: TeamActionKind,
+    participant: &str,
+    now_mono_ms: u64,
+) -> Result<(), CoordinatorError> {
+    if action == TeamActionKind::TeamWrite {
+        validate_team_wall_clock(team, now_mono_ms)?;
+    }
+    if participant == "lead" {
+        return Ok(());
+    }
+    let member = team.members.get(participant).ok_or_else(|| {
+        CoordinatorError::PolicyViolation(format!("unknown team participant `{participant}`"))
+    })?;
+    match action {
+        TeamActionKind::TeamWrite => {
+            if member.role == TeamMemberRole::Research {
+                return Err(CoordinatorError::PolicyViolation(format!(
+                    "research team member `{participant}` cannot mutate team messages or tasks"
+                )));
+            }
+            match member.status {
+                crate::proj::TeamMemberStatus::Pending => {
+                    return Err(CoordinatorError::PolicyViolation(format!(
+                        "team member `{participant}` is not active"
+                    )));
+                }
+                crate::proj::TeamMemberStatus::ShutdownApproved => {
+                    return Err(CoordinatorError::PolicyViolation(format!(
+                        "team member `{participant}` is shutdown-approved and cannot mutate team state"
+                    )));
+                }
+                crate::proj::TeamMemberStatus::Running
+                | crate::proj::TeamMemberStatus::ShutdownRequested => {}
+            }
+            if team.bounds_consumption.member_turns >= team.bounds.max_member_turns {
+                return Err(CoordinatorError::PolicyViolation(format!(
+                    "team `{}` has reached max_member_turns {}",
+                    team.team_run_id, team.bounds.max_member_turns
+                )));
+            }
+        }
+        TeamActionKind::Shutdown => {
+            if member.status == crate::proj::TeamMemberStatus::ShutdownApproved {
+                return Err(CoordinatorError::PolicyViolation(format!(
+                    "team member `{participant}` is shutdown-approved and cannot make further shutdown decisions"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_team_wall_clock(
+    team: &TeamRunProjection,
+    now_mono_ms: u64,
+) -> Result<(), CoordinatorError> {
+    let Some(created_mono_ms) = team.created_mono_ms else {
+        return Ok(());
+    };
+    let limit_ms = u64::from(team.bounds.max_wall_clock_minutes).saturating_mul(60_000);
+    if now_mono_ms.saturating_sub(created_mono_ms) >= limit_ms {
+        return Err(CoordinatorError::PolicyViolation(format!(
+            "team `{}` has exceeded max_wall_clock_minutes {}",
+            team.team_run_id, team.bounds.max_wall_clock_minutes
+        )));
+    }
+    Ok(())
+}
+
+fn team_participant_for_worker_actor(
+    actor: &EventActor,
+    team: &TeamRunProjection,
+) -> Result<String, CoordinatorError> {
+    let Some(actor_agent_id) = actor.agent_id.as_deref() else {
+        return Err(CoordinatorError::PolicyViolation(
+            "worker team action missing agent_id".to_string(),
+        ));
+    };
+    if team.lead.as_ref().and_then(|lead| lead.agent_id.as_deref()) == Some(actor_agent_id) {
+        return Ok("lead".to_string());
+    }
+    team.members
+        .values()
+        .find(|member| member.agent_id.as_deref() == Some(actor_agent_id))
+        .map(|member| member.name.clone())
+        .ok_or_else(|| {
+            CoordinatorError::PolicyViolation(format!(
+                "worker `{actor_agent_id}` is not a participant in team `{}`",
+                team.team_run_id
+            ))
+        })
+}
+
+fn validate_team_shutdown_request_can_open(
+    team: &TeamRunProjection,
+    member_name: &str,
+) -> Result<(), CoordinatorError> {
+    match team
+        .shutdown_requests
+        .get(member_name)
+        .map(|request| request.status)
+    {
+        Some(crate::proj::TeamMemberStatus::ShutdownRequested) => {
+            Err(CoordinatorError::PolicyViolation(format!(
+                "shutdown request for team member `{member_name}` is already pending"
+            )))
+        }
+        Some(crate::proj::TeamMemberStatus::ShutdownApproved) => {
+            Err(CoordinatorError::PolicyViolation(format!(
+                "shutdown for team member `{member_name}` is already approved"
+            )))
+        }
+        _ => Ok(()),
+    }
+}
+
+fn validate_team_shutdown_request_pending(
+    team: &TeamRunProjection,
+    member_name: &str,
+) -> Result<(), CoordinatorError> {
+    match team
+        .shutdown_requests
+        .get(member_name)
+        .map(|request| request.status)
+    {
+        Some(crate::proj::TeamMemberStatus::ShutdownRequested) => Ok(()),
+        _ => Err(CoordinatorError::PolicyViolation(format!(
+            "team member `{member_name}` has no pending shutdown request"
+        ))),
+    }
+}
+
+fn validate_team_message(
+    team: &TeamRunProjection,
+    message: &TeamMessage,
+) -> Result<(), CoordinatorError> {
+    if message.version != 1 {
+        return Err(CoordinatorError::PolicyViolation(
+            "team message version must be 1".to_string(),
+        ));
+    }
+    if non_empty_trimmed(&message.message_id).is_none() {
+        return Err(CoordinatorError::PolicyViolation(
+            "team message id cannot be empty".to_string(),
+        ));
+    }
+    if team.messages.len() >= team.bounds.max_messages_per_run as usize {
+        return Err(CoordinatorError::PolicyViolation(format!(
+            "team `{}` has reached max_messages_per_run {}",
+            team.team_run_id, team.bounds.max_messages_per_run
+        )));
+    }
+    validate_team_text_field("team message id", &message.message_id)?;
+    if team
+        .messages
+        .iter()
+        .any(|existing| existing.message_id == message.message_id)
+    {
+        return Err(CoordinatorError::PolicyViolation(format!(
+            "team message `{}` already exists",
+            message.message_id
+        )));
+    }
+    validate_team_text_field("team message sender", &message.from)?;
+    validate_team_text_field("team message recipient", &message.to)?;
+    if let Some(summary) = message.summary.as_deref() {
+        validate_team_text_field("team message summary", summary)?;
+    }
+    if message.body.len() > TEAM_MESSAGE_BODY_MAX_BYTES {
+        return Err(CoordinatorError::PolicyViolation(format!(
+            "team message body exceeds {TEAM_MESSAGE_BODY_MAX_BYTES} bytes"
+        )));
+    }
+    if message.references.len() > TEAM_REFERENCE_LIMIT {
+        return Err(CoordinatorError::PolicyViolation(format!(
+            "team message references exceed {TEAM_REFERENCE_LIMIT} entries"
+        )));
+    }
+    for reference in &message.references {
+        validate_team_text_field("team reference path", &reference.path)?;
+        if reference.path.starts_with('/') || reference.path.contains("..") {
+            return Err(CoordinatorError::PolicyViolation(
+                "team reference path must be workspace-relative and must not contain traversal"
+                    .to_string(),
+            ));
+        }
+        if let Some(description) = reference.description.as_deref() {
+            validate_team_text_field("team reference description", description)?;
+        }
+    }
+    validate_team_participant(team, &message.from)?;
+    if message.to == "*" {
+        if message.from != "lead" || message.kind != TeamMessageKind::Announcement {
+            return Err(CoordinatorError::PolicyViolation(
+                "only lead may broadcast announcements".to_string(),
+            ));
+        }
+    } else {
+        validate_team_participant(team, &message.to)?;
+    }
+    Ok(())
+}
+
+fn validate_team_task_create(
+    team: &TeamRunProjection,
+    task: &TeamTask,
+) -> Result<(), CoordinatorError> {
+    if task.version != 1 {
+        return Err(CoordinatorError::PolicyViolation(
+            "team task version must be 1".to_string(),
+        ));
+    }
+    if non_empty_trimmed(&task.task_id).is_none() {
+        return Err(CoordinatorError::PolicyViolation(
+            "team task id cannot be empty".to_string(),
+        ));
+    }
+    validate_team_text_field("team task id", &task.task_id)?;
+    validate_team_text_field("team task subject", &task.subject)?;
+    validate_team_text_field("team task description", &task.description)?;
+    if team.tasks.contains_key(&task.task_id) {
+        return Err(CoordinatorError::PolicyViolation(format!(
+            "team task `{}` already exists",
+            task.task_id
+        )));
+    }
+    validate_team_metadata(&task.metadata)?;
+    if let Some(owner) = task.owner.as_deref() {
+        validate_team_participant(team, owner)?;
+    }
+    for blocker in task.blocked_by.iter() {
+        if !team.tasks.contains_key(blocker) {
+            return Err(CoordinatorError::PolicyViolation(format!(
+                "team task `{}` depends on unknown task `{blocker}`",
+                task.task_id
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_team_task_update(
+    team: &TeamRunProjection,
+    task_id: &str,
+    status: TeamTaskStatus,
+    owner: Option<&str>,
+    metadata: &BTreeMap<String, String>,
+) -> Result<(), CoordinatorError> {
+    let task = team.tasks.get(task_id).ok_or_else(|| {
+        CoordinatorError::UnknownTask(format!("team:{}/task:{task_id}", team.team_run_id))
+    })?;
+    if let Some(owner) = owner {
+        validate_team_participant(team, owner)?;
+    }
+    validate_team_metadata(metadata)?;
+    if matches!(
+        status,
+        TeamTaskStatus::Claimed | TeamTaskStatus::InProgress | TeamTaskStatus::Completed
+    ) {
+        let incomplete = task
+            .blocked_by
+            .iter()
+            .filter(|blocked_by| {
+                team.tasks
+                    .get(*blocked_by)
+                    .is_none_or(|candidate| candidate.status != TeamTaskStatus::Completed)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        if !incomplete.is_empty() {
+            return Err(CoordinatorError::PolicyViolation(format!(
+                "team task `{task_id}` is blocked by incomplete tasks: {}",
+                incomplete.join(", ")
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_team_metadata(metadata: &BTreeMap<String, String>) -> Result<(), CoordinatorError> {
+    if metadata.len() > TEAM_TASK_METADATA_MAX_ENTRIES {
+        return Err(CoordinatorError::PolicyViolation(format!(
+            "team task metadata exceeds {TEAM_TASK_METADATA_MAX_ENTRIES} entries"
+        )));
+    }
+    for (key, value) in metadata {
+        validate_team_metadata_field("team task metadata key", key)?;
+        validate_team_metadata_field("team task metadata value", value)?;
+    }
+    Ok(())
+}
+
+fn validate_team_metadata_field(label: &str, value: &str) -> Result<(), CoordinatorError> {
+    if value.chars().count() > TEAM_TASK_METADATA_MAX_CHARS {
+        return Err(CoordinatorError::PolicyViolation(format!(
+            "{label} exceeds {TEAM_TASK_METADATA_MAX_CHARS} characters"
+        )));
+    }
+    Ok(())
+}
+
 fn background_notification_status_for_cancel_reason(
     reason: &str,
 ) -> BackgroundTaskNotificationStatus {
@@ -5051,9 +6613,46 @@ fn terminal_event_summary(event: &EventEnvelopeV1) -> String {
     }
 }
 
+fn background_projection_error_to_coordinator_error(
+    err: BackgroundRequestProjectionError,
+) -> CoordinatorError {
+    match err {
+        BackgroundRequestProjectionError::Unauthorized => {
+            CoordinatorError::PermissionDenied(err.to_string())
+        }
+        BackgroundRequestProjectionError::MissingSelector
+        | BackgroundRequestProjectionError::UnknownRequest(_)
+        | BackgroundRequestProjectionError::UnknownSelector(_)
+        | BackgroundRequestProjectionError::MissingProjection(_) => {
+            CoordinatorError::UnknownTask(err.to_string())
+        }
+    }
+}
+
+fn background_terminal_event_matches_task(
+    event: &EventEnvelopeV1,
+    scheduler_task_id: &str,
+) -> bool {
+    match &event.payload {
+        EventV1::TaskCompleted(payload) => {
+            payload.task_id == scheduler_task_id
+                || payload
+                    .metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.task_scope)
+                    == Some(TaskTerminalScope::AgentTurn)
+        }
+        EventV1::TaskCancelled(payload) => {
+            payload.task_id == scheduler_task_id
+                || payload.task_scope == Some(TaskTerminalScope::AgentTurn)
+        }
+        _ => false,
+    }
+}
+
 fn background_task_notification_text(notification: &BackgroundTaskNotificationEvent) -> String {
     format!(
-        "[BACKGROUND TASK {}]\nID: {}\nRequest ID: {}\nDescription: {}\nStatus: {}\n\n{}\n\nUse background_output(request_id=\"{}\") for full details or to continue analysis from the child session.",
+        "[BACKGROUND TASK {}]\nID: {}\nRequest ID: {}\nDescription: {}\nStatus: {}\n\n{}\n\nUse background_output(request_id=\"{}\") for full details or task(session_id=\"{}\") to continue analysis from the child session.",
         notification.status.as_str().to_ascii_uppercase(),
         notification.task_id,
         notification.child_request_id,
@@ -5061,6 +6660,7 @@ fn background_task_notification_text(notification: &BackgroundTaskNotificationEv
         notification.status.as_str(),
         notification.summary,
         notification.child_request_id,
+        notification.child_session_id,
     )
 }
 
@@ -6893,11 +8493,6 @@ async fn run_agent_turn_phase_loop(request: AgentTurnPhaseLoopRequest<'_>) -> Ag
             );
         }
 
-        match drain_agent_wakeups_phase(&job_tx, &task.agent_id).await {
-            Ok(wakeups) => append_agent_wakeup_messages(&mut turn_state.messages, wakeups),
-            Err(reason) => return AgentTurnOutcome::failed(reason),
-        }
-
         let provider_request_id = match allocate_provider_request_id_phase(&job_tx).await {
             Ok(request_id) => request_id,
             Err(reason) => return AgentTurnOutcome::failed(reason),
@@ -6950,17 +8545,6 @@ async fn run_agent_turn_phase_loop(request: AgentTurnPhaseLoopRequest<'_>) -> Ag
                     Some(assistant_response.request_id.clone()),
                 ),
             );
-        }
-
-        if assistant_response.tool_intents.is_empty() {
-            match drain_agent_wakeups_phase(&job_tx, &task.agent_id).await {
-                Ok(wakeups) if !wakeups.is_empty() => {
-                    append_agent_wakeup_messages(&mut turn_state.messages, wakeups);
-                    continue;
-                }
-                Ok(_) => {}
-                Err(reason) => return AgentTurnOutcome::failed(reason),
-            }
         }
 
         match decide_tool_phase(&assistant_response, &mut turn_state.total_tool_calls) {
@@ -7118,33 +8702,6 @@ async fn allocate_provider_request_id_phase(
         .await
         .map_err(|_| "provider request id response channel closed".to_string())?
         .map_err(|err| err.to_string())
-}
-
-async fn drain_agent_wakeups_phase(
-    job_tx: &mpsc::Sender<Command>,
-    agent_id: &str,
-) -> Result<Vec<String>, String> {
-    let (respond_to, response_rx) = oneshot::channel();
-    job_tx
-        .send(Command::DrainAgentWakeups {
-            agent_id: agent_id.to_string(),
-            respond_to,
-        })
-        .await
-        .map_err(|_| "agent wakeup channel closed".to_string())?;
-    response_rx
-        .await
-        .map_err(|_| "agent wakeup response channel closed".to_string())
-}
-
-fn append_agent_wakeup_messages(messages: &mut Vec<CompletionMessage>, wakeups: Vec<String>) {
-    messages.extend(wakeups.into_iter().map(|wakeup| CompletionMessage {
-        role: MessageRole::User,
-        content: wakeup,
-        name: None,
-        tool_call_id: None,
-        assistant_tool_calls: None,
-    }));
 }
 
 async fn run_provider_stream_phase(
@@ -11516,6 +13073,23 @@ fn active_plan_symlink_denial(workspace_root: &Path, active_plan: &str) -> Optio
 fn task_agent_rule_selectors(args_json: &Value) -> Vec<PermissionRuleRequest> {
     const CATEGORY_FALLBACK_PROFILE: &str = "general";
 
+    let mut team_selectors = Vec::new();
+    if let Some(members) = args_json.get("members").and_then(Value::as_array) {
+        for member in members {
+            team_selectors.extend(task_agent_rule_selectors(member));
+        }
+    }
+    if let Some(lead) = args_json.get("lead") {
+        team_selectors.extend(task_agent_rule_selectors(lead));
+    }
+    if !team_selectors.is_empty() {
+        team_selectors.sort_by(|left, right| {
+            permission_rule_request_key(left).cmp(permission_rule_request_key(right))
+        });
+        team_selectors.dedup();
+        return team_selectors;
+    }
+
     let category = trimmed_arg(args_json, "category");
     let subagent_type = ["subagent_type", "agent", "profile", "profileName"]
         .into_iter()
@@ -11538,6 +13112,14 @@ fn task_agent_rule_selectors(args_json: &Value) -> Vec<PermissionRuleRequest> {
             selectors
         }
         (None, None) => Vec::new(),
+    }
+}
+
+fn permission_rule_request_key(selector: &PermissionRuleRequest) -> &str {
+    match selector {
+        PermissionRuleRequest::ShellCommand(value)
+        | PermissionRuleRequest::WorkspacePath(value)
+        | PermissionRuleRequest::TaskAgent(value) => value,
     }
 }
 

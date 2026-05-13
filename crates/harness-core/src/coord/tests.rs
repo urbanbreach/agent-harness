@@ -4985,7 +4985,7 @@ fn compaction_runtime_context() -> RecordedRuntimeContext {
 }
 
 #[tokio::test]
-async fn background_task_completion_notifies_parent_once_and_drains_active_parent() {
+async fn background_task_completion_notifies_parent_once_and_queues_active_parent() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
@@ -5085,6 +5085,7 @@ async fn background_task_completion_notifies_parent_once_and_drains_active_paren
     assert!(reminder.contains("Description: Summarize the repository"));
     assert!(reminder.contains("Status: completed"));
     assert!(reminder.contains("background_output(request_id=\"req_child\")"));
+    assert!(reminder.contains("task(session_id=\"agent_child\")"));
     assert!(!reminder.contains("full-output-tail"));
 
     assert!(run_state.queued_agent_turns.is_empty());
@@ -5174,7 +5175,7 @@ async fn background_task_completion_caps_and_redacts_description_and_summary() {
 }
 
 #[tokio::test]
-async fn background_task_completion_schedules_pending_wakeup_when_parent_finishes_after_drain() {
+async fn background_task_completion_schedules_pending_wakeup_when_parent_finishes() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
@@ -5302,6 +5303,9 @@ async fn background_task_completion_queues_parent_when_parent_is_idle() {
     assert!(running
         .request_prompt
         .contains("background_output(request_id=\"req_child\")"));
+    assert!(running
+        .request_prompt
+        .contains("task(session_id=\"agent_child\")"));
 
     let started = read_events(&run_state.info.events_path)
         .into_iter()

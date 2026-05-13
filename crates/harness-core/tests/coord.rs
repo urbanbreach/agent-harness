@@ -18,8 +18,8 @@ use harness_core::config::{
     LifecycleHookConfig, PermissionMode, ShellAllowlist,
 };
 use harness_core::coord::{
-    spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle, JobOutcome,
-    JobProgressKind, ManualCompactionOutcome, RunInfo,
+    spawn_coordinator, ChildTaskRequestMetadata, CoordinatorConfig, CoordinatorError,
+    CoordinatorHandle, JobOutcome, JobProgressKind, ManualCompactionOutcome, RunInfo,
 };
 use harness_core::event::{
     ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1, ExecutionTimingMetadata,
@@ -628,8 +628,10 @@ async fn coord_worker_spawn_attempt_records_policy_violation_and_returns_error()
         .expect("start run");
 
     let actor = EventActor::new(ActorKind::Worker, Some("agent_worker".to_string()));
-    let result = coordinator.spawn_agent(actor, "alpha", None).await;
+    let result = coordinator.spawn_agent(actor.clone(), "alpha", None).await;
     assert!(result.is_err(), "worker spawn must fail");
+    let idle_result = coordinator.spawn_agent_idle(actor, "alpha", None).await;
+    assert!(idle_result.is_err(), "worker idle spawn must fail");
 
     coordinator.stop_run().await.expect("stop run");
 
@@ -1240,6 +1242,174 @@ async fn same_agent_turn_queues_even_when_provider_model_has_free_slots() {
         queued_schedule_states,
         vec![TaskScheduleState::Queued, TaskScheduleState::Started]
     );
+}
+
+#[tokio::test]
+async fn background_task_completion_after_tool_result_wakes_parent_in_followup_turn() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let tool_release = Arc::new(Notify::new());
+    let provider = SequentialScriptedProvider::new(vec![
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::ToolCallComplete {
+                tool_call_id: "parent_block".to_string(),
+                function_name: "shell_block".to_string(),
+                arguments_json: "{}".to_string(),
+            },
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 2,
+                    completion_tokens: 1,
+                    total_tokens: 3,
+                },
+            },
+        ],
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("child completed".to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 2,
+                    completion_tokens: 2,
+                    total_tokens: 4,
+                },
+            },
+        ],
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("parent final before wakeup".to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 3,
+                    completion_tokens: 2,
+                    total_tokens: 5,
+                },
+            },
+        ],
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("wakeup acknowledged".to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 3,
+                    completion_tokens: 2,
+                    total_tokens: 5,
+                },
+            },
+        ],
+    ]);
+    let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());
+    config.deterministic_store = true;
+    config.command_buffer = 64;
+    config.provider_model_concurrency = 2;
+    config.permission_policy = shell_only_permission_policy();
+    config.tool_registry = lifecycle_tool_registry(tool_release.clone());
+    config.provider = Arc::new(provider.clone());
+    config.agent_profiles = agent_profiles();
+    if let Some(profile) = config.agent_profiles.get_mut("alpha") {
+        profile.toolset = vec!["shell.block".to_string()];
+    }
+    let coordinator = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+
+    let run = coordinator
+        .start_run(
+            "background_task_completion_after_tool_result_wakes_parent_in_followup_turn",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let parent_agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn parent");
+    let child_agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "beta", Some(parent_agent_id.clone()))
+        .await
+        .expect("spawn child");
+    let parent_request_id = coordinator
+        .request_agent_turn(supervisor_actor(), parent_agent_id.clone(), "parent prompt")
+        .await
+        .expect("request parent turn");
+
+    wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::ToolCallRequested(data)
+                    if data.tool_id == "shell.block"
+                        && event.correlation_id.as_deref() == Some(parent_request_id.as_str())
+            )
+        })
+    })
+    .await;
+
+    let child_request_id = coordinator
+        .request_child_agent_turn_with_model(
+            supervisor_actor(),
+            child_agent_id.clone(),
+            "child prompt",
+            None,
+            None,
+            ChildTaskRequestMetadata {
+                parent_tool_call_id: "toolcall_parent_task".to_string(),
+                parent_session_id: run.run_id.clone(),
+                parent_agent_id: Some(parent_agent_id.clone()),
+                child_session_id: child_agent_id.clone(),
+                task_id: child_agent_id,
+                description: "Child background task".to_string(),
+                run_in_background: true,
+            },
+        )
+        .await
+        .expect("request child turn");
+
+    wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::BackgroundTaskNotification(data)
+                    if data.child_request_id == child_request_id
+            )
+        })
+    })
+    .await;
+
+    tool_release.notify_waiters();
+
+    wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data) if data.result_summary == "wakeup acknowledged"
+            )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let requests = provider.requests();
+    assert_eq!(requests.len(), 4);
+    let parent_tool_result_request = &requests[2];
+    assert!(parent_tool_result_request.messages.iter().any(|message| {
+        message.role == MessageRole::Tool && message.content.contains("unblocked")
+    }));
+    assert!(parent_tool_result_request
+        .messages
+        .iter()
+        .all(|message| !message.content.contains("[BACKGROUND TASK COMPLETED]")));
+
+    let wakeup_request = &requests[3];
+    assert!(wakeup_request.messages.iter().any(|message| {
+        message.role == MessageRole::User
+            && message.content.contains("[BACKGROUND TASK COMPLETED]")
+            && message
+                .content
+                .contains(&format!("Request ID: {child_request_id}"))
+    }));
 }
 
 #[tokio::test]
