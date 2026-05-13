@@ -220,6 +220,18 @@ remains restricted to the read-only `explore` profile by default; `general` and
 user-defined write-capable subagents are rejected before spawn unless a future
 profile deliberately adds parent-permission inheritance and tests for it.
 
+The shipped `build` agent also exposes the coordinator-owned `team_*` tools for
+lead-agent coordination. A team has four stable roles: supervisor/operator,
+lead, write-capable member, and read-only research member. `team_create.lead`
+selects an optional write-capable lead profile; when present, the coordinator
+spawns and projects it separately from members. Team member entries default to
+`role: "member"`; set `role: "research"` only for read-only profiles such as
+`explore`. Research members may appear in team status and complete shutdown
+handshakes, but coordinator validation denies their team message/task writes.
+Team member profiles that need to write shared team messages or tasks must
+include the relevant `team_*` tool ids in their toolset; worker calls are bound
+to the lead/member identity projected from the team event log.
+
 ### Plan operator workflow
 
 Use Plan when the operator wants a reviewed implementation plan before changing
@@ -258,7 +270,11 @@ intentionally omits `task` by default so subagents do not recursively redelegate
 unless a project opts into that tool.
 When a subagent profile does not configure its own `model`, task delegation
 inherits the invoking parent turn's active model and model settings. If the
-subagent profile has an explicit `model`, that configured model wins.
+subagent profile has an explicit `model`, that configured model wins. The `task`
+tool requires `run_in_background` and `load_skills` on every call; pass
+`load_skills: []` when no skill context is needed. Listed skills are resolved
+before the child is spawned, missing or denied skills fail the call, and loaded
+skill content is injected into the child prompt before the original task body.
 `task(run_in_background: true)` returns a child `request_id`; use the
 `background_output` tool with that `request_id` to inspect completion status or
 the terminal result. Retrieval is event-replay based and does not advance the

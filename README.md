@@ -4,9 +4,14 @@
 
 - `task` is the canonical child-delegation tool.
 - `prompt` is the task body delivered to the child.
+- `run_in_background` is required: `false` waits for the child result and does
+  not emit a background wakeup; `true` returns ids immediately and later emits
+  the background completion reminder.
+- `load_skills` is required, even when empty.
 - `skills` and `load_skills` are equivalent aliases for the same list.
 - `command`, when provided, is prepended to the child prompt as delegation context.
-- Skill/command context is delivered as prompt instructions before the original task body.
+- Listed skills are resolved before the child is spawned; missing or denied skills
+  fail the task call, and loaded skill content is injected before the original task body.
 - Task results include child runtime metadata and `next_actions` for status checks,
   waiting, cancellation, and continuation.
 - `background_output(cancel: true, request_id: ...)` requests coordinator-owned

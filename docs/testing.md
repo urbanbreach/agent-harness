@@ -78,6 +78,7 @@ Current stage commands:
 - `cargo test -p harness-providers --lib`
 - `cargo test -p harness-providers --test openai_compatible_serializes_native_tool_schema_without_alias_dupes`
 - `cargo test -p harness-tools --lib`
+- `cargo test -p harness-tools team`
 - `cargo test -p harness-tools --test native_tool_parity_matrix`
 - `cargo test -p harness-tools --test hashline_apply`
 - `cargo test -p harness-tools --test mcp_generic`
@@ -224,7 +225,7 @@ that proves the same behavior before the old test is removed.
 Expect the invariant map to keep these owners visible:
 
 - Drift checks for public config docs and event docs.
-- Coordinator scheduling, replay, cancellation, permission, and redelegation contracts.
+- Coordinator scheduling, replay-derived background output, cancellation, permission, and redelegation contracts.
 - Native tool parity and stable public tool IDs.
 - Provider-context compaction regressions and checkpoint artifact accounting.
 - Deterministic PTY rendering evidence for UI behavior that cannot be proven with unit tests.
