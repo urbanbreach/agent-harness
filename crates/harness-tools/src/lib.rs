@@ -64,6 +64,13 @@ pub(crate) use shell_run::ShellRunTool;
 mod agent_ops;
 use agent_ops::AgentOpsExecutor;
 
+mod team_ops;
+use team_ops::{
+    TeamCreateTool, TeamDeleteTool, TeamSendMessageTool, TeamShutdownApproveTool,
+    TeamShutdownRejectTool, TeamShutdownRequestTool, TeamStatusTool, TeamTaskCreateTool,
+    TeamTaskGetTool, TeamTaskListTool, TeamTaskUpdateTool,
+};
+
 mod code_lsp;
 use code_lsp::CodeLspExecutor;
 
@@ -160,6 +167,17 @@ pub fn coordinator_registry_with_mcp_and_editing(
     registry.register(Arc::new(BackgroundOutputTool::new(
         agent_ops_executor.clone(),
     )));
+    registry.register(Arc::new(TeamCreateTool));
+    registry.register(Arc::new(TeamStatusTool));
+    registry.register(Arc::new(TeamSendMessageTool));
+    registry.register(Arc::new(TeamTaskCreateTool));
+    registry.register(Arc::new(TeamTaskListTool));
+    registry.register(Arc::new(TeamTaskGetTool));
+    registry.register(Arc::new(TeamTaskUpdateTool));
+    registry.register(Arc::new(TeamShutdownRequestTool));
+    registry.register(Arc::new(TeamShutdownApproveTool));
+    registry.register(Arc::new(TeamShutdownRejectTool));
+    registry.register(Arc::new(TeamDeleteTool));
     registry.register(Arc::new(PlanEnterTool));
     registry.register(Arc::new(PlanExitTool));
     registry.register(Arc::new(HashlineEditTool));
