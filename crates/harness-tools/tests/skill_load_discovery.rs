@@ -277,7 +277,7 @@ async fn skill_load_discovers_project_and_global_roots_with_precedence() {
 
     let native_shared = skill_tool
         .call(
-            tool_context(&repo, "toolcall-native-shared"),
+            tool_context(&app, "toolcall-native-shared"),
             json!({"name": "shared-skill"}),
         )
         .await
@@ -301,7 +301,7 @@ async fn skill_load_discovers_project_and_global_roots_with_precedence() {
 
     let repo_only = skill_tool
         .call(
-            tool_context(&repo, "toolcall-repo-only"),
+            tool_context(&app, "toolcall-repo-only"),
             json!({"name": "repo-only"}),
         )
         .await
@@ -310,7 +310,7 @@ async fn skill_load_discovers_project_and_global_roots_with_precedence() {
 
     let global_only = skill_tool
         .call(
-            tool_context(&repo, "toolcall-global-only"),
+            tool_context(&app, "toolcall-global-only"),
             json!({"name": "global-only"}),
         )
         .await
@@ -321,6 +321,142 @@ async fn skill_load_discovers_project_and_global_roots_with_precedence() {
 #[test]
 fn skill_discovery_walks_project_and_global_roots() {
     skill_load_discovers_project_and_global_roots_with_precedence();
+}
+
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
+)]
+async fn skill_discovery_uses_workspace_root_not_process_cwd() {
+    let _guard = env_test_lock();
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("home");
+    let repo = temp_dir.path().join("repo");
+    let outside = temp_dir.path().join("outside-cwd");
+    fs::create_dir_all(&home).expect("home dir");
+    fs::create_dir_all(&repo).expect("repo dir");
+    fs::create_dir_all(&outside).expect("outside cwd");
+    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    let _env = EnvTestContext::new(&outside, &home);
+
+    write_skill(
+        &repo.join(".agent-harness/skills"),
+        "workspace-skill",
+        "Workspace description",
+        "Workspace body",
+    );
+    write_skill(
+        &outside.join(".agent-harness/skills"),
+        "cwd-only",
+        "Cwd description",
+        "Cwd body",
+    );
+
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let skill_tool = registry.get("skill").expect("skill tool");
+    let workspace_skill = skill_tool
+        .call(
+            tool_context(&repo, "toolcall-workspace-root-skill"),
+            json!({"name": "workspace-skill"}),
+        )
+        .await
+        .expect("workspace skill");
+    assert!(workspace_skill
+        .display_text
+        .contains("Workspace description"));
+
+    let cwd_only = skill_tool
+        .call(
+            tool_context(&repo, "toolcall-cwd-only-skill"),
+            json!({"name": "cwd-only"}),
+        )
+        .await
+        .expect_err("cwd skill should not be loaded from process cwd");
+    assert!(cwd_only
+        .to_string()
+        .contains("Skill \"cwd-only\" not found"));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
+)]
+async fn skill_discovery_rejects_symlinked_skill_directories() {
+    let _guard = env_test_lock();
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("home");
+    let repo = temp_dir.path().join("repo");
+    let outside = temp_dir.path().join("outside-skill");
+    fs::create_dir_all(&home).expect("home dir");
+    fs::create_dir_all(&repo).expect("repo dir");
+    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    let _env = EnvTestContext::new(&repo, &home);
+
+    write_skill(
+        temp_dir.path(),
+        "outside-skill",
+        "Outside description",
+        "Outside body",
+    );
+    let skill_root = repo.join(".agent-harness/skills");
+    fs::create_dir_all(&skill_root).expect("skill root");
+    std::os::unix::fs::symlink(&outside, skill_root.join("evil")).expect("symlink evil skill dir");
+
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let skill_tool = registry.get("skill").expect("skill tool");
+    let err = skill_tool
+        .call(
+            tool_context(&repo, "toolcall-symlink-skill"),
+            json!({"name": "evil"}),
+        )
+        .await
+        .expect_err("symlinked skill should be rejected");
+    assert!(err.to_string().contains("Skill \"evil\" not found"));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
+)]
+async fn skill_discovery_rejects_symlinked_project_skill_root() {
+    let _guard = env_test_lock();
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("home");
+    let repo = temp_dir.path().join("repo");
+    let outside = temp_dir.path().join("outside-root");
+    fs::create_dir_all(&home).expect("home dir");
+    fs::create_dir_all(&repo).expect("repo dir");
+    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    let _env = EnvTestContext::new(&repo, &home);
+
+    write_skill(
+        &outside,
+        "evil-root-skill",
+        "Outside root description",
+        "Outside root body",
+    );
+    let agent_harness_dir = repo.join(".agent-harness");
+    fs::create_dir_all(&agent_harness_dir).expect("agent harness dir");
+    std::os::unix::fs::symlink(&outside, agent_harness_dir.join("skills"))
+        .expect("symlink project skill root");
+
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let skill_tool = registry.get("skill").expect("skill tool");
+    let err = skill_tool
+        .call(
+            tool_context(&repo, "toolcall-symlink-root-skill"),
+            json!({"name": "evil-root-skill"}),
+        )
+        .await
+        .expect_err("symlinked project skill root should be ignored");
+    assert!(err
+        .to_string()
+        .contains("Skill \"evil-root-skill\" not found"));
 }
 
 #[tokio::test]
@@ -561,7 +697,7 @@ async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
 
     let visible = skill_tool
         .call(
-            tool_context(&repo, "toolcall-custom-visible"),
+            tool_context(&app, "toolcall-custom-visible"),
             json!({"name": "team-visible"}),
         )
         .await
@@ -581,7 +717,7 @@ async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
     let _answers = EnvGuard::set(&[("HARNESS_QUESTION_ANSWERS", Some(r#"[["Yes"]]"#))]);
     let gated = skill_tool
         .call(
-            tool_context(&repo, "toolcall-custom-ask"),
+            tool_context(&app, "toolcall-custom-ask"),
             json!({"name": "team-secret"}),
         )
         .await
@@ -590,7 +726,7 @@ async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
 
     let repo_hidden = skill_tool
         .call(
-            tool_context(&repo, "toolcall-custom-repo-hidden"),
+            tool_context(&app, "toolcall-custom-repo-hidden"),
             json!({"name": "team-repo"}),
         )
         .await
@@ -601,7 +737,7 @@ async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
 
     let global_visible = skill_tool
         .call(
-            tool_context(&repo, "toolcall-custom-global"),
+            tool_context(&app, "toolcall-custom-global"),
             json!({"name": "global-visible"}),
         )
         .await

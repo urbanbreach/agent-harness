@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
 use async_trait::async_trait;
 mod common;
@@ -16,7 +17,9 @@ use harness_core::config::{PermissionMode, ShellAllowlist};
 use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle, RunInfo,
 };
-use harness_core::event::{EventV1, PermissionDecision as EventPermissionDecision, ToolCallStatus};
+use harness_core::event::{
+    EventV1, PermissionDecision as EventPermissionDecision, TaskTerminalScope, ToolCallStatus,
+};
 use harness_core::perm::PermissionPolicy;
 use harness_core::redact::DefaultRedactor;
 use harness_providers::{
@@ -57,6 +60,94 @@ impl Provider for BlockingProvider {
             tokio_stream::iter(vec![ProviderStreamEvent::Start])
                 .chain(tokio_stream::pending::<ProviderStreamEvent>()),
         )
+    }
+}
+
+#[derive(Debug)]
+struct DelayedProvider {
+    delay: Duration,
+}
+
+#[async_trait]
+impl Provider for DelayedProvider {
+    async fn stream_completion(&self, _req: CompletionRequest) -> ProviderEventStream {
+        tokio::time::sleep(self.delay).await;
+        Box::pin(tokio_stream::iter(vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("delayed child result".to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 1,
+                    completion_tokens: 1,
+                    total_tokens: 2,
+                },
+            },
+        ]))
+    }
+}
+
+#[derive(Debug)]
+struct ChildToolThenFinalProvider {
+    requests: Mutex<Vec<CompletionRequest>>,
+    final_delay: Duration,
+}
+
+impl ChildToolThenFinalProvider {
+    fn new(final_delay: Duration) -> Self {
+        Self {
+            requests: Mutex::new(Vec::new()),
+            final_delay,
+        }
+    }
+
+    async fn requests(&self) -> Vec<CompletionRequest> {
+        self.requests.lock().await.clone()
+    }
+}
+
+#[async_trait]
+impl Provider for ChildToolThenFinalProvider {
+    async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
+        let mut requests = self.requests.lock().await;
+        requests.push(req);
+        let call_count = requests.len();
+        drop(requests);
+
+        if call_count == 1 {
+            return Box::pin(tokio_stream::iter(vec![
+                ProviderStreamEvent::Start,
+                ProviderStreamEvent::ToolCallComplete {
+                    tool_call_id: "call_read_fixture".to_string(),
+                    function_name: "read".to_string(),
+                    arguments_json: json!({
+                        "filePath": "fixture.txt",
+                        "offset": 1,
+                        "limit": 1,
+                    })
+                    .to_string(),
+                },
+                ProviderStreamEvent::Done {
+                    usage: CompletionUsage {
+                        prompt_tokens: 1,
+                        completion_tokens: 1,
+                        total_tokens: 2,
+                    },
+                },
+            ]));
+        }
+
+        tokio::time::sleep(self.final_delay).await;
+        Box::pin(tokio_stream::iter(vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("child final after read".to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 1,
+                    completion_tokens: 1,
+                    total_tokens: 2,
+                },
+            },
+        ]))
     }
 }
 
@@ -153,6 +244,24 @@ fn env_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
+struct CurrentDirGuard {
+    previous: PathBuf,
+}
+
+impl CurrentDirGuard {
+    fn set(path: &Path) -> Self {
+        let previous = std::env::current_dir().expect("capture current dir");
+        std::env::set_current_dir(path).expect("set current dir");
+        Self { previous }
+    }
+}
+
+impl Drop for CurrentDirGuard {
+    fn drop(&mut self) {
+        std::env::set_current_dir(&self.previous).expect("restore current dir");
+    }
+}
+
 fn write_fixture(workspace: &Path) {
     fs::write(workspace.join("fixture.txt"), "alpha\nbeta\n").expect("fixture file");
 }
@@ -163,6 +272,16 @@ fn write_numbered_fixture(workspace: &Path) {
         .collect::<Vec<_>>()
         .join("\n");
     fs::write(workspace.join("fixture.txt"), format!("{fixture_body}\n")).expect("fixture file");
+}
+
+fn write_skill_fixture(workspace: &Path, name: &str) {
+    let skill_dir = workspace.join(".agent-harness/skills").join(name);
+    fs::create_dir_all(&skill_dir).expect("skill dir");
+    fs::write(
+        skill_dir.join("SKILL.md"),
+        format!("---\nname: {name}\ndescription: {name} description\n---\n\n{name} body.\n"),
+    )
+    .expect("skill file");
 }
 
 fn plan_mode_permission_policy() -> PermissionPolicy {
@@ -243,6 +362,116 @@ async fn spawn_run_with_provider(
         .expect("spawn worker");
 
     (handle, run, worker_id)
+}
+
+#[tokio::test]
+async fn foreground_task_waits_for_child_agent_turn_after_child_tool_result() {
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    write_fixture(&workspace);
+
+    let provider = Arc::new(ChildToolThenFinalProvider::new(Duration::from_millis(150)));
+    let (handle, run, worker_id) = spawn_run_with_provider(&workspace, provider.clone()).await;
+
+    let task_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "task",
+            json!({
+                "description": "Child reads first",
+                "prompt": "Read fixture.txt, then report completion.",
+                "subagent_type": "general",
+                "run_in_background": false,
+                "load_skills": []
+            }),
+        )
+        .await
+        .expect("request task tool");
+    wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
+
+    handle.stop_run().await.expect("stop run");
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &task_tool_call_id);
+
+    assert_eq!(finished.status, ToolCallStatus::Succeeded);
+    assert!(finished
+        .output_summary
+        .as_deref()
+        .expect("output summary")
+        .contains("child final after read"));
+
+    let output = finished.output_json.as_ref().expect("task output json");
+    assert_eq!(
+        output.get("result_summary"),
+        Some(&json!("child final after read"))
+    );
+    assert_eq!(
+        output.pointer("/child_tool_call_counts/requested"),
+        Some(&json!(1))
+    );
+
+    let child_request_id = output
+        .get("child_request_id")
+        .and_then(Value::as_str)
+        .expect("child request id");
+    let child_tool_finish_seq = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::TaskCompleted(data)
+                if event.correlation_id.as_deref() == Some(child_request_id)
+                    && data
+                        .metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.task_scope)
+                        == Some(TaskTerminalScope::ToolCall) =>
+            {
+                Some(event.seq)
+            }
+            _ => None,
+        })
+        .expect("child tool task completion");
+    let child_agent_finish_seq = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::TaskCompleted(data)
+                if event.correlation_id.as_deref() == Some(child_request_id)
+                    && data
+                        .metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.task_scope)
+                        == Some(TaskTerminalScope::AgentTurn) =>
+            {
+                Some(event.seq)
+            }
+            _ => None,
+        })
+        .expect("child agent task completion");
+    let parent_task_tool_finish_seq = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::ToolCallFinished(data) if data.tool_call_id == task_tool_call_id => {
+                Some(event.seq)
+            }
+            _ => None,
+        })
+        .expect("parent task tool completion");
+
+    assert!(
+        child_tool_finish_seq < child_agent_finish_seq,
+        "child tool task should finish before the child agent turn"
+    );
+    assert!(
+        child_agent_finish_seq < parent_task_tool_finish_seq,
+        "foreground task tool must wait for child agent turn completion"
+    );
+
+    let requests = provider.requests().await;
+    assert_eq!(
+        requests.len(),
+        2,
+        "child should make tool-use and final requests"
+    );
 }
 
 #[tokio::test]
@@ -909,6 +1138,53 @@ async fn task_subagent_type_wins_when_category_hint_is_also_present() {
 }
 
 #[tokio::test]
+async fn worker_without_task_tool_cannot_redelegate() {
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+
+    let (handle, run, _worker_id) = spawn_run(&workspace).await;
+    let general_id = handle
+        .spawn_agent_idle(anonymous_supervisor_actor(), "general", None)
+        .await
+        .expect("spawn general worker");
+
+    let denied = handle
+        .request_tool_call(
+            worker_actor(&general_id),
+            Some("general".to_string()),
+            "task",
+            json!({
+                "subagent_type": "general",
+                "description": "Unauthorized redelegation",
+                "prompt": "Try to spawn another child",
+                "run_in_background": true,
+                "load_skills": []
+            }),
+        )
+        .await
+        .expect_err("worker without task in its toolset must be denied");
+    match denied {
+        CoordinatorError::PolicyViolation(message) => {
+            assert!(message.contains("not in worker toolset"));
+        }
+        other => panic!("expected worker toolset policy violation, got {other:?}"),
+    }
+
+    let events = read_events(&run.events_path);
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::PolicyViolationDetected(payload)
+            if payload.policy == "tool_not_in_toolset"
+                && payload.detail.contains("task")
+    )));
+    assert!(!events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::AgentSpawned(payload)
+            if payload.parent_agent_id.as_deref() == Some(general_id.as_str())
+    )));
+}
+
+#[tokio::test]
 async fn task_category_without_matching_profile_falls_back_to_general() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
@@ -1017,6 +1293,163 @@ async fn background_output_retrieves_completed_child_result_by_request_id() {
         .expect("next actions")
         .iter()
         .any(|action| action["action"] == json!("check_status")));
+}
+
+#[tokio::test]
+async fn background_output_block_waits_for_running_child_completion() {
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+
+    let (handle, run, worker_id) = spawn_run_with_provider(
+        &workspace,
+        Arc::new(DelayedProvider {
+            delay: Duration::from_millis(80),
+        }),
+    )
+    .await;
+
+    let task_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "task",
+            json!({
+                "category": "deep",
+                "description": "Delayed background child",
+                "prompt": "Return a delayed completed result",
+                "run_in_background": true,
+                "load_skills": []
+            }),
+        )
+        .await
+        .expect("request task");
+    wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
+
+    let task_events = read_events(&run.events_path);
+    let task_finished = find_finished(&task_events, &task_tool_call_id);
+    let task_output = task_finished.output_json.expect("task structured output");
+    let request_id = task_output["child_request_id"]
+        .as_str()
+        .expect("child request id")
+        .to_string();
+
+    let output_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "background_output",
+            json!({
+                "request_id": request_id,
+                "block": true,
+                "timeout_ms": 5_000
+            }),
+        )
+        .await
+        .expect("request blocking background output");
+    wait_for_tool_call_finish(&run.events_path, &output_tool_call_id).await;
+
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &output_tool_call_id);
+    assert_eq!(finished.status, ToolCallStatus::Succeeded);
+    let output = finished
+        .output_json
+        .expect("background output structured json");
+    assert_eq!(output["request_id"], json!(request_id));
+    assert_eq!(output["status"], json!("completed"));
+    assert_eq!(output["terminal"], json!(true));
+    assert_eq!(output["timed_out"], json!(false));
+    assert_eq!(output["result_summary"], json!("delayed child result"));
+}
+
+#[tokio::test]
+async fn background_output_retrieves_child_result_after_coordinator_resume() {
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+
+    let (handle, run, worker_id) = spawn_run(&workspace).await;
+
+    let task_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "task",
+            json!({
+                "category": "deep",
+                "description": "Resumable background child",
+                "prompt": "Return a concise completed result after resume",
+                "run_in_background": true,
+                "load_skills": []
+            }),
+        )
+        .await
+        .expect("request task");
+    wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
+
+    let task_events = read_events(&run.events_path);
+    let task_finished = find_finished(&task_events, &task_tool_call_id);
+    let task_output = task_finished.output_json.expect("task structured output");
+    let request_id = task_output["child_request_id"]
+        .as_str()
+        .expect("child request id")
+        .to_string();
+    wait_for_request_terminal(&run.events_path, &request_id).await;
+    handle.stop_run().await.expect("stop original coordinator");
+
+    let session_dir = workspace.join("sessions");
+    let mut config = CoordinatorConfig::new(session_dir);
+    config.permission_policy = PermissionPolicy::new(
+        PermissionMode::Allow,
+        PermissionMode::Deny,
+        PermissionMode::Allow,
+    );
+    config.provider = Arc::new(StaticProvider);
+    config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
+    config.agent_profiles = BTreeMap::from([
+        (
+            "deep".to_string(),
+            worker_profile(&["task", "background_output", "batch", "read", "bash"]),
+        ),
+        (
+            "explore".to_string(),
+            named_worker_profile("explore", &["read", "glob", "grep", "list"]),
+        ),
+        (
+            "general".to_string(),
+            named_worker_profile("general", &["read", "bash"]),
+        ),
+    ]);
+    let resumed = spawn_coordinator(
+        config,
+        Arc::new(RealClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let resumed_run = resumed
+        .resume_run(run.run_id.clone(), run.run_name.clone())
+        .await
+        .expect("resume run");
+
+    let output_tool_call_id = resumed
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "background_output",
+            json!({ "request_id": request_id }),
+        )
+        .await
+        .expect("request background output after resume");
+    wait_for_tool_call_finish(&resumed_run.events_path, &output_tool_call_id).await;
+
+    let events = read_events(&resumed_run.events_path);
+    let finished = find_finished(&events, &output_tool_call_id);
+    assert_eq!(finished.status, ToolCallStatus::Succeeded);
+    let output = finished
+        .output_json
+        .expect("background output structured json");
+    assert_eq!(output["request_id"], json!(request_id));
+    assert_eq!(output["status"], json!("completed"));
+    assert_eq!(output["result_summary"], json!("static child result"));
+    assert_eq!(output["source"], json!("event_replay"));
+    assert_eq!(output["runtime"]["profile"], json!("deep"));
 }
 
 #[tokio::test]
@@ -1297,6 +1730,7 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     write_numbered_fixture(&workspace);
+    write_skill_fixture(&workspace, "rust-best-practices");
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
 
@@ -1597,6 +2031,7 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     write_numbered_fixture(&workspace);
+    write_skill_fixture(&workspace, "rust-best-practices");
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
 
@@ -1800,6 +2235,166 @@ async fn task_tool_rejects_unknown_child_profile_before_spawning_fallback_model(
         .as_deref()
         .expect("output summary")
         .contains("Unknown child profile `missing_profile`"));
+}
+
+#[tokio::test]
+async fn task_tool_rejects_missing_loaded_skill_before_child_spawn() {
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+
+    let (handle, run, worker_id) = spawn_run(&workspace).await;
+
+    let task_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "task",
+            json!({
+                "description": "Missing child skill",
+                "prompt": "Try to inspect the repo",
+                "subagent_type": "general",
+                "run_in_background": false,
+                "load_skills": ["definitely-missing-skill"]
+            }),
+        )
+        .await
+        .expect("request task tool");
+    wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
+
+    handle.stop_run().await.expect("stop run");
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &task_tool_call_id);
+
+    assert_eq!(finished.status, ToolCallStatus::Failed);
+    assert!(finished
+        .output_summary
+        .as_deref()
+        .expect("output summary")
+        .contains("Skill \"definitely-missing-skill\" not found"));
+    assert!(!events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::AgentSpawned(payload) if payload.profile == "general"
+    )));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn task_tool_rejects_symlinked_loaded_skill_before_child_spawn() {
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let outside_skill = temp_dir.path().join("outside-skill");
+    fs::create_dir_all(&outside_skill).expect("outside skill dir");
+    fs::write(
+        outside_skill.join("SKILL.md"),
+        "---\nname: evil\ndescription: Evil description\n---\n\nEvil body.\n",
+    )
+    .expect("write outside skill");
+    let skill_root = workspace.join(".agent-harness/skills");
+    fs::create_dir_all(&skill_root).expect("skill root");
+    std::os::unix::fs::symlink(&outside_skill, skill_root.join("evil"))
+        .expect("symlink evil skill dir");
+
+    let (handle, run, worker_id) = spawn_run(&workspace).await;
+
+    let task_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "task",
+            json!({
+                "description": "Symlink child skill",
+                "prompt": "Try to load a symlinked skill",
+                "subagent_type": "general",
+                "run_in_background": false,
+                "load_skills": ["evil"]
+            }),
+        )
+        .await
+        .expect("request task tool");
+    wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
+
+    handle.stop_run().await.expect("stop run");
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &task_tool_call_id);
+
+    assert_eq!(finished.status, ToolCallStatus::Failed);
+    assert!(finished
+        .output_summary
+        .as_deref()
+        .expect("output summary")
+        .contains("Skill \"evil\" not found"));
+    assert!(!events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::AgentSpawned(payload) if payload.profile == "general"
+    )));
+}
+
+#[tokio::test]
+async fn task_tool_injects_loaded_skill_content_into_child_prompt() {
+    let _guard = env_lock().lock().await;
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let skill_dir = workspace.join(".agent-harness/skills/task-skill");
+    fs::create_dir_all(&skill_dir).expect("skill dir");
+    fs::write(
+        skill_dir.join("SKILL.md"),
+        "---\nname: task-skill\ndescription: Task skill description\n---\n\nTask skill body marker.\n",
+    )
+    .expect("write skill");
+    let _cwd = CurrentDirGuard::set(&workspace);
+
+    let provider = Arc::new(TaskCallingProvider::default());
+    let (handle, run, worker_id) = spawn_run_with_provider(&workspace, provider.clone()).await;
+
+    let task_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "task",
+            json!({
+                "description": "Skill child",
+                "prompt": "Use the injected skill",
+                "subagent_type": "general",
+                "run_in_background": false,
+                "load_skills": ["task-skill"]
+            }),
+        )
+        .await
+        .expect("request task tool");
+    wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
+
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &task_tool_call_id);
+    assert_eq!(finished.status, ToolCallStatus::Succeeded);
+    let output = finished.output_json.expect("task structured output");
+    assert_eq!(output["loaded_skills"][0]["name"], json!("task-skill"));
+    assert_eq!(output["load_skills"], json!(["task-skill"]));
+    assert!(output["next_actions"]
+        .as_array()
+        .expect("next actions")
+        .iter()
+        .any(|action| action["action"] == json!("continue_task")
+            && action["tool"] == json!("task")
+            && action["parameters"]["run_in_background"] == json!(false)
+            && action["parameters"]["load_skills"] == json!([])));
+
+    let requests = provider.requests().await;
+    assert_eq!(
+        requests.len(),
+        1,
+        "expected only the child provider request"
+    );
+    let prompt = requests[0]
+        .messages
+        .iter()
+        .map(|message| message.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(prompt.contains("<skill_content name=\"task-skill\">"));
+    assert!(prompt.contains("Task skill description"));
+    assert!(prompt.contains("Task skill body marker."));
+    assert!(prompt.contains("Base directory for this skill: file://"));
+    assert!(prompt.contains("Use the injected skill"));
 }
 
 #[tokio::test]

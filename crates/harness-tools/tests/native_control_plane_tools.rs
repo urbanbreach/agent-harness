@@ -72,9 +72,20 @@ fn todo_state_file(run: &RunInfo) -> PathBuf {
         .join("todos.json")
 }
 
+fn write_skill_fixture(workspace: &Path, name: &str) {
+    let skill_dir = workspace.join(".agent-harness/skills").join(name);
+    fs::create_dir_all(&skill_dir).expect("skill dir");
+    fs::write(
+        skill_dir.join("SKILL.md"),
+        format!("---\nname: {name}\ndescription: {name} description\n---\n\n{name} body.\n"),
+    )
+    .expect("skill file");
+}
+
 #[tokio::test]
 async fn native_control_plane_tools_cover_invalid_todo_and_skill() {
     let workspace = setup_workspace_fixture();
+    write_skill_fixture(workspace.workspace(), "rust-best-practices");
 
     let toolset = control_plane_toolset();
     let agent_profiles = BTreeMap::from([("build".to_string(), worker_profile("build", &toolset))]);

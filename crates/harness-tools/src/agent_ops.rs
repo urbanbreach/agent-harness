@@ -1,8 +1,11 @@
-use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use harness_core::coord::{AgentRuntimeInfo, ChildTaskRequestMetadata, CoordinatorError};
-use harness_core::event::{ActorKind, EventActor, EventV1, TaskScheduleState, ToolCallStatus};
+use harness_core::event::{
+    ActorKind, EventActor, EventV1, TaskCancelledEvent, TaskCompletedEvent, TaskScheduleState,
+    TaskTerminalScope, ToolCallStatus,
+};
+use harness_core::proj::{BackgroundRequestProjection, BackgroundToolCallCounts};
 use harness_core::store::{EventStoreError, EventStream};
 use harness_core::tool::{canonical_tool_id_for, ToolContext, ToolError, ToolResult};
 use schemars::JsonSchema;
@@ -12,6 +15,9 @@ use tokio::task::JoinSet;
 use tokio::time::{sleep, Instant};
 use tokio_stream::StreamExt;
 
+use crate::control_plane::{
+    render_task_skill_context, resolve_task_skill_context, TaskSkillContext,
+};
 use crate::text_json_tool_result;
 
 const DEFAULT_TASK_WAIT_TIMEOUT_MS: u64 = 300_000;
@@ -34,6 +40,7 @@ impl AgentOpsExecutor {
         mut request: AgentSpawnRequest,
     ) -> Result<ToolResult, ToolError> {
         enforce_parent_child_profile_policy(ctx, &request)?;
+        let loaded_skills = resolve_task_skill_context(ctx, &request.load_skills).await?;
 
         let supervisor = EventActor::new(ActorKind::Supervisor, None);
         let existing_session_id = request.session_id.clone().or(request.task_id.clone());
@@ -62,7 +69,7 @@ impl AgentOpsExecutor {
             .request_child_agent_turn_with_model(
                 supervisor,
                 agent_id.clone(),
-                build_child_prompt(&request),
+                build_child_prompt(&request, &loaded_skills),
                 model_override
                     .as_ref()
                     .map(|(model_ref, _)| model_ref.clone()),
@@ -110,6 +117,7 @@ impl AgentOpsExecutor {
                 ),
                 spawn_result_json(
                     &request,
+                    &loaded_skills,
                     &agent_id,
                     &request_id,
                     lineage.clone(),
@@ -146,6 +154,7 @@ impl AgentOpsExecutor {
             ),
             spawn_result_json(
                 &request,
+                &loaded_skills,
                 &agent_id,
                 &request_id,
                 lineage,
@@ -273,30 +282,40 @@ impl AgentOpsExecutor {
                 "background_output timeout must be <= {MAX_BACKGROUND_OUTPUT_TIMEOUT_MS} ms"
             )));
         }
-        let request_ref = resolve_background_request_ref(ctx, &request).await?;
-        let mut summary = summarize_background_request(ctx, &request_ref).await?;
+        let request_id = trimmed_selector(request.request_id.as_deref()).map(str::to_string);
+        let selector_hint = trimmed_selector(request.session_id.as_deref())
+            .or_else(|| trimmed_selector(request.task_id.as_deref()))
+            .map(str::to_string);
+        let mut summary = background_summary_from_projection(
+            ctx.coordinator
+                .background_request_projection(
+                    ctx.actor.clone(),
+                    request_id.clone(),
+                    selector_hint.clone(),
+                )
+                .await
+                .map_err(map_background_request_error)?,
+        );
         let mut cancel_requested_before_terminal = false;
         if request.cancel && !summary.terminal {
-            let scheduler_task_id = summary.scheduler_task_id.clone().ok_or_else(|| {
-                ToolError::InvalidArguments(format!(
-                    "cannot cancel background request `{}` because no scheduler task id was observed yet",
-                    request_ref.request_id
-                ))
-            })?;
             let reason = request
                 .reason
                 .as_deref()
                 .and_then(|reason| trimmed_selector(Some(reason)))
                 .unwrap_or("cancelled by background_output")
                 .to_string();
-            ctx.coordinator
-                .cancel_task(scheduler_task_id, reason.clone())
-                .await
-                .map_err(|err| {
-                    ToolError::Execution(format!("failed to cancel child task: {err}"))
-                })?;
+            summary = background_summary_from_projection(
+                ctx.coordinator
+                    .cancel_background_request(
+                        ctx.actor.clone(),
+                        request_id.clone(),
+                        selector_hint.clone(),
+                        reason.clone(),
+                    )
+                    .await
+                    .map_err(map_background_request_error)?,
+            );
             cancel_requested_before_terminal = true;
-            summary = summarize_background_request(ctx, &request_ref).await?;
             if summary.status == "cancelled" {
                 summary.cancel_reason = summary.failure_summary.clone().or(Some(reason));
             }
@@ -306,13 +325,31 @@ impl AgentOpsExecutor {
             cancel_requested_before_terminal && summary.status == "cancelled";
         let mut timed_out = false;
         if request.block && !summary.terminal {
-            let observed_terminal = wait_for_background_request_terminal(
-                ctx,
-                &request_ref.request_id,
-                request.timeout_ms,
-            )
-            .await?;
-            summary = summarize_background_request(ctx, &request_ref).await?;
+            let scheduler_task_id = summary.scheduler_task_id.clone().ok_or_else(|| {
+                ToolError::InvalidArguments(format!(
+                    "cannot wait for background request `{}` because no scheduler task id was observed yet",
+                    summary.request_id
+                ))
+            })?;
+            let observed_terminal = ctx
+                .coordinator
+                .wait_background_request_terminal(
+                    summary.request_id.clone(),
+                    scheduler_task_id,
+                    request.timeout_ms,
+                )
+                .await
+                .map_err(map_background_request_error)?;
+            summary = background_summary_from_projection(
+                ctx.coordinator
+                    .background_request_projection(
+                        ctx.actor.clone(),
+                        request_id.clone(),
+                        selector_hint.clone(),
+                    )
+                    .await
+                    .map_err(map_background_request_error)?,
+            );
             timed_out = !observed_terminal && !summary.terminal;
         }
         let child_runtime = background_child_runtime_metadata(ctx, &summary).await?;
@@ -461,12 +498,6 @@ struct ChildRequestObservability {
 }
 
 #[derive(Debug, Clone)]
-struct BackgroundRequestRef {
-    request_id: String,
-    session_id_hint: Option<String>,
-}
-
-#[derive(Debug, Clone)]
 struct BackgroundRequestSummary {
     request_id: String,
     session_id: Option<String>,
@@ -483,6 +514,34 @@ struct BackgroundRequestSummary {
     cancel_reason: Option<String>,
 }
 
+fn background_summary_from_projection(
+    projection: BackgroundRequestProjection,
+) -> BackgroundRequestSummary {
+    BackgroundRequestSummary {
+        request_id: projection.request_id,
+        session_id: projection.session_id,
+        scheduler_task_id: projection.scheduler_task_id,
+        status: projection.status,
+        terminal: projection.terminal,
+        duration_ms: projection.duration_ms,
+        result_summary: projection.result_summary,
+        failure_summary: projection.failure_summary,
+        tool_calls: child_tool_call_counts_from_projection(projection.tool_calls),
+        late_result: projection.late_result,
+        cancel_requested: false,
+        cancel_performed: false,
+        cancel_reason: projection.cancel_reason,
+    }
+}
+
+fn child_tool_call_counts_from_projection(counts: BackgroundToolCallCounts) -> ChildToolCallCounts {
+    ChildToolCallCounts {
+        requested: counts.requested,
+        succeeded: counts.succeeded,
+        failed: counts.failed,
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum ChildTerminalState {
     Completed,
@@ -490,16 +549,26 @@ enum ChildTerminalState {
     TimedOut,
 }
 
-fn build_child_prompt(request: &AgentSpawnRequest) -> String {
-    if request.load_skills.is_empty() && request.command.is_none() {
+fn build_child_prompt(request: &AgentSpawnRequest, loaded_skills: &[TaskSkillContext]) -> String {
+    if loaded_skills.is_empty() && request.command.is_none() {
         return request.prompt.clone();
     }
 
     let mut prompt = String::from("Delegation context from parent:\n");
-    if !request.load_skills.is_empty() {
-        prompt.push_str("- Load and apply these skills before starting: ");
-        prompt.push_str(&request.load_skills.join(", "));
-        prompt.push('\n');
+    if !loaded_skills.is_empty() {
+        prompt.push_str("- Loaded skills: ");
+        prompt.push_str(
+            &loaded_skills
+                .iter()
+                .map(|skill| skill.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+        prompt.push_str("\n\n");
+        for skill in loaded_skills {
+            prompt.push_str(&render_task_skill_context(skill));
+            prompt.push_str("\n\n");
+        }
     }
     if let Some(command) = request.command.as_deref() {
         prompt.push_str("- Treat this command as required execution context: ");
@@ -699,6 +768,15 @@ fn map_spawn_agent_error(err: CoordinatorError, request: &AgentSpawnRequest) -> 
     }
 }
 
+fn map_background_request_error(err: CoordinatorError) -> ToolError {
+    match err {
+        CoordinatorError::UnknownTask(message)
+        | CoordinatorError::PermissionDenied(message)
+        | CoordinatorError::PolicyViolation(message) => ToolError::InvalidArguments(message),
+        other => ToolError::Execution(format!("failed to inspect background request: {other}")),
+    }
+}
+
 async fn wait_for_request_completion(
     ctx: &ToolContext,
     request_id: &str,
@@ -711,14 +789,16 @@ async fn wait_for_request_completion(
             tokio::time::timeout(remaining.min(Duration::from_millis(250)), stream.next()).await;
         match next {
             Ok(Some(Ok(event))) => match &event.payload {
-                EventV1::TaskCompleted(_)
-                    if event.correlation_id.as_deref() == Some(request_id) =>
+                EventV1::TaskCompleted(data)
+                    if event.correlation_id.as_deref() == Some(request_id)
+                        && task_completed_marks_child_agent_turn(data) =>
                 {
                     return summarize_child_request(ctx, request_id, ChildTerminalState::Completed)
                         .await;
                 }
-                EventV1::TaskCancelled(_)
-                    if event.correlation_id.as_deref() == Some(request_id) =>
+                EventV1::TaskCancelled(data)
+                    if event.correlation_id.as_deref() == Some(request_id)
+                        && task_cancelled_marks_child_agent_turn(data) =>
                 {
                     return summarize_child_request(ctx, request_id, ChildTerminalState::Failed)
                         .await;
@@ -736,154 +816,6 @@ async fn wait_for_request_completion(
     summarize_child_request(ctx, request_id, ChildTerminalState::TimedOut).await
 }
 
-async fn wait_for_background_request_terminal(
-    ctx: &ToolContext,
-    request_id: &str,
-    timeout_ms: u64,
-) -> Result<bool, ToolError> {
-    let mut stream = subscribe_events(ctx).await?;
-    let deadline = Instant::now() + Duration::from_millis(timeout_ms);
-
-    while Instant::now() < deadline {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        let next =
-            tokio::time::timeout(remaining.min(Duration::from_millis(250)), stream.next()).await;
-        match next {
-            Ok(Some(Ok(event))) => {
-                if event.correlation_id.as_deref() == Some(request_id)
-                    && matches!(
-                        event.payload,
-                        EventV1::TaskCompleted(_) | EventV1::TaskCancelled(_)
-                    )
-                {
-                    return Ok(true);
-                }
-            }
-            Ok(Some(Err(err))) => {
-                return Err(map_event_stream_error(err));
-            }
-            Ok(None) | Err(_) => sleep(Duration::from_millis(10)).await,
-        }
-    }
-
-    Ok(false)
-}
-
-async fn resolve_background_request_ref(
-    ctx: &ToolContext,
-    request: &BackgroundOutputRequest,
-) -> Result<BackgroundRequestRef, ToolError> {
-    let explicit_request_id = trimmed_selector(request.request_id.as_deref());
-    let selector_hint = trimmed_selector(request.session_id.as_deref())
-        .or_else(|| trimmed_selector(request.task_id.as_deref()));
-
-    if explicit_request_id.is_none() && selector_hint.is_none() {
-        return Err(ToolError::InvalidArguments(
-            "provide request_id, task_id, or session_id returned by a background task call"
-                .to_string(),
-        ));
-    }
-
-    let mut replay = replay_events(ctx).await?;
-    let mut latest_request_id = None;
-    let mut parent_by_agent = BTreeMap::new();
-    let mut saw_matching_unauthorized = false;
-    let mut saw_explicit_request = false;
-
-    while let Some(next) = replay.next().await {
-        let event = next.map_err(map_replay_stream_error)?;
-        match &event.payload {
-            EventV1::AgentSpawned(data) => {
-                if let Some(parent_agent_id) = data.parent_agent_id.as_deref() {
-                    parent_by_agent.insert(data.agent_id.clone(), parent_agent_id.to_string());
-                }
-            }
-            EventV1::TaskScheduled(data) => {
-                let event_request_id = event.correlation_id.as_deref();
-                let matches_explicit_request = explicit_request_id == event_request_id;
-                let matches_session = selector_hint.is_some_and(|selector| {
-                    event.actor.agent_id.as_deref() == Some(selector) || data.task_id == selector
-                });
-                if !matches_explicit_request && !matches_session {
-                    continue;
-                }
-                if matches_explicit_request {
-                    saw_explicit_request = true;
-                }
-                if background_request_authorized(
-                    ctx,
-                    &parent_by_agent,
-                    event.actor.agent_id.as_deref(),
-                ) {
-                    latest_request_id = event.correlation_id.clone();
-                } else {
-                    saw_matching_unauthorized = true;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    let request_id = match latest_request_id {
-        Some(request_id) => request_id,
-        None if saw_matching_unauthorized => {
-            return Err(ToolError::InvalidArguments(
-                "background request is not in the caller's task lineage".to_string(),
-            ));
-        }
-        None if explicit_request_id.is_some() && !saw_explicit_request => {
-            return Err(ToolError::InvalidArguments(format!(
-                "could not resolve background request `{}`",
-                explicit_request_id.expect("explicit request id checked")
-            )));
-        }
-        None => {
-            return Err(ToolError::InvalidArguments(format!(
-                "could not resolve background request for task_id/session_id `{}`; pass the request_id returned by task(run_in_background=true)",
-                selector_hint.expect("selector checked")
-            )));
-        }
-    };
-
-    Ok(BackgroundRequestRef {
-        request_id,
-        session_id_hint: selector_hint.map(str::to_string),
-    })
-}
-
-fn background_request_authorized(
-    ctx: &ToolContext,
-    parent_by_agent: &BTreeMap<String, String>,
-    request_agent_id: Option<&str>,
-) -> bool {
-    if ctx.actor.kind != ActorKind::Worker {
-        return true;
-    }
-    let Some(caller_agent_id) = ctx.actor.agent_id.as_deref() else {
-        return false;
-    };
-    let Some(mut candidate_agent_id) = request_agent_id else {
-        return false;
-    };
-
-    if candidate_agent_id == caller_agent_id {
-        return true;
-    }
-
-    let mut seen = BTreeSet::new();
-    while seen.insert(candidate_agent_id.to_string()) {
-        let Some(parent_agent_id) = parent_by_agent.get(candidate_agent_id) else {
-            return false;
-        };
-        if parent_agent_id == caller_agent_id {
-            return true;
-        }
-        candidate_agent_id = parent_agent_id;
-    }
-
-    false
-}
-
 async fn background_child_runtime_metadata(
     ctx: &ToolContext,
     summary: &BackgroundRequestSummary,
@@ -897,108 +829,6 @@ async fn background_child_runtime_metadata(
         .await
         .map_err(|err| ToolError::Execution(format!("failed to inspect child runtime: {err}")))?;
     Ok(Some(child_runtime_metadata(&runtime)))
-}
-
-async fn summarize_background_request(
-    ctx: &ToolContext,
-    request_ref: &BackgroundRequestRef,
-) -> Result<BackgroundRequestSummary, ToolError> {
-    let mut replay = replay_events(ctx).await?;
-
-    let mut tool_calls = ChildToolCallCounts::default();
-    let mut started_mono_ms = None;
-    let mut session_id = request_ref.session_id_hint.clone();
-    let mut scheduler_task_id = None;
-    let mut latest_scheduled_state = None;
-    let mut result_summary = None;
-    let mut failure_summary = None;
-    let mut duration_ms = None;
-    let mut terminal_status = None;
-    let mut late_result = false;
-    let mut saw_event = false;
-
-    while let Some(next) = replay.next().await {
-        let event = next.map_err(map_replay_stream_error)?;
-        if event.correlation_id.as_deref() != Some(request_ref.request_id.as_str()) {
-            continue;
-        }
-        saw_event = true;
-
-        match &event.payload {
-            EventV1::TaskScheduled(data) => {
-                latest_scheduled_state = Some(data.state);
-                scheduler_task_id = Some(data.task_id.clone());
-                session_id = event.actor.agent_id.clone().or(session_id);
-                if data.state == TaskScheduleState::Started {
-                    started_mono_ms.get_or_insert(event.mono_ms);
-                }
-            }
-            EventV1::ToolCallRequested(_) => {
-                tool_calls.requested = tool_calls.requested.saturating_add(1);
-            }
-            EventV1::ToolCallFinished(data) => match data.status {
-                ToolCallStatus::Succeeded => {
-                    tool_calls.succeeded = tool_calls.succeeded.saturating_add(1);
-                }
-                ToolCallStatus::Failed => {
-                    tool_calls.failed = tool_calls.failed.saturating_add(1);
-                }
-            },
-            EventV1::TaskCompleted(data) => {
-                terminal_status = Some("completed".to_string());
-                scheduler_task_id = Some(data.task_id.clone());
-                result_summary = Some(data.result_summary.clone());
-                let timing = data
-                    .metadata
-                    .as_ref()
-                    .and_then(|metadata| metadata.timing.as_ref());
-                started_mono_ms = timing
-                    .and_then(|metadata| metadata.started_mono_ms)
-                    .or(started_mono_ms);
-                duration_ms = timing
-                    .and_then(|metadata| metadata.elapsed_ms)
-                    .or_else(|| elapsed_ms_from_events(started_mono_ms, event.mono_ms));
-            }
-            EventV1::TaskCancelled(data) => {
-                terminal_status = Some("cancelled".to_string());
-                scheduler_task_id = Some(data.task_id.clone());
-                failure_summary = Some(data.reason.clone());
-                duration_ms = elapsed_ms_from_events(started_mono_ms, event.mono_ms);
-            }
-            EventV1::TaskResultLate(_) => {
-                late_result = true;
-            }
-            _ => {}
-        }
-    }
-
-    let (status, terminal) = if let Some(status) = terminal_status {
-        (status, true)
-    } else {
-        let status = match latest_scheduled_state {
-            Some(TaskScheduleState::Started) => "running",
-            Some(TaskScheduleState::Queued) => "queued",
-            None if saw_event => "observed",
-            None => "not_found",
-        };
-        (status.to_string(), false)
-    };
-
-    Ok(BackgroundRequestSummary {
-        request_id: request_ref.request_id.clone(),
-        session_id,
-        scheduler_task_id,
-        status,
-        terminal,
-        duration_ms,
-        result_summary,
-        failure_summary,
-        tool_calls,
-        late_result,
-        cancel_requested: false,
-        cancel_performed: false,
-        cancel_reason: None,
-    })
 }
 
 fn trimmed_selector(selector: Option<&str>) -> Option<&str> {
@@ -1082,7 +912,7 @@ async fn summarize_child_request(
                     tool_calls.failed = tool_calls.failed.saturating_add(1);
                 }
             },
-            EventV1::TaskCompleted(data) => {
+            EventV1::TaskCompleted(data) if task_completed_marks_child_agent_turn(data) => {
                 observed_status = Some("completed");
                 observed_result_summary = Some(data.result_summary.clone());
                 let timing = data
@@ -1096,7 +926,7 @@ async fn summarize_child_request(
                     .and_then(|metadata| metadata.elapsed_ms)
                     .or_else(|| elapsed_ms_from_events(started_mono_ms, event.mono_ms));
             }
-            EventV1::TaskCancelled(data) => {
+            EventV1::TaskCancelled(data) if task_cancelled_marks_child_agent_turn(data) => {
                 observed_status = Some("failed");
                 observed_failure_summary = Some(data.reason.clone());
                 observed_duration_ms = elapsed_ms_from_events(started_mono_ms, event.mono_ms);
@@ -1156,6 +986,18 @@ fn map_replay_stream_error(err: EventStoreError) -> ToolError {
 
 fn elapsed_ms_from_events(started_mono_ms: Option<u64>, finished_mono_ms: u64) -> Option<u64> {
     started_mono_ms.map(|started| finished_mono_ms.saturating_sub(started))
+}
+
+fn task_completed_marks_child_agent_turn(data: &TaskCompletedEvent) -> bool {
+    data.metadata
+        .as_ref()
+        .and_then(|metadata| metadata.task_scope)
+        .is_some_and(|scope| matches!(scope, TaskTerminalScope::AgentTurn))
+}
+
+fn task_cancelled_marks_child_agent_turn(data: &TaskCancelledEvent) -> bool {
+    data.task_scope
+        .is_some_and(|scope| matches!(scope, TaskTerminalScope::AgentTurn))
 }
 
 fn child_permission_metadata(
@@ -1249,6 +1091,7 @@ fn child_next_actions(request: &AgentSpawnRequest, agent_id: &str, request_id: &
             "subagent_type": request.profile_name,
             "description": format!("Continue {}", request.description),
             "prompt": "Continue this child task with additional instructions.",
+            "run_in_background": false,
             "load_skills": []
         },
     }));
@@ -1287,6 +1130,7 @@ fn child_session_observability(
 
 fn spawn_result_json(
     request: &AgentSpawnRequest,
+    loaded_skills: &[TaskSkillContext],
     agent_id: &str,
     request_id: &str,
     lineage: Value,
@@ -1303,6 +1147,7 @@ fn spawn_result_json(
         "lineage": lineage,
         "load_skills": request.load_skills,
         "skills": request.load_skills,
+        "loaded_skills": loaded_skill_metadata(loaded_skills),
         "command": request.command,
         "background": child_session.background,
         "mode": child_session.mode,
@@ -1323,6 +1168,21 @@ fn spawn_result_json(
         "next_actions": child_next_actions(request, agent_id, request_id),
         "child_session": child_session,
     })
+}
+
+fn loaded_skill_metadata(loaded_skills: &[TaskSkillContext]) -> Value {
+    Value::Array(
+        loaded_skills
+            .iter()
+            .map(|skill| {
+                json!({
+                    "name": skill.name,
+                    "description": skill.description,
+                    "location": skill.location.display().to_string(),
+                })
+            })
+            .collect(),
+    )
 }
 
 fn batch_detail_json(outcome: BatchCallOutcome) -> Value {
