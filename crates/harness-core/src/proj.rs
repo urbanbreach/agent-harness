@@ -10,11 +10,13 @@ use crate::agent::AgentModelRef;
 use crate::config::{registered_profile_model_metadata, ResolvedProfileModelMetadata};
 use crate::counter_id::parse_prefixed_counter;
 use crate::event::{
-    first_lineage_parent_session_id, EventArtifactRef, EventEnvelopeV1, EventV1,
-    ExecutionTimingMetadata, HookExecutionMetadata, ProviderAssistantMessageMetadata,
-    ProviderRequestFinishedMetadata, ProviderRequestStartedMetadata, ResolvedToolIdentity,
-    TaskCompletionMetadata, TaskLineageMetadata, TaskScheduleState, ToolCallLifecycleState,
-    ToolCallMetadata, ToolCallStatus,
+    first_lineage_parent_session_id, ActorKind, BackgroundTaskNotificationStatus, EventActor,
+    EventArtifactRef, EventEnvelopeV1, EventV1, ExecutionTimingMetadata, HookExecutionMetadata,
+    ProviderAssistantMessageMetadata, ProviderRequestFinishedMetadata,
+    ProviderRequestStartedMetadata, ResolvedToolIdentity, TaskCancelledEvent, TaskCompletedEvent,
+    TaskCompletionMetadata, TaskLineageMetadata, TaskScheduleState, TaskTerminalScope, TeamBounds,
+    TeamMemberRole, TeamMemberSelector, TeamMemberSpec, TeamMessage, TeamSpec, TeamTask,
+    ToolCallLifecycleState, ToolCallMetadata, ToolCallStatus,
 };
 use crate::perm::PermissionGrantSet;
 use crate::session_paths::{EVENTS_FILE_NAME, META_FILE_NAME};
@@ -228,6 +230,194 @@ pub struct ResumeToolCallSnapshot {
     pub metadata: Option<ToolCallMetadata>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BackgroundRequestRef {
+    pub request_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id_hint: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct BackgroundToolCallCounts {
+    pub requested: u64,
+    pub succeeded: u64,
+    pub failed: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TeamRunStatus {
+    Active,
+    ShutdownRequested,
+    Deleted,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TeamMemberStatus {
+    Pending,
+    Running,
+    ShutdownRequested,
+    ShutdownApproved,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TeamLeadProjection {
+    pub selector: TeamMemberSelector,
+    pub status: TeamMemberStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TeamMemberProjection {
+    pub name: String,
+    pub role: TeamMemberRole,
+    pub spec: TeamMemberSpec,
+    pub status: TeamMemberStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shutdown_requester: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shutdown_rejected_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TeamShutdownRequestProjection {
+    pub member_name: String,
+    pub requester: String,
+    pub status: TeamMemberStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rejected_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TeamRunProjection {
+    pub team_run_id: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub status: TeamRunStatus,
+    pub bounds: TeamBounds,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lead: Option<TeamLeadProjection>,
+    pub members: BTreeMap<String, TeamMemberProjection>,
+    pub messages: Vec<TeamMessage>,
+    pub tasks: BTreeMap<String, TeamTask>,
+    pub shutdown_requests: BTreeMap<String, TeamShutdownRequestProjection>,
+    pub bounds_consumption: TeamBoundsConsumption,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_mono_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_mono_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct TeamBoundsConsumption {
+    pub running_members: u32,
+    pub pending_members: u32,
+    pub shutdown_approved_members: u32,
+    pub messages: u32,
+    pub tasks: u32,
+    pub member_turns: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elapsed_wall_clock_minutes: Option<u32>,
+}
+
+impl TeamRunProjection {
+    fn from_spec(team_run_id: String, spec: TeamSpec, created_mono_ms: u64) -> Self {
+        let lead = spec.lead.clone().map(|selector| TeamLeadProjection {
+            selector,
+            status: TeamMemberStatus::Pending,
+            agent_id: None,
+            profile: None,
+        });
+        let members = spec
+            .members
+            .iter()
+            .cloned()
+            .map(|member| {
+                let name = member.name.clone();
+                let role = member.role;
+                (
+                    name.clone(),
+                    TeamMemberProjection {
+                        name,
+                        role,
+                        spec: member,
+                        status: TeamMemberStatus::Pending,
+                        agent_id: None,
+                        profile: None,
+                        shutdown_requester: None,
+                        shutdown_rejected_reason: None,
+                    },
+                )
+            })
+            .collect();
+
+        Self {
+            team_run_id,
+            name: spec.name,
+            description: spec.description,
+            status: TeamRunStatus::Active,
+            bounds: spec.bounds,
+            lead,
+            members,
+            messages: Vec::new(),
+            tasks: BTreeMap::new(),
+            shutdown_requests: BTreeMap::new(),
+            bounds_consumption: TeamBoundsConsumption::default(),
+            created_mono_ms: Some(created_mono_ms),
+            last_mono_ms: Some(created_mono_ms),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct TeamProjection {
+    pub teams: BTreeMap<String, TeamRunProjection>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BackgroundRequestProjection {
+    pub request_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheduler_task_id: Option<String>,
+    pub status: String,
+    pub terminal: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_summary: Option<String>,
+    pub tool_calls: BackgroundToolCallCounts,
+    pub late_result: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cancel_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum BackgroundRequestProjectionError {
+    #[error("provide request_id, task_id, or session_id returned by a background task call")]
+    MissingSelector,
+    #[error("background request is not in the caller's task lineage")]
+    Unauthorized,
+    #[error("could not resolve background request `{0}`")]
+    UnknownRequest(String),
+    #[error("could not resolve background request for task_id/session_id `{0}`; pass the request_id returned by task(run_in_background=true)")]
+    UnknownSelector(String),
+    #[error("background request `{0}` has no projected events")]
+    MissingProjection(String),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ResumeTaskSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -280,7 +470,19 @@ pub struct ResumeArtifactSnapshot {
 pub enum ChildSessionTerminalState {
     Completed,
     Cancelled,
+    Failed,
+    TimedOut,
     LateResult,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResumeBackgroundTaskNotificationSnapshot {
+    pub status: BackgroundTaskNotificationStatus,
+    pub summary: String,
+    pub terminal_event_id: String,
+    pub terminal_task_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivered_turn_request_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -309,6 +511,8 @@ pub struct ResumeChildSessionSnapshot {
     pub terminal_reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timing: Option<ExecutionTimingMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background_notification: Option<ResumeBackgroundTaskNotificationSnapshot>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hook_executions: Vec<HookExecutionMetadata>,
 }
@@ -390,6 +594,526 @@ fn resume_plan_child_session_count(plan: &ResumePlan) -> usize {
                 || child.parent_request_id.is_some()
         })
         .count()
+}
+
+pub fn resolve_background_request_ref<'a>(
+    events: impl IntoIterator<Item = &'a EventEnvelopeV1>,
+    actor: &EventActor,
+    request_id: Option<&str>,
+    selector_hint: Option<&str>,
+) -> Result<BackgroundRequestRef, BackgroundRequestProjectionError> {
+    let explicit_request_id = request_id.and_then(non_empty_trimmed);
+    let selector_hint = selector_hint.and_then(non_empty_trimmed);
+
+    if explicit_request_id.is_none() && selector_hint.is_none() {
+        return Err(BackgroundRequestProjectionError::MissingSelector);
+    }
+
+    let mut latest_request_id = None;
+    let mut parent_by_agent = BTreeMap::new();
+    let mut saw_matching_unauthorized = false;
+    let mut saw_explicit_request = false;
+
+    for event in events {
+        match &event.payload {
+            EventV1::AgentSpawned(data) => {
+                if let Some(parent_agent_id) = data.parent_agent_id.as_deref() {
+                    parent_by_agent.insert(data.agent_id.clone(), parent_agent_id.to_string());
+                }
+            }
+            EventV1::TaskScheduled(data) => {
+                let event_request_id = event.correlation_id.as_deref();
+                let matches_explicit_request = explicit_request_id == event_request_id;
+                let matches_session = explicit_request_id.is_none()
+                    && selector_hint.is_some_and(|selector| {
+                        event.actor.agent_id.as_deref() == Some(selector)
+                            || data.task_id == selector
+                    });
+                if !matches_explicit_request && !matches_session {
+                    continue;
+                }
+                if matches_explicit_request {
+                    saw_explicit_request = true;
+                }
+                if background_request_authorized(
+                    actor,
+                    &parent_by_agent,
+                    event.actor.agent_id.as_deref(),
+                ) {
+                    latest_request_id = event.correlation_id.clone();
+                } else {
+                    saw_matching_unauthorized = true;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let request_id = match latest_request_id {
+        Some(request_id) => request_id,
+        None if saw_matching_unauthorized => {
+            return Err(BackgroundRequestProjectionError::Unauthorized);
+        }
+        None if explicit_request_id.is_some() && !saw_explicit_request => {
+            return Err(BackgroundRequestProjectionError::UnknownRequest(
+                explicit_request_id
+                    .expect("explicit request id checked")
+                    .to_string(),
+            ));
+        }
+        None => {
+            return Err(BackgroundRequestProjectionError::UnknownSelector(
+                selector_hint.expect("selector checked").to_string(),
+            ));
+        }
+    };
+
+    Ok(BackgroundRequestRef {
+        request_id,
+        session_id_hint: selector_hint.map(str::to_string),
+    })
+}
+
+pub fn project_background_request<'a>(
+    events: impl IntoIterator<Item = &'a EventEnvelopeV1>,
+    request_ref: &BackgroundRequestRef,
+) -> Result<BackgroundRequestProjection, BackgroundRequestProjectionError> {
+    let mut tool_calls = BackgroundToolCallCounts::default();
+    let mut started_mono_ms = None;
+    let mut session_id = request_ref.session_id_hint.clone();
+    let mut scheduler_task_id = None;
+    let mut latest_scheduled_state = None;
+    let mut result_summary = None;
+    let mut failure_summary = None;
+    let mut duration_ms = None;
+    let mut terminal_status = None;
+    let mut late_result = false;
+    let mut saw_event = false;
+
+    for event in events {
+        let matches_notification = matches!(
+            &event.payload,
+            EventV1::BackgroundTaskNotification(data)
+                if data.child_request_id == request_ref.request_id
+        );
+        if event.correlation_id.as_deref() != Some(request_ref.request_id.as_str())
+            && !matches_notification
+        {
+            continue;
+        }
+        saw_event = true;
+
+        match &event.payload {
+            EventV1::TaskScheduled(data) => {
+                if data
+                    .queue_key
+                    .as_deref()
+                    .is_some_and(|queue_key| queue_key.starts_with("provider_model:"))
+                {
+                    latest_scheduled_state = Some(data.state);
+                    scheduler_task_id = Some(data.task_id.clone());
+                    if let Some(agent_id) = event.actor.agent_id.as_ref() {
+                        session_id = Some(agent_id.clone());
+                    }
+                    if data.state == TaskScheduleState::Started {
+                        started_mono_ms = Some(event.mono_ms);
+                    }
+                }
+            }
+            EventV1::ToolCallRequested(_) => {
+                tool_calls.requested += 1;
+            }
+            EventV1::ToolCallFinished(data) => match data.status {
+                ToolCallStatus::Succeeded => {
+                    tool_calls.succeeded += 1;
+                }
+                ToolCallStatus::Failed => {
+                    tool_calls.failed += 1;
+                }
+            },
+            EventV1::TaskCompleted(data) => {
+                if is_background_agent_turn_completion(data, scheduler_task_id.as_deref()) {
+                    terminal_status = Some("completed".to_string());
+                    result_summary = Some(data.result_summary.clone());
+                    duration_ms = data
+                        .metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.timing.as_ref())
+                        .and_then(|timing| timing.elapsed_ms)
+                        .or_else(|| elapsed_ms_from_events(started_mono_ms, event.mono_ms));
+                }
+            }
+            EventV1::TaskCancelled(data) => {
+                if is_background_agent_turn_cancellation(data, scheduler_task_id.as_deref()) {
+                    terminal_status = Some("cancelled".to_string());
+                    failure_summary = Some(data.reason.clone());
+                }
+            }
+            EventV1::TaskResultLate(_) => {
+                late_result = true;
+            }
+            EventV1::BackgroundTaskNotification(data) => {
+                terminal_status = Some(data.status.as_str().to_string());
+                session_id = Some(data.child_session_id.clone());
+                scheduler_task_id = Some(data.task_id.clone());
+                match data.status {
+                    BackgroundTaskNotificationStatus::Completed => {
+                        result_summary = Some(data.summary.clone());
+                    }
+                    BackgroundTaskNotificationStatus::Cancelled
+                    | BackgroundTaskNotificationStatus::Failed
+                    | BackgroundTaskNotificationStatus::TimedOut => {
+                        failure_summary = Some(data.summary.clone());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if !saw_event {
+        return Err(BackgroundRequestProjectionError::MissingProjection(
+            request_ref.request_id.clone(),
+        ));
+    }
+
+    let status = terminal_status.unwrap_or_else(|| match latest_scheduled_state {
+        Some(TaskScheduleState::Started) => "running".to_string(),
+        Some(TaskScheduleState::Queued) => "queued".to_string(),
+        None => "scheduled".to_string(),
+    });
+    let cancel_reason = (status == "cancelled")
+        .then(|| failure_summary.clone())
+        .flatten();
+
+    Ok(BackgroundRequestProjection {
+        request_id: request_ref.request_id.clone(),
+        session_id,
+        scheduler_task_id,
+        terminal: matches!(
+            status.as_str(),
+            "completed" | "cancelled" | "failed" | "timed_out"
+        ),
+        duration_ms,
+        result_summary,
+        failure_summary,
+        tool_calls,
+        late_result,
+        cancel_reason,
+        status,
+    })
+}
+
+pub fn project_team_state<'a>(
+    events: impl IntoIterator<Item = &'a EventEnvelopeV1>,
+) -> Result<TeamProjection, ProjectionError> {
+    let mut projection = TeamProjection::default();
+    let mut last_seq = None;
+
+    for event in events {
+        enforce_seq(last_seq, event.seq)?;
+        last_seq = Some(event.seq);
+        apply_team_event(&mut projection, event);
+    }
+
+    Ok(projection)
+}
+
+fn apply_team_event(projection: &mut TeamProjection, event: &EventEnvelopeV1) {
+    match &event.payload {
+        EventV1::TeamCreated(payload) => {
+            let mut team = TeamRunProjection::from_spec(
+                payload.team_run_id.clone(),
+                payload.spec.clone(),
+                event.mono_ms,
+            );
+            refresh_team_derived_state(&mut team, event.mono_ms);
+            projection.teams.insert(payload.team_run_id.clone(), team);
+        }
+        EventV1::TeamMemberSpawned(payload) => {
+            if let Some(team) = projection.teams.get_mut(&payload.team_run_id) {
+                if payload.member_name == "lead" {
+                    if let Some(lead) = team.lead.as_mut() {
+                        if lead.agent_id.is_none() {
+                            lead.status = TeamMemberStatus::Running;
+                            lead.agent_id = Some(payload.agent_id.clone());
+                            lead.profile = Some(payload.profile.clone());
+                        }
+                    }
+                } else if let Some(member) = team.members.get_mut(&payload.member_name) {
+                    if member.agent_id.is_none() {
+                        member.status = TeamMemberStatus::Running;
+                        member.agent_id = Some(payload.agent_id.clone());
+                        member.profile = Some(payload.profile.clone());
+                    }
+                }
+                refresh_team_derived_state(team, event.mono_ms);
+            }
+        }
+        EventV1::TeamMessageSent(payload) => {
+            if let Some(team) = projection.teams.get_mut(&payload.team_run_id) {
+                if team
+                    .messages
+                    .iter()
+                    .all(|message| message.message_id != payload.message.message_id)
+                {
+                    if member_write_participant_for_event(team, event, Some(&payload.message.from))
+                        .is_some()
+                    {
+                        team.bounds_consumption.member_turns =
+                            team.bounds_consumption.member_turns.saturating_add(1);
+                    }
+                    team.messages.push(payload.message.clone());
+                }
+                refresh_team_derived_state(team, event.mono_ms);
+            }
+        }
+        EventV1::TeamTaskCreated(payload) => {
+            if let Some(team) = projection.teams.get_mut(&payload.team_run_id) {
+                if !team.tasks.contains_key(&payload.task.task_id) {
+                    let mut task = payload.task.clone();
+                    task.blocks.clear();
+                    if member_write_participant_for_event(team, event, task.owner.as_deref())
+                        .is_some()
+                    {
+                        team.bounds_consumption.member_turns =
+                            team.bounds_consumption.member_turns.saturating_add(1);
+                    }
+                    team.tasks.insert(task.task_id.clone(), task);
+                }
+                refresh_team_derived_state(team, event.mono_ms);
+            }
+        }
+        EventV1::TeamTaskUpdated(payload) => {
+            if let Some(team) = projection.teams.get_mut(&payload.team_run_id) {
+                if member_write_participant_for_event(team, event, payload.owner.as_deref())
+                    .is_some()
+                {
+                    team.bounds_consumption.member_turns =
+                        team.bounds_consumption.member_turns.saturating_add(1);
+                }
+                if let Some(task) = team.tasks.get_mut(&payload.task_id) {
+                    task.status = payload.status;
+                    if payload.owner.is_some() {
+                        task.owner = payload.owner.clone();
+                    }
+                    if !payload.metadata.is_empty() {
+                        task.metadata.extend(payload.metadata.clone());
+                    }
+                }
+                refresh_team_derived_state(team, event.mono_ms);
+            }
+        }
+        EventV1::TeamShutdownRequested(payload) => {
+            if let Some(team) = projection.teams.get_mut(&payload.team_run_id) {
+                team.status = TeamRunStatus::ShutdownRequested;
+                if let Some(member) = team.members.get_mut(&payload.member_name) {
+                    member.status = TeamMemberStatus::ShutdownRequested;
+                    member.shutdown_requester = Some(payload.requester.clone());
+                    member.shutdown_rejected_reason = None;
+                }
+                team.shutdown_requests.insert(
+                    payload.member_name.clone(),
+                    TeamShutdownRequestProjection {
+                        member_name: payload.member_name.clone(),
+                        requester: payload.requester.clone(),
+                        status: TeamMemberStatus::ShutdownRequested,
+                        rejected_reason: None,
+                    },
+                );
+                refresh_team_derived_state(team, event.mono_ms);
+            }
+        }
+        EventV1::TeamShutdownApproved(payload) => {
+            if let Some(team) = projection.teams.get_mut(&payload.team_run_id) {
+                team.status = TeamRunStatus::ShutdownRequested;
+                if let Some(member) = team.members.get_mut(&payload.member_name) {
+                    member.status = TeamMemberStatus::ShutdownApproved;
+                    member.shutdown_rejected_reason = None;
+                }
+                if let Some(request) = team.shutdown_requests.get_mut(&payload.member_name) {
+                    request.status = TeamMemberStatus::ShutdownApproved;
+                    request.rejected_reason = None;
+                }
+                refresh_team_derived_state(team, event.mono_ms);
+            }
+        }
+        EventV1::TeamShutdownRejected(payload) => {
+            if let Some(team) = projection.teams.get_mut(&payload.team_run_id) {
+                if let Some(member) = team.members.get_mut(&payload.member_name) {
+                    member.status = TeamMemberStatus::Running;
+                    member.shutdown_rejected_reason = Some(payload.reason.clone());
+                }
+                if let Some(request) = team.shutdown_requests.get_mut(&payload.member_name) {
+                    request.status = TeamMemberStatus::Running;
+                    request.rejected_reason = Some(payload.reason.clone());
+                }
+                refresh_team_derived_state(team, event.mono_ms);
+            }
+        }
+        EventV1::TeamDeleted(payload) => {
+            if let Some(team) = projection.teams.get_mut(&payload.team_run_id) {
+                team.status = TeamRunStatus::Deleted;
+                refresh_team_derived_state(team, event.mono_ms);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn refresh_team_derived_state(team: &mut TeamRunProjection, mono_ms: u64) {
+    team.last_mono_ms = Some(mono_ms);
+    refresh_team_shutdown_status(team);
+    refresh_team_task_blocks(team);
+    team.bounds_consumption.running_members = team
+        .members
+        .values()
+        .filter(|member| {
+            matches!(
+                member.status,
+                TeamMemberStatus::Running | TeamMemberStatus::ShutdownRequested
+            )
+        })
+        .count() as u32;
+    team.bounds_consumption.pending_members = team
+        .members
+        .values()
+        .filter(|member| member.status == TeamMemberStatus::Pending)
+        .count() as u32;
+    team.bounds_consumption.shutdown_approved_members = team
+        .members
+        .values()
+        .filter(|member| member.status == TeamMemberStatus::ShutdownApproved)
+        .count() as u32;
+    team.bounds_consumption.messages = team.messages.len() as u32;
+    team.bounds_consumption.tasks = team.tasks.len() as u32;
+    team.bounds_consumption.elapsed_wall_clock_minutes = team
+        .created_mono_ms
+        .map(|created| mono_ms.saturating_sub(created) / 60_000)
+        .map(|minutes| minutes.min(u64::from(u32::MAX)) as u32);
+}
+
+fn refresh_team_task_blocks(team: &mut TeamRunProjection) {
+    for task in team.tasks.values_mut() {
+        task.blocks.clear();
+    }
+    let edges = team
+        .tasks
+        .iter()
+        .flat_map(|(task_id, task)| {
+            task.blocked_by
+                .iter()
+                .cloned()
+                .map(|blocked_by| (blocked_by, task_id.clone()))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    for (blocked_by, task_id) in edges {
+        if let Some(blocker) = team.tasks.get_mut(&blocked_by) {
+            if !blocker.blocks.contains(&task_id) {
+                blocker.blocks.push(task_id);
+            }
+        }
+    }
+}
+
+fn member_write_participant<'a>(
+    team: &'a TeamRunProjection,
+    participant: &str,
+) -> Option<&'a TeamMemberProjection> {
+    team.members
+        .get(participant)
+        .filter(|member| member.role == TeamMemberRole::Member)
+}
+
+fn member_write_participant_for_event<'a>(
+    team: &'a TeamRunProjection,
+    event: &EventEnvelopeV1,
+    explicit_participant: Option<&str>,
+) -> Option<&'a TeamMemberProjection> {
+    if event.actor.kind == ActorKind::Worker {
+        if let Some(agent_id) = event.actor.agent_id.as_deref() {
+            return team
+                .members
+                .values()
+                .find(|member| member.agent_id.as_deref() == Some(agent_id))
+                .filter(|member| member.role == TeamMemberRole::Member);
+        }
+    }
+    explicit_participant.and_then(|participant| member_write_participant(team, participant))
+}
+
+fn refresh_team_shutdown_status(team: &mut TeamRunProjection) {
+    if team.status == TeamRunStatus::Deleted {
+        return;
+    }
+    team.status = if team.members.values().any(|member| {
+        matches!(
+            member.status,
+            TeamMemberStatus::ShutdownRequested | TeamMemberStatus::ShutdownApproved
+        )
+    }) {
+        TeamRunStatus::ShutdownRequested
+    } else {
+        TeamRunStatus::Active
+    };
+}
+
+fn background_request_authorized(
+    actor: &EventActor,
+    parent_by_agent: &BTreeMap<String, String>,
+    request_agent_id: Option<&str>,
+) -> bool {
+    if actor.kind != ActorKind::Worker {
+        return true;
+    }
+    let Some(caller_agent_id) = actor.agent_id.as_deref() else {
+        return false;
+    };
+    let Some(mut candidate_agent_id) = request_agent_id else {
+        return false;
+    };
+
+    if candidate_agent_id == caller_agent_id {
+        return true;
+    }
+
+    let mut seen = BTreeSet::new();
+    while seen.insert(candidate_agent_id.to_string()) {
+        let Some(parent_agent_id) = parent_by_agent.get(candidate_agent_id) else {
+            return false;
+        };
+        if parent_agent_id == caller_agent_id {
+            return true;
+        }
+        candidate_agent_id = parent_agent_id;
+    }
+
+    false
+}
+
+fn is_background_agent_turn_completion(
+    event: &TaskCompletedEvent,
+    scheduler_task_id: Option<&str>,
+) -> bool {
+    event
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.task_scope)
+        == Some(TaskTerminalScope::AgentTurn)
+        || scheduler_task_id == Some(event.task_id.as_str())
+}
+
+fn is_background_agent_turn_cancellation(
+    event: &TaskCancelledEvent,
+    scheduler_task_id: Option<&str>,
+) -> bool {
+    event.task_scope == Some(TaskTerminalScope::AgentTurn)
+        || scheduler_task_id == Some(event.task_id.as_str())
+}
+
+fn elapsed_ms_from_events(started_mono_ms: Option<u64>, finished_mono_ms: u64) -> Option<u64> {
+    started_mono_ms.map(|started| finished_mono_ms.saturating_sub(started))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -771,6 +1495,37 @@ pub fn project_resume_plan<'a>(
                     child.terminal_state = Some(ChildSessionTerminalState::LateResult);
                     child.terminal_reason = None;
                 }
+            }
+            EventV1::BackgroundTaskNotification(payload) => {
+                tasks_in_flight.remove(&payload.task_id);
+                tasks_in_flight.remove(&payload.terminal_task_id);
+                agent_turns_in_flight.remove(&payload.task_id);
+                agent_turns_in_flight.remove(&payload.terminal_task_id);
+                agent_turns_terminal_pending_late.remove(&payload.task_id);
+                agent_turns_terminal_pending_late.remove(&payload.terminal_task_id);
+
+                let child = child_sessions
+                    .entry(payload.child_session_id.clone())
+                    .or_insert_with(ResumeChildSessionSnapshot::default);
+                if child.parent_session_id.is_none() {
+                    child.parent_session_id = Some(payload.parent_session_id.clone());
+                }
+                child.latest_child_request_id = Some(payload.child_request_id.clone());
+                child.terminal_state =
+                    Some(child_terminal_state_from_background_status(payload.status));
+                child.terminal_reason = match payload.status {
+                    BackgroundTaskNotificationStatus::Completed => None,
+                    BackgroundTaskNotificationStatus::Cancelled
+                    | BackgroundTaskNotificationStatus::Failed
+                    | BackgroundTaskNotificationStatus::TimedOut => Some(payload.summary.clone()),
+                };
+                child.background_notification = Some(ResumeBackgroundTaskNotificationSnapshot {
+                    status: payload.status,
+                    summary: payload.summary.clone(),
+                    terminal_event_id: payload.terminal_event_id.clone(),
+                    terminal_task_id: payload.terminal_task_id.clone(),
+                    delivered_turn_request_id: payload.delivered_turn_request_id.clone(),
+                });
             }
             EventV1::ProviderRequestStarted(payload) => {
                 update_id_watermark(
@@ -1417,6 +2172,17 @@ fn apply_agent_turn_terminal_state(
     }
 }
 
+fn child_terminal_state_from_background_status(
+    status: BackgroundTaskNotificationStatus,
+) -> ChildSessionTerminalState {
+    match status {
+        BackgroundTaskNotificationStatus::Completed => ChildSessionTerminalState::Completed,
+        BackgroundTaskNotificationStatus::Cancelled => ChildSessionTerminalState::Cancelled,
+        BackgroundTaskNotificationStatus::Failed => ChildSessionTerminalState::Failed,
+        BackgroundTaskNotificationStatus::TimedOut => ChildSessionTerminalState::TimedOut,
+    }
+}
+
 fn derive_timing_from_start(
     started_mono_ms: u64,
     finished_mono_ms: u64,
@@ -1593,7 +2359,10 @@ fn apply_run_summary_event(summary: &mut RunSummary, event: &EventEnvelopeV1) {
         EventV1::TaskCompleted(payload) => {
             summary.tasks_in_flight.remove(&payload.task_id);
         }
-        EventV1::BackgroundTaskNotification(_) => {}
+        EventV1::BackgroundTaskNotification(payload) => {
+            summary.tasks_in_flight.remove(&payload.task_id);
+            summary.tasks_in_flight.remove(&payload.terminal_task_id);
+        }
         EventV1::PermissionRequested(payload) => {
             summary
                 .pending_permissions
@@ -1660,6 +2429,15 @@ fn event_type_name(event: &EventV1) -> String {
         EventV1::EditRejected(_) => "edit_rejected",
         EventV1::ArtifactWritten(_) => "artifact_written",
         EventV1::PolicyViolationDetected(_) => "policy_violation_detected",
+        EventV1::TeamCreated(_) => "team_created",
+        EventV1::TeamMemberSpawned(_) => "team_member_spawned",
+        EventV1::TeamMessageSent(_) => "team_message_sent",
+        EventV1::TeamTaskCreated(_) => "team_task_created",
+        EventV1::TeamTaskUpdated(_) => "team_task_updated",
+        EventV1::TeamShutdownRequested(_) => "team_shutdown_requested",
+        EventV1::TeamShutdownApproved(_) => "team_shutdown_approved",
+        EventV1::TeamShutdownRejected(_) => "team_shutdown_rejected",
+        EventV1::TeamDeleted(_) => "team_deleted",
         EventV1::UiIntentReceived(_) => "ui_intent_received",
         EventV1::UserMessageSubmitted(_) => "user_message_submitted",
     }
@@ -1737,12 +2515,18 @@ fn enforce_seq(last_seq: Option<u64>, current_seq: u64) -> Result<(), Projection
 
 #[cfg(test)]
 mod tests {
-    use super::{project_run_summary, project_timeline_index, ProjectionError, RunStatus};
+    use super::{
+        project_background_request, project_resume_plan, project_run_summary,
+        project_timeline_index, resolve_background_request_ref, BackgroundRequestProjectionError,
+        ChildSessionTerminalState, ProjectionError, RunStatus,
+    };
     use crate::event::{
-        ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionDecision,
+        ActorKind, AgentSpawnedEvent, BackgroundTaskNotificationEvent,
+        BackgroundTaskNotificationStatus, EventActor, EventEnvelopeV1, EventV1, PermissionDecision,
         PermissionRequestedEvent, PermissionResolvedEvent, RunFailedEvent, RunFinishedEvent,
-        RunStartedEvent, TaskCompletedEvent, TaskScheduleState, TaskScheduledEvent,
-        ToolCallRequestedEvent, SCHEMA_VERSION,
+        RunStartedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskResultLateEvent,
+        TaskScheduleState, TaskScheduledEvent, TaskTerminalScope, ToolCallFinishedEvent,
+        ToolCallRequestedEvent, ToolCallStatus, SCHEMA_VERSION,
     };
 
     #[test]
@@ -1881,6 +2665,389 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn background_projection_resolves_lineage_and_terminal_result_from_events() {
+        let parent_actor = EventActor::new(ActorKind::Worker, Some("agent_parent".to_string()));
+        let child_actor = EventActor::new(ActorKind::Worker, Some("agent_child".to_string()));
+        let events = [
+            envelope(
+                1,
+                None,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_parent".to_string(),
+                    profile: "deep".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            envelope(
+                2,
+                None,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_child".to_string(),
+                    profile: "general".to_string(),
+                    parent_agent_id: Some("agent_parent".to_string()),
+                }),
+            ),
+            envelope_with_actor(
+                3,
+                Some("req_child"),
+                child_actor.clone(),
+                EventV1::TaskScheduled(TaskScheduledEvent {
+                    task_id: "task_000001".to_string(),
+                    state: TaskScheduleState::Started,
+                    queue_key: Some("provider_model:mock:model-1".to_string()),
+                }),
+            ),
+            envelope_with_actor(
+                4,
+                Some("req_child"),
+                child_actor.clone(),
+                EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                    tool_call_id: "toolcall_000001".to_string(),
+                    tool_id: "read".to_string(),
+                    args_summary: "{}".to_string(),
+                    args_digest: "argsdigest".to_string(),
+                    metadata: None,
+                }),
+            ),
+            envelope_with_actor(
+                5,
+                Some("req_child"),
+                child_actor.clone(),
+                EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                    tool_call_id: "toolcall_000001".to_string(),
+                    status: ToolCallStatus::Succeeded,
+                    output_summary: Some("read ok".to_string()),
+                    output_digest: Some("outdigest".to_string()),
+                    output_json: None,
+                    metadata: None,
+                }),
+            ),
+            envelope_with_actor(
+                6,
+                Some("req_child"),
+                child_actor,
+                EventV1::TaskCompleted(TaskCompletedEvent {
+                    task_id: "task_000001".to_string(),
+                    result_summary: "child done".to_string(),
+                    result_digest: "resultdigest".to_string(),
+                    metadata: None,
+                }),
+            ),
+        ];
+
+        let request_ref =
+            resolve_background_request_ref(events.iter(), &parent_actor, Some("req_child"), None)
+                .expect("authorized child request");
+        let projection =
+            project_background_request(events.iter(), &request_ref).expect("project background");
+
+        assert_eq!(projection.request_id, "req_child");
+        assert_eq!(projection.session_id.as_deref(), Some("agent_child"));
+        assert_eq!(projection.scheduler_task_id.as_deref(), Some("task_000001"));
+        assert_eq!(projection.status, "completed");
+        assert!(projection.terminal);
+        assert_eq!(projection.result_summary.as_deref(), Some("child done"));
+        assert_eq!(projection.tool_calls.requested, 1);
+        assert_eq!(projection.tool_calls.succeeded, 1);
+        assert_eq!(projection.tool_calls.failed, 0);
+    }
+
+    #[test]
+    fn background_notification_projects_failed_resume_and_request_state() {
+        let parent_actor = EventActor::new(ActorKind::Worker, Some("agent_parent".to_string()));
+        let child_actor = EventActor::new(ActorKind::Worker, Some("agent_child".to_string()));
+        let events = [
+            envelope(
+                1,
+                None,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_parent".to_string(),
+                    profile: "deep".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            envelope(
+                2,
+                None,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_child".to_string(),
+                    profile: "general".to_string(),
+                    parent_agent_id: Some("agent_parent".to_string()),
+                }),
+            ),
+            envelope_with_actor(
+                3,
+                Some("req_child"),
+                child_actor,
+                EventV1::TaskScheduled(TaskScheduledEvent {
+                    task_id: "task_000001".to_string(),
+                    state: TaskScheduleState::Started,
+                    queue_key: Some("provider_model:mock:model-1".to_string()),
+                }),
+            ),
+            envelope(
+                4,
+                Some("background_task_notification:req_child"),
+                EventV1::BackgroundTaskNotification(BackgroundTaskNotificationEvent {
+                    parent_session_id: "agent_parent".to_string(),
+                    parent_agent_id: Some("agent_parent".to_string()),
+                    child_session_id: "agent_child".to_string(),
+                    child_request_id: "req_child".to_string(),
+                    task_id: "task_000001".to_string(),
+                    description: "investigate".to_string(),
+                    status: BackgroundTaskNotificationStatus::Failed,
+                    summary: "provider failed closed".to_string(),
+                    terminal_event_id: "evt-terminal".to_string(),
+                    terminal_task_id: "task_000001".to_string(),
+                    delivered_turn_request_id: Some("req_parent_notice".to_string()),
+                }),
+            ),
+        ];
+
+        let request_ref =
+            resolve_background_request_ref(events.iter(), &parent_actor, Some("req_child"), None)
+                .expect("authorized child request");
+        let projection =
+            project_background_request(events.iter(), &request_ref).expect("project background");
+        assert_eq!(projection.status, "failed");
+        assert!(projection.terminal);
+        assert_eq!(projection.session_id.as_deref(), Some("agent_child"));
+        assert_eq!(
+            projection.failure_summary.as_deref(),
+            Some("provider failed closed")
+        );
+
+        let plan = project_resume_plan(events.iter(), "run_projection").expect("resume plan");
+        assert!(plan.tasks_in_flight.is_empty());
+        let child = plan
+            .child_sessions
+            .get("agent_child")
+            .expect("child session snapshot");
+        assert_eq!(
+            child.terminal_state,
+            Some(ChildSessionTerminalState::Failed)
+        );
+        assert_eq!(
+            child.terminal_reason.as_deref(),
+            Some("provider failed closed")
+        );
+        let notification = child
+            .background_notification
+            .as_ref()
+            .expect("notification snapshot");
+        assert_eq!(
+            notification.status,
+            BackgroundTaskNotificationStatus::Failed
+        );
+        assert_eq!(notification.terminal_event_id, "evt-terminal");
+        assert_eq!(
+            notification.delivered_turn_request_id.as_deref(),
+            Some("req_parent_notice")
+        );
+    }
+
+    #[test]
+    fn background_projection_denies_requests_outside_worker_lineage() {
+        let other_actor = EventActor::new(ActorKind::Worker, Some("agent_other".to_string()));
+        let events = [
+            envelope(
+                1,
+                None,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_child".to_string(),
+                    profile: "general".to_string(),
+                    parent_agent_id: Some("agent_parent".to_string()),
+                }),
+            ),
+            envelope_with_actor(
+                2,
+                Some("req_child"),
+                EventActor::new(ActorKind::Worker, Some("agent_child".to_string())),
+                EventV1::TaskScheduled(TaskScheduledEvent {
+                    task_id: "task_000001".to_string(),
+                    state: TaskScheduleState::Queued,
+                    queue_key: Some("provider_model:mock:model-1".to_string()),
+                }),
+            ),
+        ];
+
+        let err =
+            resolve_background_request_ref(events.iter(), &other_actor, Some("req_child"), None)
+                .expect_err("unrelated worker cannot read child request");
+        assert_eq!(err, BackgroundRequestProjectionError::Unauthorized);
+    }
+
+    #[test]
+    fn background_request_resolution_prefers_explicit_request_id_over_session_hint() {
+        let actor = EventActor::new(ActorKind::Worker, Some("agent_parent".to_string()));
+        let child_actor = EventActor::new(ActorKind::Worker, Some("agent_child".to_string()));
+        let events = [
+            envelope(
+                1,
+                None,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_child".to_string(),
+                    profile: "general".to_string(),
+                    parent_agent_id: Some("agent_parent".to_string()),
+                }),
+            ),
+            envelope_with_actor(
+                2,
+                Some("req_first"),
+                child_actor.clone(),
+                EventV1::TaskScheduled(TaskScheduledEvent {
+                    task_id: "task_000001".to_string(),
+                    state: TaskScheduleState::Started,
+                    queue_key: Some("provider_model:mock:model-1".to_string()),
+                }),
+            ),
+            envelope_with_actor(
+                3,
+                Some("req_second"),
+                child_actor,
+                EventV1::TaskScheduled(TaskScheduledEvent {
+                    task_id: "task_000002".to_string(),
+                    state: TaskScheduleState::Started,
+                    queue_key: Some("provider_model:mock:model-1".to_string()),
+                }),
+            ),
+        ];
+
+        let request_ref = resolve_background_request_ref(
+            events.iter(),
+            &actor,
+            Some("req_first"),
+            Some("agent_child"),
+        )
+        .expect("explicit request id should resolve");
+
+        assert_eq!(request_ref.request_id, "req_first");
+    }
+
+    #[test]
+    fn background_projection_preserves_cancelled_late_result_state() {
+        let parent_actor = EventActor::new(ActorKind::Worker, Some("agent_parent".to_string()));
+        let child_actor = EventActor::new(ActorKind::Worker, Some("agent_child".to_string()));
+        let events = [
+            envelope(
+                1,
+                None,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_child".to_string(),
+                    profile: "general".to_string(),
+                    parent_agent_id: Some("agent_parent".to_string()),
+                }),
+            ),
+            envelope_with_actor(
+                2,
+                Some("req_child"),
+                child_actor.clone(),
+                EventV1::TaskScheduled(TaskScheduledEvent {
+                    task_id: "task_000001".to_string(),
+                    state: TaskScheduleState::Started,
+                    queue_key: Some("provider_model:mock:model-1".to_string()),
+                }),
+            ),
+            envelope_with_actor(
+                3,
+                Some("req_child"),
+                child_actor.clone(),
+                EventV1::TaskCancelled(TaskCancelledEvent {
+                    task_id: "task_000001".to_string(),
+                    reason: "cancelled by test".to_string(),
+                    task_scope: Some(TaskTerminalScope::AgentTurn),
+                }),
+            ),
+            envelope_with_actor(
+                4,
+                Some("req_child"),
+                child_actor,
+                EventV1::TaskResultLate(TaskResultLateEvent {
+                    task_id: "task_000001".to_string(),
+                    result_digest: "latedigest".to_string(),
+                }),
+            ),
+        ];
+
+        let request_ref =
+            resolve_background_request_ref(events.iter(), &parent_actor, Some("req_child"), None)
+                .expect("authorized child request");
+        let projection =
+            project_background_request(events.iter(), &request_ref).expect("project background");
+
+        assert_eq!(projection.status, "cancelled");
+        assert!(projection.terminal);
+        assert!(projection.late_result);
+        assert_eq!(
+            projection.cancel_reason.as_deref(),
+            Some("cancelled by test")
+        );
+        assert_eq!(
+            projection.failure_summary.as_deref(),
+            Some("cancelled by test")
+        );
+    }
+
+    #[test]
+    fn background_projection_ignores_correlated_tool_task_terminal_events() {
+        let parent_actor = EventActor::new(ActorKind::Worker, Some("agent_parent".to_string()));
+        let child_actor = EventActor::new(ActorKind::Worker, Some("agent_child".to_string()));
+        let events = [
+            envelope(
+                1,
+                None,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_child".to_string(),
+                    profile: "general".to_string(),
+                    parent_agent_id: Some("agent_parent".to_string()),
+                }),
+            ),
+            envelope_with_actor(
+                2,
+                Some("req_child"),
+                child_actor.clone(),
+                EventV1::TaskScheduled(TaskScheduledEvent {
+                    task_id: "task_000001".to_string(),
+                    state: TaskScheduleState::Started,
+                    queue_key: Some("provider_model:mock:model-1".to_string()),
+                }),
+            ),
+            envelope_with_actor(
+                3,
+                Some("req_child"),
+                child_actor.clone(),
+                EventV1::TaskScheduled(TaskScheduledEvent {
+                    task_id: "task_000002".to_string(),
+                    state: TaskScheduleState::Started,
+                    queue_key: Some("tool:read".to_string()),
+                }),
+            ),
+            envelope_with_actor(
+                4,
+                Some("req_child"),
+                child_actor,
+                EventV1::TaskCompleted(TaskCompletedEvent {
+                    task_id: "task_000002".to_string(),
+                    result_summary: "tool done".to_string(),
+                    result_digest: "tooldigest".to_string(),
+                    metadata: None,
+                }),
+            ),
+        ];
+
+        let request_ref =
+            resolve_background_request_ref(events.iter(), &parent_actor, Some("req_child"), None)
+                .expect("authorized child request");
+        let projection =
+            project_background_request(events.iter(), &request_ref).expect("project background");
+
+        assert_eq!(projection.scheduler_task_id.as_deref(), Some("task_000001"));
+        assert_eq!(projection.status, "running");
+        assert!(!projection.terminal);
+        assert_eq!(projection.result_summary, None);
+    }
+
     fn envelope(seq: u64, correlation_id: Option<&str>, payload: EventV1) -> EventEnvelopeV1 {
         EventEnvelopeV1 {
             schema_version: SCHEMA_VERSION,
@@ -1894,6 +3061,18 @@ mod tests {
             causation_id: None,
             stream_key: Some("run:run_projection".to_string()),
             payload,
+        }
+    }
+
+    fn envelope_with_actor(
+        seq: u64,
+        correlation_id: Option<&str>,
+        actor: EventActor,
+        payload: EventV1,
+    ) -> EventEnvelopeV1 {
+        EventEnvelopeV1 {
+            actor,
+            ..envelope(seq, correlation_id, payload)
         }
     }
 
