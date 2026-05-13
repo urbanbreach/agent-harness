@@ -129,6 +129,7 @@ pub enum ProjectedPart {
     Artifact(ProjectedArtifactPart),
     Lifecycle(ProjectedLifecyclePart),
     Task(ProjectedTaskPart),
+    Team(ProjectedTeamPart),
     PolicyViolation(ProjectedPolicyViolationPart),
     UiIntent(ProjectedUiIntentPart),
 }
@@ -283,6 +284,39 @@ pub enum ProjectedTaskState {
     Cancelled,
     Completed,
     LateResult,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectedTeamPart {
+    pub team_run_id: String,
+    pub event: ProjectedTeamEventKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub participant: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    pub provenance: ProvenanceRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectedTeamEventKind {
+    Created,
+    MemberSpawned,
+    MessageSent,
+    TaskCreated,
+    TaskUpdated,
+    ShutdownRequested,
+    ShutdownApproved,
+    ShutdownRejected,
+    Deleted,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1141,6 +1175,161 @@ pub fn project_transcript(
                     }),
                 );
             }
+            EventV1::TeamCreated(payload) => {
+                append_team_part(
+                    &mut projection,
+                    event,
+                    ProjectedTeamPart {
+                        team_run_id: payload.team_run_id.clone(),
+                        event: ProjectedTeamEventKind::Created,
+                        participant: None,
+                        target: None,
+                        task_id: None,
+                        message_id: None,
+                        status: Some("active".to_string()),
+                        summary: Some(payload.spec.name.clone()),
+                        provenance: ProvenanceRange::from_event(event),
+                    },
+                );
+            }
+            EventV1::TeamMemberSpawned(payload) => {
+                append_team_part(
+                    &mut projection,
+                    event,
+                    ProjectedTeamPart {
+                        team_run_id: payload.team_run_id.clone(),
+                        event: ProjectedTeamEventKind::MemberSpawned,
+                        participant: Some(payload.member_name.clone()),
+                        target: Some(payload.agent_id.clone()),
+                        task_id: None,
+                        message_id: None,
+                        status: Some("running".to_string()),
+                        summary: Some(payload.profile.clone()),
+                        provenance: ProvenanceRange::from_event(event),
+                    },
+                );
+            }
+            EventV1::TeamMessageSent(payload) => {
+                append_team_part(
+                    &mut projection,
+                    event,
+                    ProjectedTeamPart {
+                        team_run_id: payload.team_run_id.clone(),
+                        event: ProjectedTeamEventKind::MessageSent,
+                        participant: Some(payload.message.from.clone()),
+                        target: Some(payload.message.to.clone()),
+                        task_id: None,
+                        message_id: Some(payload.message.message_id.clone()),
+                        status: Some(format!("{:?}", payload.message.kind)),
+                        summary: payload.message.summary.clone().or_else(|| {
+                            non_empty_trimmed(&payload.message.body).map(str::to_string)
+                        }),
+                        provenance: ProvenanceRange::from_event(event),
+                    },
+                );
+            }
+            EventV1::TeamTaskCreated(payload) => {
+                append_team_part(
+                    &mut projection,
+                    event,
+                    ProjectedTeamPart {
+                        team_run_id: payload.team_run_id.clone(),
+                        event: ProjectedTeamEventKind::TaskCreated,
+                        participant: payload.task.owner.clone(),
+                        target: None,
+                        task_id: Some(payload.task.task_id.clone()),
+                        message_id: None,
+                        status: Some(payload.task.status.as_str().to_string()),
+                        summary: Some(payload.task.subject.clone()),
+                        provenance: ProvenanceRange::from_event(event),
+                    },
+                );
+            }
+            EventV1::TeamTaskUpdated(payload) => {
+                append_team_part(
+                    &mut projection,
+                    event,
+                    ProjectedTeamPart {
+                        team_run_id: payload.team_run_id.clone(),
+                        event: ProjectedTeamEventKind::TaskUpdated,
+                        participant: payload.owner.clone(),
+                        target: None,
+                        task_id: Some(payload.task_id.clone()),
+                        message_id: None,
+                        status: Some(payload.status.as_str().to_string()),
+                        summary: None,
+                        provenance: ProvenanceRange::from_event(event),
+                    },
+                );
+            }
+            EventV1::TeamShutdownRequested(payload) => {
+                append_team_part(
+                    &mut projection,
+                    event,
+                    ProjectedTeamPart {
+                        team_run_id: payload.team_run_id.clone(),
+                        event: ProjectedTeamEventKind::ShutdownRequested,
+                        participant: Some(payload.requester.clone()),
+                        target: Some(payload.member_name.clone()),
+                        task_id: None,
+                        message_id: None,
+                        status: Some("shutdown_requested".to_string()),
+                        summary: None,
+                        provenance: ProvenanceRange::from_event(event),
+                    },
+                );
+            }
+            EventV1::TeamShutdownApproved(payload) => {
+                append_team_part(
+                    &mut projection,
+                    event,
+                    ProjectedTeamPart {
+                        team_run_id: payload.team_run_id.clone(),
+                        event: ProjectedTeamEventKind::ShutdownApproved,
+                        participant: Some(payload.approver.clone()),
+                        target: Some(payload.member_name.clone()),
+                        task_id: None,
+                        message_id: None,
+                        status: Some("shutdown_approved".to_string()),
+                        summary: None,
+                        provenance: ProvenanceRange::from_event(event),
+                    },
+                );
+            }
+            EventV1::TeamShutdownRejected(payload) => {
+                append_team_part(
+                    &mut projection,
+                    event,
+                    ProjectedTeamPart {
+                        team_run_id: payload.team_run_id.clone(),
+                        event: ProjectedTeamEventKind::ShutdownRejected,
+                        participant: Some(payload.rejecter.clone()),
+                        target: Some(payload.member_name.clone()),
+                        task_id: None,
+                        message_id: None,
+                        status: Some("running".to_string()),
+                        summary: Some(payload.reason.clone()),
+                        provenance: ProvenanceRange::from_event(event),
+                    },
+                );
+            }
+            EventV1::TeamDeleted(payload) => {
+                append_team_part(
+                    &mut projection,
+                    event,
+                    ProjectedTeamPart {
+                        team_run_id: payload.team_run_id.clone(),
+                        event: ProjectedTeamEventKind::Deleted,
+                        participant: None,
+                        target: None,
+                        task_id: None,
+                        message_id: None,
+                        status: Some("deleted".to_string()),
+                        summary: None,
+                        provenance: ProvenanceRange::from_event(event),
+                    },
+                );
+            }
             EventV1::StaleDetected(_)
             | EventV1::BackgroundTaskNotification(_)
             | EventV1::PermissionGrantRecorded(_)
@@ -1194,6 +1383,14 @@ fn append_task_part(
     part: ProjectedTaskPart,
 ) {
     append_system_part(projection, event, ProjectedPart::Task(part));
+}
+
+fn append_team_part(
+    projection: &mut TranscriptProjection,
+    event: &EventEnvelopeV1,
+    part: ProjectedTeamPart,
+) {
+    append_system_part(projection, event, ProjectedPart::Team(part));
 }
 
 fn append_part_to_message(

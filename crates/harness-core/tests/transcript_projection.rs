@@ -9,14 +9,16 @@ use harness_core::event::{
     ProviderRequestFinishedEvent, ProviderRequestStartedEvent, ProviderStreamDeltaEvent,
     RunFailedEvent, RunFinishedEvent, RunStartedEvent, TaskCancelledEvent, TaskCompletedEvent,
     TaskCompletionMetadata, TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState,
-    TaskScheduledEvent, ToolCallFinishedEvent, ToolCallMetadata, ToolCallRequestedEvent,
-    ToolCallStartedEvent, ToolCallStatus, UiIntentReceivedEvent, UserMessageSubmittedEvent,
-    SCHEMA_VERSION,
+    TaskScheduledEvent, TeamBounds, TeamCreatedEvent, TeamMemberRole, TeamMemberSelector,
+    TeamMemberSpec, TeamMessage, TeamMessageKind, TeamMessageSentEvent, TeamSpec, TeamTask,
+    TeamTaskCreatedEvent, TeamTaskStatus, ToolCallFinishedEvent, ToolCallMetadata,
+    ToolCallRequestedEvent, ToolCallStartedEvent, ToolCallStatus, UiIntentReceivedEvent,
+    UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use harness_core::transcript_projection::{
     project_transcript, ArtifactProjectionSource, CompactionCheckpointStatus, ProjectedMessageRole,
-    ProjectedPart, ProjectedPermissionState, ProjectedTaskState, ProjectedToolCallState,
-    TranscriptProjectionError, TranscriptRunStatus,
+    ProjectedPart, ProjectedPermissionState, ProjectedTaskState, ProjectedTeamEventKind,
+    ProjectedToolCallState, TranscriptProjectionError, TranscriptRunStatus,
 };
 
 #[test]
@@ -798,6 +800,95 @@ fn tolerates_old_minimal_metadata_and_projects_incomplete_or_failed_states() {
         .iter()
         .flat_map(|message| message.parts.iter())
         .any(|part| matches!(part, ProjectedPart::UiIntent(_))));
+}
+
+#[test]
+fn projects_team_events_as_replayable_transcript_parts() {
+    let events = vec![
+        envelope(
+            1,
+            supervisor(),
+            None,
+            EventV1::TeamCreated(TeamCreatedEvent {
+                team_run_id: "team_transcript".to_string(),
+                spec: TeamSpec {
+                    version: 1,
+                    name: "Transcript Team".to_string(),
+                    description: None,
+                    lead: Some(TeamMemberSelector::SubagentType {
+                        subagent_type: "general".to_string(),
+                    }),
+                    members: vec![TeamMemberSpec {
+                        name: "alpha".to_string(),
+                        role: TeamMemberRole::Member,
+                        selector: TeamMemberSelector::SubagentType {
+                            subagent_type: "alpha".to_string(),
+                        },
+                        prompt: None,
+                    }],
+                    bounds: TeamBounds::default(),
+                },
+            }),
+        ),
+        envelope(
+            2,
+            supervisor(),
+            None,
+            EventV1::TeamMessageSent(TeamMessageSentEvent {
+                team_run_id: "team_transcript".to_string(),
+                message: TeamMessage {
+                    version: 1,
+                    message_id: "msg_1".to_string(),
+                    from: "lead".to_string(),
+                    to: "alpha".to_string(),
+                    kind: TeamMessageKind::Message,
+                    body: "please take this".to_string(),
+                    summary: Some("handoff".to_string()),
+                    references: Vec::new(),
+                    correlation_id: None,
+                },
+            }),
+        ),
+        envelope(
+            3,
+            supervisor(),
+            None,
+            EventV1::TeamTaskCreated(TeamTaskCreatedEvent {
+                team_run_id: "team_transcript".to_string(),
+                task: TeamTask {
+                    version: 1,
+                    task_id: "team_task_1".to_string(),
+                    subject: "Task one".to_string(),
+                    description: "Do the first task".to_string(),
+                    status: TeamTaskStatus::Pending,
+                    owner: Some("alpha".to_string()),
+                    blocks: Vec::new(),
+                    blocked_by: Vec::new(),
+                    metadata: BTreeMap::new(),
+                },
+            }),
+        ),
+    ];
+
+    let projection = project_transcript(&events).expect("project transcript");
+    let team_parts = projection
+        .messages
+        .iter()
+        .flat_map(|message| message.parts.iter())
+        .filter_map(|part| match part {
+            ProjectedPart::Team(team) => Some(team),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(team_parts.len(), 3);
+    assert_eq!(team_parts[0].event, ProjectedTeamEventKind::Created);
+    assert_eq!(team_parts[0].summary.as_deref(), Some("Transcript Team"));
+    assert_eq!(team_parts[1].event, ProjectedTeamEventKind::MessageSent);
+    assert_eq!(team_parts[1].message_id.as_deref(), Some("msg_1"));
+    assert_eq!(team_parts[1].summary.as_deref(), Some("handoff"));
+    assert_eq!(team_parts[2].event, ProjectedTeamEventKind::TaskCreated);
+    assert_eq!(team_parts[2].task_id.as_deref(), Some("team_task_1"));
 }
 
 #[test]
