@@ -627,12 +627,17 @@ pub enum OrchestrationTaskState {
     Stale,
     Completed,
     Cancelled,
+    Failed,
+    TimedOut,
     LateResult,
 }
 
 impl OrchestrationTaskState {
     pub fn is_terminal(self) -> bool {
-        matches!(self, Self::Completed | Self::Cancelled | Self::LateResult)
+        matches!(
+            self,
+            Self::Completed | Self::Cancelled | Self::Failed | Self::TimedOut | Self::LateResult
+        )
     }
 
     fn sort_rank(self) -> u8 {
@@ -640,7 +645,11 @@ impl OrchestrationTaskState {
             Self::Stale => 0,
             Self::Running => 1,
             Self::Queued => 2,
-            Self::Completed | Self::Cancelled | Self::LateResult => 0,
+            Self::Completed
+            | Self::Cancelled
+            | Self::Failed
+            | Self::TimedOut
+            | Self::LateResult => 0,
         }
     }
 }

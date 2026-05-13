@@ -679,6 +679,15 @@ fn event_kind_label(event: &EventV1) -> &'static str {
         EventV1::EditRejected(_) => "edit_rejected",
         EventV1::ArtifactWritten(_) => "artifact_written",
         EventV1::PolicyViolationDetected(_) => "policy_violation_detected",
+        EventV1::TeamCreated(_) => "team_created",
+        EventV1::TeamMemberSpawned(_) => "team_member_spawned",
+        EventV1::TeamMessageSent(_) => "team_message_sent",
+        EventV1::TeamTaskCreated(_) => "team_task_created",
+        EventV1::TeamTaskUpdated(_) => "team_task_updated",
+        EventV1::TeamShutdownRequested(_) => "team_shutdown_requested",
+        EventV1::TeamShutdownApproved(_) => "team_shutdown_approved",
+        EventV1::TeamShutdownRejected(_) => "team_shutdown_rejected",
+        EventV1::TeamDeleted(_) => "team_deleted",
         EventV1::UiIntentReceived(_) => "ui_intent_received",
     }
 }

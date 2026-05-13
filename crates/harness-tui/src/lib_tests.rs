@@ -320,10 +320,13 @@ delegate_test!(operator_rail_section_model_keeps_native_prefix_tools_out_of_mcp 
 delegate_test!(operator_rail_matches_sidebar_text_styles => ui::exact_test_operator_rail_matches_sidebar_text_styles);
 delegate_test!(operator_rail_uses_generated_session_title => ui::exact_test_operator_rail_uses_generated_session_title);
 delegate_test!(operator_rail_renders_todo_items_from_tool_state => ui::exact_test_operator_rail_renders_todo_items_from_tool_state);
+delegate_test!(operator_rail_places_todo_below_subagents => ui::exact_test_operator_rail_places_todo_below_subagents);
 delegate_test!(operator_rail_renders_todo_items_from_artifact_state => ui::exact_test_operator_rail_renders_todo_items_from_artifact_state);
 delegate_test!(operator_rail_renders_subagent_rows_from_orchestration_state => ui::exact_test_operator_rail_renders_subagent_rows_from_orchestration_state);
+delegate_test!(operator_rail_marks_background_subagent_terminal_from_notification => ui::exact_test_operator_rail_marks_background_subagent_terminal_from_notification);
+delegate_test!(operator_rail_shows_wakeup_report_without_task_tool_row => ui::exact_test_operator_rail_shows_wakeup_report_without_task_tool_row);
 delegate_test!(operator_rail_keeps_subagents_visible_in_replay => ui::exact_test_operator_rail_keeps_subagents_visible_in_replay);
-delegate_test!(operator_rail_keeps_completed_todo_state_visible => ui::exact_test_operator_rail_keeps_completed_todo_state_visible);
+delegate_test!(operator_rail_hides_completed_todo_state => ui::exact_test_operator_rail_hides_completed_todo_state);
 delegate_test!(operator_rail_collapses_todo_section_body => ui::exact_test_operator_rail_collapses_todo_section_body);
 delegate_test!(operator_rail_collapses_modified_files_section_body => ui::exact_test_operator_rail_collapses_modified_files_section_body);
 delegate_test!(operator_sidebar_hit_target_maps_section_headers => ui::exact_test_operator_sidebar_hit_target_maps_section_headers);
@@ -3123,6 +3126,43 @@ fn orchestration_projection_resolves_owner_labels() {
 
 #[cfg(test)]
 #[test]
+fn replay_projection_surfaces_team_orchestration_rows() {
+    let events = vec![envelope(
+        1,
+        None,
+        harness_core::event::EventV1::TeamCreated(harness_core::event::TeamCreatedEvent {
+            team_run_id: "team_replay".to_string(),
+            spec: harness_core::event::TeamSpec {
+                version: 1,
+                name: "Replay Team".to_string(),
+                description: None,
+                lead: None,
+                members: vec![harness_core::event::TeamMemberSpec {
+                    name: "alpha".to_string(),
+                    role: harness_core::event::TeamMemberRole::Member,
+                    selector: harness_core::event::TeamMemberSelector::SubagentType {
+                        subagent_type: "alpha".to_string(),
+                    },
+                    prompt: None,
+                }],
+                bounds: harness_core::event::TeamBounds::default(),
+            },
+        }),
+    )];
+    let app = app::AppState::new_replay(std::path::PathBuf::from("/tmp/replay-team"), events);
+
+    let rows = app.orchestration_visible_rows();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].task_id, "team:team_replay");
+    assert_eq!(rows[0].state, crate::app::OrchestrationTaskState::Running);
+    assert_eq!(
+        rows[0].result_summary.as_deref(),
+        Some("team Replay Team · 1 member(s)")
+    );
+}
+
+#[cfg(test)]
+#[test]
 fn orchestration_projection_ignores_duplicate_seq_events() {
     let mut app = app::AppState::new_live(None, false, None);
 
@@ -3240,6 +3280,194 @@ fn orchestration_projection_ignores_duplicate_seq_events() {
             profile: "researcher".to_string(),
         }
     );
+}
+
+#[cfg(test)]
+#[test]
+fn orchestration_projection_preserves_background_notification_terminal_states() {
+    let mut app = app::AppState::new_live(None, false, None);
+
+    app.ingest_event(envelope(
+        1,
+        Some("background_task_notification:req_failed"),
+        harness_core::event::EventV1::BackgroundTaskNotification(
+            harness_core::event::BackgroundTaskNotificationEvent {
+                parent_session_id: "agent_parent".to_string(),
+                parent_agent_id: Some("agent_parent".to_string()),
+                child_session_id: "agent_failed".to_string(),
+                child_request_id: "req_failed".to_string(),
+                task_id: "task_failed".to_string(),
+                description: "failed child".to_string(),
+                status: harness_core::event::BackgroundTaskNotificationStatus::Failed,
+                summary: "provider failed closed".to_string(),
+                terminal_event_id: "evt-terminal-failed".to_string(),
+                terminal_task_id: "task_failed".to_string(),
+                delivered_turn_request_id: Some("req_parent_notice".to_string()),
+            },
+        ),
+    ));
+    app.ingest_event(envelope(
+        2,
+        Some("background_task_notification:req_timeout"),
+        harness_core::event::EventV1::BackgroundTaskNotification(
+            harness_core::event::BackgroundTaskNotificationEvent {
+                parent_session_id: "agent_parent".to_string(),
+                parent_agent_id: Some("agent_parent".to_string()),
+                child_session_id: "agent_timeout".to_string(),
+                child_request_id: "req_timeout".to_string(),
+                task_id: "task_timeout".to_string(),
+                description: "timed out child".to_string(),
+                status: harness_core::event::BackgroundTaskNotificationStatus::TimedOut,
+                summary: "child timed out".to_string(),
+                terminal_event_id: "evt-terminal-timeout".to_string(),
+                terminal_task_id: "task_timeout".to_string(),
+                delivered_turn_request_id: None,
+            },
+        ),
+    ));
+
+    let rows = app.orchestration_visible_rows();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(
+        rows.iter()
+            .map(|row| (row.task_id.as_str(), row.warning.as_deref(), row.state))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                "task_timeout",
+                Some("timed out"),
+                crate::app::OrchestrationTaskState::TimedOut,
+            ),
+            (
+                "task_failed",
+                Some("failed"),
+                crate::app::OrchestrationTaskState::Failed,
+            ),
+        ]
+    );
+    assert_eq!(app.orchestration_latest_warning(), Some("timed out"));
+    assert!(app.operator_rail_has_sections());
+}
+
+#[cfg(test)]
+#[test]
+fn background_notification_projects_chat_reminder_without_duplicate_user_event() {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        Some("background_task_notification:req_child"),
+        harness_core::event::EventV1::BackgroundTaskNotification(
+            harness_core::event::BackgroundTaskNotificationEvent {
+                parent_session_id: "agent_parent".to_string(),
+                parent_agent_id: Some("agent_parent".to_string()),
+                child_session_id: "agent_child".to_string(),
+                child_request_id: "req_child".to_string(),
+                task_id: "agent_child".to_string(),
+                description: "summarize README".to_string(),
+                status: harness_core::event::BackgroundTaskNotificationStatus::Completed,
+                summary: "README summarized".to_string(),
+                terminal_event_id: "evt-terminal-child".to_string(),
+                terminal_task_id: "agent_child".to_string(),
+                delivered_turn_request_id: Some("req_parent_wakeup".to_string()),
+            },
+        ),
+    ));
+
+    assert_eq!(app.activities.len(), 1);
+    let activity = &app.activities[0];
+    assert_eq!(activity.request_id, "req_parent_wakeup");
+    assert_eq!(activity.status, app::ActivityStatus::Streaming);
+    let reminder = activity
+        .user_message
+        .as_ref()
+        .expect("background notification should render as chat reminder");
+    assert!(reminder.text.contains("[BACKGROUND TASK COMPLETED]"));
+    assert!(reminder.text.contains("ID: agent_child"));
+    assert!(reminder
+        .text
+        .contains("background_output(request_id=\"req_child\")"));
+    assert!(reminder.text.contains("task(session_id=\"agent_child\")"));
+
+    app.ingest_event(envelope(
+        2,
+        Some("req_parent_wakeup"),
+        harness_core::event::EventV1::UserMessageSubmitted(
+            harness_core::event::UserMessageSubmittedEvent {
+                request_id: "req_parent_wakeup".to_string(),
+                text: "<system-reminder>canonical coordinator wakeup</system-reminder>".to_string(),
+            },
+        ),
+    ));
+
+    assert_eq!(app.activities.len(), 1);
+    assert_eq!(
+        app.activities[0]
+            .user_message
+            .as_ref()
+            .expect("canonical wakeup should replace placeholder")
+            .text,
+        "<system-reminder>canonical coordinator wakeup</system-reminder>"
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn operator_sidebar_shows_running_child_turn_before_task_tool_finishes() {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        None,
+        harness_core::event::EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
+            agent_id: "agent_parent".to_string(),
+            profile: "build".to_string(),
+            parent_agent_id: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        None,
+        harness_core::event::EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
+            agent_id: "agent_child".to_string(),
+            profile: "explore".to_string(),
+            parent_agent_id: Some("agent_parent".to_string()),
+        }),
+    ));
+    app.ingest_event(envelope_with_actor(
+        3,
+        Some("req_child"),
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Worker,
+            Some("agent_child".to_string()),
+        ),
+        harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
+            task_id: "task_child_turn".to_string(),
+            state: harness_core::event::TaskScheduleState::Started,
+            queue_key: Some("provider_model:mock:model-1".to_string()),
+        }),
+    ));
+    app.ingest_event(envelope_with_actor(
+        4,
+        Some("req_child"),
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Worker,
+            Some("agent_child".to_string()),
+        ),
+        harness_core::event::EventV1::ProviderRequestStarted(
+            harness_core::event::ProviderRequestStartedEvent {
+                request_id: "req_child".to_string(),
+                provider_id: "mock".to_string(),
+                model_id: "model-1".to_string(),
+                prompt_summary: "inspect task behavior".to_string(),
+                request_digest: "digest-child".to_string(),
+                metadata: None,
+            },
+        ),
+    ));
+
+    assert!(app.operator_rail_has_sections());
+    let sidebar = operator_sidebar_text(&app);
+    assert!(sidebar.contains("▼ Subagents"));
+    assert!(sidebar.contains("• explore ⠋ inspect task behavior"));
 }
 
 #[cfg(test)]
@@ -3572,6 +3800,60 @@ fn orchestration_projection_tracks_stale_then_late_result() {
         app.orchestration_latest_warning(),
         Some("late result after stale cancellation")
     );
+}
+
+#[cfg(test)]
+#[test]
+fn orchestration_projection_distinguishes_background_failure_and_timeout() {
+    let mut app = app::AppState::new_live(None, false, None);
+
+    app.ingest_event(envelope(
+        1,
+        Some("req_failed"),
+        harness_core::event::EventV1::BackgroundTaskNotification(
+            harness_core::event::BackgroundTaskNotificationEvent {
+                parent_session_id: "agent_parent".to_string(),
+                parent_agent_id: Some("agent_parent".to_string()),
+                child_session_id: "agent_failed".to_string(),
+                child_request_id: "req_failed".to_string(),
+                task_id: "task_failed".to_string(),
+                description: "fail child".to_string(),
+                status: harness_core::event::BackgroundTaskNotificationStatus::Failed,
+                summary: "child failed".to_string(),
+                terminal_event_id: "evt_failed".to_string(),
+                terminal_task_id: "task_failed".to_string(),
+                delivered_turn_request_id: Some("req_parent_failed".to_string()),
+            },
+        ),
+    ));
+    app.ingest_event(envelope(
+        2,
+        Some("req_timeout"),
+        harness_core::event::EventV1::BackgroundTaskNotification(
+            harness_core::event::BackgroundTaskNotificationEvent {
+                parent_session_id: "agent_parent".to_string(),
+                parent_agent_id: Some("agent_parent".to_string()),
+                child_session_id: "agent_timeout".to_string(),
+                child_request_id: "req_timeout".to_string(),
+                task_id: "task_timeout".to_string(),
+                description: "timeout child".to_string(),
+                status: harness_core::event::BackgroundTaskNotificationStatus::TimedOut,
+                summary: "child timed out".to_string(),
+                terminal_event_id: "evt_timeout".to_string(),
+                terminal_task_id: "task_timeout".to_string(),
+                delivered_turn_request_id: Some("req_parent_timeout".to_string()),
+            },
+        ),
+    ));
+
+    let rows = app.orchestration_visible_rows();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].task_id, "task_timeout");
+    assert_eq!(rows[0].state, crate::app::OrchestrationTaskState::TimedOut);
+    assert_eq!(rows[0].warning.as_deref(), Some("timed out"));
+    assert_eq!(rows[1].task_id, "task_failed");
+    assert_eq!(rows[1].state, crate::app::OrchestrationTaskState::Failed);
+    assert_eq!(rows[1].warning.as_deref(), Some("failed"));
 }
 
 #[cfg(test)]

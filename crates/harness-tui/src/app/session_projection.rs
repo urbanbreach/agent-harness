@@ -1,7 +1,10 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use harness_core::event::{ActorKind, EventEnvelopeV1, EventV1, ResolvedToolIdentity};
+use harness_core::event::{
+    ActorKind, BackgroundTaskNotificationEvent, EventEnvelopeV1, EventV1, ResolvedToolIdentity,
+    UserMessageSubmittedEvent,
+};
 
 use super::permissions::PendingPermission;
 use super::{
@@ -151,6 +154,55 @@ impl SessionProjection {
         if self.child_agent_ids.contains(agent_id) {
             self.child_request_agents
                 .insert(request_id.to_string(), agent_id.to_string());
+        }
+    }
+
+    fn ensure_background_notification_activity(
+        &mut self,
+        event: &EventEnvelopeV1,
+        data: &BackgroundTaskNotificationEvent,
+    ) {
+        let request_id = data
+            .delivered_turn_request_id
+            .as_deref()
+            .unwrap_or(data.child_request_id.as_str());
+        if self.activity_index_for_request(request_id).is_some() {
+            return;
+        }
+
+        let text = background_task_notification_text(data);
+        let status = if data.delivered_turn_request_id.is_some() {
+            if self
+                .activities
+                .iter()
+                .any(|activity| activity.status == ActivityStatus::Streaming)
+            {
+                ActivityStatus::Queued
+            } else {
+                ActivityStatus::Streaming
+            }
+        } else {
+            ActivityStatus::Done
+        };
+
+        self.activities.push_back(new_streaming_activity_entry(
+            NewStreamingActivityEntryArgs {
+                request_id: request_id.to_string(),
+                model_id: String::new(),
+                provider_id: String::new(),
+                user_message: Some(UserMessageSubmittedEvent {
+                    request_id: request_id.to_string(),
+                    text,
+                }),
+                user_timestamp: event.ts.clone(),
+                request_data: None,
+                transcript_text: String::new(),
+                first_seq: event.seq,
+                first_mono_ms: event.mono_ms,
+            },
+        ));
+        if let Some(entry) = self.activities.back_mut() {
+            entry.status = status;
         }
     }
 
@@ -520,6 +572,8 @@ impl SessionProjection {
                 OrchestrationTaskState::Stale => summary.stale += 1,
                 OrchestrationTaskState::Completed
                 | OrchestrationTaskState::Cancelled
+                | OrchestrationTaskState::Failed
+                | OrchestrationTaskState::TimedOut
                 | OrchestrationTaskState::LateResult => {}
             }
         }
@@ -682,6 +736,18 @@ impl SessionProjection {
             EventV1::ProviderRequestStarted(data) => {
                 self.note_child_agent_request(event, &data.request_id);
                 let turn_id = Self::canonical_provider_turn_id(event, &data.request_id);
+                for row in self.orchestration_tasks.values_mut() {
+                    if row.effective_child_request_id() == Some(turn_id)
+                        || row.effective_child_request_id() == Some(data.request_id.as_str())
+                    {
+                        if row.result_summary.is_none() {
+                            row.result_summary = non_empty_preserved_string(&data.prompt_summary);
+                        }
+                        row.last_seq = event.seq;
+                        row.last_mono_ms = event.mono_ms;
+                        row.last_timestamp = event.ts.clone();
+                    }
+                }
                 if let Some(index) = self.activity_index_for_provider_event(event, &data.request_id)
                 {
                     if let Some(entry) = self.activities.get_mut(index) {
@@ -960,16 +1026,104 @@ impl SessionProjection {
                         harness_core::event::BackgroundTaskNotificationStatus::Completed => {
                             OrchestrationTaskState::Completed
                         }
-                        harness_core::event::BackgroundTaskNotificationStatus::Cancelled
-                        | harness_core::event::BackgroundTaskNotificationStatus::Failed
-                        | harness_core::event::BackgroundTaskNotificationStatus::TimedOut => {
+                        harness_core::event::BackgroundTaskNotificationStatus::Cancelled => {
                             OrchestrationTaskState::Cancelled
+                        }
+                        harness_core::event::BackgroundTaskNotificationStatus::Failed => {
+                            OrchestrationTaskState::Failed
+                        }
+                        harness_core::event::BackgroundTaskNotificationStatus::TimedOut => {
+                            OrchestrationTaskState::TimedOut
                         }
                     };
                     row.warning = match data.status {
                         harness_core::event::BackgroundTaskNotificationStatus::Completed => None,
                         _ => Some(data.status.as_str().replace('_', " ")),
                     };
+                });
+                self.ensure_background_notification_activity(event, data);
+            }
+            EventV1::TeamCreated(data) => {
+                let row_id = format!("team:{}", data.team_run_id);
+                self.update_orchestration_task(event, &row_id, |row| {
+                    row.state = OrchestrationTaskState::Running;
+                    row.queue_key = Some("team".to_string());
+                    row.result_summary = Some(format!(
+                        "team {} · {} member(s)",
+                        data.spec.name,
+                        data.spec.members.len()
+                    ));
+                    row.warning = None;
+                });
+            }
+            EventV1::TeamMemberSpawned(data) => {
+                let row_id = format!("team:{}", data.team_run_id);
+                self.update_orchestration_task(event, &row_id, |row| {
+                    row.state = OrchestrationTaskState::Running;
+                    row.result_summary =
+                        Some(format!("{} active as {}", data.member_name, data.profile));
+                    row.warning = None;
+                });
+            }
+            EventV1::TeamMessageSent(data) => {
+                let row_id = format!("team:{}", data.team_run_id);
+                self.update_orchestration_task(event, &row_id, |row| {
+                    row.state = OrchestrationTaskState::Running;
+                    row.result_summary = data
+                        .message
+                        .summary
+                        .clone()
+                        .or_else(|| Some(format!("message {}", data.message.message_id)));
+                    row.warning = None;
+                });
+            }
+            EventV1::TeamTaskCreated(data) => {
+                let row_id = format!("team:{}", data.team_run_id);
+                self.update_orchestration_task(event, &row_id, |row| {
+                    row.state = OrchestrationTaskState::Running;
+                    row.result_summary = Some(format!("task created · {}", data.task.task_id));
+                    row.warning = None;
+                });
+            }
+            EventV1::TeamTaskUpdated(data) => {
+                let row_id = format!("team:{}", data.team_run_id);
+                self.update_orchestration_task(event, &row_id, |row| {
+                    row.state = OrchestrationTaskState::Running;
+                    row.result_summary =
+                        Some(format!("task {} · {}", data.task_id, data.status.as_str()));
+                    row.warning = None;
+                });
+            }
+            EventV1::TeamShutdownRequested(data) => {
+                let row_id = format!("team:{}", data.team_run_id);
+                self.update_orchestration_task(event, &row_id, |row| {
+                    row.state = OrchestrationTaskState::Running;
+                    row.result_summary = Some(format!("shutdown requested · {}", data.member_name));
+                    row.warning = None;
+                });
+            }
+            EventV1::TeamShutdownApproved(data) => {
+                let row_id = format!("team:{}", data.team_run_id);
+                self.update_orchestration_task(event, &row_id, |row| {
+                    row.state = OrchestrationTaskState::Running;
+                    row.result_summary = Some(format!("shutdown approved · {}", data.member_name));
+                    row.warning = None;
+                });
+            }
+            EventV1::TeamShutdownRejected(data) => {
+                let row_id = format!("team:{}", data.team_run_id);
+                self.update_orchestration_task(event, &row_id, |row| {
+                    row.state = OrchestrationTaskState::Running;
+                    row.result_summary = Some(format!("shutdown rejected · {}", data.member_name));
+                    row.warning = Some(data.reason.clone());
+                });
+            }
+            EventV1::TeamDeleted(data) => {
+                let row_id = format!("team:{}", data.team_run_id);
+                self.update_orchestration_task(event, &row_id, |row| {
+                    row.state = OrchestrationTaskState::Completed;
+                    row.result_summary = Some("team deleted".to_string());
+                    row.warning = None;
                 });
             }
             EventV1::StaleDetected(data) => {
@@ -1238,6 +1392,20 @@ fn titlecase_word(value: &str) -> String {
     label
 }
 
+fn background_task_notification_text(data: &BackgroundTaskNotificationEvent) -> String {
+    format!(
+        "<system-reminder>\n[BACKGROUND TASK {}]\nID: {}\nRequest ID: {}\nDescription: {}\nStatus: {}\n\n{}\n\nUse background_output(request_id=\"{}\") for full details or task(session_id=\"{}\") to continue analysis from the child session.\n</system-reminder>",
+        data.status.as_str().to_ascii_uppercase(),
+        data.task_id,
+        data.child_request_id,
+        data.description,
+        data.status.as_str(),
+        data.summary,
+        data.child_request_id,
+        data.child_session_id,
+    )
+}
+
 impl AppState {
     pub fn runtime_context_primary_summary(&self) -> String {
         self.control_dock_view_model().primary_summary
@@ -1348,6 +1516,7 @@ impl AppState {
             || has_user_message_title
             || title_generation_pending
             || has_usage
+            || !self.orchestration_visible_rows().is_empty()
             || has_modified_files
             || has_integrations
             || has_lsp
