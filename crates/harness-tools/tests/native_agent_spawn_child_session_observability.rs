@@ -102,7 +102,9 @@ async fn agent_spawn_returns_child_session_status_duration_and_counts() {
             json!({
                 "category": "parent",
                 "description": "Observe child failure metadata",
-                "prompt": "This child has no provider configured"
+                "prompt": "This child has no provider configured",
+                "run_in_background": false,
+                "load_skills": []
             }),
         )
         .await
@@ -246,7 +248,8 @@ async fn child_session_permission_inheritance_isolated_by_task() {
                 "category": "parent",
                 "description": "Inherited child scope",
                 "prompt": "Background child",
-                "run_in_background": true
+                "run_in_background": true,
+                "load_skills": []
             }),
         )
         .await
@@ -262,7 +265,8 @@ async fn child_session_permission_inheritance_isolated_by_task() {
                 "category": "restricted",
                 "description": "Restricted child scope",
                 "prompt": "Background child",
-                "run_in_background": true
+                "run_in_background": true,
+                "load_skills": []
             }),
         )
         .await

@@ -31,6 +31,7 @@ use globset::Glob;
 use harness_core::config::ShellAllowlist;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResult};
 use schemars::JsonSchema;
+use serde::de::Error as _;
 use serde::{Deserialize, Deserializer};
 use serde_json::{json, Value};
 use walkdir::WalkDir;
@@ -285,7 +286,7 @@ struct TaskArgs {
     category: Option<String>,
     task_id: Option<String>,
     session_id: Option<String>,
-    run_in_background: Option<bool>,
+    run_in_background: bool,
     load_skills: Vec<String>,
     command: Option<String>,
 }
@@ -335,7 +336,7 @@ struct TaskArgsCompat {
     #[serde(default, alias = "background")]
     run_in_background: Option<bool>,
     #[serde(default, alias = "skills")]
-    load_skills: Vec<String>,
+    load_skills: Option<Vec<String>>,
     #[serde(default)]
     command: Option<String>,
 }
@@ -346,6 +347,13 @@ impl<'de> Deserialize<'de> for TaskArgs {
         D: Deserializer<'de>,
     {
         let compat = TaskArgsCompat::deserialize(deserializer)?;
+        let run_in_background = compat
+            .run_in_background
+            .ok_or_else(|| D::Error::custom("missing required field `run_in_background`"))?;
+        let load_skills = compat
+            .load_skills
+            .ok_or_else(|| D::Error::custom("missing required field `load_skills`"))?;
+
         Ok(Self {
             description: compat.description,
             prompt: compat.prompt,
@@ -357,8 +365,8 @@ impl<'de> Deserialize<'de> for TaskArgs {
             category: compat.category,
             task_id: compat.task_id,
             session_id: compat.session_id,
-            run_in_background: compat.run_in_background,
-            load_skills: compat.load_skills,
+            run_in_background,
+            load_skills,
             command: compat.command,
         })
     }
@@ -789,7 +797,7 @@ impl Tool for TaskTool {
     }
 
     fn description(&self) -> &str {
-        "Delegates work to another configured harness profile/category (legacy `category` alias supported). By default the parent waits and receives the child result synchronously. With run_in_background=true, the tool returns task_id/request_id immediately; use background_output with that request_id whenever you need status, result, or cancellation. The coordinator may also send a completion reminder later, but do not wait for that reminder when the result is needed. `load_skills` and `command` are prepended to the child prompt as explicit delegation instructions."
+        "Delegates work to another configured harness profile/category. `run_in_background` is required: run_in_background=false waits and returns the child result synchronously; sync child tasks do not emit background wakeup notifications. run_in_background=true returns task_id/request_id immediately and is required when testing or exercising background scheduling, completion reminders, or background_output retrieval. `load_skills` is required, even when empty; listed skills are resolved before spawning and injected into the child prompt. Use background_output with the returned request_id whenever you need status, result, or cancellation. The coordinator may also send a completion reminder later for background tasks, but do not wait for that reminder when the result is needed. `command` is prepended to the child prompt as explicit delegation context."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -814,7 +822,7 @@ impl Tool for TaskTool {
                     prompt: args.prompt,
                     task_id: args.task_id,
                     session_id: args.session_id,
-                    run_in_background: args.run_in_background.unwrap_or(false),
+                    run_in_background: args.run_in_background,
                     load_skills: args.load_skills,
                     command: args.command,
                 },
@@ -1639,7 +1647,7 @@ mod tests {
         .expect("task args should accept agent aliases");
 
         assert_eq!(args.subagent_type.as_deref(), Some("explorer"));
-        assert_eq!(args.run_in_background, Some(true));
+        assert!(args.run_in_background);
     }
 
     #[test]
@@ -1648,11 +1656,37 @@ mod tests {
             "description": "Explore codebase",
             "prompt": "Find auth flow",
             "category": "explore",
+            "run_in_background": false,
             "skills": ["rust-best-practices"]
         }))
         .expect("task args should accept skills alias");
 
         assert_eq!(args.load_skills, vec!["rust-best-practices".to_string()]);
+    }
+
+    #[test]
+    fn task_args_require_explicit_background_and_skills_fields() {
+        let missing_background = serde_json::from_value::<TaskArgs>(json!({
+            "description": "Explore codebase",
+            "prompt": "Find auth flow",
+            "category": "explore",
+            "load_skills": []
+        }))
+        .expect_err("task args should require run_in_background");
+        assert!(missing_background
+            .to_string()
+            .contains("missing required field `run_in_background`"));
+
+        let missing_skills = serde_json::from_value::<TaskArgs>(json!({
+            "description": "Explore codebase",
+            "prompt": "Find auth flow",
+            "category": "explore",
+            "run_in_background": true
+        }))
+        .expect_err("task args should require load_skills");
+        assert!(missing_skills
+            .to_string()
+            .contains("missing required field `load_skills`"));
     }
 
     #[test]
@@ -1662,10 +1696,16 @@ mod tests {
         let background_output = BackgroundOutputTool::new(executor);
 
         let task_description = task.description();
+        assert!(task_description.contains("`run_in_background` is required"));
+        assert!(task_description.contains("`load_skills` is required"));
         assert!(task_description.contains("run_in_background=true"));
         assert!(task_description.contains("returns task_id/request_id immediately"));
-        assert!(task_description.contains("use background_output"));
-        assert!(task_description.contains("do not wait for that reminder"));
+        assert!(task_description
+            .contains("sync child tasks do not emit background wakeup notifications"));
+        assert!(task_description.contains("testing or exercising background scheduling"));
+        assert!(task_description.contains("injected into the child prompt"));
+        assert!(task_description.contains("Use background_output"));
+        assert!(task_description.contains("completion reminder later for background tasks"));
 
         let background_output_description = background_output.description();
         assert!(background_output_description.contains("Use this tool when you need"));
