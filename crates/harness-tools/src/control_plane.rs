@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use harness_core::config::{registered_skills_config, PermissionMode};
@@ -47,7 +47,7 @@ impl ControlPlaneExecutor {
         name: &str,
         user_message: Option<String>,
     ) -> Result<ToolResult, ToolError> {
-        let mut catalog = discover_skill_catalog()?;
+        let mut catalog = discover_skill_catalog(ctx.workspace_root.as_path())?;
         let skill_not_found = skill_not_found_message(name, &catalog);
         let skill = match catalog
             .remove(name)
@@ -56,7 +56,7 @@ impl ControlPlaneExecutor {
             DiscoveredSkill::Visible(skill) => match skill.permission {
                 PermissionMode::Allow => skill,
                 PermissionMode::Ask => {
-                    self.request_skill_load_approval(ctx, name).await?;
+                    request_skill_load_approval(ctx, name).await?;
                     skill
                 }
                 PermissionMode::Deny => {
@@ -67,18 +67,8 @@ impl ControlPlaneExecutor {
                 return Err(ToolError::Execution(skill_not_found));
             }
         };
-        let mut output = format!(
-            "<skill_content name=\"{}\">\n# Skill: {}\n\n{}\n\n{}\n\nBase directory for this skill: file://{}\n</skill_content>",
-            skill.name,
-            skill.name,
-            skill.description,
-            skill.content.trim(),
-            skill
-                .location
-                .parent()
-                .unwrap_or(skill.location.as_path())
-                .display(),
-        );
+        let skill = TaskSkillContext::from(skill);
+        let mut output = render_task_skill_context(&skill);
         if let Some(user_message) = user_message {
             output.push_str(&format!(
                 "\n\n<skill_user_message>{user_message}</skill_user_message>"
@@ -91,35 +81,6 @@ impl ControlPlaneExecutor {
                 "location": skill.location.display().to_string(),
             }),
         ))
-    }
-
-    async fn request_skill_load_approval(
-        &self,
-        ctx: &ToolContext,
-        name: &str,
-    ) -> Result<(), ToolError> {
-        let questions = vec![skill_load_confirmation_question(name)];
-        let answers =
-            question_answers_from_env_or_request(ctx, json!({ "questions": questions }), |err| {
-                ToolError::Execution(format!(
-                    "Skill \"{name}\" approval failed before loading: {err}"
-                ))
-            })
-            .await?;
-        let answers =
-            validate_question_answers(&questions, answers).map_err(ToolError::Execution)?;
-        let approved = answers
-            .first()
-            .and_then(|answer| answer.first())
-            .is_some_and(|answer| answer == SKILL_LOAD_CONFIRM_YES);
-
-        if approved {
-            Ok(())
-        } else {
-            Err(ToolError::Execution(format!(
-                "Skill \"{name}\" load cancelled by user confirmation"
-            )))
-        }
     }
 
     pub(crate) fn invalid_tool(&self, tool: &str, error: &str) -> ToolResult {
@@ -510,6 +471,40 @@ enum DiscoveredSkill {
     Invalid,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TaskSkillContext {
+    pub(crate) name: String,
+    pub(crate) description: String,
+    pub(crate) content: String,
+    pub(crate) location: PathBuf,
+}
+
+impl From<SkillRecord> for TaskSkillContext {
+    fn from(skill: SkillRecord) -> Self {
+        Self {
+            name: skill.name,
+            description: skill.description,
+            content: skill.content,
+            location: skill.location,
+        }
+    }
+}
+
+pub(crate) fn render_task_skill_context(skill: &TaskSkillContext) -> String {
+    format!(
+        "<skill_content name=\"{}\">\n# Skill: {}\n\n{}\n\n{}\n\nBase directory for this skill: file://{}\n</skill_content>",
+        skill.name,
+        skill.name,
+        skill.description,
+        skill.content.trim(),
+        skill
+            .location
+            .parent()
+            .unwrap_or(skill.location.as_path())
+            .display(),
+    )
+}
+
 #[derive(Debug, Default)]
 struct SkillFrontmatter {
     name: Option<String>,
@@ -620,6 +615,83 @@ fn validate_question_prompts(questions: &[QuestionPrompt]) -> Result<(), String>
     Ok(())
 }
 
+pub(crate) async fn resolve_task_skill_context(
+    ctx: &ToolContext,
+    names: &[String],
+) -> Result<Vec<TaskSkillContext>, ToolError> {
+    if names.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut catalog = discover_skill_catalog(ctx.workspace_root.as_path())?;
+    let mut seen = BTreeSet::new();
+    let mut resolved = Vec::new();
+    for raw_name in names {
+        let name = raw_name.trim();
+        if name.is_empty() {
+            return Err(ToolError::InvalidArguments(
+                "load_skills entries must not be empty".to_string(),
+            ));
+        }
+        if !seen.insert(name.to_string()) {
+            continue;
+        }
+
+        let skill_not_found = skill_not_found_message(name, &catalog);
+        let skill = match catalog
+            .remove(name)
+            .ok_or_else(|| ToolError::Execution(skill_not_found.clone()))?
+        {
+            DiscoveredSkill::Visible(skill) => match skill.permission {
+                PermissionMode::Allow => skill,
+                PermissionMode::Ask => {
+                    request_skill_load_approval(ctx, name).await?;
+                    skill
+                }
+                PermissionMode::Deny => {
+                    return Err(ToolError::Execution(skill_not_found));
+                }
+            },
+            DiscoveredSkill::Denied | DiscoveredSkill::Invalid => {
+                return Err(ToolError::Execution(skill_not_found));
+            }
+        };
+
+        resolved.push(TaskSkillContext {
+            name: skill.name,
+            description: skill.description,
+            content: skill.content,
+            location: skill.location,
+        });
+    }
+
+    Ok(resolved)
+}
+
+async fn request_skill_load_approval(ctx: &ToolContext, name: &str) -> Result<(), ToolError> {
+    let questions = vec![skill_load_confirmation_question(name)];
+    let answers =
+        question_answers_from_env_or_request(ctx, json!({ "questions": questions }), |err| {
+            ToolError::Execution(format!(
+                "Skill \"{name}\" approval failed before loading: {err}"
+            ))
+        })
+        .await?;
+    let answers = validate_question_answers(&questions, answers).map_err(ToolError::Execution)?;
+    let approved = answers
+        .first()
+        .and_then(|answer| answer.first())
+        .is_some_and(|answer| answer == SKILL_LOAD_CONFIRM_YES);
+
+    if approved {
+        Ok(())
+    } else {
+        Err(ToolError::Execution(format!(
+            "Skill \"{name}\" load cancelled by user confirmation"
+        )))
+    }
+}
+
 fn skill_not_found_message(name: &str, catalog: &BTreeMap<String, DiscoveredSkill>) -> String {
     let trimmed = name.trim();
     let mut message = format!("Skill \"{trimmed}\" not found");
@@ -701,18 +773,34 @@ fn run_root(ctx: &ToolContext) -> Result<PathBuf, ToolError> {
         })
 }
 
-fn discover_skill_catalog() -> Result<BTreeMap<String, DiscoveredSkill>, ToolError> {
+fn discover_skill_catalog(
+    workspace_root: &Path,
+) -> Result<BTreeMap<String, DiscoveredSkill>, ToolError> {
     let config = registered_skills_config();
-    let current_dir = std::env::current_dir().map_err(|err| {
-        ToolError::Execution(format!("failed to determine current directory: {err}"))
-    })?;
     let mut catalog = BTreeMap::new();
-    for dir in skill_search_dirs(&current_dir, &config) {
-        if !dir.exists() {
+    for search_dir in skill_search_dirs(workspace_root, &config) {
+        if !search_dir.path.exists() {
             continue;
         }
+        let canonical_dir = search_dir.path.canonicalize().map_err(|err| {
+            ToolError::Execution(format!(
+                "failed to resolve skill directory {}: {err}",
+                search_dir.path.display()
+            ))
+        })?;
+        if let Some(base_dir) = search_dir.project_base.as_deref() {
+            let canonical_base = base_dir.canonicalize().map_err(|err| {
+                ToolError::Execution(format!(
+                    "failed to resolve skill search base {}: {err}",
+                    base_dir.display()
+                ))
+            })?;
+            if !canonical_dir.starts_with(canonical_base) {
+                continue;
+            }
+        }
 
-        for entry in sorted_skill_entries(&dir)? {
+        for entry in sorted_skill_entries(&canonical_dir)? {
             let name = entry.file_name().to_string_lossy().to_string();
             if catalog.contains_key(&name) {
                 continue;
@@ -724,19 +812,40 @@ fn discover_skill_catalog() -> Result<BTreeMap<String, DiscoveredSkill>, ToolErr
                 continue;
             }
 
+            if entry
+                .file_type()
+                .map_err(|err| {
+                    ToolError::Execution(format!("failed to inspect skill entry: {err}"))
+                })?
+                .is_symlink()
+            {
+                catalog.insert(name, DiscoveredSkill::Invalid);
+                continue;
+            }
+
             let skill_file = entry.path().join("SKILL.md");
             if !skill_file.exists() {
                 continue;
             }
-
-            let content = std::fs::read_to_string(&skill_file).map_err(|err| {
+            let canonical_skill_file = skill_file.canonicalize().map_err(|err| {
                 ToolError::Execution(format!(
-                    "failed to read skill file {}: {err}",
+                    "failed to resolve skill file {}: {err}",
                     skill_file.display()
                 ))
             })?;
+            if !canonical_skill_file.starts_with(&canonical_dir) {
+                catalog.insert(name, DiscoveredSkill::Invalid);
+                continue;
+            }
 
-            match build_skill_record(&name, &skill_file, &content, permission.clone()) {
+            let content = std::fs::read_to_string(&canonical_skill_file).map_err(|err| {
+                ToolError::Execution(format!(
+                    "failed to read skill file {}: {err}",
+                    canonical_skill_file.display()
+                ))
+            })?;
+
+            match build_skill_record(&name, &canonical_skill_file, &content, permission.clone()) {
                 Ok(skill) => {
                     catalog.insert(name, DiscoveredSkill::Visible(skill));
                 }
@@ -750,18 +859,36 @@ fn discover_skill_catalog() -> Result<BTreeMap<String, DiscoveredSkill>, ToolErr
     Ok(catalog)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SkillSearchDir {
+    path: PathBuf,
+    project_base: Option<PathBuf>,
+}
+
 fn skill_search_dirs(
     current_dir: &Path,
     config: &harness_core::config::SkillsConfig,
-) -> Vec<PathBuf> {
+) -> Vec<SkillSearchDir> {
     let mut dirs = Vec::new();
     for base_dir in project_search_bases(current_dir, config.walk_to_git_root) {
         for root in &config.project_roots {
-            push_unique_path(&mut dirs, resolve_skill_root(&base_dir, root));
+            push_unique_search_dir(
+                &mut dirs,
+                SkillSearchDir {
+                    path: resolve_skill_root(&base_dir, root),
+                    project_base: Some(base_dir.clone()),
+                },
+            );
         }
     }
     for root in &config.global_roots {
-        push_unique_path(&mut dirs, resolve_skill_root(current_dir, root));
+        push_unique_search_dir(
+            &mut dirs,
+            SkillSearchDir {
+                path: resolve_skill_root(current_dir, root),
+                project_base: None,
+            },
+        );
     }
     dirs
 }
@@ -782,8 +909,8 @@ fn project_search_bases(current_dir: &Path, walk_to_git_root: bool) -> Vec<PathB
     vec![current_dir.to_path_buf()]
 }
 
-fn push_unique_path(paths: &mut Vec<PathBuf>, candidate: PathBuf) {
-    if !paths.iter().any(|existing| existing == &candidate) {
+fn push_unique_search_dir(paths: &mut Vec<SkillSearchDir>, candidate: SkillSearchDir) {
+    if !paths.iter().any(|existing| existing.path == candidate.path) {
         paths.push(candidate);
     }
 }
