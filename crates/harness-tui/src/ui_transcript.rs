@@ -2401,6 +2401,12 @@ fn build_transcript_tool_call_section(
         "agent.spawn" | "task" => {
             build_agent_spawn_tool_row(tool_call, task_row, &mut detail_blocks, animation_phase)
         }
+        "background_output" => (
+            background_output_tool_title(tool_call),
+            Some("↻"),
+            TranscriptToolCallVisualStyle::Inline,
+            false,
+        ),
         "fs.write" => {
             let rendered_diff = push_tool_call_diff_blocks(
                 &mut detail_blocks,
@@ -2662,6 +2668,7 @@ fn build_transcript_tool_call_section(
             header_path_metadata = metadata.parent.clone();
             metadata.leaf
         }),
+        "background_output" => background_output_tool_subtitle(tool_call),
         "apply_patch" => apply_patch_tool_header_metadata(tool_call).map(|metadata| {
             header_path_metadata = metadata.parent.clone();
             metadata.leaf
@@ -2976,6 +2983,12 @@ fn tool_call_should_remain_visible_without_tool_details(
 
     if matches!(tool_call.effective_tool_id(), "agent.spawn" | "task")
         || matches!(tool_call.tool_id.as_str(), "agent.spawn" | "task")
+    {
+        return true;
+    }
+
+    if matches!(tool_call.effective_tool_id(), "background_output")
+        || matches!(tool_call.tool_id.as_str(), "background_output")
     {
         return true;
     }
@@ -3493,6 +3506,59 @@ fn generic_tool_name(tool_id: &str) -> String {
     tool_id.trim().to_string()
 }
 
+fn background_output_tool_title(tool_call: &crate::app::ToolCallEntry) -> String {
+    match tool_call.status {
+        ToolCallDisplayStatus::PendingPermission | ToolCallDisplayStatus::Queued => {
+            "Check background output".to_string()
+        }
+        ToolCallDisplayStatus::Running => "Checking background output...".to_string(),
+        ToolCallDisplayStatus::Succeeded => "Checked background output".to_string(),
+        ToolCallDisplayStatus::Failed => "Background output check failed".to_string(),
+    }
+}
+
+fn background_output_tool_subtitle(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
+    let mut parts = Vec::new();
+
+    if let Some(request_id) = tool_json_string(tool_call.output_json.as_ref(), &["request_id"])
+        .or_else(|| tool_summary_string(&tool_call.args_summary, &["request_id"]))
+    {
+        parts.push(request_id);
+    } else if let Some(task_id) = tool_json_string(tool_call.output_json.as_ref(), &["task_id"])
+        .or_else(|| tool_summary_string(&tool_call.args_summary, &["task_id", "session_id"]))
+    {
+        parts.push(task_id);
+    }
+
+    if let Some(status) = tool_json_string(tool_call.output_json.as_ref(), &["status"]) {
+        parts.push(status);
+    }
+
+    if let Some(count) = tool_call
+        .output_json
+        .as_ref()
+        .and_then(|value| value.get("child_tool_call_count"))
+        .and_then(serde_json::Value::as_u64)
+    {
+        parts.push(format!(
+            "{count} child tool call{}",
+            if count == 1 { "" } else { "s" }
+        ));
+    }
+
+    if let Some(duration_ms) = tool_call
+        .output_json
+        .as_ref()
+        .and_then(|value| value.get("duration_ms"))
+        .and_then(serde_json::Value::as_u64)
+        .or_else(|| tool_call.duration_ms())
+    {
+        parts.push(format_duration_ms(duration_ms));
+    }
+
+    (!parts.is_empty()).then(|| parts.join(" · "))
+}
+
 fn batch_tool_title(tool_call: &crate::app::ToolCallEntry) -> String {
     let count = tool_call
         .output_json
@@ -3604,9 +3670,15 @@ fn build_agent_spawn_tool_row(
     TranscriptToolCallVisualStyle,
     bool,
 ) {
-    let has_description = agent_spawn_description(tool_call).is_some();
+    let description = agent_spawn_description(tool_call).or_else(|| {
+        task_row
+            .and_then(|row| row.result_summary.as_deref())
+            .map(collapse_inline_whitespace)
+            .filter(|value| !value.is_empty())
+    });
+    let has_description = description.is_some();
     let title = if has_description {
-        agent_spawn_title(tool_call)
+        agent_spawn_title(tool_call, description)
     } else {
         "Delegating...".to_string()
     };
@@ -3640,8 +3712,7 @@ fn build_agent_spawn_tool_row(
     )
 }
 
-fn agent_spawn_title(tool_call: &crate::app::ToolCallEntry) -> String {
-    let description = agent_spawn_description(tool_call);
+fn agent_spawn_title(tool_call: &crate::app::ToolCallEntry, description: Option<String>) -> String {
     let profile = tool_call
         .output_json
         .as_ref()
@@ -3742,6 +3813,9 @@ fn agent_spawn_context_line(
         if resumed_existing_session {
             parts.push("resumed session".to_string());
         }
+        if let Some(hint) = background_task_next_action_hint(task_row, tool_call) {
+            parts.push(format!("details {hint}"));
+        }
         return Some(format!("└ {}", parts.join(" · ")));
     }
 
@@ -3755,13 +3829,60 @@ fn agent_spawn_context_line(
         if let Some(count) = child_tool_call_count.filter(|count| *count > 0) {
             return Some(format!("↳ {count} toolcalls"));
         }
+        if let Some(hint) = background_task_next_action_hint(task_row, tool_call) {
+            return Some(format!("↳ system notifies on completion · status {hint}"));
+        }
     }
 
     let mut parts = Vec::new();
     if resumed_existing_session {
         parts.push("resumed session".to_string());
     }
+    if let Some(hint) = background_task_next_action_hint(task_row, tool_call) {
+        parts.push(format!("status {hint}"));
+    }
     (!parts.is_empty()).then(|| parts.join(" · "))
+}
+
+fn background_task_next_action_hint(
+    task_row: Option<&crate::app::OrchestrationTaskRow>,
+    tool_call: &crate::app::ToolCallEntry,
+) -> Option<String> {
+    if !tool_output_indicates_background_task(tool_call.output_json.as_ref()) {
+        return None;
+    }
+
+    let request_id = task_row
+        .and_then(crate::app::OrchestrationTaskRow::effective_child_request_id)
+        .or_else(|| {
+            tool_json_string_ref(
+                tool_call.output_json.as_ref(),
+                &["child_request_id", "request_id"],
+            )
+        })
+        .or_else(|| {
+            tool_call
+                .lineage
+                .as_ref()
+                .and_then(|lineage| lineage.child_request_id.as_deref())
+        })
+        .and_then(collapsed_inline_non_empty)?;
+    let mut actions = vec![format!("background_output(request_id=\"{request_id}\")")];
+    if let Some(session_id) = task_row
+        .and_then(crate::app::OrchestrationTaskRow::effective_child_session_id)
+        .or_else(|| task_tool_child_session_id(tool_call))
+        .and_then(collapsed_inline_non_empty)
+    {
+        actions.push(format!("task(session_id=\"{session_id}\")"));
+    }
+    Some(actions.join(" · "))
+}
+
+fn tool_output_indicates_background_task(output_json: Option<&serde_json::Value>) -> bool {
+    output_json
+        .and_then(|value| value.get("background"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
 }
 
 fn orchestration_task_state_label(state: crate::app::OrchestrationTaskState) -> &'static str {
@@ -3771,6 +3892,8 @@ fn orchestration_task_state_label(state: crate::app::OrchestrationTaskState) -> 
         crate::app::OrchestrationTaskState::Stale => "stale",
         crate::app::OrchestrationTaskState::Completed => "completed",
         crate::app::OrchestrationTaskState::Cancelled => "cancelled",
+        crate::app::OrchestrationTaskState::Failed => "failed",
+        crate::app::OrchestrationTaskState::TimedOut => "timed out",
         crate::app::OrchestrationTaskState::LateResult => "late result",
     }
 }
@@ -4150,15 +4273,68 @@ fn strip_ansi_escapes(text: &str) -> String {
 }
 
 fn tool_summary_string(args_summary: &str, keys: &[&str]) -> Option<String> {
-    let value = serde_json::from_str::<serde_json::Value>(args_summary).ok()?;
-    let object = value.as_object()?;
-    keys.iter().find_map(|key| {
-        object
-            .get(*key)
-            .and_then(serde_json::Value::as_str)
-            .map(collapse_inline_whitespace)
-            .filter(|value| !value.is_empty())
-    })
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(args_summary) {
+        if let Some(object) = value.as_object() {
+            if let Some(parsed) = keys.iter().find_map(|key| {
+                object
+                    .get(*key)
+                    .and_then(serde_json::Value::as_str)
+                    .map(collapse_inline_whitespace)
+                    .filter(|value| !value.is_empty())
+            }) {
+                return Some(parsed);
+            }
+        }
+    }
+
+    tool_summary_string_fragment(args_summary, keys)
+}
+
+fn tool_summary_string_fragment(args_summary: &str, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| tool_summary_fragment_for_key(args_summary, key))
+}
+
+fn tool_summary_fragment_for_key(args_summary: &str, key: &str) -> Option<String> {
+    let marker = format!("\"{key}\"");
+    let marker_index = args_summary.find(&marker)?;
+    let mut rest = args_summary[marker_index + marker.len()..]
+        .chars()
+        .peekable();
+    while rest.peek().is_some_and(|ch| ch.is_whitespace()) {
+        rest.next();
+    }
+    if rest.next()? != ':' {
+        return None;
+    }
+    while rest.peek().is_some_and(|ch| ch.is_whitespace()) {
+        rest.next();
+    }
+    if rest.next()? != '"' {
+        return None;
+    }
+
+    let mut value = String::new();
+    let mut escaped = false;
+    for ch in rest {
+        if escaped {
+            match ch {
+                'n' | 'r' | 't' => value.push(' '),
+                '"' | '\\' | '/' => value.push(ch),
+                _ => value.push(ch),
+            }
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '"' => break,
+            '…' => break,
+            _ => value.push(ch),
+        }
+    }
+
+    Some(collapse_inline_whitespace(&value)).filter(|value| !value.is_empty())
 }
 
 #[derive(Debug, Clone)]
@@ -6873,28 +7049,7 @@ fn append_tool_call_todo_list(
 }
 
 fn ordered_todo_items(items: &[TranscriptTodoItem]) -> Vec<&TranscriptTodoItem> {
-    let active_index = items
-        .iter()
-        .position(|item| item.status == TranscriptTodoStatus::InProgress)
-        .or_else(|| {
-            items
-                .iter()
-                .position(|item| item.status == TranscriptTodoStatus::Pending)
-        })
-        .or_else(|| {
-            items
-                .iter()
-                .rposition(|item| item.status == TranscriptTodoStatus::Completed)
-        })
-        .unwrap_or(0);
-    std::iter::once(&items[active_index])
-        .chain(
-            items
-                .iter()
-                .enumerate()
-                .filter_map(|(index, item)| (index != active_index).then_some(item)),
-        )
-        .collect()
+    items.iter().collect()
 }
 
 fn inline_tool_color(tool_call: &TranscriptToolCallSection, theme: &Theme) -> Color {
@@ -9134,6 +9289,123 @@ fn task_row_hides_raw_task_result_payload_until_expanded() {
 }
 
 #[test]
+fn task_row_title_uses_partial_args_or_child_prompt_before_terminal_output() {
+    let mut tool_call = crate::app::ToolCallEntry {
+        tool_call_id: "tc_running_task".to_string(),
+        tool_id: "task".to_string(),
+        canonical_tool_id: Some("task".to_string()),
+        alias_source_tool_id: None,
+        resolved_tool_identity: None,
+        args_summary: r#"{"description":"review queued background completion wakeups","subagent_type":"explore","prompt":"long prompt"…"#
+            .to_string(),
+        args_digest: "digest-running-task-args".to_string(),
+        lifecycle_state: None,
+        status: ToolCallDisplayStatus::Running,
+        output_summary: None,
+        output_digest: None,
+        output_json: None,
+        truncated_output: None,
+        edit: None,
+        lineage: None,
+        artifact_refs: Vec::new(),
+        timing_elapsed_ms: None,
+        permissions: Vec::new(),
+        first_seq: 1,
+        last_seq: 2,
+        first_mono_ms: 1,
+        last_mono_ms: 2,
+        first_timestamp: None,
+        last_timestamp: None,
+    };
+
+    let mut detail_blocks = Vec::new();
+    let (title, icon, _, _) = build_agent_spawn_tool_row(&tool_call, None, &mut detail_blocks, 0);
+    assert_eq!(
+        title,
+        "Explore Task — review queued background completion wakeups"
+    );
+    assert_ne!(title, "Delegating...");
+    assert!(icon.is_some_and(|value| value != "~"));
+
+    tool_call.args_summary = "{}".to_string();
+    let task_row = crate::app::OrchestrationTaskRow {
+        task_id: "task_child".to_string(),
+        queue_key: Some("provider_model:mock:model-1".to_string()),
+        state: crate::app::OrchestrationTaskState::Running,
+        warning: None,
+        owner_kind: harness_core::event::ActorKind::Worker,
+        owner_agent_id: Some("agent_child".to_string()),
+        request_id: Some("req_child".to_string()),
+        parent_tool_call_id: None,
+        parent_request_id: None,
+        child_session_id: Some("agent_child".to_string()),
+        child_request_id: Some("req_child".to_string()),
+        result_summary: Some("inspect task behavior".to_string()),
+        child_tool_call_count: 0,
+        current_child_tool_title: None,
+        timing_elapsed_ms: None,
+        first_seq: 1,
+        last_seq: 2,
+        first_mono_ms: 1,
+        last_mono_ms: 2,
+        first_timestamp: None,
+        last_timestamp: None,
+    };
+    let (title, _, _, _) =
+        build_agent_spawn_tool_row(&tool_call, Some(&task_row), &mut Vec::new(), 0);
+    assert_eq!(title, "General Task — inspect task behavior");
+}
+
+#[test]
+fn background_output_tool_row_confirms_checked_child_result() {
+    let mut tool_call =
+        transcript_section_model_test_tool_call("tc-background-output", "background_output");
+    tool_call.status = ToolCallDisplayStatus::Succeeded;
+    tool_call.args_summary = r#"{"request_id":"req_child"}"#.to_string();
+    tool_call.output_json = Some(serde_json::json!({
+        "request_id": "req_child",
+        "task_id": "agent_child",
+        "status": "completed",
+        "duration_ms": 1600,
+        "child_tool_call_count": 2
+    }));
+
+    let section = build_transcript_tool_call_section(
+        &tool_call,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+
+    assert_eq!(section.header.title, "Checked background output");
+    assert_eq!(section.header.icon, Some("↻"));
+    assert_eq!(
+        section.header.subtitle.as_deref(),
+        Some("req_child · completed · 2 child tool calls · 1.6s")
+    );
+
+    let visible_without_details = build_tool_call_section(
+        &tool_call,
+        &AppState::default(),
+        false,
+        true,
+        false,
+        false,
+        false,
+        None,
+    )
+    .expect("background_output checks stay visible when tool details are hidden");
+    assert_eq!(
+        visible_without_details.header.title,
+        "Checked background output"
+    );
+}
+
+#[test]
 fn inline_metadata_collapse_removes_terminal_controls() {
     assert_eq!(
         collapse_inline_whitespace("researcher\u{1b}]0;owned\u{7} task\nsummary"),
@@ -10870,11 +11142,11 @@ pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
     assert!(rendered.contains("[•] Implement UI"));
     assert!(rendered.contains("[✓] Plan work"));
     assert!(rendered.contains("[ ] Verify tests"));
-    let active = rendered.find("[•] Implement UI").expect("active todo row");
     let completed = rendered.find("[✓] Plan work").expect("completed todo row");
+    let active = rendered.find("[•] Implement UI").expect("active todo row");
     assert!(
-        active < completed,
-        "active todo should be pinned first\n{rendered}"
+        completed < active,
+        "todo rows should preserve tool-provided order\n{rendered}"
     );
 
     let mut cancelled_then_pending =
@@ -10907,15 +11179,15 @@ pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
         render.lines
     })
     .join("\n");
-    let pending = cancelled_then_pending_rendered
-        .find("[ ] Pick next path")
-        .expect("pending todo row");
     let cancelled = cancelled_then_pending_rendered
         .find("[✓] Skip stale path")
         .expect("cancelled todo row");
+    let pending = cancelled_then_pending_rendered
+        .find("[ ] Pick next path")
+        .expect("pending todo row");
     assert!(
-        pending < cancelled,
-        "pending todo should outrank cancelled fallback\n{cancelled_then_pending_rendered}"
+        cancelled < pending,
+        "todo rows should preserve cancelled/pending order\n{cancelled_then_pending_rendered}"
     );
 
     let mut structured_output =
@@ -11213,7 +11485,10 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
                 status: harness_core::event::ToolCallStatus::Succeeded,
                 output_summary: Some("child session finished".to_string()),
                 output_digest: Some("digest-task-finished".to_string()),
-                output_json: None,
+                output_json: Some(serde_json::json!({
+                    "background": true,
+                    "request_id": "req_child",
+                })),
                 metadata: None,
             },
         ),
@@ -11247,6 +11522,8 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         completed_text.contains("2 toolcalls · 1.6s"),
         "completed task row should keep child-session context inline\n{completed_text}"
     );
+    assert!(completed_text.contains("details background_output(request_id=\"req_child\")"));
+    assert!(completed_text.contains("task(session_id=\"agent_worker\")"));
     assert!(!completed_text.contains("Found the inline transcript path."));
     assert!(!completed_text.contains("child session finished"));
 
@@ -11279,6 +11556,8 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
     .join("\n");
     assert!(parent_transcript_text.contains("Researcher Task — audit transcript parity"));
     assert!(parent_transcript_text.contains("2 toolcalls · 1.6s"));
+    assert!(parent_transcript_text.contains("details background_output(request_id=\"req_child\")"));
+    assert!(parent_transcript_text.contains("task(session_id=\"agent_worker\")"));
     let subagent_hint = format!(
         "{} view subagents",
         app.keymap.get_binding_str(Action::SessionChildFirst)

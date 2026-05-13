@@ -1,10 +1,11 @@
 use harness_core::event::{
-    ActorKind, AgentSpawnedEvent, EditAppliedEvent, EditProposedEvent, EventActor, EventEnvelopeV1,
-    EventV1, PermissionDecision, PermissionRequestedEvent, ProviderRequestFinishedEvent,
-    ProviderRequestStartedEvent, ProviderStreamDeltaEvent, RunFinishedEvent, RunStartedEvent,
-    StaleDetectedEvent, TaskCompletedEvent, TaskResultLateEvent, TaskScheduleState,
-    TaskScheduledEvent, ToolCallFinishedEvent, ToolCallRequestedEvent, ToolCallStartedEvent,
-    ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
+    ActorKind, AgentSpawnedEvent, BackgroundTaskNotificationEvent,
+    BackgroundTaskNotificationStatus, EditAppliedEvent, EditProposedEvent, EventActor,
+    EventEnvelopeV1, EventV1, PermissionDecision, PermissionRequestedEvent,
+    ProviderRequestFinishedEvent, ProviderRequestStartedEvent, ProviderStreamDeltaEvent,
+    RunFinishedEvent, RunStartedEvent, StaleDetectedEvent, TaskCompletedEvent, TaskResultLateEvent,
+    TaskScheduleState, TaskScheduledEvent, ToolCallFinishedEvent, ToolCallRequestedEvent,
+    ToolCallStartedEvent, ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use harness_core::proj::{RunStatus, SessionCatalogEntry, SessionModeSource};
 use harness_tui::app::{
@@ -697,6 +698,7 @@ fn operator_sidebar_matches_information_architecture() {
         &screen,
         &[
             "Inspect sidebar parity",
+            "▼ Subagents",
             "▼ MCP",
             "▼ LSP",
             "▼ Modified Files",
@@ -707,10 +709,15 @@ fn operator_sidebar_matches_information_architecture() {
         &screen,
         &[
             "• websearch Connected",
+            "• plan",
+            "• reporter ✓ Wakeup report visible",
             "• rust",
             "src/ui_secondary.rs",
             "src/layout.rs",
             "src/theme.rs",
+            "[BACKGROUND TASK COMPLETED]",
+            "background_output(request_id=\"req_plan\")",
+            "task(session_id=\"task_plan\")",
         ],
     );
     assert!(!screen.contains("Todo ·"));
@@ -1872,6 +1879,49 @@ fn sidebar_session_parity_events() -> Vec<EventEnvelopeV1> {
                 new_file_digest: "digest-edit-sidebar-3".to_string(),
                 diff_rel_path: None,
                 diff_digest: None,
+            }),
+        ),
+        envelope(
+            18,
+            Some("background_task_notification:req_plan"),
+            EventV1::BackgroundTaskNotification(BackgroundTaskNotificationEvent {
+                parent_session_id: "run_fixture".to_string(),
+                parent_agent_id: Some("agent_parent".to_string()),
+                child_session_id: "task_plan".to_string(),
+                child_request_id: "req_plan".to_string(),
+                task_id: "task_plan".to_string(),
+                description: "Inspect sidebar parity".to_string(),
+                status: BackgroundTaskNotificationStatus::Completed,
+                summary: "Plan subagent finished".to_string(),
+                terminal_event_id: "evt_plan_done".to_string(),
+                terminal_task_id: "task_plan".to_string(),
+                delivered_turn_request_id: Some("req_sidebar_wakeup".to_string()),
+            }),
+        ),
+        envelope(
+            19,
+            None,
+            EventV1::AgentSpawned(AgentSpawnedEvent {
+                agent_id: "agent_reporter".to_string(),
+                profile: "reporter".to_string(),
+                parent_agent_id: Some("agent_parent".to_string()),
+            }),
+        ),
+        envelope(
+            20,
+            Some("background_task_notification:req_reporter"),
+            EventV1::BackgroundTaskNotification(BackgroundTaskNotificationEvent {
+                parent_session_id: "run_fixture".to_string(),
+                parent_agent_id: Some("agent_parent".to_string()),
+                child_session_id: "agent_reporter".to_string(),
+                child_request_id: "req_reporter".to_string(),
+                task_id: "task_reporter".to_string(),
+                description: "Show sidebar wakeup".to_string(),
+                status: BackgroundTaskNotificationStatus::Completed,
+                summary: "Wakeup report visible".to_string(),
+                terminal_event_id: "evt_reporter_done".to_string(),
+                terminal_task_id: "task_reporter".to_string(),
+                delivered_turn_request_id: Some("req_reporter_wakeup".to_string()),
             }),
         ),
     ]
