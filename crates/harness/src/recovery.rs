@@ -46,6 +46,16 @@ pub struct RecoveryChildSessionEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub terminal_reason: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub notification_status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notification_summary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notification_terminal_event_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notification_terminal_task_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notification_delivered_turn_request_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub elapsed_ms: Option<u64>,
     pub hook_count: usize,
 }
@@ -307,6 +317,26 @@ fn collect_child_sessions(resume_plan: &ResumePlan) -> Vec<RecoveryChildSessionE
                     .to_string()
             }),
             terminal_reason: child.terminal_reason.clone(),
+            notification_status: child
+                .background_notification
+                .as_ref()
+                .map(|notification| notification.status.as_str().to_string()),
+            notification_summary: child
+                .background_notification
+                .as_ref()
+                .map(|notification| notification.summary.clone()),
+            notification_terminal_event_id: child
+                .background_notification
+                .as_ref()
+                .map(|notification| notification.terminal_event_id.clone()),
+            notification_terminal_task_id: child
+                .background_notification
+                .as_ref()
+                .map(|notification| notification.terminal_task_id.clone()),
+            notification_delivered_turn_request_id: child
+                .background_notification
+                .as_ref()
+                .and_then(|notification| notification.delivered_turn_request_id.clone()),
             elapsed_ms: child.timing.as_ref().and_then(|timing| timing.elapsed_ms),
             hook_count: child.hook_executions.len(),
         })

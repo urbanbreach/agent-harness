@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use clap::Args;
 use harness_core::event::{EventEnvelopeV1, EventV1, RunStartedEvent};
 use harness_core::proj::{
-    project_resume_plan, project_run_summary, project_session_catalog_entry,
+    project_resume_plan, project_run_summary, project_session_catalog_entry, project_team_state,
     ChildSessionTerminalState, RunStatus, SessionCatalogEntry, SessionCatalogMetadata,
 };
 use serde::Serialize;
@@ -72,11 +72,23 @@ pub struct ReplayChildSessionSummary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub terminal_reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notification_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notification_summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notification_terminal_event_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notification_terminal_task_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notification_delivered_turn_request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub elapsed_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub related_tool_call_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub artifact_paths: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub next_actions: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -101,6 +113,26 @@ pub struct ReplaySummary {
     pub artifacts: Vec<ReplayArtifactSummary>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub child_sessions: Vec<ReplayChildSessionSummary>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub teams: Vec<ReplayTeamSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ReplayTeamSummary {
+    pub team_run_id: String,
+    pub name: String,
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lead_profile: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lead_status: Option<String>,
+    pub member_count: usize,
+    pub running_members: u32,
+    pub pending_members: u32,
+    pub message_count: usize,
+    pub task_count: usize,
+    pub shutdown_request_count: usize,
+    pub member_turns: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -157,6 +189,7 @@ pub fn summarize_session(run_dir: &Path) -> Result<ReplaySummary, String> {
         .map_err(|err| err.to_string())?;
     let run_name = run_started_event(&events).map(|data| data.run_name.clone());
     let (artifacts, child_sessions) = summarize_recovery_story(run_dir, &events, &run_id);
+    let teams = summarize_teams(&events);
 
     Ok(ReplaySummary {
         run_id,
@@ -177,7 +210,32 @@ pub fn summarize_session(run_dir: &Path) -> Result<ReplaySummary, String> {
         last_error: projection.last_error,
         artifacts,
         child_sessions,
+        teams,
     })
+}
+
+fn summarize_teams(events: &[EventEnvelopeV1]) -> Vec<ReplayTeamSummary> {
+    let Ok(projection) = project_team_state(events.iter()) else {
+        return Vec::new();
+    };
+    projection
+        .teams
+        .into_iter()
+        .map(|(team_run_id, team)| ReplayTeamSummary {
+            team_run_id,
+            name: team.name,
+            status: format!("{:?}", team.status),
+            lead_profile: team.lead.as_ref().and_then(|lead| lead.profile.clone()),
+            lead_status: team.lead.as_ref().map(|lead| format!("{:?}", lead.status)),
+            member_count: team.members.len(),
+            running_members: team.bounds_consumption.running_members,
+            pending_members: team.bounds_consumption.pending_members,
+            message_count: team.messages.len(),
+            task_count: team.tasks.len(),
+            shutdown_request_count: team.shutdown_requests.len(),
+            member_turns: team.bounds_consumption.member_turns,
+        })
+        .collect()
 }
 
 pub fn inspect_session_catalog(session_dir: &Path) -> Result<Vec<SessionInspectionEntry>, String> {
@@ -376,6 +434,26 @@ fn summarize_recovery_story(
                     parent_request_id: child.parent_request_id.clone(),
                     terminal_state: child.terminal_state,
                     terminal_reason: child.terminal_reason.clone(),
+                    notification_status: child
+                        .background_notification
+                        .as_ref()
+                        .map(|notification| notification.status.as_str().to_string()),
+                    notification_summary: child
+                        .background_notification
+                        .as_ref()
+                        .map(|notification| notification.summary.clone()),
+                    notification_terminal_event_id: child
+                        .background_notification
+                        .as_ref()
+                        .map(|notification| notification.terminal_event_id.clone()),
+                    notification_terminal_task_id: child
+                        .background_notification
+                        .as_ref()
+                        .map(|notification| notification.terminal_task_id.clone()),
+                    notification_delivered_turn_request_id: child
+                        .background_notification
+                        .as_ref()
+                        .and_then(|notification| notification.delivered_turn_request_id.clone()),
                     elapsed_ms: child.timing.as_ref().and_then(|timing| timing.elapsed_ms),
                     related_tool_call_ids: child_tool_call_ids
                         .remove(child_session_id)
@@ -387,6 +465,11 @@ fn summarize_recovery_story(
                         .unwrap_or_default()
                         .into_iter()
                         .collect(),
+                    next_actions: child_session_next_actions(
+                        child_session_id,
+                        child.latest_child_request_id.as_deref(),
+                        child.terminal_state,
+                    ),
                 })
                 .collect::<Vec<_>>()
         })
@@ -394,6 +477,31 @@ fn summarize_recovery_story(
     child_sessions.sort_by(|left, right| left.child_session_id.cmp(&right.child_session_id));
 
     (artifacts, child_sessions)
+}
+
+fn child_session_next_actions(
+    child_session_id: &str,
+    child_request_id: Option<&str>,
+    terminal_state: Option<ChildSessionTerminalState>,
+) -> Vec<String> {
+    let mut actions = Vec::new();
+    if let Some(request_id) = child_request_id {
+        actions.push(format!(
+            "background_output(request_id=\"{}\", block=false)",
+            sanitize_human_text(request_id)
+        ));
+        if terminal_state.is_none() {
+            actions.push(format!(
+                "background_output(request_id=\"{}\", block=true)",
+                sanitize_human_text(request_id)
+            ));
+        }
+    }
+    actions.push(format!(
+        "task(session_id=\"{}\", run_in_background=false, load_skills=[], prompt=\"Continue this child task with additional instructions.\")",
+        sanitize_human_text(child_session_id)
+    ));
+    actions
 }
 
 #[derive(Debug, Clone, Default)]
@@ -799,6 +907,7 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary) {
     );
     println!("child_sessions: {}", summary.child_session_count);
     println!("artifacts: {}", summary.artifact_count);
+    println!("teams: {}", summary.teams.len());
     println!("total_events: {}", summary.total_events);
     if let Some(last_error) = &summary.last_error {
         println!("last_error: {}", sanitize_human_text(last_error));
@@ -908,10 +1017,20 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary) {
             if let Some(terminal_state) = child.terminal_state {
                 details.push(format!("state={terminal_state:?}"));
             }
+            push_sanitized_detail(
+                &mut details,
+                "notification",
+                child.notification_status.as_deref(),
+            );
             if let Some(elapsed_ms) = child.elapsed_ms {
                 details.push(format!("elapsed_ms={elapsed_ms}"));
             }
             push_sanitized_detail(&mut details, "reason", child.terminal_reason.as_deref());
+            push_sanitized_detail(
+                &mut details,
+                "notification_summary",
+                child.notification_summary.as_deref(),
+            );
             if !details.is_empty() {
                 println!("    {}", details.join(", "));
             }
@@ -935,6 +1054,43 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary) {
                         .map(|value| sanitize_human_text(value))
                         .collect::<Vec<_>>()
                         .join(", ")
+                );
+            }
+            if !child.next_actions.is_empty() {
+                println!("    next_actions:");
+                for action in &child.next_actions {
+                    println!("      - {}", sanitize_human_text(action));
+                }
+            }
+        }
+    }
+
+    println!("teams: {}", summary.teams.len());
+    if summary.teams.is_empty() {
+        println!("  <none>");
+    } else {
+        for team in &summary.teams {
+            println!(
+                "  - {} ({})",
+                sanitize_human_text(&team.name),
+                sanitize_human_text(&team.team_run_id)
+            );
+            println!(
+                "    status={}, members={} (running={}, pending={}), messages={}, tasks={}, shutdown_requests={}, member_turns={}",
+                sanitize_human_text(&team.status),
+                team.member_count,
+                team.running_members,
+                team.pending_members,
+                team.message_count,
+                team.task_count,
+                team.shutdown_request_count,
+                team.member_turns
+            );
+            if let Some(lead_profile) = team.lead_profile.as_deref() {
+                println!(
+                    "    lead={} ({})",
+                    sanitize_human_text(lead_profile),
+                    sanitize_human_text(team.lead_status.as_deref().unwrap_or("unknown"))
                 );
             }
         }

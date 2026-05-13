@@ -1544,6 +1544,10 @@ async fn run_continue_session_bootstrap(
     Ok(selected_workflow)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "continue live TUI options mirror the live handoff state explicitly"
+)]
 fn continue_live_tui_options(
     run_dir: PathBuf,
     historical_events: Vec<EventEnvelopeV1>,

@@ -16,6 +16,7 @@ pub fn compose(ctx: DynamicPromptContext<'_>) -> String {
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| provider_prompt(ctx.model.model.as_str()).to_string())];
     sections.push(environment_prompt(ctx.model));
+    sections.push(task_delegation_prompt().to_string());
 
     if let Some(instructions) = ctx.instruction_prompt {
         sections.push(instructions.to_string());
@@ -75,6 +76,10 @@ fn environment_prompt(model: &ResolvedModelTarget) -> String {
         platform = std::env::consts::OS,
         date = today_date_string(),
     )
+}
+
+fn task_delegation_prompt() -> &'static str {
+    "Task delegation reminder: if the `task` tool is available, `run_in_background=false` is synchronous; the child result returns directly in the current tool response and no `[BACKGROUND TASK ...]` reminder is emitted. Use `run_in_background=true` when testing background subagents, wakeups, completion reminders, or `background_output`."
 }
 
 fn today_date_string() -> String {
@@ -677,6 +682,20 @@ mod tests {
         assert!(!prompt.to_lowercase().contains(&["open", "code"].concat()));
         assert!(prompt.contains("Instructions from: AGENTS.md"));
         assert!(prompt.contains("Skills provide specialized instructions"));
+    }
+
+    #[test]
+    fn dynamic_prompt_explains_task_background_modes() {
+        let prompt = compose(DynamicPromptContext {
+            configured_prompt: None,
+            model: &model("gpt-5.4-mini"),
+            instruction_prompt: None,
+            skill_tool_enabled: false,
+        });
+
+        assert!(prompt.contains("run_in_background=false` is synchronous"));
+        assert!(prompt.contains("no `[BACKGROUND TASK ...]` reminder is emitted"));
+        assert!(prompt.contains("Use `run_in_background=true` when testing background subagents"));
     }
 
     #[test]

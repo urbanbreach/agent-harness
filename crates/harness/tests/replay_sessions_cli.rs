@@ -5,13 +5,14 @@ use std::time::Duration;
 use std::time::SystemTime;
 
 use harness_core::event::{
-    ActorKind, AgentSpawnedEvent, ArtifactWrittenEvent, EventActor, EventArtifactRef,
-    EventEnvelopeV1, EventV1, ExecutionTimingMetadata, PermissionDecision,
-    PermissionRequestedEvent, ProviderRequestFinishedEvent, ProviderRequestStartedEvent,
-    RunFailedEvent, RunFinishedEvent, RunStartedEvent, TaskCompletedEvent, TaskCompletionMetadata,
-    TaskLineageMetadata, TaskScheduleState, TaskScheduledEvent, ToolCallFinishedEvent,
-    ToolCallMetadata, ToolCallRequestedEvent, ToolCallStatus, ToolIdentityMetadata,
-    UserMessageSubmittedEvent, SCHEMA_VERSION,
+    ActorKind, AgentSpawnedEvent, ArtifactWrittenEvent, BackgroundTaskNotificationEvent,
+    BackgroundTaskNotificationStatus, EventActor, EventArtifactRef, EventEnvelopeV1, EventV1,
+    ExecutionTimingMetadata, PermissionDecision, PermissionRequestedEvent,
+    ProviderRequestFinishedEvent, ProviderRequestStartedEvent, RunFailedEvent, RunFinishedEvent,
+    RunStartedEvent, TaskCompletedEvent, TaskCompletionMetadata, TaskLineageMetadata,
+    TaskScheduleState, TaskScheduledEvent, ToolCallFinishedEvent, ToolCallMetadata,
+    ToolCallRequestedEvent, ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent,
+    SCHEMA_VERSION,
 };
 use tempfile::tempdir;
 
@@ -234,7 +235,12 @@ fn replay_cli_surfaces_recovery_story_details_from_resume_metadata() {
     assert!(stdout.contains("child-run-001"));
     assert!(stdout.contains("parent_tool=toolcall_1"));
     assert!(stdout.contains("provider_model=openai/gpt-5.4-mini"));
+    assert!(stdout.contains("notification=completed"));
+    assert!(stdout.contains("notification_summary=background child completed"));
     assert!(stdout.contains("artifacts=artifacts/delegated/task-output.json"));
+    assert!(stdout.contains("next_actions:"));
+    assert!(stdout.contains("background_output(request_id=\"child-req-001\", block=false)"));
+    assert!(stdout.contains("task(session_id=\"child-run-001\""));
 
     let json = Command::new(env!("CARGO_BIN_EXE_harness"))
         .args([
@@ -279,6 +285,28 @@ fn replay_cli_surfaces_recovery_story_details_from_resume_metadata() {
         summary["child_sessions"][0]["artifact_paths"][0],
         "artifacts/delegated/task-output.json"
     );
+    assert_eq!(
+        summary["child_sessions"][0]["notification_status"],
+        "completed"
+    );
+    assert_eq!(
+        summary["child_sessions"][0]["notification_summary"],
+        "background child completed"
+    );
+    assert_eq!(
+        summary["child_sessions"][0]["notification_terminal_event_id"],
+        "evt-0006"
+    );
+    assert_eq!(
+        summary["child_sessions"][0]["next_actions"][0],
+        "background_output(request_id=\"child-req-001\", block=false)"
+    );
+    assert!(summary["child_sessions"][0]["next_actions"]
+        .as_array()
+        .expect("child next actions")
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .any(|action| action.contains("task(session_id=\"child-run-001\"")));
 }
 
 #[test]
@@ -3132,6 +3160,23 @@ fn delegated_recovery_events(run_id: &str) -> Vec<EventEnvelopeV1> {
         envelope(
             run_id,
             7,
+            EventV1::BackgroundTaskNotification(BackgroundTaskNotificationEvent {
+                parent_session_id: "agent_supervisor".to_string(),
+                parent_agent_id: Some("agent_supervisor".to_string()),
+                child_session_id: "child-run-001".to_string(),
+                child_request_id: "child-req-001".to_string(),
+                task_id: "task_1".to_string(),
+                description: "delegate".to_string(),
+                status: BackgroundTaskNotificationStatus::Completed,
+                summary: "background child completed".to_string(),
+                terminal_event_id: "evt-0006".to_string(),
+                terminal_task_id: "task_1".to_string(),
+                delivered_turn_request_id: Some("parent-notice-req".to_string()),
+            }),
+        ),
+        envelope(
+            run_id,
+            8,
             EventV1::RunFinished(RunFinishedEvent {
                 summary: "done".to_string(),
             }),
