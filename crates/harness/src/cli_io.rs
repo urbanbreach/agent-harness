@@ -128,3 +128,50 @@ pub(crate) async fn wait_for_tool_finished(
         tokio::time::sleep(EVENT_WAIT_POLL_INTERVAL).await;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+    use std::fs::File;
+    use std::io::Write;
+
+    #[test]
+    fn test_copy_events_file_success() {
+        let dir = tempdir().unwrap();
+        let from = dir.path().join("from.jsonl");
+        let to = dir.path().join("to.jsonl");
+
+        let mut file = File::create(&from).unwrap();
+        writeln!(file, "test").unwrap();
+
+        assert!(copy_events_file(&from, &to).is_ok());
+        assert!(to.exists());
+        assert_eq!(fs::read_to_string(&to).unwrap(), "test\n");
+    }
+
+    #[test]
+    fn test_copy_events_file_create_parents() {
+        let dir = tempdir().unwrap();
+        let from = dir.path().join("from.jsonl");
+        let to = dir.path().join("nested/dir/to.jsonl");
+
+        let mut file = File::create(&from).unwrap();
+        writeln!(file, "test").unwrap();
+
+        assert!(copy_events_file(&from, &to).is_ok());
+        assert!(to.exists());
+        assert_eq!(fs::read_to_string(&to).unwrap(), "test\n");
+    }
+
+    #[test]
+    fn test_copy_events_file_source_missing() {
+        let dir = tempdir().unwrap();
+        let from = dir.path().join("from.jsonl");
+        let to = dir.path().join("to.jsonl");
+
+        let result = copy_events_file(&from, &to);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("failed to copy events file"));
+    }
+}
