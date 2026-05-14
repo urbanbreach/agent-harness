@@ -16,6 +16,7 @@ mod cli_config;
 mod cli_io;
 mod cli_labels;
 mod defaults;
+mod doctor;
 mod dynamic_prompt;
 mod generated_model_catalog;
 mod logging;
@@ -31,6 +32,7 @@ mod tui;
 
 use crate::prompt::PromptCommand;
 use crate::tui::TuiCommand;
+use doctor::DoctorCommand;
 use models::ModelsCommand;
 use replay::ReplayCommand;
 use run::RunCommand;
@@ -85,6 +87,7 @@ impl RootInteractiveArgs {
 enum Commands {
     Tui(TuiCommand),
     Run(RunCommand),
+    Doctor(DoctorCommand),
     Models(ModelsCommand),
     Prompt(PromptCommand),
     Replay(ReplayCommand),
@@ -134,6 +137,7 @@ fn main() -> ExitCode {
     match command {
         Commands::Tui(command) => crate::tui::execute(command, config, session_dir),
         Commands::Run(command) => run::execute(command, config, session_dir),
+        Commands::Doctor(command) => doctor::execute(command, config, session_dir),
         Commands::Models(command) => models::execute(command, config),
         Commands::Prompt(command) => prompt::execute(command, config, session_dir),
         Commands::Replay(command) => replay::execute(command),
