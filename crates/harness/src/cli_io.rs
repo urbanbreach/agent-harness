@@ -128,3 +128,72 @@ pub(crate) async fn wait_for_tool_finished(
         tokio::time::sleep(EVENT_WAIT_POLL_INTERVAL).await;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use harness_core::event::{ActorKind, EventActor, EventV1, RunStartedEvent};
+    use tempfile::TempDir;
+
+    fn create_test_event() -> EventEnvelopeV1 {
+        EventEnvelopeV1 {
+            schema_version: 1,
+            event_id: "test-event-1".to_string(),
+            seq: 1,
+            run_id: "test-run".to_string(),
+            mono_ms: 0,
+            ts: None,
+            actor: EventActor::new(ActorKind::System, None),
+            correlation_id: None,
+            causation_id: None,
+            stream_key: None,
+            payload: EventV1::RunStarted(RunStartedEvent {
+                run_name: "test-run".to_string(),
+                workspace_root: "/test/workspace".to_string(),
+            }),
+        }
+    }
+
+    #[test]
+    fn test_load_events_from_run_dir_success() {
+        let temp_dir = TempDir::new().unwrap();
+        let events_file = temp_dir.path().join(EVENTS_FILE_NAME);
+
+        let event1 = create_test_event();
+        let mut event2 = create_test_event();
+        event2.event_id = "test-event-2".to_string();
+        event2.seq = 2;
+
+        let content = format!(
+            "{}\n{}\n",
+            serde_json::to_string(&event1).unwrap(),
+            serde_json::to_string(&event2).unwrap()
+        );
+        std::fs::write(&events_file, content).unwrap();
+
+        let loaded_events = load_events_from_run_dir(temp_dir.path()).unwrap();
+        assert_eq!(loaded_events.len(), 2);
+        assert_eq!(loaded_events[0].event_id, "test-event-1");
+        assert_eq!(loaded_events[1].event_id, "test-event-2");
+    }
+
+    #[test]
+    fn test_load_events_from_run_dir_not_found() {
+        let temp_dir = TempDir::new().unwrap();
+        let result = load_events_from_run_dir(temp_dir.path());
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("failed to read events file"));
+    }
+
+    #[test]
+    fn test_load_events_from_run_dir_invalid_json() {
+        let temp_dir = TempDir::new().unwrap();
+        let events_file = temp_dir.path().join(EVENTS_FILE_NAME);
+
+        std::fs::write(&events_file, "invalid json\n").unwrap();
+
+        let result = load_events_from_run_dir(temp_dir.path());
+        assert!(result.is_err());
+    }
+}
