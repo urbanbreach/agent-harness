@@ -128,3 +128,78 @@ pub(crate) async fn wait_for_tool_finished(
         tokio::time::sleep(EVENT_WAIT_POLL_INTERVAL).await;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use harness_core::event::{ActorKind, EventActor, EventV1, RunFinishedEvent};
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_load_events_file_success() {
+        let dir = TempDir::new().unwrap();
+        let events_path = dir.path().join("events.jsonl");
+
+        let event1 = EventEnvelopeV1 {
+            schema_version: 1,
+            event_id: "evt1".to_string(),
+            seq: 1,
+            run_id: "run1".to_string(),
+            mono_ms: 100,
+            ts: None,
+            actor: EventActor { kind: ActorKind::System, agent_id: None },
+            correlation_id: None,
+            causation_id: None,
+            stream_key: None,
+            payload: EventV1::RunFinished(RunFinishedEvent { summary: "test".to_string() }),
+        };
+
+        let event2 = EventEnvelopeV1 {
+            schema_version: 1,
+            event_id: "evt2".to_string(),
+            seq: 2,
+            run_id: "run1".to_string(),
+            mono_ms: 200,
+            ts: None,
+            actor: EventActor { kind: ActorKind::System, agent_id: None },
+            correlation_id: None,
+            causation_id: None,
+            stream_key: None,
+            payload: EventV1::RunFinished(RunFinishedEvent { summary: "test".to_string() }),
+        };
+
+        let content = format!(
+            "{}\n{}\n",
+            serde_json::to_string(&event1).unwrap(),
+            serde_json::to_string(&event2).unwrap()
+        );
+
+        fs::write(&events_path, content).unwrap();
+
+        let events = load_events_file(&events_path).unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].event_id, "evt1");
+        assert_eq!(events[1].event_id, "evt2");
+    }
+
+    #[test]
+    fn test_load_events_file_not_found() {
+        let dir = TempDir::new().unwrap();
+        let events_path = dir.path().join("non_existent.jsonl");
+
+        let result = load_events_file(&events_path);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("failed to read events file"));
+    }
+
+    #[test]
+    fn test_load_events_file_invalid_json() {
+        let dir = TempDir::new().unwrap();
+        let events_path = dir.path().join("events.jsonl");
+
+        fs::write(&events_path, "invalid json\n").unwrap();
+
+        let result = load_events_file(&events_path);
+        assert!(result.is_err());
+    }
+}
