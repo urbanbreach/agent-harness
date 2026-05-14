@@ -68,3 +68,78 @@ pub fn execute(cmd: ModelsCommand, config_path: Option<PathBuf>) -> ExitCode {
 
     ExitCode::SUCCESS
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    #[serial]
+    fn execute_returns_error_when_config_is_missing() {
+        let cmd = ModelsCommand { command: None };
+        // We set HARNESS_CONFIG_CONTENT to empty or unset to make sure it tries to load from file
+        std::env::remove_var("HARNESS_CONFIG_CONTENT");
+        let exit_code = execute(cmd, Some(PathBuf::from("non_existent_config.jsonc")));
+        // Since load_resolved_config with a missing explicit path might return an Err
+        // if it exists, or return None if not found, we expect it to return 1 or 2.
+        // If we provide an explicit path and it doesn't exist, load_resolved_config_from_paths
+        // will return an error about file not found -> Err -> ExitCode::from(1).
+        // Since std::process::ExitCode cannot be compared, we convert it indirectly or check format.
+        assert_eq!(format!("{:?}", exit_code), "ExitCode(unix_exit_status(1))");
+    }
+
+    #[test]
+    #[serial]
+    fn execute_returns_success_with_valid_config() {
+        let temp = tempdir().expect("failed to create temp dir");
+        let config_path = temp.path().join("harness.jsonc");
+        fs::write(
+            &config_path,
+            r#"{
+                "providers": {
+                    "test_provider": {
+                        "type": "openai_compatible",
+                        "options": { "baseURL": "http://localhost" },
+                        "models": {
+                            "test_model": {
+                                "name": "Test Model",
+                                "limit": {
+                                    "context": 8192
+                                },
+                                "metadata": {
+                                    "supportsToolCalls": true
+                                },
+                                "modalities": {
+                                    "input": ["text"],
+                                    "output": ["text"]
+                                }
+                            }
+                        }
+                    }
+                },
+                "model_profiles": {
+                    "default": {
+                        "model": "test_provider:test_model"
+                    }
+                },
+                "agents": {
+                    "build": {
+                        "model_ref": "default",
+                        "description": "test agent",
+                        "system_prompt": "test prompt"
+                    }
+                }
+            }"#
+        ).expect("failed to write config");
+
+        let cmd = ModelsCommand { command: None };
+        std::env::remove_var("HARNESS_CONFIG_CONTENT");
+        let exit_code = execute(cmd, Some(config_path));
+
+        // When successful, it prints to stdout and returns ExitCode::SUCCESS
+        assert_eq!(format!("{:?}", exit_code), "ExitCode(unix_exit_status(0))");
+    }
+}
