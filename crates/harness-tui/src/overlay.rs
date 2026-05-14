@@ -107,3 +107,55 @@ impl<'a> IntoIterator for &'a OverlayStack {
         self.overlays.iter().copied()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_command_palette_channel_visible() {
+        let mut state = OverlayState::default();
+
+        // Initially should be false
+        assert!(!state.command_palette_channel_visible());
+
+        // Changing unrelated fields should not affect it
+        state.details_drawer_open = true;
+        state.slash_visible = true;
+        state.file_mention_visible = true;
+        state.status_dialog_visible = true;
+        state.permission_pending = true;
+        assert!(!state.command_palette_channel_visible());
+
+        // Test each field that should make it visible
+        let mut state = OverlayState::default();
+        state.palette_visible = true;
+        assert!(state.command_palette_channel_visible());
+
+        let mut state = OverlayState::default();
+        state.session_history_visible = true;
+        assert!(state.command_palette_channel_visible());
+
+        let mut state = OverlayState::default();
+        state.model_switcher_visible = true;
+        assert!(state.command_palette_channel_visible());
+
+        let mut state = OverlayState::default();
+        state.toggles_menu_visible = true;
+        assert!(state.command_palette_channel_visible());
+
+        let mut state = OverlayState::default();
+        state.lineage_browser_visible = true;
+        assert!(state.command_palette_channel_visible());
+
+        let mut state = OverlayState::default();
+        state.fork_selector_visible = true;
+        assert!(state.command_palette_channel_visible());
+
+        // Test multiple fields
+        let mut state = OverlayState::default();
+        state.palette_visible = true;
+        state.toggles_menu_visible = true;
+        assert!(state.command_palette_channel_visible());
+    }
+}
