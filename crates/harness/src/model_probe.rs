@@ -644,3 +644,35 @@ struct ModelsDevModalities {
     #[serde(default)]
     output: Option<Vec<String>>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_execute_generated_with_output_file() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_path_buf();
+        let command = GeneratedModelCatalogCommand {
+            output: Some(path.clone()),
+        };
+
+        let result = execute_generated(command);
+        assert_eq!(result, ExitCode::SUCCESS);
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            content,
+            crate::generated_model_catalog::PROVIDER_CATALOG_JSON
+        );
+    }
+
+    #[test]
+    fn test_execute_generated_with_stdout() {
+        let command = GeneratedModelCatalogCommand { output: None };
+
+        let result = execute_generated(command);
+        assert_eq!(result, ExitCode::SUCCESS);
+    }
+}
