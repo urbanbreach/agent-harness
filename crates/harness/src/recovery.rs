@@ -415,7 +415,7 @@ mod tests {
     use super::*;
     use harness_core::event::{
         ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1,
-        ProviderRequestStartedEvent, RunFinishedEvent, RunStartedEvent, SCHEMA_VERSION,
+        ProviderRequestStartedEvent, RunFinishedEvent, RunStartedEvent, SessionTitleUpdatedEvent, SCHEMA_VERSION,
     };
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -566,6 +566,85 @@ mod tests {
         assert_eq!(summary.run_id, "test-run");
         assert!(!summary.resumable);
         assert!(summary.resume_agent_id.is_none());
+    }
+
+    #[test]
+    fn test_latest_run_name_empty() {
+        let events = vec![];
+        assert_eq!(latest_run_name(&events), None);
+    }
+
+    #[test]
+    fn test_latest_run_name_unrelated_events() {
+        let events = vec![
+            envelope(
+                1,
+                None,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ];
+        assert_eq!(latest_run_name(&events), None);
+    }
+
+    #[test]
+    fn test_latest_run_name_run_started() {
+        let events = vec![
+            envelope(
+                1,
+                None,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "my-run".to_string(),
+                    workspace_root: "/tmp".to_string(),
+                }),
+            ),
+        ];
+        assert_eq!(latest_run_name(&events), Some("my-run".to_string()));
+    }
+
+    #[test]
+    fn test_latest_run_name_session_title_updated() {
+        let events = vec![
+            envelope(
+                1,
+                None,
+                EventV1::SessionTitleUpdated(SessionTitleUpdatedEvent {
+                    title: "my-title".to_string(),
+                }),
+            ),
+        ];
+        assert_eq!(latest_run_name(&events), Some("my-title".to_string()));
+    }
+
+    #[test]
+    fn test_latest_run_name_multiple_events() {
+        let events = vec![
+            envelope(
+                1,
+                None,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "my-run".to_string(),
+                    workspace_root: "/tmp".to_string(),
+                }),
+            ),
+            envelope(
+                2,
+                None,
+                EventV1::SessionTitleUpdated(SessionTitleUpdatedEvent {
+                    title: "my-first-title".to_string(),
+                }),
+            ),
+            envelope(
+                3,
+                None,
+                EventV1::SessionTitleUpdated(SessionTitleUpdatedEvent {
+                    title: "my-latest-title".to_string(),
+                }),
+            ),
+        ];
+        // It iterates backwards and finds the last one
+        assert_eq!(latest_run_name(&events), Some("my-latest-title".to_string()));
     }
 
     #[test]
