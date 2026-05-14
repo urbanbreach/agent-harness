@@ -802,7 +802,7 @@ fn html_to_text(html: &str) -> String {
         .to_string()
 }
 
-pub fn html_to_markdown(html: &str) -> String {
+fn html_to_markdown(html: &str) -> String {
     let markdown = html
         .replace("\r\n", "\n")
         .replace("<br>", "\n")
