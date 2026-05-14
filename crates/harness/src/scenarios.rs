@@ -369,3 +369,30 @@ pub fn supervisor_actor() -> EventActor {
 pub fn worker_actor(agent_id: String) -> EventActor {
     EventActor::new(ActorKind::Worker, Some(agent_id))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deterministic_run_id_format_and_uniqueness() {
+        let id1 = deterministic_run_id(12345, ScenarioName::GoldenPath);
+        let id2 = deterministic_run_id(12345, ScenarioName::GoldenPath);
+
+        // Same seed and scenario give same run_id
+        assert_eq!(id1, id2);
+
+        // Format is starting with run_ and followed by 32 hex chars
+        assert!(id1.starts_with("run_"));
+        assert_eq!(id1.len(), 4 + 32);
+        assert!(id1[4..].chars().all(|c| c.is_ascii_hexdigit()));
+
+        // Different seed gives different run_id
+        let id3 = deterministic_run_id(54321, ScenarioName::GoldenPath);
+        assert_ne!(id1, id3);
+
+        // Different scenario gives different run_id
+        let id4 = deterministic_run_id(12345, ScenarioName::GoldenPathInteractive);
+        assert_ne!(id1, id4);
+    }
+}
