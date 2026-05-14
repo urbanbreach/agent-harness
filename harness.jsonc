@@ -272,6 +272,11 @@
       "model": "default/gpt-5.5",
       "variant": "xhigh",
     },
+    "discipline": {
+      "enable": true,
+      "model": "default/gpt-5.5",
+      "variant": "high",
+    },
     "general": {
       "enable": true,
       "model": "default/gpt-5.4-mini",
@@ -281,6 +286,46 @@
       "enable": true,
       "model": "default/gpt-5.4-mini",
       "variant": "low",
+    },
+    "visual-engineering": {
+      "enable": true,
+      "model": "default/gpt-5.4-mini",
+      "variant": "high",
+    },
+    "artistry": {
+      "enable": true,
+      "model": "default/gpt-5.5",
+      "variant": "high",
+    },
+    "ultrabrain": {
+      "enable": true,
+      "model": "default/gpt-5.5",
+      "variant": "xhigh",
+    },
+    "deep": {
+      "enable": true,
+      "model": "default/gpt-5.5",
+      "variant": "high",
+    },
+    "quick": {
+      "enable": true,
+      "model": "default/gpt-5.4-mini",
+      "variant": "low",
+    },
+    "unspecified-low": {
+      "enable": true,
+      "model": "default/gpt-5.4-mini",
+      "variant": "low",
+    },
+    "unspecified-high": {
+      "enable": true,
+      "model": "default/gpt-5.5",
+      "variant": "high",
+    },
+    "writing": {
+      "enable": true,
+      "model": "default/gpt-5.4-mini",
+      "variant": "medium",
     },
     "title": {
       "enable": true,

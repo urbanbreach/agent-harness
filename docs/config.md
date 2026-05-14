@@ -44,8 +44,17 @@ fills in the default details for each listed agent unless you override them.
   "agent": {
     "build": { "enable": true },
     "plan": { "enable": true },
+    "discipline": { "enable": true },
     "general": { "enable": true },
     "explore": { "enable": true },
+    "visual-engineering": { "enable": true },
+    "artistry": { "enable": true },
+    "ultrabrain": { "enable": true },
+    "deep": { "enable": true },
+    "quick": { "enable": true },
+    "unspecified-low": { "enable": true },
+    "unspecified-high": { "enable": true },
+    "writing": { "enable": true },
     "title": { "enable": true, "hidden": true },
     "summary": { "enable": true, "hidden": true },
     "compaction": { "enable": true, "hidden": true }
@@ -232,6 +241,20 @@ Team member profiles that need to write shared team messages or tasks must
 include the relevant `team_*` tool ids in their toolset; worker calls are bound
 to the lead/member identity projected from the team event log.
 
+The shipped `discipline` agent is the opt-in autonomous delivery workflow. It is
+a separate primary profile, not a global toggle: use it when a turn should enforce
+todo hygiene, focused delegation, and end-to-end surface verification. The
+behavior remains prompt/profile-scoped and does not add coordinator-owned
+background scheduler loops, plugin loading, or hidden continuation semantics.
+
+`harness doctor` validates the operator-facing orchestration surface without
+making provider or MCP network calls. It checks provider/model metadata,
+provider credential availability without printing key values, configured agent
+and model-profile references, shipped workflow profile availability, category
+route coverage, profile tool ids, permissions, session-directory readiness, and
+configured MCP server state.
+Use `--json` for machine-readable output.
+
 ### Plan operator workflow
 
 Use Plan when the operator wants a reviewed implementation plan before changing
@@ -262,12 +285,22 @@ Plan-spawned child work restricted to `explore` unless a future policy adds test
 parent-permission inheritance for write-capable subagents.
 
 The shipped agent names are available without extra config: primary
-`build` and `plan`, subagents `general` and `explore`, plus hidden `title`,
+`build`, `plan`, and `discipline`, subagents `general`, `explore`,
+`visual-engineering`, `artistry`, `ultrabrain`, `deep`, `quick`,
+`unspecified-low`, `unspecified-high`, and `writing`, plus hidden `title`,
 `summary`, and `compaction` profiles. `explore` is a read-only local codebase
 search profile for `task(subagent_type: "explore")`. `general` is a broader
-focused implementation/research profile for `task(subagent_type: "general")`; it
-intentionally omits `task` by default so subagents do not recursively redelegate
-unless a project opts into that tool.
+focused implementation/research profile for `task(subagent_type: "general")`.
+The category profiles are OMO-style routing lanes for `task(category: "...")`:
+the task tool selects the matching profile first and falls back to `general` only
+when no matching category profile is configured. `visual-engineering` covers UI,
+UX, layout, styling, animation, and design; `artistry` covers complex creative
+problem-solving; `ultrabrain` covers hard logic, architecture, algorithms, and
+deep debugging; `deep` covers autonomous research and end-to-end implementation;
+`quick` covers small low-risk changes; `unspecified-low` and `unspecified-high`
+cover uncategorized low- and high-effort work; and `writing` covers docs and
+prose. Shipped subagents intentionally omit or deny `task` by default so they do
+not recursively redelegate unless a project opts into that tool.
 When a subagent profile does not configure its own `model`, task delegation
 inherits the invoking parent turn's active model and model settings. If the
 subagent profile has an explicit `model`, that configured model wins. The `task`

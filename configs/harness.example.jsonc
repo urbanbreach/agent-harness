@@ -56,6 +56,14 @@
       "model": "default/gpt-5.5",
       "variant": "xhigh",
     },
+    // Strict autonomous delivery lane for work that should enforce todos,
+    // focused delegation, and end-to-end verification without changing runtime
+    // scheduler semantics.
+    "discipline": {
+      "enable": true,
+      "model": "default/gpt-5.5",
+      "variant": "high",
+    },
     "general": {
       "enable": true,
       "model": "default/gpt-5.4-mini",
@@ -65,6 +73,49 @@
       "enable": true,
       "model": "default/gpt-5.4-mini",
       "variant": "low",
+    },
+    // OMO-style task category routes. These are subagents used by
+    // task(category=...) and intentionally deny recursive task delegation by
+    // default.
+    "visual-engineering": {
+      "enable": true,
+      "model": "default/gpt-5.4-mini",
+      "variant": "high",
+    },
+    "artistry": {
+      "enable": true,
+      "model": "default/gpt-5.5",
+      "variant": "high",
+    },
+    "ultrabrain": {
+      "enable": true,
+      "model": "default/gpt-5.5",
+      "variant": "xhigh",
+    },
+    "deep": {
+      "enable": true,
+      "model": "default/gpt-5.5",
+      "variant": "high",
+    },
+    "quick": {
+      "enable": true,
+      "model": "default/gpt-5.4-mini",
+      "variant": "low",
+    },
+    "unspecified-low": {
+      "enable": true,
+      "model": "default/gpt-5.4-mini",
+      "variant": "low",
+    },
+    "unspecified-high": {
+      "enable": true,
+      "model": "default/gpt-5.5",
+      "variant": "high",
+    },
+    "writing": {
+      "enable": true,
+      "model": "default/gpt-5.4-mini",
+      "variant": "medium",
     },
     "title": {
       "enable": true,

@@ -6,8 +6,8 @@ use std::sync::{Mutex, OnceLock};
 
 use harness_core::config::{
     harness_schema_pretty_json, harness_tui_schema_pretty_json, load_config_from_file,
-    load_config_from_str, OpenAiApiMode, PermissionMode, ProviderConfig, PublicRuntimeConfig,
-    PublicTuiConfig,
+    load_config_from_str, AgentMode, OpenAiApiMode, PermissionMode, ProviderConfig,
+    PublicRuntimeConfig, PublicTuiConfig,
 };
 use serde_json::Value;
 use tempfile::tempdir;
@@ -28,16 +28,18 @@ fn with_env_var_state<T>(name: &str, value: Option<&str>, run: impl FnOnce() -> 
         .expect("openai api key env lock poisoned");
     let previous = env::var_os(name);
 
-    match value {
-        Some(value) => unsafe { env::set_var(name, value) },
-        None => unsafe { env::remove_var(name) },
+    if let Some(value) = value {
+        unsafe { env::set_var(name, value) };
+    } else {
+        unsafe { env::remove_var(name) };
     }
 
     let result = run();
 
-    match previous {
-        Some(value) => unsafe { env::set_var(name, value) },
-        None => unsafe { env::remove_var(name) },
+    if let Some(value) = previous {
+        unsafe { env::set_var(name, value) };
+    } else {
+        unsafe { env::remove_var(name) };
     }
 
     result
@@ -425,8 +427,17 @@ fn schema_cli_prints_runtime_json_schema() {
     for agent in [
         "build",
         "plan",
+        "discipline",
         "general",
         "explore",
+        "visual-engineering",
+        "artistry",
+        "ultrabrain",
+        "deep",
+        "quick",
+        "unspecified-low",
+        "unspecified-high",
+        "writing",
         "title",
         "summary",
         "compaction",
@@ -436,6 +447,14 @@ fn schema_cli_prints_runtime_json_schema() {
             "agent schema should expose built-in agent `{agent}`"
         );
     }
+    assert_eq!(
+        definitions["PublicAgentMap"]
+            .get("additionalProperties")
+            .and_then(|value| value.get("$ref"))
+            .and_then(Value::as_str),
+        Some("#/definitions/PublicAgentConfig"),
+        "agent schema should type custom agent names as PublicAgentConfig"
+    );
 
     let model_properties = definitions["ModelConfig"]
         .get("properties")
@@ -595,11 +614,345 @@ fn config_validate_cli_accepts_shipped_example_config() {
     assert!(provider.models.contains_key("gpt-5.5"));
     assert!(provider.models.contains_key("gpt-5.4-mini"));
     assert!(parsed.agents.contains_key("build"));
+    assert!(parsed.agents.contains_key("discipline"));
+    for category in [
+        "visual-engineering",
+        "artistry",
+        "ultrabrain",
+        "deep",
+        "quick",
+        "unspecified-low",
+        "unspecified-high",
+        "writing",
+    ] {
+        let agent = parsed
+            .agents
+            .get(category)
+            .unwrap_or_else(|| panic!("missing category route profile {category}"));
+        assert_eq!(agent.mode, AgentMode::Subagent);
+        assert!(!agent.hidden);
+        assert_eq!(
+            agent
+                .permissions
+                .as_ref()
+                .and_then(|permissions| permissions.task.as_ref()),
+            Some(&PermissionMode::Deny),
+            "category route {category} should not recursively redelegate by default"
+        );
+    }
     assert!(!parsed.runtime.compaction.model_backed);
     assert!(parsed.runtime.compaction.auto_retry_overflow);
     assert!(parsed.runtime.compaction.structured_summary_contract);
     assert!(parsed.runtime.compaction.estimated_token_triggers);
     assert_eq!(parsed.runtime.compaction.fallback_input_tokens, 32_768);
+}
+
+#[test]
+fn doctor_cli_reports_shipped_orchestration_health() {
+    let repo_root = repo_root();
+    let config_path = repo_root.join("configs").join("harness.example.jsonc");
+
+    let output = harness_command()
+        .current_dir(&repo_root)
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "doctor",
+        ])
+        .output()
+        .expect("run harness doctor with shipped example config");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("doctor ok:"));
+    assert!(stdout.contains("provider_credentials"));
+    assert!(stdout.contains("model_references"));
+    assert!(stdout.contains("workflow_profiles"));
+    assert!(stdout.contains("category_routes"));
+    assert!(stdout.contains("discipline"));
+    assert!(stdout.contains("visual-engineering"));
+}
+
+#[test]
+fn doctor_cli_emits_json_report() {
+    let repo_root = repo_root();
+    let config_path = repo_root.join("configs").join("harness.example.jsonc");
+
+    let output = harness_command()
+        .current_dir(&repo_root)
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "doctor",
+            "--json",
+        ])
+        .output()
+        .expect("run harness doctor --json with shipped example config");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).expect("doctor json report");
+    assert!(report["config"]
+        .as_str()
+        .expect("config display")
+        .contains("configs/harness.example.jsonc"));
+    assert!(report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .any(|check| { check["name"] == "workflow_profiles" && check["status"] == "pass" }));
+    assert!(report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .any(|check| { check["name"] == "category_routes" && check["status"] == "pass" }));
+    assert!(report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .any(|check| { check["name"] == "provider_credentials" && check["status"] == "pass" }));
+    assert!(report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .any(|check| { check["name"] == "model_references" && check["status"] == "pass" }));
+}
+
+#[test]
+fn doctor_cli_fails_invalid_category_routes_even_when_some_are_missing() {
+    let temp = tempdir().expect("tempdir");
+    fs::create_dir_all(temp.path().join(".agent-harness")).expect("create session parent");
+    let config_path = temp.path().join("harness.jsonc");
+    fs::write(
+        &config_path,
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              baseURL: "http://127.0.0.1:8317/v1",
+              apiKey: "DUMMY",
+              models: {
+                "gpt-5.4-mini": { name: "GPT-5.4 mini" },
+              },
+            },
+          },
+          model: "default/gpt-5.4-mini",
+          agent: {
+            "visual-engineering": { hidden: true },
+            artistry: { enable: false },
+          },
+          permission: "ask",
+        }
+        "#,
+    )
+    .expect("write invalid category route config");
+
+    let output = harness_command()
+        .current_dir(temp.path())
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "doctor",
+        ])
+        .output()
+        .expect("run harness doctor with invalid category routes");
+
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("doctor found issues:"));
+    assert!(stdout.contains("[FAIL] category_routes"));
+    assert!(stdout.contains("visual-engineering"));
+    assert!(stdout.contains("artistry"));
+}
+
+#[test]
+fn doctor_cli_reports_model_profile_fallback_targets() {
+    let temp = tempdir().expect("tempdir");
+    fs::create_dir_all(temp.path().join(".agent-harness")).expect("create session parent");
+    let config_path = temp.path().join("harness.jsonc");
+    fs::write(
+        &config_path,
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              baseURL: "http://127.0.0.1:8317/v1",
+              apiKey: "DUMMY",
+              models: {
+                "gpt-5.5": { name: "GPT-5.5" },
+                "gpt-5.4-mini": { name: "GPT-5.4 mini" },
+              },
+            },
+          },
+          model_profile: {
+            fast: {
+              model: "default/gpt-5.5",
+              fallback: [{ model: "default/gpt-5.4-mini" }],
+            },
+          },
+          model: "fast",
+          agent: {
+            build: { enable: true, model: "fast" },
+          },
+          permission: "ask",
+        }
+        "#,
+    )
+    .expect("write config with model profile fallback");
+
+    let output = harness_command()
+        .current_dir(temp.path())
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "doctor",
+            "--json",
+        ])
+        .output()
+        .expect("run harness doctor with model profile fallback");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).expect("doctor json report");
+    let model_check = report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .find(|check| check["name"] == "model_references")
+        .expect("model references check");
+    assert_eq!(model_check["status"], "pass");
+    let message = model_check["message"]
+        .as_str()
+        .expect("model check message");
+    assert!(message.contains("1 model profile(s) resolve"));
+    assert!(message.contains("fallback target(s)"));
+}
+
+#[test]
+fn doctor_cli_warns_when_provider_credentials_are_missing() {
+    let temp = tempdir().expect("tempdir");
+    fs::create_dir_all(temp.path().join(".agent-harness")).expect("create session parent");
+    let config_path = temp.path().join("harness.jsonc");
+    fs::write(
+        &config_path,
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              baseURL: "http://127.0.0.1:8317/v1",
+              models: {
+                "gpt-5.4-mini": { name: "GPT-5.4 mini" },
+              },
+            },
+          },
+          model: "default/gpt-5.4-mini",
+          permission: "ask",
+        }
+        "#,
+    )
+    .expect("write config without credentials");
+
+    let output = harness_command()
+        .current_dir(temp.path())
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "doctor",
+        ])
+        .output()
+        .expect("run harness doctor with missing credentials");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("doctor ok with warnings:"));
+    assert!(stdout.contains("[WARN] provider_credentials"));
+    assert!(stdout.contains("default (set apiKey or apiKeyEnv)"));
+}
+
+#[test]
+fn doctor_cli_reports_env_provider_credentials_without_revealing_values() {
+    with_env_var_state(
+        "HARNESS_DOCTOR_TEST_API_KEY",
+        Some("super-secret-test-key"),
+        || {
+            let temp = tempdir().expect("tempdir");
+            fs::create_dir_all(temp.path().join(".agent-harness")).expect("create session parent");
+            let config_path = temp.path().join("harness.jsonc");
+            fs::write(
+                &config_path,
+                r#"
+            {
+              provider: {
+                default: {
+                  type: "openai_compatible",
+                  baseURL: "http://127.0.0.1:8317/v1",
+                  apiKeyEnv: ["HARNESS_DOCTOR_TEST_API_KEY"],
+                  models: {
+                    "gpt-5.4-mini": { name: "GPT-5.4 mini" },
+                  },
+                },
+              },
+              model: "default/gpt-5.4-mini",
+              permission: "ask",
+            }
+            "#,
+            )
+            .expect("write env credential config");
+
+            let output = harness_command()
+                .current_dir(temp.path())
+                .args([
+                    "--config",
+                    config_path.to_str().expect("config path utf-8"),
+                    "doctor",
+                    "--json",
+                ])
+                .output()
+                .expect("run harness doctor with env credentials");
+
+            assert!(
+                output.status.success(),
+                "stdout:\n{}\nstderr:\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(!stdout.contains("super-secret-test-key"));
+            let report: Value = serde_json::from_slice(&output.stdout).expect("doctor json report");
+            let credential_check = report["checks"]
+                .as_array()
+                .expect("checks array")
+                .iter()
+                .find(|check| check["name"] == "provider_credentials")
+                .expect("provider credential check");
+            assert_eq!(credential_check["status"], "pass");
+            assert!(credential_check["message"]
+                .as_str()
+                .expect("credential message")
+                .contains("1 via environment"));
+        },
+    );
 }
 
 #[test]
@@ -1195,8 +1548,17 @@ fn shipped_runtime_example_parses_as_public_runtime_config() {
     assert!(provider.models.contains_key("gpt-5.4-mini"));
     assert!(parsed.agent.build.is_some());
     assert!(parsed.agent.plan.is_some());
+    assert!(parsed.agent.discipline.is_some());
     assert!(parsed.agent.general.is_some());
     assert!(parsed.agent.explore.is_some());
+    assert!(parsed.agent.visual_engineering.is_some());
+    assert!(parsed.agent.artistry.is_some());
+    assert!(parsed.agent.ultrabrain.is_some());
+    assert!(parsed.agent.deep.is_some());
+    assert!(parsed.agent.quick.is_some());
+    assert!(parsed.agent.unspecified_low.is_some());
+    assert!(parsed.agent.unspecified_high.is_some());
+    assert!(parsed.agent.writing.is_some());
     assert!(parsed.agent.title.is_some());
     assert!(parsed.agent.summary.is_some());
     assert!(parsed.agent.compaction.is_some());
@@ -1320,8 +1682,17 @@ fn root_runtime_example_uses_canonical_public_keys() {
     assert_eq!(parsed.small_model.as_deref(), Some("default/gpt-5.4-mini"));
     assert!(parsed.agent.build.is_some());
     assert!(parsed.agent.plan.is_some());
+    assert!(parsed.agent.discipline.is_some());
     assert!(parsed.agent.general.is_some());
     assert!(parsed.agent.explore.is_some());
+    assert!(parsed.agent.visual_engineering.is_some());
+    assert!(parsed.agent.artistry.is_some());
+    assert!(parsed.agent.ultrabrain.is_some());
+    assert!(parsed.agent.deep.is_some());
+    assert!(parsed.agent.quick.is_some());
+    assert!(parsed.agent.unspecified_low.is_some());
+    assert!(parsed.agent.unspecified_high.is_some());
+    assert!(parsed.agent.writing.is_some());
     assert!(parsed.agent.title.is_some());
     assert!(parsed.agent.summary.is_some());
     assert!(parsed.agent.compaction.is_some());
