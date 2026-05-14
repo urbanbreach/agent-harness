@@ -369,3 +369,14 @@ pub fn supervisor_actor() -> EventActor {
 pub fn worker_actor(agent_id: String) -> EventActor {
     EventActor::new(ActorKind::Worker, Some(agent_id))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_interactive_permissions() {
+        assert_eq!(ScenarioName::GoldenPath.interactive_permissions(), false);
+        assert_eq!(ScenarioName::GoldenPathInteractive.interactive_permissions(), true);
+    }
+}
