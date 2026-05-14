@@ -662,14 +662,15 @@ mod tests {
         assert_eq!(result, ExitCode::SUCCESS);
 
         let content = fs::read_to_string(&path).unwrap();
-        assert_eq!(content, crate::generated_model_catalog::PROVIDER_CATALOG_JSON);
+        assert_eq!(
+            content,
+            crate::generated_model_catalog::PROVIDER_CATALOG_JSON
+        );
     }
 
     #[test]
     fn test_execute_generated_with_stdout() {
-        let command = GeneratedModelCatalogCommand {
-            output: None,
-        };
+        let command = GeneratedModelCatalogCommand { output: None };
 
         let result = execute_generated(command);
         assert_eq!(result, ExitCode::SUCCESS);
