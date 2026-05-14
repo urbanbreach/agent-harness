@@ -321,6 +321,112 @@ fn interactive_bootstrap_uses_discovered_markdown_prompt_when_inline_missing() {
 }
 
 #[test]
+fn interactive_bootstrap_uses_discovered_discipline_markdown_prompt() {
+    let _lock = DISCOVERY_TEST_LOCK.lock().expect("lock discovery tests");
+    let temp = tempdir().expect("tempdir");
+    let repo = temp.path().join("repo");
+    fs::create_dir_all(repo.join(".git")).expect("create git dir");
+    fs::create_dir_all(&repo).expect("create repo");
+    let _cwd = CurrentDirGuard::set(&repo);
+
+    let config_path = repo.join("harness.jsonc");
+    fs::write(
+        &config_path,
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              baseURL: "http://127.0.0.1:8317/v1",
+              apiKey: "test-key",
+              apiMode: "responses",
+              models: {
+                "gpt-5.4-mini": {
+                  name: "GPT-5.4 mini",
+                },
+              },
+            },
+          },
+          model: "default/gpt-5.4-mini",
+          agent: {
+            discipline: {
+              enable: true,
+            },
+          },
+          default_agent: "discipline",
+          permission: "ask",
+        }
+        "#,
+    )
+    .expect("write config");
+    write_agent_markdown(
+        &repo,
+        "discipline",
+        r#"---
+{ description: "Temp discipline prompt" }
+---
+
+Unique markdown discipline prompt.
+"#,
+    );
+
+    let config = load_config_from_file(&config_path).expect("load harness config");
+    let coordinator_config =
+        bootstrap::build_interactive_coordinator_config(&config).expect("build config");
+    let prompt = &coordinator_config.agent_profiles["discipline"].system_prompt;
+    assert!(prompt.starts_with("Unique markdown discipline prompt."));
+    assert!(prompt.contains("The exact model ID is default/gpt-5.4-mini"));
+}
+
+#[test]
+fn interactive_bootstrap_allows_discipline_without_markdown_prompt() {
+    let _lock = DISCOVERY_TEST_LOCK.lock().expect("lock discovery tests");
+    let temp = tempdir().expect("tempdir");
+    let repo = temp.path().join("repo");
+    fs::create_dir_all(repo.join(".git")).expect("create git dir");
+    fs::create_dir_all(&repo).expect("create repo");
+    let _cwd = CurrentDirGuard::set(&repo);
+
+    let config_path = repo.join("harness.jsonc");
+    fs::write(
+        &config_path,
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              baseURL: "http://127.0.0.1:8317/v1",
+              apiKey: "test-key",
+              apiMode: "responses",
+              models: {
+                "gpt-5.4-mini": {
+                  name: "GPT-5.4 mini",
+                },
+              },
+            },
+          },
+          model: "default/gpt-5.4-mini",
+          agent: {
+            discipline: {
+              enable: true,
+            },
+          },
+          default_agent: "discipline",
+          permission: "ask",
+        }
+        "#,
+    )
+    .expect("write config");
+
+    let config = load_config_from_file(&config_path).expect("load harness config");
+    let coordinator_config =
+        bootstrap::build_interactive_coordinator_config(&config).expect("build config");
+    let prompt = &coordinator_config.agent_profiles["discipline"].system_prompt;
+    assert!(prompt.starts_with("You are agent-harness"));
+    assert!(prompt.contains("The exact model ID is default/gpt-5.4-mini"));
+}
+
+#[test]
 fn interactive_bootstrap_prepends_project_agents_md_to_agent_prompt() {
     let _lock = DISCOVERY_TEST_LOCK.lock().expect("lock discovery tests");
     let temp = tempdir().expect("tempdir");

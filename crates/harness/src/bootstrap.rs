@@ -205,7 +205,9 @@ fn compose_interactive_system_prompt(
     if profile_cfg.system_prompt.is_none()
         && !matches!(
             profile_name,
-            harness_core::plan::BUILD_AGENT_NAME | harness_core::plan::PLAN_AGENT_NAME
+            harness_core::plan::BUILD_AGENT_NAME
+                | harness_core::plan::PLAN_AGENT_NAME
+                | "discipline"
         )
     {
         return Err(format!(
@@ -587,12 +589,13 @@ mod tests {
     }
 
     #[test]
-    fn shipped_example_config_seeds_build_plan_and_subagents() {
+    fn shipped_example_config_seeds_build_plan_discipline_and_subagents() {
         let config_path = crate::cli_config::shipped_example_config_path();
         let cfg = load_config_from_file(&config_path).expect("shipped example config should parse");
 
         assert!(cfg.agents.contains_key("build"));
         assert!(cfg.agents.contains_key("plan"));
+        assert!(cfg.agents.contains_key("discipline"));
         assert!(cfg.agents.contains_key("explore"));
         assert!(cfg.agents.contains_key("general"));
         assert_eq!(cfg.default_agent.as_deref(), Some("build"));
@@ -616,6 +619,14 @@ mod tests {
             .contains(&"background_output".to_string()));
         assert!(profiles["plan"].toolset.contains(&"bash".to_string()));
         assert!(!profiles["plan"].toolset.contains(&"plan_enter".to_string()));
+        assert!(profiles["discipline"].toolset.contains(&"edit".to_string()));
+        assert!(profiles["discipline"].toolset.contains(&"task".to_string()));
+        assert!(profiles["discipline"]
+            .toolset
+            .contains(&"todowrite".to_string()));
+        assert!(profiles["discipline"]
+            .system_prompt
+            .starts_with("You are the Disciplined workflow agent"));
         assert!(profiles["explore"].toolset.contains(&"read".to_string()));
         assert!(profiles["explore"].toolset.contains(&"grep".to_string()));
         assert!(!profiles["explore"].toolset.contains(&"edit".to_string()));
