@@ -376,7 +376,7 @@ mod tests {
 
     #[test]
     fn test_interactive_permissions() {
-        assert_eq!(ScenarioName::GoldenPath.interactive_permissions(), false);
-        assert_eq!(ScenarioName::GoldenPathInteractive.interactive_permissions(), true);
+        assert!(!ScenarioName::GoldenPath.interactive_permissions());
+        assert!(ScenarioName::GoldenPathInteractive.interactive_permissions());
     }
 }
