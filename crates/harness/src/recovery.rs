@@ -409,3 +409,234 @@ fn most_recent_known_agent_spawn_id(
             .then(|| data.agent_id.clone())
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use harness_core::event::{
+        ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1,
+        ProviderRequestStartedEvent, RunFinishedEvent, RunStartedEvent, SCHEMA_VERSION,
+    };
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use tempfile::tempdir;
+
+    fn envelope(seq: u64, agent_id: Option<&str>, payload: EventV1) -> EventEnvelopeV1 {
+        EventEnvelopeV1 {
+            schema_version: SCHEMA_VERSION,
+            event_id: format!("evt-{}", seq),
+            seq,
+            run_id: "test-run".to_string(),
+            mono_ms: seq * 100,
+            ts: None,
+            actor: EventActor::new(
+                if agent_id.is_some() {
+                    ActorKind::Worker
+                } else {
+                    ActorKind::System
+                },
+                agent_id.map(|s| s.to_string()),
+            ),
+            correlation_id: None,
+            causation_id: None,
+            stream_key: None,
+            payload,
+        }
+    }
+
+    fn write_events(run_dir: &Path, events: &[EventEnvelopeV1]) {
+        let events_path = run_dir.join(EVENTS_FILE_NAME);
+        let mut content = String::new();
+        for event in events {
+            content.push_str(&serde_json::to_string(event).unwrap());
+            content.push('\n');
+        }
+        fs::write(events_path, content).unwrap();
+    }
+
+    fn setup_session_dir(root: &Path, run_id: &str) -> PathBuf {
+        let run_dir = root.join(run_id);
+        fs::create_dir_all(&run_dir).unwrap();
+        run_dir
+    }
+
+    #[test]
+    fn test_inspect_session_recovery_happy_path() {
+        let root = tempdir().unwrap();
+        // create a sessions directory so that run_dir.parent() works and inspect_session_catalog can find it
+        let sessions_dir = root.path().join("sessions");
+        fs::create_dir_all(&sessions_dir).unwrap();
+        let run_dir = setup_session_dir(&sessions_dir, "test-run");
+
+        let events = vec![
+            envelope(
+                1,
+                None,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/tmp".to_string(),
+                }),
+            ),
+            envelope(
+                2,
+                Some("agent-1"),
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent-1".to_string(),
+                    profile: "default".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            envelope(
+                3,
+                Some("agent-1"),
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req-1".to_string(),
+                    provider_id: "mock".to_string(),
+                    model_id: "model-1".to_string(),
+                    prompt_summary: "hello".to_string(),
+                    request_digest: "digest".to_string(),
+                    metadata: None,
+                }),
+            ),
+            envelope(
+                4,
+                None,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ];
+        write_events(&run_dir, &events);
+
+        let summary = inspect_session_recovery(&run_dir).unwrap();
+        assert_eq!(summary.run_id, "test-run");
+        assert_eq!(summary.run_name, Some("interactive".to_string()));
+        assert!(summary.resumable);
+        assert_eq!(summary.resume_agent_id, Some("agent-1".to_string()));
+        assert_eq!(summary.total_events, 4);
+    }
+
+    #[test]
+    fn test_inspect_session_recovery_no_events() {
+        let root = tempdir().unwrap();
+        let run_dir = setup_session_dir(root.path(), "test-run");
+        write_events(&run_dir, &[]);
+
+        let err = inspect_session_recovery(&run_dir).unwrap_err();
+        assert!(err.contains("no events found"));
+    }
+
+    #[test]
+    fn test_inspect_session_recovery_missing_events_file() {
+        let root = tempdir().unwrap();
+        let run_dir = setup_session_dir(root.path(), "test-run");
+        // Don't write events file
+
+        let err = inspect_session_recovery(&run_dir).unwrap_err();
+        assert!(err.contains("failed to read events file"));
+    }
+
+    #[test]
+    fn test_inspect_session_recovery_not_resumable() {
+        let root = tempdir().unwrap();
+        let sessions_dir = root.path().join("sessions");
+        fs::create_dir_all(&sessions_dir).unwrap();
+        let run_dir = setup_session_dir(&sessions_dir, "test-run");
+
+        let events = vec![
+            envelope(
+                1,
+                None,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "prompt".to_string(), // prompt runs are not resumable
+                    workspace_root: "/tmp".to_string(),
+                }),
+            ),
+            envelope(
+                2,
+                None,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ];
+        write_events(&run_dir, &events);
+
+        let summary = inspect_session_recovery(&run_dir).unwrap();
+        assert_eq!(summary.run_id, "test-run");
+        assert!(!summary.resumable);
+        assert!(summary.resume_agent_id.is_none());
+    }
+
+    #[test]
+    fn test_inspect_session_recovery_multiple_agents() {
+        let root = tempdir().unwrap();
+        let sessions_dir = root.path().join("sessions");
+        fs::create_dir_all(&sessions_dir).unwrap();
+        let run_dir = setup_session_dir(&sessions_dir, "test-run");
+
+        let events = vec![
+            envelope(
+                1,
+                None,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/tmp".to_string(),
+                }),
+            ),
+            envelope(
+                2,
+                Some("agent-1"),
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent-1".to_string(),
+                    profile: "default".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            envelope(
+                3,
+                Some("agent-2"),
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent-2".to_string(),
+                    profile: "default".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            envelope(
+                4,
+                Some("agent-1"),
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req-1".to_string(),
+                    provider_id: "mock".to_string(),
+                    model_id: "model-1".to_string(),
+                    prompt_summary: "hello from 1".to_string(),
+                    request_digest: "digest1".to_string(),
+                    metadata: None,
+                }),
+            ),
+            envelope(
+                5,
+                Some("agent-2"),
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req-2".to_string(),
+                    provider_id: "mock".to_string(),
+                    model_id: "model-1".to_string(),
+                    prompt_summary: "hello from 2".to_string(),
+                    request_digest: "digest2".to_string(),
+                    metadata: None,
+                }),
+            ),
+            envelope(
+                6,
+                None,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ];
+        write_events(&run_dir, &events);
+
+        let summary = inspect_session_recovery(&run_dir).unwrap();
+        assert_eq!(summary.resume_agent_id, Some("agent-2".to_string()));
+    }
+}
