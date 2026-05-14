@@ -89,6 +89,22 @@ Always follow the exact output structure requested by the user prompt. Keep ever
 
 Do not answer the conversation itself. Do not mention that you are summarizing, compacting, or merging context. Respond in the same language as the conversation."#;
 
+const CATEGORY_ROUTING_TOOLS: [&str; 13] = [
+    "question",
+    "skill",
+    "websearch",
+    "webfetch",
+    "codesearch",
+    "lsp",
+    "read",
+    "glob",
+    "grep",
+    "list",
+    "edit",
+    "bash",
+    "batch",
+];
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PublicRuntimeConfig {
@@ -184,9 +200,28 @@ pub struct PublicAgentMap {
     #[serde(default)]
     pub plan: Option<PublicAgentConfig>,
     #[serde(default)]
+    pub discipline: Option<PublicAgentConfig>,
+    #[serde(default)]
     pub general: Option<PublicAgentConfig>,
     #[serde(default)]
     pub explore: Option<PublicAgentConfig>,
+    #[serde(default)]
+    #[serde(rename = "visual-engineering", alias = "visualEngineering")]
+    pub visual_engineering: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub artistry: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub ultrabrain: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub deep: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub quick: Option<PublicAgentConfig>,
+    #[serde(default, rename = "unspecified-low", alias = "unspecifiedLow")]
+    pub unspecified_low: Option<PublicAgentConfig>,
+    #[serde(default, rename = "unspecified-high", alias = "unspecifiedHigh")]
+    pub unspecified_high: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub writing: Option<PublicAgentConfig>,
     #[serde(default)]
     pub title: Option<PublicAgentConfig>,
     #[serde(default)]
@@ -201,8 +236,17 @@ impl PublicAgentMap {
     pub fn is_empty(&self) -> bool {
         self.build.is_none()
             && self.plan.is_none()
+            && self.discipline.is_none()
             && self.general.is_none()
             && self.explore.is_none()
+            && self.visual_engineering.is_none()
+            && self.artistry.is_none()
+            && self.ultrabrain.is_none()
+            && self.deep.is_none()
+            && self.quick.is_none()
+            && self.unspecified_low.is_none()
+            && self.unspecified_high.is_none()
+            && self.writing.is_none()
             && self.title.is_none()
             && self.summary.is_none()
             && self.compaction.is_none()
@@ -214,8 +258,17 @@ impl PublicAgentMap {
         for (name, agent) in [
             ("build", self.build),
             ("plan", self.plan),
+            ("discipline", self.discipline),
             ("general", self.general),
             ("explore", self.explore),
+            ("visual-engineering", self.visual_engineering),
+            ("artistry", self.artistry),
+            ("ultrabrain", self.ultrabrain),
+            ("deep", self.deep),
+            ("quick", self.quick),
+            ("unspecified-low", self.unspecified_low),
+            ("unspecified-high", self.unspecified_high),
+            ("writing", self.writing),
             ("title", self.title),
             ("summary", self.summary),
             ("compaction", self.compaction),
@@ -814,6 +867,74 @@ fn default_shipped_agents(
             },
         ),
         (
+            "discipline".to_string(),
+            ProfileConfig {
+                name: None,
+                description:
+                    "Disciplined autonomous delivery lane with strict todo, delegation, and verification behavior."
+                        .to_string(),
+                system_prompt: None,
+                model_ref: model_ref.to_string(),
+                model_ref_explicit: false,
+                variant: None,
+                temperature: None,
+                top_p: None,
+                mode: AgentMode::Primary,
+                hidden: false,
+                color: None,
+                options: BTreeMap::new(),
+                permissions: Some(ProfilePermissions {
+                    fallback: None,
+                    edit: Some(PermissionMode::Allow),
+                    shell: Some(PermissionMode::Allow),
+                    network: Some(PermissionMode::Allow),
+                    question: Some(PermissionMode::Allow),
+                    task: Some(PermissionMode::Allow),
+                    webfetch: Some(PermissionMode::Allow),
+                    websearch: Some(PermissionMode::Allow),
+                    codesearch: Some(PermissionMode::Allow),
+                    lsp: Some(PermissionMode::Allow),
+                    rules: PermissionRuleSet::default(),
+                }),
+                max_iters: None,
+                tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
+                tools: vec![
+                    "todowrite",
+                    "todoread",
+                    "question",
+                    crate::plan::PLAN_ENTER_TOOL_ID,
+                    "task",
+                    "background_output",
+                    "team_create",
+                    "team_status",
+                    "team_send_message",
+                    "team_task_create",
+                    "team_task_list",
+                    "team_task_get",
+                    "team_task_update",
+                    "team_shutdown_request",
+                    "team_shutdown_approve",
+                    "team_shutdown_reject",
+                    "team_delete",
+                    "skill",
+                    "websearch",
+                    "webfetch",
+                    "codesearch",
+                    "lsp",
+                    "read",
+                    "glob",
+                    "grep",
+                    "list",
+                    "edit",
+                    "bash",
+                    "batch",
+                ]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            },
+        ),
+        (
             "explore".to_string(),
             ProfileConfig {
                 name: None,
@@ -908,6 +1029,54 @@ fn default_shipped_agents(
                 .map(str::to_string)
                 .collect(),
             },
+        ),
+        category_routing_profile(
+            "visual-engineering",
+            "Frontend, UI/UX, layout, styling, animation, and visual design subagent.",
+            "You are the visual-engineering category subagent. Focus on frontend, UI/UX, layout, styling, animation, and design work. Preserve existing product semantics, verify through the rendered or CLI-visible surface when applicable, and report concise evidence.",
+            model_ref,
+        ),
+        category_routing_profile(
+            "artistry",
+            "Complex creative problem-solving subagent for ambiguous product or implementation work.",
+            "You are the artistry category subagent. Solve complex creative implementation problems with clear tradeoffs, minimal abstractions, and observable verification evidence.",
+            model_ref,
+        ),
+        category_routing_profile(
+            "ultrabrain",
+            "Hard logic, architecture, algorithms, and deep debugging subagent.",
+            "You are the ultrabrain category subagent. Handle genuinely hard logic, architecture, algorithmic, or debugging tasks. Prefer root-cause fixes, state assumptions explicitly, and verify the behavioral boundary.",
+            model_ref,
+        ),
+        category_routing_profile(
+            "deep",
+            "Autonomous research and end-to-end implementation subagent.",
+            "You are the deep category subagent. Work autonomously on multi-step implementation or research tasks, keep scope focused, and return the completed outcome with verification evidence.",
+            model_ref,
+        ),
+        category_routing_profile(
+            "quick",
+            "Small, low-risk implementation or cleanup subagent.",
+            "You are the quick category subagent. Complete small, low-risk tasks with the smallest correct change and only the verification needed for confidence.",
+            model_ref,
+        ),
+        category_routing_profile(
+            "unspecified-low",
+            "Low-effort fallback subagent for uncategorized small tasks.",
+            "You are the unspecified-low category subagent. Handle uncategorized low-effort tasks directly, avoid broad refactors, and report the concise result.",
+            model_ref,
+        ),
+        category_routing_profile(
+            "unspecified-high",
+            "High-effort fallback subagent for uncategorized complex tasks.",
+            "You are the unspecified-high category subagent. Handle uncategorized high-effort tasks thoroughly, inspect enough context before acting, and provide verification evidence.",
+            model_ref,
+        ),
+        category_routing_profile(
+            "writing",
+            "Documentation, prose, technical writing, and editing subagent.",
+            "You are the writing category subagent. Produce clear documentation, prose, or technical writing that matches the repository voice and keeps examples aligned with behavior.",
+            model_ref,
         ),
         (
             crate::session_title::TITLE_AGENT_NAME.to_string(),
@@ -1009,6 +1178,50 @@ fn default_shipped_agents(
             },
         ),
     ])
+}
+
+fn category_routing_profile(
+    name: &str,
+    description: &str,
+    system_prompt: &str,
+    model_ref: &str,
+) -> (String, ProfileConfig) {
+    (
+        name.to_string(),
+        ProfileConfig {
+            name: None,
+            description: description.to_string(),
+            system_prompt: Some(system_prompt.to_string()),
+            model_ref: model_ref.to_string(),
+            model_ref_explicit: false,
+            variant: None,
+            temperature: None,
+            top_p: None,
+            mode: AgentMode::Subagent,
+            hidden: false,
+            color: None,
+            options: BTreeMap::new(),
+            permissions: Some(ProfilePermissions {
+                fallback: None,
+                edit: Some(PermissionMode::Allow),
+                shell: Some(PermissionMode::Allow),
+                network: Some(PermissionMode::Allow),
+                question: Some(PermissionMode::Allow),
+                task: Some(PermissionMode::Deny),
+                webfetch: Some(PermissionMode::Allow),
+                websearch: Some(PermissionMode::Allow),
+                codesearch: Some(PermissionMode::Allow),
+                lsp: Some(PermissionMode::Allow),
+                rules: PermissionRuleSet::default(),
+            }),
+            max_iters: None,
+            tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
+            tools: CATEGORY_ROUTING_TOOLS
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+        },
+    )
 }
 
 fn fallback_public_agent_description(name: &str) -> String {
@@ -1562,7 +1775,19 @@ pub(super) fn translate_public_runtime_root(
 }
 
 pub fn harness_schema_pretty_json() -> Result<String, ConfigError> {
-    let schema = schema_for!(PublicRuntimeConfig);
+    let mut schema = serde_json::to_value(schema_for!(PublicRuntimeConfig))
+        .map_err(|err| ConfigError::SerializeSchema(err.to_string()))?;
+    if let Some(agent_map) = schema
+        .get_mut("definitions")
+        .and_then(serde_json::Value::as_object_mut)
+        .and_then(|definitions| definitions.get_mut("PublicAgentMap"))
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        agent_map.insert(
+            "additionalProperties".to_string(),
+            serde_json::json!({ "$ref": "#/definitions/PublicAgentConfig" }),
+        );
+    }
     serde_json::to_string_pretty(&schema)
         .map_err(|err| ConfigError::SerializeSchema(err.to_string()))
 }
