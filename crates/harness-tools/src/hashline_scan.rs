@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use async_trait::async_trait;
 use harness_core::edit::hashline::{compute_line_hash, LineAnchor};
 use harness_core::redact::{redact_value, DefaultRedactor};
@@ -54,14 +52,7 @@ impl Tool for HashlineScanTool {
     ) -> Result<ToolResult, ToolError> {
         let args: HashlineScanArgs = parse_tool_args(args_json)?;
 
-        let path = Path::new(&args.path);
-        if path.is_absolute() {
-            return Err(ToolError::InvalidArguments(
-                "path must be relative to workspace root".to_string(),
-            ));
-        }
-
-        let resolved_path = ctx.resolve_workspace_path(path)?;
+        let resolved_path = crate::workspace_paths::resolve_existing_path(&ctx, &args.path)?;
         let source = std::fs::read_to_string(&resolved_path)
             .map_err(|err| ToolError::Execution(format!("failed to read target file: {err}")))?;
 
