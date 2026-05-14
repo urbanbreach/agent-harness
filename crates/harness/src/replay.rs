@@ -1126,3 +1126,99 @@ fn short_digest(digest: &str) -> String {
 fn is_false(value: &bool) -> bool {
     !*value
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use harness_core::event::{
+        ActorKind, EventActor, EventEnvelopeV1, EventV1, RunStartedEvent, SCHEMA_VERSION,
+    };
+    use tempfile::tempdir;
+
+    fn envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
+        EventEnvelopeV1 {
+            schema_version: SCHEMA_VERSION,
+            event_id: format!("evt-{seq:04}"),
+            seq,
+            run_id: run_id.to_string(),
+            mono_ms: seq,
+            ts: None,
+            actor: EventActor::new(ActorKind::System, Some("test".to_string())),
+            correlation_id: None,
+            causation_id: None,
+            stream_key: Some(format!("run:{run_id}")),
+            payload,
+        }
+    }
+
+    fn write_events_jsonl(run_dir: &std::path::Path, events: &[EventEnvelopeV1]) {
+        let body = events
+            .iter()
+            .map(|event| serde_json::to_string(event).expect("serialize event"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(run_dir.join(EVENTS_FILE_NAME), format!("{body}\n")).expect("write events");
+    }
+
+    #[test]
+    fn test_inspect_session_catalog_returns_valid_entries() {
+        let session_dir = tempdir().expect("tempdir");
+
+        // Valid session 1
+        let run1_dir = session_dir.path().join("run1");
+        std::fs::create_dir_all(&run1_dir).expect("create run dir");
+        write_events_jsonl(
+            &run1_dir,
+            &[envelope(
+                "run1_id",
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "run1-name".to_string(),
+                    workspace_root: "/tmp/workspace".to_string(),
+                }),
+            )],
+        );
+
+        // Valid session 2
+        let run2_dir = session_dir.path().join("run2");
+        std::fs::create_dir_all(&run2_dir).expect("create run dir");
+        write_events_jsonl(
+            &run2_dir,
+            &[envelope(
+                "run2_id",
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "run2-name".to_string(),
+                    workspace_root: "/tmp/workspace".to_string(),
+                }),
+            )],
+        );
+
+        // Invalid session (no events.jsonl)
+        let run3_dir = session_dir.path().join("run3");
+        std::fs::create_dir_all(&run3_dir).expect("create run dir");
+
+        // File that is not a directory
+        let file_path = session_dir.path().join("not_a_dir.txt");
+        std::fs::write(&file_path, "test").expect("write file");
+
+        let entries = inspect_session_catalog(session_dir.path()).expect("inspect catalog");
+
+        assert_eq!(entries.len(), 2);
+
+        let mut run_ids: Vec<_> = entries.iter().map(|e| e.catalog.run_id.clone()).collect();
+        run_ids.sort();
+
+        assert_eq!(run_ids, vec!["run1_id", "run2_id"]);
+    }
+
+    #[test]
+    fn test_inspect_session_catalog_invalid_dir() {
+        let temp = tempdir().expect("tempdir");
+        let missing_dir = temp.path().join("missing");
+
+        let err = inspect_session_catalog(&missing_dir).unwrap_err();
+
+        assert!(err.contains("failed to read session directory"));
+    }
+}
