@@ -132,51 +132,80 @@ pub(crate) async fn wait_for_tool_finished(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use harness_core::event::{ActorKind, EventActor, EventV1, RunFinishedEvent};
+    use harness_core::event::{ActorKind, EventActor, EventV1, RunFinishedEvent, SCHEMA_VERSION};
     use tempfile::TempDir;
+
+    fn event(event_id: &str, seq: u64) -> EventEnvelopeV1 {
+        EventEnvelopeV1 {
+            schema_version: SCHEMA_VERSION,
+            event_id: event_id.to_string(),
+            seq,
+            run_id: "run1".to_string(),
+            mono_ms: seq * 100,
+            ts: None,
+            actor: EventActor::new(ActorKind::System, None),
+            correlation_id: None,
+            causation_id: None,
+            stream_key: None,
+            payload: EventV1::RunFinished(RunFinishedEvent {
+                summary: "test".to_string(),
+            }),
+        }
+    }
+
+    fn write_events(path: &Path, events: &[EventEnvelopeV1]) {
+        let content = events
+            .iter()
+            .map(|event| serde_json::to_string(event).expect("serialize event"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(path, format!("{content}\n")).expect("write events file");
+    }
+
+    #[test]
+    fn test_copy_events_file_success() {
+        let dir = TempDir::new().unwrap();
+        let from = dir.path().join("from.jsonl");
+        let to = dir.path().join("to.jsonl");
+        fs::write(&from, "test\n").unwrap();
+
+        copy_events_file(&from, &to).expect("copy events file");
+
+        assert_eq!(fs::read_to_string(&to).unwrap(), "test\n");
+    }
+
+    #[test]
+    fn test_copy_events_file_create_parents() {
+        let dir = TempDir::new().unwrap();
+        let from = dir.path().join("from.jsonl");
+        let to = dir.path().join("nested/dir/to.jsonl");
+        fs::write(&from, "test\n").unwrap();
+
+        copy_events_file(&from, &to).expect("copy events file");
+
+        assert_eq!(fs::read_to_string(&to).unwrap(), "test\n");
+    }
+
+    #[test]
+    fn test_copy_events_file_source_missing_does_not_create_destination() {
+        let dir = TempDir::new().unwrap();
+        let from = dir.path().join("from.jsonl");
+        let to = dir.path().join("to.jsonl");
+
+        let err = copy_events_file(&from, &to).unwrap_err();
+
+        assert!(err.contains("failed to copy events file"));
+        assert!(!to.exists());
+    }
 
     #[test]
     fn test_load_events_file_success() {
         let dir = TempDir::new().unwrap();
-        let events_path = dir.path().join("events.jsonl");
-
-        let event1 = EventEnvelopeV1 {
-            schema_version: 1,
-            event_id: "evt1".to_string(),
-            seq: 1,
-            run_id: "run1".to_string(),
-            mono_ms: 100,
-            ts: None,
-            actor: EventActor { kind: ActorKind::System, agent_id: None },
-            correlation_id: None,
-            causation_id: None,
-            stream_key: None,
-            payload: EventV1::RunFinished(RunFinishedEvent { summary: "test".to_string() }),
-        };
-
-        let event2 = EventEnvelopeV1 {
-            schema_version: 1,
-            event_id: "evt2".to_string(),
-            seq: 2,
-            run_id: "run1".to_string(),
-            mono_ms: 200,
-            ts: None,
-            actor: EventActor { kind: ActorKind::System, agent_id: None },
-            correlation_id: None,
-            causation_id: None,
-            stream_key: None,
-            payload: EventV1::RunFinished(RunFinishedEvent { summary: "test".to_string() }),
-        };
-
-        let content = format!(
-            "{}\n{}\n",
-            serde_json::to_string(&event1).unwrap(),
-            serde_json::to_string(&event2).unwrap()
-        );
-
-        fs::write(&events_path, content).unwrap();
+        let events_path = dir.path().join(EVENTS_FILE_NAME);
+        write_events(&events_path, &[event("evt1", 1), event("evt2", 2)]);
 
         let events = load_events_file(&events_path).unwrap();
+
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].event_id, "evt1");
         assert_eq!(events[1].event_id, "evt2");
@@ -187,19 +216,51 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let events_path = dir.path().join("non_existent.jsonl");
 
-        let result = load_events_file(&events_path);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("failed to read events file"));
+        let err = load_events_file(&events_path).unwrap_err();
+
+        assert!(err.contains("failed to read events file"));
     }
 
     #[test]
     fn test_load_events_file_invalid_json() {
         let dir = TempDir::new().unwrap();
-        let events_path = dir.path().join("events.jsonl");
-
+        let events_path = dir.path().join(EVENTS_FILE_NAME);
         fs::write(&events_path, "invalid json\n").unwrap();
 
         let result = load_events_file(&events_path);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_events_from_run_dir_success() {
+        let dir = TempDir::new().unwrap();
+        let events_path = dir.path().join(EVENTS_FILE_NAME);
+        write_events(&events_path, &[event("evt1", 1), event("evt2", 2)]);
+
+        let events = load_events_from_run_dir(dir.path()).unwrap();
+
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].event_id, "evt1");
+        assert_eq!(events[1].event_id, "evt2");
+    }
+
+    #[test]
+    fn test_load_events_from_run_dir_not_found() {
+        let dir = TempDir::new().unwrap();
+
+        let err = load_events_from_run_dir(dir.path()).unwrap_err();
+
+        assert!(err.contains("failed to read events file"));
+    }
+
+    #[test]
+    fn test_load_events_from_run_dir_invalid_json() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join(EVENTS_FILE_NAME), "invalid json\n").unwrap();
+
+        let result = load_events_from_run_dir(dir.path());
+
         assert!(result.is_err());
     }
 }
