@@ -1127,11 +1127,12 @@ fn is_false(value: &bool) -> bool {
     !*value
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1, RunStartedEvent, SCHEMA_VERSION};
+    use harness_core::event::{
+        ActorKind, EventActor, EventEnvelopeV1, EventV1, RunStartedEvent, SCHEMA_VERSION,
+    };
     use tempfile::tempdir;
 
     fn envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
@@ -1156,7 +1157,7 @@ mod tests {
             .map(|event| serde_json::to_string(event).expect("serialize event"))
             .collect::<Vec<_>>()
             .join("\n");
-        std::fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).expect("write events");
+        std::fs::write(run_dir.join(EVENTS_FILE_NAME), format!("{body}\n")).expect("write events");
     }
 
     #[test]
@@ -1168,16 +1169,14 @@ mod tests {
         std::fs::create_dir_all(&run1_dir).expect("create run dir");
         write_events_jsonl(
             &run1_dir,
-            &[
-                envelope(
-                    "run1_id",
-                    1,
-                    EventV1::RunStarted(RunStartedEvent {
-                        run_name: "run1-name".to_string(),
-                        workspace_root: "/tmp/workspace".to_string(),
-                    }),
-                )
-            ],
+            &[envelope(
+                "run1_id",
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "run1-name".to_string(),
+                    workspace_root: "/tmp/workspace".to_string(),
+                }),
+            )],
         );
 
         // Valid session 2
@@ -1185,16 +1184,14 @@ mod tests {
         std::fs::create_dir_all(&run2_dir).expect("create run dir");
         write_events_jsonl(
             &run2_dir,
-            &[
-                envelope(
-                    "run2_id",
-                    1,
-                    EventV1::RunStarted(RunStartedEvent {
-                        run_name: "run2-name".to_string(),
-                        workspace_root: "/tmp/workspace".to_string(),
-                    }),
-                )
-            ],
+            &[envelope(
+                "run2_id",
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "run2-name".to_string(),
+                    workspace_root: "/tmp/workspace".to_string(),
+                }),
+            )],
         );
 
         // Invalid session (no events.jsonl)
@@ -1217,8 +1214,11 @@ mod tests {
 
     #[test]
     fn test_inspect_session_catalog_invalid_dir() {
-        let result = inspect_session_catalog(std::path::Path::new("/path/does/not/exist"));
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("failed to read session directory"));
+        let temp = tempdir().expect("tempdir");
+        let missing_dir = temp.path().join("missing");
+
+        let err = inspect_session_catalog(&missing_dir).unwrap_err();
+
+        assert!(err.contains("failed to read session directory"));
     }
 }
