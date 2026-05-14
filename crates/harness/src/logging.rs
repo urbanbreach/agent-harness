@@ -57,3 +57,15 @@ pub fn init_logging(cfg: &HarnessConfig, run_dir: &Path) -> Result<PathBuf, Stri
 
     Ok(log_path)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_log_path() {
+        let run_dir = Path::new("harness_run");
+        let expected = Path::new("harness_run/logs/harness.log");
+        assert_eq!(default_log_path(run_dir), expected);
+    }
+}
