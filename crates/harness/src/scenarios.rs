@@ -369,3 +369,17 @@ pub fn supervisor_actor() -> EventActor {
 pub fn worker_actor(agent_id: String) -> EventActor {
     EventActor::new(ActorKind::Worker, Some(agent_id))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_scenario_name_as_str() {
+        assert_eq!(ScenarioName::GoldenPath.as_str(), "golden_path");
+        assert_eq!(
+            ScenarioName::GoldenPathInteractive.as_str(),
+            "golden_path_interactive"
+        );
+    }
+}
