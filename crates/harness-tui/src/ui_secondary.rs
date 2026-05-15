@@ -3491,37 +3491,34 @@ fn build_operator_rail_section_lines(
         return lines;
     }
 
-    if let OperatorRailBodySection::Subagents { groups, .. } = section {
-        for group in groups {
-            if group.items.len() > 1 {
-                lines.push(subagent_group_line(theme, group, animation_phase, width));
-                if !group.expanded {
-                    continue;
+    match section {
+        OperatorRailBodySection::Subagents { groups, .. } => {
+            for group in groups {
+                if group.items.len() > 1 {
+                    lines.push(subagent_group_line(theme, group, animation_phase, width));
+                    if !group.expanded {
+                        continue;
+                    }
+                }
+                for item in &group.items {
+                    lines.push(subagent_item_line(
+                        theme,
+                        group,
+                        item,
+                        animation_phase,
+                        width,
+                    ));
                 }
             }
-            for item in &group.items {
-                lines.push(subagent_item_line(
-                    theme,
-                    group,
-                    item,
-                    animation_phase,
-                    width,
-                ));
-            }
         }
-        return lines;
-    }
-
-    let items = match section {
         OperatorRailBodySection::Todo { items, .. }
         | OperatorRailBodySection::Mcp { items, .. }
         | OperatorRailBodySection::Lsp { items, .. }
-        | OperatorRailBodySection::ModifiedFiles { items, .. } => items,
-        OperatorRailBodySection::Subagents { .. } => unreachable!("handled above"),
-    };
-
-    for item in items {
-        append_operator_rail_item(&mut lines, theme, section, item);
+        | OperatorRailBodySection::ModifiedFiles { items, .. } => {
+            for item in items {
+                append_operator_rail_item(&mut lines, theme, section, item);
+            }
+        }
     }
 
     lines
