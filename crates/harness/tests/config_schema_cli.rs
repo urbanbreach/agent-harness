@@ -777,6 +777,18 @@ fn doctor_cli_emits_json_report() {
         .expect("checks array")
         .iter()
         .any(|check| { check["id"] == "command_registry" && check["status"] == "pass" }));
+    let workflow_contract = report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .find(|check| check["id"] == "workflow_contract_registry")
+        .expect("workflow contract registry check");
+    assert_eq!(workflow_contract["status"], "pass");
+    assert!(
+        workflow_contract["details"]["id_groups"]["evidence_categories"]
+            .as_u64()
+            .is_some_and(|count| count >= 1)
+    );
     assert!(report["checks"]
         .as_array()
         .expect("checks array")

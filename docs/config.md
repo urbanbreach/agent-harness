@@ -276,6 +276,24 @@ transport errors, and post-compaction context-window failures. Provider
 start/finish metadata records the fallback attempt and classified reason without
 changing replay semantics.
 
+### Workflow contract registry
+
+Harness keeps first-party workflow ids in code registries instead of treating a
+project file as authoritative runtime state. The initial workflow-slice SSOT is
+split by crate responsibility:
+
+- `harness-core::workflow_registry` owns stable workflow mode, lane, outcome,
+  evidence category, transition policy, doctor-check, and docs-anchor ids.
+- `harness-core::command_registry` owns canonical command names and aliases such
+  as `workflow-run`, `workflow-status`, `workflow-signoff`, `workflow-cancel`,
+  `workflow-dossier`, `workflow-snapshot`, `plan-consensus`, and `goal-ledger`.
+  These entries resolve to workflow intents and must not execute shell tools.
+- `harness doctor --json` includes the `workflow_contract_registry` check so docs
+  anchors and stable id groups drift visibly.
+- `docs/omx-workflow-slice-spec.md` remains the source narrative for the broader
+  slice, while replayable workflow state must still come from coordinator-owned
+  events and redacted artifact references.
+
 ### Plan operator workflow
 
 Use Plan when the operator wants a reviewed implementation plan before changing

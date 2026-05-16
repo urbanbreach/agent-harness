@@ -10,11 +10,17 @@ use harness_core::config::{
     configured_model_catalog, load_resolved_config, resolve_model_selection, AgentMode,
     CompatibilityImportState, HarnessConfig, McpServerConfig, PermissionMode, ProviderConfig,
 };
+use harness_core::workflow_registry::{
+    stable_id_groups, WORKFLOW_DOCS_ANCHORS, WORKFLOW_DOCTOR_CHECKS,
+};
 use harness_tools::{coordinator_registry_with_mcp_and_editing, EditingToolSurfaceConfig};
 use serde::Serialize;
 use serde_json::Value;
 
 const PARITY_LEDGER_JSON: &str = include_str!("../../../docs/parity-ledger.json");
+const CONFIG_DOC_MD: &str = include_str!("../../../docs/config.md");
+const TESTING_DOC_MD: &str = include_str!("../../../docs/testing.md");
+const WORKFLOW_SLICE_SPEC_MD: &str = include_str!("../../../docs/omx-workflow-slice-spec.md");
 
 const REQUIRED_PRIMARY_AGENTS: [&str; 3] = ["build", "plan", "discipline"];
 const REQUIRED_SUBAGENTS: [&str; 2] = ["explore", "general"];
@@ -200,6 +206,7 @@ fn build_report(config_display: String, config: &HarnessConfig) -> DoctorReport 
         check_profile_tools(config),
         check_first_slice_omo_tool_surface(config),
         check_command_registry(),
+        check_workflow_contract_registry(),
         check_permissions(config),
         check_session_dir(&config.paths.session_dir),
         check_mcp(config),
@@ -240,6 +247,14 @@ fn print_text_report(report: &DoctorReport) {
 fn check_command_registry() -> DoctorCheck {
     let registry = CommandRegistry::builtins();
     let required = [
+        "workflow-run",
+        "workflow-status",
+        "workflow-signoff",
+        "workflow-cancel",
+        "workflow-dossier",
+        "workflow-snapshot",
+        "plan-consensus",
+        "goal-ledger",
         "init-deep",
         "ralph-loop",
         "ulw-loop",
@@ -283,6 +298,66 @@ fn check_command_registry() -> DoctorCheck {
             registry.commands().len(),
             CommandRegistry::roots().len()
         ),
+    )
+}
+
+fn check_workflow_contract_registry() -> DoctorCheck {
+    let mut duplicate_groups = Vec::new();
+    let mut group_counts = serde_json::Map::new();
+    for (group, ids) in stable_id_groups() {
+        let unique = ids.iter().copied().collect::<BTreeSet<_>>();
+        group_counts.insert(group.to_string(), serde_json::json!(ids.len()));
+        if unique.len() != ids.len() {
+            duplicate_groups.push(group);
+        }
+    }
+    if !duplicate_groups.is_empty() {
+        return fail(
+            "workflow_contract_registry",
+            format!(
+                "duplicate workflow contract id(s) in group(s): {}",
+                duplicate_groups.join(", ")
+            ),
+        );
+    }
+
+    let missing_docs = WORKFLOW_DOCS_ANCHORS
+        .iter()
+        .filter(|anchor| match anchor.path {
+            "docs/config.md" => !CONFIG_DOC_MD.contains(anchor.heading),
+            "docs/testing.md" => !TESTING_DOC_MD.contains(anchor.heading),
+            "docs/omx-workflow-slice-spec.md" => !WORKFLOW_SLICE_SPEC_MD.contains(anchor.heading),
+            _ => true,
+        })
+        .map(|anchor| format!("{}:{}", anchor.path, anchor.heading))
+        .collect::<Vec<_>>();
+    if !missing_docs.is_empty() {
+        return fail(
+            "workflow_contract_registry",
+            format!(
+                "missing workflow docs anchor(s): {}",
+                missing_docs.join(", ")
+            ),
+        );
+    }
+
+    pass_with_details(
+        "workflow_contract_registry",
+        format!(
+            "{} workflow doctor check id(s), {} docs anchor(s), stable ids split by crate responsibility",
+            WORKFLOW_DOCTOR_CHECKS.len(),
+            WORKFLOW_DOCS_ANCHORS.len()
+        ),
+        Some(serde_json::json!({
+            "id_groups": group_counts,
+            "docs_anchors": WORKFLOW_DOCS_ANCHORS.iter().map(|anchor| {
+                serde_json::json!({
+                    "id": anchor.id,
+                    "path": anchor.path,
+                    "heading": anchor.heading,
+                })
+            }).collect::<Vec<_>>(),
+        })),
     )
 }
 

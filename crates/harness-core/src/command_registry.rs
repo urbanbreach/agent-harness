@@ -20,11 +20,39 @@ pub enum CommandAction {
     LoadSkills { skills: &'static [&'static str] },
     ProfileSwitch { profile: &'static str },
     NativeTool { tool_id: &'static str },
+    WorkflowIntent { intent: WorkflowIntent },
     StartContinuation { mode: ContinuationMode },
     StopContinuation,
     PlanArtifact { artifact: &'static str },
     HandoffArtifact { artifact: &'static str },
     TuiAction { action: &'static str },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkflowIntent {
+    Run,
+    Status,
+    Signoff,
+    Cancel,
+    DossierExport,
+    Snapshot,
+    PlanConsensus,
+    GoalLedger,
+}
+
+impl WorkflowIntent {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Run => "workflow.run",
+            Self::Status => "workflow.status",
+            Self::Signoff => "workflow.signoff",
+            Self::Cancel => "workflow.cancel",
+            Self::DossierExport => "workflow.dossier_export",
+            Self::Snapshot => "workflow.snapshot",
+            Self::PlanConsensus => "workflow.plan_consensus",
+            Self::GoalLedger => "workflow.goal_ledger",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,6 +77,70 @@ impl CommandRegistry {
 
     pub fn builtins() -> Self {
         Self::new(vec![
+            spec(
+                "workflow-run",
+                "Start a coordinator-owned workflow run",
+                &["workflow"],
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Run,
+                },
+            ),
+            spec(
+                "workflow-status",
+                "Inspect projected workflow status",
+                &["status-workflow"],
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Status,
+                },
+            ),
+            spec(
+                "workflow-signoff",
+                "Record or inspect workflow signoff decisions",
+                &["signoff"],
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Signoff,
+                },
+            ),
+            spec(
+                "workflow-cancel",
+                "Cancel a coordinator-owned workflow run",
+                &["cancel-workflow"],
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Cancel,
+                },
+            ),
+            spec(
+                "workflow-dossier",
+                "Export a replay-derived workflow Run Dossier",
+                &["dossier"],
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::DossierExport,
+                },
+            ),
+            spec(
+                "workflow-snapshot",
+                "List, read, or export workflow context snapshots",
+                &["snapshot"],
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Snapshot,
+                },
+            ),
+            spec(
+                "plan-consensus",
+                "Create a reviewed consensus plan artifact",
+                &["ralplan", "consensus-plan"],
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::PlanConsensus,
+                },
+            ),
+            spec(
+                "goal-ledger",
+                "Inspect or checkpoint workflow goal ledger state",
+                &["ultragoal"],
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::GoalLedger,
+                },
+            ),
             spec(
                 "init-deep",
                 "Start a deep requirements interview",
@@ -82,7 +174,7 @@ impl CommandRegistry {
             spec(
                 "stop-continuation",
                 "Stop active continuation",
-                &["stop-continuation"],
+                &[],
                 CommandAction::StopContinuation,
             ),
             spec(
@@ -171,12 +263,22 @@ fn spec(
 
 #[cfg(test)]
 mod tests {
-    use super::{CommandAction, CommandRegistry};
+    use std::collections::BTreeSet;
+
+    use super::{CommandAction, CommandRegistry, WorkflowIntent};
 
     #[test]
     fn builtin_registry_exposes_omo_commands_without_shell_actions() {
         let registry = CommandRegistry::builtins();
         for name in [
+            "workflow-run",
+            "workflow-status",
+            "workflow-signoff",
+            "workflow-cancel",
+            "workflow-dossier",
+            "workflow-snapshot",
+            "plan-consensus",
+            "goal-ledger",
             "init-deep",
             "ralph-loop",
             "ulw-loop",
@@ -200,5 +302,45 @@ mod tests {
         assert!(CommandRegistry::roots()
             .iter()
             .any(|root| root == &std::path::PathBuf::from(".opencode/command")));
+    }
+
+    #[test]
+    fn workflow_commands_have_stable_intents_and_unique_aliases() {
+        let registry = CommandRegistry::builtins();
+        for (name, intent) in [
+            ("workflow-run", WorkflowIntent::Run),
+            ("workflow-status", WorkflowIntent::Status),
+            ("workflow-signoff", WorkflowIntent::Signoff),
+            ("workflow-cancel", WorkflowIntent::Cancel),
+            ("workflow-dossier", WorkflowIntent::DossierExport),
+            ("workflow-snapshot", WorkflowIntent::Snapshot),
+            ("plan-consensus", WorkflowIntent::PlanConsensus),
+            ("goal-ledger", WorkflowIntent::GoalLedger),
+        ] {
+            let command = registry
+                .get(name)
+                .unwrap_or_else(|| panic!("missing {name}"));
+            assert_eq!(
+                command.action,
+                CommandAction::WorkflowIntent { intent },
+                "{name} drifted from workflow intent {}",
+                intent.as_str()
+            );
+        }
+
+        let mut names_and_aliases = BTreeSet::new();
+        for command in registry.commands() {
+            assert!(
+                names_and_aliases.insert(command.name),
+                "duplicate command name {}",
+                command.name
+            );
+            for alias in command.aliases {
+                assert!(
+                    names_and_aliases.insert(alias),
+                    "duplicate command alias {alias}"
+                );
+            }
+        }
     }
 }

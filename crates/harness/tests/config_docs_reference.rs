@@ -119,3 +119,48 @@ fn config_docs_capture_plan_operator_workflow_and_guardrails() {
         );
     }
 }
+
+#[test]
+fn config_docs_capture_workflow_contract_registry() {
+    let root = repo_root();
+    let doc = std::fs::read_to_string(root.join("docs/config.md")).expect("read docs/config.md");
+
+    for expected in [
+        "### Workflow contract registry",
+        "harness-core::workflow_registry",
+        "harness-core::command_registry",
+        "workflow-run",
+        "workflow-status",
+        "workflow-signoff",
+        "workflow_contract_registry",
+        "must not execute shell tools",
+        "docs/omx-workflow-slice-spec.md",
+    ] {
+        assert!(
+            doc.contains(expected),
+            "docs/config.md missing workflow contract registry anchor: {expected}"
+        );
+    }
+}
+
+#[test]
+fn workflow_slice_docs_capture_g001_ssot_and_drift_guard_contract() {
+    let root = repo_root();
+    let doc = std::fs::read_to_string(root.join("docs/omx-workflow-slice-spec.md"))
+        .expect("read docs/omx-workflow-slice-spec.md");
+
+    for expected in [
+        "## Workstream J: Setup, doctor, and SSOT verification",
+        "Treat first-party workflow commands, aliases, prompts, evidence categories, doctor checks, and docs links as a small single source of truth early in the slice.",
+        "Manifest/registry verification tests for first-party commands, aliases, evidence categories, prompts, and doctor/docs links.",
+        "workflow commands registered",
+        "aliases present or explicitly disabled",
+        "First-party command/alias/evidence/doctor/docs SSOT drift guard.",
+        "Exit criteria: implementer can state what is reused, what is wrapped with workflow metadata, what is hardened later, and what is deferred.",
+    ] {
+        assert!(
+            doc.contains(expected),
+            "docs/omx-workflow-slice-spec.md missing G001 SSOT/drift anchor: {expected}"
+        );
+    }
+}
