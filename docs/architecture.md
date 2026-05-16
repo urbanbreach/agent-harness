@@ -265,6 +265,21 @@ mailbox/task work after the bound. `max_wall_clock_minutes` blocks non-shutdown 
 deadline while still allowing shutdown and deletion cleanup. Duplicate team message ids and task ids
 are rejected by the coordinator; projections keep first-seen state if old logs contain duplicates.
 
+**Workflow Orchestration**
+- `WorkflowStarted` - Starts a durable workflow run with stable workflow id, mode, owner, optional lane/title, and optional idempotency key.
+- `WorkflowTransitionRecorded` - Records an accepted workflow status transition with previous/current status context, owner, reason, and optional policy/idempotency metadata.
+- `WorkflowTransitionDenied` - Records denied workflow lifecycle evidence such as owner conflicts without mutating the active workflow projection.
+- `WorkflowEvidenceRecorded` - Attaches typed verification or signoff evidence to a workflow, optionally linking a redacted artifact path/digest and acceptance reference.
+- `WorkflowOperatorDecisionRecorded` - Records an operator decision with operator id, reason, and optional correlation id.
+- `WorkflowCompleted` - Marks a workflow terminal with final outcome, reason, and owner.
+
+Workflow state is replayed by the pure `workflow` projection. Old logs with no workflow events
+project to empty workflow state. Start decisions are idempotent by idempotency key and by same-owner
+duplicate workflow id; conflicting owners append denied-transition evidence instead of rewriting the
+existing run. Workflow status, dossier, and replay readers consume projections only and must not
+append events. Continuation events may carry optional workflow metadata so bounded continuation loops
+can be associated with a workflow lane/iteration/stop reason without changing old-log semantics.
+
 **Continuation**
 - `ContinuationStarted` - Starts an explicit, bounded continuation loop from a slash command or tool action. The event records the stable continuation id, mode, originating command, and max iteration/wall-clock/provider/tool-call bounds.
 - `ContinuationReminderQueued` - Records a persisted continuation reminder and iteration count. Replay renders the reminder but never schedules provider work.

@@ -5715,6 +5715,7 @@ impl Coordinator {
                 max_wall_clock_ms: bounds.max_wall_clock_ms,
                 max_provider_calls: bounds.max_provider_calls,
                 max_tool_calls: bounds.max_tool_calls,
+                workflow: None,
             }),
         )?;
         run_state.active_continuation_id = Some(continuation_id.clone());
@@ -5751,6 +5752,7 @@ impl Coordinator {
             EventV1::ContinuationStopped(ContinuationStoppedEvent {
                 continuation_id,
                 reason,
+                workflow: None,
             }),
         )?;
         run_state.active_continuation_id = None;
@@ -5813,6 +5815,7 @@ impl Coordinator {
                         iteration,
                         reminder: reminder.clone(),
                         reason: trigger.reason,
+                        workflow: None,
                     }),
                 )?;
                 let request_id = allocate_provider_request_id(run_state);
@@ -5864,6 +5867,7 @@ impl Coordinator {
                         continuation_id,
                         limit: limit.to_string(),
                         iteration,
+                        workflow: None,
                     }),
                 )?;
                 run_state.active_continuation_id = None;
@@ -5885,6 +5889,7 @@ impl Coordinator {
                     EventV1::ContinuationStopped(ContinuationStoppedEvent {
                         continuation_id,
                         reason: reason.to_string(),
+                        workflow: None,
                     }),
                 )?;
                 run_state.active_continuation_id = None;
@@ -5918,6 +5923,7 @@ impl Coordinator {
                 iteration,
                 reminder,
                 reason,
+                workflow: None,
             }),
         )?;
         Ok(())
@@ -5945,6 +5951,7 @@ impl Coordinator {
                 continuation_id,
                 limit,
                 iteration,
+                workflow: None,
             }),
         )?;
         run_state.active_continuation_id = None;

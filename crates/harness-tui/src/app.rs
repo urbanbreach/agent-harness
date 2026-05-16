@@ -4599,6 +4599,7 @@ pub(crate) fn exact_test_continuation_events_update_tui_state() {
             max_wall_clock_ms: 1_800_000,
             max_provider_calls: 32,
             max_tool_calls: 256,
+            workflow: None,
         }),
     });
     app.ingest_event(EventEnvelopeV1 {
@@ -4617,6 +4618,7 @@ pub(crate) fn exact_test_continuation_events_update_tui_state() {
             iteration: 2,
             reminder: "continue ralph loop iteration 2".to_string(),
             reason: "session_idle".to_string(),
+            workflow: None,
         }),
     });
 

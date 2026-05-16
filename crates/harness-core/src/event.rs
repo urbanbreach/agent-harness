@@ -142,6 +142,12 @@ pub enum EventV1 {
     TeamShutdownApproved(TeamShutdownApprovedEvent),
     TeamShutdownRejected(TeamShutdownRejectedEvent),
     TeamDeleted(TeamDeletedEvent),
+    WorkflowStarted(WorkflowStartedEvent),
+    WorkflowTransitionRecorded(WorkflowTransitionRecordedEvent),
+    WorkflowTransitionDenied(WorkflowTransitionDeniedEvent),
+    WorkflowEvidenceRecorded(WorkflowEvidenceRecordedEvent),
+    WorkflowOperatorDecisionRecorded(WorkflowOperatorDecisionRecordedEvent),
+    WorkflowCompleted(WorkflowCompletedEvent),
     ContinuationStarted(ContinuationStartedEvent),
     ContinuationReminderQueued(ContinuationReminderQueuedEvent),
     ContinuationStopped(ContinuationStoppedEvent),
@@ -1194,6 +1200,94 @@ pub struct TeamDeletedEvent {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WorkflowStartedEvent {
+    pub workflow_id: String,
+    pub mode: String,
+    pub owner: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lane: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idempotency_key: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WorkflowTransitionRecordedEvent {
+    pub workflow_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_status: Option<String>,
+    pub to_status: String,
+    pub reason: String,
+    pub owner: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idempotency_key: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WorkflowTransitionDeniedEvent {
+    pub workflow_id: String,
+    pub requested_status: String,
+    pub reason: String,
+    pub owner: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_owner: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_status: Option<String>,
+    pub policy_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WorkflowEvidenceRecordedEvent {
+    pub workflow_id: String,
+    pub category: String,
+    pub summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acceptance_ref: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WorkflowOperatorDecisionRecordedEvent {
+    pub workflow_id: String,
+    pub decision: String,
+    pub operator: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub correlation_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WorkflowCompletedEvent {
+    pub workflow_id: String,
+    pub outcome: String,
+    pub reason: String,
+    pub owner: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WorkflowEventMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lane: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub iteration: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stop_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_category: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ContinuationStartedEvent {
     pub continuation_id: String,
     pub mode: String,
@@ -1202,6 +1296,8 @@ pub struct ContinuationStartedEvent {
     pub max_wall_clock_ms: u64,
     pub max_provider_calls: u32,
     pub max_tool_calls: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<WorkflowEventMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1210,12 +1306,16 @@ pub struct ContinuationReminderQueuedEvent {
     pub iteration: u32,
     pub reminder: String,
     pub reason: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<WorkflowEventMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ContinuationStoppedEvent {
     pub continuation_id: String,
     pub reason: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<WorkflowEventMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1223,6 +1323,8 @@ pub struct ContinuationLimitReachedEvent {
     pub continuation_id: String,
     pub limit: String,
     pub iteration: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<WorkflowEventMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

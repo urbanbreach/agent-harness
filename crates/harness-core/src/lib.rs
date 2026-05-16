@@ -31,5 +31,6 @@ pub mod store;
 pub(crate) mod text;
 pub mod tool;
 pub mod transcript_projection;
+pub mod workflow;
 pub mod workflow_registry;
 pub mod workspace;

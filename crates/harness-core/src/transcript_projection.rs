@@ -1438,7 +1438,13 @@ pub fn project_transcript(
             | EventV1::PermissionGrantRecorded(_)
             | EventV1::EditProposed(_)
             | EventV1::EditApplied(_)
-            | EventV1::EditRejected(_) => {}
+            | EventV1::EditRejected(_)
+            | EventV1::WorkflowStarted(_)
+            | EventV1::WorkflowTransitionRecorded(_)
+            | EventV1::WorkflowTransitionDenied(_)
+            | EventV1::WorkflowEvidenceRecorded(_)
+            | EventV1::WorkflowOperatorDecisionRecorded(_)
+            | EventV1::WorkflowCompleted(_) => {}
         }
     }
 
