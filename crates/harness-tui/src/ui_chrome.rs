@@ -751,6 +751,17 @@ fn live_footer_status_candidates(app: &AppState, max_width: usize, theme: &Theme
         runtime_summary.clone(),
         runtime_state.kind.label().to_string(),
     ];
+    if let Some(workflow_summary) = app.workflow_footer_summary() {
+        options.insert(
+            0,
+            format!(
+                "{}  ·  {}  ·  {}",
+                runtime_state.kind.label(),
+                runtime_summary,
+                workflow_summary
+            ),
+        );
+    }
     if let Some(segment) = control_dock_summary_segment(app) {
         let segment_text = control_dock_summary_segment_text_for_width(
             &segment,

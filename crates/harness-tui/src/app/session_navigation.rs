@@ -1265,6 +1265,9 @@ impl AppState {
                     .map(|rank| (rank, command.to_string()))
             })
             .collect::<Vec<_>>();
+        if !slash_query.is_empty() && filtered.iter().any(|(rank, _)| *rank == (0, 0)) {
+            filtered.retain(|(rank, _)| *rank == (0, 0));
+        }
         filtered.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
         self.slash_filtered = filtered
             .into_iter()
@@ -1364,7 +1367,8 @@ impl AppState {
             "follow" => !self.replay_mode && !self.startup_mode,
             "compact" => self.compact_session_supported,
             "workflow-run" | "workflow-status" | "workflow-signoff" | "workflow-cancel"
-            | "workflow-dossier" | "workflow-snapshot" => !self.replay_mode,
+            | "workflow-dossier" | "workflow-snapshot" | "plan-consensus" | "goal-ledger"
+            | "research-mission" | "wiki" => !self.replay_mode,
             "init-deep" | "refactor" | "start-work" | "remove-ai-slops" | "handoff"
             | "hyperplan" => !self.replay_mode,
             "ralph-loop" | "ulw-loop" => !self.replay_mode && !self.startup_mode,
@@ -1532,6 +1536,30 @@ impl AppState {
                 WorkflowIntent::Snapshot,
                 "/workflow snapshot",
                 "workflow snapshot intent queued",
+            ),
+            "plan-consensus" => self.emit_workflow_intent(
+                preserved_draft,
+                WorkflowIntent::PlanConsensus,
+                "/plan-consensus",
+                "workflow plan consensus intent queued",
+            ),
+            "goal-ledger" => self.emit_workflow_intent(
+                preserved_draft,
+                WorkflowIntent::GoalLedger,
+                "/goal-ledger",
+                "workflow goal ledger intent queued",
+            ),
+            "research-mission" => self.emit_workflow_intent(
+                preserved_draft,
+                WorkflowIntent::ResearchMission,
+                "/research-mission",
+                "workflow research mission intent queued",
+            ),
+            "wiki" => self.emit_workflow_intent(
+                preserved_draft,
+                WorkflowIntent::Wiki,
+                "/wiki",
+                "workflow wiki intent queued",
             ),
             "ralph-loop" => {
                 let command = Self::continuation_command_with_draft("/ralph-loop", preserved_draft.as_deref());
@@ -3600,6 +3628,15 @@ fn slash_command_aliases(command: &str) -> &'static [&'static str] {
         "workflow-cancel" => &["cancel-workflow"],
         "workflow-dossier" => &["dossier"],
         "workflow-snapshot" => &["snapshot"],
+        "plan-consensus" => &["ralplan", "consensus-plan", "workflow-plan-consensus"],
+        "goal-ledger" => &["goal", "ultragoal", "workflow-goal"],
+        "research-mission" => &[
+            "mission",
+            "research-loop",
+            "autoresearch",
+            "workflow-mission",
+        ],
+        "wiki" => &["workflow-wiki"],
         "ulw-loop" => &["ultrawork", "ulw"],
         "cancel-ralph" => &["stop-ralph"],
         "remove-ai-slops" => &["deslop", "ai-slop-cleaner"],

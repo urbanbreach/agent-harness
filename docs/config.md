@@ -636,11 +636,14 @@ Harness keeps the command registry separate from TUI-only actions. Built-in OMO-
 commands include `/init-deep`, `/ralph-loop`, `/ulw-loop`, `/cancel-ralph`, `/refactor`,
 `/start-work`, `/stop-continuation`, `/remove-ai-slops`, `/handoff`, and `/hyperplan`.
 Built-in registry actions may load prompts/skills, create plan or handoff artifacts,
-or start/stop a coordinator-owned continuation. Imported command templates are
-prompt-only slash commands; they submit the template text (with `{{args}}`
-expanded from the preserved draft when present) back through the normal
-coordinator path. They do not execute shell code directly; shell execution still
-requires the normal native tool permission flow.
+or start/stop a coordinator-owned continuation. Workflow commands also expose
+typed TUI intents for `/workflow-*`, `/plan-consensus`, `/goal-ledger`,
+`/research-mission`, and `/wiki` surfaces, with compatibility aliases such as
+`/ralplan`, `/ultragoal`, `/autoresearch`, and `/workflow-wiki`. Imported command
+templates are prompt-only slash commands; they submit the template text (with
+`{{args}}` expanded from the preserved draft when present) back through the
+normal coordinator path. They do not execute shell code directly; shell
+execution still requires the normal native tool permission flow.
 
 Custom command lookup roots include Harness, OpenCode, Claude, and Agents-compatible locations:
 `.agent-harness/commands`, `.opencode/command`, `.opencode/commands`, `.claude/commands`,
@@ -666,10 +669,27 @@ failed-tool/failed-compaction events. Effect summaries and hook output summaries
 are redacted and capped before persistence. Artifact effects should reference
 already-redacted files under the run artifact directory, for example:
 
+Workflow hook policies are typed metadata on those effects, not separate event
+writers. Hook JSON may include `policy`, `policy_action`/`decision`, optional
+`target`, and `state_affecting`. Recognized policy ids cover
+`keyword_alias_detection`, `vague_request_planning_gate`,
+`active_context_injection`, `evidence_classification`, `recovery_hint`,
+`continuation_policy`, `compaction_preservation`, and
+`final_missing_evidence_warning`. When a policy affects workflow state or
+provider context, the capped/redacted decision metadata is persisted on the
+hook execution record so replay can show the decision without rerunning hooks.
+
 ```json
 {
   "effects": [
     { "kind": "truncate_output", "summary": "cap grep output to provider budget" },
+    {
+      "kind": "transform_context",
+      "policy": "active_context_injection",
+      "decision": "inject_snapshot",
+      "workflow_id": "wf_123",
+      "summary": "inject active workflow snapshot"
+    },
     { "kind": "recover", "summary": "retry missing tool result once" },
     {
       "kind": "write_artifact",

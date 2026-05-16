@@ -124,6 +124,7 @@ struct StatusDialogRow {
 
 fn status_dialog_body(app: &AppState, theme: &Theme) -> Text<'static> {
     status_dialog_body_from_rows(
+        status_dialog_workflow_rows(app),
         status_dialog_mcp_rows(),
         status_dialog_lsp_rows(app),
         status_dialog_continuation_rows(app),
@@ -132,18 +133,36 @@ fn status_dialog_body(app: &AppState, theme: &Theme) -> Text<'static> {
 }
 
 fn status_dialog_body_from_rows(
+    workflow_rows: Vec<StatusDialogRow>,
     mcp_rows: Vec<StatusDialogRow>,
     lsp_rows: Vec<StatusDialogRow>,
     continuation_rows: Vec<StatusDialogRow>,
     theme: &Theme,
 ) -> Text<'static> {
     let mut lines = Vec::new();
+    append_status_dialog_workflow_section(&mut lines, workflow_rows, theme);
     append_status_dialog_mcp_section(&mut lines, mcp_rows, theme);
     append_status_dialog_lsp_section(&mut lines, lsp_rows, theme);
     append_status_dialog_continuation_section(&mut lines, continuation_rows, theme);
     append_status_dialog_formatters_section(&mut lines, theme);
     append_status_dialog_plugins_section(&mut lines, theme);
     Text::from(lines)
+}
+
+fn append_status_dialog_workflow_section(
+    lines: &mut Vec<Line<'static>>,
+    rows: Vec<StatusDialogRow>,
+    theme: &Theme,
+) {
+    if rows.is_empty() {
+        lines.push(status_dialog_plain_line("Workflow: inactive", theme));
+        lines.push(Line::default());
+        return;
+    }
+
+    lines.push(status_dialog_plain_line("Workflow", theme));
+    append_status_dialog_rows(lines, rows, theme);
+    lines.push(Line::default());
 }
 
 fn append_status_dialog_mcp_section(
@@ -254,6 +273,43 @@ fn status_dialog_row_line(row: StatusDialogRow, theme: &Theme) -> Line<'static> 
         ));
     }
     Line::from(spans)
+}
+
+fn status_dialog_workflow_rows(app: &AppState) -> Vec<StatusDialogRow> {
+    app.workflow_status_rows()
+        .into_iter()
+        .map(|row| {
+            let name = row
+                .title
+                .as_deref()
+                .filter(|title| !title.trim().is_empty())
+                .unwrap_or(&row.workflow_id)
+                .to_string();
+            let mut suffix = format!("{} · {} · owner {}", row.mode, row.status, row.owner);
+            if row.evidence_count > 0 {
+                suffix.push_str(&format!(" · {} evidence", row.evidence_count));
+            }
+            if row.operator_decision_count > 0 {
+                suffix.push_str(&format!(" · {} decisions", row.operator_decision_count));
+            }
+            if let Some(category) = row.latest_evidence_category.as_deref() {
+                suffix.push_str(&format!(" · latest {category}"));
+            }
+            let tone = if row.is_blocked() {
+                StatusDialogTone::Error
+            } else if row.terminal {
+                StatusDialogTone::Muted
+            } else {
+                StatusDialogTone::Success
+            };
+            StatusDialogRow {
+                name: sanitize_status_dialog_text(&name),
+                suffix: Some(sanitize_status_dialog_text(&suffix)),
+                tone,
+                enabled: !row.terminal,
+            }
+        })
+        .collect()
 }
 
 fn status_dialog_mcp_rows() -> Vec<StatusDialogRow> {
@@ -450,7 +506,7 @@ pub(crate) fn exact_test_status_dialog_render_snapshot_covers_harness_sections()
                 frame,
                 &theme,
                 chunks[1],
-                status_dialog_body_from_rows(mcp_rows, lsp_rows, Vec::new(), &theme),
+                status_dialog_body_from_rows(Vec::new(), mcp_rows, lsp_rows, Vec::new(), &theme),
             );
         })
         .expect("draw status dialog");

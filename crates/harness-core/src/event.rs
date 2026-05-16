@@ -342,6 +342,44 @@ pub enum HookEffectKind {
     Notify,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HookPolicyKind {
+    KeywordAliasDetection,
+    VagueRequestPlanningGate,
+    ActiveContextInjection,
+    EvidenceClassification,
+    RecoveryHint,
+    ContinuationPolicy,
+    CompactionPreservation,
+    FinalMissingEvidenceWarning,
+}
+
+impl HookPolicyKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::KeywordAliasDetection => "keyword_alias_detection",
+            Self::VagueRequestPlanningGate => "vague_request_planning_gate",
+            Self::ActiveContextInjection => "active_context_injection",
+            Self::EvidenceClassification => "evidence_classification",
+            Self::RecoveryHint => "recovery_hint",
+            Self::ContinuationPolicy => "continuation_policy",
+            Self::CompactionPreservation => "compaction_preservation",
+            Self::FinalMissingEvidenceWarning => "final_missing_evidence_warning",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HookPolicyMetadata {
+    pub policy: HookPolicyKind,
+    pub action: String,
+    #[serde(default)]
+    pub state_affecting: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HookEffectMetadata {
     pub kind: HookEffectKind,
@@ -349,6 +387,8 @@ pub struct HookEffectMetadata {
     pub summary: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub artifact_ref: Option<EventArtifactRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy: Option<HookPolicyMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

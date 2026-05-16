@@ -1526,6 +1526,17 @@ impl AppState {
             .events
             .iter()
             .any(|event| matches!(event.payload, EventV1::EditApplied(_)));
+        let has_workflows = self.events.iter().any(|event| {
+            matches!(
+                event.payload,
+                EventV1::WorkflowStarted(_)
+                    | EventV1::WorkflowTransitionRecorded(_)
+                    | EventV1::WorkflowTransitionDenied(_)
+                    | EventV1::WorkflowEvidenceRecorded(_)
+                    | EventV1::WorkflowOperatorDecisionRecorded(_)
+                    | EventV1::WorkflowCompleted(_)
+            )
+        });
         let has_integrations = harness_core::config::registered_integrations_config().is_some();
         let lsp = harness_core::config::registered_lsp_config();
         let has_lsp = lsp.disabled || !lsp.servers.is_empty();
@@ -1536,6 +1547,7 @@ impl AppState {
             || has_usage
             || !self.orchestration_visible_rows().is_empty()
             || has_modified_files
+            || has_workflows
             || has_integrations
             || has_lsp
     }

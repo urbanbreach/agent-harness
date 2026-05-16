@@ -21,6 +21,7 @@ use harness_core::event::{
 #[cfg(test)]
 use harness_core::event::{ContinuationReminderQueuedEvent, ContinuationStartedEvent, EventActor};
 use harness_core::perm::{PermissionDecision, PermissionGrantScope};
+use harness_core::workflow::project_workflows;
 use harness_core::workspace::WorkspaceEnvironment;
 use ratatui::layout::Rect;
 
@@ -82,7 +83,7 @@ const TOOL_OUTPUT_DISPLAY_MAX_CHARS: usize = 100;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_CHARS: usize = 72;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_FIELDS: usize = 3;
 const INTERRUPT_CONFIRM_TIMEOUT: Duration = Duration::from_secs(5);
-pub(crate) const SLASH_COMMANDS: [(&str, &str); 31] = [
+pub(crate) const SLASH_COMMANDS: [(&str, &str); 35] = [
     ("new", "Return to the home shell"),
     ("sessions", "Switch session"),
     ("resume", "Continue a saved session"),
@@ -106,6 +107,13 @@ pub(crate) const SLASH_COMMANDS: [(&str, &str); 31] = [
         "Export a replay-derived workflow dossier",
     ),
     ("workflow-snapshot", "Inspect workflow context snapshots"),
+    ("plan-consensus", "Create a reviewed consensus plan"),
+    ("goal-ledger", "Inspect or checkpoint workflow goals"),
+    (
+        "research-mission",
+        "Inspect validator-gated research missions",
+    ),
+    ("wiki", "Read or query the workflow wiki"),
     ("init-deep", "Start a deep requirements interview"),
     ("ralph-loop", "Start bounded Ralph continuation"),
     ("ulw-loop", "Start bounded ultrawork continuation"),
@@ -152,6 +160,7 @@ pub enum ToolCallDisplayStatus {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum OperatorSidebarSection {
+    Workflow,
     Todo,
     Subagents,
     Mcp,
@@ -825,6 +834,41 @@ pub struct OrchestrationOwnerLabels {
     pub profile: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WorkflowStatusRow {
+    pub workflow_id: String,
+    pub mode: String,
+    pub status: String,
+    pub owner: String,
+    pub lane: Option<String>,
+    pub title: Option<String>,
+    pub terminal: bool,
+    pub evidence_count: usize,
+    pub latest_evidence_category: Option<String>,
+    pub latest_evidence_summary: Option<String>,
+    pub operator_decision_count: usize,
+    pub latest_operator_decision: Option<String>,
+    pub denied_transition_count: u32,
+    pub context_snapshot_slug: Option<String>,
+    pub context_snapshot_ambiguity: Option<String>,
+}
+
+impl WorkflowStatusRow {
+    pub(crate) fn is_blocked(&self) -> bool {
+        self.status.contains("blocked")
+            || self.status.contains("denied")
+            || self.denied_transition_count > 0
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct WorkflowStatusSummary {
+    pub total: usize,
+    pub active: usize,
+    pub blocked: usize,
+    pub terminal: usize,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeStateKind {
     Ready,
@@ -1437,6 +1481,92 @@ impl AppState {
         self.projection.compaction_usage_metrics
     }
 
+    pub(crate) fn workflow_status_rows(&self) -> Vec<WorkflowStatusRow> {
+        let projection = project_workflows(self.events.iter().map(|event| &event.payload));
+        let mut rows = projection
+            .workflows
+            .values()
+            .map(|workflow| {
+                let evidence = projection
+                    .evidence
+                    .get(&workflow.workflow_id)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
+                let latest_evidence = evidence.last();
+                WorkflowStatusRow {
+                    workflow_id: workflow.workflow_id.clone(),
+                    mode: workflow.mode.clone(),
+                    status: workflow.status.clone(),
+                    owner: workflow.owner.clone(),
+                    lane: workflow.lane.clone(),
+                    title: workflow.title.clone(),
+                    terminal: workflow.terminal,
+                    evidence_count: evidence.len(),
+                    latest_evidence_category: latest_evidence.map(|event| event.category.clone()),
+                    latest_evidence_summary: latest_evidence.map(|event| event.summary.clone()),
+                    operator_decision_count: workflow.operator_decisions.len(),
+                    latest_operator_decision: workflow.operator_decisions.last().cloned(),
+                    denied_transition_count: workflow.denied_transition_count,
+                    context_snapshot_slug: workflow
+                        .context_snapshot
+                        .as_ref()
+                        .map(|snapshot| snapshot.slug.clone()),
+                    context_snapshot_ambiguity: workflow
+                        .context_snapshot
+                        .as_ref()
+                        .and_then(|snapshot| snapshot.ambiguity_score.clone()),
+                }
+            })
+            .collect::<Vec<_>>();
+        rows.sort_by(|left, right| {
+            (left.terminal, !left.is_blocked(), left.workflow_id.as_str()).cmp(&(
+                right.terminal,
+                !right.is_blocked(),
+                right.workflow_id.as_str(),
+            ))
+        });
+        rows
+    }
+
+    pub(crate) fn workflow_status_summary(&self) -> WorkflowStatusSummary {
+        self.workflow_status_rows().iter().fold(
+            WorkflowStatusSummary::default(),
+            |mut summary, row| {
+                summary.total += 1;
+                if row.terminal {
+                    summary.terminal += 1;
+                } else {
+                    summary.active += 1;
+                }
+                if row.is_blocked() {
+                    summary.blocked += 1;
+                }
+                summary
+            },
+        )
+    }
+
+    pub(crate) fn workflow_footer_summary(&self) -> Option<String> {
+        let rows = self.workflow_status_rows();
+        let latest = rows.first()?;
+        let status = if latest.is_blocked() {
+            "blocked"
+        } else {
+            latest.status.as_str()
+        };
+        let mut summary = format!("Workflow {} {status}", latest.workflow_id);
+        if latest.evidence_count > 0 {
+            summary.push_str(&format!(" · {} ev", latest.evidence_count));
+        }
+        if latest.operator_decision_count > 0 {
+            summary.push_str(&format!(" · {} decision", latest.operator_decision_count));
+            if latest.operator_decision_count != 1 {
+                summary.push('s');
+            }
+        }
+        Some(summary)
+    }
+
     pub fn new_live(
         session_path: Option<PathBuf>,
         auto_exit_on_finish: bool,
@@ -1651,6 +1781,18 @@ impl AppState {
             self.collapsed_operator_sidebar_sections
                 .remove(&OperatorSidebarSection::ModifiedFiles);
             self.file_mention_index = None;
+        }
+        if matches!(
+            &event.payload,
+            EventV1::WorkflowStarted(_)
+                | EventV1::WorkflowTransitionRecorded(_)
+                | EventV1::WorkflowTransitionDenied(_)
+                | EventV1::WorkflowEvidenceRecorded(_)
+                | EventV1::WorkflowOperatorDecisionRecorded(_)
+                | EventV1::WorkflowCompleted(_)
+        ) {
+            self.collapsed_operator_sidebar_sections
+                .remove(&OperatorSidebarSection::Workflow);
         }
 
         let terminal_panel_follow_event = terminal_panel_event_is_shell(&event.payload);
@@ -4284,15 +4426,15 @@ pub(crate) fn exact_test_startup_slash_commands_execute_without_menu() {
         app.slash_filtered,
         vec![
             "exit".to_string(),
+            "goal-ledger".to_string(),
             "handoff".to_string(),
             "hyperplan".to_string(),
             "init-deep".to_string(),
             "new".to_string(),
+            "plan-consensus".to_string(),
             "refactor".to_string(),
             "remove-ai-slops".to_string(),
             "replay".to_string(),
-            "resume".to_string(),
-            "start-work".to_string(),
         ]
     );
 }

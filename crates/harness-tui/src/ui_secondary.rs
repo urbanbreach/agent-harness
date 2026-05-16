@@ -387,6 +387,10 @@ struct OperatorSidebarSelectionRow {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum OperatorRailBodySection {
+    Workflow {
+        items: Vec<OperatorRailItem>,
+        disclosure: OperatorRailSectionDisclosure,
+    },
     Todo {
         items: Vec<OperatorRailItem>,
         disclosure: Option<OperatorRailSectionDisclosure>,
@@ -418,6 +422,9 @@ impl OperatorRailBodySection {
     #[cfg(test)]
     fn heading(&self) -> String {
         match self {
+            Self::Workflow { disclosure, .. } => {
+                format!("{} Workflow", disclosure_glyph(*disclosure))
+            }
             Self::Todo { disclosure, .. } => disclosure
                 .map(|disclosure| format!("{} Todo", disclosure_glyph(disclosure)))
                 .unwrap_or_else(|| "Todo".to_string()),
@@ -439,6 +446,10 @@ impl OperatorRailBodySection {
     fn heading_line(&self, theme: &Theme) -> Line<'static> {
         let heading_style = self.heading_style(theme);
         match self {
+            Self::Workflow { disclosure, .. } => Line::from(vec![
+                Span::styled(format!("{} ", disclosure_glyph(*disclosure)), heading_style),
+                Span::styled("Workflow".to_string(), heading_style),
+            ]),
             Self::Todo { disclosure, .. } => match disclosure {
                 Some(disclosure) => Line::from(vec![
                     Span::styled(format!("{} ", disclosure_glyph(*disclosure)), heading_style),
@@ -487,7 +498,8 @@ impl OperatorRailBodySection {
 
     fn heading_style(&self, theme: &Theme) -> Style {
         match self {
-            Self::Todo { .. }
+            Self::Workflow { .. }
+            | Self::Todo { .. }
             | Self::Subagents { .. }
             | Self::Mcp { .. }
             | Self::Lsp { .. }
@@ -499,6 +511,7 @@ impl OperatorRailBodySection {
 
     fn disclosure(&self) -> Option<OperatorRailSectionDisclosure> {
         match self {
+            Self::Workflow { disclosure, .. } => Some(*disclosure),
             Self::Todo { disclosure, .. } => *disclosure,
             Self::Subagents { disclosure, .. }
             | Self::Mcp { disclosure, .. }
@@ -515,7 +528,8 @@ impl OperatorRailBodySection {
     #[cfg(test)]
     fn item_texts(&self) -> Vec<String> {
         match self {
-            Self::Todo { items, .. }
+            Self::Workflow { items, .. }
+            | Self::Todo { items, .. }
             | Self::Mcp { items, .. }
             | Self::Lsp { items, .. }
             | Self::ModifiedFiles { items, .. } => {
@@ -3062,6 +3076,16 @@ fn build_operator_rail_body_text(
 
 fn build_operator_rail_model(app: &AppState) -> OperatorRailModel {
     let mut sections = Vec::new();
+    let workflow_items = operator_sidebar_workflow_items(app);
+    if !workflow_items.is_empty() {
+        sections.push(OperatorRailBodySection::Workflow {
+            items: workflow_items,
+            disclosure: OperatorRailSectionDisclosure {
+                section: OperatorSidebarSection::Workflow,
+                collapsed: app.operator_sidebar_section_collapsed(OperatorSidebarSection::Workflow),
+            },
+        });
+    }
     let subagent_groups = operator_sidebar_subagent_groups(app);
     if !subagent_groups.is_empty() {
         sections.push(OperatorRailBodySection::Subagents {
@@ -3513,7 +3537,8 @@ fn build_operator_rail_section_lines(
     }
 
     let items = match section {
-        OperatorRailBodySection::Todo { items, .. }
+        OperatorRailBodySection::Workflow { items, .. }
+        | OperatorRailBodySection::Todo { items, .. }
         | OperatorRailBodySection::Mcp { items, .. }
         | OperatorRailBodySection::Lsp { items, .. }
         | OperatorRailBodySection::ModifiedFiles { items, .. } => items,
@@ -4146,6 +4171,78 @@ fn operator_sidebar_session_title(app: &AppState) -> Option<OperatorRailTitle> {
     }
 
     None
+}
+
+fn operator_sidebar_workflow_items(app: &AppState) -> Vec<OperatorRailItem> {
+    let rows = app.workflow_status_rows();
+    if rows.is_empty() {
+        return Vec::new();
+    }
+
+    let summary = app.workflow_status_summary();
+    let mut items = Vec::new();
+    items.push(OperatorRailItem::Plain(format!(
+        "{} active · {} blocked · {} done",
+        summary.active, summary.blocked, summary.terminal
+    )));
+
+    for row in rows.iter().take(3) {
+        let title = row
+            .title
+            .as_deref()
+            .filter(|title| !title.trim().is_empty())
+            .unwrap_or(&row.workflow_id);
+        let lane = row
+            .lane
+            .as_deref()
+            .map(|lane| format!(" · {lane}"))
+            .unwrap_or_default();
+        let blocked = if row.is_blocked() { " · blocked" } else { "" };
+        items.push(OperatorRailItem::Plain(sanitize_operator_sidebar_line(
+            &format!("{title} · {} · {}{lane}{blocked}", row.mode, row.status),
+        )));
+
+        if let Some(category) = row.latest_evidence_category.as_deref() {
+            let summary = row
+                .latest_evidence_summary
+                .as_deref()
+                .map(sanitize_operator_sidebar_line)
+                .filter(|summary| !summary.is_empty())
+                .map(|summary| format!(" · {summary}"))
+                .unwrap_or_default();
+            items.push(OperatorRailItem::Plain(format!(
+                "evidence {category}{summary}"
+            )));
+        } else if !row.terminal {
+            items.push(OperatorRailItem::Plain(
+                "evidence missing · /workflow-signoff".to_string(),
+            ));
+        }
+
+        if let Some(decision) = row.latest_operator_decision.as_deref() {
+            items.push(OperatorRailItem::Plain(format!(
+                "decision {}",
+                sanitize_operator_sidebar_line(decision)
+            )));
+        }
+
+        if let Some(snapshot) = row.context_snapshot_slug.as_deref() {
+            let ambiguity = row
+                .context_snapshot_ambiguity
+                .as_deref()
+                .map(|score| format!(" · ambiguity {score}"))
+                .unwrap_or_default();
+            items.push(OperatorRailItem::Plain(format!(
+                "snapshot {}{ambiguity}",
+                sanitize_operator_sidebar_line(snapshot)
+            )));
+        }
+    }
+
+    items.push(OperatorRailItem::Plain(
+        "status /workflow-status · dossier /workflow-dossier".to_string(),
+    ));
+    items
 }
 
 fn operator_sidebar_todo_items(app: &AppState) -> Option<Vec<OperatorRailItem>> {

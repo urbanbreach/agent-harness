@@ -32,11 +32,12 @@ use crate::conversation::{
 use crate::event::{
     ActorKind, AgentSpawnedEvent, ArtifactWrittenEvent, BackgroundTaskNotificationStatus,
     CompactionAppliedEvent, CompactionWrittenEvent, EditAppliedEvent, EventActor, EventArtifactRef,
-    EventEnvelopeV1, EventV1, HookExecutionMetadata, HookExecutionStatus,
-    ProviderRequestFinishedEvent, ProviderRequestStartedEvent, ProviderStreamDeltaEvent,
-    RunFinishedEvent, RunStartedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskScheduleState,
-    TaskScheduledEvent, ToolCallFinishedEvent, ToolCallMetadata, ToolCallRequestedEvent,
-    ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent, SCHEMA_VERSION,
+    EventEnvelopeV1, EventV1, HookEffectKind, HookExecutionMetadata, HookExecutionStatus,
+    HookPolicyKind, ProviderRequestFinishedEvent, ProviderRequestStartedEvent,
+    ProviderStreamDeltaEvent, RunFinishedEvent, RunStartedEvent, TaskCancelledEvent,
+    TaskCompletedEvent, TaskScheduleState, TaskScheduledEvent, ToolCallFinishedEvent,
+    ToolCallMetadata, ToolCallRequestedEvent, ToolCallStatus, ToolIdentityMetadata,
+    UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use crate::perm::{
     PermissionDecision, PermissionGrantScope, PermissionKind, PermissionPolicy,
@@ -54,7 +55,7 @@ use super::{
     build_model_compaction_prompt, build_provider_context_summary, compact_provider_context,
     compaction_summary_override_from_hooks, completion_messages_to_conversation_messages,
     continuation_done_marker_seen, continuation_reminder_prompt,
-    mark_failed_terminal_compaction_attempt, permission_rule_request_selectors,
+    mark_failed_terminal_compaction_attempt, parse_hook_effects, permission_rule_request_selectors,
     plan_mode_shell_boundary_denial, provider_context_summary_required_headings,
     provider_tool_message_status, restore_provider_context_from_history,
     schedule_pending_agent_wakeups_for_idle_agent, spawn_coordinator, summarize_hook_output,
@@ -138,6 +139,111 @@ fn summarize_hook_output_truncates_long_single_stream_output() {
     assert_eq!(summary.chars().count(), 161);
     assert!(summary.starts_with(&"x".repeat(160)));
     assert!(summary.ends_with('…'));
+}
+
+#[test]
+fn workflow_hook_policy_effects_are_typed_capped_and_redacted() {
+    let long_summary = format!(
+        "inject active workflow context with secret sk-AbCdEf0123456789 {}",
+        "x".repeat(260)
+    );
+    let stdout = json!({
+        "effects": [
+            {
+                "kind": "transform_context",
+                "policy": "active_context_injection",
+                "decision": "inject_snapshot",
+                "workflow_id": "wf_active",
+                "summary": long_summary
+            },
+            {
+                "kind": "request_reminder",
+                "policy": "continuation_policy",
+                "target": "goal-story-1"
+            },
+            {
+                "kind": "transform_context",
+                "policy": "compaction_preservation",
+                "action": "preserve_workflow_summary"
+            },
+            {
+                "kind": "add_diagnostic",
+                "policy": "final_missing_evidence_warning",
+                "state_affecting": true,
+                "category": "evidence.test"
+            }
+        ]
+    })
+    .to_string();
+
+    let effects = parse_hook_effects(&stdout, "");
+    assert_eq!(effects.len(), 4);
+
+    let context = &effects[0];
+    assert_eq!(context.kind, HookEffectKind::TransformContext);
+    assert!(
+        !context
+            .summary
+            .as_deref()
+            .unwrap_or_default()
+            .contains("sk-AbCdEf0123456789"),
+        "hook policy summaries must be redacted before persistence"
+    );
+    assert!(
+        context
+            .summary
+            .as_deref()
+            .unwrap_or_default()
+            .chars()
+            .count()
+            <= 241,
+        "hook policy summaries must stay capped"
+    );
+    let context_policy = context.policy.as_ref().expect("context policy metadata");
+    assert_eq!(
+        context_policy.policy,
+        HookPolicyKind::ActiveContextInjection
+    );
+    assert_eq!(context_policy.action, "inject_snapshot");
+    assert!(context_policy.state_affecting);
+    assert_eq!(context_policy.target.as_deref(), Some("wf_active"));
+
+    assert_eq!(
+        effects[1].policy.as_ref().map(|policy| (
+            policy.policy,
+            policy.action.as_str(),
+            policy.state_affecting
+        )),
+        Some((
+            HookPolicyKind::ContinuationPolicy,
+            "schedule_continuation",
+            true
+        ))
+    );
+    assert_eq!(
+        effects[2].policy.as_ref().map(|policy| (
+            policy.policy,
+            policy.action.as_str(),
+            policy.state_affecting
+        )),
+        Some((
+            HookPolicyKind::CompactionPreservation,
+            "preserve_workflow_summary",
+            true
+        ))
+    );
+    assert_eq!(
+        effects[3].policy.as_ref().map(|policy| (
+            policy.policy,
+            policy.target.as_deref(),
+            policy.state_affecting
+        )),
+        Some((
+            HookPolicyKind::FinalMissingEvidenceWarning,
+            Some("evidence.test"),
+            true
+        ))
+    );
 }
 
 #[test]

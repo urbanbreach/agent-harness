@@ -50,21 +50,22 @@ use crate::event::{
     ContinuationReminderQueuedEvent, ContinuationStartedEvent, ContinuationStoppedEvent,
     EditAppliedEvent, EditProposedEvent, EditRejectedEvent, EventActor, EventArtifactRef,
     EventBuildError, EventBuilder, EventContext, EventEnvelopeV1, EventV1, ExecutionTimingMetadata,
-    HookEffectKind, HookEffectMetadata, HookExecutionMetadata, HookExecutionStatus,
-    PermissionDecision as EventPermissionDecision, PermissionGrantRecordedEvent,
-    PermissionRequestedArgs, PermissionResolvedEvent, PersistentTask, PersistentTaskCreatedEvent,
-    PersistentTaskStatus, PersistentTaskUpdatedEvent, PolicyViolationDetectedEvent,
-    ProviderAssistantMessageMetadata, ProviderReasoningDeltaEvent, ProviderRequestFinishedMetadata,
-    ProviderRequestStartedMetadata, ResolvedToolIdentity, RunFinishedEvent, RunStartedEvent,
-    StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskCompletionMetadata,
-    TaskLineageMetadata, TaskResultLateEvent, TaskRouteMetadata, TaskScheduleState,
-    TaskScheduledEvent, TaskTerminalScope, TeamBounds, TeamCreatedEvent, TeamDeletedEvent,
-    TeamMemberRole, TeamMemberSelector, TeamMemberSpawnedEvent, TeamMemberSpec, TeamMessage,
-    TeamMessageKind, TeamMessageSentEvent, TeamShutdownApprovedEvent, TeamShutdownRejectedEvent,
-    TeamShutdownRequestedEvent, TeamSpec, TeamTask, TeamTaskCreatedEvent, TeamTaskStatus,
-    TeamTaskUpdatedEvent, ToolCallFinishedEvent, ToolCallMetadata, ToolCallStartedEvent,
-    ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent, WorkflowCompletedEvent,
-    WorkflowEventMetadata, WorkflowEvidenceRecordedEvent, WorkflowOperatorDecisionRecordedEvent,
+    HookEffectKind, HookEffectMetadata, HookExecutionMetadata, HookExecutionStatus, HookPolicyKind,
+    HookPolicyMetadata, PermissionDecision as EventPermissionDecision,
+    PermissionGrantRecordedEvent, PermissionRequestedArgs, PermissionResolvedEvent, PersistentTask,
+    PersistentTaskCreatedEvent, PersistentTaskStatus, PersistentTaskUpdatedEvent,
+    PolicyViolationDetectedEvent, ProviderAssistantMessageMetadata, ProviderReasoningDeltaEvent,
+    ProviderRequestFinishedMetadata, ProviderRequestStartedMetadata, ResolvedToolIdentity,
+    RunFinishedEvent, RunStartedEvent, StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent,
+    TaskCompletionMetadata, TaskLineageMetadata, TaskResultLateEvent, TaskRouteMetadata,
+    TaskScheduleState, TaskScheduledEvent, TaskTerminalScope, TeamBounds, TeamCreatedEvent,
+    TeamDeletedEvent, TeamMemberRole, TeamMemberSelector, TeamMemberSpawnedEvent, TeamMemberSpec,
+    TeamMessage, TeamMessageKind, TeamMessageSentEvent, TeamShutdownApprovedEvent,
+    TeamShutdownRejectedEvent, TeamShutdownRequestedEvent, TeamSpec, TeamTask,
+    TeamTaskCreatedEvent, TeamTaskStatus, TeamTaskUpdatedEvent, ToolCallFinishedEvent,
+    ToolCallMetadata, ToolCallStartedEvent, ToolCallStatus, ToolIdentityMetadata,
+    UserMessageSubmittedEvent, WorkflowCompletedEvent, WorkflowEventMetadata,
+    WorkflowEvidenceRecordedEvent, WorkflowOperatorDecisionRecordedEvent,
     WorkflowTransitionDeniedEvent, WorkflowTransitionRecordedEvent,
 };
 use crate::path_selector::workspace_relative_path_from_maybe_absolute;
@@ -9507,6 +9508,7 @@ fn parse_hook_effect_source<R: Redactor + ?Sized>(
                 kind: HookEffectKind::WriteArtifact,
                 summary: Some("hook wrote redacted artifact".to_string()),
                 artifact_ref: Some(artifact_ref),
+                policy: None,
             });
         }
     }
@@ -9539,11 +9541,75 @@ fn parse_hook_effect_metadata(value: &Value) -> Option<HookEffectMetadata> {
         .get("artifact_ref")
         .or_else(|| object.get("artifact"))
         .and_then(parse_hook_artifact_ref);
+    let policy = parse_hook_policy_metadata(object, kind);
 
     Some(HookEffectMetadata {
         kind,
         summary,
         artifact_ref,
+        policy,
+    })
+}
+
+fn parse_hook_policy_metadata(
+    object: &serde_json::Map<String, Value>,
+    kind: HookEffectKind,
+) -> Option<HookPolicyMetadata> {
+    let policy = extract_object_string(
+        object,
+        &[
+            "policy",
+            "policy_id",
+            "policyId",
+            "hook_policy",
+            "hookPolicy",
+            "workflow_policy",
+            "workflowPolicy",
+        ],
+    )
+    .and_then(|policy| parse_hook_policy_kind(&policy))?;
+    let action = extract_object_string(
+        object,
+        &[
+            "policy_action",
+            "policyAction",
+            "decision",
+            "intent",
+            "action",
+        ],
+    )
+    .map(|action| truncate_with_ellipsis(&action, 64))
+    .unwrap_or_else(|| default_hook_policy_action(policy, kind).to_string());
+    let target = extract_object_string(
+        object,
+        &[
+            "target",
+            "target_id",
+            "targetId",
+            "workflow_id",
+            "workflowId",
+            "acceptance_ref",
+            "acceptanceRef",
+            "category",
+        ],
+    )
+    .map(|target| truncate_with_ellipsis(&target, 120));
+    let state_affecting = extract_object_bool(
+        object,
+        &[
+            "state_affecting",
+            "stateAffecting",
+            "affects_state",
+            "affectsState",
+        ],
+    )
+    .unwrap_or_else(|| default_hook_policy_state_affecting(policy, kind));
+
+    Some(HookPolicyMetadata {
+        policy,
+        action,
+        state_affecting,
+        target,
     })
 }
 
@@ -9569,6 +9635,81 @@ fn parse_hook_effect_kind(kind: &str) -> Option<HookEffectKind> {
         "notify" | "notification" => Some(HookEffectKind::Notify),
         _ => None,
     }
+}
+
+fn parse_hook_policy_kind(policy: &str) -> Option<HookPolicyKind> {
+    match policy
+        .trim()
+        .to_ascii_lowercase()
+        .replace('-', "_")
+        .as_str()
+    {
+        "keyword_alias_detection"
+        | "keyword_alias_detector"
+        | "workflow_keyword_alias"
+        | "workflow_alias_detection"
+        | "alias_detection"
+        | "keyword_detection" => Some(HookPolicyKind::KeywordAliasDetection),
+        "vague_request_planning_gate"
+        | "vague_request_gate"
+        | "planning_gate"
+        | "pre_execution_planning_gate" => Some(HookPolicyKind::VagueRequestPlanningGate),
+        "active_context_injection"
+        | "context_injection"
+        | "workflow_context_injection"
+        | "inject_context" => Some(HookPolicyKind::ActiveContextInjection),
+        "evidence_classification"
+        | "evidence_classifier"
+        | "tool_result_classification"
+        | "classify_evidence" => Some(HookPolicyKind::EvidenceClassification),
+        "recovery_hint" | "recovery_hints" | "post_tool_recovery" | "recover_hint" => {
+            Some(HookPolicyKind::RecoveryHint)
+        }
+        "continuation_policy" | "work_loop_policy" | "workflow_continuation_policy" => {
+            Some(HookPolicyKind::ContinuationPolicy)
+        }
+        "compaction_preservation"
+        | "compaction_context_preservation"
+        | "preserve_compaction_context" => Some(HookPolicyKind::CompactionPreservation),
+        "final_missing_evidence_warning" | "missing_evidence_warning" | "signoff_warning" => {
+            Some(HookPolicyKind::FinalMissingEvidenceWarning)
+        }
+        _ => None,
+    }
+}
+
+fn default_hook_policy_action(policy: HookPolicyKind, kind: HookEffectKind) -> &'static str {
+    match (policy, kind) {
+        (_, HookEffectKind::Deny) => "deny",
+        (_, HookEffectKind::Allow) => "allow",
+        (HookPolicyKind::KeywordAliasDetection, _) => "detect_alias",
+        (HookPolicyKind::VagueRequestPlanningGate, _) => "redirect_to_planning",
+        (HookPolicyKind::ActiveContextInjection, _) => "inject_context",
+        (HookPolicyKind::EvidenceClassification, _) => "classify_evidence",
+        (HookPolicyKind::RecoveryHint, _) => "add_recovery_hint",
+        (HookPolicyKind::ContinuationPolicy, _) => "schedule_continuation",
+        (HookPolicyKind::CompactionPreservation, _) => "preserve_context",
+        (HookPolicyKind::FinalMissingEvidenceWarning, _) => "warn_missing_evidence",
+    }
+}
+
+fn default_hook_policy_state_affecting(policy: HookPolicyKind, kind: HookEffectKind) -> bool {
+    matches!(
+        kind,
+        HookEffectKind::Deny
+            | HookEffectKind::TransformContext
+            | HookEffectKind::RequestReminder
+            | HookEffectKind::TruncateOutput
+            | HookEffectKind::Recover
+    ) || matches!(
+        policy,
+        HookPolicyKind::VagueRequestPlanningGate
+            | HookPolicyKind::ActiveContextInjection
+            | HookPolicyKind::EvidenceClassification
+            | HookPolicyKind::ContinuationPolicy
+            | HookPolicyKind::CompactionPreservation
+            | HookPolicyKind::FinalMissingEvidenceWarning
+    )
 }
 
 async fn start_tool_call_execution<C, R>(
@@ -15696,6 +15837,16 @@ fn extract_object_string(object: &serde_json::Map<String, Value>, keys: &[&str])
             .and_then(non_empty_trimmed)
             .map(ToOwned::to_owned)
         {
+            return Some(value);
+        }
+    }
+
+    None
+}
+
+fn extract_object_bool(object: &serde_json::Map<String, Value>, keys: &[&str]) -> Option<bool> {
+    for key in keys {
+        if let Some(value) = object.get(*key).and_then(Value::as_bool) {
             return Some(value);
         }
     }

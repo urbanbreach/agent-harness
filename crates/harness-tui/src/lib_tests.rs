@@ -1304,13 +1304,16 @@ fn slash_overlay_uses_input_width_aligned_rows_and_accent_selection() {
     let events_description = lines[row]
         .find("Open the event log review")
         .expect("events description column");
-    let new_row = find_line_containing_all(&lines, &["/new", "Return to the home shell"])
-        .unwrap_or_else(|| panic!("slash /new row\n{rendered}"));
-    let new_description = lines[new_row]
-        .find("Return to the home shell")
-        .expect("new description column");
+    let goal_row = find_line_containing_all(
+        &lines,
+        &["/goal-ledger", "Inspect or checkpoint workflow goals"],
+    )
+    .unwrap_or_else(|| panic!("slash /goal-ledger row\n{rendered}"));
+    let goal_description = lines[goal_row]
+        .find("Inspect or checkpoint workflow goals")
+        .expect("goal-ledger description column");
 
-    assert_eq!(events_description, new_description);
+    assert_eq!(events_description, goal_description);
     assert!(!lines[row].contains('┃'));
     assert!(!rendered.contains('╭') && !rendered.contains('╰') && !rendered.contains('│'));
 
@@ -3165,6 +3168,81 @@ fn replay_projection_surfaces_team_orchestration_rows() {
     assert_eq!(
         rows[0].result_summary.as_deref(),
         Some("team Replay Team · 1 member(s)")
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn workflow_projection_surfaces_footer_and_operator_sidebar_rows() {
+    let events = vec![
+        envelope(
+            1,
+            None,
+            harness_core::event::EventV1::WorkflowStarted(
+                harness_core::event::WorkflowStartedEvent {
+                    workflow_id: "wf_docs".to_string(),
+                    mode: "workflow_run".to_string(),
+                    owner: "operator".to_string(),
+                    lane: Some("simulated".to_string()),
+                    title: Some("Docs release".to_string()),
+                    idempotency_key: None,
+                },
+            ),
+        ),
+        envelope(
+            2,
+            None,
+            harness_core::event::EventV1::WorkflowEvidenceRecorded(
+                harness_core::event::WorkflowEvidenceRecordedEvent {
+                    workflow_id: "wf_docs".to_string(),
+                    category: "evidence.test".to_string(),
+                    summary: "cargo test -p harness-tui".to_string(),
+                    artifact_path: None,
+                    artifact_digest: None,
+                    acceptance_ref: Some("acceptance.tests".to_string()),
+                    metadata: Default::default(),
+                },
+            ),
+        ),
+        envelope(
+            3,
+            None,
+            harness_core::event::EventV1::WorkflowOperatorDecisionRecorded(
+                harness_core::event::WorkflowOperatorDecisionRecordedEvent {
+                    workflow_id: "wf_docs".to_string(),
+                    decision: "signoff-approved".to_string(),
+                    operator: "operator".to_string(),
+                    reason: Some("verified".to_string()),
+                    correlation_id: None,
+                },
+            ),
+        ),
+    ];
+    let app = app::AppState::new_replay(std::path::PathBuf::from("/tmp/replay-workflow"), events);
+
+    let rows = app.workflow_status_rows();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].workflow_id, "wf_docs");
+    assert_eq!(rows[0].evidence_count, 1);
+    assert_eq!(
+        app.workflow_footer_summary().as_deref(),
+        Some("Workflow wf_docs active · 1 ev · 1 decision")
+    );
+
+    let sidebar = operator_sidebar_text(&app);
+    assert!(sidebar.contains("▼ Workflow"), "{sidebar}");
+    assert!(
+        sidebar.contains("Docs release · workflow_run · active · simulated"),
+        "{sidebar}"
+    );
+    assert!(
+        sidebar.contains("evidence evidence.test · cargo test -p harness-tui"),
+        "{sidebar}"
+    );
+    assert!(sidebar.contains("decision signoff-approved"), "{sidebar}");
+    assert!(
+        sidebar.contains("status /workflow-status · dossier /workflow-dossier"),
+        "{sidebar}"
     );
 }
 

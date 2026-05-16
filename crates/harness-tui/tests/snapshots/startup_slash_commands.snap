@@ -2,16 +2,16 @@
 
 
 
-                /exit             Quit Harness
-                /handoff          Create a continuation handoff artifact
-                /hyperplan        Start team/parallel planning handoff
-                /init-deep        Start a deep requirements interview
-                /model            Switch model
-                /new              Return to the home shell
-                /refactor         Load refactor cleanup guidance
-                /remove-ai-slops  Load AI slop removal guidance
-                /replay           Replay a saved session
-                /resume           Continue a saved session
+                /exit               Quit Harness
+                /goal-ledger        Inspect or checkpoint workflow goals
+                /handoff            Create a continuation handoff artifact
+                /hyperplan          Start team/parallel planning handoff
+                /init-deep          Start a deep requirements interview
+                /model              Switch model
+                /new                Return to the home shell
+                /plan-consensus     Create a reviewed consensus plan
+                /refactor           Load refactor cleanup guidance
+                /remove-ai-slops    Load AI slop removal guidance
             ┃
             ┃  /
             ┃

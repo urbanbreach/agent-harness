@@ -5384,7 +5384,12 @@ fn slash_menu_resets_selection_when_filter_changes() {
 
     assert_eq!(
         app.slash_filtered,
-        vec!["replay".to_string(), "remove-ai-slops".to_string()]
+        vec![
+            "replay".to_string(),
+            "research-mission".to_string(),
+            "remove-ai-slops".to_string(),
+            "workflow-dossier".to_string(),
+        ]
     );
     assert_eq!(app.slash_selected, 0);
 }
@@ -5471,6 +5476,53 @@ fn slash_workflow_command_emits_typed_intent_without_shell_prompt() {
             command: "/workflow run deploy docs".to_string(),
         }]
     );
+}
+
+#[test]
+fn slash_extended_workflow_commands_emit_typed_intents() {
+    let cases = [
+        (
+            "/ralplan hard migration",
+            WorkflowIntent::PlanConsensus,
+            "/plan-consensus hard migration",
+        ),
+        (
+            "/workflow-goal checkpoint",
+            WorkflowIntent::GoalLedger,
+            "/goal-ledger checkpoint",
+        ),
+        (
+            "/workflow-mission validator",
+            WorkflowIntent::ResearchMission,
+            "/research-mission validator",
+        ),
+        ("/workflow-wiki query", WorkflowIntent::Wiki, "/wiki query"),
+    ];
+
+    for (typed, expected_intent, expected_command) in cases {
+        let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+        let sink = {
+            let intents = Arc::clone(&intents);
+            Arc::new(move |intent| {
+                intents.lock().expect("lock intents").push(intent);
+            })
+        };
+
+        let mut app = AppState::new_live(None, false, Some(sink));
+        for ch in typed.chars() {
+            app.handle_key(key(KeyCode::Char(ch)));
+        }
+        app.handle_key(key(KeyCode::Enter));
+
+        assert_eq!(
+            intents.lock().expect("lock intents").as_slice(),
+            &[UiIntent::WorkflowIntent {
+                intent: expected_intent,
+                command: expected_command.to_string(),
+            }],
+            "unexpected workflow intent for {typed}"
+        );
+    }
 }
 
 #[test]
