@@ -1,29 +1,28 @@
 use regex::Regex;
 use serde_json::{Map, Value};
+use std::sync::OnceLock;
 
 pub trait Redactor {
     fn redact_text(&self, s: &str) -> String;
 }
 
-#[derive(Debug)]
-pub struct DefaultRedactor {
-    api_key_re: Regex,
-    bearer_re: Regex,
+#[derive(Debug, Default)]
+pub struct DefaultRedactor;
+
+fn api_key_re() -> &'static Regex {
+    static API_KEY_RE: OnceLock<Regex> = OnceLock::new();
+    API_KEY_RE.get_or_init(|| Regex::new(r"sk-[A-Za-z0-9]{10,}").expect("valid api key regex"))
 }
 
-impl Default for DefaultRedactor {
-    fn default() -> Self {
-        Self {
-            api_key_re: Regex::new(r"sk-[A-Za-z0-9]{10,}").expect("valid api key regex"),
-            bearer_re: Regex::new(r"Bearer\s+[A-Za-z0-9._\-]+").expect("valid bearer regex"),
-        }
-    }
+fn bearer_re() -> &'static Regex {
+    static BEARER_RE: OnceLock<Regex> = OnceLock::new();
+    BEARER_RE.get_or_init(|| Regex::new(r"Bearer\s+[A-Za-z0-9._\-]+").expect("valid bearer regex"))
 }
 
 impl Redactor for DefaultRedactor {
     fn redact_text(&self, s: &str) -> String {
-        let without_keys = self.api_key_re.replace_all(s, "[REDACTED_API_KEY]");
-        self.bearer_re
+        let without_keys = api_key_re().replace_all(s, "[REDACTED_API_KEY]");
+        bearer_re()
             .replace_all(without_keys.as_ref(), "Bearer [REDACTED]")
             .into_owned()
     }
