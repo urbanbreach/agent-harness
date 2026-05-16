@@ -29,6 +29,19 @@ pub struct WorkflowRunProjection {
     pub operator_decisions: Vec<String>,
     #[serde(default)]
     pub denied_transition_count: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_snapshot: Option<WorkflowContextSnapshotRef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WorkflowContextSnapshotRef {
+    pub snapshot_id: String,
+    pub slug: String,
+    pub artifact_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ambiguity_score: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -50,6 +63,7 @@ pub struct WorkflowProjection {
     pub evidence: BTreeMap<String, Vec<WorkflowEvidenceRecordedEvent>>,
     pub denied_transitions: Vec<WorkflowTransitionDeniedEvent>,
     pub continuations: BTreeMap<String, WorkflowContinuationProjection>,
+    pub context_snapshots: BTreeMap<String, WorkflowContextSnapshotRef>,
 }
 
 impl WorkflowProjection {
@@ -89,6 +103,7 @@ impl WorkflowProjection {
                     evidence_categories: BTreeSet::new(),
                     operator_decisions: Vec::new(),
                     denied_transition_count: 0,
+                    context_snapshot: None,
                 },
             );
         }
@@ -118,8 +133,19 @@ impl WorkflowProjection {
     }
 
     fn apply_evidence(&mut self, payload: &WorkflowEvidenceRecordedEvent) {
+        let snapshot_ref = (payload.category
+            == crate::context_snapshot::CONTEXT_SNAPSHOT_EVIDENCE_CATEGORY)
+            .then(|| context_snapshot_ref_from_evidence(payload))
+            .flatten();
+        if let Some(snapshot_ref) = snapshot_ref.as_ref() {
+            self.context_snapshots
+                .insert(snapshot_ref.snapshot_id.clone(), snapshot_ref.clone());
+        }
         if let Some(run) = self.workflows.get_mut(&payload.workflow_id) {
             run.evidence_categories.insert(payload.category.clone());
+            if let Some(snapshot_ref) = snapshot_ref {
+                run.context_snapshot = Some(snapshot_ref);
+            }
         }
         self.evidence
             .entry(payload.workflow_id.clone())
@@ -186,6 +212,28 @@ impl WorkflowProjection {
             continuation.stop_reason = Some(payload.limit.clone());
         }
     }
+}
+
+fn context_snapshot_ref_from_evidence(
+    payload: &WorkflowEvidenceRecordedEvent,
+) -> Option<WorkflowContextSnapshotRef> {
+    let artifact_path = payload.artifact_path.clone()?;
+    let snapshot_id = payload
+        .metadata
+        .get("snapshot_id")
+        .cloned()
+        .or_else(|| payload.acceptance_ref.clone())?;
+    Some(WorkflowContextSnapshotRef {
+        snapshot_id,
+        slug: payload
+            .metadata
+            .get("snapshot_slug")
+            .cloned()
+            .unwrap_or_else(|| "context-snapshot".to_string()),
+        artifact_path,
+        artifact_digest: payload.artifact_digest.clone(),
+        ambiguity_score: payload.metadata.get("ambiguity_score").cloned(),
+    })
 }
 
 pub fn project_workflows<'a>(events: impl IntoIterator<Item = &'a EventV1>) -> WorkflowProjection {
@@ -264,8 +312,8 @@ mod tests {
     };
     use crate::event::{
         ContinuationReminderQueuedEvent, ContinuationStartedEvent, ContinuationStoppedEvent,
-        EventV1, WorkflowCompletedEvent, WorkflowEventMetadata, WorkflowStartedEvent,
-        WorkflowTransitionRecordedEvent,
+        EventV1, WorkflowCompletedEvent, WorkflowEventMetadata, WorkflowEvidenceRecordedEvent,
+        WorkflowStartedEvent, WorkflowTransitionRecordedEvent,
     };
 
     fn start_event() -> EventV1 {
@@ -404,6 +452,39 @@ mod tests {
         assert_eq!(continuation.iteration, 2);
         assert_eq!(continuation.status, "stopped");
         assert_eq!(continuation.stop_reason.as_deref(), Some("acceptance_met"));
+    }
+
+    #[test]
+    fn context_snapshot_refs_survive_replay_without_workspace_reads() {
+        let events = [
+            start_event(),
+            EventV1::WorkflowEvidenceRecorded(WorkflowEvidenceRecordedEvent {
+                workflow_id: "wf_1".to_string(),
+                category: crate::context_snapshot::CONTEXT_SNAPSHOT_EVIDENCE_CATEGORY.to_string(),
+                summary: "context snapshot captured".to_string(),
+                artifact_path: Some("artifacts/context_snapshots/ctx_123.json".to_string()),
+                artifact_digest: Some("digest123".to_string()),
+                acceptance_ref: Some("ctx_123".to_string()),
+                metadata: std::collections::BTreeMap::from([
+                    ("snapshot_id".to_string(), "ctx_123".to_string()),
+                    ("snapshot_slug".to_string(), "ship-workflow".to_string()),
+                    ("ambiguity_score".to_string(), "0.420".to_string()),
+                ]),
+            }),
+        ];
+
+        let projection = project_workflows(events.iter());
+        let snapshot = projection.workflows["wf_1"]
+            .context_snapshot
+            .as_ref()
+            .expect("snapshot ref projected from events");
+        assert_eq!(snapshot.snapshot_id, "ctx_123");
+        assert_eq!(snapshot.slug, "ship-workflow");
+        assert_eq!(
+            snapshot.artifact_path,
+            "artifacts/context_snapshots/ctx_123.json"
+        );
+        assert_eq!(snapshot.ambiguity_score.as_deref(), Some("0.420"));
     }
 
     #[test]

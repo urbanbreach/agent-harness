@@ -279,6 +279,13 @@ duplicate workflow id; conflicting owners append denied-transition evidence inst
 existing run. Workflow status, dossier, and replay readers consume projections only and must not
 append events. Continuation events may carry optional workflow metadata so bounded continuation loops
 can be associated with a workflow lane/iteration/stop reason without changing old-log semantics.
+Context snapshots use this workflow evidence path: the coordinator writes a redacted/capped
+`artifacts/context_snapshots/<snapshot-id>.json` artifact, appends `ArtifactWritten`, then appends
+`WorkflowEvidenceRecorded` using the `evidence.context_snapshot` category with snapshot id, slug,
+ambiguity score, artifact path, and digest metadata. Replay projects these refs without reading live
+workspace files; artifact write failure prevents the workflow evidence event. The CLI write path
+`harness workflow snapshot write` uses the same coordinator command and is limited to artifact/event
+creation until the broader workflow command family lands.
 
 **Continuation**
 - `ContinuationStarted` - Starts an explicit, bounded continuation loop from a slash command or tool action. The event records the stable continuation id, mode, originating command, and max iteration/wall-clock/provider/tool-call bounds.

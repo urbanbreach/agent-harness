@@ -30,6 +30,11 @@ use crate::config::{
     CompactionRuntimeConfig, HookLifecycleEvent, HookRuntimeConfig, LifecycleHookConfig,
     ShellAllowlist, ToolFailureMode,
 };
+use crate::context_snapshot::{
+    build_context_snapshot, snapshot_write_result, write_context_snapshot_artifact,
+    ContextSnapshotInput, ContextSnapshotOptions, ContextSnapshotWriteResult,
+    CONTEXT_SNAPSHOT_ARTIFACT_KIND, CONTEXT_SNAPSHOT_EVIDENCE_CATEGORY,
+};
 use crate::continuation::{ContinuationBounds, ContinuationController, ContinuationDecision};
 use crate::conversation::{
     ConversationAssistantMessage, ConversationMessage, ConversationToolCall,
@@ -58,7 +63,7 @@ use crate::event::{
     TeamMessageKind, TeamMessageSentEvent, TeamShutdownApprovedEvent, TeamShutdownRejectedEvent,
     TeamShutdownRequestedEvent, TeamSpec, TeamTask, TeamTaskCreatedEvent, TeamTaskStatus,
     TeamTaskUpdatedEvent, ToolCallFinishedEvent, ToolCallMetadata, ToolCallStartedEvent,
-    ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent,
+    ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent, WorkflowEvidenceRecordedEvent,
 };
 use crate::path_selector::workspace_relative_path_from_maybe_absolute;
 use crate::perm::{
@@ -333,6 +338,13 @@ pub enum Command {
         tool_call_id: String,
         request_json: Value,
         respond_to: oneshot::Sender<Result<Vec<Vec<String>>, String>>,
+    },
+    WriteContextSnapshot {
+        actor: EventActor,
+        workflow_id: Option<String>,
+        input: ContextSnapshotInput,
+        options: ContextSnapshotOptions,
+        respond_to: oneshot::Sender<Result<ContextSnapshotWriteResult, CoordinatorError>>,
     },
     ResolvePermission {
         permission_id: String,
@@ -694,6 +706,8 @@ pub enum CoordinatorError {
     ResumeRestoreFailed { run_id: String, reason: String },
     #[error("provider context compaction failed: {0}")]
     CompactionFailed(String),
+    #[error("context snapshot failed: {0}")]
+    ContextSnapshotFailed(String),
     #[error("lifecycle hook failed: {0}")]
     LifecycleHookFailed(String),
 }
@@ -1062,6 +1076,23 @@ impl CoordinatorHandle {
             actor,
             tool_call_id: tool_call_id.into(),
             request_json,
+            respond_to,
+        })
+        .await
+    }
+
+    pub async fn write_context_snapshot(
+        &self,
+        actor: EventActor,
+        workflow_id: Option<String>,
+        input: ContextSnapshotInput,
+        options: ContextSnapshotOptions,
+    ) -> Result<ContextSnapshotWriteResult, CoordinatorError> {
+        self.request(|respond_to| Command::WriteContextSnapshot {
+            actor,
+            workflow_id,
+            input,
+            options,
             respond_to,
         })
         .await
@@ -1596,6 +1627,17 @@ impl Coordinator {
                 let _ = self
                     .request_question_internal(actor, tool_call_id, request_json, respond_to)
                     .await;
+            }
+            Command::WriteContextSnapshot {
+                actor,
+                workflow_id,
+                input,
+                options,
+                respond_to,
+            } => {
+                let result =
+                    self.write_context_snapshot_internal(actor, workflow_id, input, options);
+                warn_oneshot_send_failure(respond_to.send(result), "write_context_snapshot");
             }
             Command::ResolvePermission {
                 permission_id,
@@ -3849,6 +3891,90 @@ impl Coordinator {
             }
         }
         result
+    }
+
+    fn write_context_snapshot_internal(
+        &mut self,
+        actor: EventActor,
+        workflow_id: Option<String>,
+        input: ContextSnapshotInput,
+        options: ContextSnapshotOptions,
+    ) -> Result<ContextSnapshotWriteResult, CoordinatorError> {
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        let created_at = self
+            .clock
+            .system_time_rfc3339()
+            .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_string());
+        let snapshot = build_context_snapshot(input, options, self.redactor.as_ref(), created_at);
+        let artifact_store = crate::tool::ArtifactStore::new(run_state.info.artifacts_dir.clone())
+            .map_err(|err| {
+                CoordinatorError::ContextSnapshotFailed(format!(
+                    "failed to open artifact store: {err}"
+                ))
+            })?;
+        let (artifact, artifact_bytes) =
+            write_context_snapshot_artifact(&artifact_store, &snapshot).map_err(|err| {
+                CoordinatorError::ContextSnapshotFailed(format!(
+                    "failed to write snapshot artifact: {err}"
+                ))
+            })?;
+        let result = snapshot_write_result(&snapshot, &artifact, artifact_bytes);
+
+        let artifact_digest = result.artifact_digest.clone();
+        let mut metadata = result.workflow_evidence_metadata();
+        if let Some(workflow_id) = workflow_id.as_ref() {
+            metadata.insert("workflow_id".to_string(), workflow_id.clone());
+        }
+
+        append_payload_event(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            system_actor(),
+            Some(format!("context_snapshot:{}", result.snapshot_id)),
+            EventV1::ArtifactWritten(ArtifactWrittenEvent {
+                path: result.artifact_path.clone(),
+                digest: artifact_digest.clone(),
+                bytes: result.artifact_bytes,
+                tool_call_id: None,
+                tool_metadata: None,
+                metadata: BTreeMap::from([
+                    (
+                        "artifact_kind".to_string(),
+                        CONTEXT_SNAPSHOT_ARTIFACT_KIND.to_string(),
+                    ),
+                    ("snapshot_id".to_string(), result.snapshot_id.clone()),
+                    ("snapshot_slug".to_string(), result.slug.clone()),
+                ]),
+            }),
+        )?;
+
+        if let Some(workflow_id) = workflow_id {
+            append_payload_event(
+                self.clock.as_ref(),
+                self.redactor.as_ref(),
+                run_state,
+                actor,
+                Some(format!("workflow:{workflow_id}")),
+                EventV1::WorkflowEvidenceRecorded(WorkflowEvidenceRecordedEvent {
+                    workflow_id,
+                    category: CONTEXT_SNAPSHOT_EVIDENCE_CATEGORY.to_string(),
+                    summary: format!(
+                        "context snapshot `{}` captured (ambiguity={:.3})",
+                        result.slug, result.ambiguity_score
+                    ),
+                    artifact_path: Some(result.artifact_path.clone()),
+                    artifact_digest: Some(artifact_digest),
+                    acceptance_ref: Some(result.snapshot_id.clone()),
+                    metadata,
+                }),
+            )?;
+        }
+
+        Ok(result)
     }
 
     fn job_progress_internal(&mut self, task_id: String, kind: JobProgressKind) {

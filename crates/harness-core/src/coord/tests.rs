@@ -20,6 +20,10 @@ use crate::config::{
     resolve_profile_model_metadata, set_registered_mcp_server_first_class_tool_ids,
     CategoryPermissions, CompactionRuntimeConfig, PermissionMode,
 };
+use crate::context_snapshot::{
+    ContextSnapshotAmbiguity, ContextSnapshotInput, ContextSnapshotOptions,
+    CONTEXT_SNAPSHOT_EVIDENCE_CATEGORY,
+};
 use crate::continuation::ContinuationController;
 use crate::conversation::{
     ConversationAssistantMessage, ConversationMessage, ConversationToolCall,
@@ -43,6 +47,7 @@ use crate::redact::DefaultRedactor;
 use crate::sched::{ConcurrencyKey, ScheduleDecision, Scheduler, SchedulerLimits};
 use crate::store::JsonlFileEventStore;
 use crate::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
+use crate::workflow::project_workflows;
 
 use super::{
     append_background_task_notification_and_schedule, append_payload_event_with_correlation,
@@ -365,6 +370,119 @@ fn test_agent_profile(name: &str) -> AgentProfile {
         tool_failure_mode: crate::config::ToolFailureMode::FailTurn,
         toolset: Vec::new(),
     }
+}
+
+#[tokio::test]
+async fn context_snapshot_write_appends_redacted_artifact_and_workflow_evidence() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let config = test_config(temp_dir.path());
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = handle
+        .start_run("snapshot write", temp_dir.path())
+        .await
+        .expect("start run");
+    let mut input = ContextSnapshotInput::new(
+        "/workflow run",
+        "Investigate sk-ABCDE12345ABCDE before execution",
+        "Redacted snapshot artifact",
+    );
+    input.ambiguity = ContextSnapshotAmbiguity {
+        score: 0.35,
+        threshold: 0.2,
+    };
+
+    let result = handle
+        .write_context_snapshot(
+            EventActor::new(ActorKind::Supervisor, None),
+            Some("wf_snapshot".to_string()),
+            input,
+            ContextSnapshotOptions::default(),
+        )
+        .await
+        .expect("write context snapshot");
+
+    let artifact_body = fs::read_to_string(run.run_dir.join(&result.artifact_path))
+        .expect("read snapshot artifact");
+    assert!(!artifact_body.contains("sk-ABCDE12345ABCDE"));
+    assert!(artifact_body.contains("[REDACTED_API_KEY]"));
+    assert_eq!(result.artifact_digest.len(), 64);
+
+    let events = read_events(&run.events_path);
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::ArtifactWritten(ArtifactWrittenEvent { metadata, .. })
+                if metadata.get("artifact_kind").is_some_and(|kind| kind == "context_snapshot")
+        )
+    }));
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::WorkflowEvidenceRecorded(payload)
+                if payload.category == CONTEXT_SNAPSHOT_EVIDENCE_CATEGORY
+                    && payload.workflow_id == "wf_snapshot"
+                    && payload.artifact_path.as_deref() == Some(result.artifact_path.as_str())
+        )
+    }));
+
+    let payloads = events
+        .iter()
+        .map(|event| &event.payload)
+        .collect::<Vec<_>>();
+    let projection = project_workflows(payloads);
+    let snapshot_ref = projection
+        .context_snapshots
+        .get(&result.snapshot_id)
+        .expect("snapshot ref projected");
+    assert_eq!(snapshot_ref.slug, result.slug);
+    assert_eq!(
+        snapshot_ref.artifact_digest.as_deref(),
+        Some(result.artifact_digest.as_str())
+    );
+}
+
+#[tokio::test]
+async fn context_snapshot_artifact_write_failure_does_not_append_workflow_evidence() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let config = test_config(temp_dir.path());
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = handle
+        .start_run("snapshot write failure", temp_dir.path())
+        .await
+        .expect("start run");
+    fs::write(
+        run.artifacts_dir.join("context_snapshots"),
+        "not a directory",
+    )
+    .expect("block context snapshot artifact directory");
+
+    let err = handle
+        .write_context_snapshot(
+            EventActor::new(ActorKind::Supervisor, None),
+            Some("wf_snapshot".to_string()),
+            ContextSnapshotInput::new("/workflow run", "Cannot write snapshot", "Failure"),
+            ContextSnapshotOptions::default(),
+        )
+        .await
+        .expect_err("snapshot write should fail");
+
+    assert!(matches!(err, CoordinatorError::ContextSnapshotFailed(_)));
+    let events = read_events(&run.events_path);
+    assert!(!events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::WorkflowEvidenceRecorded(payload)
+                if payload.category == CONTEXT_SNAPSHOT_EVIDENCE_CATEGORY
+        )
+    }));
 }
 
 #[tokio::test]

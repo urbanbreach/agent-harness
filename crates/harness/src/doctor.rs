@@ -10,6 +10,9 @@ use harness_core::config::{
     configured_model_catalog, load_resolved_config, resolve_model_selection, AgentMode,
     CompatibilityImportState, HarnessConfig, McpServerConfig, PermissionMode, ProviderConfig,
 };
+use harness_core::context_snapshot::{
+    ContextSnapshotOptions, CONTEXT_SNAPSHOT_ARTIFACT_DIR, CONTEXT_SNAPSHOT_SCHEMA_VERSION,
+};
 use harness_core::workflow_registry::{
     stable_id_groups, WORKFLOW_DOCS_ANCHORS, WORKFLOW_DOCTOR_CHECKS,
 };
@@ -207,6 +210,7 @@ fn build_report(config_display: String, config: &HarnessConfig) -> DoctorReport 
         check_first_slice_omo_tool_surface(config),
         check_command_registry(),
         check_workflow_contract_registry(),
+        check_workflow_context_snapshot_contract(),
         check_permissions(config),
         check_session_dir(&config.paths.session_dir),
         check_mcp(config),
@@ -357,6 +361,29 @@ fn check_workflow_contract_registry() -> DoctorCheck {
                     "heading": anchor.heading,
                 })
             }).collect::<Vec<_>>(),
+        })),
+    )
+}
+
+fn check_workflow_context_snapshot_contract() -> DoctorCheck {
+    let options = ContextSnapshotOptions::default();
+    if options.max_text_chars == 0 || options.max_list_items == 0 {
+        return fail(
+            "workflow_context_snapshot",
+            "context snapshot caps must be non-zero",
+        );
+    }
+
+    pass_with_details(
+        "workflow_context_snapshot",
+        format!(
+            "context snapshot schema v{CONTEXT_SNAPSHOT_SCHEMA_VERSION} writes redacted artifacts under artifacts/{CONTEXT_SNAPSHOT_ARTIFACT_DIR}/ and is replay-projected from workflow evidence"
+        ),
+        Some(serde_json::json!({
+            "schema_version": CONTEXT_SNAPSHOT_SCHEMA_VERSION,
+            "artifact_dir": CONTEXT_SNAPSHOT_ARTIFACT_DIR,
+            "max_text_chars": options.max_text_chars,
+            "max_list_items": options.max_list_items,
         })),
     )
 }

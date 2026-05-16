@@ -187,6 +187,11 @@ pub const WORKFLOW_DOCTOR_CHECKS: &[WorkflowDoctorCheckSpec] = &[
         description: "Validates the first-party workflow contract ids and docs anchors.",
     },
     WorkflowDoctorCheckSpec {
+        id: "workflow_context_snapshot",
+        description:
+            "Validates the redacted context snapshot artifact contract and projection metadata.",
+    },
+    WorkflowDoctorCheckSpec {
         id: "command_registry",
         description: "Validates canonical command and alias entries never invoke shell directly.",
     },

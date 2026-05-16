@@ -290,6 +290,13 @@ split by crate responsibility:
   These entries resolve to workflow intents and must not execute shell tools.
 - `harness doctor --json` includes the `workflow_contract_registry` check so docs
   anchors and stable id groups drift visibly.
+- `harness doctor --json` also includes `workflow_context_snapshot`, which
+  reports the redacted/capped context snapshot artifact contract that workflow
+  status and dossier projections consume from events.
+- `harness workflow snapshot write --json` is the minimal coordinator-backed
+  CLI write path for `/interview` and `/workflow run` intake snapshots; it
+  stores artifacts under the session run and emits workflow evidence when a
+  workflow id is provided.
 - `docs/omx-workflow-slice-spec.md` remains the source narrative for the broader
   slice, while replayable workflow state must still come from coordinator-owned
   events and redacted artifact references.

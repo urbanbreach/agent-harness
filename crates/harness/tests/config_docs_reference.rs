@@ -133,6 +133,8 @@ fn config_docs_capture_workflow_contract_registry() {
         "workflow-status",
         "workflow-signoff",
         "workflow_contract_registry",
+        "workflow_context_snapshot",
+        "harness workflow snapshot write",
         "must not execute shell tools",
         "docs/omx-workflow-slice-spec.md",
     ] {

@@ -777,6 +777,11 @@ fn doctor_cli_emits_json_report() {
         .expect("checks array")
         .iter()
         .any(|check| { check["id"] == "command_registry" && check["status"] == "pass" }));
+    assert!(report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .any(|check| { check["id"] == "workflow_context_snapshot" && check["status"] == "pass" }));
     let workflow_contract = report["checks"]
         .as_array()
         .expect("checks array")

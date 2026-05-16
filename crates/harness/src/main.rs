@@ -29,6 +29,7 @@ mod run;
 mod scenarios;
 mod sessions;
 mod tui;
+mod workflow_cli;
 
 use crate::prompt::PromptCommand;
 use crate::tui::TuiCommand;
@@ -37,6 +38,7 @@ use models::ModelsCommand;
 use replay::ReplayCommand;
 use run::RunCommand;
 use sessions::SessionsCommand;
+use workflow_cli::WorkflowCommand;
 
 #[derive(Debug, Parser)]
 #[command(name = "harness")]
@@ -95,6 +97,7 @@ enum Commands {
         #[command(subcommand)]
         command: SessionsCommand,
     },
+    Workflow(WorkflowCommand),
     Schema(SchemaCommand),
     Config {
         #[command(subcommand)]
@@ -142,6 +145,7 @@ fn main() -> ExitCode {
         Commands::Prompt(command) => prompt::execute(command, config, session_dir),
         Commands::Replay(command) => replay::execute(command),
         Commands::Sessions { command } => sessions::execute(command, config, session_dir),
+        Commands::Workflow(command) => workflow_cli::execute(command, config, session_dir),
         Commands::Schema(command) => match if command.tui {
             harness_tui_schema_pretty_json()
         } else {

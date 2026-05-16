@@ -5,6 +5,7 @@ pub mod agent_catalog;
 pub mod clock;
 pub mod command_registry;
 pub mod config;
+pub mod context_snapshot;
 pub mod continuation;
 pub mod conversation;
 pub mod coord;
