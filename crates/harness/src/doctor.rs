@@ -13,6 +13,7 @@ use harness_core::config::{
 use harness_core::context_snapshot::{
     ContextSnapshotOptions, CONTEXT_SNAPSHOT_ARTIFACT_DIR, CONTEXT_SNAPSHOT_SCHEMA_VERSION,
 };
+use harness_core::workflow::{WorkflowSignoffPolicy, SIMULATED_TOOL_EVIDENCE_CATEGORY};
 use harness_core::workflow_registry::{
     stable_id_groups, WORKFLOW_DOCS_ANCHORS, WORKFLOW_DOCTOR_CHECKS,
 };
@@ -212,6 +213,7 @@ fn build_report(config_display: String, config: &HarnessConfig) -> DoctorReport 
         check_workflow_contract_registry(),
         check_workflow_context_snapshot_contract(),
         check_workflow_runtime_config(config),
+        check_workflow_simulator_contract(),
         check_permissions(config),
         check_session_dir(&config.paths.session_dir),
         check_mcp(config),
@@ -858,6 +860,30 @@ fn check_first_slice_omo_tool_surface(config: &HarnessConfig) -> DoctorCheck {
     pass(
         "omo_tool_surface",
         "first-slice OMO tool ids are registered; unsupported tools return explicit diagnostics",
+    )
+}
+
+fn check_workflow_simulator_contract() -> DoctorCheck {
+    let policy = WorkflowSignoffPolicy::simulator_default();
+    let required = policy.required_evidence_categories();
+    if !required
+        .iter()
+        .any(|category| category == SIMULATED_TOOL_EVIDENCE_CATEGORY)
+    {
+        return fail(
+            "workflow_simulator",
+            "simulator signoff policy must require mapped no-op tool evidence",
+        );
+    }
+
+    pass_with_details(
+        "workflow_simulator",
+        "deterministic workflow simulator contract is available without live provider, terminal, browser, or network dependencies",
+        Some(serde_json::json!({
+            "required_evidence_categories": required,
+            "side_effect_adapter": "bash true via permission-gated no-op",
+            "dossier": "replay-derived run dossier",
+        })),
     )
 }
 

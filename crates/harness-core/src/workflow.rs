@@ -10,6 +10,9 @@ use crate::event::{
     WorkflowTransitionRecordedEvent,
 };
 
+pub const SIMULATED_TOOL_EVIDENCE_CATEGORY: &str = "evidence.simulated_tool_result";
+pub const SIGNOFF_WAIVER_DECISION: &str = "waive-missing-evidence";
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct WorkflowRunProjection {
     pub workflow_id: String,
@@ -161,6 +164,9 @@ impl WorkflowProjection {
 
     fn apply_completed(&mut self, payload: &WorkflowCompletedEvent) {
         if let Some(run) = self.workflows.get_mut(&payload.workflow_id) {
+            if run.terminal {
+                return;
+            }
             run.status = payload.outcome.clone();
             run.owner = payload.owner.clone();
             run.terminal = true;
@@ -265,6 +271,17 @@ pub struct WorkflowTransitionRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkflowEvidenceRequest {
+    pub workflow_id: String,
+    pub category: String,
+    pub summary: String,
+    pub artifact_path: Option<String>,
+    pub artifact_digest: Option<String>,
+    pub acceptance_ref: Option<String>,
+    pub metadata: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkflowStartDecision {
     Start(WorkflowStartedEvent),
     Existing { workflow_id: String },
@@ -285,6 +302,83 @@ pub enum WorkflowStartResult {
         reason: String,
         policy_id: String,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WorkflowSignoffReadiness {
+    pub workflow_id: String,
+    pub allowed: bool,
+    pub waived: bool,
+    pub required_evidence_categories: Vec<String>,
+    pub present_evidence_categories: Vec<String>,
+    pub missing_evidence_categories: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkflowSignoffPolicy {
+    required_evidence_categories: Vec<String>,
+}
+
+impl WorkflowSignoffPolicy {
+    pub fn new(required_evidence_categories: impl IntoIterator<Item = String>) -> Self {
+        Self {
+            required_evidence_categories: required_evidence_categories.into_iter().collect(),
+        }
+    }
+
+    pub fn simulator_default() -> Self {
+        Self::new([
+            crate::context_snapshot::CONTEXT_SNAPSHOT_EVIDENCE_CATEGORY.to_string(),
+            SIMULATED_TOOL_EVIDENCE_CATEGORY.to_string(),
+        ])
+    }
+
+    pub fn required_evidence_categories(&self) -> &[String] {
+        &self.required_evidence_categories
+    }
+
+    pub fn evaluate(
+        &self,
+        projection: &WorkflowProjection,
+        workflow_id: impl Into<String>,
+    ) -> WorkflowSignoffReadiness {
+        projection.signoff_readiness(workflow_id, &self.required_evidence_categories)
+    }
+}
+
+impl WorkflowProjection {
+    pub fn signoff_readiness(
+        &self,
+        workflow_id: impl Into<String>,
+        required_evidence_categories: &[String],
+    ) -> WorkflowSignoffReadiness {
+        let workflow_id = workflow_id.into();
+        let present = self
+            .workflows
+            .get(&workflow_id)
+            .map(|run| run.evidence_categories.iter().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+        let present_set = present.iter().cloned().collect::<BTreeSet<_>>();
+        let missing = required_evidence_categories
+            .iter()
+            .filter(|category| !present_set.contains(*category))
+            .cloned()
+            .collect::<Vec<_>>();
+        let waived = self.workflows.get(&workflow_id).is_some_and(|run| {
+            run.operator_decisions
+                .iter()
+                .any(|decision| decision == SIGNOFF_WAIVER_DECISION)
+        });
+
+        WorkflowSignoffReadiness {
+            workflow_id,
+            allowed: missing.is_empty() || waived,
+            waived,
+            required_evidence_categories: required_evidence_categories.to_vec(),
+            present_evidence_categories: present,
+            missing_evidence_categories: missing,
+        }
+    }
 }
 
 pub struct WorkflowTransitionPolicy;
@@ -333,13 +427,15 @@ impl WorkflowTransitionPolicy {
 #[cfg(test)]
 mod tests {
     use super::{
-        project_workflows, WorkflowProjection, WorkflowStartDecision, WorkflowStartRequest,
-        WorkflowTransitionPolicy,
+        project_workflows, WorkflowProjection, WorkflowSignoffPolicy, WorkflowStartDecision,
+        WorkflowStartRequest, WorkflowTransitionPolicy, SIGNOFF_WAIVER_DECISION,
+        SIMULATED_TOOL_EVIDENCE_CATEGORY,
     };
     use crate::event::{
         ContinuationReminderQueuedEvent, ContinuationStartedEvent, ContinuationStoppedEvent,
         EventV1, WorkflowCompletedEvent, WorkflowEventMetadata, WorkflowEvidenceRecordedEvent,
-        WorkflowStartedEvent, WorkflowTransitionRecordedEvent,
+        WorkflowOperatorDecisionRecordedEvent, WorkflowStartedEvent,
+        WorkflowTransitionRecordedEvent,
     };
 
     fn start_event() -> EventV1 {
@@ -431,6 +527,30 @@ mod tests {
     }
 
     #[test]
+    fn terminal_late_completion_does_not_mutate_terminal_outcome() {
+        let events = [
+            start_event(),
+            EventV1::WorkflowCompleted(WorkflowCompletedEvent {
+                workflow_id: "wf_1".to_string(),
+                outcome: "outcome.finished".to_string(),
+                reason: "done".to_string(),
+                owner: "leader".to_string(),
+            }),
+            EventV1::WorkflowCompleted(WorkflowCompletedEvent {
+                workflow_id: "wf_1".to_string(),
+                outcome: "outcome.failed".to_string(),
+                reason: "late failure".to_string(),
+                owner: "late-worker".to_string(),
+            }),
+        ];
+        let projection = project_workflows(events.iter());
+        let run = &projection.workflows["wf_1"];
+        assert_eq!(run.status, "outcome.finished");
+        assert!(run.terminal);
+        assert_eq!(run.owner, "leader");
+    }
+
+    #[test]
     fn continuation_metadata_derives_workflow_schedule_and_stop_state() {
         let events = [
             start_event(),
@@ -511,6 +631,44 @@ mod tests {
             "artifacts/context_snapshots/ctx_123.json"
         );
         assert_eq!(snapshot.ambiguity_score.as_deref(), Some("0.420"));
+    }
+
+    #[test]
+    fn signoff_policy_requires_mapped_evidence_or_waiver() {
+        let events = [
+            start_event(),
+            EventV1::WorkflowEvidenceRecorded(WorkflowEvidenceRecordedEvent {
+                workflow_id: "wf_1".to_string(),
+                category: crate::context_snapshot::CONTEXT_SNAPSHOT_EVIDENCE_CATEGORY.to_string(),
+                summary: "context snapshot captured".to_string(),
+                artifact_path: None,
+                artifact_digest: None,
+                acceptance_ref: Some("ctx_1".to_string()),
+                metadata: std::collections::BTreeMap::new(),
+            }),
+        ];
+        let projection = project_workflows(events.iter());
+        let policy = WorkflowSignoffPolicy::simulator_default();
+
+        let readiness = policy.evaluate(&projection, "wf_1");
+        assert!(!readiness.allowed);
+        assert_eq!(
+            readiness.missing_evidence_categories,
+            vec![SIMULATED_TOOL_EVIDENCE_CATEGORY.to_string()]
+        );
+
+        let waiver =
+            EventV1::WorkflowOperatorDecisionRecorded(WorkflowOperatorDecisionRecordedEvent {
+                workflow_id: "wf_1".to_string(),
+                decision: SIGNOFF_WAIVER_DECISION.to_string(),
+                operator: "operator".to_string(),
+                reason: Some("accepted missing simulator evidence".to_string()),
+                correlation_id: None,
+            });
+        let waived_projection = project_workflows(events.iter().chain([waiver].iter()));
+        let waived = policy.evaluate(&waived_projection, "wf_1");
+        assert!(waived.allowed);
+        assert!(waived.waived);
     }
 
     #[test]

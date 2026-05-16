@@ -14,8 +14,10 @@ use harness_core::coord::{spawn_coordinator, CoordinatorConfig, RunInfo};
 use harness_core::event::{ActorKind, EventActor};
 use harness_core::proj::SessionModeSource;
 use harness_core::redact::DefaultRedactor;
+use harness_core::run_dossier::{build_run_dossier, RunDossier};
 use harness_core::workflow::{
-    project_workflows, WorkflowProjection, WorkflowStartRequest, WorkflowStartResult,
+    project_workflows, WorkflowProjection, WorkflowSignoffPolicy, WorkflowStartRequest,
+    WorkflowStartResult,
 };
 use serde::Serialize;
 
@@ -699,10 +701,14 @@ fn execute_dossier_export(
     global_session_dir: Option<PathBuf>,
 ) -> Result<(), String> {
     let report = status_report(cmd.target, cmd.workflow_id, config_path, global_session_dir)?;
+    let dossier = build_run_dossier(
+        &report.projection,
+        &WorkflowSignoffPolicy::simulator_default(),
+    );
     let body = match cmd.format {
-        DossierFormat::Json => serde_json::to_string_pretty(&report)
+        DossierFormat::Json => serde_json::to_string_pretty(&dossier)
             .map_err(|err| format!("failed to render dossier JSON: {err}"))?,
-        DossierFormat::Markdown => render_dossier_markdown(&report),
+        DossierFormat::Markdown => render_dossier_markdown(&report, &dossier),
     };
     if let Some(output) = cmd.output.as_ref() {
         write_explicit_output(output, &body)?;
@@ -1018,19 +1024,34 @@ fn latest_run_dir(session_dir: &Path) -> Result<PathBuf, String> {
     })
 }
 
-fn render_dossier_markdown(report: &WorkflowStatusReport) -> String {
+fn render_dossier_markdown(report: &WorkflowStatusReport, dossier: &RunDossier) -> String {
     let mut body = format!(
         "# Workflow Run Dossier\n\n- Run dir: `{}`\n- Events: `{}`\n- Workflows: {}\n- Active: {}\n\n",
         report.run_dir, report.events_path, report.workflow_count, report.active_count
     );
-    for workflow in report.projection.workflows.values() {
+    for workflow in &dossier.workflows {
         body.push_str(&format!(
-            "## `{}`\n\n- Mode: `{}`\n- Status: `{}`\n- Owner: `{}`\n- Terminal: `{}`\n\n",
-            workflow.workflow_id, workflow.mode, workflow.status, workflow.owner, workflow.terminal
+            "## `{}`\n\n- Mode: `{}`\n- Status: `{}`\n- Owner: `{}`\n- Terminal: `{}`\n- Signoff allowed: `{}`\n\n",
+            workflow.workflow_id,
+            workflow.mode,
+            workflow.status,
+            workflow.owner,
+            workflow.terminal,
+            workflow.signoff.allowed
         ));
-        if !workflow.evidence_categories.is_empty() {
-            body.push_str("Evidence categories:\n");
-            for category in &workflow.evidence_categories {
+        if !workflow.evidence.is_empty() {
+            body.push_str("Evidence:\n");
+            for evidence in &workflow.evidence {
+                body.push_str(&format!(
+                    "- `{}`: {}\n",
+                    evidence.category, evidence.summary
+                ));
+            }
+            body.push('\n');
+        }
+        if !workflow.signoff.missing_evidence_categories.is_empty() {
+            body.push_str("Missing signoff evidence:\n");
+            for category in &workflow.signoff.missing_evidence_categories {
                 body.push_str(&format!("- `{category}`\n"));
             }
             body.push('\n');

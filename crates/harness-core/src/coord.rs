@@ -65,7 +65,7 @@ use crate::event::{
     TeamTaskUpdatedEvent, ToolCallFinishedEvent, ToolCallMetadata, ToolCallStartedEvent,
     ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent, WorkflowCompletedEvent,
     WorkflowEvidenceRecordedEvent, WorkflowOperatorDecisionRecordedEvent,
-    WorkflowTransitionRecordedEvent,
+    WorkflowTransitionDeniedEvent, WorkflowTransitionRecordedEvent,
 };
 use crate::path_selector::workspace_relative_path_from_maybe_absolute;
 use crate::perm::{
@@ -101,8 +101,8 @@ use crate::tool::{
     canonical_tool_id_for, sanitize_mcp_tool_segment, ToolContext, ToolRegistry, ToolResult,
 };
 use crate::workflow::{
-    project_workflows, WorkflowStartDecision, WorkflowStartRequest, WorkflowStartResult,
-    WorkflowTransitionPolicy, WorkflowTransitionRequest,
+    project_workflows, WorkflowEvidenceRequest, WorkflowSignoffPolicy, WorkflowStartDecision,
+    WorkflowStartRequest, WorkflowStartResult, WorkflowTransitionPolicy, WorkflowTransitionRequest,
 };
 use harness_providers::{
     AssistantToolCall, CompletionMessage, CompletionRequest, MessageRole, Provider,
@@ -362,6 +362,11 @@ pub enum Command {
         request: WorkflowTransitionRequest,
         respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
     },
+    RecordWorkflowEvidence {
+        actor: EventActor,
+        request: WorkflowEvidenceRequest,
+        respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
+    },
     RecordWorkflowOperatorDecision {
         actor: EventActor,
         workflow_id: String,
@@ -377,6 +382,15 @@ pub enum Command {
         outcome: String,
         reason: String,
         owner: String,
+        respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
+    },
+    CompleteWorkflowWithSignoffPolicy {
+        actor: EventActor,
+        workflow_id: String,
+        outcome: String,
+        reason: String,
+        owner: String,
+        signoff_policy: WorkflowSignoffPolicy,
         respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
     },
     ResolvePermission {
@@ -1157,6 +1171,19 @@ impl CoordinatorHandle {
         .await
     }
 
+    pub async fn record_workflow_evidence(
+        &self,
+        actor: EventActor,
+        request: WorkflowEvidenceRequest,
+    ) -> Result<(), CoordinatorError> {
+        self.request(|respond_to| Command::RecordWorkflowEvidence {
+            actor,
+            request,
+            respond_to,
+        })
+        .await
+    }
+
     pub async fn record_workflow_operator_decision(
         &self,
         actor: EventActor,
@@ -1192,6 +1219,27 @@ impl CoordinatorHandle {
             outcome: outcome.into(),
             reason: reason.into(),
             owner: owner.into(),
+            respond_to,
+        })
+        .await
+    }
+
+    pub async fn complete_workflow_with_signoff_policy(
+        &self,
+        actor: EventActor,
+        workflow_id: impl Into<String>,
+        outcome: impl Into<String>,
+        reason: impl Into<String>,
+        owner: impl Into<String>,
+        signoff_policy: WorkflowSignoffPolicy,
+    ) -> Result<(), CoordinatorError> {
+        self.request(|respond_to| Command::CompleteWorkflowWithSignoffPolicy {
+            actor,
+            workflow_id: workflow_id.into(),
+            outcome: outcome.into(),
+            reason: reason.into(),
+            owner: owner.into(),
+            signoff_policy,
             respond_to,
         })
         .await
@@ -1754,6 +1802,14 @@ impl Coordinator {
                 let result = self.record_workflow_transition_internal(actor, request);
                 warn_oneshot_send_failure(respond_to.send(result), "record_workflow_transition");
             }
+            Command::RecordWorkflowEvidence {
+                actor,
+                request,
+                respond_to,
+            } => {
+                let result = self.record_workflow_evidence_internal(actor, request);
+                warn_oneshot_send_failure(respond_to.send(result), "record_workflow_evidence");
+            }
             Command::RecordWorkflowOperatorDecision {
                 actor,
                 workflow_id,
@@ -1787,6 +1843,28 @@ impl Coordinator {
                 let result =
                     self.complete_workflow_internal(actor, workflow_id, outcome, reason, owner);
                 warn_oneshot_send_failure(respond_to.send(result), "complete_workflow");
+            }
+            Command::CompleteWorkflowWithSignoffPolicy {
+                actor,
+                workflow_id,
+                outcome,
+                reason,
+                owner,
+                signoff_policy,
+                respond_to,
+            } => {
+                let result = self.complete_workflow_with_signoff_policy_internal(
+                    actor,
+                    workflow_id,
+                    outcome,
+                    reason,
+                    owner,
+                    signoff_policy,
+                );
+                warn_oneshot_send_failure(
+                    respond_to.send(result),
+                    "complete_workflow_with_signoff_policy",
+                );
             }
             Command::ResolvePermission {
                 permission_id,
@@ -4206,6 +4284,34 @@ impl Coordinator {
         .map(|_| ())
     }
 
+    fn record_workflow_evidence_internal(
+        &mut self,
+        actor: EventActor,
+        request: WorkflowEvidenceRequest,
+    ) -> Result<(), CoordinatorError> {
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        append_payload_event(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            actor,
+            Some(format!("workflow:{}", request.workflow_id)),
+            EventV1::WorkflowEvidenceRecorded(WorkflowEvidenceRecordedEvent {
+                workflow_id: request.workflow_id,
+                category: request.category,
+                summary: request.summary,
+                artifact_path: request.artifact_path,
+                artifact_digest: request.artifact_digest,
+                acceptance_ref: request.acceptance_ref,
+                metadata: request.metadata,
+            }),
+        )
+        .map(|_| ())
+    }
+
     fn record_workflow_operator_decision_internal(
         &mut self,
         actor: EventActor,
@@ -4248,6 +4354,66 @@ impl Coordinator {
             .run_state
             .as_mut()
             .ok_or(CoordinatorError::RunNotStarted)?;
+        append_payload_event(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            actor,
+            Some(format!("workflow:{workflow_id}")),
+            EventV1::WorkflowCompleted(WorkflowCompletedEvent {
+                workflow_id,
+                outcome,
+                reason,
+                owner,
+            }),
+        )
+        .map(|_| ())
+    }
+
+    fn complete_workflow_with_signoff_policy_internal(
+        &mut self,
+        actor: EventActor,
+        workflow_id: String,
+        outcome: String,
+        reason: String,
+        owner: String,
+        signoff_policy: WorkflowSignoffPolicy,
+    ) -> Result<(), CoordinatorError> {
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        if outcome == "outcome.finished" {
+            let projection = workflow_projection_for_run(run_state)?;
+            let readiness = signoff_policy.evaluate(&projection, workflow_id.clone());
+            if !readiness.allowed {
+                let current = projection.workflows.get(&workflow_id);
+                let missing = readiness.missing_evidence_categories.join(", ");
+                let denial_reason = if missing.is_empty() {
+                    "workflow completion requires mapped signoff evidence or waiver".to_string()
+                } else {
+                    format!("workflow completion missing signoff evidence: {missing}")
+                };
+                append_payload_event(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    run_state,
+                    actor,
+                    Some(format!("workflow:{workflow_id}")),
+                    EventV1::WorkflowTransitionDenied(WorkflowTransitionDeniedEvent {
+                        workflow_id,
+                        requested_status: outcome,
+                        reason: denial_reason.clone(),
+                        owner,
+                        current_owner: current.map(|run| run.owner.clone()),
+                        current_status: current.map(|run| run.status.clone()),
+                        policy_id: "transition.evidence_gated_completion".to_string(),
+                    }),
+                )?;
+                return Err(CoordinatorError::PolicyViolation(denial_reason));
+            }
+        }
+
         append_payload_event(
             self.clock.as_ref(),
             self.redactor.as_ref(),

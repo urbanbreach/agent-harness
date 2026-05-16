@@ -148,6 +148,82 @@ fn workflow_status_json_is_projection_only() {
 }
 
 #[test]
+fn workflow_dossier_json_reports_signoff_gate_without_appending_events() {
+    let temp = tempdir().expect("tempdir");
+    let session_dir = temp.path().join("sessions");
+
+    let run_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "--session-dir",
+            session_dir.to_str().expect("session dir utf-8"),
+            "workflow",
+            "run",
+            "--workflow-id",
+            "wf_dossier_signoff",
+            "--title",
+            "Dossier signoff gate",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow run");
+
+    assert!(
+        run_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run_output.stdout),
+        String::from_utf8_lossy(&run_output.stderr)
+    );
+    let run_report: Value = serde_json::from_slice(&run_output.stdout).expect("run json");
+    let run_dir = run_report["run_dir"].as_str().expect("run dir");
+    let events_path = run_report["events_path"].as_str().expect("events path");
+    let before = fs::read_to_string(events_path).expect("read events before dossier");
+
+    let dossier_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "workflow",
+            "dossier",
+            "export",
+            "--run-dir",
+            run_dir,
+            "--workflow-id",
+            "wf_dossier_signoff",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run workflow dossier export");
+
+    assert!(
+        dossier_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&dossier_output.stdout),
+        String::from_utf8_lossy(&dossier_output.stderr)
+    );
+    let after = fs::read_to_string(events_path).expect("read events after dossier");
+    assert_eq!(
+        before, after,
+        "workflow dossier export must not append events"
+    );
+
+    let dossier: Value = serde_json::from_slice(&dossier_output.stdout).expect("dossier json");
+    let workflow = &dossier["workflows"][0];
+    assert_eq!(workflow["workflow_id"], "wf_dossier_signoff");
+    assert_eq!(workflow["signoff"]["allowed"], false);
+    assert!(workflow["signoff"]["missing_evidence_categories"]
+        .as_array()
+        .expect("missing evidence array")
+        .iter()
+        .any(|category| category.as_str() == Some("evidence.context_snapshot")));
+    assert!(workflow["signoff"]["missing_evidence_categories"]
+        .as_array()
+        .expect("missing evidence array")
+        .iter()
+        .any(|category| category.as_str() == Some("evidence.simulated_tool_result")));
+}
+
+#[test]
 fn workflow_signoff_audit_run_projects_terminal_decision() {
     let temp = tempdir().expect("tempdir");
     let session_dir = temp.path().join("sessions");

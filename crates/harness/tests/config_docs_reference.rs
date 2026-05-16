@@ -135,6 +135,8 @@ fn config_docs_capture_workflow_contract_registry() {
         "workflow_contract_registry",
         "workflow_context_snapshot",
         "workflow_runtime_config",
+        "workflow_simulator",
+        "evidence.simulated_tool_result",
         "harness workflow run/status/signoff/cancel/dossier/snapshot/init",
         "runtime.workflow",
         "init --check",

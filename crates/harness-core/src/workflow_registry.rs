@@ -141,6 +141,10 @@ pub const EVIDENCE_CATEGORIES: &[EvidenceCategorySpec] = &[
         description: "Native tool completion summary plus artifact refs.",
     },
     EvidenceCategorySpec {
+        id: "evidence.simulated_tool_result",
+        description: "Deterministic simulator no-op tool result mapped to acceptance evidence.",
+    },
+    EvidenceCategorySpec {
         id: "evidence.artifact",
         description: "Redacted artifact ref, digest, and summary used for acceptance.",
     },
@@ -194,6 +198,10 @@ pub const WORKFLOW_DOCTOR_CHECKS: &[WorkflowDoctorCheckSpec] = &[
     WorkflowDoctorCheckSpec {
         id: "workflow_runtime_config",
         description: "Validates staged runtime.workflow defaults and operator limits.",
+    },
+    WorkflowDoctorCheckSpec {
+        id: "workflow_simulator",
+        description: "Validates deterministic simulator evidence/signoff/dossier readiness.",
     },
     WorkflowDoctorCheckSpec {
         id: "command_registry",

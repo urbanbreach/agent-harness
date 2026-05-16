@@ -4,3 +4,4 @@
 //! belongs under `crates/harness-testkit/tests/` with local support modules.
 
 pub mod secret_scanner;
+pub mod workflow_simulator;

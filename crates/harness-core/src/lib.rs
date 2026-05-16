@@ -24,6 +24,7 @@ pub(crate) mod provider_args;
 pub mod provider_recovery;
 pub mod question_answers;
 pub mod redact;
+pub mod run_dossier;
 pub mod sched;
 pub mod session_lineage;
 pub(crate) mod session_paths;

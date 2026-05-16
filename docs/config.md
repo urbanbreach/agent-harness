@@ -296,6 +296,10 @@ split by crate responsibility:
 - `harness doctor --json` includes `workflow_runtime_config`, which validates
   staged `runtime.workflow` defaults and operator limits without launching
   providers, tools, tmux, or workers.
+- `harness doctor --json` includes `workflow_simulator`, which verifies the
+  deterministic testkit simulator contract requires context snapshot evidence
+  plus `evidence.simulated_tool_result` before signoff unless an operator waiver
+  is recorded.
 - `harness workflow run/status/signoff/cancel/dossier/snapshot/init` are the
   CLI foundation commands. `status` and dossier/snapshot reads are projection-only
   over `events.jsonl`; `init --check` reports planned files without writing and
