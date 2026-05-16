@@ -5,6 +5,7 @@ use std::path::{Component, Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_core::agent::AgentModelRef;
+use harness_core::command_registry::WorkflowIntent;
 use harness_core::config::{registered_profile_model_metadata, ResolvedProfileModelMetadata};
 use harness_core::event::{first_lineage_parent_session_id, EventEnvelopeV1, EventV1};
 use harness_core::proj::{
@@ -1362,6 +1363,8 @@ impl AppState {
             "shell" => self.active_review_surface.is_some(),
             "follow" => !self.replay_mode && !self.startup_mode,
             "compact" => self.compact_session_supported,
+            "workflow-run" | "workflow-status" | "workflow-signoff" | "workflow-cancel"
+            | "workflow-dossier" | "workflow-snapshot" => !self.replay_mode,
             "init-deep" | "refactor" | "start-work" | "remove-ai-slops" | "handoff"
             | "hyperplan" => !self.replay_mode,
             "ralph-loop" | "ulw-loop" => !self.replay_mode && !self.startup_mode,
@@ -1494,6 +1497,42 @@ impl AppState {
                 self.restore_slash_draft(preserved_draft);
                 self.emit_ui_intent(UiIntent::CompactSession);
             }
+            "workflow-run" => self.emit_workflow_intent(
+                preserved_draft,
+                WorkflowIntent::Run,
+                "/workflow run",
+                "workflow run intent queued",
+            ),
+            "workflow-status" => self.emit_workflow_intent(
+                preserved_draft,
+                WorkflowIntent::Status,
+                "/workflow status",
+                "workflow status intent queued",
+            ),
+            "workflow-signoff" => self.emit_workflow_intent(
+                preserved_draft,
+                WorkflowIntent::Signoff,
+                "/workflow signoff",
+                "workflow signoff intent queued",
+            ),
+            "workflow-cancel" => self.emit_workflow_intent(
+                preserved_draft,
+                WorkflowIntent::Cancel,
+                "/workflow cancel",
+                "workflow cancel intent queued",
+            ),
+            "workflow-dossier" => self.emit_workflow_intent(
+                preserved_draft,
+                WorkflowIntent::DossierExport,
+                "/workflow dossier",
+                "workflow dossier intent queued",
+            ),
+            "workflow-snapshot" => self.emit_workflow_intent(
+                preserved_draft,
+                WorkflowIntent::Snapshot,
+                "/workflow snapshot",
+                "workflow snapshot intent queued",
+            ),
             "ralph-loop" => {
                 let command = Self::continuation_command_with_draft("/ralph-loop", preserved_draft.as_deref());
                 self.restore_slash_draft(preserved_draft);
@@ -1590,6 +1629,20 @@ impl AppState {
             return;
         }
         self.dispatch_submitted_prompt(text);
+    }
+
+    fn emit_workflow_intent(
+        &mut self,
+        preserved_draft: Option<String>,
+        intent: WorkflowIntent,
+        base_command: &str,
+        banner: &str,
+    ) {
+        let command =
+            Self::continuation_command_with_draft(base_command, preserved_draft.as_deref());
+        self.restore_slash_draft(preserved_draft);
+        self.set_status_banner(Some(banner.to_string()));
+        self.emit_ui_intent(UiIntent::WorkflowIntent { intent, command });
     }
 
     fn execute_passive_lineage_slash_command(
@@ -3541,6 +3594,12 @@ fn slash_command_aliases(command: &str) -> &'static [&'static str] {
         "events" => &["event-log"],
         "shell" => &["session-shell"],
         "compact" => &["summarize", "summary"],
+        "workflow-run" => &["workflow"],
+        "workflow-status" => &["status-workflow"],
+        "workflow-signoff" => &["signoff"],
+        "workflow-cancel" => &["cancel-workflow"],
+        "workflow-dossier" => &["dossier"],
+        "workflow-snapshot" => &["snapshot"],
         "ulw-loop" => &["ultrawork", "ulw"],
         "cancel-ralph" => &["stop-ralph"],
         "remove-ai-slops" => &["deslop", "ai-slop-cleaner"],

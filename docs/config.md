@@ -159,7 +159,7 @@ for those settings instead of mixing them into runtime config.
 | `permission` | Default permission policy for the supported tool subset plus optional shell allowlist. |
 | `plugin` | OpenCode plugin list; accepted only when empty because plugins are not loaded by the harness. |
 | `provider` | Provider definitions keyed by provider id. |
-| `runtime` | Runtime knobs that are not provider/model/agent definitions, currently including provider-context compaction settings. |
+| `runtime` | Runtime knobs that are not provider/model/agent definitions, currently including provider-context compaction and staged workflow settings. |
 | `server` | OpenCode server configuration; accepted only when empty because server commands are outside this runtime config. |
 | `share` | OpenCode sharing mode; only `disabled` is accepted. |
 | `shell` | OpenCode-compatible default-shell setting accepted as inert compatibility input. |
@@ -293,6 +293,14 @@ split by crate responsibility:
 - `harness doctor --json` also includes `workflow_context_snapshot`, which
   reports the redacted/capped context snapshot artifact contract that workflow
   status and dossier projections consume from events.
+- `harness doctor --json` includes `workflow_runtime_config`, which validates
+  staged `runtime.workflow` defaults and operator limits without launching
+  providers, tools, tmux, or workers.
+- `harness workflow run/status/signoff/cancel/dossier/snapshot/init` are the
+  CLI foundation commands. `status` and dossier/snapshot reads are projection-only
+  over `events.jsonl`; `init --check` reports planned files without writing and
+  `init --apply` is the explicit write path for safe generated files under
+  `.agent-harness/`.
 - `harness workflow snapshot write --json` is the minimal coordinator-backed
   CLI write path for `/interview` and `/workflow run` intake snapshots; it
   stores artifacts under the session run and emits workflow evidence when a
@@ -670,6 +678,36 @@ Public compaction knobs live under `runtime.compaction`:
 | `structuredSummaryContract` / `structured_summary_contract` | `true` | Requires default-on checkpoint summaries to carry the Harness sections `Goal`, `Constraints`, `Progress`, `Key Decisions`, `Next Steps`, and `Critical Context`. Set `false` only for legacy heading compatibility. |
 | `estimatedTokenTriggers` / `estimated_token_triggers` | `true` | Allows proactive and pre-prompt compaction to use deterministic context estimates when provider usage or model metadata is absent. |
 | `fallbackInputTokens` / `fallback_input_tokens` | `32768` | Input budget used for estimated trigger checks when the active model does not publish a context window or max input token limit. |
+
+Public workflow knobs live under `runtime.workflow`. The first slice keeps these
+as staged configuration for command foundations, doctor checks, and future
+simulator/signoff policy; replayable workflow state still comes from events and
+redacted artifacts:
+
+| Key | Default | Purpose |
+| --- | --- | --- |
+| `enabled` | `true` | Enables Harness-native workflow command surfaces and doctor readiness checks. Existing replay/status reads remain projection-only even when disabled. |
+| `aliases` | `true` | Enables canonical workflow aliases such as `/workflow`, `/signoff`, and `/dossier` in command registries. |
+| `projectArtifacts` / `project_artifacts` | `false` | Reserves a future opt-in for writing durable project workflow artifacts outside session runs. |
+| `run.defaultLane` / `run.default_lane` | `simulated` | Default workflow lane recorded by `harness workflow run` when `--lane` is omitted. |
+| `run.requireDossier` / `run.require_dossier` | `true` | Future signoff policy flag requiring a Run Dossier before terminal success. |
+| `run.requireEvidence` / `run.require_evidence` | `true` | Future signoff policy flag requiring mapped evidence or waiver before terminal success. |
+| `interview.defaultProfile` / `interview.default_profile` | `standard` | Default profile name for future workflow intake interviews. |
+| `interview.threshold` | `0.2` | Ambiguity threshold used by intake gating. |
+| `interview.maxRounds` / `interview.max_rounds` | `12` | Maximum interview rounds before handoff or blocker. |
+| `planConsensus.maxIterations` / `plan_consensus.max_iterations` | `5` | Maximum critic/planner consensus iterations. |
+| `planConsensus.deliberateTriggers` / `plan_consensus.deliberate_triggers` | `auth`, `security`, `migration`, `public api`, `pii` | Terms that should bias future workflow intake toward consensus planning. |
+| `workLoop.maxIterations` / `work_loop.max_iterations` | `10` | Default bound for future workflow-owned continuation loops. |
+| `workLoop.requireManualQa` / `work_loop.require_manual_qa` | `true` | Future signoff policy flag for manual QA evidence. |
+| `team.maxMembers` / `team.max_members` | `8` | Maximum declared workflow team size. |
+| `team.maxParallelMembers` / `team.max_parallel_members` | `4` | Maximum parallel workflow team members; doctor fails if this exceeds `maxMembers`. |
+| `team.tmuxVisualization` / `team.tmux_visualization` | `false` | Future opt-in for tmux visualization diagnostics. |
+| `team.worktrees` | `false` | Future opt-in for permissioned workflow worktrees. |
+| `goal.requireFinalQualityGate` / `goal.require_final_quality_gate` | `true` | Future goal-ledger policy requiring final cleanup/review evidence. |
+| `researchLoop.maxIterations` / `research_loop.max_iterations` | `10` | Default bound for future validator-gated research loops. |
+| `wiki.enabled` | `false` | Enables future markdown wiki workflow surfaces. |
+| `wiki.root` | `.agent-harness/wiki` | Project wiki root when wiki workflows are enabled. |
+| `wiki.autoCapture` / `wiki.auto_capture` | `false` | Future opt-in for automatic wiki capture from workflow evidence. |
 
 On successful compaction, checkpoints are written under `artifacts/compactions/<agent_id>/` and recorded in the session event log. Checkpoints and compaction events include additive before/after active-context estimates (`tokens_before_estimate`, `tokens_after_estimate`, summary-token estimate, compacted/preserved turn counts, and estimated reduction) so UIs can report whether compaction helped without treating historical provider spend as active context. Checkpoints also include structured source facts, tail-boundary metadata, summary-source metadata, the summary contract version, replay-derived read/modified file counts, and a timeline entry for replay/UIs. Resume reconstructs provider context from the latest applied checkpoint plus post-checkpoint deltas in `events.jsonl`; the event log itself stays append-only.
 

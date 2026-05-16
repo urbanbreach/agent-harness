@@ -211,6 +211,7 @@ fn build_report(config_display: String, config: &HarnessConfig) -> DoctorReport 
         check_command_registry(),
         check_workflow_contract_registry(),
         check_workflow_context_snapshot_contract(),
+        check_workflow_runtime_config(config),
         check_permissions(config),
         check_session_dir(&config.paths.session_dir),
         check_mcp(config),
@@ -1180,6 +1181,63 @@ fn check_terminal_browser_media() -> DoctorCheck {
         "terminal_browser_media",
         format!("{message}; look_at and terminal tools are registered"),
     )
+}
+
+fn check_workflow_runtime_config(config: &HarnessConfig) -> DoctorCheck {
+    let workflow = &config.runtime.workflow;
+    if workflow.interview.max_rounds == 0 {
+        return fail(
+            "workflow_runtime_config",
+            "runtime.workflow.interview.max_rounds must be greater than zero",
+        );
+    }
+    if !(0.0..=1.0).contains(&workflow.interview.threshold) {
+        return fail(
+            "workflow_runtime_config",
+            "runtime.workflow.interview.threshold must be between 0.0 and 1.0",
+        );
+    }
+    if workflow.team.max_parallel_members > workflow.team.max_members {
+        return fail(
+            "workflow_runtime_config",
+            "runtime.workflow.team.max_parallel_members must not exceed max_members",
+        );
+    }
+
+    let status = if workflow.enabled {
+        CheckStatus::Pass
+    } else {
+        CheckStatus::Warn
+    };
+    DoctorCheck {
+        id: "workflow_runtime_config".to_string(),
+        name: "workflow_runtime_config".to_string(),
+        status,
+        message: if workflow.enabled {
+            "runtime.workflow enabled with staged command/config defaults".to_string()
+        } else {
+            "runtime.workflow is disabled; CLI projection reads still work for existing logs"
+                .to_string()
+        },
+        details: Some(serde_json::json!({
+            "enabled": workflow.enabled,
+            "aliases": workflow.aliases,
+            "default_lane": workflow.run.default_lane,
+            "require_dossier": workflow.run.require_dossier,
+            "require_evidence": workflow.run.require_evidence,
+            "team": {
+                "max_members": workflow.team.max_members,
+                "max_parallel_members": workflow.team.max_parallel_members,
+                "tmux_visualization": workflow.team.tmux_visualization,
+                "worktrees": workflow.team.worktrees,
+            },
+            "wiki": {
+                "enabled": workflow.wiki.enabled,
+                "root": workflow.wiki.root,
+                "auto_capture": workflow.wiki.auto_capture,
+            }
+        })),
+    }
 }
 
 fn check_parity_ledger() -> DoctorCheck {

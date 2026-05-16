@@ -63,7 +63,9 @@ use crate::event::{
     TeamMessageKind, TeamMessageSentEvent, TeamShutdownApprovedEvent, TeamShutdownRejectedEvent,
     TeamShutdownRequestedEvent, TeamSpec, TeamTask, TeamTaskCreatedEvent, TeamTaskStatus,
     TeamTaskUpdatedEvent, ToolCallFinishedEvent, ToolCallMetadata, ToolCallStartedEvent,
-    ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent, WorkflowEvidenceRecordedEvent,
+    ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent, WorkflowCompletedEvent,
+    WorkflowEvidenceRecordedEvent, WorkflowOperatorDecisionRecordedEvent,
+    WorkflowTransitionRecordedEvent,
 };
 use crate::path_selector::workspace_relative_path_from_maybe_absolute;
 use crate::perm::{
@@ -97,6 +99,10 @@ use crate::store::{EventEnvelopeWithoutSeqV1, EventStore, EventStoreError, Jsonl
 use crate::text::{non_empty_trimmed, truncate_with_ellipsis};
 use crate::tool::{
     canonical_tool_id_for, sanitize_mcp_tool_segment, ToolContext, ToolRegistry, ToolResult,
+};
+use crate::workflow::{
+    project_workflows, WorkflowStartDecision, WorkflowStartRequest, WorkflowStartResult,
+    WorkflowTransitionPolicy, WorkflowTransitionRequest,
 };
 use harness_providers::{
     AssistantToolCall, CompletionMessage, CompletionRequest, MessageRole, Provider,
@@ -345,6 +351,33 @@ pub enum Command {
         input: ContextSnapshotInput,
         options: ContextSnapshotOptions,
         respond_to: oneshot::Sender<Result<ContextSnapshotWriteResult, CoordinatorError>>,
+    },
+    StartWorkflow {
+        actor: EventActor,
+        request: WorkflowStartRequest,
+        respond_to: oneshot::Sender<Result<WorkflowStartResult, CoordinatorError>>,
+    },
+    RecordWorkflowTransition {
+        actor: EventActor,
+        request: WorkflowTransitionRequest,
+        respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
+    },
+    RecordWorkflowOperatorDecision {
+        actor: EventActor,
+        workflow_id: String,
+        decision: String,
+        operator: String,
+        reason: Option<String>,
+        correlation_id: Option<String>,
+        respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
+    },
+    CompleteWorkflow {
+        actor: EventActor,
+        workflow_id: String,
+        outcome: String,
+        reason: String,
+        owner: String,
+        respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
     },
     ResolvePermission {
         permission_id: String,
@@ -1098,6 +1131,72 @@ impl CoordinatorHandle {
         .await
     }
 
+    pub async fn start_workflow(
+        &self,
+        actor: EventActor,
+        request: WorkflowStartRequest,
+    ) -> Result<WorkflowStartResult, CoordinatorError> {
+        self.request(|respond_to| Command::StartWorkflow {
+            actor,
+            request,
+            respond_to,
+        })
+        .await
+    }
+
+    pub async fn record_workflow_transition(
+        &self,
+        actor: EventActor,
+        request: WorkflowTransitionRequest,
+    ) -> Result<(), CoordinatorError> {
+        self.request(|respond_to| Command::RecordWorkflowTransition {
+            actor,
+            request,
+            respond_to,
+        })
+        .await
+    }
+
+    pub async fn record_workflow_operator_decision(
+        &self,
+        actor: EventActor,
+        workflow_id: impl Into<String>,
+        decision: impl Into<String>,
+        operator: impl Into<String>,
+        reason: Option<String>,
+        correlation_id: Option<String>,
+    ) -> Result<(), CoordinatorError> {
+        self.request(|respond_to| Command::RecordWorkflowOperatorDecision {
+            actor,
+            workflow_id: workflow_id.into(),
+            decision: decision.into(),
+            operator: operator.into(),
+            reason,
+            correlation_id,
+            respond_to,
+        })
+        .await
+    }
+
+    pub async fn complete_workflow(
+        &self,
+        actor: EventActor,
+        workflow_id: impl Into<String>,
+        outcome: impl Into<String>,
+        reason: impl Into<String>,
+        owner: impl Into<String>,
+    ) -> Result<(), CoordinatorError> {
+        self.request(|respond_to| Command::CompleteWorkflow {
+            actor,
+            workflow_id: workflow_id.into(),
+            outcome: outcome.into(),
+            reason: reason.into(),
+            owner: owner.into(),
+            respond_to,
+        })
+        .await
+    }
+
     pub async fn job_progress(
         &self,
         task_id: impl Into<String>,
@@ -1638,6 +1737,56 @@ impl Coordinator {
                 let result =
                     self.write_context_snapshot_internal(actor, workflow_id, input, options);
                 warn_oneshot_send_failure(respond_to.send(result), "write_context_snapshot");
+            }
+            Command::StartWorkflow {
+                actor,
+                request,
+                respond_to,
+            } => {
+                let result = self.start_workflow_internal(actor, request);
+                warn_oneshot_send_failure(respond_to.send(result), "start_workflow");
+            }
+            Command::RecordWorkflowTransition {
+                actor,
+                request,
+                respond_to,
+            } => {
+                let result = self.record_workflow_transition_internal(actor, request);
+                warn_oneshot_send_failure(respond_to.send(result), "record_workflow_transition");
+            }
+            Command::RecordWorkflowOperatorDecision {
+                actor,
+                workflow_id,
+                decision,
+                operator,
+                reason,
+                correlation_id,
+                respond_to,
+            } => {
+                let result = self.record_workflow_operator_decision_internal(
+                    actor,
+                    workflow_id,
+                    decision,
+                    operator,
+                    reason,
+                    correlation_id,
+                );
+                warn_oneshot_send_failure(
+                    respond_to.send(result),
+                    "record_workflow_operator_decision",
+                );
+            }
+            Command::CompleteWorkflow {
+                actor,
+                workflow_id,
+                outcome,
+                reason,
+                owner,
+                respond_to,
+            } => {
+                let result =
+                    self.complete_workflow_internal(actor, workflow_id, outcome, reason, owner);
+                warn_oneshot_send_failure(respond_to.send(result), "complete_workflow");
             }
             Command::ResolvePermission {
                 permission_id,
@@ -3975,6 +4124,144 @@ impl Coordinator {
         }
 
         Ok(result)
+    }
+
+    fn start_workflow_internal(
+        &mut self,
+        actor: EventActor,
+        request: WorkflowStartRequest,
+    ) -> Result<WorkflowStartResult, CoordinatorError> {
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        let projection = workflow_projection_for_run(run_state)?;
+        match WorkflowTransitionPolicy::decide_start(&projection, request) {
+            WorkflowStartDecision::Start(event) => {
+                let workflow_id = event.workflow_id.clone();
+                append_payload_event(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    run_state,
+                    actor,
+                    Some(format!("workflow:{workflow_id}")),
+                    EventV1::WorkflowStarted(event),
+                )?;
+                Ok(WorkflowStartResult::Started { workflow_id })
+            }
+            WorkflowStartDecision::Existing { workflow_id } => {
+                Ok(WorkflowStartResult::Existing { workflow_id })
+            }
+            WorkflowStartDecision::Denied(event) => {
+                let workflow_id = event.workflow_id.clone();
+                let reason = event.reason.clone();
+                let policy_id = event.policy_id.clone();
+                append_payload_event(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    run_state,
+                    actor,
+                    Some(format!("workflow:{workflow_id}")),
+                    EventV1::WorkflowTransitionDenied(event),
+                )?;
+                Ok(WorkflowStartResult::Denied {
+                    workflow_id,
+                    reason,
+                    policy_id,
+                })
+            }
+        }
+    }
+
+    fn record_workflow_transition_internal(
+        &mut self,
+        actor: EventActor,
+        request: WorkflowTransitionRequest,
+    ) -> Result<(), CoordinatorError> {
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        let projection = workflow_projection_for_run(run_state)?;
+        let from_status = projection
+            .workflows
+            .get(&request.workflow_id)
+            .map(|run| run.status.clone());
+        append_payload_event(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            actor,
+            Some(format!("workflow:{}", request.workflow_id)),
+            EventV1::WorkflowTransitionRecorded(WorkflowTransitionRecordedEvent {
+                workflow_id: request.workflow_id,
+                from_status,
+                to_status: request.to_status,
+                reason: request.reason,
+                owner: request.owner,
+                policy_id: request.policy_id,
+                idempotency_key: request.idempotency_key,
+            }),
+        )
+        .map(|_| ())
+    }
+
+    fn record_workflow_operator_decision_internal(
+        &mut self,
+        actor: EventActor,
+        workflow_id: String,
+        decision: String,
+        operator: String,
+        reason: Option<String>,
+        correlation_id: Option<String>,
+    ) -> Result<(), CoordinatorError> {
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        append_payload_event(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            actor,
+            Some(format!("workflow:{workflow_id}")),
+            EventV1::WorkflowOperatorDecisionRecorded(WorkflowOperatorDecisionRecordedEvent {
+                workflow_id,
+                decision,
+                operator,
+                reason,
+                correlation_id,
+            }),
+        )
+        .map(|_| ())
+    }
+
+    fn complete_workflow_internal(
+        &mut self,
+        actor: EventActor,
+        workflow_id: String,
+        outcome: String,
+        reason: String,
+        owner: String,
+    ) -> Result<(), CoordinatorError> {
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        append_payload_event(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            actor,
+            Some(format!("workflow:{workflow_id}")),
+            EventV1::WorkflowCompleted(WorkflowCompletedEvent {
+                workflow_id,
+                outcome,
+                reason,
+                owner,
+            }),
+        )
+        .map(|_| ())
     }
 
     fn job_progress_internal(&mut self, task_id: String, kind: JobProgressKind) {
@@ -15945,6 +16232,19 @@ fn append_built_event(
 
 fn system_actor() -> EventActor {
     EventActor::new(ActorKind::System, Some(COORDINATOR_AGENT_ID.to_string()))
+}
+
+fn workflow_projection_for_run(
+    run_state: &RunState,
+) -> Result<crate::workflow::WorkflowProjection, CoordinatorError> {
+    let historical_events = read_historical_events_until(
+        &run_state.info.run_id,
+        &run_state.info.events_path,
+        u64::MAX,
+    )?;
+    Ok(project_workflows(
+        historical_events.iter().map(|event| &event.payload),
+    ))
 }
 
 fn agent_actor(agent_id: &str) -> EventActor {

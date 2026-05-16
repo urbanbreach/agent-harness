@@ -710,6 +710,236 @@ pub struct RuntimeConfig {
     pub deterministic: DeterministicConfig,
     #[serde(default)]
     pub compaction: CompactionRuntimeConfig,
+    #[serde(default)]
+    pub workflow: WorkflowRuntimeConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WorkflowRuntimeConfig {
+    #[serde(default = "default_workflow_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_workflow_aliases")]
+    pub aliases: bool,
+    #[serde(default, alias = "projectArtifacts")]
+    pub project_artifacts: bool,
+    #[serde(default)]
+    pub run: WorkflowRunRuntimeConfig,
+    #[serde(default)]
+    pub interview: WorkflowInterviewRuntimeConfig,
+    #[serde(default, alias = "planConsensus")]
+    pub plan_consensus: WorkflowPlanConsensusRuntimeConfig,
+    #[serde(default, alias = "workLoop")]
+    pub work_loop: WorkflowWorkLoopRuntimeConfig,
+    #[serde(default)]
+    pub team: WorkflowTeamRuntimeConfig,
+    #[serde(default)]
+    pub goal: WorkflowGoalRuntimeConfig,
+    #[serde(default, alias = "researchLoop")]
+    pub research_loop: WorkflowResearchLoopRuntimeConfig,
+    #[serde(default)]
+    pub wiki: WorkflowWikiRuntimeConfig,
+}
+
+impl Default for WorkflowRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_workflow_enabled(),
+            aliases: default_workflow_aliases(),
+            project_artifacts: false,
+            run: WorkflowRunRuntimeConfig::default(),
+            interview: WorkflowInterviewRuntimeConfig::default(),
+            plan_consensus: WorkflowPlanConsensusRuntimeConfig::default(),
+            work_loop: WorkflowWorkLoopRuntimeConfig::default(),
+            team: WorkflowTeamRuntimeConfig::default(),
+            goal: WorkflowGoalRuntimeConfig::default(),
+            research_loop: WorkflowResearchLoopRuntimeConfig::default(),
+            wiki: WorkflowWikiRuntimeConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WorkflowRunRuntimeConfig {
+    #[serde(default = "default_workflow_run_default_lane", alias = "defaultLane")]
+    pub default_lane: String,
+    #[serde(
+        default = "default_workflow_run_require_dossier",
+        alias = "requireDossier"
+    )]
+    pub require_dossier: bool,
+    #[serde(
+        default = "default_workflow_run_require_evidence",
+        alias = "requireEvidence"
+    )]
+    pub require_evidence: bool,
+}
+
+impl Default for WorkflowRunRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            default_lane: default_workflow_run_default_lane(),
+            require_dossier: default_workflow_run_require_dossier(),
+            require_evidence: default_workflow_run_require_evidence(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WorkflowInterviewRuntimeConfig {
+    #[serde(
+        default = "default_workflow_interview_profile",
+        alias = "defaultProfile"
+    )]
+    pub default_profile: String,
+    #[serde(default = "default_workflow_interview_threshold")]
+    pub threshold: f32,
+    #[serde(default = "default_workflow_interview_max_rounds", alias = "maxRounds")]
+    pub max_rounds: u32,
+}
+
+impl Default for WorkflowInterviewRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            default_profile: default_workflow_interview_profile(),
+            threshold: default_workflow_interview_threshold(),
+            max_rounds: default_workflow_interview_max_rounds(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WorkflowPlanConsensusRuntimeConfig {
+    #[serde(
+        default = "default_workflow_plan_max_iterations",
+        alias = "maxIterations"
+    )]
+    pub max_iterations: u32,
+    #[serde(
+        default = "default_workflow_plan_deliberate_triggers",
+        alias = "deliberateTriggers"
+    )]
+    pub deliberate_triggers: Vec<String>,
+}
+
+impl Default for WorkflowPlanConsensusRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            max_iterations: default_workflow_plan_max_iterations(),
+            deliberate_triggers: default_workflow_plan_deliberate_triggers(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WorkflowWorkLoopRuntimeConfig {
+    #[serde(
+        default = "default_workflow_work_loop_max_iterations",
+        alias = "maxIterations"
+    )]
+    pub max_iterations: u32,
+    #[serde(
+        default = "default_workflow_work_loop_require_manual_qa",
+        alias = "requireManualQa"
+    )]
+    pub require_manual_qa: bool,
+}
+
+impl Default for WorkflowWorkLoopRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            max_iterations: default_workflow_work_loop_max_iterations(),
+            require_manual_qa: default_workflow_work_loop_require_manual_qa(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WorkflowTeamRuntimeConfig {
+    #[serde(default = "default_workflow_team_max_members", alias = "maxMembers")]
+    pub max_members: u32,
+    #[serde(
+        default = "default_workflow_team_max_parallel_members",
+        alias = "maxParallelMembers"
+    )]
+    pub max_parallel_members: u32,
+    #[serde(default, alias = "tmuxVisualization")]
+    pub tmux_visualization: bool,
+    #[serde(default)]
+    pub worktrees: bool,
+}
+
+impl Default for WorkflowTeamRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            max_members: default_workflow_team_max_members(),
+            max_parallel_members: default_workflow_team_max_parallel_members(),
+            tmux_visualization: false,
+            worktrees: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WorkflowGoalRuntimeConfig {
+    #[serde(
+        default = "default_workflow_goal_require_final_quality_gate",
+        alias = "requireFinalQualityGate"
+    )]
+    pub require_final_quality_gate: bool,
+}
+
+impl Default for WorkflowGoalRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            require_final_quality_gate: default_workflow_goal_require_final_quality_gate(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WorkflowResearchLoopRuntimeConfig {
+    #[serde(
+        default = "default_workflow_research_loop_max_iterations",
+        alias = "maxIterations"
+    )]
+    pub max_iterations: u32,
+}
+
+impl Default for WorkflowResearchLoopRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            max_iterations: default_workflow_research_loop_max_iterations(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WorkflowWikiRuntimeConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_workflow_wiki_root")]
+    pub root: PathBuf,
+    #[serde(default, alias = "autoCapture")]
+    pub auto_capture: bool,
+}
+
+impl Default for WorkflowWikiRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            root: default_workflow_wiki_root(),
+            auto_capture: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1943,6 +2173,77 @@ impl HarnessTaggedMcpServerConfig {
 
 fn default_session_dir() -> PathBuf {
     PathBuf::from(".agent-harness/sessions")
+}
+
+fn default_workflow_enabled() -> bool {
+    true
+}
+
+fn default_workflow_aliases() -> bool {
+    true
+}
+
+fn default_workflow_run_default_lane() -> String {
+    "simulated".to_string()
+}
+
+fn default_workflow_run_require_dossier() -> bool {
+    true
+}
+
+fn default_workflow_run_require_evidence() -> bool {
+    true
+}
+
+fn default_workflow_interview_profile() -> String {
+    "standard".to_string()
+}
+
+fn default_workflow_interview_threshold() -> f32 {
+    0.2
+}
+
+fn default_workflow_interview_max_rounds() -> u32 {
+    12
+}
+
+fn default_workflow_plan_max_iterations() -> u32 {
+    5
+}
+
+fn default_workflow_plan_deliberate_triggers() -> Vec<String> {
+    ["auth", "security", "migration", "public api", "pii"]
+        .into_iter()
+        .map(str::to_string)
+        .collect()
+}
+
+fn default_workflow_work_loop_max_iterations() -> u32 {
+    10
+}
+
+fn default_workflow_work_loop_require_manual_qa() -> bool {
+    true
+}
+
+fn default_workflow_team_max_members() -> u32 {
+    8
+}
+
+fn default_workflow_team_max_parallel_members() -> u32 {
+    4
+}
+
+fn default_workflow_goal_require_final_quality_gate() -> bool {
+    true
+}
+
+fn default_workflow_research_loop_max_iterations() -> u32 {
+    10
+}
+
+fn default_workflow_wiki_root() -> PathBuf {
+    PathBuf::from(".agent-harness/wiki")
 }
 
 fn default_runtime_ask_timeout_ms() -> u64 {

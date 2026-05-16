@@ -10,6 +10,7 @@ use crate::ui::{
 };
 use crate::view_model;
 use crossterm::event::{MouseButton, MouseEvent};
+use harness_core::command_registry::WorkflowIntent;
 use harness_core::event::{
     ActorKind, AgentSpawnedEvent, EditAppliedEvent, EventActor, EventEnvelopeV1, EventV1,
     ExecutionTimingMetadata, PermissionRequestedEvent, PermissionResolvedEvent,
@@ -5444,6 +5445,31 @@ fn slash_alias_executes_matching_command_without_menu() {
     assert_eq!(
         intents.lock().expect("lock intents").as_slice(),
         &[UiIntent::QuitRequested]
+    );
+}
+
+#[test]
+fn slash_workflow_command_emits_typed_intent_without_shell_prompt() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(None, false, Some(sink));
+    for ch in "/workflow deploy docs".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
+
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[UiIntent::WorkflowIntent {
+            intent: WorkflowIntent::Run,
+            command: "/workflow run deploy docs".to_string(),
+        }]
     );
 }
 

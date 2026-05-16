@@ -137,6 +137,52 @@
   // when a project needs per-tool rules.
   "permission": "ask",
 
+  // Staged Harness-native workflow controls. Workflow state remains
+  // coordinator-owned events plus redacted artifact refs; these knobs configure
+  // command foundations, doctor checks, and future simulator/signoff policy.
+  "runtime": {
+    "workflow": {
+      "enabled": true,
+      "aliases": true,
+      "project_artifacts": false,
+      "run": {
+        "default_lane": "simulated",
+        "require_dossier": true,
+        "require_evidence": true,
+      },
+      "interview": {
+        "default_profile": "standard",
+        "threshold": 0.2,
+        "max_rounds": 12,
+      },
+      "plan_consensus": {
+        "max_iterations": 5,
+        "deliberate_triggers": ["auth", "security", "migration", "public api", "pii"],
+      },
+      "work_loop": {
+        "max_iterations": 10,
+        "require_manual_qa": true,
+      },
+      "team": {
+        "max_members": 8,
+        "max_parallel_members": 4,
+        "tmux_visualization": false,
+        "worktrees": false,
+      },
+      "goal": {
+        "require_final_quality_gate": true,
+      },
+      "research_loop": {
+        "max_iterations": 10,
+      },
+      "wiki": {
+        "enabled": false,
+        "root": ".agent-harness/wiki",
+        "auto_capture": false,
+      },
+    },
+  },
+
   // Optional migration adapters for upstream-style local files.
   // Imports are prompts/config only; executable plugin loading remains disabled.
   "compatibility": {

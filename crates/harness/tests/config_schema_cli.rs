@@ -646,6 +646,11 @@ fn config_validate_cli_accepts_shipped_example_config() {
     assert!(parsed.runtime.compaction.structured_summary_contract);
     assert!(parsed.runtime.compaction.estimated_token_triggers);
     assert_eq!(parsed.runtime.compaction.fallback_input_tokens, 32_768);
+    assert!(parsed.runtime.workflow.enabled);
+    assert!(parsed.runtime.workflow.aliases);
+    assert_eq!(parsed.runtime.workflow.run.default_lane, "simulated");
+    assert!(parsed.runtime.workflow.run.require_dossier);
+    assert!(parsed.runtime.workflow.run.require_evidence);
 }
 
 #[test]
@@ -674,6 +679,7 @@ fn doctor_cli_reports_shipped_orchestration_health() {
     assert!(stdout.contains("provider_credentials"));
     assert!(stdout.contains("model_references"));
     assert!(stdout.contains("workflow_profiles"));
+    assert!(stdout.contains("workflow_runtime_config"));
     assert!(stdout.contains("category_routes"));
     assert!(stdout.contains("discipline"));
     assert!(stdout.contains("visual-engineering"));
@@ -2675,6 +2681,59 @@ fn public_runtime_config_accepts_new_compaction_settings() {
     assert!(parsed.runtime.compaction.structured_summary_contract);
     assert!(parsed.runtime.compaction.estimated_token_triggers);
     assert_eq!(parsed.runtime.compaction.fallback_input_tokens, 32_768);
+}
+
+#[test]
+fn public_runtime_config_accepts_workflow_settings() {
+    let parsed: PublicRuntimeConfig = json5::from_str(
+        r#"
+        {
+          runtime: {
+            workflow: {
+              enabled: true,
+              aliases: false,
+              projectArtifacts: true,
+              run: {
+                defaultLane: "deterministic",
+                requireDossier: false,
+                requireEvidence: true,
+              },
+              interview: {
+                defaultProfile: "deep",
+                threshold: 0.35,
+                maxRounds: 7,
+              },
+              team: {
+                maxMembers: 6,
+                maxParallelMembers: 3,
+                tmuxVisualization: true,
+                worktrees: false,
+              },
+              wiki: {
+                enabled: true,
+                root: ".agent-harness/wiki",
+                autoCapture: true,
+              }
+            }
+          }
+        }
+        "#,
+    )
+    .expect("parse runtime workflow config");
+
+    assert!(parsed.runtime.workflow.enabled);
+    assert!(!parsed.runtime.workflow.aliases);
+    assert!(parsed.runtime.workflow.project_artifacts);
+    assert_eq!(parsed.runtime.workflow.run.default_lane, "deterministic");
+    assert!(!parsed.runtime.workflow.run.require_dossier);
+    assert_eq!(parsed.runtime.workflow.interview.default_profile, "deep");
+    assert_eq!(parsed.runtime.workflow.interview.threshold, 0.35);
+    assert_eq!(parsed.runtime.workflow.interview.max_rounds, 7);
+    assert_eq!(parsed.runtime.workflow.team.max_members, 6);
+    assert_eq!(parsed.runtime.workflow.team.max_parallel_members, 3);
+    assert!(parsed.runtime.workflow.team.tmux_visualization);
+    assert!(parsed.runtime.workflow.wiki.enabled);
+    assert!(parsed.runtime.workflow.wiki.auto_capture);
 }
 
 #[test]

@@ -1720,6 +1720,59 @@
             "split_oversized_turns": false,
             "structured_summary_contract": true
           }
+        },
+        "workflow": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/WorkflowRuntimeConfig"
+            }
+          ],
+          "default": {
+            "aliases": true,
+            "enabled": true,
+            "goal": {
+              "require_final_quality_gate": true
+            },
+            "interview": {
+              "default_profile": "standard",
+              "max_rounds": 12,
+              "threshold": 0.20000000298023224
+            },
+            "plan_consensus": {
+              "deliberate_triggers": [
+                "auth",
+                "security",
+                "migration",
+                "public api",
+                "pii"
+              ],
+              "max_iterations": 5
+            },
+            "project_artifacts": false,
+            "research_loop": {
+              "max_iterations": 10
+            },
+            "run": {
+              "default_lane": "simulated",
+              "require_dossier": true,
+              "require_evidence": true
+            },
+            "team": {
+              "max_members": 8,
+              "max_parallel_members": 4,
+              "tmux_visualization": false,
+              "worktrees": false
+            },
+            "wiki": {
+              "auto_capture": false,
+              "enabled": false,
+              "root": ".agent-harness/wiki"
+            },
+            "work_loop": {
+              "max_iterations": 10,
+              "require_manual_qa": true
+            }
+          }
         }
       },
       "type": "object"
@@ -1800,6 +1853,267 @@
         "continue_as_tool_message"
       ],
       "type": "string"
+    },
+    "WorkflowGoalRuntimeConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "require_final_quality_gate": {
+          "default": true,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "WorkflowInterviewRuntimeConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "default_profile": {
+          "default": "standard",
+          "type": "string"
+        },
+        "max_rounds": {
+          "default": 12,
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "threshold": {
+          "default": 0.20000000298023224,
+          "format": "float",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "WorkflowPlanConsensusRuntimeConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "deliberate_triggers": {
+          "default": [
+            "auth",
+            "security",
+            "migration",
+            "public api",
+            "pii"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "max_iterations": {
+          "default": 5,
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "WorkflowResearchLoopRuntimeConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "max_iterations": {
+          "default": 10,
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "WorkflowRunRuntimeConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "default_lane": {
+          "default": "simulated",
+          "type": "string"
+        },
+        "require_dossier": {
+          "default": true,
+          "type": "boolean"
+        },
+        "require_evidence": {
+          "default": true,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "WorkflowRuntimeConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "aliases": {
+          "default": true,
+          "type": "boolean"
+        },
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "goal": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/WorkflowGoalRuntimeConfig"
+            }
+          ],
+          "default": {
+            "require_final_quality_gate": true
+          }
+        },
+        "interview": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/WorkflowInterviewRuntimeConfig"
+            }
+          ],
+          "default": {
+            "default_profile": "standard",
+            "max_rounds": 12,
+            "threshold": 0.20000000298023224
+          }
+        },
+        "plan_consensus": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/WorkflowPlanConsensusRuntimeConfig"
+            }
+          ],
+          "default": {
+            "deliberate_triggers": [
+              "auth",
+              "security",
+              "migration",
+              "public api",
+              "pii"
+            ],
+            "max_iterations": 5
+          }
+        },
+        "project_artifacts": {
+          "default": false,
+          "type": "boolean"
+        },
+        "research_loop": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/WorkflowResearchLoopRuntimeConfig"
+            }
+          ],
+          "default": {
+            "max_iterations": 10
+          }
+        },
+        "run": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/WorkflowRunRuntimeConfig"
+            }
+          ],
+          "default": {
+            "default_lane": "simulated",
+            "require_dossier": true,
+            "require_evidence": true
+          }
+        },
+        "team": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/WorkflowTeamRuntimeConfig"
+            }
+          ],
+          "default": {
+            "max_members": 8,
+            "max_parallel_members": 4,
+            "tmux_visualization": false,
+            "worktrees": false
+          }
+        },
+        "wiki": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/WorkflowWikiRuntimeConfig"
+            }
+          ],
+          "default": {
+            "auto_capture": false,
+            "enabled": false,
+            "root": ".agent-harness/wiki"
+          }
+        },
+        "work_loop": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/WorkflowWorkLoopRuntimeConfig"
+            }
+          ],
+          "default": {
+            "max_iterations": 10,
+            "require_manual_qa": true
+          }
+        }
+      },
+      "type": "object"
+    },
+    "WorkflowTeamRuntimeConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "max_members": {
+          "default": 8,
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_parallel_members": {
+          "default": 4,
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "tmux_visualization": {
+          "default": false,
+          "type": "boolean"
+        },
+        "worktrees": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "WorkflowWikiRuntimeConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "auto_capture": {
+          "default": false,
+          "type": "boolean"
+        },
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "root": {
+          "default": ".agent-harness/wiki",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "WorkflowWorkLoopRuntimeConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "max_iterations": {
+          "default": 10,
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "require_manual_qa": {
+          "default": true,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
     }
   },
   "properties": {
@@ -2110,6 +2424,52 @@
           "model_ref": null,
           "split_oversized_turns": false,
           "structured_summary_contract": true
+        },
+        "workflow": {
+          "aliases": true,
+          "enabled": true,
+          "goal": {
+            "require_final_quality_gate": true
+          },
+          "interview": {
+            "default_profile": "standard",
+            "max_rounds": 12,
+            "threshold": 0.20000000298023224
+          },
+          "plan_consensus": {
+            "deliberate_triggers": [
+              "auth",
+              "security",
+              "migration",
+              "public api",
+              "pii"
+            ],
+            "max_iterations": 5
+          },
+          "project_artifacts": false,
+          "research_loop": {
+            "max_iterations": 10
+          },
+          "run": {
+            "default_lane": "simulated",
+            "require_dossier": true,
+            "require_evidence": true
+          },
+          "team": {
+            "max_members": 8,
+            "max_parallel_members": 4,
+            "tmux_visualization": false,
+            "worktrees": false
+          },
+          "wiki": {
+            "auto_capture": false,
+            "enabled": false,
+            "root": ".agent-harness/wiki"
+          },
+          "work_loop": {
+            "max_iterations": 10,
+            "require_manual_qa": true
+          }
         }
       }
     },

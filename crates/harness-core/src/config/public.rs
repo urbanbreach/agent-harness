@@ -210,6 +210,8 @@ pub struct PublicRuntimeConfig {
 pub struct PublicRuntimeSettingsConfig {
     #[serde(default)]
     pub compaction: CompactionRuntimeConfig,
+    #[serde(default)]
+    pub workflow: WorkflowRuntimeConfig,
 }
 
 /// Named agent definitions. Built-in upstream-compatible agents are explicit so
@@ -2165,6 +2167,46 @@ pub(super) fn translate_public_runtime_root(
             "structured_summary_contract": true,
             "estimated_token_triggers": true,
             "fallback_input_tokens": 32768,
+        },
+        "workflow": {
+            "enabled": true,
+            "aliases": true,
+            "project_artifacts": false,
+            "run": {
+                "default_lane": "simulated",
+                "require_dossier": true,
+                "require_evidence": true,
+            },
+            "interview": {
+                "default_profile": "standard",
+                "threshold": 0.2,
+                "max_rounds": 12,
+            },
+            "plan_consensus": {
+                "max_iterations": 5,
+                "deliberate_triggers": ["auth", "security", "migration", "public api", "pii"],
+            },
+            "work_loop": {
+                "max_iterations": 10,
+                "require_manual_qa": true,
+            },
+            "team": {
+                "max_members": 8,
+                "max_parallel_members": 4,
+                "tmux_visualization": false,
+                "worktrees": false,
+            },
+            "goal": {
+                "require_final_quality_gate": true,
+            },
+            "research_loop": {
+                "max_iterations": 10,
+            },
+            "wiki": {
+                "enabled": false,
+                "root": ".agent-harness/wiki",
+                "auto_capture": false,
+            },
         },
     });
     if let Some(value) = object.get("runtime") {

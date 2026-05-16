@@ -1376,6 +1376,7 @@ fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> InteractiveWorkfl
         | None
         | Some(UiIntent::ResolvePermission { .. })
         | Some(UiIntent::CompactSession)
+        | Some(UiIntent::WorkflowIntent { .. })
         | Some(UiIntent::StartContinuation { .. })
         | Some(UiIntent::StopContinuation { .. })
         | Some(UiIntent::InterruptSession { .. })
@@ -1750,6 +1751,7 @@ fn live_workflow_from_intent(intent: &UiIntent) -> Option<InteractiveWorkflow> {
         UiIntent::ResolvePermission { .. }
         | UiIntent::SubmitPrompt { .. }
         | UiIntent::CompactSession
+        | UiIntent::WorkflowIntent { .. }
         | UiIntent::StartContinuation { .. }
         | UiIntent::StopContinuation { .. }
         | UiIntent::InterruptSession { .. }
@@ -2631,6 +2633,15 @@ async fn handle_ui_intents(
                     ),
                 };
                 let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
+            }
+            UiIntent::WorkflowIntent { intent, command } => {
+                let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                    message: format!(
+                        "workflow intent handled in-process: {} via {command}",
+                        intent.as_str()
+                    ),
+                    level: OperatorNoticeLevel::Info,
+                });
             }
             UiIntent::StartContinuation { mode, command } => {
                 match coordinator

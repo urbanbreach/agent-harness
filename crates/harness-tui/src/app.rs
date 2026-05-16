@@ -12,6 +12,7 @@ use std::sync::{
 use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use harness_core::command_registry::WorkflowIntent;
 use harness_core::event::{
     ActorKind, EventArtifactRef, EventEnvelopeV1, EventV1, ExecutionTimingMetadata,
     ProviderRequestStartedEvent, ResolvedToolIdentity, TaskCompletionMetadata, TaskLineageMetadata,
@@ -81,7 +82,7 @@ const TOOL_OUTPUT_DISPLAY_MAX_CHARS: usize = 100;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_CHARS: usize = 72;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_FIELDS: usize = 3;
 const INTERRUPT_CONFIRM_TIMEOUT: Duration = Duration::from_secs(5);
-pub(crate) const SLASH_COMMANDS: [(&str, &str); 25] = [
+pub(crate) const SLASH_COMMANDS: [(&str, &str); 31] = [
     ("new", "Return to the home shell"),
     ("sessions", "Switch session"),
     ("resume", "Continue a saved session"),
@@ -96,6 +97,15 @@ pub(crate) const SLASH_COMMANDS: [(&str, &str); 25] = [
     ("shell", "Return to the session shell"),
     ("follow", "Toggle follow mode"),
     ("compact", "Write a manual context checkpoint"),
+    ("workflow-run", "Start a coordinator-owned workflow run"),
+    ("workflow-status", "Inspect projected workflow status"),
+    ("workflow-signoff", "Record a workflow signoff decision"),
+    ("workflow-cancel", "Cancel a coordinator-owned workflow run"),
+    (
+        "workflow-dossier",
+        "Export a replay-derived workflow dossier",
+    ),
+    ("workflow-snapshot", "Inspect workflow context snapshots"),
     ("init-deep", "Start a deep requirements interview"),
     ("ralph-loop", "Start bounded Ralph continuation"),
     ("ulw-loop", "Start bounded ultrawork continuation"),
@@ -991,6 +1001,10 @@ pub enum UiIntent {
     CompactSession,
     StartContinuation {
         mode: String,
+        command: String,
+    },
+    WorkflowIntent {
+        intent: WorkflowIntent,
         command: String,
     },
     StopContinuation {

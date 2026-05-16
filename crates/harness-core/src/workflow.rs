@@ -255,10 +255,36 @@ pub struct WorkflowStartRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkflowTransitionRequest {
+    pub workflow_id: String,
+    pub to_status: String,
+    pub reason: String,
+    pub owner: String,
+    pub policy_id: Option<String>,
+    pub idempotency_key: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkflowStartDecision {
     Start(WorkflowStartedEvent),
     Existing { workflow_id: String },
     Denied(WorkflowTransitionDeniedEvent),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum WorkflowStartResult {
+    Started {
+        workflow_id: String,
+    },
+    Existing {
+        workflow_id: String,
+    },
+    Denied {
+        workflow_id: String,
+        reason: String,
+        policy_id: String,
+    },
 }
 
 pub struct WorkflowTransitionPolicy;

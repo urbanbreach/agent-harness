@@ -192,6 +192,10 @@ pub const WORKFLOW_DOCTOR_CHECKS: &[WorkflowDoctorCheckSpec] = &[
             "Validates the redacted context snapshot artifact contract and projection metadata.",
     },
     WorkflowDoctorCheckSpec {
+        id: "workflow_runtime_config",
+        description: "Validates staged runtime.workflow defaults and operator limits.",
+    },
+    WorkflowDoctorCheckSpec {
         id: "command_registry",
         description: "Validates canonical command and alias entries never invoke shell directly.",
     },
