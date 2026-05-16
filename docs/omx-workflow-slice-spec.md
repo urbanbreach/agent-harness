@@ -690,6 +690,9 @@ Plan artifact sections:
 Acceptance criteria:
 
 - `/plan-consensus` writes a plan artifact and workflow evidence ref.
+- Harness exposes this as `harness workflow plan-consensus` with `ralplan` and
+  `consensus-plan` aliases in the command registry; replay projects
+  `evidence.plan_consensus` into current plan status without artifact reads.
 - Architect and critic reviews happen in the configured order when both are required.
 - Critic can force iteration up to a bounded limit.
 - Final plan includes an ADR and execution handoff choices.
@@ -732,6 +735,9 @@ Acceptance criteria:
 
 - `/workflow goal create` writes a goal ledger event or artifact ref after coordinator validation.
 - `/workflow goal status` is replay-derived.
+- Harness exposes `harness workflow goal create/status/checkpoint/list/read`;
+  create and checkpoint write session artifacts plus `evidence.goal_ledger`,
+  while status/read/list replay only `events.jsonl`.
 - Work loop/team/research workflows can checkpoint a story with evidence.
 - Intermediate story completion does not complete the aggregate goal.
 - Final goal completion requires verification and review evidence.
@@ -935,6 +941,7 @@ harness workflow signoff --approve|--fail|--request-evidence [--json]
 harness workflow cancel --mode <mode|all> [--json]
 harness workflow dossier export [--format json|markdown] [--json]
 harness workflow snapshot list|read|export [--json]
+harness workflow plan-consensus [--json]
 harness workflow goal create|status|checkpoint|list|read [--json]
 harness workflow mission init|status|run|read [--json]
 harness workflow wiki add|query|read|list|lint|refresh|delete [--json]

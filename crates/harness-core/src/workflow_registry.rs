@@ -160,6 +160,16 @@ pub const EVIDENCE_CATEGORIES: &[EvidenceCategorySpec] = &[
         id: "evidence.dossier",
         description: "Run Dossier export or projection evidence.",
     },
+    EvidenceCategorySpec {
+        id: "evidence.plan_consensus",
+        description:
+            "Planner/architect/critic consensus plan artifact and review verdict evidence.",
+    },
+    EvidenceCategorySpec {
+        id: "evidence.goal_ledger",
+        description:
+            "Goal/story ledger create and checkpoint evidence with final quality-gate refs.",
+    },
 ];
 
 pub const TRANSITION_POLICIES: &[TransitionPolicySpec] = &[

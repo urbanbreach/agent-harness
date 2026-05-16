@@ -287,6 +287,240 @@ fn workflow_signoff_audit_run_projects_terminal_decision() {
 }
 
 #[test]
+fn workflow_plan_consensus_cli_writes_artifact_and_projection() {
+    let temp = tempdir().expect("tempdir");
+    let session_dir = temp.path().join("sessions");
+
+    let output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "--session-dir",
+            session_dir.to_str().expect("session dir utf-8"),
+            "workflow",
+            "plan-consensus",
+            "--workflow-id",
+            "wf_plan_cli",
+            "--plan-id",
+            "plan_cli",
+            "--task",
+            "Plan a replay-derived workflow ledger",
+            "--option",
+            "event-metadata=Record workflow evidence metadata",
+            "--chosen-option",
+            "event-metadata",
+            "--adr",
+            "Use workflow evidence as the replay source for consensus plans.",
+            "--risk",
+            "Metadata drift can hide plan status.",
+            "--test-plan",
+            "cargo test -p harness-core plan_consensus",
+            "--staffing",
+            "planner/architect/critic",
+            "--handoff",
+            "workflow goal create",
+            "--evidence-ref",
+            "ctx_plan_cli",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow plan-consensus");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).expect("plan json");
+    let run_dir = report["run_dir"].as_str().expect("run dir");
+    let events_path = report["events_path"].as_str().expect("events path");
+    let artifact_path = report["artifact_path"].as_str().expect("artifact path");
+    assert!(artifact_path.starts_with("artifacts/workflows/plan_consensus/plan_cli"));
+    assert_eq!(report["lanes"].as_array().expect("lanes").len(), 3);
+
+    let artifact_body = fs::read_to_string(std::path::Path::new(run_dir).join(artifact_path))
+        .expect("read plan artifact");
+    assert!(artifact_body.contains("\"adr\""));
+    assert!(artifact_body.contains("event-metadata"));
+    assert!(artifact_body.contains("Metadata drift"));
+    assert!(artifact_body.contains("planner/architect/critic"));
+
+    let before = fs::read_to_string(events_path).expect("read events before status");
+    let status_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "workflow",
+            "status",
+            "--run-dir",
+            run_dir,
+            "--workflow-id",
+            "wf_plan_cli",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow status");
+    assert!(
+        status_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&status_output.stdout),
+        String::from_utf8_lossy(&status_output.stderr)
+    );
+    let after = fs::read_to_string(events_path).expect("read events after status");
+    assert_eq!(
+        before, after,
+        "plan projection status must not append events"
+    );
+    let status: Value = serde_json::from_slice(&status_output.stdout).expect("status json");
+    let plan = &status["projection"]["plan_consensus"]["plan_cli"];
+    assert_eq!(plan["status"], "approved");
+    assert_eq!(plan["critic_iterations"], 1);
+    assert_eq!(plan["lanes"].as_array().expect("plan lanes").len(), 3);
+}
+
+#[test]
+fn workflow_goal_cli_creates_and_checkpoints_replay_derived_ledger() {
+    let temp = tempdir().expect("tempdir");
+    let session_dir = temp.path().join("sessions");
+
+    let create_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "--session-dir",
+            session_dir.to_str().expect("session dir utf-8"),
+            "workflow",
+            "goal",
+            "create",
+            "--workflow-id",
+            "wf_goal_cli",
+            "--goal-id",
+            "goal_cli",
+            "--objective",
+            "Complete a replay-derived goal ledger",
+            "--story",
+            "G001=Checkpoint with evidence",
+            "--acceptance",
+            "final gate recorded",
+            "--evidence-ref",
+            "plan_cli",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow goal create");
+    assert!(
+        create_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&create_output.stdout),
+        String::from_utf8_lossy(&create_output.stderr)
+    );
+    let create_report: Value = serde_json::from_slice(&create_output.stdout).expect("create json");
+    let create_run_dir = create_report["run_dir"].as_str().expect("create run dir");
+    let create_status = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "workflow",
+            "goal",
+            "status",
+            "--run-dir",
+            create_run_dir,
+            "--goal-id",
+            "goal_cli",
+            "--json",
+        ])
+        .output()
+        .expect("run goal create status");
+    assert!(
+        create_status.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&create_status.stdout),
+        String::from_utf8_lossy(&create_status.stderr)
+    );
+    let create_status: Value =
+        serde_json::from_slice(&create_status.stdout).expect("create status json");
+    assert_eq!(
+        create_status["projection"]["goals"]["goal_cli"]["status"],
+        "active"
+    );
+
+    let checkpoint_session_dir = temp.path().join("checkpoint-sessions");
+    let checkpoint_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "--session-dir",
+            checkpoint_session_dir.to_str().expect("session dir utf-8"),
+            "workflow",
+            "goal",
+            "checkpoint",
+            "--workflow-id",
+            "wf_goal_cli_checkpoint",
+            "--goal-id",
+            "goal_cli",
+            "--story-id",
+            "G001",
+            "--status",
+            "complete",
+            "--summary",
+            "G001 complete with test and review evidence",
+            "--evidence-ref",
+            "tests-pass",
+            "--final-goal",
+            "--verification-ref",
+            "cargo test -p harness-core goal_ledger",
+            "--review-ref",
+            "code-review approve",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow goal checkpoint");
+    assert!(
+        checkpoint_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&checkpoint_output.stdout),
+        String::from_utf8_lossy(&checkpoint_output.stderr)
+    );
+    let checkpoint_report: Value =
+        serde_json::from_slice(&checkpoint_output.stdout).expect("checkpoint json");
+    let run_dir = checkpoint_report["run_dir"].as_str().expect("run dir");
+    let events_path = checkpoint_report["events_path"]
+        .as_str()
+        .expect("events path");
+    let before = fs::read_to_string(events_path).expect("read events before goal status");
+
+    let status_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "workflow",
+            "goal",
+            "status",
+            "--run-dir",
+            run_dir,
+            "--goal-id",
+            "goal_cli",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow goal status");
+    assert!(
+        status_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&status_output.stdout),
+        String::from_utf8_lossy(&status_output.stderr)
+    );
+    let after = fs::read_to_string(events_path).expect("read events after goal status");
+    assert_eq!(
+        before, after,
+        "workflow goal status must be projection-only"
+    );
+    let status: Value = serde_json::from_slice(&status_output.stdout).expect("goal status json");
+    let goal = &status["projection"]["goals"]["goal_cli"];
+    assert_eq!(goal["status"], "complete");
+    assert_eq!(goal["ready_for_completion"], true);
+    assert_eq!(goal["stories"]["G001"]["status"], "complete");
+    assert!(goal["final_quality_gate"]["passed"]
+        .as_bool()
+        .expect("quality gate passed"));
+}
+
+#[test]
 fn workflow_init_check_writes_nothing_and_apply_is_explicit() {
     let temp = tempdir().expect("tempdir");
     let workflow_dir = temp.path().join(".agent-harness").join("workflows");

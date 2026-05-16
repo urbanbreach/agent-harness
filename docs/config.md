@@ -297,6 +297,14 @@ split by crate responsibility:
   as `workflow-run`, `workflow-status`, `workflow-signoff`, `workflow-cancel`,
   `workflow-dossier`, `workflow-snapshot`, `plan-consensus`, and `goal-ledger`.
   These entries resolve to workflow intents and must not execute shell tools.
+- `evidence.plan_consensus` records the reviewed planner/architect/critic plan
+  artifact metadata (ADR, options, risks, test plan, staffing, evidence refs,
+  verdict, and bounded critic iterations) so replay can expose current plan
+  status without reading artifacts.
+- `evidence.goal_ledger` records goal/story create and checkpoint metadata,
+  including evidence refs and final quality-gate refs, so replay can derive
+  aggregate goal status and block final completion until checkpoint evidence
+  plus verification/review quality evidence are present.
 - `harness doctor --json` includes the `workflow_contract_registry` check so docs
   anchors and stable id groups drift visibly.
 - `harness doctor --json` also includes `workflow_context_snapshot`, which
@@ -312,16 +320,21 @@ split by crate responsibility:
 - `harness doctor --json` includes `workflow_stale_work_loop`, which inspects
   the latest `events.jsonl` under the configured session directory and warns
   when workflow-owned continuations are still active or reminder-queued.
-- `harness workflow run/status/signoff/cancel/dossier/snapshot/init` are the
-  CLI foundation commands. `status` and dossier/snapshot reads are projection-only
-  over `events.jsonl`; dossier export includes the replay-derived quality gate
-  and prompt-to-artifact completion audit. `init --check` reports planned files
-  without writing and `init --apply` is the explicit write path for safe generated
-  files under `.agent-harness/`.
+- `harness workflow run/status/signoff/cancel/dossier/snapshot/plan-consensus/goal/init`
+  are the CLI foundation commands. `status`, goal status/read/list, and
+  dossier/snapshot reads are projection-only over `events.jsonl`; dossier export
+  includes the replay-derived quality gate and prompt-to-artifact completion audit.
+  `harness workflow goal create/status/checkpoint/list/read` is the
+  goal-ledger surface, while `init --check` reports planned files without
+  writing and `init --apply` is the explicit write path for safe generated files
+  under `.agent-harness/`.
 - `harness workflow snapshot write --json` is the minimal coordinator-backed
   CLI write path for `/interview` and `/workflow run` intake snapshots; it
   stores artifacts under the session run and emits workflow evidence when a
   workflow id is provided.
+- `harness workflow plan-consensus --json` writes a session-scoped plan artifact
+  and records `evidence.plan_consensus`; `/ralplan` and `/consensus-plan`
+  command aliases resolve to the same workflow intent.
 - `docs/omx-workflow-slice-spec.md` remains the source narrative for the broader
   slice, while replayable workflow state must still come from coordinator-owned
   events and redacted artifact references.
@@ -720,7 +733,7 @@ redacted artifacts:
 | `team.maxParallelMembers` / `team.max_parallel_members` | `4` | Maximum parallel workflow team members; doctor fails if this exceeds `maxMembers`. |
 | `team.tmuxVisualization` / `team.tmux_visualization` | `false` | Future opt-in for tmux visualization diagnostics. |
 | `team.worktrees` | `false` | Future opt-in for permissioned workflow worktrees. |
-| `goal.requireFinalQualityGate` / `goal.require_final_quality_gate` | `true` | Future goal-ledger policy requiring final cleanup/review evidence. |
+| `goal.requireFinalQualityGate` / `goal.require_final_quality_gate` | `true` | Goal-ledger policy requiring verification/review quality-gate evidence before final completion. |
 | `researchLoop.maxIterations` / `research_loop.max_iterations` | `10` | Default bound for future validator-gated research loops. |
 | `wiki.enabled` | `false` | Enables future markdown wiki workflow surfaces. |
 | `wiki.root` | `.agent-harness/wiki` | Project wiki root when wiki workflows are enabled. |

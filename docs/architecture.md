@@ -296,9 +296,13 @@ Context snapshots use this workflow evidence path: the coordinator writes a reda
 ambiguity score, artifact path, and digest metadata. Replay projects these refs without reading live
 workspace files; artifact write failure prevents the workflow evidence event. The CLI write path
 `harness workflow snapshot write` uses the same coordinator command. The workflow command
-foundation also exposes `run`, `status`, `signoff`, `cancel`, `dossier`, `snapshot`, and `init`:
-mutating commands append through coordinator command handlers, while status/dossier/snapshot reads
-derive from event projections only and do not append events.
+foundation also exposes `run`, `status`, `signoff`, `cancel`, `dossier`, `snapshot`,
+`plan-consensus`, `goal`, and `init`: mutating commands append through coordinator command
+handlers, while status/dossier/snapshot/goal reads derive from event projections only and do not
+append events. Specialized plan and goal projections derive from `WorkflowEvidenceRecorded`
+metadata categories (`evidence.plan_consensus` and `evidence.goal_ledger`) so replay exposes
+plan verdicts, goal story status, checkpoint refs, and final quality-gate readiness without
+launching workers or reading artifact contents.
 
 **Continuation**
 - `ContinuationStarted` - Starts an explicit, bounded continuation loop from a slash command or tool action. The event records the stable continuation id, mode, originating command, and max iteration/wall-clock/provider/tool-call bounds.
