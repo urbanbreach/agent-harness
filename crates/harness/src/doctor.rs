@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 use std::env;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
@@ -13,13 +14,17 @@ use harness_core::config::{
 use harness_core::context_snapshot::{
     ContextSnapshotOptions, CONTEXT_SNAPSHOT_ARTIFACT_DIR, CONTEXT_SNAPSHOT_SCHEMA_VERSION,
 };
-use harness_core::workflow::{WorkflowSignoffPolicy, SIMULATED_TOOL_EVIDENCE_CATEGORY};
+use harness_core::workflow::{
+    project_workflows, WorkflowSignoffPolicy, SIMULATED_TOOL_EVIDENCE_CATEGORY,
+};
 use harness_core::workflow_registry::{
     stable_id_groups, WORKFLOW_DOCS_ANCHORS, WORKFLOW_DOCTOR_CHECKS,
 };
 use harness_tools::{coordinator_registry_with_mcp_and_editing, EditingToolSurfaceConfig};
 use serde::Serialize;
 use serde_json::Value;
+
+use crate::cli_io::{load_events_from_run_dir, EVENTS_FILE_NAME};
 
 const PARITY_LEDGER_JSON: &str = include_str!("../../../docs/parity-ledger.json");
 const CONFIG_DOC_MD: &str = include_str!("../../../docs/config.md");
@@ -214,6 +219,7 @@ fn build_report(config_display: String, config: &HarnessConfig) -> DoctorReport 
         check_workflow_context_snapshot_contract(),
         check_workflow_runtime_config(config),
         check_workflow_simulator_contract(),
+        check_workflow_stale_work_loop(config),
         check_permissions(config),
         check_session_dir(&config.paths.session_dir),
         check_mcp(config),
@@ -885,6 +891,82 @@ fn check_workflow_simulator_contract() -> DoctorCheck {
             "dossier": "replay-derived run dossier",
         })),
     )
+}
+
+fn check_workflow_stale_work_loop(config: &HarnessConfig) -> DoctorCheck {
+    let Some(run_dir) = latest_event_run_dir(&config.paths.session_dir) else {
+        return pass_with_details(
+            "workflow_stale_work_loop",
+            "no session event logs found; no active workflow work loops to inspect",
+            Some(serde_json::json!({
+                "session_dir": config.paths.session_dir,
+            })),
+        );
+    };
+    let events = match load_events_from_run_dir(&run_dir) {
+        Ok(events) => events,
+        Err(err) => {
+            return warn(
+                "workflow_stale_work_loop",
+                format!(
+                    "could not inspect latest workflow run {} for stale work loops: {err}",
+                    run_dir.display()
+                ),
+            );
+        }
+    };
+    let projection = project_workflows(events.iter().map(|event| &event.payload));
+    let active = projection
+        .continuations
+        .values()
+        .filter(|continuation| {
+            continuation.status == "active" || continuation.status == "reminder_queued"
+        })
+        .map(|continuation| {
+            serde_json::json!({
+                "continuation_id": continuation.continuation_id,
+                "workflow_id": continuation.workflow_id,
+                "status": continuation.status,
+                "iteration": continuation.iteration,
+                "last_schedule_reason": continuation.last_schedule_reason,
+            })
+        })
+        .collect::<Vec<_>>();
+    if active.is_empty() {
+        return pass_with_details(
+            "workflow_stale_work_loop",
+            "latest workflow run has no active workflow-owned continuation loops",
+            Some(serde_json::json!({
+                "run_dir": run_dir,
+            })),
+        );
+    }
+    warn_with_details(
+        "workflow_stale_work_loop",
+        "latest workflow run has active workflow-owned continuation loops; inspect status/dossier before claiming completion",
+        Some(serde_json::json!({
+            "run_dir": run_dir,
+            "active_continuations": active,
+        })),
+    )
+}
+
+fn latest_event_run_dir(session_dir: &Path) -> Option<PathBuf> {
+    let entries = fs::read_dir(session_dir).ok()?;
+    let mut candidates = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.join(EVENTS_FILE_NAME).is_file() {
+            continue;
+        }
+        let modified = entry
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .ok();
+        candidates.push((modified, path));
+    }
+    candidates.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+    candidates.pop().map(|(_, path)| path)
 }
 
 fn check_permissions(config: &HarnessConfig) -> DoctorCheck {

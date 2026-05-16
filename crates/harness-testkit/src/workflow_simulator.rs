@@ -9,14 +9,19 @@ use harness_core::config::{PermissionMode, ShellAllowlist};
 use harness_core::context_snapshot::{ContextSnapshotInput, ContextSnapshotOptions};
 use harness_core::continuation::ContinuationBounds;
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, CoordinatorHandle, RunInfo};
-use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1, ToolCallStatus};
+use harness_core::event::{
+    ActorKind, EventActor, EventEnvelopeV1, EventV1, PersistentTask, PersistentTaskStatus,
+    PersistentTaskUpdatedEvent, ToolCallStatus, WorkflowEventMetadata,
+};
 use harness_core::perm::{PermissionDecision, PermissionPolicy};
+use harness_core::persistent_task::project_persistent_tasks;
 use harness_core::proj::SessionModeSource;
 use harness_core::redact::DefaultRedactor;
-use harness_core::run_dossier::{build_run_dossier, RunDossier};
+use harness_core::run_dossier::{build_run_dossier_with_tasks, RunDossier};
 use harness_core::workflow::{
     project_workflows, WorkflowEvidenceRequest, WorkflowProjection, WorkflowSignoffPolicy,
     WorkflowStartRequest, WorkflowStartResult, SIMULATED_TOOL_EVIDENCE_CATEGORY,
+    WORKFLOW_TASK_METADATA_KEY,
 };
 use harness_providers::mock::{request_digest, MockProvider};
 use harness_providers::{
@@ -40,6 +45,7 @@ pub struct WorkflowSimulationReport {
     pub missing_evidence_blocked_completion: bool,
     pub permission_denied_after_start: bool,
     pub owner_conflict_denied: bool,
+    pub pending_task_blocked_completion: bool,
     pub late_completion_ignored: bool,
     pub replay_event_count: usize,
     pub projection: WorkflowProjection,
@@ -113,7 +119,7 @@ pub async fn run_deterministic_workflow_simulator(
         .map_err(|err| err.to_string())?;
 
     coordinator
-        .start_continuation(
+        .start_workflow_continuation(
             actor.clone(),
             "workflow.work_loop",
             "/workflow run --simulated",
@@ -122,6 +128,14 @@ pub async fn run_deterministic_workflow_simulator(
                 max_wall_clock_ms: 1_000,
                 max_provider_calls: 1,
                 max_tool_calls: 4,
+            },
+            WorkflowEventMetadata {
+                workflow_id: Some(SIMULATOR_WORKFLOW_ID.to_string()),
+                lane: Some("lane.delivery".to_string()),
+                iteration: Some(0),
+                stop_reason: None,
+                evidence_category: Some("evidence.verification".to_string()),
+                owner: Some("simulator".to_string()),
             },
         )
         .await
@@ -201,6 +215,60 @@ pub async fn run_deterministic_workflow_simulator(
     }
 
     coordinator
+        .create_persistent_task(
+            actor.clone(),
+            PersistentTask {
+                version: 1,
+                task_id: "pt_simulator_verify".to_string(),
+                run_id: None,
+                thread_id: None,
+                subject: "Verify simulator evidence".to_string(),
+                description: "Workflow-owned task must complete before signoff".to_string(),
+                status: PersistentTaskStatus::Pending,
+                active_form: None,
+                owner: Some("simulator".to_string()),
+                blocks: Vec::new(),
+                blocked_by: Vec::new(),
+                metadata: BTreeMap::from([(
+                    WORKFLOW_TASK_METADATA_KEY.to_string(),
+                    SIMULATOR_WORKFLOW_ID.to_string(),
+                )]),
+            },
+        )
+        .await
+        .map_err(|err| err.to_string())?;
+    let pending_task_blocked_completion = coordinator
+        .complete_workflow_with_signoff_policy(
+            actor.clone(),
+            SIMULATOR_WORKFLOW_ID,
+            "outcome.finished",
+            "attempted signoff with a pending workflow-owned task",
+            "simulator",
+            WorkflowSignoffPolicy::simulator_default(),
+        )
+        .await
+        .is_err();
+    coordinator
+        .update_persistent_task(
+            actor.clone(),
+            PersistentTaskUpdatedEvent {
+                task_id: "pt_simulator_verify".to_string(),
+                status: PersistentTaskStatus::Completed,
+                active_form: None,
+                owner: Some("simulator".to_string()),
+                description: None,
+                subject: None,
+                blocked_by: None,
+                metadata: BTreeMap::from([(
+                    "completion_evidence".to_string(),
+                    "acceptance.noop-tool".to_string(),
+                )]),
+            },
+        )
+        .await
+        .map_err(|err| err.to_string())?;
+
+    coordinator
         .record_workflow_operator_decision(
             actor.clone(),
             SIMULATOR_WORKFLOW_ID,
@@ -239,7 +307,12 @@ pub async fn run_deterministic_workflow_simulator(
 
     let events = load_events(&run)?;
     let projection = project_workflows(events.iter().map(|event| &event.payload));
-    let dossier = build_run_dossier(&projection, &WorkflowSignoffPolicy::simulator_default());
+    let persistent_tasks = project_persistent_tasks(&events);
+    let dossier = build_run_dossier_with_tasks(
+        &projection,
+        &persistent_tasks,
+        &WorkflowSignoffPolicy::simulator_default(),
+    );
     let workflow = projection
         .workflows
         .get(SIMULATOR_WORKFLOW_ID)
@@ -260,6 +333,7 @@ pub async fn run_deterministic_workflow_simulator(
         missing_evidence_blocked_completion,
         permission_denied_after_start,
         owner_conflict_denied,
+        pending_task_blocked_completion,
         late_completion_ignored,
         replay_event_count: events.len(),
         projection,
@@ -425,9 +499,11 @@ pub fn simulator_negative_evidence(report: &WorkflowSimulationReport) -> bool {
     report.missing_evidence_blocked_completion
         && report.permission_denied_after_start
         && report.owner_conflict_denied
+        && report.pending_task_blocked_completion
         && report.late_completion_ignored
         && has_denied_transition(report, "transition.owner_conflict_denied")
         && has_denied_transition(report, "transition.evidence_gated_completion")
+        && has_denied_transition(report, "transition.workflow_tasks_incomplete")
         && report.dossier.denied_transitions == report.projection.denied_transitions
 }
 
@@ -497,11 +573,21 @@ mod tests {
         assert!(report.provider_output.contains("direct simulator path"));
         assert!(simulator_negative_evidence(&report));
         assert!(simulator_replay_evidence(&report));
+        assert!(report.pending_task_blocked_completion);
         let workflow = &report.projection.workflows[SIMULATOR_WORKFLOW_ID];
         assert_eq!(workflow.status, "outcome.finished");
         assert!(workflow.terminal);
         assert_eq!(workflow.owner, "simulator");
         assert!(report.late_completion_ignored);
+        let dossier_workflow = report
+            .dossier
+            .workflows
+            .iter()
+            .find(|workflow| workflow.workflow_id == SIMULATOR_WORKFLOW_ID)
+            .expect("simulator workflow dossier entry");
+        assert!(dossier_workflow.quality_gate.passed);
+        assert_eq!(dossier_workflow.continuations.len(), 1);
+        assert_eq!(dossier_workflow.continuations[0].status, "stopped");
         assert!(workflow
             .evidence_categories
             .contains(super::SIMULATED_TOOL_EVIDENCE_CATEGORY));

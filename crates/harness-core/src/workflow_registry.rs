@@ -183,6 +183,14 @@ pub const TRANSITION_POLICIES: &[TransitionPolicySpec] = &[
         id: "transition.evidence_gated_completion",
         description: "Completion requires acceptance-mapped evidence refs or an explicit operator waiver.",
     },
+    TransitionPolicySpec {
+        id: "transition.workflow_tasks_incomplete",
+        description: "Completion is denied while workflow-owned persistent tasks are pending, claimed, or in progress without a waiver.",
+    },
+    TransitionPolicySpec {
+        id: "transition.active_continuation_incomplete",
+        description: "Completion is denied while workflow-owned continuations are still active or queued.",
+    },
 ];
 
 pub const WORKFLOW_DOCTOR_CHECKS: &[WorkflowDoctorCheckSpec] = &[
@@ -202,6 +210,10 @@ pub const WORKFLOW_DOCTOR_CHECKS: &[WorkflowDoctorCheckSpec] = &[
     WorkflowDoctorCheckSpec {
         id: "workflow_simulator",
         description: "Validates deterministic simulator evidence/signoff/dossier readiness.",
+    },
+    WorkflowDoctorCheckSpec {
+        id: "workflow_stale_work_loop",
+        description: "Warns when the latest session run has active workflow-owned continuations.",
     },
     WorkflowDoctorCheckSpec {
         id: "command_registry",

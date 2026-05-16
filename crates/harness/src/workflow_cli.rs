@@ -12,9 +12,10 @@ use harness_core::context_snapshot::{
 };
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, RunInfo};
 use harness_core::event::{ActorKind, EventActor};
+use harness_core::persistent_task::{project_persistent_tasks, PersistentTaskProjection};
 use harness_core::proj::SessionModeSource;
 use harness_core::redact::DefaultRedactor;
-use harness_core::run_dossier::{build_run_dossier, RunDossier};
+use harness_core::run_dossier::{build_run_dossier_with_tasks, RunDossier};
 use harness_core::workflow::{
     project_workflows, WorkflowProjection, WorkflowSignoffPolicy, WorkflowStartRequest,
     WorkflowStartResult,
@@ -336,6 +337,7 @@ struct WorkflowStatusReport {
     workflow_count: usize,
     active_count: usize,
     projection: WorkflowProjection,
+    persistent_tasks: PersistentTaskProjection,
 }
 
 #[derive(Debug, Serialize)]
@@ -701,8 +703,9 @@ fn execute_dossier_export(
     global_session_dir: Option<PathBuf>,
 ) -> Result<(), String> {
     let report = status_report(cmd.target, cmd.workflow_id, config_path, global_session_dir)?;
-    let dossier = build_run_dossier(
+    let dossier = build_run_dossier_with_tasks(
         &report.projection,
+        &report.persistent_tasks,
         &WorkflowSignoffPolicy::simulator_default(),
     );
     let body = match cmd.format {
@@ -889,11 +892,17 @@ fn status_report(
     let events_path = run_dir.join(EVENTS_FILE_NAME);
     let events = load_events_from_run_dir(&run_dir)?;
     let mut projection = project_workflows(events.iter().map(|event| &event.payload));
+    let mut persistent_tasks = project_persistent_tasks(&events);
     if let Some(workflow_id) = workflow_id {
         projection
             .workflows
             .retain(|id, _| id.as_str() == workflow_id.as_str());
         projection.evidence.retain(|id, _| id == &workflow_id);
+        persistent_tasks.tasks.retain(|_, task| {
+            task.metadata
+                .get(harness_core::workflow::WORKFLOW_TASK_METADATA_KEY)
+                == Some(&workflow_id)
+        });
     }
     let workflow_count = projection.workflows.len();
     let active_count = projection
@@ -907,6 +916,7 @@ fn status_report(
         workflow_count,
         active_count,
         projection,
+        persistent_tasks,
     })
 }
 
@@ -1039,6 +1049,24 @@ fn render_dossier_markdown(report: &WorkflowStatusReport, dossier: &RunDossier) 
             workflow.terminal,
             workflow.signoff.allowed
         ));
+        body.push_str(&format!(
+            "- Quality gate passed: `{}`\n",
+            workflow.quality_gate.passed
+        ));
+        if !workflow.quality_gate.missing.is_empty() {
+            body.push_str("Quality gate gaps:\n");
+            for gate in &workflow.quality_gate.missing {
+                body.push_str(&format!("- `{gate}`\n"));
+            }
+            body.push('\n');
+        }
+        if !workflow.quality_gate.recovery_hints.is_empty() {
+            body.push_str("Recovery hints:\n");
+            for hint in &workflow.quality_gate.recovery_hints {
+                body.push_str(&format!("- {hint}\n"));
+            }
+            body.push('\n');
+        }
         if !workflow.evidence.is_empty() {
             body.push_str("Evidence:\n");
             for evidence in &workflow.evidence {
@@ -1053,6 +1081,23 @@ fn render_dossier_markdown(report: &WorkflowStatusReport, dossier: &RunDossier) 
             body.push_str("Missing signoff evidence:\n");
             for category in &workflow.signoff.missing_evidence_categories {
                 body.push_str(&format!("- `{category}`\n"));
+            }
+            body.push('\n');
+        }
+        if !workflow.continuations.is_empty() {
+            body.push_str("Continuations:\n");
+            for continuation in &workflow.continuations {
+                body.push_str(&format!(
+                    "- `{}`: status={} iteration={} reason={}\n",
+                    continuation.continuation_id,
+                    continuation.status,
+                    continuation.iteration,
+                    continuation
+                        .stop_reason
+                        .as_deref()
+                        .or(continuation.last_schedule_reason.as_deref())
+                        .unwrap_or("n/a")
+                ));
             }
             body.push('\n');
         }

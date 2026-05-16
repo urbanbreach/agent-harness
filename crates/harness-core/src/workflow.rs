@@ -9,9 +9,13 @@ use crate::event::{
     WorkflowOperatorDecisionRecordedEvent, WorkflowStartedEvent, WorkflowTransitionDeniedEvent,
     WorkflowTransitionRecordedEvent,
 };
+use crate::event::{PersistentTaskStatus, WorkflowEventMetadata};
+use crate::persistent_task::PersistentTaskProjection;
 
 pub const SIMULATED_TOOL_EVIDENCE_CATEGORY: &str = "evidence.simulated_tool_result";
 pub const SIGNOFF_WAIVER_DECISION: &str = "waive-missing-evidence";
+pub const PENDING_TASK_WAIVER_DECISION: &str = "waive-pending-workflow-tasks";
+pub const WORKFLOW_TASK_METADATA_KEY: &str = "workflow_id";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct WorkflowRunProjection {
@@ -51,10 +55,26 @@ pub struct WorkflowContextSnapshotRef {
 pub struct WorkflowContinuationProjection {
     pub continuation_id: String,
     pub workflow_id: String,
+    pub mode: String,
+    pub command: String,
     pub status: String,
     pub iteration: u32,
+    pub max_iterations: u32,
+    pub max_wall_clock_ms: u64,
+    pub max_provider_calls: u32,
+    pub max_tool_calls: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lane: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_category: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_reminder: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_schedule_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stop_reason: Option<String>,
 }
@@ -185,9 +205,20 @@ impl WorkflowProjection {
             WorkflowContinuationProjection {
                 continuation_id: payload.continuation_id.clone(),
                 workflow_id: workflow_id.clone(),
+                mode: payload.mode.clone(),
+                command: payload.command.clone(),
                 status: "active".to_string(),
                 iteration: metadata.iteration.unwrap_or(0),
+                max_iterations: payload.max_iterations,
+                max_wall_clock_ms: payload.max_wall_clock_ms,
+                max_provider_calls: payload.max_provider_calls,
+                max_tool_calls: payload.max_tool_calls,
                 lane: metadata.lane.clone(),
+                owner: metadata.owner.clone(),
+                evidence_category: metadata.evidence_category.clone(),
+                last_reminder: None,
+                last_schedule_reason: None,
+                limit: None,
                 stop_reason: None,
             },
         );
@@ -197,12 +228,16 @@ impl WorkflowProjection {
         if let Some(continuation) = self.continuations.get_mut(&payload.continuation_id) {
             continuation.status = "reminder_queued".to_string();
             continuation.iteration = payload.iteration;
+            continuation.last_reminder = Some(payload.reminder.clone());
+            continuation.last_schedule_reason = Some(payload.reason.clone());
+            merge_workflow_metadata(continuation, payload.workflow.as_ref());
         }
     }
 
     fn apply_continuation_stopped(&mut self, payload: &ContinuationStoppedEvent) {
         if let Some(continuation) = self.continuations.get_mut(&payload.continuation_id) {
             continuation.status = "stopped".to_string();
+            merge_workflow_metadata(continuation, payload.workflow.as_ref());
             continuation.stop_reason = payload
                 .workflow
                 .as_ref()
@@ -215,8 +250,28 @@ impl WorkflowProjection {
         if let Some(continuation) = self.continuations.get_mut(&payload.continuation_id) {
             continuation.status = "limit_reached".to_string();
             continuation.iteration = payload.iteration;
+            continuation.limit = Some(payload.limit.clone());
+            merge_workflow_metadata(continuation, payload.workflow.as_ref());
             continuation.stop_reason = Some(payload.limit.clone());
         }
+    }
+}
+
+fn merge_workflow_metadata(
+    continuation: &mut WorkflowContinuationProjection,
+    metadata: Option<&WorkflowEventMetadata>,
+) {
+    let Some(metadata) = metadata else {
+        return;
+    };
+    if let Some(lane) = metadata.lane.as_ref() {
+        continuation.lane = Some(lane.clone());
+    }
+    if let Some(owner) = metadata.owner.as_ref() {
+        continuation.owner = Some(owner.clone());
+    }
+    if let Some(evidence_category) = metadata.evidence_category.as_ref() {
+        continuation.evidence_category = Some(evidence_category.clone());
     }
 }
 
@@ -314,6 +369,38 @@ pub struct WorkflowSignoffReadiness {
     pub missing_evidence_categories: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WorkflowTaskReadiness {
+    pub workflow_id: String,
+    pub allowed: bool,
+    pub waived: bool,
+    pub pending_task_ids: Vec<String>,
+    pub claimed_task_ids: Vec<String>,
+    pub in_progress_task_ids: Vec<String>,
+}
+
+impl WorkflowTaskReadiness {
+    pub fn incomplete_task_ids(&self) -> Vec<String> {
+        self.pending_task_ids
+            .iter()
+            .chain(self.claimed_task_ids.iter())
+            .chain(self.in_progress_task_ids.iter())
+            .cloned()
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WorkflowCompletionReadiness {
+    pub workflow_id: String,
+    pub allowed: bool,
+    pub signoff: WorkflowSignoffReadiness,
+    pub tasks: WorkflowTaskReadiness,
+    pub active_continuation_ids: Vec<String>,
+    pub missing_quality_gates: Vec<String>,
+    pub recovery_hints: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkflowSignoffPolicy {
     required_evidence_categories: Vec<String>,
@@ -379,6 +466,101 @@ impl WorkflowProjection {
             missing_evidence_categories: missing,
         }
     }
+
+    pub fn task_readiness(
+        &self,
+        workflow_id: impl Into<String>,
+        persistent_tasks: &PersistentTaskProjection,
+    ) -> WorkflowTaskReadiness {
+        let workflow_id = workflow_id.into();
+        let waived = self.workflows.get(&workflow_id).is_some_and(|run| {
+            run.operator_decisions
+                .iter()
+                .any(|decision| decision == PENDING_TASK_WAIVER_DECISION)
+        });
+        let mut pending_task_ids = Vec::new();
+        let mut claimed_task_ids = Vec::new();
+        let mut in_progress_task_ids = Vec::new();
+        for task in persistent_tasks.tasks.values() {
+            if task
+                .metadata
+                .get(WORKFLOW_TASK_METADATA_KEY)
+                .is_none_or(|candidate| candidate != &workflow_id)
+            {
+                continue;
+            }
+            match task.status {
+                PersistentTaskStatus::Pending => pending_task_ids.push(task.task_id.clone()),
+                PersistentTaskStatus::Claimed => claimed_task_ids.push(task.task_id.clone()),
+                PersistentTaskStatus::InProgress => in_progress_task_ids.push(task.task_id.clone()),
+                PersistentTaskStatus::Completed | PersistentTaskStatus::Cancelled => {}
+            }
+        }
+        WorkflowTaskReadiness {
+            workflow_id,
+            allowed: waived
+                || (pending_task_ids.is_empty()
+                    && claimed_task_ids.is_empty()
+                    && in_progress_task_ids.is_empty()),
+            waived,
+            pending_task_ids,
+            claimed_task_ids,
+            in_progress_task_ids,
+        }
+    }
+
+    pub fn completion_readiness(
+        &self,
+        workflow_id: impl Into<String>,
+        persistent_tasks: &PersistentTaskProjection,
+        signoff_policy: &WorkflowSignoffPolicy,
+    ) -> WorkflowCompletionReadiness {
+        let workflow_id = workflow_id.into();
+        let signoff = signoff_policy.evaluate(self, workflow_id.clone());
+        let tasks = self.task_readiness(workflow_id.clone(), persistent_tasks);
+        let active_continuation_ids = self
+            .continuations
+            .values()
+            .filter(|continuation| continuation.workflow_id == workflow_id)
+            .filter(|continuation| {
+                continuation.status == "active" || continuation.status == "reminder_queued"
+            })
+            .map(|continuation| continuation.continuation_id.clone())
+            .collect::<Vec<_>>();
+        let mut missing_quality_gates = Vec::new();
+        let mut recovery_hints = Vec::new();
+        if !signoff.allowed {
+            missing_quality_gates.push("signoff_evidence".to_string());
+            recovery_hints.push(format!(
+                "record evidence for: {} or append `{SIGNOFF_WAIVER_DECISION}`",
+                signoff.missing_evidence_categories.join(", ")
+            ));
+        }
+        if !tasks.allowed {
+            missing_quality_gates.push("workflow_tasks_complete".to_string());
+            recovery_hints.push(format!(
+                "complete/cancel workflow-owned tasks: {} or append `{PENDING_TASK_WAIVER_DECISION}`",
+                tasks.incomplete_task_ids().join(", ")
+            ));
+        }
+        if !active_continuation_ids.is_empty() {
+            missing_quality_gates.push("continuation_stopped".to_string());
+            recovery_hints.push(format!(
+                "stop or resolve active workflow continuations: {}",
+                active_continuation_ids.join(", ")
+            ));
+        }
+
+        WorkflowCompletionReadiness {
+            workflow_id,
+            allowed: signoff.allowed && tasks.allowed && active_continuation_ids.is_empty(),
+            signoff,
+            tasks,
+            active_continuation_ids,
+            missing_quality_gates,
+            recovery_hints,
+        }
+    }
 }
 
 pub struct WorkflowTransitionPolicy;
@@ -428,15 +610,17 @@ impl WorkflowTransitionPolicy {
 mod tests {
     use super::{
         project_workflows, WorkflowProjection, WorkflowSignoffPolicy, WorkflowStartDecision,
-        WorkflowStartRequest, WorkflowTransitionPolicy, SIGNOFF_WAIVER_DECISION,
-        SIMULATED_TOOL_EVIDENCE_CATEGORY,
+        WorkflowStartRequest, WorkflowTransitionPolicy, PENDING_TASK_WAIVER_DECISION,
+        SIGNOFF_WAIVER_DECISION, SIMULATED_TOOL_EVIDENCE_CATEGORY, WORKFLOW_TASK_METADATA_KEY,
     };
     use crate::event::{
         ContinuationReminderQueuedEvent, ContinuationStartedEvent, ContinuationStoppedEvent,
-        EventV1, WorkflowCompletedEvent, WorkflowEventMetadata, WorkflowEvidenceRecordedEvent,
+        EventV1, PersistentTask, PersistentTaskStatus, WorkflowCompletedEvent,
+        WorkflowEventMetadata, WorkflowEvidenceRecordedEvent,
         WorkflowOperatorDecisionRecordedEvent, WorkflowStartedEvent,
         WorkflowTransitionRecordedEvent,
     };
+    use crate::persistent_task::PersistentTaskProjection;
 
     fn start_event() -> EventV1 {
         EventV1::WorkflowStarted(WorkflowStartedEvent {
@@ -594,9 +778,19 @@ mod tests {
         let projection = project_workflows(events.iter());
         let continuation = &projection.continuations["cont_1"];
         assert_eq!(continuation.workflow_id, "wf_1");
+        assert_eq!(continuation.mode, "ralph");
+        assert_eq!(continuation.command, "/ralph-loop");
+        assert_eq!(continuation.max_iterations, 4);
+        assert_eq!(continuation.max_provider_calls, 8);
         assert_eq!(continuation.lane.as_deref(), Some("lane.delivery"));
         assert_eq!(continuation.iteration, 2);
         assert_eq!(continuation.status, "stopped");
+        assert_eq!(continuation.last_reminder.as_deref(), Some("continue"));
+        assert_eq!(continuation.last_schedule_reason.as_deref(), Some("idle"));
+        assert_eq!(
+            continuation.evidence_category.as_deref(),
+            Some("evidence.verification")
+        );
         assert_eq!(continuation.stop_reason.as_deref(), Some("acceptance_met"));
     }
 
@@ -669,6 +863,83 @@ mod tests {
         let waived = policy.evaluate(&waived_projection, "wf_1");
         assert!(waived.allowed);
         assert!(waived.waived);
+    }
+
+    #[test]
+    fn completion_readiness_blocks_pending_workflow_tasks_until_waived() {
+        let events = [
+            start_event(),
+            EventV1::WorkflowEvidenceRecorded(WorkflowEvidenceRecordedEvent {
+                workflow_id: "wf_1".to_string(),
+                category: crate::context_snapshot::CONTEXT_SNAPSHOT_EVIDENCE_CATEGORY.to_string(),
+                summary: "context snapshot captured".to_string(),
+                artifact_path: None,
+                artifact_digest: None,
+                acceptance_ref: Some("ctx_1".to_string()),
+                metadata: std::collections::BTreeMap::new(),
+            }),
+            EventV1::WorkflowEvidenceRecorded(WorkflowEvidenceRecordedEvent {
+                workflow_id: "wf_1".to_string(),
+                category: SIMULATED_TOOL_EVIDENCE_CATEGORY.to_string(),
+                summary: "simulated tool completed".to_string(),
+                artifact_path: None,
+                artifact_digest: None,
+                acceptance_ref: Some("acceptance.noop-tool".to_string()),
+                metadata: std::collections::BTreeMap::new(),
+            }),
+        ];
+        let projection = project_workflows(events.iter());
+        let mut tasks = PersistentTaskProjection::default();
+        tasks.tasks.insert(
+            "pt_pending".to_string(),
+            PersistentTask {
+                version: 1,
+                task_id: "pt_pending".to_string(),
+                run_id: None,
+                thread_id: None,
+                subject: "verify workflow".to_string(),
+                description: "pending workflow-owned task".to_string(),
+                status: PersistentTaskStatus::Pending,
+                active_form: None,
+                owner: Some("leader".to_string()),
+                blocks: Vec::new(),
+                blocked_by: Vec::new(),
+                metadata: std::collections::BTreeMap::from([(
+                    WORKFLOW_TASK_METADATA_KEY.to_string(),
+                    "wf_1".to_string(),
+                )]),
+            },
+        );
+
+        let readiness = projection.completion_readiness(
+            "wf_1",
+            &tasks,
+            &WorkflowSignoffPolicy::simulator_default(),
+        );
+        assert!(!readiness.allowed);
+        assert!(readiness.signoff.allowed);
+        assert_eq!(readiness.tasks.pending_task_ids, vec!["pt_pending"]);
+        assert_eq!(
+            readiness.missing_quality_gates,
+            vec!["workflow_tasks_complete"]
+        );
+
+        let waiver =
+            EventV1::WorkflowOperatorDecisionRecorded(WorkflowOperatorDecisionRecordedEvent {
+                workflow_id: "wf_1".to_string(),
+                decision: PENDING_TASK_WAIVER_DECISION.to_string(),
+                operator: "operator".to_string(),
+                reason: Some("accept pending task risk".to_string()),
+                correlation_id: None,
+            });
+        let waived_projection = project_workflows(events.iter().chain([waiver].iter()));
+        let waived = waived_projection.completion_readiness(
+            "wf_1",
+            &tasks,
+            &WorkflowSignoffPolicy::simulator_default(),
+        );
+        assert!(waived.allowed);
+        assert!(waived.tasks.waived);
     }
 
     #[test]

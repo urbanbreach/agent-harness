@@ -211,6 +211,12 @@ fn workflow_dossier_json_reports_signoff_gate_without_appending_events() {
     let workflow = &dossier["workflows"][0];
     assert_eq!(workflow["workflow_id"], "wf_dossier_signoff");
     assert_eq!(workflow["signoff"]["allowed"], false);
+    assert_eq!(workflow["quality_gate"]["passed"], false);
+    assert!(workflow["quality_gate"]["missing"]
+        .as_array()
+        .expect("quality gate missing array")
+        .iter()
+        .any(|gate| gate.as_str() == Some("prompt_to_artifact_audit")));
     assert!(workflow["signoff"]["missing_evidence_categories"]
         .as_array()
         .expect("missing evidence array")

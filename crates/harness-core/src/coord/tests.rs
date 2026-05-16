@@ -5967,6 +5967,7 @@ fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
         failed_terminal_compaction_attempts: std::collections::BTreeSet::new(),
         overflow_retry_compacted_context_by_attempt: std::collections::BTreeMap::new(),
         active_continuation_id: None,
+        active_continuation_workflow: None,
         continuation_controller: ContinuationController::default(),
         scheduler: Scheduler::new(SchedulerLimits {
             provider_model: 1,

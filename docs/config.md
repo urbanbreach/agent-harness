@@ -300,11 +300,15 @@ split by crate responsibility:
   deterministic testkit simulator contract requires context snapshot evidence
   plus `evidence.simulated_tool_result` before signoff unless an operator waiver
   is recorded.
+- `harness doctor --json` includes `workflow_stale_work_loop`, which inspects
+  the latest `events.jsonl` under the configured session directory and warns
+  when workflow-owned continuations are still active or reminder-queued.
 - `harness workflow run/status/signoff/cancel/dossier/snapshot/init` are the
   CLI foundation commands. `status` and dossier/snapshot reads are projection-only
-  over `events.jsonl`; `init --check` reports planned files without writing and
-  `init --apply` is the explicit write path for safe generated files under
-  `.agent-harness/`.
+  over `events.jsonl`; dossier export includes the replay-derived quality gate
+  and prompt-to-artifact completion audit. `init --check` reports planned files
+  without writing and `init --apply` is the explicit write path for safe generated
+  files under `.agent-harness/`.
 - `harness workflow snapshot write --json` is the minimal coordinator-backed
   CLI write path for `/interview` and `/workflow run` intake snapshots; it
   stores artifacts under the session run and emits workflow evidence when a
@@ -701,7 +705,7 @@ redacted artifacts:
 | `interview.maxRounds` / `interview.max_rounds` | `12` | Maximum interview rounds before handoff or blocker. |
 | `planConsensus.maxIterations` / `plan_consensus.max_iterations` | `5` | Maximum critic/planner consensus iterations. |
 | `planConsensus.deliberateTriggers` / `plan_consensus.deliberate_triggers` | `auth`, `security`, `migration`, `public api`, `pii` | Terms that should bias future workflow intake toward consensus planning. |
-| `workLoop.maxIterations` / `work_loop.max_iterations` | `10` | Default bound for future workflow-owned continuation loops. |
+| `workLoop.maxIterations` / `work_loop.max_iterations` | `10` | Default bound for workflow-owned continuation loops. |
 | `workLoop.requireManualQa` / `work_loop.require_manual_qa` | `true` | Future signoff policy flag for manual QA evidence. |
 | `team.maxMembers` / `team.max_members` | `8` | Maximum declared workflow team size. |
 | `team.maxParallelMembers` / `team.max_parallel_members` | `4` | Maximum parallel workflow team members; doctor fails if this exceeds `maxMembers`. |

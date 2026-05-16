@@ -64,7 +64,7 @@ use crate::event::{
     TeamShutdownRequestedEvent, TeamSpec, TeamTask, TeamTaskCreatedEvent, TeamTaskStatus,
     TeamTaskUpdatedEvent, ToolCallFinishedEvent, ToolCallMetadata, ToolCallStartedEvent,
     ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent, WorkflowCompletedEvent,
-    WorkflowEvidenceRecordedEvent, WorkflowOperatorDecisionRecordedEvent,
+    WorkflowEventMetadata, WorkflowEvidenceRecordedEvent, WorkflowOperatorDecisionRecordedEvent,
     WorkflowTransitionDeniedEvent, WorkflowTransitionRecordedEvent,
 };
 use crate::path_selector::workspace_relative_path_from_maybe_absolute;
@@ -101,8 +101,9 @@ use crate::tool::{
     canonical_tool_id_for, sanitize_mcp_tool_segment, ToolContext, ToolRegistry, ToolResult,
 };
 use crate::workflow::{
-    project_workflows, WorkflowEvidenceRequest, WorkflowSignoffPolicy, WorkflowStartDecision,
-    WorkflowStartRequest, WorkflowStartResult, WorkflowTransitionPolicy, WorkflowTransitionRequest,
+    project_workflows, WorkflowCompletionReadiness, WorkflowEvidenceRequest, WorkflowSignoffPolicy,
+    WorkflowStartDecision, WorkflowStartRequest, WorkflowStartResult, WorkflowTransitionPolicy,
+    WorkflowTransitionRequest,
 };
 use harness_providers::{
     AssistantToolCall, CompletionMessage, CompletionRequest, MessageRole, Provider,
@@ -563,6 +564,7 @@ pub enum Command {
         mode: String,
         command: String,
         bounds: ContinuationBounds,
+        workflow: Option<WorkflowEventMetadata>,
         respond_to: oneshot::Sender<Result<String, CoordinatorError>>,
     },
     StopContinuation {
@@ -1049,6 +1051,26 @@ impl CoordinatorHandle {
             mode: mode.into(),
             command: command.into(),
             bounds,
+            workflow: None,
+            respond_to,
+        })
+        .await
+    }
+
+    pub async fn start_workflow_continuation(
+        &self,
+        actor: EventActor,
+        mode: impl Into<String>,
+        command: impl Into<String>,
+        bounds: ContinuationBounds,
+        workflow: WorkflowEventMetadata,
+    ) -> Result<String, CoordinatorError> {
+        self.request(|respond_to| Command::StartContinuation {
+            actor,
+            mode: mode.into(),
+            command: command.into(),
+            bounds,
+            workflow: Some(workflow),
             respond_to,
         })
         .await
@@ -2203,9 +2225,11 @@ impl Coordinator {
                 mode,
                 command,
                 bounds,
+                workflow,
                 respond_to,
             } => {
-                let result = self.start_continuation_internal(actor, mode, command, bounds);
+                let result =
+                    self.start_continuation_internal(actor, mode, command, bounds, workflow);
                 warn_oneshot_send_failure(respond_to.send(result), "start_continuation");
             }
             Command::StopContinuation {
@@ -2365,6 +2389,7 @@ impl Coordinator {
             failed_terminal_compaction_attempts: BTreeSet::new(),
             overflow_retry_compacted_context_by_attempt: BTreeMap::new(),
             active_continuation_id: None,
+            active_continuation_workflow: None,
             continuation_controller: ContinuationController::default(),
             scheduler: Scheduler::new(SchedulerLimits {
                 provider_model: self.config.provider_model_concurrency,
@@ -2587,6 +2612,7 @@ impl Coordinator {
             failed_terminal_compaction_attempts: BTreeSet::new(),
             overflow_retry_compacted_context_by_attempt: BTreeMap::new(),
             active_continuation_id: resume_plan.active_continuation_id.clone(),
+            active_continuation_workflow: None,
             continuation_controller,
             scheduler: Scheduler::new(SchedulerLimits {
                 provider_model: self.config.provider_model_concurrency,
@@ -4384,16 +4410,23 @@ impl Coordinator {
             .as_mut()
             .ok_or(CoordinatorError::RunNotStarted)?;
         if outcome == "outcome.finished" {
-            let projection = workflow_projection_for_run(run_state)?;
-            let readiness = signoff_policy.evaluate(&projection, workflow_id.clone());
+            let historical_events = read_historical_events_until(
+                &run_state.info.run_id,
+                &run_state.info.events_path,
+                u64::MAX,
+            )?;
+            let projection =
+                project_workflows(historical_events.iter().map(|event| &event.payload));
+            let persistent_tasks = project_persistent_tasks(&historical_events);
+            let readiness = projection.completion_readiness(
+                workflow_id.clone(),
+                &persistent_tasks,
+                &signoff_policy,
+            );
             if !readiness.allowed {
                 let current = projection.workflows.get(&workflow_id);
-                let missing = readiness.missing_evidence_categories.join(", ");
-                let denial_reason = if missing.is_empty() {
-                    "workflow completion requires mapped signoff evidence or waiver".to_string()
-                } else {
-                    format!("workflow completion missing signoff evidence: {missing}")
-                };
+                let denial_policy = workflow_completion_denial_policy_id(&readiness);
+                let denial_reason = workflow_completion_denial_reason(&readiness);
                 append_payload_event(
                     self.clock.as_ref(),
                     self.redactor.as_ref(),
@@ -4407,7 +4440,7 @@ impl Coordinator {
                         owner,
                         current_owner: current.map(|run| run.owner.clone()),
                         current_status: current.map(|run| run.status.clone()),
-                        policy_id: "transition.evidence_gated_completion".to_string(),
+                        policy_id: denial_policy.to_string(),
                     }),
                 )?;
                 return Err(CoordinatorError::PolicyViolation(denial_reason));
@@ -6273,6 +6306,7 @@ impl Coordinator {
         mode: String,
         command: String,
         bounds: ContinuationBounds,
+        workflow: Option<WorkflowEventMetadata>,
     ) -> Result<String, CoordinatorError> {
         let run_state = self
             .run_state
@@ -6294,10 +6328,11 @@ impl Coordinator {
                 max_wall_clock_ms: bounds.max_wall_clock_ms,
                 max_provider_calls: bounds.max_provider_calls,
                 max_tool_calls: bounds.max_tool_calls,
-                workflow: None,
+                workflow: workflow.clone(),
             }),
         )?;
         run_state.active_continuation_id = Some(continuation_id.clone());
+        run_state.active_continuation_workflow = workflow;
         run_state.continuation_controller.start_at(
             continuation_id.clone(),
             mode,
@@ -6321,6 +6356,7 @@ impl Coordinator {
             .active_continuation_id
             .clone()
             .unwrap_or_else(|| "none".to_string());
+        let workflow = run_state.active_continuation_workflow.clone();
         append_payload_event_with_correlation(
             self.clock.as_ref(),
             self.redactor.as_ref(),
@@ -6331,10 +6367,11 @@ impl Coordinator {
             EventV1::ContinuationStopped(ContinuationStoppedEvent {
                 continuation_id,
                 reason,
-                workflow: None,
+                workflow,
             }),
         )?;
         run_state.active_continuation_id = None;
+        run_state.active_continuation_workflow = None;
         run_state.continuation_controller.stop();
         Ok(())
     }
@@ -6382,6 +6419,14 @@ impl Coordinator {
                 iteration,
                 reminder,
             }) => {
+                let workflow =
+                    run_state
+                        .active_continuation_workflow
+                        .clone()
+                        .map(|mut workflow| {
+                            workflow.iteration = Some(iteration);
+                            workflow
+                        });
                 append_payload_event_with_correlation(
                     self.clock.as_ref(),
                     self.redactor.as_ref(),
@@ -6394,7 +6439,7 @@ impl Coordinator {
                         iteration,
                         reminder: reminder.clone(),
                         reason: trigger.reason,
-                        workflow: None,
+                        workflow,
                     }),
                 )?;
                 let request_id = allocate_provider_request_id(run_state);
@@ -6435,6 +6480,15 @@ impl Coordinator {
                 Ok(Some(request_id))
             }
             Some(ContinuationDecision::LimitReached { limit, iteration }) => {
+                let workflow =
+                    run_state
+                        .active_continuation_workflow
+                        .clone()
+                        .map(|mut workflow| {
+                            workflow.iteration = Some(iteration);
+                            workflow.stop_reason = Some(limit.to_string());
+                            workflow
+                        });
                 append_payload_event_with_correlation(
                     self.clock.as_ref(),
                     self.redactor.as_ref(),
@@ -6446,10 +6500,11 @@ impl Coordinator {
                         continuation_id,
                         limit: limit.to_string(),
                         iteration,
-                        workflow: None,
+                        workflow,
                     }),
                 )?;
                 run_state.active_continuation_id = None;
+                run_state.active_continuation_workflow = None;
                 Ok(None)
             }
             Some(ContinuationDecision::Stopped) => {
@@ -6458,6 +6513,14 @@ impl Coordinator {
                 } else {
                     "todos_completed"
                 };
+                let workflow =
+                    run_state
+                        .active_continuation_workflow
+                        .clone()
+                        .map(|mut workflow| {
+                            workflow.stop_reason = Some(reason.to_string());
+                            workflow
+                        });
                 append_payload_event_with_correlation(
                     self.clock.as_ref(),
                     self.redactor.as_ref(),
@@ -6468,10 +6531,11 @@ impl Coordinator {
                     EventV1::ContinuationStopped(ContinuationStoppedEvent {
                         continuation_id,
                         reason: reason.to_string(),
-                        workflow: None,
+                        workflow,
                     }),
                 )?;
                 run_state.active_continuation_id = None;
+                run_state.active_continuation_workflow = None;
                 Ok(None)
             }
             None => Ok(None),
@@ -6490,6 +6554,13 @@ impl Coordinator {
             .run_state
             .as_mut()
             .ok_or(CoordinatorError::RunNotStarted)?;
+        let workflow = (run_state.active_continuation_id.as_deref() == Some(&continuation_id))
+            .then(|| run_state.active_continuation_workflow.clone())
+            .flatten()
+            .map(|mut workflow| {
+                workflow.iteration = Some(iteration);
+                workflow
+            });
         append_payload_event_with_correlation(
             self.clock.as_ref(),
             self.redactor.as_ref(),
@@ -6502,7 +6573,7 @@ impl Coordinator {
                 iteration,
                 reminder,
                 reason,
-                workflow: None,
+                workflow,
             }),
         )?;
         Ok(())
@@ -6519,6 +6590,14 @@ impl Coordinator {
             .run_state
             .as_mut()
             .ok_or(CoordinatorError::RunNotStarted)?;
+        let workflow = (run_state.active_continuation_id.as_deref() == Some(&continuation_id))
+            .then(|| run_state.active_continuation_workflow.clone())
+            .flatten()
+            .map(|mut workflow| {
+                workflow.iteration = Some(iteration);
+                workflow.stop_reason = Some(limit.clone());
+                workflow
+            });
         append_payload_event_with_correlation(
             self.clock.as_ref(),
             self.redactor.as_ref(),
@@ -6530,10 +6609,11 @@ impl Coordinator {
                 continuation_id,
                 limit,
                 iteration,
-                workflow: None,
+                workflow,
             }),
         )?;
         run_state.active_continuation_id = None;
+        run_state.active_continuation_workflow = None;
         run_state.continuation_controller.stop();
         Ok(())
     }
@@ -7288,6 +7368,7 @@ struct RunState {
     failed_terminal_compaction_attempts: BTreeSet<(String, String)>,
     overflow_retry_compacted_context_by_attempt: BTreeMap<(String, String), ProviderContext>,
     active_continuation_id: Option<String>,
+    active_continuation_workflow: Option<WorkflowEventMetadata>,
     continuation_controller: ContinuationController,
     scheduler: Scheduler,
     recorded_runtime_context: Option<RecordedRuntimeContext>,
@@ -16411,6 +16492,37 @@ fn workflow_projection_for_run(
     Ok(project_workflows(
         historical_events.iter().map(|event| &event.payload),
     ))
+}
+
+fn workflow_completion_denial_policy_id(readiness: &WorkflowCompletionReadiness) -> &'static str {
+    if !readiness.signoff.allowed {
+        "transition.evidence_gated_completion"
+    } else if !readiness.tasks.allowed {
+        "transition.workflow_tasks_incomplete"
+    } else {
+        "transition.active_continuation_incomplete"
+    }
+}
+
+fn workflow_completion_denial_reason(readiness: &WorkflowCompletionReadiness) -> String {
+    if !readiness.signoff.allowed {
+        let missing = readiness.signoff.missing_evidence_categories.join(", ");
+        if missing.is_empty() {
+            "workflow completion requires mapped signoff evidence or waiver".to_string()
+        } else {
+            format!("workflow completion missing signoff evidence: {missing}")
+        }
+    } else if !readiness.tasks.allowed {
+        format!(
+            "workflow completion blocked by incomplete workflow-owned tasks: {}",
+            readiness.tasks.incomplete_task_ids().join(", ")
+        )
+    } else {
+        format!(
+            "workflow completion blocked by active continuations: {}",
+            readiness.active_continuation_ids.join(", ")
+        )
+    }
 }
 
 fn agent_actor(agent_id: &str) -> EventActor {

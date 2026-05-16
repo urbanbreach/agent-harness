@@ -2,7 +2,11 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::event::WorkflowTransitionDeniedEvent;
-use crate::workflow::{WorkflowProjection, WorkflowSignoffPolicy, WorkflowSignoffReadiness};
+use crate::persistent_task::PersistentTaskProjection;
+use crate::workflow::{
+    WorkflowCompletionReadiness, WorkflowContinuationProjection, WorkflowProjection,
+    WorkflowSignoffPolicy, WorkflowSignoffReadiness,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct RunDossier {
@@ -25,6 +29,9 @@ pub struct WorkflowDossierEntry {
     pub evidence: Vec<WorkflowDossierEvidence>,
     pub operator_decisions: Vec<String>,
     pub signoff: WorkflowSignoffReadiness,
+    pub completion: WorkflowCompletionReadiness,
+    pub quality_gate: WorkflowDossierQualityGate,
+    pub continuations: Vec<WorkflowDossierContinuation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -39,8 +46,46 @@ pub struct WorkflowDossierEvidence {
     pub artifact_digest: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WorkflowDossierQualityGate {
+    pub passed: bool,
+    pub prompt_to_artifact_complete: bool,
+    pub missing: Vec<String>,
+    pub recovery_hints: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WorkflowDossierContinuation {
+    pub continuation_id: String,
+    pub mode: String,
+    pub command: String,
+    pub status: String,
+    pub iteration: u32,
+    pub max_iterations: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lane: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stop_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_schedule_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<String>,
+}
+
 pub fn build_run_dossier(
     projection: &WorkflowProjection,
+    signoff_policy: &WorkflowSignoffPolicy,
+) -> RunDossier {
+    build_run_dossier_with_tasks(
+        projection,
+        &PersistentTaskProjection::default(),
+        signoff_policy,
+    )
+}
+
+pub fn build_run_dossier_with_tasks(
+    projection: &WorkflowProjection,
+    persistent_tasks: &PersistentTaskProjection,
     signoff_policy: &WorkflowSignoffPolicy,
 ) -> RunDossier {
     let workflows = projection
@@ -60,6 +105,25 @@ pub fn build_run_dossier(
                     artifact_digest: event.artifact_digest.clone(),
                 })
                 .collect::<Vec<_>>();
+            let completion = projection.completion_readiness(
+                &workflow.workflow_id,
+                persistent_tasks,
+                signoff_policy,
+            );
+            let continuations = workflow_continuations(projection, &workflow.workflow_id);
+            let prompt_to_artifact_complete = workflow.context_snapshot.is_some()
+                && evidence
+                    .iter()
+                    .any(|evidence| evidence.acceptance_ref.is_some());
+            let mut quality_missing = completion.missing_quality_gates.clone();
+            let mut recovery_hints = completion.recovery_hints.clone();
+            if !prompt_to_artifact_complete {
+                quality_missing.push("prompt_to_artifact_audit".to_string());
+                recovery_hints.push(
+                    "record a context snapshot artifact and acceptance evidence refs before final signoff"
+                        .to_string(),
+                );
+            }
             WorkflowDossierEntry {
                 workflow_id: workflow.workflow_id.clone(),
                 mode: workflow.mode.clone(),
@@ -71,6 +135,14 @@ pub fn build_run_dossier(
                 evidence,
                 operator_decisions: workflow.operator_decisions.clone(),
                 signoff: signoff_policy.evaluate(projection, workflow.workflow_id.clone()),
+                quality_gate: WorkflowDossierQualityGate {
+                    passed: completion.allowed && prompt_to_artifact_complete,
+                    prompt_to_artifact_complete,
+                    missing: quality_missing,
+                    recovery_hints,
+                },
+                completion,
+                continuations,
             }
         })
         .collect::<Vec<_>>();
@@ -83,6 +155,35 @@ pub fn build_run_dossier(
         workflows,
         denied_transitions: projection.denied_transitions.clone(),
         evidence_count,
+    }
+}
+
+fn workflow_continuations(
+    projection: &WorkflowProjection,
+    workflow_id: &str,
+) -> Vec<WorkflowDossierContinuation> {
+    projection
+        .continuations
+        .values()
+        .filter(|continuation| continuation.workflow_id == workflow_id)
+        .map(WorkflowDossierContinuation::from)
+        .collect()
+}
+
+impl From<&WorkflowContinuationProjection> for WorkflowDossierContinuation {
+    fn from(continuation: &WorkflowContinuationProjection) -> Self {
+        Self {
+            continuation_id: continuation.continuation_id.clone(),
+            mode: continuation.mode.clone(),
+            command: continuation.command.clone(),
+            status: continuation.status.clone(),
+            iteration: continuation.iteration,
+            max_iterations: continuation.max_iterations,
+            lane: continuation.lane.clone(),
+            stop_reason: continuation.stop_reason.clone(),
+            last_schedule_reason: continuation.last_schedule_reason.clone(),
+            limit: continuation.limit.clone(),
+        }
     }
 }
 
