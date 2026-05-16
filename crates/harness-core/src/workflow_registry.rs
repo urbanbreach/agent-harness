@@ -170,6 +170,15 @@ pub const EVIDENCE_CATEGORIES: &[EvidenceCategorySpec] = &[
         description:
             "Goal/story ledger create and checkpoint evidence with final quality-gate refs.",
     },
+    EvidenceCategorySpec {
+        id: "evidence.research_mission",
+        description:
+            "Research mission, sandbox, candidate result, and validator/review artifact refs.",
+    },
+    EvidenceCategorySpec {
+        id: "evidence.wiki",
+        description: "Markdown wiki page write/delete metadata with page path and digest refs.",
+    },
 ];
 
 pub const TRANSITION_POLICIES: &[TransitionPolicySpec] = &[

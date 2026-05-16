@@ -75,7 +75,7 @@ Use `docs/parity-ledger.json` as an intake baseline, not as a design oracle. Eve
 | Skill MCP lifecycle | partial | Harden later | Keep skill MCP scoped and visible, but defer executable/OAuth depth unless required by the demonstrator. |
 | Agent catalog and category routing | partial | Harden / wrap with workflow metadata | Workflow role lanes must record resolved catalog metadata and restrictions. |
 | AST-grep apply semantics | partial | Harden later | Not part of the first workflow spine unless the demonstrator needs it. |
-| Wiki, broad research missions, broad extension manifests, OAuth MCP, executable plugins | gap/planned | Defer | Keep as source-backed future surfaces. Do not make them foundation blockers. |
+| Wiki and validator-gated research missions | active first-party workflow slice | Harden | Harness-owned `workflow mission` and `workflow wiki` surfaces record validator/review refs and wiki write digests; broad extension manifests, OAuth MCP, and executable plugins remain deferred. |
 | OMO-shaped public command contracts that conflict with workflow semantics | mixed | Replace only when actively wrong | Prefer Harness-canonical `/workflow ...` names with aliases as thin compatibility wrappers. |
 
 Redline: do not replace working coordinator, continuation, task, team, session, or provider foundations merely because they came from the last parity slice. Redo semantic mismatches, not working invariants.
@@ -793,7 +793,7 @@ Acceptance criteria:
 - Wiki pages are markdown and reviewable in git.
 - Query can search title, tags, category, and body text.
 - `explore` and interview can prefer wiki hits before broad repository search when enabled.
-- Lint catches missing title, duplicate slug, broken wiki links, and oversized pages.
+- Initial lint catches missing page metadata and empty bodies; duplicate slug, broken-link, and oversized-page lint can harden later.
 - Replay uses event/artifact refs and does not scan the live wiki unless explicitly running a live command.
 
 ## Workstream J: Setup, doctor, and SSOT verification

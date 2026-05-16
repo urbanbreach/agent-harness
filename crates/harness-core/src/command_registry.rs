@@ -38,6 +38,8 @@ pub enum WorkflowIntent {
     Snapshot,
     PlanConsensus,
     GoalLedger,
+    ResearchMission,
+    Wiki,
 }
 
 impl WorkflowIntent {
@@ -51,6 +53,8 @@ impl WorkflowIntent {
             Self::Snapshot => "workflow.snapshot",
             Self::PlanConsensus => "workflow.plan_consensus",
             Self::GoalLedger => "workflow.goal_ledger",
+            Self::ResearchMission => "workflow.research_mission",
+            Self::Wiki => "workflow.wiki",
         }
     }
 }
@@ -139,6 +143,22 @@ impl CommandRegistry {
                 &["ultragoal"],
                 CommandAction::WorkflowIntent {
                     intent: WorkflowIntent::GoalLedger,
+                },
+            ),
+            spec(
+                "research-mission",
+                "Create or inspect validator-gated research mission state",
+                &["research-loop", "autoresearch"],
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::ResearchMission,
+                },
+            ),
+            spec(
+                "wiki",
+                "Read, query, or update the markdown workflow wiki",
+                &["workflow-wiki"],
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Wiki,
                 },
             ),
             spec(
@@ -279,6 +299,8 @@ mod tests {
             "workflow-snapshot",
             "plan-consensus",
             "goal-ledger",
+            "research-mission",
+            "wiki",
             "init-deep",
             "ralph-loop",
             "ulw-loop",
@@ -316,6 +338,8 @@ mod tests {
             ("workflow-snapshot", WorkflowIntent::Snapshot),
             ("plan-consensus", WorkflowIntent::PlanConsensus),
             ("goal-ledger", WorkflowIntent::GoalLedger),
+            ("research-mission", WorkflowIntent::ResearchMission),
+            ("wiki", WorkflowIntent::Wiki),
         ] {
             let command = registry
                 .get(name)

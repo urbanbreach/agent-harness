@@ -521,6 +521,370 @@ fn workflow_goal_cli_creates_and_checkpoints_replay_derived_ledger() {
 }
 
 #[test]
+fn workflow_mission_cli_requires_validator_artifact_and_projects_status() {
+    let temp = tempdir().expect("tempdir");
+    let session_dir = temp.path().join("sessions");
+
+    let init_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "--session-dir",
+            session_dir.to_str().expect("session dir utf-8"),
+            "workflow",
+            "mission",
+            "init",
+            "--workflow-id",
+            "wf_mission_cli",
+            "--mission-id",
+            "mission_cli",
+            "--objective",
+            "Compare workflow research options",
+            "--question",
+            "Which validator path is safer?",
+            "--validator-mode",
+            "prompt-architect-artifact",
+            "--sandbox",
+            "No network; cite local artifacts.",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow mission init");
+    assert!(
+        init_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&init_output.stdout),
+        String::from_utf8_lossy(&init_output.stderr)
+    );
+    let init: Value = serde_json::from_slice(&init_output.stdout).expect("mission init json");
+    let init_run_dir = init["run_dir"].as_str().expect("mission init run dir");
+    let init_status = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "workflow",
+            "mission",
+            "status",
+            "--run-dir",
+            init_run_dir,
+            "--mission-id",
+            "mission_cli",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow mission status");
+    assert!(
+        init_status.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&init_status.stdout),
+        String::from_utf8_lossy(&init_status.stderr)
+    );
+    let init_status: Value =
+        serde_json::from_slice(&init_status.stdout).expect("mission status json");
+    assert_eq!(
+        init_status["projection"]["missions"]["mission_cli"]["status"],
+        "active"
+    );
+
+    let run_session_dir = temp.path().join("mission-run-sessions");
+    let run_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "--session-dir",
+            run_session_dir.to_str().expect("run session dir utf-8"),
+            "workflow",
+            "mission",
+            "run",
+            "--workflow-id",
+            "wf_mission_cli_run",
+            "--mission-id",
+            "mission_cli",
+            "--iteration",
+            "1",
+            "--status",
+            "complete",
+            "--summary",
+            "Architect review approved the research result.",
+            "--candidate-ref",
+            "candidate.json",
+            "--validator-mode",
+            "prompt-architect-artifact",
+            "--review-ref",
+            "architect-review.json",
+            "--evidence-ref",
+            "architect-review.json",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow mission result");
+    assert!(
+        run_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run_output.stdout),
+        String::from_utf8_lossy(&run_output.stderr)
+    );
+    let run: Value = serde_json::from_slice(&run_output.stdout).expect("mission run json");
+    let run_dir = run["run_dir"].as_str().expect("mission run dir");
+    let events_path = run["events_path"].as_str().expect("mission events path");
+    let before = fs::read_to_string(events_path).expect("read mission events before status");
+    let status_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "workflow",
+            "mission",
+            "status",
+            "--run-dir",
+            run_dir,
+            "--mission-id",
+            "mission_cli",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow mission status");
+    assert!(
+        status_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&status_output.stdout),
+        String::from_utf8_lossy(&status_output.stderr)
+    );
+    let after = fs::read_to_string(events_path).expect("read mission events after status");
+    assert_eq!(
+        before, after,
+        "workflow mission status must be projection-only"
+    );
+    let status: Value = serde_json::from_slice(&status_output.stdout).expect("mission status json");
+    let mission = &status["projection"]["missions"]["mission_cli"];
+    assert_eq!(mission["status"], "complete");
+    assert_eq!(mission["ready_for_completion"], true);
+    assert_eq!(
+        mission["iterations"][0]["validator_ref"],
+        "architect-review.json"
+    );
+}
+
+#[test]
+fn workflow_mission_cli_executes_permissioned_validator_command() {
+    let temp = tempdir().expect("tempdir");
+    let session_dir = temp.path().join("sessions");
+
+    let output = harness_command()
+        .current_dir(repo_root())
+        .env(
+            "HARNESS_CONFIG_CONTENT",
+            r#"{ permission: { bash: { "printf validator-ok": "allow", "*": "deny" } } }"#,
+        )
+        .args([
+            "--session-dir",
+            session_dir.to_str().expect("session dir utf-8"),
+            "workflow",
+            "mission",
+            "run",
+            "--workflow-id",
+            "wf_mission_validator",
+            "--mission-id",
+            "mission_validator",
+            "--iteration",
+            "1",
+            "--status",
+            "complete",
+            "--summary",
+            "Validator command accepted the candidate.",
+            "--candidate-ref",
+            "candidate.json",
+            "--validator-mode",
+            "mission-validator-script",
+            "--validator-command",
+            "printf validator-ok",
+            "--evidence-ref",
+            "candidate.json",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow mission validator command");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).expect("mission run json");
+    let run_dir = std::path::Path::new(report["run_dir"].as_str().expect("run dir"));
+    let result_path = report["artifact_path"].as_str().expect("result path");
+    let result_body =
+        fs::read_to_string(run_dir.join(result_path)).expect("read mission result artifact");
+    let result: Value = serde_json::from_str(&result_body).expect("mission result artifact JSON");
+    let validator_ref = result["validator"]["result_ref"]
+        .as_str()
+        .expect("validator result ref");
+    assert!(validator_ref.contains("validators/mission_validator-1.json"));
+    assert_eq!(result["validator"]["status"], "passed");
+
+    let validator_body =
+        fs::read_to_string(run_dir.join(validator_ref)).expect("read validator result artifact");
+    assert!(validator_body.contains("validator-ok"));
+    let validator: Value =
+        serde_json::from_str(&validator_body).expect("validator result artifact JSON");
+    assert_eq!(validator["tool_result"]["structured_json"]["success"], true);
+
+    let events_path = report["events_path"].as_str().expect("events path");
+    let events = fs::read_to_string(events_path).expect("read events");
+    assert!(events.contains("tool_call_finished"));
+    assert!(events.contains("printf validator-ok"));
+}
+
+#[test]
+fn workflow_wiki_cli_writes_digested_markdown_and_reads_without_events() {
+    let temp = tempdir().expect("tempdir");
+    let session_dir = temp.path().join("sessions");
+
+    let add_output = harness_command()
+        .current_dir(temp.path())
+        .args([
+            "--session-dir",
+            session_dir.to_str().expect("session dir utf-8"),
+            "workflow",
+            "wiki",
+            "add",
+            "--workflow-id",
+            "wf_wiki_cli",
+            "--slug",
+            "workflow-evidence",
+            "--title",
+            "Workflow Evidence",
+            "--category",
+            "architecture",
+            "--tag",
+            "workflow",
+            "--tag",
+            "evidence",
+            "--body",
+            "Replay queries use metadata and page digests.",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow wiki add");
+    assert!(
+        add_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&add_output.stdout),
+        String::from_utf8_lossy(&add_output.stderr)
+    );
+    let add: Value = serde_json::from_slice(&add_output.stdout).expect("wiki add json");
+    let events_path = add["events_path"].as_str().expect("wiki events path");
+    let digest = add["page"]["digest"].as_str().expect("wiki digest");
+    assert_eq!(digest.len(), 64);
+    let page_path = temp.path().join(".agent-harness/wiki/workflow-evidence.md");
+    let page_body = fs::read_to_string(&page_path).expect("read wiki page");
+    assert!(page_body.contains("Workflow Evidence"));
+    let events = fs::read_to_string(events_path).expect("read wiki events");
+    assert!(events.contains("evidence.wiki"));
+    assert!(events.contains(digest));
+
+    let before = fs::read_to_string(events_path).expect("read wiki events before reads");
+    let read_output = harness_command()
+        .current_dir(temp.path())
+        .args([
+            "workflow",
+            "wiki",
+            "read",
+            "--slug",
+            "workflow-evidence",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow wiki read");
+    assert!(
+        read_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&read_output.stdout),
+        String::from_utf8_lossy(&read_output.stderr)
+    );
+    let read: Value = serde_json::from_slice(&read_output.stdout).expect("wiki read json");
+    assert_eq!(read["title"], "Workflow Evidence");
+
+    let query_output = harness_command()
+        .current_dir(temp.path())
+        .args([
+            "workflow",
+            "wiki",
+            "query",
+            "--term",
+            "metadata",
+            "--tag",
+            "workflow",
+            "--category",
+            "architecture",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow wiki query");
+    assert!(
+        query_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&query_output.stdout),
+        String::from_utf8_lossy(&query_output.stderr)
+    );
+    let query: Value = serde_json::from_slice(&query_output.stdout).expect("wiki query json");
+    assert_eq!(query["matches"].as_array().expect("matches").len(), 1);
+
+    let list_output = harness_command()
+        .current_dir(temp.path())
+        .args(["workflow", "wiki", "list", "--json"])
+        .output()
+        .expect("run workflow wiki list");
+    assert!(
+        list_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&list_output.stdout),
+        String::from_utf8_lossy(&list_output.stderr)
+    );
+    let lint_output = harness_command()
+        .current_dir(temp.path())
+        .args(["workflow", "wiki", "lint", "--json"])
+        .output()
+        .expect("run workflow wiki lint");
+    assert!(
+        lint_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&lint_output.stdout),
+        String::from_utf8_lossy(&lint_output.stderr)
+    );
+    let lint: Value = serde_json::from_slice(&lint_output.stdout).expect("wiki lint json");
+    assert_eq!(lint["findings"].as_array().expect("findings").len(), 0);
+    let after = fs::read_to_string(events_path).expect("read wiki events after reads");
+    assert_eq!(
+        before, after,
+        "wiki read/list/query/lint must not append events"
+    );
+
+    let delete_session_dir = temp.path().join("delete-sessions");
+    let delete_output = harness_command()
+        .current_dir(temp.path())
+        .args([
+            "--session-dir",
+            delete_session_dir
+                .to_str()
+                .expect("delete session dir utf-8"),
+            "workflow",
+            "wiki",
+            "delete",
+            "--workflow-id",
+            "wf_wiki_cli_delete",
+            "--slug",
+            "workflow-evidence",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow wiki delete");
+    assert!(
+        delete_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&delete_output.stdout),
+        String::from_utf8_lossy(&delete_output.stderr)
+    );
+    assert!(!page_path.exists(), "wiki delete should remove the page");
+}
+
+#[test]
 fn workflow_init_check_writes_nothing_and_apply_is_explicit() {
     let temp = tempdir().expect("tempdir");
     let workflow_dir = temp.path().join(".agent-harness").join("workflows");

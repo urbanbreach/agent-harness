@@ -13,6 +13,7 @@ use crate::event::{PersistentTaskStatus, WorkflowEventMetadata};
 use crate::goal_ledger::GoalLedgerProjection;
 use crate::persistent_task::PersistentTaskProjection;
 use crate::plan_consensus::PlanConsensusProjection;
+use crate::research_mission::ResearchMissionProjection;
 
 pub const SIMULATED_TOOL_EVIDENCE_CATEGORY: &str = "evidence.simulated_tool_result";
 pub const SIGNOFF_WAIVER_DECISION: &str = "waive-missing-evidence";
@@ -93,6 +94,8 @@ pub struct WorkflowProjection {
     pub plan_consensus: BTreeMap<String, PlanConsensusProjection>,
     #[serde(default)]
     pub goal_ledger: GoalLedgerProjection,
+    #[serde(default)]
+    pub research_missions: ResearchMissionProjection,
 }
 
 impl WorkflowProjection {
@@ -164,6 +167,10 @@ impl WorkflowProjection {
     fn apply_evidence(&mut self, payload: &WorkflowEvidenceRecordedEvent) {
         crate::plan_consensus::apply_plan_consensus_evidence(&mut self.plan_consensus, payload);
         crate::goal_ledger::apply_goal_ledger_evidence(&mut self.goal_ledger, payload);
+        crate::research_mission::apply_research_mission_evidence(
+            &mut self.research_missions,
+            payload,
+        );
         let snapshot_ref = (payload.category
             == crate::context_snapshot::CONTEXT_SNAPSHOT_EVIDENCE_CATEGORY)
             .then(|| context_snapshot_ref_from_evidence(payload))

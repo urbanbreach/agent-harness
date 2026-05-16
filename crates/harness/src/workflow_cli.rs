@@ -6,7 +6,7 @@ use std::sync::Arc;
 use clap::{ArgGroup, Args, Subcommand, ValueEnum};
 use harness_core::agent_catalog::{resolve_agent_catalog, AgentCatalog};
 use harness_core::clock::{Clock, RealClock};
-use harness_core::config::{load_resolved_config, WorkflowRuntimeConfig};
+use harness_core::config::{load_resolved_config, ShellAllowlist, WorkflowRuntimeConfig};
 use harness_core::context_snapshot::{
     ContextSnapshotAmbiguity, ContextSnapshotInput, ContextSnapshotOptions,
     ContextSnapshotWriteResult,
@@ -20,6 +20,7 @@ use harness_core::goal_ledger::{
     GoalLedgerProjection, GoalQualityGate, GoalStoryArtifact, GOAL_LEDGER_EVIDENCE_CATEGORY,
     GOAL_LEDGER_MODE, GOAL_LEDGER_SCHEMA_VERSION,
 };
+use harness_core::perm::PermissionPolicy;
 use harness_core::persistent_task::{project_persistent_tasks, PersistentTaskProjection};
 use harness_core::plan_consensus::{
     plan_consensus_artifact_name, plan_consensus_metadata, resolve_plan_consensus_lanes,
@@ -29,13 +30,27 @@ use harness_core::plan_consensus::{
 };
 use harness_core::proj::SessionModeSource;
 use harness_core::redact::DefaultRedactor;
+use harness_core::research_mission::{
+    project_research_missions, research_mission_artifact_name, research_mission_metadata,
+    research_result_artifact_name, research_result_metadata, research_validator_artifact_name,
+    validate_research_mission_artifact, validate_research_result_artifact, ResearchMissionArtifact,
+    ResearchMissionProjection, ResearchResultArtifact, ResearchSandboxArtifact,
+    ResearchValidatorArtifact, ResearchValidatorCommand, ResearchValidatorMode,
+    RESEARCH_MISSION_EVIDENCE_CATEGORY, RESEARCH_MISSION_MODE, RESEARCH_MISSION_SCHEMA_VERSION,
+};
 use harness_core::run_dossier::{build_run_dossier_with_tasks, RunDossier};
 use harness_core::tool::ArtifactStore;
+use harness_core::wiki::{
+    parse_wiki_page, render_wiki_page, wiki_digest, wiki_evidence_metadata, wiki_lint,
+    wiki_matches, wiki_page_path, wiki_summary, WikiLintFinding, WikiPage, WikiPageSummary,
+    WIKI_EVIDENCE_CATEGORY, WIKI_MODE,
+};
 use harness_core::workflow::{
     project_workflows, WorkflowEvidenceRequest, WorkflowProjection, WorkflowSignoffPolicy,
     WorkflowStartRequest, WorkflowStartResult,
 };
 use serde::Serialize;
+use serde_json::json;
 
 use crate::cli_io::{load_events_from_run_dir, EVENTS_FILE_NAME};
 use crate::defaults::DEFAULT_SESSION_DIR;
@@ -66,6 +81,11 @@ enum WorkflowCommands {
     /// Create, checkpoint, or inspect replay-derived workflow goal ledgers.
     #[command(name = "goal", alias = "goal-ledger", alias = "ultragoal")]
     Goal(Box<WorkflowGoalCommand>),
+    /// Create or inspect validator-gated research missions.
+    #[command(name = "mission", alias = "research-loop", alias = "autoresearch")]
+    Mission(Box<WorkflowMissionCommand>),
+    /// Read, query, or update the markdown workflow wiki.
+    Wiki(Box<WorkflowWikiCommand>),
     /// Check or apply local workflow bootstrap files.
     Init(WorkflowInitCommand),
 }
@@ -586,6 +606,221 @@ impl GoalStatusArg {
 }
 
 #[derive(Debug, Args, Clone)]
+struct WorkflowMissionCommand {
+    #[command(subcommand)]
+    command: WorkflowMissionCommands,
+}
+
+#[derive(Debug, Subcommand, Clone)]
+enum WorkflowMissionCommands {
+    /// Create mission and sandbox artifacts.
+    Init(WorkflowMissionInitCommand),
+    /// Record an iteration result and validator/review artifact refs.
+    Run(WorkflowMissionRunCommand),
+    /// Inspect replay-derived mission status.
+    Status(WorkflowMissionStatusCommand),
+    /// Read one replay-derived mission.
+    Read(WorkflowMissionReadCommand),
+}
+
+#[derive(Debug, Args, Clone)]
+struct WorkflowMissionInitCommand {
+    #[arg(long)]
+    workflow_id: Option<String>,
+    #[arg(long)]
+    mission_id: String,
+    #[arg(long)]
+    objective: String,
+    #[arg(long)]
+    question: String,
+    #[arg(long, value_enum, default_value_t = ValidatorModeArg::PromptArchitectArtifact)]
+    validator_mode: ValidatorModeArg,
+    #[arg(long, default_value = "isolated research sandbox")]
+    sandbox: String,
+    #[arg(long = "allowed-command")]
+    allowed_commands: Vec<String>,
+    #[arg(long = "constraint")]
+    constraints: Vec<String>,
+    #[arg(long = "evidence-ref")]
+    evidence_refs: Vec<String>,
+    #[arg(long, default_value = "workflow-cli")]
+    owner: String,
+    #[arg(long)]
+    lane: Option<String>,
+    #[arg(long, default_value_t = false)]
+    json: bool,
+}
+
+#[derive(Debug, Args, Clone)]
+struct WorkflowMissionRunCommand {
+    #[arg(long)]
+    workflow_id: Option<String>,
+    #[arg(long)]
+    mission_id: String,
+    #[arg(long, default_value_t = 1)]
+    iteration: u32,
+    #[arg(long, value_enum)]
+    status: MissionStatusArg,
+    #[arg(long)]
+    summary: String,
+    #[arg(long)]
+    candidate_ref: Option<String>,
+    #[arg(long, value_enum, default_value_t = ValidatorModeArg::PromptArchitectArtifact)]
+    validator_mode: ValidatorModeArg,
+    #[arg(long, default_value = "passed")]
+    validator_status: String,
+    #[arg(long)]
+    validator_command: Option<String>,
+    #[arg(long)]
+    validator_result_ref: Option<String>,
+    #[arg(long)]
+    review_ref: Option<String>,
+    #[arg(long = "evidence-ref")]
+    evidence_refs: Vec<String>,
+    #[arg(long, default_value = "workflow-cli")]
+    owner: String,
+    #[arg(long)]
+    lane: Option<String>,
+    #[arg(long, default_value_t = false)]
+    json: bool,
+}
+
+#[derive(Debug, Args, Clone)]
+struct WorkflowMissionStatusCommand {
+    #[command(flatten)]
+    target: WorkflowReadTargetArgs,
+    #[arg(long)]
+    mission_id: Option<String>,
+    #[arg(long, default_value_t = false)]
+    json: bool,
+}
+
+#[derive(Debug, Args, Clone)]
+struct WorkflowMissionReadCommand {
+    #[command(flatten)]
+    target: WorkflowReadTargetArgs,
+    #[arg(long)]
+    mission_id: String,
+    #[arg(long)]
+    output: Option<PathBuf>,
+    #[arg(long, default_value_t = false)]
+    json: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum ValidatorModeArg {
+    MissionValidatorScript,
+    PromptArchitectArtifact,
+}
+
+impl ValidatorModeArg {
+    fn to_core(self) -> ResearchValidatorMode {
+        match self {
+            Self::MissionValidatorScript => ResearchValidatorMode::MissionValidatorScript,
+            Self::PromptArchitectArtifact => ResearchValidatorMode::PromptArchitectArtifact,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum MissionStatusArg {
+    Complete,
+    Blocked,
+    Failed,
+}
+
+impl MissionStatusArg {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Complete => "complete",
+            Self::Blocked => "blocked",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+#[derive(Debug, Args, Clone)]
+struct WorkflowWikiCommand {
+    #[command(subcommand)]
+    command: WorkflowWikiCommands,
+}
+
+#[derive(Debug, Subcommand, Clone)]
+enum WorkflowWikiCommands {
+    Add(WorkflowWikiAddCommand),
+    Read(WorkflowWikiReadCommand),
+    List(WorkflowWikiListCommand),
+    Query(WorkflowWikiQueryCommand),
+    Lint(WorkflowWikiListCommand),
+    Refresh(WorkflowWikiListCommand),
+    Delete(WorkflowWikiDeleteCommand),
+}
+
+#[derive(Debug, Args, Clone)]
+struct WorkflowWikiAddCommand {
+    #[arg(long)]
+    workflow_id: Option<String>,
+    #[arg(long)]
+    slug: String,
+    #[arg(long)]
+    title: String,
+    #[arg(long)]
+    category: String,
+    #[arg(long = "tag")]
+    tags: Vec<String>,
+    #[arg(long)]
+    body: Option<String>,
+    #[arg(long)]
+    body_file: Option<PathBuf>,
+    #[arg(long, default_value = "workflow-cli")]
+    owner: String,
+    #[arg(long)]
+    lane: Option<String>,
+    #[arg(long, default_value_t = false)]
+    json: bool,
+}
+
+#[derive(Debug, Args, Clone)]
+struct WorkflowWikiReadCommand {
+    #[arg(long)]
+    slug: String,
+    #[arg(long, default_value_t = false)]
+    json: bool,
+}
+
+#[derive(Debug, Args, Clone)]
+struct WorkflowWikiListCommand {
+    #[arg(long, default_value_t = false)]
+    json: bool,
+}
+
+#[derive(Debug, Args, Clone)]
+struct WorkflowWikiQueryCommand {
+    #[arg(long)]
+    term: Option<String>,
+    #[arg(long)]
+    tag: Option<String>,
+    #[arg(long)]
+    category: Option<String>,
+    #[arg(long, default_value_t = false)]
+    json: bool,
+}
+
+#[derive(Debug, Args, Clone)]
+struct WorkflowWikiDeleteCommand {
+    #[arg(long)]
+    workflow_id: Option<String>,
+    #[arg(long)]
+    slug: String,
+    #[arg(long, default_value = "workflow-cli")]
+    owner: String,
+    #[arg(long)]
+    lane: Option<String>,
+    #[arg(long, default_value_t = false)]
+    json: bool,
+}
+
+#[derive(Debug, Args, Clone)]
 #[command(group(
     ArgGroup::new("mode")
         .required(true)
@@ -691,6 +926,54 @@ struct GoalStatusReport {
 }
 
 #[derive(Debug, Serialize)]
+struct MissionMutationReport {
+    run_id: String,
+    run_dir: String,
+    events_path: String,
+    workflow_id: String,
+    mission_id: String,
+    status: String,
+    artifact_path: String,
+    artifact_digest: String,
+    artifact_bytes: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct MissionStatusReport {
+    run_dir: String,
+    events_path: String,
+    projection: ResearchMissionProjection,
+}
+
+#[derive(Debug, Serialize)]
+struct WikiMutationReport {
+    run_id: String,
+    run_dir: String,
+    events_path: String,
+    workflow_id: String,
+    action: String,
+    page: WikiPageSummary,
+}
+
+#[derive(Debug, Serialize)]
+struct WikiListReport {
+    root: String,
+    pages: Vec<WikiPageSummary>,
+}
+
+#[derive(Debug, Serialize)]
+struct WikiQueryReport {
+    root: String,
+    matches: Vec<WikiPageSummary>,
+}
+
+#[derive(Debug, Serialize)]
+struct WikiLintReport {
+    root: String,
+    findings: Vec<WikiLintFinding>,
+}
+
+#[derive(Debug, Serialize)]
 struct InitReport {
     mode: String,
     applied: bool,
@@ -780,6 +1063,46 @@ pub fn execute(
                 }
             }
         }
+        WorkflowCommands::Mission(mission) => {
+            let mission = *mission;
+            match mission.command {
+                WorkflowMissionCommands::Init(init) => {
+                    runtime.block_on(execute_mission_init(init, config_path, global_session_dir))
+                }
+                WorkflowMissionCommands::Run(run) => {
+                    runtime.block_on(execute_mission_run(run, config_path, global_session_dir))
+                }
+                WorkflowMissionCommands::Status(status) => {
+                    execute_mission_status(status, config_path, global_session_dir)
+                }
+                WorkflowMissionCommands::Read(read) => {
+                    execute_mission_read(read, config_path, global_session_dir)
+                }
+            }
+        }
+        WorkflowCommands::Wiki(wiki) => {
+            let wiki = *wiki;
+            match wiki.command {
+                WorkflowWikiCommands::Add(add) => {
+                    runtime.block_on(execute_wiki_add(add, config_path, global_session_dir))
+                }
+                WorkflowWikiCommands::Delete(delete) => {
+                    runtime.block_on(execute_wiki_delete(delete, config_path, global_session_dir))
+                }
+                WorkflowWikiCommands::Read(read) => {
+                    execute_wiki_read(read, config_path, global_session_dir)
+                }
+                WorkflowWikiCommands::List(list) | WorkflowWikiCommands::Refresh(list) => {
+                    execute_wiki_list(list, config_path, global_session_dir)
+                }
+                WorkflowWikiCommands::Query(query) => {
+                    execute_wiki_query(query, config_path, global_session_dir)
+                }
+                WorkflowWikiCommands::Lint(lint) => {
+                    execute_wiki_lint(lint, config_path, global_session_dir)
+                }
+            }
+        }
         WorkflowCommands::Init(init) => execute_init(init),
     };
 
@@ -805,8 +1128,7 @@ async fn execute_run(
         )
     })?;
 
-    let mut coordinator_config = CoordinatorConfig::new(context.session_dir);
-    coordinator_config.session_mode_source = Some(SessionModeSource::Prompt);
+    let coordinator_config = coordinator_config_for_workflow(&context);
     let clock: Arc<dyn Clock + Send + Sync> = Arc::new(RealClock::new());
     let coordinator = spawn_coordinator(
         coordinator_config,
@@ -1115,8 +1437,7 @@ async fn execute_snapshot_write(
         )
     })?;
 
-    let mut coordinator_config = CoordinatorConfig::new(context.session_dir);
-    coordinator_config.session_mode_source = Some(SessionModeSource::Prompt);
+    let coordinator_config = coordinator_config_for_workflow(&context);
     let clock: Arc<dyn Clock + Send + Sync> = Arc::new(RealClock::new());
     let coordinator = spawn_coordinator(
         coordinator_config,
@@ -1208,8 +1529,7 @@ async fn execute_plan_consensus(
         )
     })?;
 
-    let mut coordinator_config = CoordinatorConfig::new(context.session_dir);
-    coordinator_config.session_mode_source = Some(SessionModeSource::Prompt);
+    let coordinator_config = coordinator_config_for_workflow(&context);
     let clock: Arc<dyn Clock + Send + Sync> = Arc::new(RealClock::new());
     let coordinator = spawn_coordinator(
         coordinator_config,
@@ -1623,6 +1943,527 @@ fn execute_goal_read(
     Ok(())
 }
 
+async fn execute_mission_init(
+    cmd: WorkflowMissionInitCommand,
+    config_path: Option<PathBuf>,
+    global_session_dir: Option<PathBuf>,
+) -> Result<(), String> {
+    let context = resolve_workflow_context(config_path, global_session_dir)?;
+    fs::create_dir_all(&context.session_dir).map_err(|err| {
+        format!(
+            "failed to create session dir {}: {err}",
+            context.session_dir.display()
+        )
+    })?;
+    let mut coordinator_config = CoordinatorConfig::new(context.session_dir);
+    coordinator_config.session_mode_source = Some(SessionModeSource::Prompt);
+    let clock: Arc<dyn Clock + Send + Sync> = Arc::new(RealClock::new());
+    let coordinator = spawn_coordinator(
+        coordinator_config,
+        Arc::clone(&clock),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let workspace = std::env::current_dir()
+        .map_err(|err| format!("failed to resolve current working directory: {err}"))?;
+    let run = coordinator
+        .start_run("workflow research mission init".to_string(), workspace)
+        .await
+        .map_err(|err| err.to_string())?;
+    let workflow_id = cmd
+        .workflow_id
+        .clone()
+        .unwrap_or_else(|| format!("wf_research_{}", run.run_id));
+    let lane = cmd
+        .lane
+        .clone()
+        .or_else(|| Some(context.workflow.run.default_lane.clone()));
+    let artifact = ResearchMissionArtifact {
+        schema_version: RESEARCH_MISSION_SCHEMA_VERSION,
+        workflow_id: workflow_id.clone(),
+        mission_id: cmd.mission_id.clone(),
+        objective: cmd.objective.clone(),
+        question: cmd.question.clone(),
+        validator_mode: cmd.validator_mode.to_core(),
+        sandbox: ResearchSandboxArtifact {
+            summary: cmd.sandbox.clone(),
+            allowed_commands: cmd.allowed_commands.clone(),
+            constraints: cmd.constraints.clone(),
+        },
+        evidence_refs: cmd.evidence_refs.clone(),
+    };
+    validate_research_mission_artifact(&artifact)
+        .map_err(|errors| format!("invalid research mission artifact: {}", errors.join("; ")))?;
+    let (artifact_path, artifact_digest, artifact_bytes) = write_json_artifact(
+        &run,
+        &research_mission_artifact_name(&cmd.mission_id),
+        &artifact,
+    )?;
+    coordinator
+        .start_workflow(
+            supervisor_actor(),
+            WorkflowStartRequest {
+                workflow_id: workflow_id.clone(),
+                mode: RESEARCH_MISSION_MODE.to_string(),
+                owner: cmd.owner.clone(),
+                lane,
+                title: Some(format!("research mission: {}", cmd.objective)),
+                idempotency_key: Some(format!("research-mission:{}", cmd.mission_id)),
+            },
+        )
+        .await
+        .map_err(|err| err.to_string())?;
+    coordinator
+        .record_workflow_evidence(
+            supervisor_actor(),
+            WorkflowEvidenceRequest {
+                workflow_id: workflow_id.clone(),
+                category: RESEARCH_MISSION_EVIDENCE_CATEGORY.to_string(),
+                summary: format!("research mission `{}` initialized", cmd.mission_id),
+                artifact_path: Some(artifact_path.clone()),
+                artifact_digest: Some(artifact_digest.clone()),
+                acceptance_ref: Some(cmd.mission_id.clone()),
+                metadata: research_mission_metadata(&artifact),
+            },
+        )
+        .await
+        .map_err(|err| err.to_string())?;
+    coordinator
+        .stop_run()
+        .await
+        .map_err(|err| err.to_string())?;
+    let report = MissionMutationReport {
+        run_id: run.run_id,
+        run_dir: run.run_dir.display().to_string(),
+        events_path: run.events_path.display().to_string(),
+        workflow_id,
+        mission_id: cmd.mission_id,
+        status: "active".to_string(),
+        artifact_path,
+        artifact_digest,
+        artifact_bytes,
+    };
+    if cmd.json {
+        print_json(&report, "workflow mission init JSON")?;
+    } else {
+        println!(
+            "workflow mission initialized: {} artifact={} run={}",
+            report.mission_id, report.artifact_path, report.run_dir
+        );
+    }
+    Ok(())
+}
+
+async fn execute_mission_run(
+    cmd: WorkflowMissionRunCommand,
+    config_path: Option<PathBuf>,
+    global_session_dir: Option<PathBuf>,
+) -> Result<(), String> {
+    let context = resolve_workflow_context(config_path, global_session_dir)?;
+    fs::create_dir_all(&context.session_dir).map_err(|err| {
+        format!(
+            "failed to create session dir {}: {err}",
+            context.session_dir.display()
+        )
+    })?;
+    let coordinator_config = coordinator_config_for_workflow(&context);
+    let clock: Arc<dyn Clock + Send + Sync> = Arc::new(RealClock::new());
+    let coordinator = spawn_coordinator(
+        coordinator_config,
+        Arc::clone(&clock),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let workspace = std::env::current_dir()
+        .map_err(|err| format!("failed to resolve current working directory: {err}"))?;
+    let run = coordinator
+        .start_run("workflow research mission run".to_string(), workspace)
+        .await
+        .map_err(|err| err.to_string())?;
+    let workflow_id = cmd
+        .workflow_id
+        .clone()
+        .unwrap_or_else(|| format!("wf_research_{}", run.run_id));
+    let lane = cmd
+        .lane
+        .clone()
+        .or_else(|| Some(context.workflow.run.default_lane.clone()));
+    let validator_mode = cmd.validator_mode.to_core();
+    let mut validator_status = cmd.validator_status.clone();
+    let mut validator_result_ref = cmd.validator_result_ref.clone();
+    if let Some(command) = cmd.validator_command.as_ref() {
+        if validator_mode != ResearchValidatorMode::MissionValidatorScript {
+            return Err(
+                "--validator-command requires --validator-mode mission-validator-script"
+                    .to_string(),
+            );
+        }
+        if cmd.validator_result_ref.is_some() {
+            return Err(
+                "pass either --validator-command or --validator-result-ref, not both".to_string(),
+            );
+        }
+        let tool_result = coordinator
+            .execute_agent_tool_call(
+                supervisor_actor(),
+                None,
+                "bash",
+                json!({
+                    "command": command,
+                    "description": format!("Run research mission validator `{}`", cmd.mission_id),
+                }),
+            )
+            .await
+            .map_err(|err| format!("validator command failed permissioned execution: {err}"))?;
+        let command_passed = tool_result
+            .structured_json
+            .as_ref()
+            .and_then(|value| value.get("success"))
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        let validator_artifact = json!({
+            "schema_version": RESEARCH_MISSION_SCHEMA_VERSION,
+            "workflow_id": workflow_id.clone(),
+            "mission_id": cmd.mission_id.clone(),
+            "iteration": cmd.iteration,
+            "command": command,
+            "tool_result": tool_result,
+        });
+        let (validator_path, _, _) = write_json_artifact(
+            &run,
+            &research_validator_artifact_name(&cmd.mission_id, cmd.iteration),
+            &validator_artifact,
+        )?;
+        validator_result_ref = Some(validator_path);
+        validator_status = if command_passed {
+            "passed".to_string()
+        } else {
+            "failed".to_string()
+        };
+    }
+    let validator = ResearchValidatorArtifact {
+        mode: validator_mode,
+        status: validator_status,
+        command: cmd
+            .validator_command
+            .clone()
+            .map(|command| ResearchValidatorCommand {
+                command,
+                permission_kind: "bash".to_string(),
+            }),
+        result_ref: validator_result_ref,
+        review_ref: cmd.review_ref.clone(),
+    };
+    let artifact = ResearchResultArtifact {
+        schema_version: RESEARCH_MISSION_SCHEMA_VERSION,
+        workflow_id: workflow_id.clone(),
+        mission_id: cmd.mission_id.clone(),
+        iteration: cmd.iteration,
+        status: cmd.status.as_str().to_string(),
+        summary: cmd.summary.clone(),
+        candidate_ref: cmd.candidate_ref.clone(),
+        validator,
+        evidence_refs: cmd.evidence_refs.clone(),
+    };
+    validate_research_result_artifact(&artifact)
+        .map_err(|errors| format!("invalid research result artifact: {}", errors.join("; ")))?;
+    let (artifact_path, artifact_digest, artifact_bytes) = write_json_artifact(
+        &run,
+        &research_result_artifact_name(&cmd.mission_id, cmd.iteration),
+        &artifact,
+    )?;
+    coordinator
+        .start_workflow(
+            supervisor_actor(),
+            WorkflowStartRequest {
+                workflow_id: workflow_id.clone(),
+                mode: RESEARCH_MISSION_MODE.to_string(),
+                owner: cmd.owner.clone(),
+                lane,
+                title: Some(format!("research mission result: {}", cmd.mission_id)),
+                idempotency_key: Some(format!(
+                    "research-result:{}:{}:{}",
+                    cmd.mission_id, cmd.iteration, run.run_id
+                )),
+            },
+        )
+        .await
+        .map_err(|err| err.to_string())?;
+    coordinator
+        .record_workflow_evidence(
+            supervisor_actor(),
+            WorkflowEvidenceRequest {
+                workflow_id: workflow_id.clone(),
+                category: RESEARCH_MISSION_EVIDENCE_CATEGORY.to_string(),
+                summary: cmd.summary.clone(),
+                artifact_path: Some(artifact_path.clone()),
+                artifact_digest: Some(artifact_digest.clone()),
+                acceptance_ref: Some(cmd.mission_id.clone()),
+                metadata: research_result_metadata(&artifact),
+            },
+        )
+        .await
+        .map_err(|err| err.to_string())?;
+    coordinator
+        .stop_run()
+        .await
+        .map_err(|err| err.to_string())?;
+    let report = MissionMutationReport {
+        run_id: run.run_id,
+        run_dir: run.run_dir.display().to_string(),
+        events_path: run.events_path.display().to_string(),
+        workflow_id,
+        mission_id: cmd.mission_id,
+        status: artifact.status,
+        artifact_path,
+        artifact_digest,
+        artifact_bytes,
+    };
+    if cmd.json {
+        print_json(&report, "workflow mission run JSON")?;
+    } else {
+        println!(
+            "workflow mission result recorded: {} status={} artifact={} run={}",
+            report.mission_id, report.status, report.artifact_path, report.run_dir
+        );
+    }
+    Ok(())
+}
+
+fn execute_mission_status(
+    cmd: WorkflowMissionStatusCommand,
+    config_path: Option<PathBuf>,
+    global_session_dir: Option<PathBuf>,
+) -> Result<(), String> {
+    let mut report = mission_status_report(cmd.target, config_path, global_session_dir)?;
+    if let Some(mission_id) = cmd.mission_id.as_ref() {
+        report
+            .projection
+            .missions
+            .retain(|id, _| id.as_str() == mission_id.as_str());
+    }
+    if cmd.json {
+        print_json(&report, "workflow mission status JSON")?;
+    } else {
+        for mission in report.projection.missions.values() {
+            println!(
+                "{} status={} iterations={} ready={}",
+                mission.mission_id,
+                mission.status,
+                mission.iterations.len(),
+                mission.ready_for_completion
+            );
+        }
+    }
+    Ok(())
+}
+
+fn execute_mission_read(
+    cmd: WorkflowMissionReadCommand,
+    config_path: Option<PathBuf>,
+    global_session_dir: Option<PathBuf>,
+) -> Result<(), String> {
+    let report = mission_status_report(cmd.target, config_path, global_session_dir)?;
+    let mission = report
+        .projection
+        .missions
+        .get(&cmd.mission_id)
+        .ok_or_else(|| format!("mission `{}` not found in projection", cmd.mission_id))?;
+    let body = serde_json::to_string_pretty(mission)
+        .map_err(|err| format!("failed to render mission JSON: {err}"))?;
+    if let Some(output) = cmd.output.as_ref() {
+        write_explicit_output(output, &body)?;
+    }
+    if cmd.json {
+        println!("{body}");
+    } else {
+        println!(
+            "workflow mission: {} status={} iterations={} ready={}",
+            mission.mission_id,
+            mission.status,
+            mission.iterations.len(),
+            mission.ready_for_completion
+        );
+    }
+    Ok(())
+}
+
+async fn execute_wiki_add(
+    cmd: WorkflowWikiAddCommand,
+    config_path: Option<PathBuf>,
+    global_session_dir: Option<PathBuf>,
+) -> Result<(), String> {
+    let context = resolve_workflow_context(config_path, global_session_dir)?;
+    let root = resolve_wiki_root(&context.workflow)?;
+    let page_path = wiki_page_path(&root, &cmd.slug)?;
+    if let Some(parent) = page_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create wiki root {}: {err}", parent.display()))?;
+    }
+    let body = read_wiki_body(cmd.body.as_ref(), cmd.body_file.as_ref())?;
+    let contents = render_wiki_page(&cmd.title, &cmd.category, &cmd.tags, &body);
+    fs::write(&page_path, &contents)
+        .map_err(|err| format!("failed to write wiki page {}: {err}", page_path.display()))?;
+    let summary = wiki_summary(&cmd.slug, &page_path, &contents);
+    let report = record_wiki_write(
+        context,
+        cmd.workflow_id,
+        cmd.owner,
+        cmd.lane,
+        "add",
+        summary,
+    )
+    .await?;
+    if cmd.json {
+        print_json(&report, "workflow wiki add JSON")?;
+    } else {
+        println!(
+            "workflow wiki page added: {} digest={} run={}",
+            report.page.slug, report.page.digest, report.run_dir
+        );
+    }
+    Ok(())
+}
+
+async fn execute_wiki_delete(
+    cmd: WorkflowWikiDeleteCommand,
+    config_path: Option<PathBuf>,
+    global_session_dir: Option<PathBuf>,
+) -> Result<(), String> {
+    let context = resolve_workflow_context(config_path, global_session_dir)?;
+    let root = resolve_wiki_root(&context.workflow)?;
+    let page_path = wiki_page_path(&root, &cmd.slug)?;
+    let contents = fs::read_to_string(&page_path)
+        .map_err(|err| format!("failed to read wiki page {}: {err}", page_path.display()))?;
+    let mut summary = wiki_summary(&cmd.slug, &page_path, &contents);
+    summary.digest = wiki_digest(&contents);
+    fs::remove_file(&page_path)
+        .map_err(|err| format!("failed to delete wiki page {}: {err}", page_path.display()))?;
+    let report = record_wiki_write(
+        context,
+        cmd.workflow_id,
+        cmd.owner,
+        cmd.lane,
+        "delete",
+        summary,
+    )
+    .await?;
+    if cmd.json {
+        print_json(&report, "workflow wiki delete JSON")?;
+    } else {
+        println!(
+            "workflow wiki page deleted: {} previous_digest={} run={}",
+            report.page.slug, report.page.digest, report.run_dir
+        );
+    }
+    Ok(())
+}
+
+fn execute_wiki_read(
+    cmd: WorkflowWikiReadCommand,
+    config_path: Option<PathBuf>,
+    global_session_dir: Option<PathBuf>,
+) -> Result<(), String> {
+    let context = resolve_workflow_context(config_path, global_session_dir)?;
+    let root = resolve_wiki_root(&context.workflow)?;
+    let page_path = wiki_page_path(&root, &cmd.slug)?;
+    let contents = fs::read_to_string(&page_path)
+        .map_err(|err| format!("failed to read wiki page {}: {err}", page_path.display()))?;
+    let page = parse_wiki_page(&cmd.slug, &contents);
+    if cmd.json {
+        print_json(&page, "workflow wiki read JSON")?;
+    } else {
+        println!("{contents}");
+    }
+    Ok(())
+}
+
+fn execute_wiki_list(
+    cmd: WorkflowWikiListCommand,
+    config_path: Option<PathBuf>,
+    global_session_dir: Option<PathBuf>,
+) -> Result<(), String> {
+    let context = resolve_workflow_context(config_path, global_session_dir)?;
+    let root = resolve_wiki_root(&context.workflow)?;
+    let pages = load_wiki_pages(&root)?;
+    let report = WikiListReport {
+        root: root.display().to_string(),
+        pages: pages.into_iter().map(|(_, summary, _)| summary).collect(),
+    };
+    if cmd.json {
+        print_json(&report, "workflow wiki list JSON")?;
+    } else {
+        for page in &report.pages {
+            println!(
+                "{} title={} category={} digest={}",
+                page.slug, page.title, page.category, page.digest
+            );
+        }
+    }
+    Ok(())
+}
+
+fn execute_wiki_query(
+    cmd: WorkflowWikiQueryCommand,
+    config_path: Option<PathBuf>,
+    global_session_dir: Option<PathBuf>,
+) -> Result<(), String> {
+    let context = resolve_workflow_context(config_path, global_session_dir)?;
+    let root = resolve_wiki_root(&context.workflow)?;
+    let matches = load_wiki_pages(&root)?
+        .into_iter()
+        .filter(|(_, _, page)| {
+            wiki_matches(
+                page,
+                cmd.term.as_deref(),
+                cmd.tag.as_deref(),
+                cmd.category.as_deref(),
+            )
+        })
+        .map(|(_, summary, _)| summary)
+        .collect::<Vec<_>>();
+    let report = WikiQueryReport {
+        root: root.display().to_string(),
+        matches,
+    };
+    if cmd.json {
+        print_json(&report, "workflow wiki query JSON")?;
+    } else {
+        for page in &report.matches {
+            println!(
+                "{} title={} category={} digest={}",
+                page.slug, page.title, page.category, page.digest
+            );
+        }
+    }
+    Ok(())
+}
+
+fn execute_wiki_lint(
+    cmd: WorkflowWikiListCommand,
+    config_path: Option<PathBuf>,
+    global_session_dir: Option<PathBuf>,
+) -> Result<(), String> {
+    let context = resolve_workflow_context(config_path, global_session_dir)?;
+    let root = resolve_wiki_root(&context.workflow)?;
+    let findings = load_wiki_pages(&root)?
+        .into_iter()
+        .flat_map(|(_, _, page)| wiki_lint(&page))
+        .collect::<Vec<_>>();
+    let report = WikiLintReport {
+        root: root.display().to_string(),
+        findings,
+    };
+    if cmd.json {
+        print_json(&report, "workflow wiki lint JSON")?;
+    } else if report.findings.is_empty() {
+        println!("workflow wiki lint: clean");
+    } else {
+        for finding in &report.findings {
+            println!("{} {}: {}", finding.slug, finding.level, finding.message);
+        }
+    }
+    Ok(())
+}
+
 fn execute_init(cmd: WorkflowInitCommand) -> Result<(), String> {
     let project_root = std::env::current_dir()
         .map_err(|err| format!("failed to resolve current working directory: {err}"))?;
@@ -1701,6 +2542,10 @@ fn status_report(
             .goal_ledger
             .goals
             .retain(|_, goal| goal.workflow_id == workflow_id);
+        projection
+            .research_missions
+            .missions
+            .retain(|_, mission| mission.workflow_id == workflow_id);
         persistent_tasks.tasks.retain(|_, task| {
             task.metadata
                 .get(harness_core::workflow::WORKFLOW_TASK_METADATA_KEY)
@@ -1733,6 +2578,22 @@ fn goal_status_report(
     let events = load_events_from_run_dir(&run_dir)?;
     let projection = project_goal_ledger(events.iter().map(|event| &event.payload));
     Ok(GoalStatusReport {
+        run_dir: run_dir.display().to_string(),
+        events_path: events_path.display().to_string(),
+        projection,
+    })
+}
+
+fn mission_status_report(
+    target: WorkflowReadTargetArgs,
+    config_path: Option<PathBuf>,
+    global_session_dir: Option<PathBuf>,
+) -> Result<MissionStatusReport, String> {
+    let run_dir = resolve_read_run_dir(target, config_path, global_session_dir)?;
+    let events_path = run_dir.join(EVENTS_FILE_NAME);
+    let events = load_events_from_run_dir(&run_dir)?;
+    let projection = project_research_missions(events.iter().map(|event| &event.payload));
+    Ok(MissionStatusReport {
         run_dir: run_dir.display().to_string(),
         events_path: events_path.display().to_string(),
         projection,
@@ -1821,6 +2682,126 @@ fn write_json_artifact<T: Serialize>(
     Ok((artifact.path, digest, body.len() as u64))
 }
 
+fn resolve_wiki_root(workflow: &WorkflowRuntimeConfig) -> Result<PathBuf, String> {
+    let root = if workflow.wiki.root.is_absolute() {
+        workflow.wiki.root.clone()
+    } else {
+        std::env::current_dir()
+            .map_err(|err| format!("failed to resolve current working directory: {err}"))?
+            .join(&workflow.wiki.root)
+    };
+    Ok(root)
+}
+
+fn read_wiki_body(body: Option<&String>, body_file: Option<&PathBuf>) -> Result<String, String> {
+    match (body, body_file) {
+        (Some(_), Some(_)) => Err("pass either --body or --body-file, not both".to_string()),
+        (Some(body), None) => Ok(body.clone()),
+        (None, Some(path)) => fs::read_to_string(path)
+            .map_err(|err| format!("failed to read wiki body file {}: {err}", path.display())),
+        (None, None) => Err("wiki add requires --body or --body-file".to_string()),
+    }
+}
+
+fn load_wiki_pages(root: &Path) -> Result<Vec<(PathBuf, WikiPageSummary, WikiPage)>, String> {
+    if !root.exists() {
+        return Ok(Vec::new());
+    }
+    let mut pages = Vec::new();
+    for entry in fs::read_dir(root)
+        .map_err(|err| format!("failed to read wiki root {}: {err}", root.display()))?
+    {
+        let entry = entry.map_err(|err| format!("failed to read wiki entry: {err}"))?;
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("md") {
+            continue;
+        }
+        let Some(slug) = path.file_stem().and_then(|stem| stem.to_str()) else {
+            continue;
+        };
+        let contents = fs::read_to_string(&path)
+            .map_err(|err| format!("failed to read wiki page {}: {err}", path.display()))?;
+        let summary = wiki_summary(slug, &path, &contents);
+        let page = parse_wiki_page(slug, &contents);
+        pages.push((path, summary, page));
+    }
+    pages.sort_by(|left, right| left.1.slug.cmp(&right.1.slug));
+    Ok(pages)
+}
+
+async fn record_wiki_write(
+    context: WorkflowRuntimeContext,
+    workflow_id: Option<String>,
+    owner: String,
+    lane: Option<String>,
+    action: &str,
+    page: WikiPageSummary,
+) -> Result<WikiMutationReport, String> {
+    fs::create_dir_all(&context.session_dir).map_err(|err| {
+        format!(
+            "failed to create session dir {}: {err}",
+            context.session_dir.display()
+        )
+    })?;
+    let mut coordinator_config = CoordinatorConfig::new(context.session_dir);
+    coordinator_config.session_mode_source = Some(SessionModeSource::Prompt);
+    let clock: Arc<dyn Clock + Send + Sync> = Arc::new(RealClock::new());
+    let coordinator = spawn_coordinator(
+        coordinator_config,
+        Arc::clone(&clock),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let workspace = std::env::current_dir()
+        .map_err(|err| format!("failed to resolve current working directory: {err}"))?;
+    let run = coordinator
+        .start_run(format!("workflow wiki {action}"), workspace)
+        .await
+        .map_err(|err| err.to_string())?;
+    let workflow_id = workflow_id.unwrap_or_else(|| format!("wf_wiki_{}", run.run_id));
+    let lane = lane.or_else(|| Some(context.workflow.run.default_lane.clone()));
+    coordinator
+        .start_workflow(
+            supervisor_actor(),
+            WorkflowStartRequest {
+                workflow_id: workflow_id.clone(),
+                mode: WIKI_MODE.to_string(),
+                owner: owner.clone(),
+                lane,
+                title: Some(format!("wiki {action}: {}", page.slug)),
+                idempotency_key: Some(format!("wiki:{action}:{}:{}", page.slug, run.run_id)),
+            },
+        )
+        .await
+        .map_err(|err| err.to_string())?;
+    coordinator
+        .record_workflow_evidence(
+            supervisor_actor(),
+            WorkflowEvidenceRequest {
+                workflow_id: workflow_id.clone(),
+                category: WIKI_EVIDENCE_CATEGORY.to_string(),
+                summary: format!("wiki {action}: {} digest={}", page.slug, page.digest),
+                artifact_path: None,
+                artifact_digest: Some(page.digest.clone()),
+                acceptance_ref: Some(page.slug.clone()),
+                metadata: wiki_evidence_metadata(action, &page),
+            },
+        )
+        .await
+        .map_err(|err| err.to_string())?;
+    coordinator
+        .stop_run()
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(WikiMutationReport {
+        run_id: run.run_id,
+        run_dir: run.run_dir.display().to_string(),
+        events_path: run.events_path.display().to_string(),
+        workflow_id,
+        action: action.to_string(),
+        page,
+    })
+}
+
 fn snapshot_input_from_command(cmd: &WorkflowSnapshotWriteCommand) -> ContextSnapshotInput {
     let mut input = ContextSnapshotInput::new(
         cmd.source_command.clone(),
@@ -1870,6 +2851,8 @@ struct WorkflowRuntimeContext {
     session_dir: PathBuf,
     workflow: WorkflowRuntimeConfig,
     agent_catalog: Option<AgentCatalog>,
+    permission_policy: PermissionPolicy,
+    shell_allowlist: ShellAllowlist,
 }
 
 fn resolve_workflow_context(
@@ -1881,10 +2864,14 @@ fn resolve_workflow_context(
         let mut config = loaded.config;
         config.apply_session_dir_override(global_session_dir);
         let agent_catalog = resolve_agent_catalog(&config);
+        let permission_policy = PermissionPolicy::from_config(&config);
+        let shell_allowlist = config.permissions.shell_allowlist.clone();
         return Ok(WorkflowRuntimeContext {
             session_dir: config.paths.session_dir,
             workflow: config.runtime.workflow,
             agent_catalog: Some(agent_catalog),
+            permission_policy,
+            shell_allowlist,
         });
     }
 
@@ -1892,7 +2879,19 @@ fn resolve_workflow_context(
         session_dir: global_session_dir.unwrap_or_else(|| PathBuf::from(DEFAULT_SESSION_DIR)),
         workflow: WorkflowRuntimeConfig::default(),
         agent_catalog: None,
+        permission_policy: PermissionPolicy::default(),
+        shell_allowlist: ShellAllowlist::default(),
     })
+}
+
+fn coordinator_config_for_workflow(context: &WorkflowRuntimeContext) -> CoordinatorConfig {
+    let mut coordinator_config = CoordinatorConfig::new(context.session_dir.clone());
+    coordinator_config.session_mode_source = Some(SessionModeSource::Prompt);
+    coordinator_config.permission_policy = context.permission_policy.clone();
+    coordinator_config.tool_registry = Arc::new(harness_tools::coordinator_registry(
+        context.shell_allowlist.clone(),
+    ));
+    coordinator_config
 }
 
 fn resolve_read_run_dir(

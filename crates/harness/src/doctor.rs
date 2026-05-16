@@ -268,6 +268,8 @@ fn check_command_registry() -> DoctorCheck {
         "workflow-snapshot",
         "plan-consensus",
         "goal-ledger",
+        "research-mission",
+        "wiki",
         "init-deep",
         "ralph-loop",
         "ulw-loop",
