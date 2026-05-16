@@ -7,6 +7,9 @@ use harness_core::event::{
     TeamBounds, TeamMemberRole, TeamMemberSelector, TeamMemberSpec, TeamMessage, TeamMessageKind,
     TeamReference, TeamSpec, TeamTask, TeamTaskStatus,
 };
+use harness_core::proj::{
+    TEAM_METADATA_ABORT_REASON, TEAM_METADATA_EVIDENCE_REF, TEAM_METADATA_SYNTHESIS_REF,
+};
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResult};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -40,6 +43,8 @@ struct TeamCreateArgs {
     members: Vec<TeamMemberArgs>,
     #[serde(default)]
     bounds: Option<TeamBoundsArgs>,
+    #[serde(default)]
+    metadata: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -63,6 +68,8 @@ struct DeclaredTeamSpec {
     members: Vec<TeamMemberSpec>,
     #[serde(default)]
     bounds: TeamBounds,
+    #[serde(default)]
+    metadata: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -205,6 +212,10 @@ struct TeamShutdownDecisionArgs {
     actor_name: String,
     #[serde(default)]
     reason: Option<String>,
+    #[serde(default, rename = "abortReason", alias = "abort_reason")]
+    abort_reason: Option<String>,
+    #[serde(default)]
+    metadata: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -212,6 +223,14 @@ struct TeamShutdownDecisionArgs {
 struct TeamDeleteArgs {
     #[serde(rename = "teamRunId", alias = "team_run_id")]
     team_run_id: String,
+    #[serde(default, rename = "abortReason", alias = "abort_reason")]
+    abort_reason: Option<String>,
+    #[serde(default, rename = "evidenceRefs", alias = "evidence_refs")]
+    evidence_refs: Vec<String>,
+    #[serde(default, rename = "synthesisRefs", alias = "synthesis_refs")]
+    synthesis_refs: Vec<String>,
+    #[serde(default)]
+    metadata: BTreeMap<String, String>,
 }
 
 fn default_team_message_kind() -> TeamMessageKind {
@@ -271,6 +290,32 @@ fn bounds_from_args(args: Option<TeamBoundsArgs>) -> TeamBounds {
 
 fn map_coord_err(err: harness_core::coord::CoordinatorError) -> ToolError {
     ToolError::Execution(err.to_string())
+}
+
+fn insert_optional_metadata(
+    metadata: &mut BTreeMap<String, String>,
+    key: &str,
+    value: Option<String>,
+) {
+    if let Some(value) = value.and_then(|value| {
+        let trimmed = value.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
+    }) {
+        metadata.entry(key.to_string()).or_insert(value);
+    }
+}
+
+fn insert_joined_metadata(metadata: &mut BTreeMap<String, String>, key: &str, values: Vec<String>) {
+    let refs = values
+        .into_iter()
+        .filter_map(|value| {
+            let trimmed = value.trim().to_string();
+            (!trimmed.is_empty()).then_some(trimmed)
+        })
+        .collect::<Vec<_>>();
+    if !refs.is_empty() {
+        metadata.entry(key.to_string()).or_insert(refs.join(","));
+    }
 }
 
 fn team_result(label: &str, team: harness_core::proj::TeamRunProjection) -> ToolResult {
@@ -351,6 +396,23 @@ fn declared_team_json(
     root: &str,
 ) -> serde_json::Value {
     let errors = validate_declared_team_spec(&spec, name_from_path);
+    let metadata = spec.metadata;
+    let worktree_path = metadata
+        .get("worktree.path")
+        .or_else(|| metadata.get("worktree_path"))
+        .cloned();
+    let worktree_status = metadata
+        .get("worktree.status")
+        .or_else(|| metadata.get("worktree_status"))
+        .cloned();
+    let tmux_pane = metadata
+        .get("tmux.pane")
+        .or_else(|| metadata.get("tmux_pane"))
+        .cloned();
+    let tmux_status = metadata
+        .get("tmux.status")
+        .or_else(|| metadata.get("tmux_status"))
+        .cloned();
     json!({
         "name": spec.name,
         "description": spec.description,
@@ -362,10 +424,12 @@ fn declared_team_json(
         "members": spec.members,
         "member_count": spec.members.len(),
         "bounds": spec.bounds,
+        "metadata": metadata,
         "runtime": {
-            "worktrees": "not_started",
-            "file_claims": "not_started",
-            "tmux_visualization": "not_started"
+            "worktree_path": worktree_path,
+            "worktree_status": worktree_status,
+            "tmux_pane": tmux_pane,
+            "tmux_status": tmux_status
         }
     })
 }
@@ -478,6 +542,7 @@ impl Tool for TeamCreateTool {
             lead: lead.map(|member| member.selector),
             members,
             bounds: bounds_from_args(args.bounds),
+            metadata: args.metadata,
         };
         let team = ctx
             .coordinator
@@ -530,8 +595,11 @@ impl Tool for TeamListTool {
                     "status": &team.status,
                     "members": team.members.len(),
                     "tasks": team.tasks.len(),
+                    "task_status_counts": &team.task_status_counts,
+                    "shutdown_proof": &team.shutdown_proof,
                     "messages": team.messages.len(),
                     "shutdown_requests": team.shutdown_requests.len(),
+                    "workflow_id": &team.workflow_id,
                 })
             })
             .collect::<Vec<_>>();
@@ -563,11 +631,7 @@ impl Tool for TeamListTool {
                     "invalid": invalid_declared,
                     "status": if invalid_declared == 0 { "ok" } else { "invalid" }
                 },
-                "not_started": [
-                    "worktree metadata",
-                    "file claim projection",
-                    "tmux visualization state"
-                ],
+                "policy": "completion requires shutdown approval plus no pending/claimed/in-progress tasks and verification evidence, unless abort_reason metadata is present",
                 "source": "event_replay"
             }),
         ))
@@ -907,13 +971,20 @@ impl Tool for TeamShutdownApproveTool {
         args_json: serde_json::Value,
     ) -> Result<ToolResult, ToolError> {
         let args: TeamShutdownDecisionArgs = parse_tool_args(args_json)?;
+        let mut metadata = args.metadata;
+        insert_optional_metadata(
+            &mut metadata,
+            TEAM_METADATA_ABORT_REASON,
+            args.abort_reason.or(args.reason),
+        );
         let team = ctx
             .coordinator
-            .approve_team_shutdown(
+            .approve_team_shutdown_with_metadata(
                 ctx.actor,
                 args.team_run_id,
                 args.member_name,
                 args.actor_name,
+                metadata,
             )
             .await
             .map_err(map_coord_err)?;
@@ -987,9 +1058,21 @@ impl Tool for TeamDeleteTool {
         args_json: serde_json::Value,
     ) -> Result<ToolResult, ToolError> {
         let args: TeamDeleteArgs = parse_tool_args(args_json)?;
+        let mut metadata = args.metadata;
+        insert_optional_metadata(&mut metadata, TEAM_METADATA_ABORT_REASON, args.abort_reason);
+        insert_joined_metadata(
+            &mut metadata,
+            TEAM_METADATA_EVIDENCE_REF,
+            args.evidence_refs,
+        );
+        insert_joined_metadata(
+            &mut metadata,
+            TEAM_METADATA_SYNTHESIS_REF,
+            args.synthesis_refs,
+        );
         let team = ctx
             .coordinator
-            .delete_team(ctx.actor, args.team_run_id)
+            .delete_team_with_metadata(ctx.actor, args.team_run_id, metadata)
             .await
             .map_err(map_coord_err)?;
         Ok(team_result("team deleted", team))

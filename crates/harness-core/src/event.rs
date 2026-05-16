@@ -928,6 +928,8 @@ pub struct PolicyViolationDetectedEvent {
 pub struct TeamCreatedEvent {
     pub team_run_id: String,
     pub spec: TeamSpec,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<WorkflowEventMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -940,6 +942,8 @@ pub struct TeamSpec {
     pub lead: Option<TeamMemberSelector>,
     pub members: Vec<TeamMemberSpec>,
     pub bounds: TeamBounds,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub metadata: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1007,6 +1011,8 @@ pub struct TeamMemberSpawnedEvent {
     pub member_name: String,
     pub agent_id: String,
     pub profile: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<WorkflowEventMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1046,6 +1052,8 @@ pub struct TeamMessage {
 pub struct TeamMessageSentEvent {
     pub team_run_id: String,
     pub message: TeamMessage,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<WorkflowEventMetadata>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1091,6 +1099,8 @@ pub struct TeamTask {
 pub struct TeamTaskCreatedEvent {
     pub team_run_id: String,
     pub task: TeamTask,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<WorkflowEventMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1102,6 +1112,8 @@ pub struct TeamTaskUpdatedEvent {
     pub owner: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub metadata: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<WorkflowEventMetadata>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1177,6 +1189,8 @@ pub struct TeamShutdownRequestedEvent {
     pub team_run_id: String,
     pub member_name: String,
     pub requester: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<WorkflowEventMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1184,6 +1198,10 @@ pub struct TeamShutdownApprovedEvent {
     pub team_run_id: String,
     pub member_name: String,
     pub approver: String,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub metadata: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<WorkflowEventMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1192,11 +1210,17 @@ pub struct TeamShutdownRejectedEvent {
     pub member_name: String,
     pub rejecter: String,
     pub reason: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<WorkflowEventMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct TeamDeletedEvent {
     pub team_run_id: String,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub metadata: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<WorkflowEventMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

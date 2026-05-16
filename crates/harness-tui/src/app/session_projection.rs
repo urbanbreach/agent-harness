@@ -1048,11 +1048,20 @@ impl SessionProjection {
                 self.update_orchestration_task(event, &row_id, |row| {
                     row.state = OrchestrationTaskState::Running;
                     row.queue_key = Some("team".to_string());
-                    row.result_summary = Some(format!(
-                        "team {} · {} member(s)",
-                        data.spec.name,
-                        data.spec.members.len()
-                    ));
+                    let workflow_suffix = data
+                        .workflow
+                        .as_ref()
+                        .and_then(|workflow| workflow.workflow_id.as_deref())
+                        .or_else(|| data.spec.metadata.get("workflow_id").map(String::as_str))
+                        .map(|workflow_id| format!(" · workflow {workflow_id}"))
+                        .unwrap_or_default();
+                    row.result_summary = Some(
+                        format!(
+                            "team {} · {} member(s)",
+                            data.spec.name,
+                            data.spec.members.len()
+                        ) + &workflow_suffix,
+                    );
                     row.warning = None;
                 });
             }
@@ -1122,8 +1131,17 @@ impl SessionProjection {
                 let row_id = format!("team:{}", data.team_run_id);
                 self.update_orchestration_task(event, &row_id, |row| {
                     row.state = OrchestrationTaskState::Completed;
-                    row.result_summary = Some("team deleted".to_string());
-                    row.warning = None;
+                    if let Some(reason) = data.metadata.get("abort_reason") {
+                        row.result_summary = Some("team aborted".to_string());
+                        row.warning = Some(reason.clone());
+                    } else {
+                        row.result_summary = data
+                            .metadata
+                            .get("evidence_ref")
+                            .map(|evidence| format!("team deleted · evidence {evidence}"))
+                            .or_else(|| Some("team deleted".to_string()));
+                        row.warning = None;
+                    }
                 });
             }
             EventV1::StaleDetected(data) => {

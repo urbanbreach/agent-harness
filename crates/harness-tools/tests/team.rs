@@ -137,6 +137,24 @@ async fn native_team_tools_append_events_and_return_projected_state() {
         .expect("team_task_get tool");
     assert!(fetched.display_text.contains("team task: task_a"));
 
+    handle
+        .execute_agent_tool_call(
+            actor.clone(),
+            None,
+            "team_task_update",
+            json!({
+                "teamRunId": "team_tool",
+                "taskId": "task_a",
+                "status": "completed",
+                "owner": "alpha",
+                "metadata": {
+                    "evidence_ref": "artifacts/team_tool/verify.json"
+                }
+            }),
+        )
+        .await
+        .expect("complete task_a with evidence");
+
     let premature_delete = handle
         .execute_agent_tool_call(
             actor.clone(),
@@ -625,6 +643,24 @@ async fn native_team_tools_enforce_task_and_shutdown_ordering() {
     let fetched_json = fetched.structured_json.expect("fetched structured json");
     assert_eq!(fetched_json["status"], "claimed");
     assert_eq!(fetched_json["owner"], "alpha");
+
+    handle
+        .execute_agent_tool_call(
+            actor.clone(),
+            None,
+            "team_task_update",
+            json!({
+                "teamRunId": "team_tool_ordering",
+                "taskId": "task_two",
+                "status": "completed",
+                "owner": "alpha",
+                "metadata": {
+                    "evidence_ref": "artifacts/team_tool_ordering/verify.json"
+                }
+            }),
+        )
+        .await
+        .expect("complete claimed task with evidence");
 
     let premature_delete = handle
         .execute_agent_tool_call(

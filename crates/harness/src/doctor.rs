@@ -1138,7 +1138,7 @@ fn check_team_mode() -> DoctorCheck {
     let tmux_available = command_available("tmux");
 
     let message = format!(
-        "{} declared team spec(s), {} invalid; git {}; tmux {}; active team runs are replay-derived through team_list",
+        "{} declared team spec(s), {} invalid; git {}; tmux {}; active team runs, metadata diagnostics, and shutdown proof are replay-derived through team_list/team_status",
         declared_report.total,
         declared_report.invalid,
         availability_label(git_available),

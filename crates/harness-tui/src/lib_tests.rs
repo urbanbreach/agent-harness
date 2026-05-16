@@ -3151,7 +3151,9 @@ fn replay_projection_surfaces_team_orchestration_rows() {
                     prompt: None,
                 }],
                 bounds: harness_core::event::TeamBounds::default(),
+                metadata: Default::default(),
             },
+            workflow: None,
         }),
     )];
     let app = app::AppState::new_replay(std::path::PathBuf::from("/tmp/replay-team"), events);

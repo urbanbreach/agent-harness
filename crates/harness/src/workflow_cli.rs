@@ -560,16 +560,16 @@ async fn execute_signoff(
         .reason
         .clone()
         .unwrap_or_else(|| format!("workflow signoff decision: {decision}"));
-    let report = execute_workflow_audit_mutation(
+    let report = execute_workflow_audit_mutation(WorkflowAuditMutationRequest {
         config_path,
         global_session_dir,
-        "workflow signoff",
-        &cmd.workflow_id,
+        run_name: "workflow signoff",
+        workflow_id: &cmd.workflow_id,
         decision,
-        &cmd.operator,
-        &reason,
+        owner: &cmd.operator,
+        reason: &reason,
         terminal_outcome,
-    )
+    })
     .await?;
 
     if cmd.json {
@@ -589,16 +589,16 @@ async fn execute_cancel(
     global_session_dir: Option<PathBuf>,
 ) -> Result<(), String> {
     let reason = format!("{} (mode={})", cmd.reason, cmd.mode);
-    let report = execute_workflow_audit_mutation(
+    let report = execute_workflow_audit_mutation(WorkflowAuditMutationRequest {
         config_path,
         global_session_dir,
-        "workflow cancel",
-        &cmd.workflow_id,
-        "abort",
-        &cmd.owner,
-        &reason,
-        Some("outcome.cancelled"),
-    )
+        run_name: "workflow cancel",
+        workflow_id: &cmd.workflow_id,
+        decision: "abort",
+        owner: &cmd.owner,
+        reason: &reason,
+        terminal_outcome: Some("outcome.cancelled"),
+    })
     .await?;
 
     if cmd.json {
@@ -612,16 +612,30 @@ async fn execute_cancel(
     Ok(())
 }
 
-async fn execute_workflow_audit_mutation(
+struct WorkflowAuditMutationRequest<'a> {
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
-    run_name: &str,
-    workflow_id: &str,
-    decision: &str,
-    owner: &str,
-    reason: &str,
-    terminal_outcome: Option<&str>,
+    run_name: &'a str,
+    workflow_id: &'a str,
+    decision: &'a str,
+    owner: &'a str,
+    reason: &'a str,
+    terminal_outcome: Option<&'a str>,
+}
+
+async fn execute_workflow_audit_mutation(
+    request: WorkflowAuditMutationRequest<'_>,
 ) -> Result<WorkflowMutationReport, String> {
+    let WorkflowAuditMutationRequest {
+        config_path,
+        global_session_dir,
+        run_name,
+        workflow_id,
+        decision,
+        owner,
+        reason,
+        terminal_outcome,
+    } = request;
     let context = resolve_workflow_context(config_path, global_session_dir)?;
     fs::create_dir_all(&context.session_dir).map_err(|err| {
         format!(

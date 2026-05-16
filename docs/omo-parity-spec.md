@@ -453,8 +453,9 @@ diagnostics, and active runtime directories.
 `team_status`, `team_send_message`, `team_task_create/list/get/update`,
 `team_shutdown_request/approve/reject`, and `team_delete`. `team_list` shows
 replay-derived active runs plus declared team specs from Harness team roots.
-Missing pieces include durable mailbox artifacts, file claims, worktrees, and tmux
-visualization.
+Replay projections derive workflow ids, task status counts, durable mailbox artifact
+refs, advisory file claims, worktree/tmux diagnostics, and shutdown proof. Missing
+pieces are optional worktree/tmux creation and cleanup adapters.
 
 **Recommended Harness outcome:**
 
@@ -462,11 +463,11 @@ visualization.
   declared team registry.
 - [x] Add declared team specs under `.agent-harness/teams/<name>.json` and user
   equivalents under the XDG Harness config directory.
-- [ ] Keep active team state event-sourced. Use artifacts for large mailbox bodies or
+- [x] Keep active team state event-sourced. Use artifacts for large mailbox bodies or
   delivery diagnostics, not as the source of truth.
 - [ ] Add optional per-member worktrees through a `TeamWorktreeAdapter`. Worktree
   creation is permission-gated and never automatic for read-only research roles.
-- [ ] Add file claims or reservations as team events if they affect coordination.
+- [x] Add advisory file claims as team task metadata if they affect coordination.
 - [ ] Add optional tmux visualization through the terminal session seam. Missing tmux
   must warn, not block team creation.
 
@@ -474,6 +475,8 @@ visualization.
 
 - [x] `team_list` shows declared teams and active runs.
 - [x] Declared team specs validate lead/member eligibility before spawning.
+- [x] Team deletion requires shutdown proof or explicit abort metadata; replay does
+  not launch workers, worktrees, or tmux.
 - [ ] Worktree path validation rejects bare branch names, traversal, and unsafe
   external paths unless explicitly allowed.
 - [ ] Tmux visualization starts, rebalances, and cleans up panes without changing the

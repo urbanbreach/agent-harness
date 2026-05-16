@@ -15,8 +15,9 @@ use crate::event::{
     ProviderAssistantMessageMetadata, ProviderRequestFinishedMetadata,
     ProviderRequestStartedMetadata, ResolvedToolIdentity, TaskCancelledEvent, TaskCompletedEvent,
     TaskCompletionMetadata, TaskLineageMetadata, TaskScheduleState, TaskTerminalScope, TeamBounds,
-    TeamMemberRole, TeamMemberSelector, TeamMemberSpec, TeamMessage, TeamSpec, TeamTask,
-    ToolCallLifecycleState, ToolCallMetadata, ToolCallStatus,
+    TeamMemberRole, TeamMemberSelector, TeamMemberSpec, TeamMessage, TeamReference, TeamSpec,
+    TeamTask, TeamTaskStatus, ToolCallLifecycleState, ToolCallMetadata, ToolCallStatus,
+    WorkflowEventMetadata,
 };
 use crate::perm::PermissionGrantSet;
 use crate::session_paths::{EVENTS_FILE_NAME, META_FILE_NAME};
@@ -285,6 +286,8 @@ pub struct TeamMemberProjection {
     pub shutdown_requester: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shutdown_rejected_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shutdown_abort_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -294,6 +297,8 @@ pub struct TeamShutdownRequestProjection {
     pub status: TeamMemberStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rejected_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub abort_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -302,19 +307,106 @@ pub struct TeamRunProjection {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow_id: Option<String>,
     pub status: TeamRunStatus,
     pub bounds: TeamBounds,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub metadata: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub completion_metadata: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lead: Option<TeamLeadProjection>,
     pub members: BTreeMap<String, TeamMemberProjection>,
     pub messages: Vec<TeamMessage>,
     pub tasks: BTreeMap<String, TeamTask>,
     pub shutdown_requests: BTreeMap<String, TeamShutdownRequestProjection>,
+    pub task_status_counts: TeamTaskStatusCounts,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mailbox_artifact_refs: Vec<TeamReference>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub file_claims: Vec<TeamFileClaimProjection>,
+    pub runtime_diagnostics: TeamRuntimeDiagnostics,
+    pub shutdown_proof: TeamShutdownProof,
     pub bounds_consumption: TeamBoundsConsumption,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_mono_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_mono_ms: Option<u64>,
+}
+
+pub const TEAM_METADATA_WORKFLOW_ID: &str = "workflow_id";
+pub const TEAM_METADATA_ABORT_REASON: &str = "abort_reason";
+pub const TEAM_METADATA_EVIDENCE_REF: &str = "evidence_ref";
+pub const TEAM_METADATA_VERIFICATION_EVIDENCE_REF: &str = "verification_evidence_ref";
+pub const TEAM_METADATA_SYNTHESIS_REF: &str = "synthesis_ref";
+pub const TEAM_METADATA_CLAIM_REF: &str = "claim_ref";
+pub const TEAM_METADATA_BLOCKER_REF: &str = "blocker_ref";
+pub const TEAM_METADATA_FILE_CLAIM_PATH: &str = "file_claim.path";
+pub const TEAM_METADATA_FILE_CLAIM_REASON: &str = "file_claim.reason";
+pub const TEAM_METADATA_FILE_CLAIM_STATUS: &str = "file_claim.status";
+pub const TEAM_METADATA_WORKTREE_PATH: &str = "worktree.path";
+pub const TEAM_METADATA_WORKTREE_STATUS: &str = "worktree.status";
+pub const TEAM_METADATA_TMUX_PANE: &str = "tmux.pane";
+pub const TEAM_METADATA_TMUX_STATUS: &str = "tmux.status";
+pub const TEAM_METADATA_TMUX_ERROR: &str = "tmux.error";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct TeamTaskStatusCounts {
+    pub pending: u32,
+    pub claimed: u32,
+    pub in_progress: u32,
+    pub completed: u32,
+    pub deleted: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TeamFileClaimProjection {
+    pub task_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct TeamRuntimeDiagnostics {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tmux_pane: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tmux_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tmux_error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct TeamShutdownProof {
+    pub ready: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub abort_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_task_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub claimed_task_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub in_progress_task_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub verification_evidence_refs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub synthesis_refs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub claim_refs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blocker_refs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub missing: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -331,6 +423,7 @@ pub struct TeamBoundsConsumption {
 
 impl TeamRunProjection {
     fn from_spec(team_run_id: String, spec: TeamSpec, created_mono_ms: u64) -> Self {
+        let workflow_id = workflow_id_from_metadata(&spec.metadata);
         let lead = spec.lead.clone().map(|selector| TeamLeadProjection {
             selector,
             status: TeamMemberStatus::Pending,
@@ -355,6 +448,7 @@ impl TeamRunProjection {
                         profile: None,
                         shutdown_requester: None,
                         shutdown_rejected_reason: None,
+                        shutdown_abort_reason: None,
                     },
                 )
             })
@@ -364,17 +458,32 @@ impl TeamRunProjection {
             team_run_id,
             name: spec.name,
             description: spec.description,
+            workflow_id,
             status: TeamRunStatus::Active,
             bounds: spec.bounds,
+            metadata: spec.metadata,
+            completion_metadata: BTreeMap::new(),
             lead,
             members,
             messages: Vec::new(),
             tasks: BTreeMap::new(),
             shutdown_requests: BTreeMap::new(),
+            task_status_counts: TeamTaskStatusCounts::default(),
+            mailbox_artifact_refs: Vec::new(),
+            file_claims: Vec::new(),
+            runtime_diagnostics: TeamRuntimeDiagnostics::default(),
+            shutdown_proof: TeamShutdownProof::default(),
             bounds_consumption: TeamBoundsConsumption::default(),
             created_mono_ms: Some(created_mono_ms),
             last_mono_ms: Some(created_mono_ms),
         }
+    }
+
+    pub fn shutdown_proof_with_delete_metadata(
+        &self,
+        metadata: &BTreeMap<String, String>,
+    ) -> TeamShutdownProof {
+        build_team_shutdown_proof(self, Some(metadata))
     }
 }
 
@@ -830,11 +939,13 @@ fn apply_team_event(projection: &mut TeamProjection, event: &EventEnvelopeV1) {
                 payload.spec.clone(),
                 event.mono_ms,
             );
+            merge_team_workflow_metadata(&mut team, payload.workflow.as_ref());
             refresh_team_derived_state(&mut team, event.mono_ms);
             projection.teams.insert(payload.team_run_id.clone(), team);
         }
         EventV1::TeamMemberSpawned(payload) => {
             if let Some(team) = projection.teams.get_mut(&payload.team_run_id) {
+                merge_team_workflow_metadata(team, payload.workflow.as_ref());
                 if payload.member_name == "lead" {
                     if let Some(lead) = team.lead.as_mut() {
                         if lead.agent_id.is_none() {
@@ -855,6 +966,7 @@ fn apply_team_event(projection: &mut TeamProjection, event: &EventEnvelopeV1) {
         }
         EventV1::TeamMessageSent(payload) => {
             if let Some(team) = projection.teams.get_mut(&payload.team_run_id) {
+                merge_team_workflow_metadata(team, payload.workflow.as_ref());
                 if team
                     .messages
                     .iter()
@@ -873,6 +985,7 @@ fn apply_team_event(projection: &mut TeamProjection, event: &EventEnvelopeV1) {
         }
         EventV1::TeamTaskCreated(payload) => {
             if let Some(team) = projection.teams.get_mut(&payload.team_run_id) {
+                merge_team_workflow_metadata(team, payload.workflow.as_ref());
                 if !team.tasks.contains_key(&payload.task.task_id) {
                     let mut task = payload.task.clone();
                     task.blocks.clear();
@@ -889,6 +1002,7 @@ fn apply_team_event(projection: &mut TeamProjection, event: &EventEnvelopeV1) {
         }
         EventV1::TeamTaskUpdated(payload) => {
             if let Some(team) = projection.teams.get_mut(&payload.team_run_id) {
+                merge_team_workflow_metadata(team, payload.workflow.as_ref());
                 if member_write_participant_for_event(team, event, payload.owner.as_deref())
                     .is_some()
                 {
@@ -909,6 +1023,7 @@ fn apply_team_event(projection: &mut TeamProjection, event: &EventEnvelopeV1) {
         }
         EventV1::TeamShutdownRequested(payload) => {
             if let Some(team) = projection.teams.get_mut(&payload.team_run_id) {
+                merge_team_workflow_metadata(team, payload.workflow.as_ref());
                 team.status = TeamRunStatus::ShutdownRequested;
                 if let Some(member) = team.members.get_mut(&payload.member_name) {
                     member.status = TeamMemberStatus::ShutdownRequested;
@@ -922,6 +1037,7 @@ fn apply_team_event(projection: &mut TeamProjection, event: &EventEnvelopeV1) {
                         requester: payload.requester.clone(),
                         status: TeamMemberStatus::ShutdownRequested,
                         rejected_reason: None,
+                        abort_reason: None,
                     },
                 );
                 refresh_team_derived_state(team, event.mono_ms);
@@ -929,33 +1045,43 @@ fn apply_team_event(projection: &mut TeamProjection, event: &EventEnvelopeV1) {
         }
         EventV1::TeamShutdownApproved(payload) => {
             if let Some(team) = projection.teams.get_mut(&payload.team_run_id) {
+                merge_team_workflow_metadata(team, payload.workflow.as_ref());
+                let abort_reason = metadata_value(&payload.metadata, &[TEAM_METADATA_ABORT_REASON])
+                    .map(str::to_string);
                 team.status = TeamRunStatus::ShutdownRequested;
                 if let Some(member) = team.members.get_mut(&payload.member_name) {
                     member.status = TeamMemberStatus::ShutdownApproved;
                     member.shutdown_rejected_reason = None;
+                    member.shutdown_abort_reason = abort_reason.clone();
                 }
                 if let Some(request) = team.shutdown_requests.get_mut(&payload.member_name) {
                     request.status = TeamMemberStatus::ShutdownApproved;
                     request.rejected_reason = None;
+                    request.abort_reason = abort_reason;
                 }
                 refresh_team_derived_state(team, event.mono_ms);
             }
         }
         EventV1::TeamShutdownRejected(payload) => {
             if let Some(team) = projection.teams.get_mut(&payload.team_run_id) {
+                merge_team_workflow_metadata(team, payload.workflow.as_ref());
                 if let Some(member) = team.members.get_mut(&payload.member_name) {
                     member.status = TeamMemberStatus::Running;
                     member.shutdown_rejected_reason = Some(payload.reason.clone());
+                    member.shutdown_abort_reason = None;
                 }
                 if let Some(request) = team.shutdown_requests.get_mut(&payload.member_name) {
                     request.status = TeamMemberStatus::Running;
                     request.rejected_reason = Some(payload.reason.clone());
+                    request.abort_reason = None;
                 }
                 refresh_team_derived_state(team, event.mono_ms);
             }
         }
         EventV1::TeamDeleted(payload) => {
             if let Some(team) = projection.teams.get_mut(&payload.team_run_id) {
+                merge_team_workflow_metadata(team, payload.workflow.as_ref());
+                team.completion_metadata = payload.metadata.clone();
                 team.status = TeamRunStatus::Deleted;
                 refresh_team_derived_state(team, event.mono_ms);
             }
@@ -968,6 +1094,12 @@ fn refresh_team_derived_state(team: &mut TeamRunProjection, mono_ms: u64) {
     team.last_mono_ms = Some(mono_ms);
     refresh_team_shutdown_status(team);
     refresh_team_task_blocks(team);
+    refresh_team_workflow_id(team);
+    team.task_status_counts = team_task_status_counts(team);
+    team.mailbox_artifact_refs = team_mailbox_artifact_refs(team);
+    team.file_claims = team_file_claims(team);
+    team.runtime_diagnostics = team_runtime_diagnostics(team);
+    team.shutdown_proof = build_team_shutdown_proof(team, None);
     team.bounds_consumption.running_members = team
         .members
         .values()
@@ -1018,6 +1150,279 @@ fn refresh_team_task_blocks(team: &mut TeamRunProjection) {
             }
         }
     }
+}
+
+fn refresh_team_workflow_id(team: &mut TeamRunProjection) {
+    if team.workflow_id.is_some() {
+        return;
+    }
+    team.workflow_id = workflow_id_from_metadata(&team.metadata)
+        .or_else(|| workflow_id_from_metadata(&team.completion_metadata))
+        .or_else(|| {
+            team.tasks
+                .values()
+                .find_map(|task| workflow_id_from_metadata(&task.metadata))
+        });
+}
+
+fn merge_team_workflow_metadata(
+    team: &mut TeamRunProjection,
+    metadata: Option<&WorkflowEventMetadata>,
+) {
+    let Some(metadata) = metadata else {
+        return;
+    };
+    if let Some(workflow_id) = metadata.workflow_id.as_ref().and_then(|value| {
+        non_empty_trimmed(value)
+            .map(str::to_string)
+            .filter(|value| !value.is_empty())
+    }) {
+        team.workflow_id = Some(workflow_id);
+    }
+}
+
+fn workflow_id_from_metadata(metadata: &BTreeMap<String, String>) -> Option<String> {
+    metadata_value(metadata, &[TEAM_METADATA_WORKFLOW_ID]).map(str::to_string)
+}
+
+fn team_task_status_counts(team: &TeamRunProjection) -> TeamTaskStatusCounts {
+    let mut counts = TeamTaskStatusCounts::default();
+    for task in team.tasks.values() {
+        match task.status {
+            TeamTaskStatus::Pending => counts.pending += 1,
+            TeamTaskStatus::Claimed => counts.claimed += 1,
+            TeamTaskStatus::InProgress => counts.in_progress += 1,
+            TeamTaskStatus::Completed => counts.completed += 1,
+            TeamTaskStatus::Deleted => counts.deleted += 1,
+        }
+    }
+    counts
+}
+
+fn team_mailbox_artifact_refs(team: &TeamRunProjection) -> Vec<TeamReference> {
+    let mut refs = Vec::new();
+    for message in &team.messages {
+        for reference in &message.references {
+            let description = reference
+                .description
+                .as_deref()
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            if reference.path.starts_with("artifacts/") || description.contains("artifact") {
+                refs.push(reference.clone());
+            }
+        }
+    }
+    refs
+}
+
+fn team_file_claims(team: &TeamRunProjection) -> Vec<TeamFileClaimProjection> {
+    team.tasks
+        .values()
+        .filter_map(|task| {
+            let path = metadata_value(
+                &task.metadata,
+                &[TEAM_METADATA_FILE_CLAIM_PATH, "file_claim_path"],
+            )?;
+            Some(TeamFileClaimProjection {
+                task_id: task.task_id.clone(),
+                owner: metadata_value(&task.metadata, &["file_claim.owner", "file_claim_owner"])
+                    .map(str::to_string)
+                    .or_else(|| task.owner.clone()),
+                path: path.to_string(),
+                reason: metadata_value(
+                    &task.metadata,
+                    &[TEAM_METADATA_FILE_CLAIM_REASON, "file_claim_reason"],
+                )
+                .map(str::to_string),
+                status: metadata_value(
+                    &task.metadata,
+                    &[TEAM_METADATA_FILE_CLAIM_STATUS, "file_claim_status"],
+                )
+                .map(str::to_string),
+            })
+        })
+        .collect()
+}
+
+fn team_runtime_diagnostics(team: &TeamRunProjection) -> TeamRuntimeDiagnostics {
+    let mut diagnostics = TeamRuntimeDiagnostics {
+        worktree_path: metadata_value(
+            &team.metadata,
+            &[TEAM_METADATA_WORKTREE_PATH, "worktree_path"],
+        )
+        .map(str::to_string),
+        worktree_status: metadata_value(
+            &team.metadata,
+            &[TEAM_METADATA_WORKTREE_STATUS, "worktree_status"],
+        )
+        .map(str::to_string),
+        tmux_pane: metadata_value(&team.metadata, &[TEAM_METADATA_TMUX_PANE, "tmux_pane"])
+            .map(str::to_string),
+        tmux_status: metadata_value(&team.metadata, &[TEAM_METADATA_TMUX_STATUS, "tmux_status"])
+            .map(str::to_string),
+        tmux_error: metadata_value(&team.metadata, &[TEAM_METADATA_TMUX_ERROR, "tmux_error"])
+            .map(str::to_string),
+    };
+
+    for task in team.tasks.values() {
+        if diagnostics.worktree_path.is_none() {
+            diagnostics.worktree_path = metadata_value(
+                &task.metadata,
+                &[TEAM_METADATA_WORKTREE_PATH, "worktree_path"],
+            )
+            .map(str::to_string);
+        }
+        if diagnostics.worktree_status.is_none() {
+            diagnostics.worktree_status = metadata_value(
+                &task.metadata,
+                &[TEAM_METADATA_WORKTREE_STATUS, "worktree_status"],
+            )
+            .map(str::to_string);
+        }
+        if diagnostics.tmux_pane.is_none() {
+            diagnostics.tmux_pane =
+                metadata_value(&task.metadata, &[TEAM_METADATA_TMUX_PANE, "tmux_pane"])
+                    .map(str::to_string);
+        }
+        if diagnostics.tmux_status.is_none() {
+            diagnostics.tmux_status =
+                metadata_value(&task.metadata, &[TEAM_METADATA_TMUX_STATUS, "tmux_status"])
+                    .map(str::to_string);
+        }
+        if diagnostics.tmux_error.is_none() {
+            diagnostics.tmux_error =
+                metadata_value(&task.metadata, &[TEAM_METADATA_TMUX_ERROR, "tmux_error"])
+                    .map(str::to_string);
+        }
+    }
+
+    diagnostics
+}
+
+fn build_team_shutdown_proof(
+    team: &TeamRunProjection,
+    delete_metadata: Option<&BTreeMap<String, String>>,
+) -> TeamShutdownProof {
+    let abort_reason = delete_metadata
+        .and_then(|metadata| metadata_value(metadata, &[TEAM_METADATA_ABORT_REASON]))
+        .or_else(|| metadata_value(&team.completion_metadata, &[TEAM_METADATA_ABORT_REASON]))
+        .map(str::to_string);
+
+    let mut pending_task_ids = Vec::new();
+    let mut claimed_task_ids = Vec::new();
+    let mut in_progress_task_ids = Vec::new();
+    let mut verification_evidence_refs = metadata_refs(
+        delete_metadata,
+        &[
+            TEAM_METADATA_EVIDENCE_REF,
+            TEAM_METADATA_VERIFICATION_EVIDENCE_REF,
+        ],
+    );
+    verification_evidence_refs.extend(metadata_refs(
+        Some(&team.completion_metadata),
+        &[
+            TEAM_METADATA_EVIDENCE_REF,
+            TEAM_METADATA_VERIFICATION_EVIDENCE_REF,
+        ],
+    ));
+    let mut synthesis_refs = metadata_refs(
+        delete_metadata,
+        &[TEAM_METADATA_SYNTHESIS_REF, "lead_synthesis_ref"],
+    );
+    synthesis_refs.extend(metadata_refs(
+        Some(&team.completion_metadata),
+        &[TEAM_METADATA_SYNTHESIS_REF, "lead_synthesis_ref"],
+    ));
+    let mut claim_refs = Vec::new();
+    let mut blocker_refs = Vec::new();
+
+    for task in team.tasks.values() {
+        match task.status {
+            TeamTaskStatus::Pending => pending_task_ids.push(task.task_id.clone()),
+            TeamTaskStatus::Claimed => claimed_task_ids.push(task.task_id.clone()),
+            TeamTaskStatus::InProgress => in_progress_task_ids.push(task.task_id.clone()),
+            TeamTaskStatus::Completed | TeamTaskStatus::Deleted => {}
+        }
+        verification_evidence_refs.extend(metadata_refs(
+            Some(&task.metadata),
+            &[
+                TEAM_METADATA_EVIDENCE_REF,
+                TEAM_METADATA_VERIFICATION_EVIDENCE_REF,
+            ],
+        ));
+        synthesis_refs.extend(metadata_refs(
+            Some(&task.metadata),
+            &[TEAM_METADATA_SYNTHESIS_REF, "lead_synthesis_ref"],
+        ));
+        claim_refs.extend(metadata_refs(
+            Some(&task.metadata),
+            &[TEAM_METADATA_CLAIM_REF, "file_claim.ref"],
+        ));
+        blocker_refs.extend(metadata_refs(
+            Some(&task.metadata),
+            &[TEAM_METADATA_BLOCKER_REF],
+        ));
+        blocker_refs.extend(task.blocked_by.iter().cloned());
+    }
+
+    dedup_strings(&mut verification_evidence_refs);
+    dedup_strings(&mut synthesis_refs);
+    dedup_strings(&mut claim_refs);
+    dedup_strings(&mut blocker_refs);
+
+    let incomplete_empty = pending_task_ids.is_empty()
+        && claimed_task_ids.is_empty()
+        && in_progress_task_ids.is_empty();
+    let mut missing = Vec::new();
+    if !incomplete_empty && abort_reason.is_none() {
+        missing.push("team_tasks_complete".to_string());
+    }
+    if verification_evidence_refs.is_empty() && abort_reason.is_none() {
+        missing.push("verification_evidence".to_string());
+    }
+
+    TeamShutdownProof {
+        ready: missing.is_empty(),
+        abort_reason,
+        pending_task_ids,
+        claimed_task_ids,
+        in_progress_task_ids,
+        verification_evidence_refs,
+        synthesis_refs,
+        claim_refs,
+        blocker_refs,
+        missing,
+    }
+}
+
+fn metadata_refs(metadata: Option<&BTreeMap<String, String>>, keys: &[&str]) -> Vec<String> {
+    let Some(metadata) = metadata else {
+        return Vec::new();
+    };
+    keys.iter()
+        .filter_map(|key| metadata_value(metadata, &[*key]))
+        .flat_map(split_metadata_refs)
+        .collect()
+}
+
+fn split_metadata_refs(value: &str) -> Vec<String> {
+    value
+        .split([',', '\n'])
+        .filter_map(non_empty_trimmed)
+        .map(str::to_string)
+        .collect()
+}
+
+fn metadata_value<'a>(metadata: &'a BTreeMap<String, String>, keys: &[&str]) -> Option<&'a str> {
+    keys.iter()
+        .find_map(|key| metadata.get(*key))
+        .and_then(|value| non_empty_trimmed(value))
+}
+
+fn dedup_strings(values: &mut Vec<String>) {
+    let mut seen = BTreeSet::new();
+    values.retain(|value| seen.insert(value.clone()));
 }
 
 fn member_write_participant<'a>(

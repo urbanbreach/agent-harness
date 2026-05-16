@@ -254,6 +254,15 @@ match, non-empty members, member bounds, lead eligibility, and research/member
 role compatibility. Declared specs do not spawn teams by themselves; `team_create`
 remains the coordinator-owned state transition.
 
+Team specs and task/delete metadata may include workflow policy refs such as
+`workflow_id`, `evidence_ref`, `synthesis_ref`, `file_claim.path`,
+`worktree.path`, and `tmux.pane`. These fields are advisory, replay-derived
+coordination state: file claims are not filesystem locks, and replay never
+creates worktrees or tmux panes. `team_delete` is completion-gated: all members
+must have approved shutdown and the projection must show no pending/claimed/
+in-progress team tasks plus verification evidence, unless `abort_reason`
+metadata is supplied explicitly.
+
 The shipped `discipline` agent is the opt-in autonomous delivery workflow. It is
 a separate primary profile, not a global toggle: use it when a turn should enforce
 todo hygiene, focused delegation, and end-to-end surface verification. The

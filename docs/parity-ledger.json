@@ -89,11 +89,12 @@
       "evidence": [
         "crates/harness-tools/src/team_ops.rs",
         "crates/harness-tools/tests/team.rs",
+        "crates/harness-core/tests/team.rs",
         "crates/harness/src/doctor.rs",
         "crates/harness/tests/config_schema_cli.rs",
         "docs/config.md"
       ],
-      "next": "Add worktrees, file claims, tmux visualization, durable mailbox artifacts, and active runtime artifact diagnostics."
+      "next": "Optional future parity: add permissioned worktree/tmux creation and cleanup adapters; replay already projects workflow ids, file claims, mailbox artifacts, runtime diagnostics, task counts, and shutdown proof."
     },
     {
       "id": "ast_grep_tools",

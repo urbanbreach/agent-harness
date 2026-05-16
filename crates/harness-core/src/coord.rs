@@ -82,6 +82,7 @@ use crate::proj::{
     inspect_resume_plan, project_background_request, project_team_state,
     resolve_background_request_ref, BackgroundRequestProjection, BackgroundRequestProjectionError,
     RecordedRuntimeContext, RunMetadata, SessionModeSource, TeamProjection, TeamRunProjection,
+    TEAM_METADATA_ABORT_REASON, TEAM_METADATA_WORKFLOW_ID,
 };
 use crate::provider_args::provider_tool_arguments_json;
 use crate::provider_recovery::{classify_provider_error, is_provider_context_overflow_reason};
@@ -481,6 +482,7 @@ pub enum Command {
         team_run_id: String,
         member_name: String,
         approver: String,
+        metadata: BTreeMap<String, String>,
         respond_to: oneshot::Sender<Result<TeamRunProjection, CoordinatorError>>,
     },
     RejectTeamShutdown {
@@ -494,6 +496,7 @@ pub enum Command {
     DeleteTeam {
         actor: EventActor,
         team_run_id: String,
+        metadata: BTreeMap<String, String>,
         respond_to: oneshot::Sender<Result<TeamRunProjection, CoordinatorError>>,
     },
     JobFinished {
@@ -1452,11 +1455,30 @@ impl CoordinatorHandle {
         member_name: impl Into<String>,
         approver: impl Into<String>,
     ) -> Result<TeamRunProjection, CoordinatorError> {
+        self.approve_team_shutdown_with_metadata(
+            actor,
+            team_run_id,
+            member_name,
+            approver,
+            BTreeMap::new(),
+        )
+        .await
+    }
+
+    pub async fn approve_team_shutdown_with_metadata(
+        &self,
+        actor: EventActor,
+        team_run_id: impl Into<String>,
+        member_name: impl Into<String>,
+        approver: impl Into<String>,
+        metadata: BTreeMap<String, String>,
+    ) -> Result<TeamRunProjection, CoordinatorError> {
         self.request(|respond_to| Command::ApproveTeamShutdown {
             actor,
             team_run_id: team_run_id.into(),
             member_name: member_name.into(),
             approver: approver.into(),
+            metadata,
             respond_to,
         })
         .await
@@ -1486,9 +1508,20 @@ impl CoordinatorHandle {
         actor: EventActor,
         team_run_id: impl Into<String>,
     ) -> Result<TeamRunProjection, CoordinatorError> {
+        self.delete_team_with_metadata(actor, team_run_id, BTreeMap::new())
+            .await
+    }
+
+    pub async fn delete_team_with_metadata(
+        &self,
+        actor: EventActor,
+        team_run_id: impl Into<String>,
+        metadata: BTreeMap<String, String>,
+    ) -> Result<TeamRunProjection, CoordinatorError> {
         self.request(|respond_to| Command::DeleteTeam {
             actor,
             team_run_id: team_run_id.into(),
+            metadata,
             respond_to,
         })
         .await
@@ -2030,10 +2063,17 @@ impl Coordinator {
                 team_run_id,
                 member_name,
                 approver,
+                metadata,
                 respond_to,
             } => {
                 let result = self
-                    .approve_team_shutdown_internal(actor, team_run_id, member_name, approver)
+                    .approve_team_shutdown_internal(
+                        actor,
+                        team_run_id,
+                        member_name,
+                        approver,
+                        metadata,
+                    )
                     .await;
                 warn_oneshot_send_failure(respond_to.send(result), "approve_team_shutdown");
             }
@@ -2059,9 +2099,12 @@ impl Coordinator {
             Command::DeleteTeam {
                 actor,
                 team_run_id,
+                metadata,
                 respond_to,
             } => {
-                let result = self.delete_team_internal(actor, team_run_id).await;
+                let result = self
+                    .delete_team_internal(actor, team_run_id, metadata)
+                    .await;
                 warn_oneshot_send_failure(respond_to.send(result), "delete_team");
             }
             Command::JobFinished { task_id, outcome } => {
@@ -4594,6 +4637,7 @@ impl Coordinator {
             spec.bounds.max_members = TeamBounds::default().max_members;
         }
         validate_team_spec(&spec)?;
+        let workflow = team_workflow_metadata_from_map(&spec.metadata);
 
         let team_run_id = team_run_id
             .and_then(|value| non_empty_trimmed(&value).map(str::to_string))
@@ -4640,6 +4684,7 @@ impl Coordinator {
                 EventV1::TeamCreated(TeamCreatedEvent {
                     team_run_id: team_run_id.clone(),
                     spec: spec.clone(),
+                    workflow: workflow.clone(),
                 }),
             )?;
         }
@@ -4669,6 +4714,7 @@ impl Coordinator {
                     member_name: "lead".to_string(),
                     agent_id,
                     profile,
+                    workflow: workflow.clone(),
                 }),
             )?;
         }
@@ -4699,6 +4745,7 @@ impl Coordinator {
                     member_name: member.name.clone(),
                     agent_id,
                     profile,
+                    workflow: workflow.clone(),
                 }),
             )?;
         }
@@ -4773,6 +4820,7 @@ impl Coordinator {
             &message.from,
             self.clock.mono_ms(),
         )?;
+        let workflow = team_workflow_metadata_for_team_action(team, None);
         let run_state = self
             .run_state
             .as_mut()
@@ -4786,6 +4834,7 @@ impl Coordinator {
             EventV1::TeamMessageSent(TeamMessageSentEvent {
                 team_run_id: team_run_id.clone(),
                 message,
+                workflow,
             }),
         )?;
         self.project_single_team(&team_run_id).await
@@ -4811,6 +4860,7 @@ impl Coordinator {
         } else {
             validate_team_actor_can_make_unowned_team_write(&actor, team, self.clock.mono_ms())?;
         }
+        let workflow = team_workflow_metadata_for_team_action(team, Some(&task.metadata));
         let run_state = self
             .run_state
             .as_mut()
@@ -4824,6 +4874,7 @@ impl Coordinator {
             EventV1::TeamTaskCreated(TeamTaskCreatedEvent {
                 team_run_id: team_run_id.clone(),
                 task,
+                workflow,
             }),
         )?;
         self.project_single_team(&team_run_id).await
@@ -4852,6 +4903,7 @@ impl Coordinator {
         } else {
             validate_team_actor_can_make_unowned_team_write(&actor, team, self.clock.mono_ms())?;
         }
+        let workflow = team_workflow_metadata_for_team_action(team, Some(&metadata));
         let run_state = self
             .run_state
             .as_mut()
@@ -4868,6 +4920,7 @@ impl Coordinator {
                 status,
                 owner,
                 metadata,
+                workflow,
             }),
         )?;
         self.project_single_team(&team_run_id).await
@@ -4892,6 +4945,7 @@ impl Coordinator {
             &requester,
             self.clock.mono_ms(),
         )?;
+        let workflow = team_workflow_metadata_for_team_action(team, None);
         let run_state = self
             .run_state
             .as_mut()
@@ -4906,6 +4960,7 @@ impl Coordinator {
                 team_run_id: team_run_id.clone(),
                 member_name,
                 requester,
+                workflow,
             }),
         )?;
         self.project_single_team(&team_run_id).await
@@ -4917,12 +4972,15 @@ impl Coordinator {
         team_run_id: String,
         member_name: String,
         approver: String,
+        metadata: BTreeMap<String, String>,
     ) -> Result<TeamRunProjection, CoordinatorError> {
         let projection = self.team_projection_internal().await?;
         let team = require_active_team_or_shutdown(&projection, &team_run_id)?;
         validate_team_member(team, &member_name)?;
         validate_team_shutdown_request_pending(team, &member_name)?;
         validate_team_participant(team, &approver)?;
+        validate_team_metadata("team shutdown approval metadata", &metadata)?;
+        validate_team_member_shutdown_readiness(team, &member_name, &metadata)?;
         validate_team_action(
             &actor,
             team,
@@ -4930,6 +4988,7 @@ impl Coordinator {
             &approver,
             self.clock.mono_ms(),
         )?;
+        let workflow = team_workflow_metadata_for_team_action(team, Some(&metadata));
         let run_state = self
             .run_state
             .as_mut()
@@ -4944,6 +5003,8 @@ impl Coordinator {
                 team_run_id: team_run_id.clone(),
                 member_name,
                 approver,
+                metadata,
+                workflow,
             }),
         )?;
         self.activate_pending_team_members(&actor, &team_run_id)
@@ -4976,6 +5037,7 @@ impl Coordinator {
                 "shutdown rejection reason cannot be empty".to_string(),
             ));
         }
+        let workflow = team_workflow_metadata_for_team_action(team, None);
         let run_state = self
             .run_state
             .as_mut()
@@ -4991,6 +5053,7 @@ impl Coordinator {
                 member_name,
                 rejecter,
                 reason,
+                workflow,
             }),
         )?;
         self.project_single_team(&team_run_id).await
@@ -5000,9 +5063,11 @@ impl Coordinator {
         &mut self,
         actor: EventActor,
         team_run_id: String,
+        metadata: BTreeMap<String, String>,
     ) -> Result<TeamRunProjection, CoordinatorError> {
         let projection = self.team_projection_internal().await?;
         let team = require_active_team_or_shutdown(&projection, &team_run_id)?;
+        validate_team_metadata("team deletion metadata", &metadata)?;
         let unapproved = team
             .members
             .values()
@@ -5015,6 +5080,14 @@ impl Coordinator {
                 unapproved.join(", ")
             )));
         }
+        let shutdown_proof = team.shutdown_proof_with_delete_metadata(&metadata);
+        if !shutdown_proof.ready {
+            return Err(CoordinatorError::PolicyViolation(format!(
+                "cannot delete team `{team_run_id}` before team completion proof: missing {}",
+                shutdown_proof.missing.join(", ")
+            )));
+        }
+        let workflow = team_workflow_metadata_for_team_action(team, Some(&metadata));
         let run_state = self
             .run_state
             .as_mut()
@@ -5027,6 +5100,8 @@ impl Coordinator {
             Some(format!("team:{team_run_id}")),
             EventV1::TeamDeleted(TeamDeletedEvent {
                 team_run_id: team_run_id.clone(),
+                metadata,
+                workflow,
             }),
         )?;
         self.project_single_team(&team_run_id).await
@@ -5060,6 +5135,7 @@ impl Coordinator {
             return Ok(());
         }
         let team_name = team.name.clone();
+        let workflow = team_workflow_metadata_for_team_action(team, None);
         let pending = team
             .members
             .values()
@@ -5094,6 +5170,7 @@ impl Coordinator {
                     member_name: member.name,
                     agent_id,
                     profile,
+                    workflow: workflow.clone(),
                 }),
             )?;
         }
@@ -7601,6 +7678,7 @@ fn validate_team_spec(spec: &TeamSpec) -> Result<(), CoordinatorError> {
             spec.bounds.max_members
         )));
     }
+    validate_team_metadata("team spec metadata", &spec.metadata)?;
     let mut names = BTreeSet::new();
     for member in spec.members.iter() {
         if non_empty_trimmed(&member.name).is_none() {
@@ -7903,6 +7981,35 @@ fn team_participant_for_worker_actor(
         })
 }
 
+fn team_workflow_metadata_for_team_action(
+    team: &TeamRunProjection,
+    metadata: Option<&BTreeMap<String, String>>,
+) -> Option<WorkflowEventMetadata> {
+    metadata
+        .and_then(team_workflow_id_from_map)
+        .or_else(|| team.workflow_id.clone())
+        .map(|workflow_id| WorkflowEventMetadata {
+            workflow_id: Some(workflow_id),
+            ..WorkflowEventMetadata::default()
+        })
+}
+
+fn team_workflow_metadata_from_map(
+    metadata: &BTreeMap<String, String>,
+) -> Option<WorkflowEventMetadata> {
+    team_workflow_id_from_map(metadata).map(|workflow_id| WorkflowEventMetadata {
+        workflow_id: Some(workflow_id),
+        ..WorkflowEventMetadata::default()
+    })
+}
+
+fn team_workflow_id_from_map(metadata: &BTreeMap<String, String>) -> Option<String> {
+    metadata
+        .get(TEAM_METADATA_WORKFLOW_ID)
+        .and_then(|value| non_empty_trimmed(value))
+        .map(str::to_string)
+}
+
 fn validate_team_shutdown_request_can_open(
     team: &TeamRunProjection,
     member_name: &str,
@@ -7924,6 +8031,39 @@ fn validate_team_shutdown_request_can_open(
         }
         _ => Ok(()),
     }
+}
+
+fn validate_team_member_shutdown_readiness(
+    team: &TeamRunProjection,
+    member_name: &str,
+    metadata: &BTreeMap<String, String>,
+) -> Result<(), CoordinatorError> {
+    if metadata
+        .get(TEAM_METADATA_ABORT_REASON)
+        .and_then(|value| non_empty_trimmed(value))
+        .is_some()
+    {
+        return Ok(());
+    }
+    let incomplete = team
+        .tasks
+        .values()
+        .filter(|task| task.owner.as_deref() == Some(member_name))
+        .filter(|task| {
+            matches!(
+                task.status,
+                TeamTaskStatus::Pending | TeamTaskStatus::Claimed | TeamTaskStatus::InProgress
+            )
+        })
+        .map(|task| task.task_id.clone())
+        .collect::<Vec<_>>();
+    if incomplete.is_empty() {
+        return Ok(());
+    }
+    Err(CoordinatorError::PolicyViolation(format!(
+        "team member `{member_name}` cannot approve shutdown with incomplete owned tasks: {}; provide `{TEAM_METADATA_ABORT_REASON}` metadata to abort",
+        incomplete.join(", ")
+    )))
 }
 
 fn validate_team_shutdown_request_pending(
@@ -8036,7 +8176,7 @@ fn validate_team_task_create(
             task.task_id
         )));
     }
-    validate_team_metadata(&task.metadata)?;
+    validate_team_metadata("persistent task metadata", &task.metadata)?;
     if let Some(owner) = task.owner.as_deref() {
         validate_team_participant(team, owner)?;
     }
@@ -8086,7 +8226,7 @@ fn validate_persistent_task_create(
             task.task_id
         )));
     }
-    validate_team_metadata(&task.metadata)?;
+    validate_team_metadata("persistent task metadata", &task.metadata)?;
     for blocker in &task.blocked_by {
         validate_team_text_field("persistent task blocker", blocker)?;
         if blocker == &task.task_id {
@@ -8143,7 +8283,7 @@ fn validate_persistent_task_update(
             }
         }
     }
-    validate_team_metadata(&update.metadata)?;
+    validate_team_metadata("persistent task metadata", &update.metadata)?;
     apply_persistent_task_update(&mut candidate, update);
     let mut candidate_tasks = projection.tasks.clone();
     candidate_tasks.insert(candidate.task_id.clone(), candidate.clone());
@@ -8184,7 +8324,7 @@ fn validate_team_task_update(
     if let Some(owner) = owner {
         validate_team_participant(team, owner)?;
     }
-    validate_team_metadata(metadata)?;
+    validate_team_metadata("team task metadata", metadata)?;
     if matches!(
         status,
         TeamTaskStatus::Claimed | TeamTaskStatus::InProgress | TeamTaskStatus::Completed
@@ -8209,15 +8349,18 @@ fn validate_team_task_update(
     Ok(())
 }
 
-fn validate_team_metadata(metadata: &BTreeMap<String, String>) -> Result<(), CoordinatorError> {
+fn validate_team_metadata(
+    label: &str,
+    metadata: &BTreeMap<String, String>,
+) -> Result<(), CoordinatorError> {
     if metadata.len() > TEAM_TASK_METADATA_MAX_ENTRIES {
         return Err(CoordinatorError::PolicyViolation(format!(
-            "team task metadata exceeds {TEAM_TASK_METADATA_MAX_ENTRIES} entries"
+            "{label} exceeds {TEAM_TASK_METADATA_MAX_ENTRIES} entries"
         )));
     }
     for (key, value) in metadata {
-        validate_team_metadata_field("team task metadata key", key)?;
-        validate_team_metadata_field("team task metadata value", value)?;
+        validate_team_metadata_field(&format!("{label} key"), key)?;
+        validate_team_metadata_field(&format!("{label} value"), value)?;
     }
     Ok(())
 }

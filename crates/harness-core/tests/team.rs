@@ -9,7 +9,12 @@ use harness_core::event::{
     ActorKind, EventActor, EventV1, TeamBounds, TeamMemberRole, TeamMemberSelector, TeamMemberSpec,
     TeamMessage, TeamMessageKind, TeamSpec, TeamTask, TeamTaskStatus,
 };
-use harness_core::proj::{project_team_state, TeamMemberStatus, TeamRunStatus};
+use harness_core::proj::{
+    project_team_state, TeamMemberStatus, TeamRunStatus, TEAM_METADATA_ABORT_REASON,
+    TEAM_METADATA_EVIDENCE_REF, TEAM_METADATA_FILE_CLAIM_PATH, TEAM_METADATA_SYNTHESIS_REF,
+    TEAM_METADATA_TMUX_PANE, TEAM_METADATA_TMUX_STATUS, TEAM_METADATA_WORKFLOW_ID,
+    TEAM_METADATA_WORKTREE_PATH, TEAM_METADATA_WORKTREE_STATUS,
+};
 use harness_core::redact::DefaultRedactor;
 
 mod common;
@@ -126,6 +131,20 @@ async fn coordinator_team_lifecycle_is_event_sourced_and_enforces_blockers() {
         )
         .await
         .expect("claim unblocked task");
+    handle
+        .update_team_task(
+            actor.clone(),
+            "team_alpha",
+            "task_2",
+            TeamTaskStatus::Completed,
+            Some("alpha".to_string()),
+            metadata([(
+                TEAM_METADATA_EVIDENCE_REF,
+                "artifacts/team_alpha/verify.json",
+            )]),
+        )
+        .await
+        .expect("complete claimed task with verification evidence");
 
     handle
         .request_team_shutdown(actor.clone(), "team_alpha", "beta", "lead")
@@ -175,9 +194,241 @@ async fn coordinator_team_lifecycle_is_event_sourced_and_enforces_blockers() {
             .as_deref(),
         Some("alpha")
     );
+    assert!(projection.teams["team_alpha"].shutdown_proof.ready);
+    assert_eq!(
+        projection.teams["team_alpha"].task_status_counts.completed,
+        2
+    );
     assert_eq!(
         projection.teams["team_alpha"].tasks["task_1"].blocks,
         vec!["task_2".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn coordinator_team_projection_surfaces_workflow_policy_metadata_and_shutdown_proof() {
+    let tempdir = tempfile::tempdir().expect("tempdir");
+    let mut config = CoordinatorConfig::new(tempdir.path());
+    config.run_id_override = Some("run_team_policy".to_string());
+    config.agent_profiles = agent_profiles();
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = handle
+        .start_run("team-policy", tempdir.path())
+        .await
+        .expect("start run");
+    let actor = EventActor::new(ActorKind::Supervisor, None);
+
+    let mut spec = team_spec();
+    spec.metadata = metadata([
+        (TEAM_METADATA_WORKFLOW_ID, "wf_team"),
+        (TEAM_METADATA_WORKTREE_PATH, "worktrees/alpha"),
+        (TEAM_METADATA_WORKTREE_STATUS, "permissioned"),
+        (TEAM_METADATA_TMUX_PANE, "%7"),
+        (TEAM_METADATA_TMUX_STATUS, "optional"),
+    ]);
+    let created = handle
+        .create_team(actor.clone(), spec, Some("team_policy".to_string()))
+        .await
+        .expect("create team");
+    assert_eq!(created.workflow_id.as_deref(), Some("wf_team"));
+
+    handle
+        .send_team_message(
+            actor.clone(),
+            "team_policy",
+            TeamMessage {
+                version: 1,
+                message_id: "mailbox_1".to_string(),
+                from: "lead".to_string(),
+                to: "alpha".to_string(),
+                kind: TeamMessageKind::Message,
+                body: "Read the mailbox artifact.".to_string(),
+                summary: Some("mailbox artifact".to_string()),
+                references: vec![harness_core::event::TeamReference {
+                    path: "artifacts/team_policy/mailbox.md".to_string(),
+                    description: Some("mailbox artifact".to_string()),
+                }],
+                correlation_id: None,
+            },
+        )
+        .await
+        .expect("send mailbox artifact ref");
+
+    let mut task = team_task("task_claim", Vec::new());
+    task.metadata = metadata([
+        (
+            TEAM_METADATA_FILE_CLAIM_PATH,
+            "crates/harness-core/src/proj.rs",
+        ),
+        ("file_claim.reason", "projection hardening"),
+        ("file_claim.status", "claimed"),
+    ]);
+    handle
+        .create_team_task(actor.clone(), "team_policy", task)
+        .await
+        .expect("create claimed file task");
+    handle
+        .update_team_task(
+            actor.clone(),
+            "team_policy",
+            "task_claim",
+            TeamTaskStatus::Completed,
+            Some("alpha".to_string()),
+            metadata([
+                (
+                    TEAM_METADATA_EVIDENCE_REF,
+                    "artifacts/team_policy/verify.json",
+                ),
+                (
+                    TEAM_METADATA_SYNTHESIS_REF,
+                    "artifacts/team_policy/synthesis.md",
+                ),
+            ]),
+        )
+        .await
+        .expect("complete task with evidence");
+
+    let projection = project_team_state(load_events(&run.events_path).iter())
+        .expect("project team policy state");
+    let team = &projection.teams["team_policy"];
+    assert_eq!(team.workflow_id.as_deref(), Some("wf_team"));
+    assert_eq!(team.task_status_counts.completed, 1);
+    assert_eq!(team.mailbox_artifact_refs.len(), 1);
+    assert_eq!(team.file_claims[0].path, "crates/harness-core/src/proj.rs");
+    assert_eq!(
+        team.runtime_diagnostics.worktree_path.as_deref(),
+        Some("worktrees/alpha")
+    );
+    assert_eq!(team.runtime_diagnostics.tmux_pane.as_deref(), Some("%7"));
+    assert!(team.shutdown_proof.ready);
+    assert_eq!(
+        team.shutdown_proof.verification_evidence_refs,
+        vec!["artifacts/team_policy/verify.json".to_string()]
+    );
+    assert_eq!(
+        team.shutdown_proof.synthesis_refs,
+        vec!["artifacts/team_policy/synthesis.md".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn coordinator_requires_team_shutdown_proof_or_explicit_abort_reason() {
+    let tempdir = tempfile::tempdir().expect("tempdir");
+    let mut config = CoordinatorConfig::new(tempdir.path());
+    config.agent_profiles = agent_profiles();
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    handle
+        .start_run("team-proof", tempdir.path())
+        .await
+        .expect("start run");
+    let actor = EventActor::new(ActorKind::Supervisor, None);
+
+    handle
+        .create_team(actor.clone(), team_spec(), Some("team_proof".to_string()))
+        .await
+        .expect("create team");
+    handle
+        .create_team_task(
+            actor.clone(),
+            "team_proof",
+            team_task("pending", Vec::new()),
+        )
+        .await
+        .expect("create pending task");
+
+    for member in ["alpha", "beta"] {
+        handle
+            .request_team_shutdown(actor.clone(), "team_proof", member, "lead")
+            .await
+            .expect("request shutdown");
+        handle
+            .approve_team_shutdown(actor.clone(), "team_proof", member, member)
+            .await
+            .expect("approve shutdown");
+    }
+
+    let blocked = handle
+        .delete_team(actor.clone(), "team_proof")
+        .await
+        .expect_err("delete without proof is blocked");
+    assert!(blocked.to_string().contains("team completion proof"));
+
+    let deleted = handle
+        .delete_team_with_metadata(
+            actor,
+            "team_proof",
+            metadata([(TEAM_METADATA_ABORT_REASON, "operator aborted pending task")]),
+        )
+        .await
+        .expect("abort metadata allows deletion");
+    assert_eq!(deleted.status, TeamRunStatus::Deleted);
+    assert_eq!(
+        deleted.shutdown_proof.abort_reason.as_deref(),
+        Some("operator aborted pending task")
+    );
+}
+
+#[tokio::test]
+async fn coordinator_blocks_member_shutdown_approval_with_owned_incomplete_tasks() {
+    let tempdir = tempfile::tempdir().expect("tempdir");
+    let mut config = CoordinatorConfig::new(tempdir.path());
+    config.agent_profiles = agent_profiles();
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    handle
+        .start_run("team-member-proof", tempdir.path())
+        .await
+        .expect("start run");
+    let actor = EventActor::new(ActorKind::Supervisor, None);
+
+    handle
+        .create_team(
+            actor.clone(),
+            team_spec(),
+            Some("team_member_proof".to_string()),
+        )
+        .await
+        .expect("create team");
+    let mut owned = team_task("owned", Vec::new());
+    owned.owner = Some("alpha".to_string());
+    handle
+        .create_team_task(actor.clone(), "team_member_proof", owned)
+        .await
+        .expect("create owned task");
+    handle
+        .request_team_shutdown(actor.clone(), "team_member_proof", "alpha", "lead")
+        .await
+        .expect("request alpha shutdown");
+    let blocked = handle
+        .approve_team_shutdown(actor.clone(), "team_member_proof", "alpha", "alpha")
+        .await
+        .expect_err("owned incomplete task blocks approval");
+    assert!(blocked.to_string().contains("incomplete owned tasks"));
+
+    let approved = handle
+        .approve_team_shutdown_with_metadata(
+            actor,
+            "team_member_proof",
+            "alpha",
+            "alpha",
+            metadata([(TEAM_METADATA_ABORT_REASON, "alpha aborted owned task")]),
+        )
+        .await
+        .expect("abort reason allows shutdown approval");
+    assert_eq!(
+        approved.members["alpha"].shutdown_abort_reason.as_deref(),
+        Some("alpha aborted owned task")
     );
 }
 
@@ -831,6 +1082,7 @@ fn team_spec() -> TeamSpec {
             },
         ],
         bounds: TeamBounds::default(),
+        metadata: BTreeMap::new(),
     }
 }
 
@@ -846,6 +1098,15 @@ fn team_task(task_id: &str, blocked_by: Vec<String>) -> TeamTask {
         blocked_by,
         metadata: BTreeMap::new(),
     }
+}
+
+fn metadata(
+    entries: impl IntoIterator<Item = (&'static str, &'static str)>,
+) -> BTreeMap<String, String> {
+    entries
+        .into_iter()
+        .map(|(key, value)| (key.to_string(), value.to_string()))
+        .collect()
 }
 
 fn agent_profiles() -> BTreeMap<String, AgentProfile> {

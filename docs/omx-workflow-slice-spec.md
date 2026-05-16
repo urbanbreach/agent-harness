@@ -625,7 +625,7 @@ Purpose: lift Team Mode from MVP to a durable operator workflow after the goal-l
 Current Harness baseline:
 
 - `README.md`, `docs/architecture.md`, and `docs/parity-ledger.json` show event-sourced team tools exist.
-- Remaining gaps include worktrees, file claims, tmux visualization, durable mailbox artifacts, and active runtime diagnostics.
+- Remaining gaps after the G007 hardening slice are optional creation/cleanup adapters for worktrees and tmux; workflow ids, file-claim metadata, durable mailbox artifact refs, runtime diagnostics, task counts, TUI status, and shutdown proof are projection/policy state.
 
 Harness adaptation:
 
@@ -639,15 +639,15 @@ Harness adaptation:
 
 Required additions after the first demonstrator:
 
-- Team spec parser with canonical validation and diagnostics.
-- Team run projection with active/pending/in-progress/completed/failed counts.
-- Durable mailbox artifact refs for large messages.
-- File claim events or metadata with owner, path, claim reason, and release status.
-- Optional per-member worktree creation through coordinator command.
-- Tmux pane metadata with dependency errors and cleanup status.
-- Team status TUI panel.
-- Team shutdown proof with no pending/in-progress tasks or explicit abort reason.
-- Lead synthesis artifact that maps member outputs to evidence refs.
+- Team spec parser with canonical validation and diagnostics. (Implemented for declared specs and coordinator-created specs.)
+- Team run projection with active/pending/in-progress/completed/failed counts. (Implemented as replay-derived task status counts.)
+- Durable mailbox artifact refs for large messages. (Implemented as replay-derived `artifacts/` message references.)
+- File claim events or metadata with owner, path, claim reason, and release status. (Implemented as advisory task metadata.)
+- Optional per-member worktree creation through coordinator command. (Adapter still future; metadata diagnostics are projected.)
+- Tmux pane metadata with dependency errors and cleanup status. (Metadata diagnostics are projected; pane orchestration remains optional/future.)
+- Team status TUI panel. (Implemented as orchestration rows with workflow/abort/evidence status.)
+- Team shutdown proof with no pending/in-progress tasks or explicit abort reason. (Implemented as coordinator delete gate and projection proof.)
+- Lead synthesis artifact that maps member outputs to evidence refs. (Implemented as projected `synthesis_ref` metadata.)
 
 Acceptance criteria:
 

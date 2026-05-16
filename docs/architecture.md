@@ -235,7 +235,7 @@ Mode, and continuation loops; execution remains coordinator-owned and is never s
 by replay projection.
 
 **Team Orchestration**
-- `TeamCreated` - Creates an event-sourced team run from a typed team spec, explicit member roles, optional lead selector, and bounds
+- `TeamCreated` - Creates an event-sourced team run from a typed team spec, explicit member roles, optional lead selector, bounds, and optional workflow metadata
 - `TeamMemberSpawned` - Links a team participant name to an ordinary coordinator-spawned child agent session; `member_name = "lead"` records the first-class lead runtime when configured
 - `TeamMessageSent` - Appends a shared team message, announcement, or shutdown notice
 - `TeamTaskCreated` - Adds a shared team checklist task, separate from scheduler `TaskScheduled` work
@@ -243,7 +243,7 @@ by replay projection.
 - `TeamShutdownRequested` - Records a member shutdown request
 - `TeamShutdownApproved` - Records approval for a member shutdown request
 - `TeamShutdownRejected` - Records rejection and reason for a member shutdown request
-- `TeamDeleted` - Marks a fully shutdown-approved team run deleted
+- `TeamDeleted` - Marks a fully shutdown-approved team run deleted after completion proof or explicit abort metadata
 
 Team orchestration state is replayed from these events by pure projections. The stable role model is
 operator/supervisor, lead, write-capable member, and read-only research member. The team spec lead is
@@ -257,6 +257,17 @@ timestamps are the enclosing event envelope timestamps. `blocks` is a projection
 `blocked_by`; callers provide `blocked_by`, and replay recomputes `blocks` deterministically.
 Shutdown approval/deletion is a team coordination protocol; it does not by itself execute provider
 work, stop child sessions, or cancel scheduler tasks.
+
+Team events may carry serde-defaulted workflow metadata; team specs and task/deletion metadata use
+the same `workflow_id` key so replay can associate team runs with durable workflow ledgers without
+launching agents. The team projection also derives task status counts, durable mailbox artifact
+references from message refs under `artifacts/`, advisory file claims from `file_claim.*` task
+metadata, optional worktree/tmux diagnostics from metadata, and shutdown proof. Normal team
+completion requires all non-lead members to approve shutdown, no `pending`/`claimed`/`in_progress`
+team tasks, and verification evidence (`evidence_ref` / `verification_evidence_ref`) or explicit
+`abort_reason` metadata on shutdown approval/deletion. These are projection and coordinator policy
+checks only: replay never starts workers, creates worktrees, attaches tmux panes, or mutates the
+workspace.
 
 Team bounds are runtime policy, not validation-only fields. `max_parallel_members` limits active
 non-lead member sessions; pending members activate after another active member is shutdown-approved.

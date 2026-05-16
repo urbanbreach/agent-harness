@@ -828,7 +828,9 @@ fn projects_team_events_as_replayable_transcript_parts() {
                         prompt: None,
                     }],
                     bounds: TeamBounds::default(),
+                    metadata: BTreeMap::new(),
                 },
+                workflow: None,
             }),
         ),
         envelope(
@@ -848,6 +850,7 @@ fn projects_team_events_as_replayable_transcript_parts() {
                     references: Vec::new(),
                     correlation_id: None,
                 },
+                workflow: None,
             }),
         ),
         envelope(
@@ -867,6 +870,7 @@ fn projects_team_events_as_replayable_transcript_parts() {
                     blocked_by: Vec::new(),
                     metadata: BTreeMap::new(),
                 },
+                workflow: None,
             }),
         ),
     ];
