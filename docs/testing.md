@@ -70,7 +70,11 @@ Current stage commands:
 - `cargo test -p harness --test config_docs_reference`
 - `cargo test -p harness --test determinism_multi_turn_tools`
 - `cargo test -p harness --test event_docs_reference`
-- `cargo test -p harness-core`
+- `cargo run -p harness -- --config configs/harness.example.jsonc config validate`
+- `cargo run -p harness -- --config configs/harness.example.jsonc doctor --json`
+- `cargo test -p harness --test workflow_cli`
+- `cargo test -p harness-core workflow`
+- `cargo test -p harness-testkit workflow_simulator`
 - `cargo test -p harness --test prompt_cli`
 - `cargo test -p harness --test replay_sessions_cli`
 - `cargo test -p harness --test run_cli`
@@ -79,7 +83,6 @@ Current stage commands:
 - `cargo test -p harness-providers --lib`
 - `cargo test -p harness-providers --test openai_compatible_serializes_native_tool_schema_without_alias_dupes`
 - `cargo test -p harness-tools --lib`
-- `cargo test -p harness-tools team`
 - `cargo test -p harness-tools --test native_tool_parity_matrix`
 - `cargo test -p harness-tools --test hashline_apply`
 - `cargo test -p harness-tools --test mcp_generic`
@@ -111,6 +114,22 @@ Current stage commands:
 - `cargo test -p harness --test config_schema_cli public_runtime_config_accepts_compaction_settings`
 - `cargo test -p harness-core conversation_projection_failed_checkpoint_turn_status`
 - `cargo test -p harness-core --test resume_plan session_catalog_counts_checkpoint_artifacts_alongside_tool_artifacts`
+
+## Workflow replay and dossier closeout evidence
+
+When a change touches workflow lifecycle, evidence, signoff, replay/restart, or dossier surfaces,
+include replay-derived closeout evidence in addition to the narrow unit tests. The usual focused
+commands are:
+
+- `cargo test -p harness-testkit workflow_simulator`
+- `cargo test -p harness --test workflow_cli`
+- `cargo run -p harness -- --config configs/harness.example.jsonc doctor --json`
+
+`harness workflow dossier export --json --run-dir <run>` regenerates the Run Dossier from
+`events.jsonl`; do not edit an exported dossier as the workflow authority. Status, dossier,
+snapshot, goal, and mission reads must stay projection-only and must not append events. The
+deterministic simulator and workflow CLI tests cover intake restart/replay, missing-evidence
+denials, mapped evidence, operator waiver/signoff, and dossier export without live providers.
 
 ## Deterministic signoff PTY lane
 

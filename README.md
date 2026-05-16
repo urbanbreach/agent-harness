@@ -176,7 +176,36 @@ LSP probes, and absolute-path workspace reads.
 
 The shipped `default` provider points at the local CLIProxy-compatible bridge (`http://127.0.0.1:8317/v1`) and uses an explicit local placeholder bearer token so the default flow stays aligned between docs, config, and live signoff lanes without depending on `OPENAI_API_KEY`. Its catalog mirrors the configured CLIProxyAPI GPT family, including GPT 5.5, GPT 5.4, GPT 5.4 Mini, GPT 5.4 extended-context presets, GPT 5.3 Codex, GPT 5.2, and GPT 5.1/Codex variants.
 
-The TUI exposes workflow slash commands for `/model`, `/status`, `/toggles`, `/resume`, `/new`, `/tree`, `/fork`, `/clone`, `/compact`, `/init-deep`, `/ralph-loop`, `/ulw-loop`, `/stop-continuation`, `/cancel-ralph`, `/refactor`, `/start-work`, `/remove-ai-slops`, `/handoff`, and `/hyperplan`. `/model` switches the agent/model used for subsequent turns, `/status` opens the system status dialog, `/toggles` opens the session-local Toggles menu for configured agents, prompts, hooks, MCP servers, tools, skills, and YOLO menu state, `/resume` opens the saved-session picker, and `/new` starts a clean live run. `/tree` shows the Harness session lineage tree for saved sessions. `/fork` creates a child Harness session from the current session at an explicit stable event cutoff. `/clone` creates a child Harness session from the latest stable prefix of the selected source session. `/ralph-loop` and `/ulw-loop` start explicit bounded continuation loops that are visible in events and the status dialog; `/stop-continuation` and `/cancel-ralph` stop the active loop.
+The TUI exposes slash commands for `/model`, `/status`, `/toggles`, `/resume`, `/new`,
+`/tree`, `/fork`, `/clone`, `/compact`, `/init-deep`, `/ralph-loop`, `/ulw-loop`,
+`/stop-continuation`, `/cancel-ralph`, `/refactor`, `/start-work`, `/remove-ai-slops`,
+`/handoff`, and `/hyperplan`. `/model` switches the agent/model used for subsequent turns,
+`/status` opens the system status dialog, `/toggles` opens the session-local Toggles menu for
+configured agents, prompts, hooks, MCP servers, tools, skills, and YOLO menu state, `/resume`
+opens the saved-session picker, and `/new` starts a clean live run. `/tree` shows the Harness
+session lineage tree for saved sessions. `/fork` creates a child Harness session from the current
+session at an explicit stable event cutoff. `/clone` creates a child Harness session from the
+latest stable prefix of the selected source session. `/ralph-loop` and `/ulw-loop` start explicit
+bounded continuation loops that are visible in events and the status dialog; `/stop-continuation`
+and `/cancel-ralph` stop the active loop.
+
+Workflow intent slash commands are typed UI intents, not shell snippets. The CLI foundation is
+`harness workflow run/status/signoff/cancel/dossier/snapshot/plan-consensus/goal/mission/wiki/init`;
+status, dossier, snapshot, goal, mission, and wiki read/list/query surfaces derive from recorded
+events or explicit wiki roots rather than rerunning hooks or tools.
+
+| Workflow intent | TUI slash commands | CLI surface |
+| --- | --- | --- |
+| Run | `/workflow-run` (`/workflow`) | `harness workflow run` |
+| Status | `/workflow-status` (`/status-workflow`) | `harness workflow status` |
+| Signoff | `/workflow-signoff` (`/signoff`) | `harness workflow signoff` |
+| Cancel | `/workflow-cancel` (`/cancel-workflow`) | `harness workflow cancel` |
+| Run Dossier | `/workflow-dossier` (`/dossier`) | `harness workflow dossier export` |
+| Context snapshot | `/workflow-snapshot` (`/snapshot`) | `harness workflow snapshot` |
+| Consensus plan | `/plan-consensus` (`/ralplan`, `/consensus-plan`) | `harness workflow plan-consensus` |
+| Goal ledger | `/goal-ledger` (`/ultragoal`) | `harness workflow goal` |
+| Research mission | `/research-mission` (`/research-loop`, `/autoresearch`) | `harness workflow mission` |
+| Wiki | `/wiki` (`/workflow-wiki`) | `harness workflow wiki` |
 
 The same lineage surface is available from the terminal through `harness sessions tree`, `harness sessions fork`, and `harness sessions clone`. `harness sessions tree` prints the saved Harness session lineage and accepts `--json`, `--root RUN_ID_OR_PATH`, and `--filter TEXT`. `harness sessions fork --source RUN_ID_OR_PATH --cutoff SEQ` writes a child session from a validated stable prefix. `harness sessions clone --source RUN_ID_OR_PATH` writes a child session from the latest stable completed prefix. Both write commands accept `--json`, reject active or writer locked sources, and print the child run id, source cutoff, event count, and copied artifact count when they succeed.
 
@@ -192,6 +221,12 @@ The same lineage surface is available from the terminal through `harness session
 ```bash
 scripts/test-lanes.sh fast
 scripts/test-lanes.sh integration
+scripts/test-lanes.sh signoff-pty
+scripts/test-lanes.sh signoff-browser
+scripts/test-lanes.sh signoff-live
+scripts/test-lanes.sh signoff-native
+scripts/test-lanes.sh stress-offline
+scripts/test-lanes.sh stress-live
 scripts/test-lanes.sh all-deterministic
 ```
 

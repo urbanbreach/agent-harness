@@ -503,6 +503,11 @@ run_stage integration harness_bootstrap_profiles "$repo_root" cargo test -p harn
 run_stage integration harness_config_docs_reference "$repo_root" cargo test -p harness --test config_docs_reference || true
 run_stage integration harness_determinism_multi_turn_tools "$repo_root" cargo test -p harness --test determinism_multi_turn_tools || true
 run_stage integration harness_event_docs_reference "$repo_root" cargo test -p harness --test event_docs_reference || true
+run_stage integration harness_config_validate "$repo_root" cargo run -p harness -- --config configs/harness.example.jsonc config validate || true
+run_stage integration harness_doctor_json "$repo_root" cargo run -p harness -- --config configs/harness.example.jsonc doctor --json || true
+run_stage integration harness_workflow_cli "$repo_root" cargo test -p harness --test workflow_cli || true
+run_stage integration harness_core_workflow "$repo_root" cargo test -p harness-core workflow || true
+run_stage integration harness_testkit_workflow_simulator "$repo_root" cargo test -p harness-testkit workflow_simulator || true
 run_stage integration harness_forbidden_branding "$repo_root" python3 scripts/check-forbidden-branding.py || true
   run_stage integration harness_prompt_cli "$repo_root" cargo test -p harness --test prompt_cli || true
   run_stage integration harness_replay_sessions_cli "$repo_root" cargo test -p harness --test replay_sessions_cli || true

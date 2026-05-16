@@ -295,7 +295,8 @@ split by crate responsibility:
   evidence category, transition policy, doctor-check, and docs-anchor ids.
 - `harness-core::command_registry` owns canonical command names and aliases such
   as `workflow-run`, `workflow-status`, `workflow-signoff`, `workflow-cancel`,
-  `workflow-dossier`, `workflow-snapshot`, `plan-consensus`, and `goal-ledger`.
+  `workflow-dossier`, `workflow-snapshot`, `plan-consensus`, `goal-ledger`,
+  `research-mission`, and `wiki`.
   These entries resolve to workflow intents and must not execute shell tools.
 - `evidence.plan_consensus` records the reviewed planner/architect/critic plan
   artifact metadata (ADR, options, risks, test plan, staffing, evidence refs,
@@ -320,14 +321,17 @@ split by crate responsibility:
 - `harness doctor --json` includes `workflow_stale_work_loop`, which inspects
   the latest `events.jsonl` under the configured session directory and warns
   when workflow-owned continuations are still active or reminder-queued.
-- `harness workflow run/status/signoff/cancel/dossier/snapshot/plan-consensus/goal/init`
+- `harness workflow run/status/signoff/cancel/dossier/snapshot/plan-consensus/goal/mission/wiki/init`
   are the CLI foundation commands. `status`, goal status/read/list, and
-  dossier/snapshot reads are projection-only over `events.jsonl`; dossier export
+  dossier/snapshot/mission reads are projection-only over `events.jsonl`; dossier export
   includes the replay-derived quality gate and prompt-to-artifact completion audit.
   `harness workflow goal create/status/checkpoint/list/read` is the
-  goal-ledger surface, while `init --check` reports planned files without
-  writing and `init --apply` is the explicit write path for safe generated files
-  under `.agent-harness/`.
+  goal-ledger surface, `harness workflow mission init/run/status/read` is the
+  validator-gated research surface, and
+  `harness workflow wiki add/read/list/query/lint/refresh/delete` is the
+  markdown wiki surface. `init --check` reports planned files without writing and
+  `init --apply` is the explicit write path for safe generated files under
+  `.agent-harness/`.
 - `harness workflow snapshot write --json` is the minimal coordinator-backed
   CLI write path for `/interview` and `/workflow run` intake snapshots; it
   stores artifacts under the session run and emits workflow evidence when a

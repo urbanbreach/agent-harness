@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use harness_core::command_registry::{CommandAction, CommandRegistry};
 use harness_core::config::{harness_schema_pretty_json, harness_tui_schema_pretty_json};
 
 mod common;
@@ -25,6 +26,89 @@ fn documented_table_keys(doc: &str, heading: &str) -> BTreeSet<String> {
             let after_tick = &trimmed[3..];
             let key = after_tick.split('`').next()?;
             Some(key.to_string())
+        })
+        .collect()
+}
+
+fn markdown_section<'a>(doc: &'a str, heading: &str) -> &'a str {
+    let mut section = doc
+        .split(&format!("{heading}\n"))
+        .nth(1)
+        .unwrap_or_else(|| panic!("missing `{heading}` section"));
+    if let Some((current, _rest)) = section.split_once("\n## ") {
+        section = current;
+    }
+    section
+}
+
+fn script_usage_modes(script: &str) -> BTreeSet<String> {
+    let modes = script
+        .split("Modes:\n")
+        .nth(1)
+        .expect("test lane usage should include Modes section")
+        .split("\nOptions:")
+        .next()
+        .expect("test lane usage should include Options section");
+
+    modes
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            let mode = trimmed.split_whitespace().next()?;
+            if mode == "help" || mode.starts_with("--") {
+                return None;
+            }
+            Some(mode.to_string())
+        })
+        .collect()
+}
+
+fn run_stage_commands(script: &str, function_name: &str) -> BTreeSet<String> {
+    let start = script
+        .find(&format!("{function_name}() {{"))
+        .unwrap_or_else(|| panic!("missing {function_name}"));
+    let after_start = &script[start..];
+    let body = after_start
+        .split_once("\n}")
+        .unwrap_or_else(|| panic!("missing {function_name} body terminator"))
+        .0;
+
+    body.lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if !trimmed.starts_with("run_stage ") {
+                return None;
+            }
+            let (_prefix, command) = trimmed
+                .split_once("\"$repo_root\"")
+                .unwrap_or_else(|| panic!("run_stage missing repo root in line: {trimmed}"));
+            let command = command
+                .trim()
+                .strip_suffix("|| true")
+                .unwrap_or(command.trim())
+                .trim();
+            Some(command.to_string())
+        })
+        .collect()
+}
+
+fn documented_stage_commands(section: &str) -> BTreeSet<String> {
+    section
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            let command = trimmed.strip_prefix("- `")?.strip_suffix('`')?;
+            if command.starts_with("cargo ")
+                || command.starts_with("env ")
+                || command.starts_with("python3 ")
+            {
+                Some(command.to_string())
+            } else {
+                None
+            }
         })
         .collect()
 }
@@ -132,6 +216,8 @@ fn config_docs_capture_workflow_contract_registry() {
         "workflow-run",
         "workflow-status",
         "workflow-signoff",
+        "research-mission",
+        "wiki",
         "workflow_contract_registry",
         "workflow_context_snapshot",
         "workflow_runtime_config",
@@ -141,8 +227,10 @@ fn config_docs_capture_workflow_contract_registry() {
         "evidence.plan_consensus",
         "evidence.goal_ledger",
         "prompt-to-artifact completion audit",
-        "harness workflow run/status/signoff/cancel/dossier/snapshot/plan-consensus/goal/init",
+        "harness workflow run/status/signoff/cancel/dossier/snapshot/plan-consensus/goal/mission/wiki/init",
         "harness workflow goal create/status/checkpoint/list/read",
+        "harness workflow mission init/run/status/read",
+        "harness workflow wiki add/read/list/query/lint/refresh/delete",
         "harness workflow plan-consensus",
         "runtime.workflow",
         "init --check",
@@ -154,6 +242,109 @@ fn config_docs_capture_workflow_contract_registry() {
         assert!(
             doc.contains(expected),
             "docs/config.md missing workflow contract registry anchor: {expected}"
+        );
+    }
+}
+
+#[test]
+fn readme_lists_registered_workflow_slash_commands_and_aliases() {
+    let root = repo_root();
+    let readme = std::fs::read_to_string(root.join("README.md")).expect("read README.md");
+
+    for command in CommandRegistry::builtins().commands() {
+        if !matches!(command.action, CommandAction::WorkflowIntent { .. }) {
+            continue;
+        }
+        let slash_command = format!("/{}", command.name);
+        assert!(
+            readme.contains(&slash_command),
+            "README.md missing workflow slash command {slash_command}"
+        );
+        for alias in command.aliases {
+            let slash_alias = format!("/{alias}");
+            assert!(
+                readme.contains(&slash_alias),
+                "README.md missing workflow slash alias {slash_alias}"
+            );
+        }
+    }
+
+    for expected in [
+        "harness workflow run/status/signoff/cancel/dossier/snapshot/plan-consensus/goal/mission/wiki/init",
+        "Run Dossier",
+        "typed UI intents",
+        "rather than rerunning hooks or tools",
+    ] {
+        assert!(
+            readme.contains(expected),
+            "README.md missing workflow command docs anchor: {expected}"
+        );
+    }
+}
+
+#[test]
+fn testing_docs_and_readme_track_test_lane_runner_modes_and_stage_commands() {
+    let root = repo_root();
+    let script =
+        std::fs::read_to_string(root.join("scripts/test-lanes.sh")).expect("read test-lanes.sh");
+    let testing = std::fs::read_to_string(root.join("docs/testing.md")).expect("read testing.md");
+    let readme = std::fs::read_to_string(root.join("README.md")).expect("read README.md");
+
+    for mode in script_usage_modes(&script) {
+        let command = format!("scripts/test-lanes.sh {mode}");
+        assert!(
+            testing.contains(&command),
+            "docs/testing.md missing test lane command `{command}`"
+        );
+        assert!(
+            readme.contains(&command),
+            "README.md missing test lane command `{command}`"
+        );
+    }
+
+    for (mode, function_name, heading) in [
+        ("fast", "run_fast", "## Fast default developer lane"),
+        ("integration", "run_integration", "## Integration CI lane"),
+        (
+            "signoff-pty",
+            "run_signoff_pty",
+            "## Deterministic signoff PTY lane",
+        ),
+        (
+            "signoff-live",
+            "run_signoff_live",
+            "## Live provider opt-in lane",
+        ),
+        (
+            "signoff-browser",
+            "run_signoff_browser",
+            "## Browser/media signoff lane",
+        ),
+        (
+            "signoff-native",
+            "run_signoff_native",
+            "## Native visual lane",
+        ),
+    ] {
+        let script_commands = run_stage_commands(&script, function_name);
+        let doc_commands = documented_stage_commands(markdown_section(&testing, heading));
+        assert_eq!(
+            doc_commands, script_commands,
+            "docs/testing.md stage command list drifted from scripts/test-lanes.sh for {mode}"
+        );
+    }
+
+    for expected in [
+        "harness workflow dossier export --json --run-dir <run>",
+        "projection-only",
+        "intake restart/replay",
+        "HARNESS_LIVE_PROXY=1",
+        "HARNESS_NATIVE_VISUAL=1",
+        "HARNESS_BROWSER_SIGNOFF=1",
+    ] {
+        assert!(
+            testing.contains(expected),
+            "docs/testing.md missing workflow/signoff closeout anchor: {expected}"
         );
     }
 }
