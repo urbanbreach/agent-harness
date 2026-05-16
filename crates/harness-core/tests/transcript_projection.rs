@@ -550,6 +550,7 @@ fn projects_task_lineage_and_child_session_metadata() {
                 result_digest: "digest-task".to_string(),
                 metadata: Some(TaskCompletionMetadata {
                     lineage: Some(lineage),
+                    route: None,
                     task_scope: None,
                     timing: None,
                     hook_executions: Vec::new(),

@@ -428,24 +428,36 @@ fn selector_rule_mode<'a>(
     value: Option<&str>,
 ) -> Option<&'a PermissionMode> {
     let Some(value) = value else {
-        return rules
-            .iter()
-            .find(|rule| matches!(rule.selector, PermissionSelector::CatchAll))
-            .map(|rule| &rule.mode);
+        return rules.iter().rev().find_map(|rule| {
+            matches!(rule.selector, PermissionSelector::CatchAll).then_some(&rule.mode)
+        });
     };
 
     rules
         .iter()
-        .rfind(|rule| permission_selector_matches(&rule.selector, value))
-        .map(|rule| &rule.mode)
+        .enumerate()
+        .filter_map(|(index, rule)| {
+            permission_selector_specificity(&rule.selector, value)
+                .map(|specificity| (specificity, index, &rule.mode))
+        })
+        .max_by_key(|(specificity, index, _)| (*specificity, *index))
+        .map(|(_, _, mode)| mode)
 }
 
-fn permission_selector_matches(selector: &PermissionSelector, value: &str) -> bool {
+fn permission_selector_specificity(
+    selector: &PermissionSelector,
+    value: &str,
+) -> Option<(u8, usize)> {
     match selector {
-        PermissionSelector::Exact(selector) => selector == value,
-        PermissionSelector::Prefix(prefix) => value.starts_with(prefix),
-        PermissionSelector::Glob(pattern) => glob_matches(pattern, value),
-        PermissionSelector::CatchAll => true,
+        PermissionSelector::Exact(selector) if selector == value => Some((3, selector.len())),
+        PermissionSelector::Prefix(prefix) if value.starts_with(prefix) => Some((2, prefix.len())),
+        PermissionSelector::Glob(pattern) if glob_matches(pattern, value) => {
+            Some((1, pattern.chars().filter(|ch| *ch != '*').count()))
+        }
+        PermissionSelector::CatchAll => Some((0, 0)),
+        PermissionSelector::Exact(_)
+        | PermissionSelector::Prefix(_)
+        | PermissionSelector::Glob(_) => None,
     }
 }
 
@@ -752,6 +764,54 @@ mod tests {
     }
 
     #[test]
+    fn permission_rule_specificity_beats_json_object_order() {
+        let policy = PermissionPolicy::new(
+            PermissionMode::Allow,
+            PermissionMode::Allow,
+            PermissionMode::Deny,
+        )
+        .with_category_override(
+            "build",
+            CategoryPermissions {
+                rules: PermissionRuleSet {
+                    shell: vec![
+                        PermissionSelectorRule {
+                            selector: PermissionSelector::Exact("git status".to_string()),
+                            mode: PermissionMode::Deny,
+                        },
+                        PermissionSelectorRule {
+                            selector: PermissionSelector::CatchAll,
+                            mode: PermissionMode::Allow,
+                        },
+                    ],
+                    edit: Vec::new(),
+                    task: Vec::new(),
+                },
+                ..CategoryPermissions::default()
+            },
+        );
+
+        assert_eq!(
+            policy.evaluate_request(
+                Some("build"),
+                PermissionKind::Shell,
+                Some(&PermissionRuleRequest::ShellCommand(
+                    "git status".to_string()
+                ))
+            ),
+            PolicyDecision::Deny
+        );
+        assert_eq!(
+            policy.evaluate_request(
+                Some("build"),
+                PermissionKind::Shell,
+                Some(&PermissionRuleRequest::ShellCommand("git diff".to_string()))
+            ),
+            PolicyDecision::Allow
+        );
+    }
+
+    #[test]
     fn permission_rule_precedence_for_task_exact_glob_and_catch_all() {
         let policy = PermissionPolicy::new(
             PermissionMode::Allow,
@@ -941,7 +1001,7 @@ mod tests {
                   tools: ["edit"]
                 }
               },
-              default_agent: "deep",
+              default_agent: "build",
               permission: {
                 edit: { "*": "deny" },
                 bash: "allow",

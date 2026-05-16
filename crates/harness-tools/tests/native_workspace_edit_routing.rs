@@ -393,6 +393,8 @@ fn test_coordinator(
             category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
             model_ref_explicit: true,
+            fallback_model_refs: Vec::new(),
+            fallback_model_settings: Vec::new(),
             system_prompt: "worker-prompt".to_string(),
             max_iters: Some(12),
             temperature: Some(0.0),

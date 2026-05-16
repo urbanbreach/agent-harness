@@ -25,6 +25,7 @@ use crate::event::{
 };
 use crate::file_tag::{SelectedAgentTag, SelectedFileTag, SelectedResourceTag};
 use crate::provider_args::provider_tool_arguments_json;
+use crate::provider_recovery::{classify_provider_error, ProviderErrorClass};
 use crate::text::{non_empty_trimmed, truncate_with_ellipsis};
 use crate::tool::{
     build_tool_function_name_mapping, sanitize_tool_function_name, ToolRegistry, ToolResult,
@@ -37,6 +38,10 @@ pub struct AgentProfile {
     pub model_ref: String,
     #[serde(default)]
     pub model_ref_explicit: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fallback_model_refs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fallback_model_settings: Vec<AgentModelSettings>,
     pub system_prompt: String,
     #[serde(default)]
     pub temperature: Option<f32>,
@@ -53,6 +58,8 @@ impl AgentProfile {
             category: name.clone(),
             model_ref: "default:default".to_string(),
             model_ref_explicit: false,
+            fallback_model_refs: Vec::new(),
+            fallback_model_settings: Vec::new(),
             system_prompt: String::new(),
             temperature: None,
             max_iters: None,
@@ -76,6 +83,10 @@ pub struct AgentRequest {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub selected_resource_tags: Vec<SelectedResourceTag>,
     pub model_ref: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fallback_model_refs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fallback_model_settings: Vec<AgentModelSettings>,
     #[serde(default)]
     pub model_settings: AgentModelSettings,
 }
@@ -722,6 +733,18 @@ where
         tool_choice: None,
     });
     let completion_request = provider_boundary.request;
+    if let Err(reason) = validate_provider_completion_request(&completion_request) {
+        return AgentTurnOutcome::failed_with_memory(
+            reason.clone(),
+            AgentTurnFailure::new(
+                ProviderConversationTurnStatus::Failed,
+                "provider_error",
+                reason,
+                "",
+                Some(request_id.clone()),
+            ),
+        );
+    }
     let request_digest = digest12_json(&completion_request);
 
     let mut stream = provider.stream_completion(completion_request).await;
@@ -819,20 +842,22 @@ where
                 };
             }
             ProviderStreamEvent::Error { message } => {
+                let mut metadata = provider_finished_metadata(
+                    &request_id,
+                    &request_id,
+                    "error",
+                    &output,
+                    "",
+                    None,
+                );
+                apply_provider_error_metadata(&mut metadata, classify_provider_error(&message));
                 emit(AgentRuntimeEvent::ProviderRequestFinished(
                     ProviderRequestFinished {
                         request_id: request_id.clone(),
                         finish_reason: "error".to_string(),
                         output_digest: None,
                         usage: None,
-                        metadata: Some(provider_finished_metadata(
-                            &request_id,
-                            &request_id,
-                            "error",
-                            &output,
-                            "",
-                            None,
-                        )),
+                        metadata: Some(metadata),
                     },
                 ))
                 .await;
@@ -903,6 +928,7 @@ where
         tool_choice: (!tool_defs.is_empty()).then_some(ToolChoice::Auto),
     });
     let completion_request = provider_boundary.request;
+    validate_provider_completion_request(&completion_request).map_err(AgentTurnFailure::message)?;
     let request_digest = digest12_json(&completion_request);
 
     let mut stream = provider.stream_completion(completion_request).await;
@@ -1005,7 +1031,7 @@ where
         }
     }
 
-    let finished_metadata = provider_finished_metadata(
+    let mut finished_metadata = provider_finished_metadata(
         &turn_request_id,
         &provider_request_id,
         &stop_reason,
@@ -1013,6 +1039,9 @@ where
         &reasoning,
         finished_provider_metadata.as_ref(),
     );
+    if let Some(reason) = provider_error.as_deref() {
+        apply_provider_error_metadata(&mut finished_metadata, classify_provider_error(reason));
+    }
     let output_digest = if stop_reason == "error" {
         None
     } else {
@@ -1425,7 +1454,55 @@ fn tool_result_message_content(tool_result: &ConversationToolResultMessage) -> S
         .output_json
         .as_ref()
         .map(Value::to_string)
-        .unwrap_or_default()
+        .unwrap_or_else(|| {
+            serde_json::json!({
+                "status": "empty_tool_result",
+                "message": "Harness recovered an empty tool result before provider submission."
+            })
+            .to_string()
+        })
+}
+
+fn validate_provider_completion_request(request: &CompletionRequest) -> Result<(), String> {
+    if request.messages.is_empty() {
+        return Err("provider context validation failed: request has no messages".to_string());
+    }
+
+    for (index, message) in request.messages.iter().enumerate() {
+        if matches!(message.role, MessageRole::Tool)
+            && message
+                .tool_call_id
+                .as_deref()
+                .and_then(non_empty_trimmed)
+                .is_none()
+        {
+            return Err(format!(
+                "provider context validation failed: tool message at index {index} is missing tool_call_id"
+            ));
+        }
+
+        if let Some(tool_calls) = &message.assistant_tool_calls {
+            for (tool_index, tool_call) in tool_calls.iter().enumerate() {
+                if non_empty_trimmed(&tool_call.tool_call_id).is_none() {
+                    return Err(format!(
+                        "provider context validation failed: assistant tool call {tool_index} at message {index} has empty id"
+                    ));
+                }
+                if non_empty_trimmed(&tool_call.function_name).is_none() {
+                    return Err(format!(
+                        "provider context validation failed: assistant tool call {tool_index} at message {index} has empty function name"
+                    ));
+                }
+                serde_json::from_str::<Value>(&tool_call.arguments_json).map_err(|err| {
+                    format!(
+                        "provider context validation failed: assistant tool call {tool_index} at message {index} has malformed arguments JSON: {err}"
+                    )
+                })?;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1536,6 +1613,10 @@ fn provider_request_started_metadata(
                 .and_then(non_empty_trimmed)
                 .map(str::to_string)
         }),
+        fallback_attempt: None,
+        fallback_from_model_ref: None,
+        fallback_reason_class: None,
+        fallback_retryable: None,
     }
 }
 
@@ -1574,7 +1655,7 @@ fn provider_finished_metadata(
             })
         });
 
-    ProviderRequestFinishedMetadata {
+    let metadata = ProviderRequestFinishedMetadata {
         turn_id: Some(turn_request_id.to_string()),
         provider_call_id: Some(provider_request_id.to_string()),
         provider_response_id: provider_metadata.and_then(|metadata| {
@@ -1611,7 +1692,23 @@ fn provider_finished_metadata(
         cache_write_tokens: provider_metadata.and_then(|metadata| metadata.cache_write_tokens),
         assistant_message,
         thinking,
-    }
+        provider_error_class: None,
+        provider_error_retryable: None,
+        fallback_attempt: None,
+        fallback_from_model_ref: None,
+        fallback_reason_class: None,
+        fallback_retryable: None,
+    };
+
+    metadata
+}
+
+fn apply_provider_error_metadata(
+    metadata: &mut ProviderRequestFinishedMetadata,
+    class: ProviderErrorClass,
+) {
+    metadata.provider_error_class = Some(class.as_str().to_string());
+    metadata.provider_error_retryable = Some(class.is_retryable());
 }
 
 fn provider_thinking_metadata(
@@ -2358,6 +2455,8 @@ mod tests {
             category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
             model_ref_explicit: true,
+            fallback_model_refs: Vec::new(),
+            fallback_model_settings: Vec::new(),
             system_prompt: "sys".to_string(),
             max_iters: Some(max_iters),
             temperature: Some(0.1),
@@ -2375,6 +2474,8 @@ mod tests {
             selected_agent_tags: Vec::new(),
             selected_resource_tags: Vec::new(),
             model_ref: "mock:model-1".to_string(),
+            fallback_model_refs: Vec::new(),
+            fallback_model_settings: Vec::new(),
             model_settings: AgentModelSettings::default(),
         }
     }

@@ -1,4 +1,6 @@
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use harness_core::event::{
@@ -7,12 +9,13 @@ use harness_core::event::{
 };
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResult};
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::{parse_tool_args, text_json_tool_result};
 
 pub(crate) struct TeamCreateTool;
+pub(crate) struct TeamListTool;
 pub(crate) struct TeamStatusTool;
 pub(crate) struct TeamSendMessageTool;
 pub(crate) struct TeamTaskCreateTool;
@@ -37,6 +40,29 @@ struct TeamCreateArgs {
     members: Vec<TeamMemberArgs>,
     #[serde(default)]
     bounds: Option<TeamBoundsArgs>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct TeamListArgs {
+    #[serde(default)]
+    include_deleted: bool,
+    #[serde(default = "default_include_declared_teams")]
+    include_declared: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct DeclaredTeamSpec {
+    version: u16,
+    name: String,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    lead: Option<TeamMemberSelector>,
+    members: Vec<TeamMemberSpec>,
+    #[serde(default)]
+    bounds: TeamBounds,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -192,6 +218,10 @@ fn default_team_message_kind() -> TeamMessageKind {
     TeamMessageKind::Message
 }
 
+fn default_include_declared_teams() -> bool {
+    true
+}
+
 impl TryFrom<TeamMemberArgs> for TeamMemberSpec {
     type Error = ToolError;
 
@@ -250,6 +280,167 @@ fn team_result(label: &str, team: harness_core::proj::TeamRunProjection) -> Tool
     )
 }
 
+fn declared_team_roots(workspace_root: &Path) -> Vec<PathBuf> {
+    let mut roots = vec![workspace_root.join(".agent-harness/teams")];
+    if let Some(config_home) = std::env::var_os("XDG_CONFIG_HOME") {
+        roots.push(PathBuf::from(config_home).join("harness/teams"));
+    } else if let Some(home) = std::env::var_os("HOME") {
+        roots.push(PathBuf::from(home).join(".config/harness/teams"));
+    }
+    roots
+}
+
+fn load_declared_teams(workspace_root: &Path) -> Vec<serde_json::Value> {
+    let mut declared = Vec::new();
+    for root in declared_team_roots(workspace_root) {
+        let Ok(entries) = fs::read_dir(&root) else {
+            continue;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            let path = entry.path();
+            if path.extension().is_none_or(|extension| extension != "json") {
+                continue;
+            }
+            declared.push(load_declared_team_file(&root, &path));
+        }
+    }
+    declared.sort_by(|left, right| {
+        left.get("name")
+            .and_then(serde_json::Value::as_str)
+            .cmp(&right.get("name").and_then(serde_json::Value::as_str))
+    });
+    declared
+}
+
+fn load_declared_team_file(root: &Path, path: &Path) -> serde_json::Value {
+    let source = path.display().to_string();
+    let root_display = root.display().to_string();
+    let name_from_path = path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_string();
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(err) => {
+            return json!({
+                "name": name_from_path,
+                "source": source,
+                "root": root_display,
+                "status": "invalid",
+                "errors": [format!("failed to read declared team spec: {err}")],
+            });
+        }
+    };
+    match serde_json::from_str::<DeclaredTeamSpec>(&text) {
+        Ok(spec) => declared_team_json(spec, &name_from_path, &source, &root_display),
+        Err(err) => json!({
+            "name": name_from_path,
+            "source": source,
+            "root": root_display,
+            "status": "invalid",
+            "errors": [format!("failed to parse declared team spec: {err}")],
+        }),
+    }
+}
+
+fn declared_team_json(
+    spec: DeclaredTeamSpec,
+    name_from_path: &str,
+    source: &str,
+    root: &str,
+) -> serde_json::Value {
+    let errors = validate_declared_team_spec(&spec, name_from_path);
+    json!({
+        "name": spec.name,
+        "description": spec.description,
+        "source": source,
+        "root": root,
+        "status": if errors.is_empty() { "valid" } else { "invalid" },
+        "errors": errors,
+        "lead": spec.lead,
+        "members": spec.members,
+        "member_count": spec.members.len(),
+        "bounds": spec.bounds,
+        "runtime": {
+            "worktrees": "not_started",
+            "file_claims": "not_started",
+            "tmux_visualization": "not_started"
+        }
+    })
+}
+
+fn validate_declared_team_spec(spec: &DeclaredTeamSpec, name_from_path: &str) -> Vec<String> {
+    let mut errors = Vec::new();
+    if spec.version != 1 {
+        errors.push(format!("unsupported version {}; expected 1", spec.version));
+    }
+    if spec.name.trim().is_empty() {
+        errors.push("name cannot be empty".to_string());
+    }
+    if !name_from_path.is_empty() && spec.name != name_from_path {
+        errors.push(format!(
+            "file name `{name_from_path}` must match declared team name `{}`",
+            spec.name
+        ));
+    }
+    if spec.members.is_empty() {
+        errors.push("members cannot be empty".to_string());
+    }
+    if spec.members.len() as u32 > spec.bounds.max_members {
+        errors.push(format!(
+            "member count {} exceeds max_members {}",
+            spec.members.len(),
+            spec.bounds.max_members
+        ));
+    }
+    if let Some(lead) = spec.lead.as_ref() {
+        let lead_profile = selector_profile_name(lead);
+        if is_read_only_team_profile(lead_profile) {
+            errors.push(format!(
+                "lead selector `{lead_profile}` is read-only or planning-only"
+            ));
+        }
+    }
+    for member in &spec.members {
+        let profile = selector_profile_name(&member.selector);
+        let read_only = is_read_only_team_profile(profile);
+        match member.role {
+            TeamMemberRole::Member if read_only => errors.push(format!(
+                "member `{}` uses read-only selector `{profile}`; mark role as research",
+                member.name
+            )),
+            TeamMemberRole::Research if !read_only => errors.push(format!(
+                "research member `{}` uses write-capable selector `{profile}`",
+                member.name
+            )),
+            _ => {}
+        }
+    }
+    errors
+}
+
+fn selector_profile_name(selector: &TeamMemberSelector) -> &str {
+    match selector {
+        TeamMemberSelector::Category { category } => category,
+        TeamMemberSelector::SubagentType { subagent_type } => subagent_type,
+    }
+}
+
+fn is_read_only_team_profile(profile: &str) -> bool {
+    matches!(
+        profile,
+        "oracle"
+            | "librarian"
+            | "explore"
+            | "metis"
+            | "momus"
+            | "multimodal-looker"
+            | "prometheus"
+            | "plan"
+    )
+}
+
 #[async_trait]
 impl Tool for TeamCreateTool {
     fn id(&self) -> &str {
@@ -294,6 +485,92 @@ impl Tool for TeamCreateTool {
             .await
             .map_err(map_coord_err)?;
         Ok(team_result("team created", team))
+    }
+}
+
+#[async_trait]
+impl Tool for TeamListTool {
+    fn id(&self) -> &str {
+        "team_list"
+    }
+
+    fn description(&self) -> &str {
+        "Lists replay-derived active team runs and declared team specs from project/user Harness team roots. Worktrees, file claims, and tmux visualization are reported as not-started parity seams."
+    }
+
+    fn parameters_json_schema(&self) -> serde_json::Value {
+        crate::json_schema_for::<TeamListArgs>()
+    }
+
+    fn capability(&self) -> ToolCapability {
+        ToolCapability::SpawnAgent
+    }
+
+    async fn call(
+        &self,
+        ctx: ToolContext,
+        args_json: serde_json::Value,
+    ) -> Result<ToolResult, ToolError> {
+        let args: TeamListArgs = parse_tool_args(args_json)?;
+        let projection = ctx
+            .coordinator
+            .team_projection()
+            .await
+            .map_err(map_coord_err)?;
+        let teams = projection
+            .teams
+            .values()
+            .filter(|team| {
+                args.include_deleted || team.status != harness_core::proj::TeamRunStatus::Deleted
+            })
+            .map(|team| {
+                json!({
+                    "team_run_id": &team.team_run_id,
+                    "name": &team.name,
+                    "status": &team.status,
+                    "members": team.members.len(),
+                    "tasks": team.tasks.len(),
+                    "messages": team.messages.len(),
+                    "shutdown_requests": team.shutdown_requests.len(),
+                })
+            })
+            .collect::<Vec<_>>();
+        let declared_teams = if args.include_declared {
+            load_declared_teams(&ctx.workspace_root)
+        } else {
+            Vec::new()
+        };
+        let invalid_declared = declared_teams
+            .iter()
+            .filter(|team| {
+                team.get("status").and_then(serde_json::Value::as_str) == Some("invalid")
+            })
+            .count();
+        Ok(text_json_tool_result(
+            format!(
+                "{} active team(s), {} declared team spec(s)",
+                teams.len(),
+                declared_teams.len()
+            ),
+            json!({
+                "teams": teams,
+                "declared_teams": declared_teams,
+                "declared_team_roots": declared_team_roots(&ctx.workspace_root)
+                    .into_iter()
+                    .map(|path| path.display().to_string())
+                    .collect::<Vec<_>>(),
+                "declared_team_validation": {
+                    "invalid": invalid_declared,
+                    "status": if invalid_declared == 0 { "ok" } else { "invalid" }
+                },
+                "not_started": [
+                    "worktree metadata",
+                    "file claim projection",
+                    "tmux visualization state"
+                ],
+                "source": "event_replay"
+            }),
+        ))
     }
 }
 

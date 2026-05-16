@@ -1,18 +1,35 @@
 use std::collections::BTreeSet;
 use std::env;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
+use std::process::{Command, ExitCode};
 
 use clap::Args;
+use harness_core::agent_catalog::resolve_agent_catalog;
+use harness_core::command_registry::{CommandAction, CommandRegistry};
 use harness_core::config::{
-    load_resolved_config, resolve_model_selection, AgentMode, HarnessConfig, McpServerConfig,
-    PermissionMode, ProviderConfig,
+    configured_model_catalog, load_resolved_config, resolve_model_selection, AgentMode,
+    CompatibilityImportState, HarnessConfig, McpServerConfig, PermissionMode, ProviderConfig,
 };
 use harness_tools::{coordinator_registry_with_mcp_and_editing, EditingToolSurfaceConfig};
 use serde::Serialize;
+use serde_json::Value;
+
+const PARITY_LEDGER_JSON: &str = include_str!("../../../docs/parity-ledger.json");
 
 const REQUIRED_PRIMARY_AGENTS: [&str; 3] = ["build", "plan", "discipline"];
 const REQUIRED_SUBAGENTS: [&str; 2] = ["explore", "general"];
+const REQUIRED_OMO_SPECIALISTS: [&str; 10] = [
+    "oracle",
+    "librarian",
+    "metis",
+    "momus",
+    "multimodal-looker",
+    "sisyphus-junior",
+    "atlas",
+    "prometheus",
+    "sisyphus",
+    "hephaestus",
+];
 const REQUIRED_CATEGORY_ROUTES: [&str; 8] = [
     "visual-engineering",
     "artistry",
@@ -38,6 +55,32 @@ const DISCIPLINE_TOOLS: [&str; 6] = [
     "plan_enter",
     "skill",
     "edit",
+];
+const FIRST_SLICE_OMO_TOOLS: [&str; 24] = [
+    "background_cancel",
+    "ast_grep_search",
+    "ast_grep_replace",
+    "look_at",
+    "interactive_bash",
+    "terminal_spawn",
+    "terminal_write",
+    "terminal_screenshot",
+    "terminal_resize",
+    "terminal_kill",
+    "terminal_list",
+    "session_list",
+    "session_read",
+    "session_search",
+    "session_info",
+    "task_create",
+    "task_list",
+    "task_get",
+    "task_update",
+    "team_list",
+    "team_create",
+    "team_status",
+    "team_task_create",
+    "team_task_list",
 ];
 
 #[derive(Debug, Args, Clone, Default)]
@@ -67,9 +110,12 @@ impl CheckStatus {
 
 #[derive(Debug, Serialize)]
 struct DoctorCheck {
+    id: String,
     name: String,
     status: CheckStatus,
     message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    details: Option<Value>,
 }
 
 #[derive(Debug, Serialize)]
@@ -147,12 +193,21 @@ fn build_report(config_display: String, config: &HarnessConfig) -> DoctorReport 
         check_provider_catalog(config),
         check_provider_credentials(config),
         check_model_references(config),
+        check_model_capabilities(config),
         check_shipped_profiles(config),
         check_category_routes(config),
+        check_agent_catalog(config),
         check_profile_tools(config),
+        check_first_slice_omo_tool_surface(config),
+        check_command_registry(),
         check_permissions(config),
         check_session_dir(&config.paths.session_dir),
         check_mcp(config),
+        check_compatibility_imports(config),
+        check_team_mode(),
+        check_terminal_browser_media(),
+        check_parity_ledger(),
+        check_omo_parity_gaps(),
     ];
 
     DoctorReport {
@@ -180,6 +235,55 @@ fn print_text_report(report: &DoctorReport) {
             check.message
         );
     }
+}
+
+fn check_command_registry() -> DoctorCheck {
+    let registry = CommandRegistry::builtins();
+    let required = [
+        "init-deep",
+        "ralph-loop",
+        "ulw-loop",
+        "cancel-ralph",
+        "refactor",
+        "start-work",
+        "stop-continuation",
+        "remove-ai-slops",
+        "handoff",
+        "hyperplan",
+    ];
+    let missing = required
+        .iter()
+        .filter(|name| registry.get(name).is_none())
+        .copied()
+        .collect::<Vec<_>>();
+    let unsafe_shell = registry.commands().iter().any(|command| {
+        matches!(
+            command.action,
+            CommandAction::NativeTool {
+                tool_id: "bash" | "shell.run"
+            }
+        )
+    });
+    if !missing.is_empty() {
+        return fail(
+            "command_registry",
+            format!("missing built-in commands: {}", missing.join(", ")),
+        );
+    }
+    if unsafe_shell {
+        return fail(
+            "command_registry",
+            "command templates must not execute shell directly; use native tool permissions",
+        );
+    }
+    pass(
+        "command_registry",
+        format!(
+            "{} built-in commands across {} custom roots",
+            registry.commands().len(),
+            CommandRegistry::roots().len()
+        ),
+    )
 }
 
 fn check_provider_credentials(config: &HarnessConfig) -> DoctorCheck {
@@ -318,11 +422,86 @@ fn check_model_references(config: &HarnessConfig) -> DoctorCheck {
     )
 }
 
+fn check_model_capabilities(config: &HarnessConfig) -> DoctorCheck {
+    let catalog = configured_model_catalog(config);
+    let model_count = catalog.len();
+    let mut warnings = Vec::new();
+    let mut fallback_edges = 0_usize;
+
+    for (agent_name, agent) in &config.agents {
+        let Ok(selection) =
+            resolve_model_selection(config, &agent.model_ref, agent.variant.as_deref())
+        else {
+            continue;
+        };
+        fallback_edges += selection.fallback.len();
+        let requires_tools = !agent.tools.is_empty();
+        let targets = std::iter::once(&selection.primary).chain(selection.fallback.iter());
+        for target in targets {
+            let Some(provider) = config.providers.get(&target.provider) else {
+                continue;
+            };
+            let ProviderConfig::OpenAiCompatible(provider) = provider;
+            let Some(model) = provider.models.get(&target.model) else {
+                continue;
+            };
+            if requires_tools && model.metadata.supports_tool_calls == Some(false) {
+                warnings.push(format!(
+                    "agent `{agent_name}` uses tools but target `{}` declares supports_tool_calls=false",
+                    target.model_ref
+                ));
+            }
+            if requires_tools && model.metadata.supports_tool_calls.is_none() {
+                warnings.push(format!(
+                    "agent `{agent_name}` uses tools but target `{}` has unknown tool-call capability",
+                    target.model_ref
+                ));
+            }
+            if model.modalities.input.is_empty() || model.modalities.output.is_empty() {
+                warnings.push(format!(
+                    "target `{}` has incomplete modality metadata (input={}, output={})",
+                    target.model_ref,
+                    model.modalities.input.len(),
+                    model.modalities.output.len()
+                ));
+            }
+        }
+    }
+
+    let details = serde_json::json!({
+        "catalog_entries": model_count,
+        "fallback_edges": fallback_edges,
+        "warnings": warnings,
+    });
+
+    if warnings.is_empty() {
+        pass_with_details(
+            "model_capabilities",
+            format!(
+                "{model_count} model catalog entrie(s) cached; {fallback_edges} fallback edge(s) checked for tool/modality capability"
+            ),
+            Some(details),
+        )
+    } else {
+        DoctorCheck {
+            id: "model_capabilities".to_string(),
+            name: "model_capabilities".to_string(),
+            status: CheckStatus::Warn,
+            message: format!(
+                "{} model capability warning(s); fallback edge(s) checked={fallback_edges}",
+                warnings.len()
+            ),
+            details: Some(details),
+        }
+    }
+}
+
 fn check_shipped_profiles(config: &HarnessConfig) -> DoctorCheck {
     let mut missing = Vec::new();
     for profile in REQUIRED_PRIMARY_AGENTS
         .into_iter()
         .chain(REQUIRED_SUBAGENTS)
+        .chain(REQUIRED_OMO_SPECIALISTS)
     {
         if !config.agents.contains_key(profile) {
             missing.push(profile);
@@ -357,6 +536,7 @@ fn check_shipped_profiles(config: &HarnessConfig) -> DoctorCheck {
 
     let invalid_subagents = REQUIRED_SUBAGENTS
         .into_iter()
+        .chain(REQUIRED_OMO_SPECIALISTS)
         .filter_map(|profile| {
             let agent = config.agents.get(profile)?;
             (agent.hidden || agent.mode == AgentMode::Primary).then_some(profile)
@@ -374,7 +554,7 @@ fn check_shipped_profiles(config: &HarnessConfig) -> DoctorCheck {
 
     pass(
         "workflow_profiles",
-        "build, plan, discipline, explore, and general profiles are available",
+        "build, plan, discipline, explore, general, and OMO specialist profiles are available",
     )
 }
 
@@ -437,6 +617,54 @@ fn check_category_routes(config: &HarnessConfig) -> DoctorCheck {
     )
 }
 
+fn check_agent_catalog(config: &HarnessConfig) -> DoctorCheck {
+    let catalog = resolve_agent_catalog(config);
+    let model_errors = catalog
+        .entries
+        .iter()
+        .filter(|entry| entry.model_error.is_some())
+        .collect::<Vec<_>>();
+    if !model_errors.is_empty() {
+        return fail(
+            "agent_catalog",
+            format!(
+                "{} catalog profile(s) have unresolved models: {}",
+                model_errors.len(),
+                model_errors
+                    .iter()
+                    .map(|entry| entry.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        );
+    }
+
+    let specialists = catalog
+        .entries
+        .iter()
+        .filter(|entry| entry.role == "specialist")
+        .count();
+    let categories = catalog
+        .entries
+        .iter()
+        .filter(|entry| entry.role == "category")
+        .count();
+    let fallback_targets = catalog
+        .entries
+        .iter()
+        .map(|entry| entry.fallback_model_refs.len())
+        .sum::<usize>();
+
+    pass_with_details(
+        "agent_catalog",
+        format!(
+            "{} profile(s) resolved through AgentCatalog; {specialists} specialist(s), {categories} category route(s), {fallback_targets} fallback target(s)",
+            catalog.entries.len()
+        ),
+        serde_json::to_value(&catalog).ok(),
+    )
+}
+
 fn check_profile_tools(config: &HarnessConfig) -> DoctorCheck {
     let native_tools = coordinator_registry_with_mcp_and_editing(
         config.permissions.shell_allowlist.clone(),
@@ -496,6 +724,38 @@ fn check_profile_tools(config: &HarnessConfig) -> DoctorCheck {
     }
 
     pass("tool_surface", "configured profile tools are registered")
+}
+
+fn check_first_slice_omo_tool_surface(config: &HarnessConfig) -> DoctorCheck {
+    let native_tools = coordinator_registry_with_mcp_and_editing(
+        config.permissions.shell_allowlist.clone(),
+        Default::default(),
+        EditingToolSurfaceConfig {
+            hashline_edit: config.hashline_edit,
+        },
+    )
+    .tool_ids()
+    .into_iter()
+    .collect::<BTreeSet<_>>();
+
+    let missing = FIRST_SLICE_OMO_TOOLS
+        .into_iter()
+        .filter(|tool| !native_tools.contains(*tool))
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return warn(
+            "omo_tool_surface",
+            format!(
+                "missing first-slice OMO tool surface id(s): {}; see docs/parity-ledger.json",
+                missing.join(", ")
+            ),
+        );
+    }
+
+    pass(
+        "omo_tool_surface",
+        "first-slice OMO tool ids are registered; unsupported tools return explicit diagnostics",
+    )
 }
 
 fn check_permissions(config: &HarnessConfig) -> DoctorCheck {
@@ -608,6 +868,311 @@ fn check_mcp(config: &HarnessConfig) -> DoctorCheck {
     )
 }
 
+fn check_compatibility_imports(config: &HarnessConfig) -> DoctorCheck {
+    let total = config.compatibility.imports.len();
+    let imported = config
+        .compatibility
+        .imports
+        .iter()
+        .filter(|item| item.status == CompatibilityImportState::Imported)
+        .count();
+    let disabled = config
+        .compatibility
+        .imports
+        .iter()
+        .filter(|item| item.status == CompatibilityImportState::Disabled)
+        .count();
+    let errors = config
+        .compatibility
+        .imports
+        .iter()
+        .filter(|item| item.status == CompatibilityImportState::Error)
+        .collect::<Vec<_>>();
+    let manifests = config.compatibility.extension_manifests.len();
+    let commands = config.compatibility.command_templates.len();
+    let details = serde_json::json!({
+        "required": config.compatibility.required,
+        "total": total,
+        "imported": imported,
+        "disabled": disabled,
+        "errors": errors.len(),
+        "command_templates": commands,
+        "extension_manifests": manifests,
+        "items": config.compatibility.imports,
+    });
+
+    if !errors.is_empty() {
+        return warn_with_details(
+            "compatibility_imports",
+            format!(
+                "{imported}/{total} compatibility item(s) imported; {disabled} disabled; {} import error(s) surfaced without executing external code",
+                errors.len()
+            ),
+            Some(details),
+        );
+    }
+
+    pass_with_details(
+        "compatibility_imports",
+        format!(
+            "{imported}/{total} compatibility item(s) imported; {disabled} disabled; {commands} command template(s), {manifests} extension manifest(s); executable plugin loading remains disabled"
+        ),
+        Some(details),
+    )
+}
+
+fn check_team_mode() -> DoctorCheck {
+    let declared_report = inspect_team_specs(Path::new(".agent-harness/teams"));
+    let git_available = command_available("git");
+    let tmux_available = command_available("tmux");
+
+    let message = format!(
+        "{} declared team spec(s), {} invalid; git {}; tmux {}; active team runs are replay-derived through team_list",
+        declared_report.total,
+        declared_report.invalid,
+        availability_label(git_available),
+        availability_label(tmux_available)
+    );
+
+    if declared_report.invalid > 0 {
+        return warn(
+            "team_mode",
+            format!(
+                "{message}; invalid declared specs: {}",
+                declared_report.errors.join("; ")
+            ),
+        );
+    }
+
+    if git_available && tmux_available {
+        pass("team_mode", message)
+    } else {
+        warn(
+            "team_mode",
+            format!(
+                "{message}; missing optional dependency means worktree or tmux visualization parity will degrade gracefully"
+            ),
+        )
+    }
+}
+
+#[derive(Debug, Default)]
+struct TeamSpecDoctorReport {
+    total: usize,
+    invalid: usize,
+    errors: Vec<String>,
+}
+
+fn inspect_team_specs(root: &Path) -> TeamSpecDoctorReport {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return TeamSpecDoctorReport::default();
+    };
+    let mut report = TeamSpecDoctorReport::default();
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        if path.extension().is_none_or(|extension| extension != "json") {
+            continue;
+        }
+        report.total += 1;
+        let error = match std::fs::read_to_string(&path) {
+            Ok(text) => match serde_json::from_str::<Value>(&text) {
+                Ok(value) => validate_team_spec_value(&path, &value).err(),
+                Err(source) => Some(format!("invalid JSON: {source}")),
+            },
+            Err(source) => Some(format!("cannot read: {source}")),
+        };
+        if let Some(error) = error {
+            report.invalid += 1;
+            report.errors.push(format!("{}: {error}", path.display()));
+        }
+    }
+    report
+}
+
+fn validate_team_spec_value(path: &Path, value: &Value) -> Result<(), String> {
+    let name = value
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|name| !name.trim().is_empty())
+        .ok_or_else(|| "missing non-empty name".to_string())?;
+    if path
+        .file_stem()
+        .and_then(|file_name| file_name.to_str())
+        .is_some_and(|file_name| file_name != name)
+    {
+        return Err("file name must match declared team name".to_string());
+    }
+    if value.get("version").and_then(Value::as_u64) != Some(1) {
+        return Err("version must be 1".to_string());
+    }
+    if value
+        .get("members")
+        .and_then(Value::as_array)
+        .is_none_or(Vec::is_empty)
+    {
+        return Err("members must be a non-empty array".to_string());
+    }
+    Ok(())
+}
+
+fn command_available(command: &str) -> bool {
+    let version_arg = if command == "tmux" { "-V" } else { "--version" };
+    Command::new(command)
+        .arg(version_arg)
+        .output()
+        .is_ok_and(|output| output.status.success())
+}
+
+fn availability_label(available: bool) -> &'static str {
+    if available {
+        "available"
+    } else {
+        "missing"
+    }
+}
+
+fn check_terminal_browser_media() -> DoctorCheck {
+    let tmux_available = command_available("tmux");
+    let npx_available = command_available("npx");
+    let agent_browser_available = command_available("agent-browser");
+    let skills = ["playwright", "agent-browser", "dev-browser"];
+    let missing_skills = skills
+        .into_iter()
+        .filter(|skill| {
+            !Path::new(".agent-harness/skills")
+                .join(skill)
+                .join("SKILL.md")
+                .exists()
+        })
+        .collect::<Vec<_>>();
+
+    let message = format!(
+        "terminal tmux {}; browser deps: npx {}, agent-browser {}; browser skills missing: {}",
+        availability_label(tmux_available),
+        availability_label(npx_available),
+        availability_label(agent_browser_available),
+        if missing_skills.is_empty() {
+            "none".to_string()
+        } else {
+            missing_skills.join(", ")
+        }
+    );
+
+    if !tmux_available || !missing_skills.is_empty() {
+        return warn(
+            "terminal_browser_media",
+            format!(
+                "{message}; terminal/browser parity degrades gracefully and tools return actionable dependency diagnostics"
+            ),
+        );
+    }
+    if !npx_available || !agent_browser_available {
+        return warn(
+            "terminal_browser_media",
+            format!(
+                "{message}; optional browser automation dependencies are missing, use skill diagnostics before live/browser work"
+            ),
+        );
+    }
+    pass(
+        "terminal_browser_media",
+        format!("{message}; look_at and terminal tools are registered"),
+    )
+}
+
+fn check_parity_ledger() -> DoctorCheck {
+    let ledger = match parse_parity_ledger() {
+        Ok(ledger) => ledger,
+        Err(err) => return fail("parity_ledger", err),
+    };
+    let Some(items) = ledger.get("items").and_then(Value::as_array) else {
+        return fail(
+            "parity_ledger",
+            "docs/parity-ledger.json is missing an items array",
+        );
+    };
+
+    let missing_fields = items
+        .iter()
+        .filter(|item| {
+            !has_non_empty_string(item, "id")
+                || !has_non_empty_string(item, "owner")
+                || !has_non_empty_string(item, "status")
+                || item
+                    .get("evidence")
+                    .and_then(Value::as_array)
+                    .is_none_or(|evidence| evidence.is_empty())
+        })
+        .count();
+    if missing_fields > 0 {
+        return fail(
+            "parity_ledger",
+            format!(
+                "docs/parity-ledger.json has {missing_fields} item(s) missing id, owner, status, or evidence"
+            ),
+        );
+    }
+
+    pass(
+        "parity_ledger",
+        format!(
+            "{} parity item(s) loaded from docs/parity-ledger.json",
+            items.len()
+        ),
+    )
+}
+
+fn check_omo_parity_gaps() -> DoctorCheck {
+    let ledger = match parse_parity_ledger() {
+        Ok(ledger) => ledger,
+        Err(err) => return fail("omo_parity_gaps", err),
+    };
+    let Some(items) = ledger.get("items").and_then(Value::as_array) else {
+        return fail(
+            "omo_parity_gaps",
+            "docs/parity-ledger.json is missing an items array",
+        );
+    };
+
+    let open_items = items
+        .iter()
+        .filter(|item| {
+            item.get("status")
+                .and_then(Value::as_str)
+                .is_none_or(|status| !matches!(status, "present" | "stronger"))
+        })
+        .collect::<Vec<_>>();
+    if open_items.is_empty() {
+        return pass("omo_parity_gaps", "OMO parity ledger has no open gaps");
+    }
+
+    let preview = open_items
+        .iter()
+        .filter_map(|item| item.get("id").and_then(Value::as_str))
+        .take(6)
+        .collect::<Vec<_>>()
+        .join(", ");
+    warn(
+        "omo_parity_gaps",
+        format!(
+            "{} open OMO parity ledger item(s); next gaps include: {preview}; see docs/parity-ledger.json",
+            open_items.len()
+        ),
+    )
+}
+
+fn parse_parity_ledger() -> Result<Value, String> {
+    serde_json::from_str(PARITY_LEDGER_JSON)
+        .map_err(|err| format!("failed to parse docs/parity-ledger.json: {err}"))
+}
+
+fn has_non_empty_string(value: &Value, key: &str) -> bool {
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .is_some_and(|text| !text.trim().is_empty())
+}
+
 fn non_empty(value: &str) -> bool {
     !value.trim().is_empty()
 }
@@ -617,25 +1182,64 @@ fn env_var_is_set(name: &str) -> bool {
 }
 
 fn pass(name: impl Into<String>, message: impl Into<String>) -> DoctorCheck {
+    let name = name.into();
     DoctorCheck {
-        name: name.into(),
+        id: name.clone(),
+        name,
         status: CheckStatus::Pass,
         message: message.into(),
+        details: None,
+    }
+}
+
+fn pass_with_details(
+    name: impl Into<String>,
+    message: impl Into<String>,
+    details: Option<Value>,
+) -> DoctorCheck {
+    let name = name.into();
+    DoctorCheck {
+        id: name.clone(),
+        name,
+        status: CheckStatus::Pass,
+        message: message.into(),
+        details,
     }
 }
 
 fn warn(name: impl Into<String>, message: impl Into<String>) -> DoctorCheck {
+    let name = name.into();
     DoctorCheck {
-        name: name.into(),
+        id: name.clone(),
+        name,
         status: CheckStatus::Warn,
         message: message.into(),
+        details: None,
+    }
+}
+
+fn warn_with_details(
+    name: impl Into<String>,
+    message: impl Into<String>,
+    details: Option<Value>,
+) -> DoctorCheck {
+    let name = name.into();
+    DoctorCheck {
+        id: name.clone(),
+        name,
+        status: CheckStatus::Warn,
+        message: message.into(),
+        details,
     }
 }
 
 fn fail(name: impl Into<String>, message: impl Into<String>) -> DoctorCheck {
+    let name = name.into();
     DoctorCheck {
-        name: name.into(),
+        id: name.clone(),
+        name,
         status: CheckStatus::Fail,
         message: message.into(),
+        details: None,
     }
 }

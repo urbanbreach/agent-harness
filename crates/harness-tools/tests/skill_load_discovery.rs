@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::ffi::OsString;
 use std::fs;
@@ -8,8 +8,8 @@ use std::sync::Arc;
 use harness_core::agent::AgentProfile;
 use harness_core::clock::RealClock;
 use harness_core::config::{
-    refresh_skills_config_registry, registered_skills_config, HarnessConfig, PermissionMode,
-    ShellAllowlist, SkillsConfig, ToolFailureMode,
+    load_config_from_str, refresh_skills_config_registry, registered_skills_config, HarnessConfig,
+    PermissionMode, ShellAllowlist, SkillsConfig, ToolFailureMode,
 };
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, RunInfo};
 use harness_core::perm::PermissionDecision;
@@ -104,6 +104,24 @@ fn write_skill(root: &Path, name: &str, description: &str, body: &str) {
     .expect("write skill file");
 }
 
+fn write_skill_with_extra_frontmatter(
+    root: &Path,
+    name: &str,
+    description: &str,
+    extra_frontmatter: &str,
+    body: &str,
+) {
+    let skill_dir = root.join(name);
+    fs::create_dir_all(&skill_dir).expect("create skill dir");
+    fs::write(
+        skill_dir.join("SKILL.md"),
+        format!(
+            "---\nname: {name}\ndescription: {description}\n{extra_frontmatter}---\n\n{body}\n"
+        ),
+    )
+    .expect("write skill file");
+}
+
 fn write_invalid_skill(root: &Path, name: &str) {
     let skill_dir = root.join(name);
     fs::create_dir_all(&skill_dir).expect("create invalid skill dir");
@@ -122,6 +140,8 @@ fn worker_profile(name: &str, toolset: &[&str]) -> AgentProfile {
         category: name.to_string(),
         model_ref: format!("default:{name}"),
         model_ref_explicit: true,
+        fallback_model_refs: Vec::new(),
+        fallback_model_settings: Vec::new(),
         system_prompt: format!("{name} prompt"),
         temperature: None,
         max_iters: Some(12),
@@ -271,6 +291,42 @@ async fn skill_load_discovers_project_and_global_roots_with_precedence() {
         "Global only description",
         "Global only body",
     );
+    write_skill(
+        &repo.join(".opencode/skills"),
+        "upstream-only",
+        "Upstream only description",
+        "Upstream only body",
+    );
+    write_skill(
+        &repo.join(".claude/skills"),
+        "claude-only",
+        "Claude only description",
+        "Claude only body",
+    );
+    write_skill(
+        &repo.join(".agents/skills"),
+        "agents-only",
+        "Agents only description",
+        "Agents only body",
+    );
+    write_skill(
+        &home.join(".config/opencode/skills"),
+        "global-upstream",
+        "Global upstream description",
+        "Global upstream body",
+    );
+    write_skill(
+        &home.join(".claude/skills"),
+        "global-claude",
+        "Global Claude description",
+        "Global Claude body",
+    );
+    write_skill(
+        &home.join(".agents/skills"),
+        "global-agents",
+        "Global Agents description",
+        "Global Agents body",
+    );
 
     let registry = coordinator_registry(ShellAllowlist::default());
     let skill_tool = registry.get("skill").expect("skill tool");
@@ -316,6 +372,27 @@ async fn skill_load_discovers_project_and_global_roots_with_precedence() {
         .await
         .expect("global-only skill");
     assert!(global_only.display_text.contains("Global only description"));
+
+    for (name, description) in [
+        ("upstream-only", "Upstream only description"),
+        ("claude-only", "Claude only description"),
+        ("agents-only", "Agents only description"),
+        ("global-upstream", "Global upstream description"),
+        ("global-claude", "Global Claude description"),
+        ("global-agents", "Global Agents description"),
+    ] {
+        let skill = skill_tool
+            .call(
+                tool_context(&app, &format!("toolcall-{name}")),
+                json!({ "name": name }),
+            )
+            .await
+            .unwrap_or_else(|err| panic!("{name} should load from compatibility roots: {err}"));
+        assert!(
+            skill.display_text.contains(description),
+            "{name} should include {description}"
+        );
+    }
 }
 
 #[test]
@@ -545,9 +622,328 @@ async fn skill_load_hides_denied_or_invalid_skills() {
         .contains("Skill \"broken-skill\" not found"));
 }
 
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
+)]
+async fn compatibility_disabled_skills_are_hidden_from_skill_tool() {
+    let _guard = env_test_lock();
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("home");
+    let repo = temp_dir.path().join("repo");
+    fs::create_dir_all(&home).expect("home dir");
+    fs::create_dir_all(&repo).expect("repo dir");
+    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    let _env = EnvTestContext::new(&repo, &home);
+
+    write_skill(
+        &repo.join(".opencode/skills"),
+        "legacy-disabled",
+        "Disabled compatibility skill",
+        "Compatibility body",
+    );
+    let previous_skills = registered_skills_config();
+    let config = load_config_from_str(
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              baseURL: "http://127.0.0.1:1/v1",
+              apiKey: "DUMMY",
+              models: { "gpt-5.4-mini": { name: "GPT-5.4 Mini" } }
+            }
+          },
+          model: "default:gpt-5.4-mini",
+          compatibility: { disabledSkills: ["legacy-disabled"] }
+        }
+        "#,
+    )
+    .expect("config parses");
+    assert!(config.skills.disabled_skills.contains("legacy-disabled"));
+    let _skills_guard = SkillsConfigGuard {
+        previous: previous_skills,
+    };
+    refresh_skills_config_registry(&harness_config_with_skills(config.skills.clone()));
+
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let skill_tool = registry.get("skill").expect("skill tool");
+    let err = skill_tool
+        .call(
+            tool_context(&repo, "toolcall-compat-disabled-skill"),
+            json!({"name": "legacy-disabled"}),
+        )
+        .await
+        .expect_err("compatibility-disabled skill should not load");
+    assert!(err
+        .to_string()
+        .contains("Skill \"legacy-disabled\" not found"));
+}
+
 #[test]
 fn skill_permissions_hide_denied_and_reject_invalid_frontmatter() {
     skill_load_hides_denied_or_invalid_skills();
+}
+
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
+)]
+async fn skill_list_reports_status_shadowing_and_frontmatter_policy() {
+    let _guard = env_test_lock();
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("home");
+    let repo = temp_dir.path().join("repo");
+    fs::create_dir_all(&home).expect("home dir");
+    fs::create_dir_all(&repo).expect("repo dir");
+    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    let _env = EnvTestContext::new(&repo, &home);
+
+    write_skill_with_extra_frontmatter(
+        &repo.join(".agent-harness/skills"),
+        "browser-skill",
+        "Browser skill description",
+        "tools: [read, webfetch]\ncommands:\n  - npm test\npermissions:\n  webfetch: allow\nenvironment:\n  allow:\n    - PLAYWRIGHT_*\nmcp:\n  playwright:\n    command: playwright-mcp\n",
+        "Browser body",
+    );
+    write_skill(
+        &home.join(".config/agent-harness/skills"),
+        "browser-skill",
+        "Shadowed browser description",
+        "Shadowed body",
+    );
+    write_skill(
+        &repo.join(".agent-harness/skills"),
+        "internal-secret",
+        "Denied description",
+        "Denied body",
+    );
+    write_invalid_skill(&repo.join(".agent-harness/skills"), "broken-skill");
+
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let skill_tool = registry.get("skill").expect("skill tool");
+    let list = skill_tool
+        .call(
+            tool_context(&repo, "toolcall-skill-list"),
+            json!({"list": true}),
+        )
+        .await
+        .expect("skill list");
+    let output = list.structured_json.expect("skill list json");
+    assert_eq!(output["visible"], json!(["browser-skill"]));
+    assert_eq!(output["denied"], json!(["internal-secret"]));
+    assert_eq!(output["invalid"], json!(["broken-skill"]));
+    assert_eq!(output["shadowed"][0]["name"], json!("browser-skill"));
+
+    let browser = output["skills"]
+        .as_array()
+        .expect("skills array")
+        .iter()
+        .find(|skill| skill["name"] == json!("browser-skill"))
+        .expect("browser skill listing");
+    assert_eq!(browser["status"], json!("visible"));
+    assert_eq!(browser["policy"]["tools"], json!(["read", "webfetch"]));
+    assert_eq!(browser["policy"]["commands"], json!(["npm test"]));
+    assert_eq!(browser["policy"]["permissions"]["webfetch"], json!("allow"));
+    assert_eq!(
+        browser["policy"]["environment"]["allow"],
+        json!(["PLAYWRIGHT_*"])
+    );
+    assert_eq!(browser["policy"]["mcp"], json!(["playwright"]));
+
+    let loaded = skill_tool
+        .call(
+            tool_context(&repo, "toolcall-skill-load-with-policy"),
+            json!({"name": "browser-skill"}),
+        )
+        .await
+        .expect("load browser skill");
+    assert!(loaded
+        .display_text
+        .contains("<skill_policy name=\"browser-skill\">"));
+    assert_eq!(
+        loaded.structured_json.expect("load json")["policy"]["tools"],
+        json!(["read", "webfetch"])
+    );
+}
+
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
+)]
+async fn skills_config_can_disable_all_or_individual_skills() {
+    let _guard = env_test_lock();
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("home");
+    let repo = temp_dir.path().join("repo");
+    fs::create_dir_all(&home).expect("home dir");
+    fs::create_dir_all(&repo).expect("repo dir");
+    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    let _env = EnvTestContext::new(&repo, &home);
+
+    write_skill(
+        &repo.join(".agent-harness/skills"),
+        "visible-skill",
+        "Visible description",
+        "Visible body",
+    );
+    write_skill(
+        &repo.join(".agent-harness/skills"),
+        "disabled-skill",
+        "Disabled description",
+        "Disabled body",
+    );
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let skill_tool = registry.get("skill").expect("skill tool");
+
+    let skills_guard = SkillsConfigGuard::install(SkillsConfig {
+        disabled_skills: BTreeSet::from(["disabled-skill".to_string()]),
+        ..SkillsConfig::default()
+    });
+    let list = skill_tool
+        .call(
+            tool_context(&repo, "toolcall-skill-disable-list"),
+            json!({}),
+        )
+        .await
+        .expect("skill list");
+    let output = list.structured_json.expect("skill list json");
+    assert_eq!(output["visible"], json!(["visible-skill"]));
+    assert_eq!(output["denied"], json!(["disabled-skill"]));
+    let err = skill_tool
+        .call(
+            tool_context(&repo, "toolcall-disabled-skill"),
+            json!({"name": "disabled-skill"}),
+        )
+        .await
+        .expect_err("disabled skill should not load");
+    assert!(err
+        .to_string()
+        .contains("Skill \"disabled-skill\" not found"));
+    drop(skills_guard);
+
+    let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
+        disabled: true,
+        ..SkillsConfig::default()
+    });
+    let list = skill_tool
+        .call(tool_context(&repo, "toolcall-skills-disabled"), json!({}))
+        .await
+        .expect("disabled skill list");
+    let output = list.structured_json.expect("disabled skill list json");
+    assert_eq!(output["disabled"], json!(true));
+    assert_eq!(output["visible"], json!([]));
+}
+
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
+)]
+async fn skill_mcp_records_run_scoped_state_without_exposing_env_values() {
+    let _guard = env_test_lock();
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("home");
+    let repo = temp_dir.path().join("repo");
+    fs::create_dir_all(&home).expect("home dir");
+    fs::create_dir_all(&repo).expect("repo dir");
+    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    let _env = EnvTestContext::new(&repo, &home);
+
+    write_skill_with_extra_frontmatter(
+        &repo.join(".agent-harness/skills"),
+        "mcp-skill",
+        "MCP skill description",
+        "mcp:\n  docs:\n    command: docs-mcp\n    args:\n      - serve\n    env:\n      DOCS_TOKEN: super-secret-token\n",
+        "MCP body",
+    );
+
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let skill_mcp_tool = registry.get("skill_mcp").expect("skill_mcp tool");
+    let status = skill_mcp_tool
+        .call(
+            tool_context(&repo, "toolcall-skill-mcp-status"),
+            json!({"skill": "mcp-skill", "action": "status"}),
+        )
+        .await
+        .expect("skill_mcp status");
+    let output = status.structured_json.expect("skill_mcp status json");
+    assert_eq!(output["servers"][0]["server"], json!("docs"));
+    assert_eq!(output["servers"][0]["status"], json!("declared"));
+    assert_eq!(
+        output["servers"][0]["command"],
+        json!(["docs-mcp", "serve"])
+    );
+    assert_eq!(output["servers"][0]["env_keys"], json!(["DOCS_TOKEN"]));
+    assert_eq!(output["servers"][0]["env_values_redacted"], json!(true));
+    assert!(!serde_json::to_string(&output)
+        .expect("json")
+        .contains("super-secret-token"));
+
+    let started = skill_mcp_tool
+        .call(
+            tool_context(&repo, "toolcall-skill-mcp-start"),
+            json!({"skill": "mcp-skill", "server": "docs", "action": "start"}),
+        )
+        .await
+        .expect("skill_mcp start");
+    assert_eq!(
+        started.structured_json.expect("start json")["servers"][0]["status"],
+        json!("started")
+    );
+
+    let stopped = skill_mcp_tool
+        .call(
+            tool_context(&repo, "toolcall-skill-mcp-stop"),
+            json!({"skill": "mcp-skill", "server": "docs", "action": "stop"}),
+        )
+        .await
+        .expect("skill_mcp stop");
+    assert_eq!(
+        stopped.structured_json.expect("stop json")["servers"][0]["status"],
+        json!("stopped")
+    );
+}
+
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global env lock intentionally serializes process-wide HOME/cwd mutation across awaits"
+)]
+async fn skill_mcp_accepts_yaml_block_list_declarations() {
+    let _guard = env_test_lock();
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("home");
+    let repo = temp_dir.path().join("repo");
+    fs::create_dir_all(&home).expect("home dir");
+    fs::create_dir_all(&repo).expect("repo dir");
+    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    let _env = EnvTestContext::new(&repo, &home);
+
+    write_skill_with_extra_frontmatter(
+        &repo.join(".agent-harness/skills"),
+        "block-mcp-skill",
+        "Block MCP skill description",
+        "mcp:\n  - docs\n",
+        "MCP body",
+    );
+
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let skill_mcp_tool = registry.get("skill_mcp").expect("skill_mcp tool");
+    let status = skill_mcp_tool
+        .call(
+            tool_context(&repo, "toolcall-skill-mcp-block-list"),
+            json!({"skill": "block-mcp-skill", "action": "status"}),
+        )
+        .await
+        .expect("skill_mcp status");
+    let output = status.structured_json.expect("skill_mcp status json");
+    assert_eq!(output["servers"][0]["server"], json!("docs"));
+    assert_eq!(output["servers"][0]["status"], json!("declared"));
+    assert_eq!(output["servers"][0]["transport"], json!("declared"));
 }
 
 #[tokio::test]
@@ -612,6 +1008,36 @@ async fn harness_skill_pack_is_discoverable_from_repo_checkout() {
             .display()
             .to_string()))
     );
+
+    for (name, expected) in [
+        ("git-master", "# Git master"),
+        ("frontend-ui-ux", "# Frontend UI UX"),
+        ("review-work", "# Review work"),
+        ("playwright", "# Playwright browser automation"),
+        ("agent-browser", "# Agent browser"),
+        ("dev-browser", "# Dev browser"),
+        ("ai-slop-remover", "# AI slop remover"),
+        ("team-mode", "# Team mode"),
+    ] {
+        let skill = skill_tool
+            .call(
+                tool_context(&repo, &format!("toolcall-shipped-{name}")),
+                json!({ "name": name }),
+            )
+            .await
+            .unwrap_or_else(|err| panic!("shipped {name} skill should load: {err}"));
+        assert!(skill.display_text.contains(expected));
+        assert_eq!(
+            skill
+                .structured_json
+                .as_ref()
+                .and_then(|value| value.get("location")),
+            Some(&json!(repo
+                .join(format!(".agent-harness/skills/{name}/SKILL.md"))
+                .display()
+                .to_string()))
+        );
+    }
 }
 
 #[tokio::test]
@@ -656,10 +1082,12 @@ async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
     fs::create_dir_all(repo.join(".git")).expect("git dir");
     let _env = EnvTestContext::new(&app, &home);
     let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
+        disabled: false,
         project_roots: vec![PathBuf::from(".custom/skills")],
         global_roots: vec![PathBuf::from("~/.company/skills")],
         urls: Vec::new(),
         walk_to_git_root: false,
+        disabled_skills: BTreeSet::new(),
         permissions: std::collections::BTreeMap::from([
             ("*".to_string(), PermissionMode::Allow),
             ("team-*".to_string(), PermissionMode::Allow),

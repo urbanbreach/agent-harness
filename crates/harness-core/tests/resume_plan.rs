@@ -367,6 +367,7 @@ fn replay_new_loop_metadata_is_non_semantic_for_run_summary() {
                     provider_call_id: Some("provider-call-redacted".to_string()),
                     provider_session_id: Some("provider-session-digest".to_string()),
                     provider_cache_id: Some("provider-cache-digest".to_string()),
+                    ..Default::default()
                 }),
             }),
         ),
@@ -396,6 +397,7 @@ fn replay_new_loop_metadata_is_non_semantic_for_run_summary() {
                         summary_digest: Some("digest-thinking-summary".to_string()),
                         signature: Some("thinking-signature-redacted".to_string()),
                     }),
+                    ..Default::default()
                 }),
             }),
         ),
@@ -424,6 +426,7 @@ fn replay_new_loop_metadata_is_non_semantic_for_run_summary() {
                         child_provider_id: Some("default".to_string()),
                         child_model_id: Some("gpt-5".to_string()),
                     }),
+                    route: None,
                     task_scope: None,
                     timing: None,
                     hook_executions: Vec::new(),

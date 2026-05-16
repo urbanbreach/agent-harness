@@ -23,6 +23,8 @@ fn worker_profile(name: &str, toolset: &[&str]) -> AgentProfile {
         category: name.to_string(),
         model_ref: format!("default:{name}"),
         model_ref_explicit: true,
+        fallback_model_refs: Vec::new(),
+        fallback_model_settings: Vec::new(),
         system_prompt: format!("{name} prompt"),
         max_iters: Some(12),
         temperature: Some(0.0),

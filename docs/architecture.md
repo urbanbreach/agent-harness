@@ -61,6 +61,9 @@ Built-in tool implementations:
 - `bash` - Execute shell commands with allowlist
 - `task` / `background_output` / `batch` / `question` / `skill` - Control-plane and delegation workflows
 - `team_create` / `team_status` / `team_send_message` / `team_task_*` / `team_shutdown_*` / `team_delete` - Event-sourced team coordination workflows
+- `task_create` / `task_list` / `task_get` / `task_update` - Replay-projected persistent dependency tasks
+- `interactive_bash` / `terminal_*` - Tmux-backed persistent terminal sessions with explicit dependency errors when tmux is unavailable
+- `look_at` - Replay-safe media/text summary extraction with an explicit `multimodal-looker` route for visual interpretation
 - `webfetch` / `websearch` / `codesearch` / `lsp` - Network and language-intelligence workflows
 
 Hashline editing is the only normal file-changing route. Agent profiles expose `read`
@@ -69,7 +72,7 @@ compatibility and focused test lanes.
 
 The active registry exposes a single native provider surface. Canonical ids such as
 `read`, `edit`, `bash`, `webfetch`, `websearch`, `codesearch`, `question`, `batch`, `task`,
-`background_output`, `team_*`, and `lsp` are the documented tool surface, while lower-level
+`background_output`, `team_*`, `terminal_*`, `look_at`, and `lsp` are the documented tool surface, while lower-level
 executors remain internal implementation details behind those tool ids.
 
 ### harness-tui (library)
@@ -125,6 +128,8 @@ Events are the source of truth. All state is derived from events.
 - `TaskCompleted` - Normal completion
 - `TaskResultLate` - Result arrived after cancellation
 - `BackgroundTaskNotification` - Durable parent wakeup record for a `task(run_in_background=true)` child request after the child reaches a terminal state; carries parent/child ids, terminal status (`completed`, `cancelled`, `failed`, or `timed_out`), capped summary, terminal event id, and delivered parent turn request id. Replay projects this event only and must not schedule provider work.
+- `PersistentTaskCreated` - Creates a durable dependency-aware work item for `task_create`
+- `PersistentTaskUpdated` - Mutates persistent task status, owner, active form, dependencies, subject/description, and metadata after coordinator validation
 
 **Progress and Staleness**
 - `StaleDetected` - Task exceeded staleness timeout
@@ -140,6 +145,10 @@ tool response. Notification summaries are capped; full child history remains ava
 cancellation targets, and late-result markers through coordinator-owned replay projection rather
 than a tool-local background manager or in-memory task handle, so the same child request remains
 observable after coordinator resume.
+Child-agent `TaskCompleted` metadata carries the resolved task route when the turn was spawned
+through `task`: requested profile/category, resolved profile/category, catalog role/binding,
+display order, effective model ref, redelegation capability, fallback marker, and loaded skills.
+Replay and session inspection consume this metadata only; they do not re-run routing logic.
 Replay and TUI surfaces render child-session next actions from the same projected ids: terminal
 children point at `background_output(request_id=...)` for full details and `task(session_id=...)`
 for deliberate continuation, while non-terminal children also show non-blocking/blocking status
@@ -187,6 +196,7 @@ Field decisions:
 | Usage and cache read/write counts | Existing `usage`; optional finish `metadata.cache_read_tokens` / `metadata.cache_write_tokens` | Durable aggregate accounting. Counts are advisory and must be safe to omit from old logs. |
 | Assistant message barrier ids/digests | `assistant_message` on `AssistantMessageFinished`; compatibility-only mirror in optional finish `metadata.assistant_message` | Carries redacted message ids or text/reasoning digests for audit boundaries. New logs should use `AssistantMessageFinished` as the explicit assistant boundary; old logs may only have the provider-finish metadata mirror. |
 | Thinking or reasoning signatures | Optional finish `metadata.thinking` | Store only summaries, digests, or signature ids. Never store raw hidden thinking text. |
+| Runtime fallback telemetry | Optional start/finish `metadata.fallback_attempt`, `metadata.fallback_from_model_ref`, `metadata.fallback_reason_class`, and `metadata.fallback_retryable`; optional finish `metadata.provider_error_class` / `metadata.provider_error_retryable` | Records why a configured fallback target was tried. Replay still derives behavior from the event sequence and never re-runs fallback decisions. |
 | Provider payloads and secrets | Never durable | Raw requests, raw responses, auth headers, and unredacted reasoning are excluded from event logs. |
 
 **Tool Execution**
@@ -207,6 +217,22 @@ Field decisions:
 **Artifacts and Policy**
 - `ArtifactWritten` - File stored to session
 - `PolicyViolationDetected` - Security rule triggered
+
+**Persistent Tasks**
+
+Persistent tasks are separate from scheduler tasks and team checklist tasks. The
+`task_create`, `task_list`, `task_get`, and `task_update` compatibility tools append or
+read `PersistentTaskCreated` / `PersistentTaskUpdated` events through the coordinator.
+State is projected from the current run event log, so task state survives restart/resume
+and session replay does not execute tools. Task payloads keep OMO/Claude-compatible
+fields (`subject`, `description`, `status`, `active_form`, `blocked_by`, projected
+`blocks`, `owner`, `metadata`, and `run_id` / `thread_id`). Callers provide `blocked_by`;
+replay recomputes `blocks` deterministically. Coordinator validation rejects duplicate
+ids, unknown dependencies, self-dependencies, dependency cycles, and moving a task to
+`claimed`, `in_progress`, or `completed` while any blocker is incomplete. `task_list`
+also returns pending unblocked `ready_task_ids` for orchestrators such as Atlas, Team
+Mode, and continuation loops; execution remains coordinator-owned and is never started
+by replay projection.
 
 **Team Orchestration**
 - `TeamCreated` - Creates an event-sourced team run from a typed team spec, explicit member roles, optional lead selector, and bounds
@@ -238,6 +264,16 @@ non-lead member sessions; pending members activate after another active member i
 mailbox/task work after the bound. `max_wall_clock_minutes` blocks non-shutdown team writes after the
 deadline while still allowing shutdown and deletion cleanup. Duplicate team message ids and task ids
 are rejected by the coordinator; projections keep first-seen state if old logs contain duplicates.
+
+**Continuation**
+- `ContinuationStarted` - Starts an explicit, bounded continuation loop from a slash command or tool action. The event records the stable continuation id, mode, originating command, and max iteration/wall-clock/provider/tool-call bounds.
+- `ContinuationReminderQueued` - Records a persisted continuation reminder and iteration count. Replay renders the reminder but never schedules provider work.
+- `ContinuationStopped` - Stops the active continuation through `/stop-continuation`, `/cancel-ralph`, user interruption, or done-marker detection.
+- `ContinuationLimitReached` - Stops continuation after a configured bound is reached.
+
+Continuation state is coordinator-owned and replay-derived. Resume projections restore the active
+continuation id from the event stream so a restarted coordinator can show and stop an already-started
+loop without relying on in-memory state.
 
 **UI Intent**
 - `UiIntentReceived` - Live UI intent recorded before coordinator handling
@@ -466,7 +502,7 @@ surface the same incomplete-turn marker instead of displaying the partial assist
 
 The checkpoint recap injected back into provider requests is historical background only. It is intentionally not treated as a system instruction; preserved recent turns and the live user prompt take precedence.
 
-Lifecycle hooks can observe `compaction_requested`. Critical hook failure cancels the checkpoint and records `CompactionFailed`. A successful hook may supply a custom summary by writing output beginning with `compaction_summary:`; hook summaries take precedence over optional model-backed summaries. Model-backed summary calls are disabled by default, run through the provider abstraction without emitting provider request/stream events, and must return the default Harness summary sections when `runtime.compaction.structured_summary_contract=true`. Empty, failing, overflowing, or invalid model summaries fall back to the deterministic rolling summary and record `summary_source.deterministic_fallback=true`.
+Lifecycle hooks are projected onto coordinator-owned typed hook phases (`tool_preflight`, `tool_result`, `provider_params`, `provider_context_transform`, `agent_turn_started`, `agent_turn_finished`, `session_idle`, `message_received`, and `compaction_requested`). Hook command output is redacted and capped before event metadata is persisted, and structured hook effects record allow/deny, context-transform, reminder, artifact, diagnostic, truncation, recovery, and notification intent. Disabled hooks record skipped metadata without executing. Lifecycle hooks can observe `compaction_requested`; critical hook failure or a typed `deny` effect cancels the checkpoint and records `CompactionFailed`. A successful hook may supply a custom summary by writing output beginning with `compaction_summary:` or by returning a `transform_context` effect; hook summaries take precedence over optional model-backed summaries. Model-backed summary calls are disabled by default, run through the provider abstraction without emitting provider request/stream events, and must return the default Harness summary sections when `runtime.compaction.structured_summary_contract=true`. Empty, failing, overflowing, or invalid model summaries fall back to the deterministic rolling summary and record `summary_source.deterministic_fallback=true`.
 
 Operational memory remains event-derived. The coordinator gathers capped read-file facts, modified-file facts, and compact operation facts from the durable event/artifact stream between checkpoint boundaries, then stores summary counts and facts inside checkpoint metadata. Replay does not scan the workspace or execute tools to rebuild that memory.
 

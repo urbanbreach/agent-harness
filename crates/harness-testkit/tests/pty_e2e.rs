@@ -387,23 +387,20 @@ fn open_startup_session_history(
         .expect("wait for startup session history overlay")
 }
 
-fn move_list_selection(writer: &mut dyn Write, steps: usize) {
-    for _ in 0..steps {
-        writer
-            .write_all(b"\x1b[B")
-            .expect("write down-arrow escape sequence");
-        writer.flush().expect("flush down-arrow escape sequence");
-    }
-}
-
 fn show_live_operator_sidebar(
     parser: &mut VtParser,
     output_rx: &Receiver<Vec<u8>>,
     writer: &mut dyn Write,
     marker: &str,
 ) -> String {
-    send_key(writer, b'\t').expect("focus transcript before opening operator sidebar");
-    send_key(writer, b'i').expect("toggle live operator sidebar");
+    open_startup_command_palette(parser, output_rx, writer);
+    writer
+        .write_all(b"operator")
+        .expect("filter operator sidebar palette command");
+    writer
+        .flush()
+        .expect("flush operator sidebar palette command");
+    send_key(writer, b'\r').expect("toggle live operator sidebar from palette");
     wait_for_screen_contains(parser, output_rx, marker, MARKER_TIMEOUT)
         .expect("wait for live operator sidebar")
 }
@@ -1984,8 +1981,16 @@ fn pty_e2e_continue_rejects_active_or_unrestorable_session() {
         &harness.output_rx,
         harness.writer.as_mut(),
         "resume",
-        "tasks are still in flight",
+        STARTUP_CONTINUE_HISTORY_MARKER,
     );
+    type_text(harness.writer.as_mut(), "run_active_blocked");
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        "tasks are still in flight",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for active session row after filtering");
     send_key(harness.writer.as_mut(), b'\r').expect("attempt continue on active session");
 
     let active_screen = wait_for_screen_contains(
@@ -2017,7 +2022,7 @@ fn pty_e2e_continue_rejects_active_or_unrestorable_session() {
     wait_for_screen_contains(
         &mut harness.parser,
         &harness.output_rx,
-        STARTUP_LAUNCHER_READY_MARKER,
+        STARTUP_HOME_COMPOSER_HINT_MARKER,
         MARKER_TIMEOUT,
     )
     .expect("wait for startup launcher after active-session rejection");
@@ -2027,9 +2032,16 @@ fn pty_e2e_continue_rejects_active_or_unrestorable_session() {
         &harness.output_rx,
         harness.writer.as_mut(),
         "resume",
-        "events unavailable",
+        STARTUP_CONTINUE_HISTORY_MARKER,
     );
-    move_list_selection(harness.writer.as_mut(), 1);
+    type_text(harness.writer.as_mut(), "run_unrestorable_blocked");
+    wait_for_screen_contains(
+        &mut harness.parser,
+        &harness.output_rx,
+        "events unavailable",
+        MARKER_TIMEOUT,
+    )
+    .expect("wait for unrestorable session row after filtering");
     send_key(harness.writer.as_mut(), b'\r').expect("attempt continue on corrupt session");
 
     let unrestorable_screen = wait_for_screen_contains(
@@ -2061,7 +2073,7 @@ fn pty_e2e_continue_rejects_active_or_unrestorable_session() {
     wait_for_screen_contains(
         &mut harness.parser,
         &harness.output_rx,
-        STARTUP_LAUNCHER_READY_MARKER,
+        STARTUP_HOME_COMPOSER_HINT_MARKER,
         MARKER_TIMEOUT,
     )
     .expect("wait for startup launcher after unrestorable-session rejection");
@@ -3970,22 +3982,53 @@ fn write_corrupt_blocked_fixture(session_dir: &Path, run_id: &str) -> PathBuf {
     let run_dir = session_dir.join(run_id);
     fs::create_dir_all(run_dir.join("artifacts")).expect("create corrupt fixture artifacts dir");
 
-    let valid_first_line = serde_json::to_string(&session_event(
-        run_id,
-        1,
-        event_actor("system", Some("coordinator")),
-        None,
-        "run_started",
-        json!({
-            "run_name": "interactive",
-            "workspace_root": "/workspace/project",
-        }),
-    ))
-    .expect("serialize corrupt fixture first line");
+    let valid_prefix = [
+        session_event(
+            run_id,
+            1,
+            event_actor("system", Some("coordinator")),
+            None,
+            "run_started",
+            json!({
+                "run_name": "interactive",
+                "workspace_root": "/workspace/project",
+            }),
+        ),
+        session_event(
+            run_id,
+            2,
+            event_actor("system", Some("coordinator")),
+            None,
+            "agent_spawned",
+            json!({
+                "agent_id": "agent_000001",
+                "profile": "worker",
+                "parent_agent_id": Value::Null,
+            }),
+        ),
+        session_event(
+            run_id,
+            3,
+            event_actor("worker", Some("agent_000001")),
+            Some("req_000001"),
+            "provider_request_started",
+            json!({
+                "request_id": "req_000001",
+                "provider_id": "default",
+                "model_id": "model-1",
+                "prompt_summary": "unrestorable prompt",
+                "request_digest": "digest-unrestorable-request",
+            }),
+        ),
+    ]
+    .into_iter()
+    .map(|event| serde_json::to_string(&event).expect("serialize corrupt fixture valid prefix"))
+    .collect::<Vec<_>>()
+    .join("\n");
 
     fs::write(
         run_dir.join("events.jsonl"),
-        format!("{valid_first_line}\n{{bad-json}}\n"),
+        format!("{valid_prefix}\n{{bad-json}}\n"),
     )
     .expect("write corrupt fixture events");
     run_dir

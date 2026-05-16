@@ -25,6 +25,7 @@ Modes:
   fast                 Fast deterministic developer lane. No PTY, live, native visual, stress, ignored, or real-network signoff commands.
   integration          Remaining deterministic non-live, non-native-visual, non-PTY-signoff integration commands using explicit Cargo invocations.
   signoff-pty          Deterministic PTY signoff, single-threaded.
+  signoff-browser      Browser/media signoff. Requires browser env and optional browser dependencies.
   signoff-live         Live provider signoff. Requires live env and runs live_proxy_preflight first.
   signoff-native       Native visual signoff. Requires native visual env and runs ignored native visual tests single-threaded.
   stress-offline       Delegates to scripts/stress-harness.sh --mode offline.
@@ -56,6 +57,9 @@ Required environment:
   signoff-native requires:
     HARNESS_NATIVE_VISUAL=1
     DISPLAY=<display>
+  signoff-browser requires:
+    HARNESS_BROWSER_SIGNOFF=1
+    npx on PATH for Playwright-backed skill diagnostics
   all-deterministic PTY support requires:
     cargo on PATH
     crates/harness-testkit/tests/pty_e2e.rs
@@ -104,7 +108,7 @@ while [[ $# -gt 0 ]]; do
       usage
       exit 0
       ;;
-    fast|integration|signoff-pty|signoff-live|signoff-native|stress-offline|stress-live|all-deterministic|help)
+    fast|integration|signoff-pty|signoff-browser|signoff-live|signoff-native|stress-offline|stress-live|all-deterministic|help)
       if [[ -n "$mode" ]]; then
         printf 'Multiple modes provided: %s and %s\n' "$mode" "$1" >&2
         usage >&2
@@ -464,6 +468,28 @@ require_native_env() {
   return 0
 }
 
+require_browser_env() {
+  local mode_name="$1"
+  if [[ "$dry_run" -eq 1 ]]; then
+    return 0
+  fi
+
+  local missing=()
+  if [[ "${HARNESS_BROWSER_SIGNOFF-}" != "1" ]]; then
+    missing+=("HARNESS_BROWSER_SIGNOFF=1")
+  fi
+  if ! command -v npx >/dev/null 2>&1; then
+    missing+=("npx on PATH")
+  fi
+
+  if [[ "${#missing[@]}" -ne 0 ]]; then
+    record_gate_failure "$mode_name" browser_env "${missing[@]}"
+    return 1
+  fi
+
+  return 0
+}
+
 run_fast() {
   run_stage fast fmt "$repo_root" cargo fmt --all -- --check || true
   run_stage fast check "$repo_root" cargo check --workspace || true
@@ -524,6 +550,13 @@ run_signoff_pty() {
   run_stage signoff-pty harness_tui_pty_e2e "$repo_root" env RUST_TEST_THREADS=1 cargo test -p harness-tui pty_e2e || true
 }
 
+run_signoff_browser() {
+  require_browser_env signoff-browser || return 0
+  run_stage signoff-browser harness_doctor_browser_media "$repo_root" cargo run -p harness -- --config configs/harness.example.jsonc doctor --json || true
+  run_stage signoff-browser harness_tools_look_at_media "$repo_root" cargo test -p harness-tools --test native_execution_surface native_look_at_extracts_text_and_routes_media || true
+  run_stage signoff-browser harness_tools_terminal_dependency_gate "$repo_root" cargo test -p harness-tools --test native_execution_surface native_terminal_tools_are_registered_and_dependency_gated || true
+}
+
 run_signoff_live() {
   require_live_env signoff-live || return 0
   run_stage signoff-live live_proxy_preflight "$repo_root" cargo test -p harness-testkit live_proxy_preflight -- --ignored --exact || true
@@ -572,6 +605,9 @@ run_mode() {
       ;;
     signoff-pty)
       run_signoff_pty
+      ;;
+    signoff-browser)
+      run_signoff_browser
       ;;
     signoff-live)
       run_signoff_live

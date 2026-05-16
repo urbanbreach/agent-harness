@@ -1,0 +1,272 @@
+{
+  "schema_version": 1,
+  "source": "docs/omo-parity-spec.md",
+  "description": "Machine-readable OMO parity ledger. Status values are stronger, present, partial, gap, or planned.",
+  "items": [
+    {
+      "id": "event_sourced_coordinator",
+      "area": "runtime",
+      "owner": "harness-core",
+      "status": "stronger",
+      "evidence": [
+        "docs/architecture.md",
+        "crates/harness-core/src/coord.rs"
+      ],
+      "next": "Preserve replay purity as new parity seams are added."
+    },
+    {
+      "id": "task_background_output",
+      "area": "delegation",
+      "owner": "harness-tools",
+      "status": "present",
+      "evidence": [
+        "README.md#task",
+        "crates/harness-tools/src/agent_ops.rs"
+      ],
+      "next": "Keep compatibility wrappers thin over canonical task/background_output."
+    },
+    {
+      "id": "category_routes",
+      "area": "agents",
+      "owner": "harness-core",
+      "status": "partial",
+      "evidence": [
+        "crates/harness-core/src/config/public.rs",
+        "crates/harness/src/doctor.rs",
+        "crates/harness-tools/src/agent_ops.rs"
+      ],
+      "next": "Add runtime fallback-chain validation, prompt append metadata, and capability diagnostics."
+    },
+    {
+      "id": "agent_catalog",
+      "area": "agents",
+      "owner": "harness-core",
+      "status": "partial",
+      "evidence": [
+        "docs/omo-parity-spec.md#3-agent-catalog-and-routing-seam",
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-core/src/event.rs",
+        "crates/harness/src/doctor.rs",
+        "crates/harness-tools/src/agent_ops.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "next": "Add fallback-chain metadata from resolved model profiles and capability diagnostics to task routes."
+    },
+    {
+      "id": "omo_specialist_profiles",
+      "area": "agents",
+      "owner": "harness-core",
+      "status": "partial",
+      "evidence": [
+        "docs/omo-parity-spec.md#b-specialist-agent-catalog",
+        "crates/harness-core/src/config/public.rs",
+        "crates/harness-core/src/event.rs",
+        "crates/harness/src/doctor.rs",
+        "crates/harness-tools/src/agent_ops.rs"
+      ],
+      "next": "Add dedicated specialist contract drift tests for tool restrictions and model fallback status."
+    },
+    {
+      "id": "continuation_loops",
+      "area": "orchestration",
+      "owner": "harness-core",
+      "status": "present",
+      "evidence": [
+        "crates/harness-core/src/continuation.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-core/src/coord.rs",
+        "crates/harness-tui/src/app/session_navigation.rs",
+        "docs/architecture.md",
+        "docs/omo-parity-spec.md#e-continuation-controller-ultrawork-and-ralph-loop"
+      ],
+      "next": "Optional future hardening: add unstable-agent babysitting policies on top of explicit bounded continuation events."
+    },
+    {
+      "id": "team_mode_mvp",
+      "area": "team",
+      "owner": "harness-core+harness-tools",
+      "status": "partial",
+      "evidence": [
+        "crates/harness-tools/src/team_ops.rs",
+        "crates/harness-tools/tests/team.rs",
+        "crates/harness/src/doctor.rs",
+        "crates/harness/tests/config_schema_cli.rs",
+        "docs/config.md"
+      ],
+      "next": "Add worktrees, file claims, tmux visualization, durable mailbox artifacts, and active runtime artifact diagnostics."
+    },
+    {
+      "id": "ast_grep_tools",
+      "area": "tools",
+      "owner": "harness-tools",
+      "status": "partial",
+      "evidence": [
+        "docs/omo-parity-spec.md#h-tool-parity",
+        "crates/harness-tools/src/lib.rs",
+        "crates/harness-tools/src/native_tools.rs",
+        "crates/harness-tools/tests/native_tool_parity_matrix.rs"
+      ],
+      "next": "Add deterministic fixture coverage with an installed ast-grep binary and coordinator-mediated non-dry-run apply semantics."
+    },
+    {
+      "id": "session_tools",
+      "area": "tools",
+      "owner": "harness-tools",
+      "status": "present",
+      "evidence": [
+        "docs/omo-parity-spec.md#h-tool-parity",
+        "crates/harness-tools/src/lib.rs",
+        "crates/harness-tools/src/native_tools.rs",
+        "crates/harness-tools/tests/native_execution_surface.rs"
+      ],
+      "next": "Deepen transcript projection summaries and large-session redaction fixtures as session history grows."
+    },
+    {
+      "id": "persistent_task_tools",
+      "area": "tools",
+      "owner": "harness-core+harness-tools",
+      "status": "present",
+      "evidence": [
+        "docs/omo-parity-spec.md#f-persistent-task-system",
+        "docs/architecture.md#event-types",
+        "crates/harness-core/src/persistent_task.rs",
+        "crates/harness-core/src/event.rs",
+        "crates/harness-core/src/coord.rs",
+        "crates/harness-tools/src/native_tools.rs",
+        "crates/harness-core/tests/coord.rs",
+        "crates/harness-tools/tests/team.rs"
+      ],
+      "next": "Keep persistent tasks replay-only for projection, and route execution through normal coordinator-owned task delegation."
+    },
+    {
+      "id": "interactive_terminal",
+      "area": "tools",
+      "owner": "harness-tools",
+      "status": "partial",
+      "evidence": [
+        "docs/omo-parity-spec.md#5-terminal-session-seam",
+        "crates/harness-tools/src/terminal_session.rs",
+        "crates/harness-tools/src/lib.rs",
+        "crates/harness-tools/tests/native_execution_surface.rs",
+        "crates/harness/src/doctor.rs"
+      ],
+      "next": "Add portable-pty fallback and gated PTY signoff coverage for live TUI drive/capture when tmux is unavailable."
+    },
+    {
+      "id": "browser_media_workflows",
+      "area": "tools",
+      "owner": "harness-tools+harness-testkit",
+      "status": "partial",
+      "evidence": [
+        "docs/omo-parity-spec.md#i-browser-automation-and-media-workflows",
+        ".agent-harness/skills/playwright/SKILL.md",
+        ".agent-harness/skills/agent-browser/SKILL.md",
+        ".agent-harness/skills/dev-browser/SKILL.md",
+        "crates/harness-tools/src/native_tools.rs",
+        "crates/harness/src/doctor.rs",
+        "scripts/test-lanes.sh",
+        "docs/testing.md"
+      ],
+      "next": "Add live browser interaction fixtures and model-backed multimodal provider interpretation beyond replay-safe metadata extraction."
+    },
+    {
+      "id": "skill_bundles_mcp",
+      "area": "skills",
+      "owner": "harness-core+harness-tools",
+      "status": "partial",
+      "evidence": [
+        "docs/starter-skills.md",
+        "crates/harness-core/src/config.rs",
+        "crates/harness-core/src/config/loader.rs",
+        "crates/harness-tools/src/control_plane.rs",
+        "crates/harness-tools/src/native_tools.rs",
+        "crates/harness-tools/tests/mcp_generic.rs",
+        "crates/harness-tools/tests/skill_load_discovery.rs",
+        "crates/harness/tests/config_schema_cli.rs",
+        ".agent-harness/skills/git-master/SKILL.md",
+        ".agent-harness/skills/frontend-ui-ux/SKILL.md",
+        ".agent-harness/skills/review-work/SKILL.md",
+        ".agent-harness/skills/playwright/SKILL.md",
+        ".agent-harness/skills/agent-browser/SKILL.md",
+        ".agent-harness/skills/dev-browser/SKILL.md",
+        ".agent-harness/skills/ai-slop-remover/SKILL.md",
+        ".agent-harness/skills/team-mode/SKILL.md"
+      ],
+      "next": "Replace run-scoped skill_mcp state with fully executable skill MCP processes where safe, then add OAuth-capable MCP sessions and doctor visibility without loading external MCP servers."
+    },
+    {
+      "id": "hook_middleware",
+      "area": "hooks",
+      "owner": "harness-core",
+      "status": "partial",
+      "evidence": [
+        "crates/harness-core/src/config.rs",
+        "crates/harness-core/src/event.rs",
+        "crates/harness-core/src/coord.rs",
+        "crates/harness-core/tests/coord.rs",
+        "docs/omo-parity-spec.md#2-hook-middleware-seam",
+        "docs/config.md"
+      ],
+      "next": "Add built-in hook implementations for pre-permission guards, context injection, dynamic per-tool truncation, recovery, notification, and continuation policies."
+    },
+    {
+      "id": "compatibility_imports",
+      "area": "compatibility",
+      "owner": "harness-core+harness+harness-tools",
+      "status": "present",
+      "evidence": [
+        "docs/omo-parity-spec.md#q-compatibility-surfaces",
+        "docs/config.md#compatibility-imports",
+        "crates/harness-core/src/config/discovery.rs",
+        "crates/harness-core/src/config/loader.rs",
+        "crates/harness-core/src/config/public.rs",
+        "crates/harness/src/doctor.rs",
+        "crates/harness-tools/src/native_tools.rs",
+        "crates/harness/tests/config_schema_cli.rs"
+      ],
+      "next": "Keep compatibility adapters manifest-only and translation-only; do not execute external plugin code until a sandboxed extension runtime has separate evidence."
+    },
+    {
+      "id": "provider_model_fallback",
+      "area": "providers",
+      "owner": "harness-core+harness-providers",
+      "status": "present",
+      "evidence": [
+        "crates/harness-core/src/provider_recovery.rs",
+        "crates/harness-core/src/coord.rs",
+        "crates/harness-core/src/agent.rs",
+        "crates/harness/src/doctor.rs",
+        "crates/harness-core/tests/coord.rs",
+        "docs/config.md"
+      ],
+      "next": "Add native non-OpenAI provider adapters only with deterministic fixtures and gated live signoff."
+    },
+    {
+      "id": "doctor_parity_visibility",
+      "area": "diagnostics",
+      "owner": "harness",
+      "status": "present",
+      "evidence": [
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness/src/doctor.rs",
+        "crates/harness/tests/config_schema_cli.rs",
+        "docs/parity-ledger.json",
+        "docs/config.md#compatibility-imports"
+      ],
+      "next": "Keep doctor checks aligned as remaining parity gaps move from partial to present."
+    },
+    {
+      "id": "session_recovery_repair",
+      "area": "recovery",
+      "owner": "harness+harness-core",
+      "status": "present",
+      "evidence": [
+        "crates/harness/src/recovery.rs",
+        "crates/harness/src/sessions.rs",
+        "crates/harness/src/replay.rs",
+        "crates/harness/tests/replay_sessions_cli.rs"
+      ],
+      "next": "Keep repair flows append-only by using continuation/fork/clone rather than in-place event edits."
+    }
+  ]
+}

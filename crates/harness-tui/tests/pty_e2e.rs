@@ -955,6 +955,7 @@ fn run_helper_if_requested(scenario: HelperScenario) {
                 keybindings: None,
                 toggles: None,
                 preserve_terminal_on_exit: false,
+                slash_command_templates: None,
             })
             .expect("run startup helper tui");
             return;
@@ -1097,6 +1098,7 @@ fn run_helper_if_requested(scenario: HelperScenario) {
                 keybindings: None,
                 toggles: None,
                 preserve_terminal_on_exit: false,
+                slash_command_templates: None,
             })
             .expect("run disconnected helper tui");
             return;
@@ -1114,6 +1116,7 @@ fn run_helper_if_requested(scenario: HelperScenario) {
                 keybindings: None,
                 toggles: None,
                 preserve_terminal_on_exit: false,
+                slash_command_templates: None,
             })
             .expect("run replay read-only helper tui");
             return;
@@ -1134,6 +1137,7 @@ fn run_helper_if_requested(scenario: HelperScenario) {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        slash_command_templates: None,
     })
     .expect("run helper tui");
 }

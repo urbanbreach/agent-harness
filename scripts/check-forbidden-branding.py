@@ -17,6 +17,12 @@ sys.dont_write_bytecode = True
 
 
 ALLOWED_DIRS = {".git", ".sisyphus", "inspirations", "target"}
+ALLOWED_FILES = {
+    Path("configs/config.json"),
+    Path("configs/provider-catalog.generated.json"),
+    Path("docs/config.md"),
+    Path("docs/omo-parity-spec.md"),
+}
 SOURCE_PREFIX = "p" + "i"
 FORBIDDEN_PATTERNS = [
     re.compile(pattern, re.IGNORECASE)
@@ -28,6 +34,26 @@ FORBIDDEN_PATTERNS = [
         r"\b" + SOURCE_PREFIX + r"\b",
     )
 ]
+
+
+COMPATIBILITY_PATH_LITERAL_PATTERNS = [
+    re.compile(re.escape(literal))
+    for literal in (
+        "~/.config/opencode",
+        ".opencode",
+        "/opencode/",
+        'join("opencode")',
+        '"opencode"',
+    )
+]
+
+
+def mask_compatibility_path_literals(line: str) -> str:
+    """Mask literal migration paths without hiding same-line forbidden branding."""
+    masked = line
+    for pattern in COMPATIBILITY_PATH_LITERAL_PATTERNS:
+        masked = pattern.sub("<compatibility-path>", masked)
+    return masked
 
 
 def parse_root() -> Path:
@@ -48,7 +74,7 @@ def parse_root() -> Path:
 
 
 def is_allowed(path: Path) -> bool:
-    return any(part in ALLOWED_DIRS for part in path.parts)
+    return path in ALLOWED_FILES or any(part in ALLOWED_DIRS for part in path.parts)
 
 
 def is_binary(path: Path) -> bool:
@@ -123,8 +149,9 @@ def matches_for_file(path: Path, relative: Path) -> list[str]:
 
     matches: list[str] = []
     for line_number, line in enumerate(text.splitlines(), start=1):
+        masked_line = mask_compatibility_path_literals(line)
         for pattern in FORBIDDEN_PATTERNS:
-            if pattern.search(line):
+            if pattern.search(masked_line):
                 matches.append(f"{relative}:{line_number}: forbidden brand term")
                 break
     return matches

@@ -484,11 +484,16 @@ delegate_test!(slash_resume_opens_history_and_restores_draft => app::exact_test_
 delegate_test!(slash_events_opens_review_surface => app::exact_test_slash_events_opens_review_surface);
 delegate_test!(slash_status_opens_status_dialog_and_restores_draft => app::exact_test_slash_status_opens_status_dialog_and_restores_draft);
 delegate_test!(status_dialog_mcp_rows_match_harness_states => ui::exact_test_status_dialog_mcp_rows_match_harness_states);
+delegate_test!(status_dialog_continuation_rows_show_active_loop => ui::exact_test_status_dialog_continuation_rows_show_active_loop);
 delegate_test!(status_dialog_render_snapshot_covers_harness_sections => ui::exact_test_status_dialog_render_snapshot_covers_harness_sections);
 delegate_test!(slash_shell_closes_review_surface => app::exact_test_slash_shell_closes_review_surface);
 delegate_test!(slash_follow_toggles_follow_mode => app::exact_test_slash_follow_toggles_follow_mode);
 delegate_test!(live_slash_compact_appears_when_supported => app::exact_test_live_slash_compact_appears_when_supported);
 delegate_test!(live_slash_compact_emits_ui_intent => app::exact_test_live_slash_compact_emits_ui_intent);
+delegate_test!(live_slash_continuation_commands_emit_ui_intents => app::exact_test_live_slash_continuation_commands_emit_ui_intents);
+delegate_test!(imported_slash_command_template_dispatches_prompt => app::exact_test_imported_slash_command_template_dispatches_prompt);
+delegate_test!(startup_template_slash_command_bootstraps_live_session => app::exact_test_startup_template_slash_command_bootstraps_live_session);
+delegate_test!(continuation_events_update_tui_state => app::exact_test_continuation_events_update_tui_state);
 delegate_test!(live_without_compact_support_hides_slash_compact => app::exact_test_live_without_compact_support_hides_slash_compact);
 delegate_test!(slash_menu_lists_lineage_commands => app::exact_test_slash_menu_lists_lineage_commands);
 delegate_test!(slash_lineage_write_commands_blocked_in_replay => app::exact_test_slash_lineage_write_commands_blocked_in_replay);
@@ -6483,6 +6488,7 @@ fn command_palette_renders_and_filters() {
             "cycle_variant".to_string(),
             "toggles".to_string(),
             "open_event_log".to_string(),
+            "toggle_operator_sidebar".to_string(),
             "toggle_terminal_panel".to_string(),
             "toggle_follow".to_string(),
             "hide_thinking".to_string(),
@@ -6788,6 +6794,12 @@ fn session_history_filter_uses_case_insensitive_substrings() {
         by_case_insensitive_title.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
     assert_eq!(by_case_insensitive_title.session_history_filtered, vec![0]);
+
+    let mut by_run_id = open_continue_picker();
+    for ch in "abc123".chars() {
+        by_run_id.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    assert_eq!(by_run_id.session_history_filtered, vec![0]);
 
     let mut by_non_title_metadata = open_continue_picker();
     for ch in "gpt-5".chars() {

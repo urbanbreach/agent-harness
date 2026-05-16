@@ -624,6 +624,7 @@ pub(crate) fn prepare_prompt_run_config_with_contract(
     }
 
     let mut config = load_json5_config(source_config_path)?;
+    let preserve_source_agents = config.get("agents").is_some();
     normalize_legacy_profile_aliases(&mut config)?;
 
     let provider = provider_from_config(&config, provider_name)?;
@@ -652,6 +653,7 @@ pub(crate) fn prepare_prompt_run_config_with_contract(
         } => apply_restricted_tools_contract(&mut config, profile_name, description, tools)?,
         PreparedLiveConfigContract::VisionVerifier(_) => {}
     }
+    retain_prepared_live_profile_surface(&mut config, profile_name, preserve_source_agents)?;
 
     let rendered = serde_json::to_string_pretty(&config)
         .map_err(|err| format!("failed to render prepared config JSON: {err}"))?;
@@ -672,6 +674,32 @@ pub(crate) fn prepare_prompt_run_config_with_contract(
         workspace_root: paths.workspace_root,
         session_dir: paths.session_dir,
     })
+}
+
+fn retain_prepared_live_profile_surface(
+    config: &mut Value,
+    profile_name: &str,
+    preserve_source_agents: bool,
+) -> Result<(), String> {
+    let root = config
+        .as_object_mut()
+        .ok_or_else(|| "config root must be a JSON object".to_string())?;
+    root.remove("agent");
+
+    let agents = root
+        .get_mut("agents")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| "prepared config.agents must be an object".to_string())?;
+    if !preserve_source_agents {
+        agents.retain(|name, _| name == profile_name);
+    }
+    if agents.contains_key(profile_name) {
+        Ok(())
+    } else {
+        Err(format!(
+            "prepared config is missing selected profile `{profile_name}`"
+        ))
+    }
 }
 
 pub(crate) fn run_live_prompt_stage(

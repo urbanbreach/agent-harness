@@ -727,6 +727,7 @@ fn mouse_click_on_task_inline_row_uses_task_row_child_session() {
                     child_request_id: Some("req_child".to_string()),
                     ..TaskLineageMetadata::default()
                 }),
+                route: None,
                 task_scope: Some(TaskTerminalScope::ToolCall),
                 timing: None,
                 hook_executions: Vec::new(),
@@ -807,6 +808,7 @@ fn mouse_up_on_completed_general_task_row_opens_child_session() {
                     child_request_id: Some("req_child".to_string()),
                     ..TaskLineageMetadata::default()
                 }),
+                route: None,
                 task_scope: Some(TaskTerminalScope::ToolCall),
                 timing: Some(ExecutionTimingMetadata {
                     started_mono_ms: Some(6),
@@ -3908,6 +3910,7 @@ fn provider_request_finished_keeps_activity_streaming_until_turn_task_completes(
             result_digest: "digest-turn-task-result".to_string(),
             metadata: Some(TaskCompletionMetadata {
                 lineage: None,
+                route: None,
                 task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
                 timing: None,
                 hook_executions: Vec::new(),
@@ -4018,6 +4021,7 @@ fn child_tool_task_completed_does_not_finish_parent_turn_activity() {
                     parent_tool_call_id: Some("tc_child_read".to_string()),
                     ..TaskLineageMetadata::default()
                 }),
+                route: None,
                 task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
                 timing: None,
                 hook_executions: Vec::new(),
@@ -4106,6 +4110,7 @@ fn terminal_only_turn_completion_scope_marks_activity_done_without_task_row() {
             result_digest: "digest-terminal-only-result".to_string(),
             metadata: Some(TaskCompletionMetadata {
                 lineage: None,
+                route: None,
                 task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
                 timing: None,
                 hook_executions: Vec::new(),
@@ -4213,6 +4218,7 @@ fn replay_terminal_only_turn_completion_scope_marks_activity_done_without_task_r
                     result_digest: "digest-replay-terminal-only-result".to_string(),
                     metadata: Some(TaskCompletionMetadata {
                         lineage: None,
+                        route: None,
                         task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
                         timing: None,
                         hook_executions: Vec::new(),
@@ -5375,7 +5381,10 @@ fn slash_menu_resets_selection_when_filter_changes() {
     app.handle_key(key(KeyCode::Char('e')));
     app.handle_key(key(KeyCode::Char('p')));
 
-    assert_eq!(app.slash_filtered, vec!["replay".to_string()]);
+    assert_eq!(
+        app.slash_filtered,
+        vec!["replay".to_string(), "remove-ai-slops".to_string()]
+    );
     assert_eq!(app.slash_selected, 0);
 }
 
@@ -5778,6 +5787,7 @@ fn tool_task_completion_does_not_copy_tool_output_into_activity_transcript() {
                     parent_tool_call_id: Some("tc_docs_tokio".to_string()),
                     ..TaskLineageMetadata::default()
                 }),
+                route: None,
                 task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
                 timing: None,
                 hook_executions: Vec::new(),

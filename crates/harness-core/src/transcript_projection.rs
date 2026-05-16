@@ -1262,6 +1262,38 @@ pub fn project_transcript(
                     },
                 );
             }
+            EventV1::PersistentTaskCreated(payload) => {
+                append_system_part(
+                    &mut projection,
+                    event,
+                    ProjectedPart::UiIntent(ProjectedUiIntentPart {
+                        intent: "persistent_task_created".to_string(),
+                        params: BTreeMap::from([
+                            ("task_id".to_string(), payload.task.task_id.clone()),
+                            (
+                                "status".to_string(),
+                                payload.task.status.as_str().to_string(),
+                            ),
+                            ("subject".to_string(), payload.task.subject.clone()),
+                        ]),
+                        provenance: ProvenanceRange::from_event(event),
+                    }),
+                );
+            }
+            EventV1::PersistentTaskUpdated(payload) => {
+                append_system_part(
+                    &mut projection,
+                    event,
+                    ProjectedPart::UiIntent(ProjectedUiIntentPart {
+                        intent: "persistent_task_updated".to_string(),
+                        params: BTreeMap::from([
+                            ("task_id".to_string(), payload.task_id.clone()),
+                            ("status".to_string(), payload.status.as_str().to_string()),
+                        ]),
+                        provenance: ProvenanceRange::from_event(event),
+                    }),
+                );
+            }
             EventV1::TeamShutdownRequested(payload) => {
                 append_team_part(
                     &mut projection,
@@ -1328,6 +1360,77 @@ pub fn project_transcript(
                         summary: None,
                         provenance: ProvenanceRange::from_event(event),
                     },
+                );
+            }
+            EventV1::ContinuationStarted(payload) => {
+                append_system_part(
+                    &mut projection,
+                    event,
+                    ProjectedPart::UiIntent(ProjectedUiIntentPart {
+                        intent: "continuation_started".to_string(),
+                        params: BTreeMap::from([
+                            (
+                                "continuation_id".to_string(),
+                                payload.continuation_id.clone(),
+                            ),
+                            ("mode".to_string(), payload.mode.clone()),
+                            ("command".to_string(), payload.command.clone()),
+                        ]),
+                        provenance: ProvenanceRange::from_event(event),
+                    }),
+                );
+            }
+            EventV1::ContinuationReminderQueued(payload) => {
+                append_system_part(
+                    &mut projection,
+                    event,
+                    ProjectedPart::UiIntent(ProjectedUiIntentPart {
+                        intent: "continuation_reminder_queued".to_string(),
+                        params: BTreeMap::from([
+                            (
+                                "continuation_id".to_string(),
+                                payload.continuation_id.clone(),
+                            ),
+                            ("iteration".to_string(), payload.iteration.to_string()),
+                            ("reason".to_string(), payload.reason.clone()),
+                        ]),
+                        provenance: ProvenanceRange::from_event(event),
+                    }),
+                );
+            }
+            EventV1::ContinuationStopped(payload) => {
+                append_system_part(
+                    &mut projection,
+                    event,
+                    ProjectedPart::UiIntent(ProjectedUiIntentPart {
+                        intent: "continuation_stopped".to_string(),
+                        params: BTreeMap::from([
+                            (
+                                "continuation_id".to_string(),
+                                payload.continuation_id.clone(),
+                            ),
+                            ("reason".to_string(), payload.reason.clone()),
+                        ]),
+                        provenance: ProvenanceRange::from_event(event),
+                    }),
+                );
+            }
+            EventV1::ContinuationLimitReached(payload) => {
+                append_system_part(
+                    &mut projection,
+                    event,
+                    ProjectedPart::UiIntent(ProjectedUiIntentPart {
+                        intent: "continuation_limit_reached".to_string(),
+                        params: BTreeMap::from([
+                            (
+                                "continuation_id".to_string(),
+                                payload.continuation_id.clone(),
+                            ),
+                            ("limit".to_string(), payload.limit.clone()),
+                            ("iteration".to_string(), payload.iteration.to_string()),
+                        ]),
+                        provenance: ProvenanceRange::from_event(event),
+                    }),
                 );
             }
             EventV1::StaleDetected(_)

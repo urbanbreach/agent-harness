@@ -8,6 +8,7 @@ the change touches the contracts they cover.
 scripts/test-lanes.sh fast
 scripts/test-lanes.sh integration
 scripts/test-lanes.sh signoff-pty
+scripts/test-lanes.sh signoff-browser
 scripts/test-lanes.sh signoff-live
 scripts/test-lanes.sh signoff-native
 scripts/test-lanes.sh stress-offline
@@ -169,6 +170,31 @@ Current stage commands:
 
 Use the live README for exact preflight details, optional live vars, artifacts, retention, and
 agent iteration order instead of duplicating that contract here.
+
+## Browser/media signoff lane
+
+Browser/media signoff is opt-in and env-gated so browser dependencies are never
+downloaded or launched accidentally:
+
+```bash
+HARNESS_BROWSER_SIGNOFF=1 scripts/test-lanes.sh signoff-browser
+```
+
+Required browser/media environment:
+
+- `HARNESS_BROWSER_SIGNOFF=1`
+- `npx` on `PATH` for Playwright-backed skill diagnostics
+
+The lane records doctor browser/terminal diagnostics plus deterministic coverage
+for `look_at` media routing and terminal dependency gating. It does not perform
+live browser network calls by itself; load `playwright`, `agent-browser`, or
+`dev-browser` skills explicitly for task-specific browser work.
+
+Current stage commands:
+
+- `cargo run -p harness -- --config configs/harness.example.jsonc doctor --json`
+- `cargo test -p harness-tools --test native_execution_surface native_look_at_extracts_text_and_routes_media`
+- `cargo test -p harness-tools --test native_execution_surface native_terminal_tools_are_registered_and_dependency_gated`
 
 ## Native visual lane
 

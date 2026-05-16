@@ -171,6 +171,13 @@ impl Action {
                 section: PaletteCommandSection::Session,
             },
             PaletteCommand {
+                id: "toggle_operator_sidebar",
+                label: "Operator sidebar",
+                description: "Show or hide the live operator sidebar",
+                shortcut: "operator",
+                section: PaletteCommandSection::Session,
+            },
+            PaletteCommand {
                 id: "toggle_terminal_panel",
                 label: "Toggle terminal panel",
                 description: "Show or hide shell command output below the transcript",
@@ -592,7 +599,7 @@ impl KeyMap {
             Action::MoveUp,
         );
 
-        // Agent cycling (Opencode-compatible primary-agent switching)
+        // Agent cycling (upstream-compatible primary-agent switching)
         keymap.bind(
             KeyBinding::new(KeyCode::Tab, KeyModifiers::NONE),
             Action::AgentCycle,

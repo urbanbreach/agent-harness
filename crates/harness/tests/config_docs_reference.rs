@@ -92,7 +92,7 @@ fn config_docs_capture_plan_operator_workflow_and_guardrails() {
     for expected in [
         "### Plan operator workflow",
         "stable public runtime surface",
-        "experimental OpenCode flag",
+        "experimental upstream-compatible flag",
         "Build call `plan_enter`",
         ".agent-harness/plans/<run>.md",
         "Plan calls `plan_exit`",

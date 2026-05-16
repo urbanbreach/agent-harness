@@ -11,15 +11,20 @@
 - `skills` and `load_skills` are equivalent aliases for the same list.
 - `command`, when provided, is prepended to the child prompt as delegation context.
 - Listed skills are resolved before the child is spawned; missing or denied skills
-  fail the task call, and loaded skill content is injected before the original task body.
+  fail the task call, and loaded skill content plus parsed policy metadata is
+  injected before the original task body.
 - Task results include child runtime metadata and `next_actions` for status checks,
   waiting, cancellation, and continuation.
 - `background_output(cancel: true, request_id: ...)` requests coordinator-owned
   cancellation for an authorized non-terminal background child task.
+- `skill_mcp` reports and records run-scoped lifecycle state for MCP servers
+  declared in loaded skill frontmatter without exposing environment values.
 
 ## Configuration
 
 The current public integration surface is documented in [`docs/config.md`](docs/config.md).
+OMO parity work is tracked in [`docs/omo-parity-spec.md`](docs/omo-parity-spec.md),
+with machine-readable status in [`docs/parity-ledger.json`](docs/parity-ledger.json).
 Config-backed `mcp` servers are first-class: enabled MCP servers are
 registered into the runtime tool registry, discovered server tools are exposed to
 interactive profiles alongside the built-ins, and the generic
@@ -52,7 +57,21 @@ runtime config's `model` default:
 - `discipline` — optional strict delivery lane for todo-driven autonomous work, focused delegation, and end-to-end verification
 - `explore` — shipped read-only subagent profile for local codebase search via `task(subagent_type: "explore")`
 - `general` — shipped focused implementation/research subagent profile via `task(subagent_type: "general")`
+- OMO specialist subagents — `oracle`, `librarian`, `metis`, `momus`, `multimodal-looker`, `sisyphus-junior`, `atlas`, `prometheus`, `sisyphus`, and `hephaestus` are shipped profile contracts so `task(subagent_type: "...")` resolves without local bootstrap code
 - category subagents — `visual-engineering`, `artistry`, `ultrabrain`, `deep`, `quick`, `unspecified-low`, `unspecified-high`, and `writing` route OMO-style `task(category: "...")` calls through ordinary toggleable profiles
+
+The first OMO parity slices also register compatibility tool ids for
+`background_cancel`, `team_list`, `ast_grep_*`, `session_*`, general
+`task_create/list/get/update`, `interactive_bash`/`terminal_*`, and `look_at`. Safe wrappers such as
+`background_cancel`, `team_list`, replay-only `session_*`, and persistent
+`task_create/list/get/update` tools execute through coordinator-owned or
+event-derived state. `task_list` exposes pending unblocked `ready_task_ids` while
+actual execution remains normal coordinator-owned delegation. The terminal tools
+are tmux-backed and dependency-gated, and `look_at` extracts text/media metadata
+or returns an explicit `multimodal-looker` route for model-backed visual analysis.
+`ast_grep_search` and dry-run `ast_grep_replace` use a workspace-bounded
+`ast-grep`/`sg` CLI adapter when installed and return actionable dependency
+errors otherwise.
 
 Validate the shipped example config:
 
@@ -60,6 +79,13 @@ Validate the shipped example config:
 cargo run -p harness -- --config configs/harness.example.jsonc config validate
 cargo run -p harness -- --config configs/harness.example.jsonc doctor
 ```
+
+Doctor reports effective model-profile fallback chains, model tool/modality
+capability warnings, and compatibility import status for local upstream-style
+agents, skills, commands, `.mcp.json`, safe hook subsets, and manifest-only
+extensions. Runtime fallback uses configured chains only for classified retryable
+provider failures and records the reason in provider metadata so replay remains a
+pure event projection.
 
 Shared runtime defaults can live at `$XDG_CONFIG_HOME/harness/harness.jsonc`
 (fallback: `~/.config/harness/harness.jsonc`) or `$XDG_CONFIG_HOME/harness/harness.json`.
@@ -150,7 +176,7 @@ LSP probes, and absolute-path workspace reads.
 
 The shipped `default` provider points at the local CLIProxy-compatible bridge (`http://127.0.0.1:8317/v1`) and uses an explicit local placeholder bearer token so the default flow stays aligned between docs, config, and live signoff lanes without depending on `OPENAI_API_KEY`. Its catalog mirrors the configured CLIProxyAPI GPT family, including GPT 5.5, GPT 5.4, GPT 5.4 Mini, GPT 5.4 extended-context presets, GPT 5.3 Codex, GPT 5.2, and GPT 5.1/Codex variants.
 
-The TUI exposes workflow slash commands for `/model`, `/status`, `/toggles`, `/resume`, `/new`, `/tree`, `/fork`, and `/clone`. `/model` switches the agent/model used for subsequent turns, `/status` opens the system status dialog, `/toggles` opens the session-local Toggles menu for configured agents, prompts, hooks, MCP servers, tools, skills, and YOLO menu state, `/resume` opens the saved-session picker, and `/new` starts a clean live run. `/tree` shows the Harness session lineage tree for saved sessions. `/fork` creates a child Harness session from the current session at an explicit stable event cutoff. `/clone` creates a child Harness session from the latest stable prefix of the selected source session.
+The TUI exposes workflow slash commands for `/model`, `/status`, `/toggles`, `/resume`, `/new`, `/tree`, `/fork`, `/clone`, `/compact`, `/init-deep`, `/ralph-loop`, `/ulw-loop`, `/stop-continuation`, `/cancel-ralph`, `/refactor`, `/start-work`, `/remove-ai-slops`, `/handoff`, and `/hyperplan`. `/model` switches the agent/model used for subsequent turns, `/status` opens the system status dialog, `/toggles` opens the session-local Toggles menu for configured agents, prompts, hooks, MCP servers, tools, skills, and YOLO menu state, `/resume` opens the saved-session picker, and `/new` starts a clean live run. `/tree` shows the Harness session lineage tree for saved sessions. `/fork` creates a child Harness session from the current session at an explicit stable event cutoff. `/clone` creates a child Harness session from the latest stable prefix of the selected source session. `/ralph-loop` and `/ulw-loop` start explicit bounded continuation loops that are visible in events and the status dialog; `/stop-continuation` and `/cancel-ralph` stop the active loop.
 
 The same lineage surface is available from the terminal through `harness sessions tree`, `harness sessions fork`, and `harness sessions clone`. `harness sessions tree` prints the saved Harness session lineage and accepts `--json`, `--root RUN_ID_OR_PATH`, and `--filter TEXT`. `harness sessions fork --source RUN_ID_OR_PATH --cutoff SEQ` writes a child session from a validated stable prefix. `harness sessions clone --source RUN_ID_OR_PATH` writes a child session from the latest stable completed prefix. Both write commands accept `--json`, reject active or writer locked sources, and print the child run id, source cutoff, event count, and copied artifact count when they succeed.
 

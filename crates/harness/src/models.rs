@@ -14,7 +14,7 @@ pub struct ModelsCommand {
 
 #[derive(Debug, Subcommand, Clone)]
 enum ModelsSubcommand {
-    /// Write the Pi-style generated provider catalog artifact.
+    /// Write the generated provider catalog artifact.
     Generate(ModelGenerateCommand),
     /// Print the generated provider catalog embedded in this build.
     Generated(GeneratedModelCatalogCommand),

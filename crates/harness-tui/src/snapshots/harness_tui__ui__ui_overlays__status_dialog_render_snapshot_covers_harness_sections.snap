@@ -1,6 +1,6 @@
 ---
 source: crates/harness-tui/src/ui_overlays.rs
-assertion_line: 403
+assertion_line: 458
 expression: "format!(\"{:#?}\", terminal.backend().buffer())"
 ---
 Buffer {
@@ -19,11 +19,11 @@ Buffer {
         "          1 LSP Servers                                                         ",
         "          • rust /workspace                                                     ",
         "                                                                                ",
+        "          Continuation: inactive                                                ",
+        "                                                                                ",
         "          No Formatters                                                         ",
         "                                                                                ",
         "          No Plugins                                                            ",
-        "                                                                                ",
-        "                                                                                ",
         "                                                                                ",
         "                                                                                ",
         "                                                                                ",
@@ -79,17 +79,19 @@ Buffer {
         x: 72, y: 12, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 8, y: 13, fg: Reset, bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
         x: 10, y: 13, fg: Rgb(238, 238, 238), bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
-        x: 23, y: 13, fg: Reset, bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
+        x: 32, y: 13, fg: Reset, bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
         x: 72, y: 13, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 8, y: 14, fg: Reset, bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
         x: 72, y: 14, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 8, y: 15, fg: Reset, bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
         x: 10, y: 15, fg: Rgb(238, 238, 238), bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
-        x: 20, y: 15, fg: Reset, bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
+        x: 23, y: 15, fg: Reset, bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
         x: 72, y: 15, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 8, y: 16, fg: Reset, bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
         x: 72, y: 16, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 8, y: 17, fg: Reset, bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
+        x: 10, y: 17, fg: Rgb(238, 238, 238), bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
+        x: 20, y: 17, fg: Reset, bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
         x: 72, y: 17, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 8, y: 18, fg: Reset, bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
         x: 72, y: 18, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,

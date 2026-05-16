@@ -189,6 +189,17 @@ fn map_openai_api_mode(mode: CoreOpenAiApiMode) -> ProviderOpenAiApiMode {
     }
 }
 
+fn model_settings_for_resolved_target(
+    target: &harness_core::config::ResolvedModelTarget,
+) -> harness_core::agent::AgentModelSettings {
+    harness_core::agent::AgentModelSettings {
+        variant: target.variant.clone(),
+        reasoning_effort: target.reasoning_effort.clone(),
+        text_verbosity: target.text_verbosity.clone(),
+        reasoning_summary: target.reasoning_summary.clone(),
+    }
+}
+
 fn compose_interactive_system_prompt(
     cfg: &HarnessConfig,
     profile_name: &str,
@@ -266,6 +277,17 @@ fn interactive_agent_profiles_with_extra_tools(
             &toolset,
         )?;
 
+        let fallback_model_refs = model_selection
+            .fallback
+            .iter()
+            .map(|target| target.model_ref.clone())
+            .collect::<Vec<_>>();
+        let fallback_model_settings = model_selection
+            .fallback
+            .iter()
+            .map(model_settings_for_resolved_target)
+            .collect::<Vec<_>>();
+
         profiles.insert(
             profile_name.clone(),
             AgentProfile {
@@ -273,6 +295,8 @@ fn interactive_agent_profiles_with_extra_tools(
                 category: profile_name.clone(),
                 model_ref: model_selection.primary.model_ref,
                 model_ref_explicit: profile_cfg.model_ref_explicit,
+                fallback_model_refs,
+                fallback_model_settings,
                 system_prompt,
                 max_iters: profile_cfg.max_iters,
                 temperature: profile_cfg.temperature,

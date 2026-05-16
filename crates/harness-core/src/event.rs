@@ -136,10 +136,16 @@ pub enum EventV1 {
     TeamMessageSent(TeamMessageSentEvent),
     TeamTaskCreated(TeamTaskCreatedEvent),
     TeamTaskUpdated(TeamTaskUpdatedEvent),
+    PersistentTaskCreated(PersistentTaskCreatedEvent),
+    PersistentTaskUpdated(PersistentTaskUpdatedEvent),
     TeamShutdownRequested(TeamShutdownRequestedEvent),
     TeamShutdownApproved(TeamShutdownApprovedEvent),
     TeamShutdownRejected(TeamShutdownRejectedEvent),
     TeamDeleted(TeamDeletedEvent),
+    ContinuationStarted(ContinuationStartedEvent),
+    ContinuationReminderQueued(ContinuationReminderQueuedEvent),
+    ContinuationStopped(ContinuationStoppedEvent),
+    ContinuationLimitReached(ContinuationLimitReachedEvent),
     UiIntentReceived(UiIntentReceivedEvent),
 }
 
@@ -269,6 +275,34 @@ impl TaskLineageMetadata {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct TaskRouteMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_profile: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_category: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_profile: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_category: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_catalog_role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_category_binding: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_display_order: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_ref: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub can_redelegate: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category_fallback_applied: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub explicit_subagent: Option<bool>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub loaded_skills: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ExecutionTimingMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub started_mono_ms: Option<u64>,
@@ -288,12 +322,37 @@ pub enum HookExecutionStatus {
     Unknown,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HookEffectKind {
+    Allow,
+    Deny,
+    TransformContext,
+    RequestReminder,
+    WriteArtifact,
+    AddDiagnostic,
+    TruncateOutput,
+    Recover,
+    Notify,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HookEffectMetadata {
+    pub kind: HookEffectKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact_ref: Option<EventArtifactRef>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HookExecutionMetadata {
     pub hook_name: String,
     pub status: HookExecutionStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hook_event: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hook_phase: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command_digest: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -302,6 +361,8 @@ pub struct HookExecutionMetadata {
     pub output_summary: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effects: Vec<HookEffectMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -331,6 +392,8 @@ pub struct ToolCallMetadata {
 pub struct TaskCompletionMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lineage: Option<TaskLineageMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route: Option<TaskRouteMetadata>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_scope: Option<TaskTerminalScope>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -421,6 +484,14 @@ pub struct ProviderRequestStartedMetadata {
     pub provider_session_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_cache_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback_attempt: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback_from_model_ref: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback_reason_class: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback_retryable: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -465,6 +536,18 @@ pub struct ProviderRequestFinishedMetadata {
     pub assistant_message: Option<ProviderAssistantMessageMetadata>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking: Option<ProviderThinkingMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_error_class: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_error_retryable: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback_attempt: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback_from_model_ref: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback_reason_class: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback_retryable: Option<bool>,
 }
 
 /// Durable provider request start barrier.
@@ -1015,6 +1098,74 @@ pub struct TeamTaskUpdatedEvent {
     pub metadata: BTreeMap<String, String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PersistentTaskStatus {
+    Pending,
+    Claimed,
+    InProgress,
+    Completed,
+    Cancelled,
+}
+
+impl PersistentTaskStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Claimed => "claimed",
+            Self::InProgress => "in_progress",
+            Self::Completed => "completed",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PersistentTask {
+    pub version: u16,
+    pub task_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
+    pub subject: String,
+    pub description: String,
+    pub status: PersistentTaskStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_form: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blocks: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blocked_by: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub metadata: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PersistentTaskCreatedEvent {
+    pub task: PersistentTask,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PersistentTaskUpdatedEvent {
+    pub task_id: String,
+    pub status: PersistentTaskStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_form: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocked_by: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub metadata: BTreeMap<String, String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct TeamShutdownRequestedEvent {
     pub team_run_id: String,
@@ -1040,6 +1191,38 @@ pub struct TeamShutdownRejectedEvent {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct TeamDeletedEvent {
     pub team_run_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ContinuationStartedEvent {
+    pub continuation_id: String,
+    pub mode: String,
+    pub command: String,
+    pub max_iterations: u32,
+    pub max_wall_clock_ms: u64,
+    pub max_provider_calls: u32,
+    pub max_tool_calls: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ContinuationReminderQueuedEvent {
+    pub continuation_id: String,
+    pub iteration: u32,
+    pub reminder: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ContinuationStoppedEvent {
+    pub continuation_id: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ContinuationLimitReachedEvent {
+    pub continuation_id: String,
+    pub limit: String,
+    pub iteration: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

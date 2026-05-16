@@ -17,6 +17,8 @@ use harness_core::event::{
     ProviderRequestStartedEvent, ResolvedToolIdentity, TaskCompletionMetadata, TaskLineageMetadata,
     ToolCallLifecycleState, ToolCallMetadata, ToolCallStatus, UserMessageSubmittedEvent,
 };
+#[cfg(test)]
+use harness_core::event::{ContinuationReminderQueuedEvent, ContinuationStartedEvent, EventActor};
 use harness_core::perm::{PermissionDecision, PermissionGrantScope};
 use harness_core::workspace::WorkspaceEnvironment;
 use ratatui::layout::Rect;
@@ -79,7 +81,7 @@ const TOOL_OUTPUT_DISPLAY_MAX_CHARS: usize = 100;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_CHARS: usize = 72;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_FIELDS: usize = 3;
 const INTERRUPT_CONFIRM_TIMEOUT: Duration = Duration::from_secs(5);
-pub(crate) const SLASH_COMMANDS: [(&str, &str); 15] = [
+pub(crate) const SLASH_COMMANDS: [(&str, &str); 25] = [
     ("new", "Return to the home shell"),
     ("sessions", "Switch session"),
     ("resume", "Continue a saved session"),
@@ -94,6 +96,16 @@ pub(crate) const SLASH_COMMANDS: [(&str, &str); 15] = [
     ("shell", "Return to the session shell"),
     ("follow", "Toggle follow mode"),
     ("compact", "Write a manual context checkpoint"),
+    ("init-deep", "Start a deep requirements interview"),
+    ("ralph-loop", "Start bounded Ralph continuation"),
+    ("ulw-loop", "Start bounded ultrawork continuation"),
+    ("cancel-ralph", "Stop Ralph continuation"),
+    ("refactor", "Load refactor cleanup guidance"),
+    ("start-work", "Create a work handoff artifact"),
+    ("stop-continuation", "Stop active continuation"),
+    ("remove-ai-slops", "Load AI slop removal guidance"),
+    ("handoff", "Create a continuation handoff artifact"),
+    ("hyperplan", "Start team/parallel planning handoff"),
     ("exit", "Quit Harness"),
 ];
 
@@ -102,6 +114,14 @@ pub(crate) fn slash_command_description(command: &str) -> &'static str {
         .iter()
         .find_map(|(name, description)| (*name == command).then_some(*description))
         .unwrap_or("")
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SlashCommandTemplate {
+    pub name: String,
+    pub description: Option<String>,
+    pub prompt: String,
+    pub enabled: bool,
 }
 
 static NEXT_TRANSCRIPT_CACHE_INSTANCE_ID: AtomicU64 = AtomicU64::new(1);
@@ -969,6 +989,13 @@ pub enum UiIntent {
         launch_metadata: LaunchMetadata,
     },
     CompactSession,
+    StartContinuation {
+        mode: String,
+        command: String,
+    },
+    StopContinuation {
+        reason: String,
+    },
     InterruptSession {
         task_ids: Vec<String>,
     },
@@ -984,6 +1011,15 @@ pub enum UiIntent {
         stable_prefix: harness_core::session_lineage::StableSessionPrefix,
     },
     QuitRequested,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContinuationDisplayState {
+    pub continuation_id: String,
+    pub mode: String,
+    pub command: String,
+    pub iteration: u32,
+    pub status: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -1183,6 +1219,7 @@ pub struct AppState {
     pub slash_filtered: Vec<String>,
     pub slash_selected: usize,
     slash_draft_snapshot: Option<String>,
+    slash_command_templates: BTreeMap<String, SlashCommandTemplate>,
     pub(crate) file_mention_visible: bool,
     pub(crate) file_mention_entries: Vec<FileMentionEntry>,
     pub(crate) file_mention_selected: usize,
@@ -1193,6 +1230,7 @@ pub struct AppState {
     pub(crate) file_mention_tags: Vec<FileMentionTag>,
     file_mention_frecency: BTreeMap<String, FileMentionFrecency>,
     pub continue_disabled_banner: Option<String>,
+    pub active_continuation: Option<ContinuationDisplayState>,
     pub keymap: KeyMap,
     theme: Theme,
     launch_metadata: LaunchMetadata,
@@ -1307,6 +1345,7 @@ impl Default for AppState {
             slash_filtered: Vec::new(),
             slash_selected: 0,
             slash_draft_snapshot: None,
+            slash_command_templates: BTreeMap::new(),
             file_mention_visible: false,
             file_mention_entries: Vec::new(),
             file_mention_selected: 0,
@@ -1317,6 +1356,7 @@ impl Default for AppState {
             file_mention_tags: Vec::new(),
             file_mention_frecency: BTreeMap::new(),
             continue_disabled_banner: None,
+            active_continuation: None,
             keymap: KeyMap::default(),
             theme: Theme::default(),
             launch_metadata: LaunchMetadata::default(),
@@ -1457,6 +1497,26 @@ impl AppState {
         self.keymap.apply_overrides(&bindings);
     }
 
+    pub fn set_slash_command_templates(&mut self, templates: Vec<SlashCommandTemplate>) {
+        self.slash_command_templates = templates
+            .into_iter()
+            .filter_map(|mut template| {
+                template.name = template.name.trim().to_string();
+                template.prompt = template.prompt.trim().to_string();
+                if template.name.is_empty() || template.prompt.is_empty() || !template.enabled {
+                    return None;
+                }
+                if SLASH_COMMANDS
+                    .iter()
+                    .any(|(builtin, _)| *builtin == template.name)
+                {
+                    return None;
+                }
+                Some((template.name.clone(), template))
+            })
+            .collect();
+    }
+
     pub fn theme(&self) -> &Theme {
         &self.theme
     }
@@ -1533,6 +1593,44 @@ impl AppState {
             let environment = WorkspaceEnvironment::discover(&data.workspace_root);
             self.workspace_context_labels = workspace_context_labels(&environment);
             self.file_mention_index = None;
+        }
+
+        match &event.payload {
+            EventV1::ContinuationStarted(data) => {
+                self.active_continuation = Some(ContinuationDisplayState {
+                    continuation_id: data.continuation_id.clone(),
+                    mode: data.mode.clone(),
+                    command: data.command.clone(),
+                    iteration: 0,
+                    status: "active".to_string(),
+                });
+            }
+            EventV1::ContinuationReminderQueued(data) => {
+                if let Some(active) = self.active_continuation.as_mut() {
+                    if active.continuation_id == data.continuation_id {
+                        active.iteration = data.iteration;
+                        active.status = "reminder queued".to_string();
+                    }
+                }
+            }
+            EventV1::ContinuationStopped(data) => {
+                if self
+                    .active_continuation
+                    .as_ref()
+                    .is_some_and(|active| active.continuation_id == data.continuation_id)
+                {
+                    self.active_continuation = None;
+                }
+            }
+            EventV1::ContinuationLimitReached(data) => {
+                if let Some(active) = self.active_continuation.as_mut() {
+                    if active.continuation_id == data.continuation_id {
+                        active.iteration = data.iteration;
+                        active.status = format!("limit reached: {}", data.limit);
+                    }
+                }
+            }
+            _ => {}
         }
 
         if matches!(&event.payload, EventV1::EditApplied(_)) {
@@ -3935,8 +4033,14 @@ impl AppState {
 
     fn submit_prompt(&mut self) {
         if !self.replay_mode && !self.composer_disabled() {
-            if let Some(command) = self.typed_slash_command() {
-                self.execute_slash_command(command, self.slash_draft_snapshot.clone());
+            if let Some((command, args)) = self
+                .typed_slash_invocation()
+                .map(|(command, args)| (command.to_string(), args))
+            {
+                self.execute_slash_command(
+                    &command,
+                    args.or_else(|| self.slash_draft_snapshot.clone()),
+                );
                 return;
             }
         }
@@ -4166,11 +4270,15 @@ pub(crate) fn exact_test_startup_slash_commands_execute_without_menu() {
         app.slash_filtered,
         vec![
             "exit".to_string(),
+            "handoff".to_string(),
+            "hyperplan".to_string(),
+            "init-deep".to_string(),
             "new".to_string(),
+            "refactor".to_string(),
+            "remove-ai-slops".to_string(),
             "replay".to_string(),
             "resume".to_string(),
-            "status".to_string(),
-            "toggles".to_string(),
+            "start-work".to_string(),
         ]
     );
 }
@@ -4338,6 +4446,189 @@ pub(crate) fn exact_test_live_slash_compact_emits_ui_intent() {
         intents.lock().expect("lock intents").as_slice(),
         &[UiIntent::CompactSession]
     );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_live_slash_continuation_commands_emit_ui_intents() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(sink));
+
+    app.replace_prompt_input("/ralph-loop fix tests".to_string());
+    app.sync_slash_overlay();
+    assert_eq!(app.typed_slash_command(), Some("ralph-loop"));
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    app.replace_prompt_input("/stop-continuation".to_string());
+    app.sync_slash_overlay();
+    assert_eq!(app.slash_filtered, vec!["stop-continuation".to_string()]);
+    assert_eq!(app.typed_slash_command(), Some("stop-continuation"));
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[
+            UiIntent::StartContinuation {
+                mode: "ralph".to_string(),
+                command: "/ralph-loop fix tests".to_string(),
+            },
+            UiIntent::StopContinuation {
+                reason: "/stop-continuation".to_string(),
+            },
+        ]
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_imported_slash_command_template_dispatches_prompt() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(sink));
+    app.set_slash_command_templates(vec![SlashCommandTemplate {
+        name: "review".to_string(),
+        description: Some("Review the current draft".to_string()),
+        prompt: "Review {{args}} carefully.".to_string(),
+        enabled: true,
+    }]);
+    app.replace_prompt_input("/review".to_string());
+    app.sync_slash_overlay();
+    assert_eq!(
+        app.slash_filtered.first().map(String::as_str),
+        Some("review")
+    );
+    assert_eq!(app.typed_slash_command(), Some("review"));
+    assert_eq!(
+        app.slash_command_description("review"),
+        "Review the current draft"
+    );
+
+    app.execute_slash_command("review", Some("the current diff".to_string()));
+
+    let intents = intents.lock().expect("lock intents");
+    let [UiIntent::SubmitPrompt { text, .. }] = intents.as_slice() else {
+        panic!("expected imported command to dispatch a prompt, got {intents:?}");
+    };
+    assert_eq!(text, "Review the current diff carefully.");
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_startup_template_slash_command_bootstraps_live_session() {
+    let startup_intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let startup_sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let startup_intents = Arc::clone(&startup_intents);
+        Arc::new(move |intent: UiIntent| {
+            startup_intents
+                .lock()
+                .expect("lock startup intents")
+                .push(intent);
+        })
+    };
+    set_pending_live_launch_metadata(
+        LaunchMetadata::from_model_ref("build", "mock:model-1").with_mode_label("Startup"),
+    );
+    let mut app = AppState::new_startup(Vec::new(), Some(startup_sink));
+
+    app.execute_slash_command("init-deep", Some("the current diff".to_string()));
+
+    assert!(app.should_quit);
+    assert!(!app.startup_mode);
+    assert_eq!(
+        startup_intents
+            .lock()
+            .expect("lock startup intents")
+            .as_slice(),
+        &[UiIntent::NewSession]
+    );
+
+    let live_intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let live_sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let live_intents = Arc::clone(&live_intents);
+        Arc::new(move |intent: UiIntent| {
+            live_intents.lock().expect("lock live intents").push(intent);
+        })
+    };
+    let live = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(live_sink));
+
+    assert_eq!(live.active_profile(), "build");
+    let live_intents = live_intents.lock().expect("lock live intents");
+    let [UiIntent::SubmitPrompt {
+        text,
+        launch_metadata,
+        ..
+    }] = live_intents.as_slice()
+    else {
+        panic!("expected startup template command to auto-submit, got {live_intents:?}");
+    };
+    assert_eq!(
+        text,
+        "Deep interview this request before implementation. Identify constraints, success criteria, risks, and the smallest safe next step.\n\nUser draft:\nthe current diff"
+    );
+    assert_eq!(launch_metadata.profile(), "build");
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_continuation_events_update_tui_state() {
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
+
+    app.ingest_event(EventEnvelopeV1 {
+        schema_version: 1,
+        event_id: "evt_cont_start".to_string(),
+        seq: 1,
+        run_id: "run_cont".to_string(),
+        mono_ms: 1,
+        ts: None,
+        actor: EventActor::new(ActorKind::User, Some("user".to_string())),
+        correlation_id: Some("continuation:cont_000001".to_string()),
+        causation_id: None,
+        stream_key: None,
+        payload: EventV1::ContinuationStarted(ContinuationStartedEvent {
+            continuation_id: "cont_000001".to_string(),
+            mode: "ralph".to_string(),
+            command: "/ralph-loop".to_string(),
+            max_iterations: 8,
+            max_wall_clock_ms: 1_800_000,
+            max_provider_calls: 32,
+            max_tool_calls: 256,
+        }),
+    });
+    app.ingest_event(EventEnvelopeV1 {
+        schema_version: 1,
+        event_id: "evt_cont_reminder".to_string(),
+        seq: 2,
+        run_id: "run_cont".to_string(),
+        mono_ms: 2,
+        ts: None,
+        actor: EventActor::new(ActorKind::Supervisor, Some("continuation".to_string())),
+        correlation_id: Some("continuation:cont_000001".to_string()),
+        causation_id: None,
+        stream_key: None,
+        payload: EventV1::ContinuationReminderQueued(ContinuationReminderQueuedEvent {
+            continuation_id: "cont_000001".to_string(),
+            iteration: 2,
+            reminder: "continue ralph loop iteration 2".to_string(),
+            reason: "session_idle".to_string(),
+        }),
+    });
+
+    let active = app
+        .active_continuation
+        .as_ref()
+        .expect("active continuation");
+    assert_eq!(active.continuation_id, "cont_000001");
+    assert_eq!(active.mode, "ralph");
+    assert_eq!(active.command, "/ralph-loop");
+    assert_eq!(active.iteration, 2);
+    assert_eq!(active.status, "reminder queued");
 }
 
 #[cfg(test)]

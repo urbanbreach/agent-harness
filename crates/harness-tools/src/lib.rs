@@ -66,7 +66,7 @@ use agent_ops::AgentOpsExecutor;
 
 mod team_ops;
 use team_ops::{
-    TeamCreateTool, TeamDeleteTool, TeamSendMessageTool, TeamShutdownApproveTool,
+    TeamCreateTool, TeamDeleteTool, TeamListTool, TeamSendMessageTool, TeamShutdownApproveTool,
     TeamShutdownRejectTool, TeamShutdownRequestTool, TeamStatusTool, TeamTaskCreateTool,
     TeamTaskGetTool, TeamTaskListTool, TeamTaskUpdateTool,
 };
@@ -84,13 +84,22 @@ mod lsp_support;
 
 mod native_tools;
 use native_tools::{
-    BackgroundOutputTool, BashTool, BatchTool, CodeSearchTool, GlobTool, GrepTool, InvalidTool,
-    ListTool, LspTool, QuestionTool, ReadTool, SkillTool, TaskTool, TodoReadTool, TodoWriteTool,
-    WebFetchTool, WebSearchTool,
+    AstGrepReplaceTool, AstGrepSearchTool, BackgroundCancelTool, BackgroundOutputTool, BashTool,
+    BatchTool, CodeSearchTool, GlobTool, GrepTool, InvalidTool, ListTool, LookAtTool, LspTool,
+    PersistentTaskCreateTool, PersistentTaskGetTool, PersistentTaskListTool,
+    PersistentTaskUpdateTool, QuestionTool, ReadTool, SessionInfoTool, SessionListTool,
+    SessionReadTool, SessionSearchTool, SkillMcpTool, SkillTool, TaskTool, TodoReadTool,
+    TodoWriteTool, WebFetchTool, WebSearchTool,
 };
 
 mod plan;
 use plan::{PlanEnterTool, PlanExitTool};
+
+mod terminal_session;
+use terminal_session::{
+    InteractiveBashTool, TerminalKillTool, TerminalListTool, TerminalResizeTool,
+    TerminalScreenshotTool, TerminalSpawnTool, TerminalWriteTool,
+};
 
 pub use harness_core::tool::canonical_tool_id_for;
 
@@ -167,7 +176,11 @@ pub fn coordinator_registry_with_mcp_and_editing(
     registry.register(Arc::new(BackgroundOutputTool::new(
         agent_ops_executor.clone(),
     )));
+    registry.register(Arc::new(BackgroundCancelTool::new(
+        agent_ops_executor.clone(),
+    )));
     registry.register(Arc::new(TeamCreateTool));
+    registry.register(Arc::new(TeamListTool));
     registry.register(Arc::new(TeamStatusTool));
     registry.register(Arc::new(TeamSendMessageTool));
     registry.register(Arc::new(TeamTaskCreateTool));
@@ -182,7 +195,7 @@ pub fn coordinator_registry_with_mcp_and_editing(
     registry.register(Arc::new(PlanExitTool));
     registry.register(Arc::new(HashlineEditTool));
     registry.register(Arc::new(ShellRunTool::new(shell_allowlist.clone())));
-    registry.register(Arc::new(BashTool::new(shell_allowlist)));
+    registry.register(Arc::new(BashTool::new(shell_allowlist.clone())));
     registry.register(Arc::new(WebFetchTool::new(network_executor.clone())));
     registry.register(Arc::new(WebSearchTool::new(network_executor.clone())));
     registry.register(Arc::new(CodeSearchTool::new(network_executor.clone())));
@@ -191,6 +204,25 @@ pub fn coordinator_registry_with_mcp_and_editing(
     registry.register(Arc::new(TodoWriteTool::new(control_plane_executor.clone())));
     registry.register(Arc::new(TodoReadTool::new(control_plane_executor.clone())));
     registry.register(Arc::new(SkillTool::new(control_plane_executor.clone())));
+    registry.register(Arc::new(SkillMcpTool::new(control_plane_executor.clone())));
+    registry.register(Arc::new(AstGrepSearchTool));
+    registry.register(Arc::new(AstGrepReplaceTool));
+    registry.register(Arc::new(SessionListTool));
+    registry.register(Arc::new(SessionReadTool));
+    registry.register(Arc::new(SessionSearchTool));
+    registry.register(Arc::new(SessionInfoTool));
+    registry.register(Arc::new(PersistentTaskCreateTool));
+    registry.register(Arc::new(PersistentTaskListTool));
+    registry.register(Arc::new(PersistentTaskGetTool));
+    registry.register(Arc::new(PersistentTaskUpdateTool));
+    registry.register(Arc::new(LookAtTool));
+    registry.register(Arc::new(InteractiveBashTool::new(shell_allowlist.clone())));
+    registry.register(Arc::new(TerminalSpawnTool::new(shell_allowlist.clone())));
+    registry.register(Arc::new(TerminalWriteTool::new(shell_allowlist.clone())));
+    registry.register(Arc::new(TerminalScreenshotTool));
+    registry.register(Arc::new(TerminalResizeTool));
+    registry.register(Arc::new(TerminalKillTool));
+    registry.register(Arc::new(TerminalListTool));
     registry.register(Arc::new(BatchTool::new(agent_ops_executor.clone())));
     registry.register(Arc::new(QuestionTool::new(control_plane_executor.clone())));
     registry.register(Arc::new(CodeLspRenameTool::new(code_lsp_rename_executor)));
@@ -353,6 +385,9 @@ mod tests {
 
         for tool_id in [
             "bash",
+            "ast_grep_replace",
+            "ast_grep_search",
+            "background_cancel",
             "background_output",
             "batch",
             "codesearch",
@@ -364,13 +399,42 @@ mod tests {
             "grep",
             "invalid",
             "list",
+            "look_at",
             "lsp",
             "question",
             "read",
             "skill",
+            "skill_mcp",
+            "session_info",
+            "session_list",
+            "session_read",
+            "session_search",
+            "interactive_bash",
+            "terminal_spawn",
+            "terminal_write",
+            "terminal_screenshot",
+            "terminal_resize",
+            "terminal_kill",
+            "terminal_list",
             "todoread",
             "todowrite",
             "task",
+            "task_create",
+            "task_get",
+            "task_list",
+            "task_update",
+            "team_create",
+            "team_delete",
+            "team_list",
+            "team_send_message",
+            "team_shutdown_approve",
+            "team_shutdown_reject",
+            "team_shutdown_request",
+            "team_status",
+            "team_task_create",
+            "team_task_get",
+            "team_task_list",
+            "team_task_update",
             "webfetch",
             "websearch",
         ] {

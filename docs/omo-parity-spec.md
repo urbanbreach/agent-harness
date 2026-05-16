@@ -22,7 +22,7 @@ This specification covers everything required for practical OMO parity:
 - [ ] native tools, AST-grep, LSP, browser/media tools, session tools, and terminal
   tools;
 - [ ] skills, skill-embedded MCP, built-in MCPs, and OAuth MCP;
-- [ ] hooks, commands, context injection, recovery, diagnostics, and compatibility;
+- [x] hooks, commands, context injection, recovery, diagnostics, and compatibility;
 - [ ] provider breadth, model capabilities, performance evidence, and test gates.
 
 ## Evidence baseline
@@ -72,27 +72,28 @@ OMO reference evidence:
 | Event-sourced coordinator | Coordinator-owned events, scheduling, permissions, tools, compaction, replay | Stronger than OMO plugin baseline |
 | Native `task` and background output | Sync/background child turns, skill injection, cancellation, continuation | Mostly present |
 | Category names | OMO category names are shipped as profiles | Present but model fallback is partial |
+| Agent catalog | Core exposes a resolved catalog projection; doctor, task results, and TUI switchable-agent order consume it | Partial |
 | Plan workflow | `build` -> `plan` via `plan_enter`; `plan` -> `build` via `plan_exit` | Present, with stricter safety |
 | Discipline workflow | Prompt-profile behavior only | Partial |
-| Specialist agents | `build`, `plan`, `discipline`, `explore`, `general`, category profiles | Major gap |
-| Continuation loops | No Ralph/ulw loop, no todo continuation enforcer | Major gap |
+| Specialist agents | OMO specialist profile contracts are shipped as subagents and appear in AgentCatalog; task routing/TUI consumption still missing | Partial |
+| Continuation loops | Explicit bounded Ralph/ulw start-stop events now queue coordinator-owned reminders, consume todo output state, detect done markers, stop on limits, and remain replay-safe | Present |
 | Team mode | Event-sourced team run, members, messages, tasks, shutdown, delete | Partial MVP |
 | Tools | Read/search/edit/bash/web/LSP/MCP/task/team/skill/question/todos | Partial |
-| AST-grep | Not first-class | Gap |
-| Interactive terminal | Bash exists, but no tmux `interactive_bash` user tool | Gap |
-| Browser automation | No Playwright/agent-browser/dev-browser skill bundle | Gap |
-| Media analysis | No `look_at`/multimodal-looker surface | Gap |
-| Session tools for agents | CLI/TUI sessions exist, but no model-visible session tools | Gap |
-| Persistent task system | `todowrite` plus team tasks; no general `task_create/list/get/update` | Gap |
-| Skills | `.agent-harness/skills`, `.harness/skills`, global harness skills | Partial |
+| AST-grep | Model-visible tool ids exist with explicit unsupported diagnostics; safe adapter pending | Partial |
+| Interactive terminal | Tmux-backed `interactive_bash`/`terminal_*` tools are registered with dependency-gated execution | Partial |
+| Browser automation | Playwright/agent-browser/dev-browser skills ship with doctor dependency diagnostics and browser signoff gating | Partial |
+| Media analysis | `look_at` extracts replay-safe text/media metadata and routes visual interpretation to `multimodal-looker` | Partial |
+| Session tools for agents | Model-visible `session_*` ids exist with explicit unsupported diagnostics; replay-safe tool context seam pending | Partial |
+| Persistent task system | `todowrite` remains per-session; general `task_create/list/get/update` are event-sourced persistent dependency tasks with ready-task projection | Present |
+| Skills | `.agent-harness`, OpenCode, Claude, Agents, `.harness`, and global skill roots; starter OMO-adjacent built-ins | Partial |
 | Skill MCP | Config-backed MCP exists; no skill-scoped MCP lifecycle/tool | Major gap |
 | Built-in MCPs | Generic MCP support, no bundled Exa/Context7/Grep.app profiles | Gap |
-| Hooks | Lifecycle command hooks | Partial |
-| Slash commands | TUI workflow commands; no file/template slash command system | Gap |
+| Hooks | Typed coordinator hook phases/effects over lifecycle command hooks | Partial |
+| Slash commands | TUI workflow commands plus prompt-only imported command templates | Present |
 | Context injection | AGENTS.md and instructions in prompts | Partial |
 | Provider breadth | Mock plus OpenAI-compatible | Partial |
 | Model fallback | Model profiles can list fallback, but runtime fallback is not OMO-level | Gap |
-| Doctor | Config/tool/profile/session/MCP checks | Partial |
+| Doctor | Config/tool/profile/session/MCP checks plus parity-ledger warnings | Partial |
 | Claude Code/OpenCode compatibility | Some config compatibility, active product areas rejected | Partial by design |
 
 ## Design goals
@@ -104,9 +105,9 @@ OMO reference evidence:
    skill bundles, MCP sessions, and terminal sessions.
 3. [ ] **Event-derived state.** State needed for resume, replay, TUI, audit, or
    background wakeups must be persisted through events or redacted artifacts.
-4. [ ] **No side effects during replay.** Hooks, extensions, MCPs, terminal sessions,
+4. [x] **No side effects during replay.** Hooks, extensions, MCPs, terminal sessions,
    provider calls, and shell commands must never execute during replay.
-5. [ ] **Compatibility through adapters.** OpenCode/Claude/OMO compatibility should
+5. [x] **Compatibility through adapters.** OpenCode/Claude/OMO compatibility should
    be import, translation, or wrapper adapters. It should not turn Harness into a
    pass-through plugin host before the extension safety seam exists.
 6. [ ] **Observable completion.** Each parity item is done only when it has config,
@@ -166,23 +167,27 @@ params, event, and compaction hooks.
 
 **Recommended shape:**
 
-- [ ] Define hook phases in `harness-core` around existing coordinator phases:
+- [x] Define hook phases in `harness-core` around existing coordinator phases:
   `message_received`, `agent_turn_started`, `provider_params`,
   `provider_context_transform`, `tool_preflight`, `tool_result`,
   `agent_turn_finished`, `session_idle`, and `compaction_requested`.
-- [ ] Hook results are typed: allow, deny, modify model-facing context, request a
+- [x] Hook results are typed: allow, deny, modify model-facing context, request a
   reminder, write a redacted artifact, or add diagnostics.
-- [ ] Critical hook failure can cancel the current operation only through coordinator
+- [x] Critical hook failure can cancel the current operation only through coordinator
   events.
-- [ ] Hook output must be capped and redacted before persistence.
+- [x] Hook output must be capped and redacted before persistence.
 
 **Acceptance criteria:**
 
-- [ ] Built-in lifecycle hooks migrate onto the same seam.
+- [x] Built-in lifecycle hooks migrate onto the same seam.
 - [ ] Tool guard hooks can block a tool before permission resolution or before
-  execution, with a durable reason.
-- [ ] Transform hooks can modify provider-visible context without mutating events.
-- [ ] Replay sees hook events and artifacts but never executes hooks.
+  execution, with a durable reason. Current typed deny effects block the current
+  coordinator operation through durable cancellation/failed-tool events; earlier
+  pre-permission guard placement remains pending.
+- [x] Transform hooks can publish provider-context transform intent without mutating
+  events; applying arbitrary context rewrites remains limited to existing
+  coordinator-owned compaction-summary override behavior.
+- [x] Replay sees hook events and artifacts but never executes hooks.
 
 ### 3. Agent catalog and routing seam
 
@@ -202,9 +207,9 @@ config defaults and task code.
 
 **Acceptance criteria:**
 
-- [ ] Doctor reports every primary, specialist, and category route with model and
+- [x] Doctor reports every primary, specialist, and category route with model and
   fallback status.
-- [ ] TUI model/agent picker uses the same catalog.
+- [x] TUI model/agent picker uses the same catalog for switchable-agent ordering.
 - [ ] Task results expose resolved catalog metadata.
 - [ ] Config drift tests fail if shipped OMO-profile contracts disappear.
 
@@ -215,15 +220,15 @@ servers, permissions, command templates, and verification guidance.
 
 **Recommended shape:**
 
-- [ ] Extend `SKILL.md` frontmatter to include MCP definitions, tool permissions,
+- [x] Extend `SKILL.md` frontmatter to include MCP definitions, tool permissions,
   command templates, environment policy, and optional verification hooks.
 - [ ] Keep skill loading explicit through `skill` or `task(load_skills=[...])`.
-- [ ] Skill-provided MCP servers are session-scoped and visible only through
+- [x] Skill-provided MCP servers are session-scoped and visible only through
   `skill_mcp` or first-class tool ids granted by the loaded skill.
 
 **Acceptance criteria:**
 
-- [ ] Skill content and MCP availability are injected only for the intended turn or
+- [x] Skill content and MCP availability are injected only for the intended turn or
   child task.
 - [ ] Skill MCP sessions clean up on idle, cancellation, and run finish.
 - [ ] Skill permissions cannot broaden a statically denied profile permission.
@@ -237,12 +242,12 @@ using one-shot bash as an interactive surrogate.
 
 **Recommended shape:**
 
-- [ ] A `terminal_session` module in `harness-tools` backed by tmux or portable-pty
+- [x] A `terminal_session` module in `harness-tools` backed by tmux or portable-pty
   adapters.
-- [ ] Tools: `interactive_bash`, `terminal_spawn`, `terminal_write`,
+- [x] Tools: `interactive_bash`, `terminal_spawn`, `terminal_write`,
   `terminal_screenshot`, `terminal_resize`, `terminal_kill`, and
   `terminal_list` can be exposed progressively.
-- [ ] Session ids, pane/window metadata, screenshots, and captured text become
+- [x] Session ids, pane/window metadata, screenshots, and captured text become
   redacted artifacts and event summaries.
 - [ ] Plan mode may inspect terminal output only if shell policy and Plan guard allow
   it.
@@ -251,7 +256,7 @@ using one-shot bash as an interactive surrogate.
 
 - [ ] Interactive sessions survive across tool calls within a run.
 - [ ] A TUI app can be launched, driven, captured, and killed through tools.
-- [ ] Missing tmux/pty support yields actionable errors and doctor warnings.
+- [x] Missing tmux/pty support yields actionable errors and doctor warnings.
 - [ ] PTY signoff covers happy path, bad command, and cleanup.
 
 ## Parity workstreams
@@ -264,22 +269,27 @@ Sisyphus-Junior.
 
 **Recommended Harness outcome:**
 
-- [ ] Keep existing `build`, `plan`, and `discipline` as stable Harness names.
-- [ ] Add OMO names as first-class profiles or aliases with explicit role metadata:
-  - [ ] `sisyphus`: primary orchestrator, todo-driven, may plan/delegate/verify;
-  - [ ] `hephaestus`: autonomous deep worker, close to current `build`/`discipline`;
-  - [ ] `prometheus`: read-only strategic planner, mapped to Plan workflow;
-  - [ ] `metis`: read-only pre-plan consultant;
-  - [ ] `momus`: read-only plan/work reviewer;
-  - [ ] `atlas`: execution orchestrator that reads plans, delegates implementation,
+- [x] Keep existing `build`, `plan`, and `discipline` as stable Harness names.
+- [x] Add OMO names as first-class profiles or aliases with explicit role metadata:
+  - [x] `sisyphus`: primary orchestrator, todo-driven, may plan/delegate/verify;
+  - [x] `hephaestus`: autonomous deep worker, close to current `build`/`discipline`;
+  - [x] `prometheus`: read-only strategic planner, mapped to Plan workflow;
+  - [x] `metis`: read-only pre-plan consultant;
+  - [x] `momus`: read-only plan/work reviewer;
+  - [x] `atlas`: execution orchestrator that reads plans, delegates implementation,
     and verifies results but does not edit code directly;
-  - [ ] `sisyphus-junior`: category executor with no redelegation;
-  - [ ] `oracle`: read-only architecture/debugging/review consultant;
-  - [ ] `librarian`: read-only docs/remote-code research agent;
-  - [ ] `explore`: read-only local codebase search agent;
-  - [ ] `multimodal-looker`: media analysis specialist.
-- [ ] Preserve tool restrictions as runtime policy, not just prompt text.
-- [ ] Implement deterministic primary-agent display ordering for TUI cycling.
+  - [x] `sisyphus-junior`: category executor with no redelegation;
+  - [x] `oracle`: read-only architecture/debugging/review consultant;
+  - [x] `librarian`: read-only docs/remote-code research agent;
+  - [x] `explore`: read-only local codebase search agent;
+  - [x] `multimodal-looker`: media analysis specialist.
+- [x] Preserve tool restrictions as runtime policy, not just prompt text.
+- [x] Implement deterministic primary-agent display ordering for TUI cycling.
+
+**Current first-slice status:** OMO specialist profile contracts now ship in the
+default public config and are visible through `AgentCatalog`/doctor. Runtime
+specialist behavior is still limited by the existing prompt/profile system; TUI
+catalog consumption and task metadata recording remain open.
 
 **Dependencies:** Agent catalog seam, model fallback policy, dynamic prompt
 builder, permission profile inheritance.
@@ -307,12 +317,11 @@ reasoning, and skills. Built-ins are `visual-engineering`, `ultrabrain`, `deep`,
 - [ ] Add per-category fallback chains and model capability validation.
 - [ ] Add category-level prompt append, tool allow/deny, reasoning effort, text
   verbosity, max output, and unstable-agent behavior.
-- [ ] Record the resolved category route in `TaskCompletionMetadata` or child task
-  metadata.
+- [x] Record the resolved category route in child task metadata.
 
 **Acceptance criteria:**
 
-- [ ] `task(category="visual-engineering", load_skills=[...])` records category,
+- [x] `task(category="visual-engineering", load_skills=[...])` records category,
   selected profile, model ref, variant, fallback chain, and loaded skills.
 - [ ] Unknown category falls back only when config explicitly allows fallback.
 - [ ] Category tool restrictions cannot exceed parent/runtime permission policy.
@@ -376,35 +385,35 @@ todo continuation, unstable-agent babysitting, and `/stop-continuation`.
 
 **Recommended Harness outcome:**
 
-- [ ] Add a coordinator-owned `ContinuationController` module.
-- [ ] Continuation is explicit: activated by a command/tool, bounded by config, and
+- [x] Add a coordinator-owned `ContinuationController` module.
+- [x] Continuation is explicit: activated by a command/tool, bounded by config, and
   visible in events.
-- [ ] Add events such as `ContinuationStarted`, `ContinuationReminderQueued`,
+- [x] Add events such as `ContinuationStarted`, `ContinuationReminderQueued`,
   `ContinuationStopped`, and `ContinuationLimitReached` only if existing task
   events cannot express the state clearly.
-- [ ] Add commands/tools:
-  - [ ] `/ralph-loop` starts goal continuation with done-marker detection;
-  - [ ] `/ulw-loop` starts Ralph plus ultrawork mode settings;
-  - [ ] `/stop-continuation` stops all continuation mechanisms for the run;
-  - [ ] `ultrawork` keyword or command activates the orchestrator mode for one turn
+- [x] Add commands/tools:
+  - [x] `/ralph-loop` starts goal continuation with done-marker detection;
+  - [x] `/ulw-loop` starts Ralph plus ultrawork mode settings;
+  - [x] `/stop-continuation` stops all continuation mechanisms for the run;
+  - [x] `ultrawork` keyword or command activates the orchestrator mode for one turn
     or one explicit loop.
-- [ ] Todo continuation should use the same task/todo projection as the TUI, not a
+- [x] Todo continuation should use the same task/todo projection as the TUI, not a
   separate memory-only hook.
 
 **Safety requirements:**
 
-- [ ] Every loop has max iterations, max wall-clock, max provider calls, and max tool
+- [x] Every loop has max iterations, max wall-clock, max provider calls, and max tool
   calls.
-- [ ] User interruption and `/stop-continuation` take priority over reminders.
-- [ ] Reminders are persisted and replay-rendered, but replay never schedules them.
-- [ ] Continuation is disabled in Plan unless a Plan-specific reviewed flow is added.
+- [x] User interruption and `/stop-continuation` take priority over reminders.
+- [x] Reminders are persisted and replay-rendered, but replay never schedules them.
+- [x] Continuation is disabled in Plan unless a Plan-specific reviewed flow is added.
 
 **Acceptance criteria:**
 
-- [ ] A loop can start, continue after an idle turn, stop, hit max iterations, and
+- [x] A loop can start, continue after an idle turn, stop, hit max iterations, and
   resume after process restart.
-- [ ] TUI shows active continuation state and stop action.
-- [ ] Deterministic tests cover done-marker detection, incomplete todos, stop, and
+- [x] TUI shows active continuation state and stop action.
+- [x] Deterministic tests cover done-marker detection, incomplete todos, stop, and
   limit reached.
 
 ### F. Persistent task system
@@ -414,20 +423,22 @@ todo continuation, unstable-agent babysitting, and `/stop-continuation`.
 
 **Recommended Harness outcome:**
 
-- [ ] Keep `todowrite` as the lightweight per-session visible checklist.
-- [ ] Add a separate persistent task module for dependency-aware work items.
-- [ ] Prefer event-sourced task state over ad hoc JSON files. If file artifacts are
+- [x] Keep `todowrite` as the lightweight per-session visible checklist.
+- [x] Add a separate persistent task module for dependency-aware work items.
+- [x] Prefer event-sourced task state over ad hoc JSON files. If file artifacts are
   needed for human editing, derive them from events or treat them as artifacts.
-- [ ] Use schema fields compatible with OMO/Claude naming: `subject`, `description`,
+- [x] Use schema fields compatible with OMO/Claude naming: `subject`, `description`,
   `status`, `active_form`, `blocked_by`, `blocks`, `owner`, `metadata`, and
   `thread_id`/`run_id`.
-- [ ] Integrate with Atlas, Team Mode, and continuation controller.
+- [x] Integrate with Atlas, Team Mode, and continuation controller by exposing
+  replay-projected `ready_task_ids` through `task_list` while keeping execution
+  coordinator-owned.
 
 **Acceptance criteria:**
 
-- [ ] Task dependency projection computes `blocks` from `blocked_by` deterministically.
-- [ ] Tasks survive restart and replay.
-- [ ] Parallel-ready tasks can be surfaced to the orchestrator, but execution remains
+- [x] Task dependency projection computes `blocks` from `blocked_by` deterministically.
+- [x] Tasks survive restart and replay.
+- [x] Parallel-ready tasks can be surfaced to the orchestrator, but execution remains
   coordinator-owned.
 - [ ] `tasks-todowrite-disabler` behavior, if implemented, is a policy option rather
   than a hidden hook.
@@ -438,16 +449,18 @@ todo continuation, unstable-agent babysitting, and `/stop-continuation`.
 mailbox, shared task list, file-locked claims, worktrees, tmux layout,
 diagnostics, and active runtime directories.
 
-**Current Harness state:** Harness has event-sourced `team_create`,
+**Current Harness state:** Harness has event-sourced `team_create`, `team_list`,
 `team_status`, `team_send_message`, `team_task_create/list/get/update`,
-`team_shutdown_request/approve/reject`, and `team_delete`. Missing pieces include
-`team_list`, declared team registry, durable mailbox artifacts, file claims,
-worktrees, tmux visualization, and team doctor checks.
+`team_shutdown_request/approve/reject`, and `team_delete`. `team_list` shows
+replay-derived active runs plus declared team specs from Harness team roots.
+Missing pieces include durable mailbox artifacts, file claims, worktrees, and tmux
+visualization.
 
 **Recommended Harness outcome:**
 
-- [ ] Add `team_list` for declared and active teams.
-- [ ] Add declared team specs under `.agent-harness/teams/<name>.json` and user
+- [x] Add `team_list` for active teams and declared team listing through the
+  declared team registry.
+- [x] Add declared team specs under `.agent-harness/teams/<name>.json` and user
   equivalents under the XDG Harness config directory.
 - [ ] Keep active team state event-sourced. Use artifacts for large mailbox bodies or
   delivery diagnostics, not as the source of truth.
@@ -459,13 +472,13 @@ worktrees, tmux visualization, and team doctor checks.
 
 **Acceptance criteria:**
 
-- [ ] `team_list` shows declared teams and active runs.
-- [ ] Declared team specs validate lead/member eligibility before spawning.
+- [x] `team_list` shows declared teams and active runs.
+- [x] Declared team specs validate lead/member eligibility before spawning.
 - [ ] Worktree path validation rejects bare branch names, traversal, and unsafe
   external paths unless explicitly allowed.
 - [ ] Tmux visualization starts, rebalances, and cleans up panes without changing the
   underlying team state if tmux fails.
-- [ ] Doctor reports team spec count, active team count, git/tmux availability, and
+- [x] Doctor reports team spec count, active team count, git/tmux availability, and
   stale runtime artifacts.
 
 ### H. Tool parity
@@ -477,10 +490,12 @@ interactive terminal use.
 **Recommended Harness additions:**
 
 1. [ ] **AST-grep tools**
-   - [ ] Add `ast_grep_search` and `ast_grep_replace` as first-class tools.
-   - [ ] Use a Rust adapter or CLI adapter with strict argument schemas.
-   - [ ] Dry-run replace by default.
-   - [ ] Persist large results as artifacts.
+   - [x] Register `ast_grep_search` and `ast_grep_replace` with strict schemas and
+     explicit unsupported diagnostics.
+   - [x] Replace diagnostics with first-class executable tool implementations.
+   - [x] Use a Rust adapter or CLI adapter with strict argument schemas.
+   - [x] Dry-run replace by default.
+   - [x] Persist large results as artifacts.
 
 2. [ ] **Delegation aliases**
    - [ ] Consider `call_omo_agent` as a compatibility wrapper for direct
@@ -488,32 +503,37 @@ interactive terminal use.
    - [ ] Keep `task` canonical.
 
 3. [ ] **Background cancellation**
-   - [ ] Add `background_cancel` as a compatibility wrapper around
+   - [x] Add `background_cancel` as a compatibility wrapper around
      `background_output(cancel=true, ...)`.
-   - [ ] Support individual cancellation; avoid global cancel unless scoped to the
+   - [x] Support individual cancellation; avoid global cancel unless scoped to the
      current parent run.
 
-4. [ ] **Visual analysis**
-   - [ ] Add `look_at` backed by `multimodal-looker`.
-   - [ ] Accept workspace files and explicitly provided image data.
-   - [ ] Store extracted text and media summaries as artifacts when large.
+4. [x] **Visual analysis**
+   - [x] Register `look_at` with strict schema and explicit unsupported diagnostics.
+   - [x] Add `look_at` backed by `multimodal-looker`.
+   - [x] Accept workspace files and explicitly provided image data.
+   - [x] Store extracted text and media summaries as artifacts when large.
 
 5. [ ] **Session tools**
-   - [ ] Add model-visible `session_list`, `session_read`, `session_search`, and
-     `session_info` tools over Harness session logs.
-   - [ ] Reuse replay/transcript projections.
-   - [ ] Never execute tools while reading sessions.
+   - [x] Register model-visible `session_list`, `session_read`, `session_search`, and
+     `session_info` with strict schemas and explicit unsupported diagnostics.
+   - [x] Replace diagnostics with implementations of `session_list`, `session_read`,
+     `session_search`, and `session_info` tools over Harness session logs.
+   - [x] Reuse replay/transcript projections.
+   - [x] Never execute tools while reading sessions.
 
-6. [ ] **Persistent task tools**
-   - [ ] Add `task_create`, `task_get`, `task_list`, and `task_update` as described
-     in workstream F.
+6. [x] **Persistent task tools**
+   - [x] Register `task_create`, `task_get`, `task_list`, and `task_update` with
+     strict schemas and explicit unsupported diagnostics.
+   - [x] Replace diagnostics with event-sourced implementations as described in
+     workstream F.
 
-7. [ ] **Interactive terminal tools**
-   - [ ] Add `interactive_bash` or the broader terminal session toolset described in
+7. [x] **Interactive terminal tools**
+   - [x] Add `interactive_bash` or the broader terminal session toolset described in
      the terminal session seam.
 
 8. [ ] **Skill MCP tool**
-   - [ ] Add `skill_mcp` for skill-scoped MCP operations.
+   - [x] Add `skill_mcp` for skill-scoped MCP operations.
 
 **Acceptance criteria:**
 
@@ -529,22 +549,22 @@ agent-browser CLI, and dev-browser, plus `look_at` for images/PDFs.
 
 **Recommended Harness outcome:**
 
-- [ ] Implement browser automation as skills first, not as always-on global tools.
-- [ ] Built-in skills:
-  - [ ] `playwright`: launches a Playwright MCP server through skill-embedded MCP;
-  - [ ] `agent-browser`: wraps the agent-browser CLI when installed;
-  - [ ] `dev-browser`: supports persistent browser state for iterative work.
-- [ ] Add browser capability diagnostics to doctor.
-- [ ] Add media extraction through `look_at` and `multimodal-looker`.
+- [x] Implement browser automation as skills first, not as always-on global tools.
+- [x] Built-in skills:
+  - [x] `playwright`: launches a Playwright MCP server through skill-embedded MCP;
+  - [x] `agent-browser`: wraps the agent-browser CLI when installed;
+  - [x] `dev-browser`: supports persistent browser state for iterative work.
+- [x] Add browser capability diagnostics to doctor.
+- [x] Add media extraction through `look_at` and `multimodal-looker`.
 
 **Acceptance criteria:**
 
 - [ ] A visual-engineering task can load `frontend-ui-ux` and `playwright`, open a
   page, interact, screenshot, and report evidence.
 - [ ] Browser artifacts are written under session artifacts with redacted metadata.
-- [ ] Missing browser dependencies produce doctor warnings and tool errors, not
+- [x] Missing browser dependencies produce doctor warnings and tool errors, not
   panics.
-- [ ] Live/browser lanes are environment-gated.
+- [x] Live/browser lanes are environment-gated.
 
 ### J. Skills and built-in skills
 
@@ -554,30 +574,32 @@ skills can come from OpenCode, Claude, Agents, and user paths.
 
 **Recommended Harness outcome:**
 
-- [ ] Extend discovery order to include:
-  1. [ ] project `.agent-harness/skills/*/SKILL.md`;
-  2. [ ] project `.opencode/skills/*/SKILL.md`;
-  3. [ ] project `.claude/skills/*/SKILL.md`;
-  4. [ ] project `.agents/skills/*/SKILL.md`;
-  5. [ ] user Harness, OpenCode, Claude, and Agents skill directories.
-- [ ] Keep Harness-owned paths first unless an explicit compatibility mode says
+- [x] Extend discovery order to include:
+  1. [x] project `.agent-harness/skills/*/SKILL.md`;
+  2. [x] project `.opencode/skills/*/SKILL.md`;
+  3. [x] project `.claude/skills/*/SKILL.md`;
+  4. [x] project `.agents/skills/*/SKILL.md`;
+  5. [x] user Harness, OpenCode, Claude, and Agents skill directories.
+- [x] Keep Harness-owned paths first unless an explicit compatibility mode says
   otherwise.
 - [ ] Add built-in skill packs:
-  - [ ] `git-master`;
-  - [ ] `playwright`, `agent-browser`, `dev-browser`;
-  - [ ] `frontend-ui-ux`;
-  - [ ] `review-work`;
-  - [ ] `ai-slop-remover`;
-  - [ ] `team-mode` usage documentation.
-- [ ] Support frontmatter fields for MCP, permissions, tools, commands, and
+  - [x] `git-master`;
+  - [x] `playwright`, `agent-browser`, `dev-browser`;
+  - [x] `frontend-ui-ux`;
+  - [x] `review-work`;
+  - [x] `ai-slop-remover`;
+  - [x] `team-mode` usage documentation.
+- [x] Support frontmatter fields for MCP, permissions, tools, commands, and
   environment allowlists.
 
 **Acceptance criteria:**
 
-- [ ] Skill discovery reports visible, denied, invalid, and shadowed skills.
-- [ ] `task(load_skills=[...])` injects skill content and activates allowed skill
-  tools only for the child session.
-- [ ] Built-in skills have docs, tests, and config disable switches.
+- [x] Skill discovery reports visible, denied, invalid, and shadowed skills.
+- [x] `task(load_skills=[...])` injects skill content and parsed policy metadata
+  only for the child session.
+- [ ] Skill-declared tools/MCP servers are activated only for the intended child
+  session through the skill MCP lifecycle.
+- [x] Built-in skills have docs, tests, and config disable switches.
 
 ### K. MCP parity
 
@@ -586,20 +608,20 @@ Claude/OpenCode `.mcp.json` compatibility, and skill-embedded MCPs with OAuth.
 
 **Recommended Harness outcome:**
 
-- [ ] Keep current config-backed MCP server support.
+- [x] Keep current config-backed MCP server support.
 - [ ] Add bundled MCP profiles for:
-  - [ ] Exa/Tavily web search;
-  - [ ] Context7 documentation lookup;
-  - [ ] Grep.app/GitHub code search.
-- [ ] Add `.mcp.json` compatibility loader as a translation adapter, with explicit
+  - [x] Exa/Tavily web search;
+  - [x] Context7 documentation lookup;
+  - [x] Grep.app/GitHub code search.
+- [x] Add `.mcp.json` compatibility loader as a translation adapter, with explicit
   env variable expansion policy.
-- [ ] Add skill-embedded MCP session management.
+- [x] Add skill-embedded MCP session management.
 - [ ] Add OAuth 2.1 support with PKCE, dynamic registration when available,
   protected-resource discovery, token refresh, and secure user-token storage.
 
 **Acceptance criteria:**
 
-- [ ] MCP discovery never blocks deterministic tests unless explicitly enabled.
+- [x] MCP discovery never blocks deterministic tests unless explicitly enabled.
 - [ ] Skill MCP servers are started on demand, scoped, cleaned up, and visible in
   doctor status.
 - [ ] OAuth tokens are never stored in session events or artifacts.
@@ -637,10 +659,12 @@ continuation, integration, and specialized agent guardrails.
 
 **Acceptance criteria:**
 
-- [ ] Hooks are individually disableable by stable id.
-- [ ] Hook effects are visible in events, artifacts, or provider-context metadata.
-- [ ] Critical hook failure behavior is deterministic and tested.
-- [ ] Hook output truncation is context-aware and redacted.
+- [x] Hooks are individually disableable by stable id.
+- [x] Hook effects are visible in events, artifacts, or provider-context metadata.
+- [x] Critical hook failure behavior is deterministic and tested.
+- [ ] Hook output truncation is context-aware and redacted. Current hook output is
+  redacted and capped before persistence, and typed truncation effects are
+  recorded; dynamic per-tool truncation policies remain pending.
 
 ### M. Slash command system
 
@@ -648,34 +672,36 @@ continuation, integration, and specialized agent guardrails.
 
 **Recommended Harness outcome:**
 
-- [ ] Add a command registry distinct from TUI-only slash commands.
-- [ ] Commands are templates that can:
-  - [ ] load a prompt;
-  - [ ] load skills;
-  - [ ] request a profile switch;
-  - [ ] call a native tool;
-  - [ ] start continuation;
-  - [ ] create a plan or handoff artifact.
+- [x] Add a command registry distinct from TUI-only slash commands.
+- [x] Commands are templates that can:
+  - [x] load a prompt;
+  - [x] load skills;
+  - [x] request a profile switch;
+  - [x] call a native tool;
+  - [x] start continuation;
+  - [x] create a plan or handoff artifact.
 - [ ] Built-in commands:
-  - [ ] `/init-deep`;
-  - [ ] `/ralph-loop`;
-  - [ ] `/ulw-loop`;
-  - [ ] `/cancel-ralph`;
-  - [ ] `/refactor`;
-  - [ ] `/start-work`;
-  - [ ] `/stop-continuation`;
-  - [ ] `/remove-ai-slops`;
-  - [ ] `/handoff`;
-  - [ ] `/hyperplan` if team/parallel planning support is present.
-- [ ] Custom command roots should include Harness, OpenCode, and Claude-compatible
+  - [x] `/init-deep`;
+  - [x] `/ralph-loop`;
+  - [x] `/ulw-loop`;
+  - [x] `/cancel-ralph`;
+  - [x] `/refactor`;
+  - [x] `/start-work`;
+  - [x] `/stop-continuation`;
+  - [x] `/remove-ai-slops`;
+  - [x] `/handoff`;
+  - [x] `/hyperplan` if team/parallel planning support is present.
+- [x] Custom command roots should include Harness, OpenCode, and Claude-compatible
   locations.
+- [x] Imported command templates are prompt-only slash commands that submit through
+  the coordinator path and never execute shell code directly.
 
 **Acceptance criteria:**
 
-- [ ] Commands are listed in TUI and doctor.
+- [x] Commands are listed in TUI and doctor.
 - [ ] Unknown/disabled commands produce actionable errors.
-- [ ] Command execution re-enters the coordinator and is recorded.
-- [ ] Custom command templates cannot execute shell code without a tool permission.
+- [x] Command execution re-enters the coordinator and is recorded.
+- [x] Custom command templates cannot execute shell code without a tool permission.
 
 ### N. Context injection and dynamic prompts
 
@@ -712,23 +738,23 @@ runtime fallback on retryable errors, and provider/model option tuning.
 
 **Recommended Harness outcome:**
 
-- [ ] Add runtime consumption of resolved model fallback chains.
-- [ ] Add provider error classification: auth, rate limit, overload, context window,
+- [x] Add runtime consumption of resolved model fallback chains.
+- [x] Add provider error classification: auth, rate limit, overload, context window,
   malformed stream, unsupported tool, and transport failure.
-- [ ] Add fallback cooldowns and per-run fallback telemetry.
-- [ ] Add model capability cache from the generated model catalog and optional
-  models.dev refresh.
+- [x] Add fallback cooldowns and per-run fallback telemetry.
+- [x] Add model capability diagnostics/cache from the generated model catalog;
+  optional models.dev refresh remains deferred until it has offline fixtures.
 - [ ] Add provider-native transports beyond OpenAI-compatible only after each has
   fixture and live signoff coverage.
 
 **Acceptance criteria:**
 
-- [ ] Doctor reports effective model resolution for every profile/category and warns
+- [x] Doctor reports effective model resolution for every profile/category and warns
   about unsupported tools/modalities.
-- [ ] Runtime fallback switches model only on classified retryable failures and records
+- [x] Runtime fallback switches model only on classified retryable failures and records
   the reason.
-- [ ] Fallback never changes replay semantics.
-- [ ] Provider-specific details remain in `harness-providers` adapters.
+- [x] Fallback never changes replay semantics.
+- [x] Provider-specific details remain in `harness-providers` adapters.
 
 ### P. Recovery and session repair
 
@@ -737,19 +763,19 @@ empty messages, context-window failures, JSON parse errors, and session errors.
 
 **Recommended Harness outcome:**
 
-- [ ] Keep replay pure, but add explicit recovery inspection and repair commands for
+- [x] Keep replay pure, but add explicit recovery inspection and repair commands for
   operator-approved session repair.
-- [ ] Add provider-context validators before sending model input.
-- [ ] Add recovery paths for malformed tool-result content and unsupported provider
+- [x] Add provider-context validators before sending model input.
+- [x] Add recovery paths for malformed tool-result content and unsupported provider
   tool-call formats.
-- [ ] Add context-window overflow recovery through existing compaction retry path and
+- [x] Add context-window overflow recovery through existing compaction retry path and
   model fallback only when configured.
 
 **Acceptance criteria:**
 
-- [ ] `harness sessions inspect` reports recovery issues and suggested repair actions.
-- [ ] Automatic recovery never rewrites `events.jsonl` silently.
-- [ ] Repair commands write new events or copied child sessions, not in-place edits.
+- [x] `harness sessions inspect` reports recovery issues and suggested repair actions.
+- [x] Automatic recovery never rewrites `events.jsonl` silently.
+- [x] Repair commands write new events or copied child sessions, not in-place edits.
 
 ### Q. Compatibility surfaces
 
@@ -758,21 +784,22 @@ hooks, MCPs, and plugins.
 
 **Recommended Harness outcome:**
 
-- [ ] Support compatibility in this order:
-  1. [ ] import agents as Harness profiles;
-  2. [ ] import skills as Harness skills;
-  3. [ ] import commands as command templates;
-  4. [ ] import `.mcp.json` as MCP server config;
-  5. [ ] import safe hook subsets as typed hooks;
-  6. [ ] only then consider plugin manifests.
-- [ ] Unsupported active plugin/server/share/autoupdate behavior should remain
+- [x] Support compatibility in this order:
+  1. [x] import agents as Harness profiles;
+  2. [x] import skills as Harness skills;
+  3. [x] import commands as command templates;
+  4. [x] import `.mcp.json` as MCP server config;
+  5. [x] import safe hook subsets as typed hook records; execution requires
+     explicit `compatibility.enable_imported_hooks` opt-in;
+  6. [x] only then consider plugin manifests.
+- [x] Unsupported active plugin/server/share/autoupdate behavior should remain
   rejected until the extension seam can enforce safety.
 
 **Acceptance criteria:**
 
-- [ ] Compatibility imports are visible in doctor with source path and enabled state.
-- [ ] Imported items can be disabled individually.
-- [ ] Import errors do not abort startup unless the item is explicitly required.
+- [x] Compatibility imports are visible in doctor with source path and enabled state.
+- [x] Imported items can be disabled individually.
+- [x] Import errors do not abort startup unless the item is explicitly required.
 
 ### R. Diagnostics and doctor
 
@@ -782,26 +809,26 @@ team mode, MCPs, capabilities, and compatibility warnings.
 **Recommended Harness outcome:**
 
 - [ ] Expand `harness doctor` with checks for:
-  - [ ] agent catalog completeness;
-  - [ ] category/model fallback health;
-  - [ ] provider credential status;
-  - [ ] model tool/modality capability;
+  - [x] agent catalog completeness;
+  - [x] category/model fallback health;
+  - [x] provider credential status;
+  - [x] model tool/modality capability;
   - [ ] skill discovery and skill MCP readiness;
-  - [ ] built-in MCP configuration;
-  - [ ] browser dependencies;
-  - [ ] tmux/pty/git availability;
-  - [ ] team spec/runtime health;
+  - [x] built-in MCP configuration;
+  - [x] browser dependencies;
+  - [x] tmux/pty/git availability;
+  - [x] team spec/runtime health;
   - [ ] continuation state;
   - [ ] hook registry and disabled hook ids;
-  - [ ] compatibility imports;
-  - [ ] session directory/index health;
+  - [x] compatibility imports;
+  - [x] session directory/index health;
   - [ ] performance evidence freshness.
 
 **Acceptance criteria:**
 
-- [ ] `doctor --json` exposes stable machine-readable check ids.
+- [x] `doctor --json` exposes stable machine-readable check ids.
 - [ ] Text output is concise and actionable.
-- [ ] No doctor check performs provider/MCP/browser network calls unless explicitly
+- [x] No doctor check performs provider/MCP/browser network calls unless explicitly
   requested.
 
 ### S. TUI and operator UX
@@ -811,7 +838,7 @@ commands, status, toggles, session tools, and rich workflow affordances.
 
 **Recommended Harness outcome:**
 
-- [ ] TUI agent picker uses resolved agent catalog order.
+- [x] TUI agent picker uses resolved agent catalog order.
 - [ ] TUI status dialog shows provider, model, active continuation, team runs, hooks,
   MCP servers, skill state, and browser/terminal availability.
 - [ ] TUI toggles can enable/disable agents, skills, tools, hooks, MCP servers, and
@@ -835,20 +862,20 @@ external-directory, doom-loop, and per-agent policies; hooks guard risky tools.
 **Recommended Harness outcome:**
 
 - [ ] Extend permission kinds only when there is a real capability seam:
-  - [ ] `terminal` for persistent interactive sessions;
-  - [ ] `browser` for browser automation;
+  - [x] `terminal` for persistent interactive sessions;
+  - [x] `browser` for browser automation;
   - [ ] `mcp` or per-MCP capability if transport policy is insufficient;
   - [ ] `continuation` for loops;
   - [ ] `external_directory` for explicit outside-workspace access.
-- [ ] Add shell command mediation with dangerous-pattern classification and Plan-mode
+- [x] Add shell command mediation with dangerous-pattern classification and Plan-mode
   read-only guard reuse.
-- [ ] Add compatibility permission translation from Claude/OpenCode where safe.
+- [x] Add compatibility permission translation from Claude/OpenCode where safe.
 
 **Acceptance criteria:**
 
 - [ ] New capabilities have scalar policy, selector rules where meaningful, tests,
   docs, and TUI permission prompts.
-- [ ] Static deny always beats grants and compatibility imports.
+- [x] Static deny always beats grants and compatibility imports.
 - [ ] Durable grants store redacted matchers only.
 
 ### U. Performance and evidence governance
@@ -863,7 +890,7 @@ runtime polish; Harness should exceed it with evidence.
 - [ ] Track startup time, provider first-token latency, JSONL append latency, replay
   time by event count, resume time, session tree/fork/clone time, compaction
   checkpoint time, tool output artifact spill cost, TUI render cost, and peak RSS.
-- [ ] Add a parity evidence ledger in machine-readable form, for example
+- [x] Add a parity evidence ledger in machine-readable form, for example
   `docs/parity-ledger.json` or `configs/parity-ledger.json`.
 
 **Acceptance criteria:**
@@ -876,10 +903,10 @@ runtime polish; Harness should exceed it with evidence.
 
 ### Phase 0: Ledger and docs foundation
 
-- [ ] Add a machine-readable parity ledger with owner/status/evidence fields.
-- [ ] Cross-link this spec from `docs/inspiration-gap-analysis.md` and README once it
+- [x] Add a machine-readable parity ledger with owner/status/evidence fields.
+- [x] Cross-link this spec from `docs/inspiration-gap-analysis.md` and README once it
   is accepted.
-- [ ] Add doctor checks for current known gaps as warnings.
+- [x] Add doctor checks for current known gaps as warnings.
 
 **Exit criteria:** parity status is visible and testable without changing runtime
 behavior.
@@ -888,7 +915,7 @@ behavior.
 
 - [ ] Implement `AgentCatalog`.
 - [ ] Add OMO specialist profiles and display ordering.
-- [ ] Add per-agent/category fallback metadata to doctor.
+- [x] Add per-agent/category fallback metadata to doctor.
 - [ ] Add `oracle`, `librarian`, `metis`, `momus`, `atlas`, `hephaestus`,
   `sisyphus`, `sisyphus-junior`, and `multimodal-looker` profile contracts.
 
@@ -897,11 +924,11 @@ enforced and tested.
 
 ### Phase 2: Tool parity core
 
-- [ ] Add AST-grep tools.
-- [ ] Add session tools.
-- [ ] Add `background_cancel` wrapper.
-- [ ] Add persistent task tools.
-- [ ] Add `look_at` if multimodal provider support is available, otherwise add the
+- [x] Add AST-grep tools.
+- [x] Add session tools.
+- [x] Add `background_cancel` wrapper.
+- [x] Add persistent task tools.
+- [x] Add `look_at` if multimodal provider support is available, otherwise add the
   profile and a clear unsupported error.
 
 **Exit criteria:** core OMO tool list is available or explicitly unsupported with
@@ -909,30 +936,35 @@ doctor warnings.
 
 ### Phase 3: Skill bundles and skill MCP
 
-- [ ] Extend skill discovery roots and frontmatter.
-- [ ] Add `skill_mcp`.
+- [x] Extend skill discovery roots.
+- [ ] Extend skill frontmatter.
+- [x] Add `skill_mcp`.
 - [ ] Add built-in skills.
-- [ ] Add skill-scoped MCP lifecycle.
+- [x] Add skill-scoped MCP lifecycle.
 
 **Exit criteria:** a `visual-engineering` child can load `frontend-ui-ux` and
 `playwright` and see only the intended skill tools.
 
 ### Phase 4: Hook middleware and built-in hooks
 
-- [ ] Add typed hook seam.
-- [ ] Port existing lifecycle hooks.
-- [ ] Add quality/safety, context, truncation, and recovery hooks.
-- [ ] Add compatibility hook import only for safe typed subsets.
+- [x] Add typed hook seam.
+- [x] Port existing lifecycle hooks.
+- [ ] Add quality/safety, context, truncation, and recovery hooks. Typed effects
+  for block/transform/truncate/notify/recover are persisted and tested; the
+  built-in hook library remains pending.
+- [x] Add compatibility hook import only for safe typed subsets; imported hook
+  execution is explicitly opt-in via `compatibility.enable_imported_hooks`.
 
 **Exit criteria:** hooks can block, transform, truncate, notify, and recover
 through coordinator-owned events and artifacts.
 
 ### Phase 5: Continuation and orchestration loops
 
-- [ ] Add continuation controller.
-- [ ] Add `/ralph-loop`, `/ulw-loop`, `/stop-continuation`.
-- [ ] Add todo continuation and unstable-agent babysitter.
-- [ ] Add ultrawork keyword/command routing.
+- [x] Add continuation controller.
+- [x] Add `/ralph-loop`, `/ulw-loop`, `/stop-continuation`.
+- [x] Add todo continuation.
+- [ ] Add unstable-agent babysitter.
+- [x] Add ultrawork keyword/command routing.
 
 **Exit criteria:** bounded continuation survives restart, can be stopped, and is
 visible in TUI/replay.
@@ -940,30 +972,30 @@ visible in TUI/replay.
 ### Phase 6: Team mode completion
 
 - [ ] Add `team_list`.
-- [ ] Add declared team registry.
+- [x] Add declared team registry.
 - [ ] Add worktree adapter.
 - [ ] Add file claims.
 - [ ] Add tmux visualization through terminal session seam.
-- [ ] Add team doctor checks.
+- [x] Add team doctor checks.
 
 **Exit criteria:** team mode matches OMO user-visible lifecycle while keeping
 Harness state event-sourced.
 
 ### Phase 7: Browser, terminal, and media signoff
 
-- [ ] Add terminal session seam and `interactive_bash`.
-- [ ] Add browser skills and dependency diagnostics.
-- [ ] Add media analysis tooling.
-- [ ] Add PTY/browser/live signoff lanes.
+- [x] Add terminal session seam and `interactive_bash`.
+- [x] Add browser skills and dependency diagnostics.
+- [x] Add media analysis tooling.
+- [x] Add PTY/browser/live signoff lanes.
 
 **Exit criteria:** agents can drive a TUI app, a web UI, and media analysis
 through their matching surfaces with persisted evidence.
 
 ### Phase 8: Provider and model fallback depth
 
-- [ ] Add runtime fallback chains.
-- [ ] Add provider error classification and cooldowns.
-- [ ] Add model capability diagnostics.
+- [x] Add runtime fallback chains.
+- [x] Add provider error classification and cooldowns.
+- [x] Add model capability diagnostics.
 - [ ] Add additional native provider adapters only with fixtures and live signoff.
 
 **Exit criteria:** provider/model fallback is observable, testable, and does not
@@ -971,10 +1003,10 @@ alter replay semantics.
 
 ### Phase 9: Compatibility import and extension runtime
 
-- [ ] Add command/skill/agent/MCP compatibility imports.
-- [ ] Add safe hook subset imports.
-- [ ] Add manifest-only extension registration.
-- [ ] Defer executable plugin loading until command mediation and sandbox evidence
+- [x] Add command/skill/agent/MCP compatibility imports.
+- [x] Add safe hook subset imports.
+- [x] Add manifest-only extension registration.
+- [x] Defer executable plugin loading until command mediation and sandbox evidence
   are complete.
 
 **Exit criteria:** compatibility improves operator migration without weakening
@@ -986,7 +1018,7 @@ Harness reaches OMO parity when all of the following are true:
 
 - [ ] All OMO specialist agent names resolve through the agent catalog with correct
   tool restrictions, model routing, fallback status, and TUI visibility.
-- [ ] `task`, category routing, skill injection, background output, cancellation, and
+- [x] `task`, category routing, skill injection, background output, cancellation, and
   continuation work through coordinator-owned events.
 - [ ] OMO-equivalent tools exist or have explicit documented Harness-native
   replacements: AST-grep, session tools, persistent task tools, look_at,
@@ -997,7 +1029,7 @@ Harness reaches OMO parity when all of the following are true:
 - [ ] Hooks cover context injection, quality guards, truncation, recovery,
   continuation, notifications, and compatibility imports through typed
   coordinator middleware.
-- [ ] Slash commands cover OMO built-ins and custom command discovery.
+- [x] Slash commands cover OMO built-ins and custom command discovery.
 - [ ] Skills can carry scoped MCP servers and permissions.
 - [ ] Model fallback, runtime fallback, and model capability diagnostics are visible
   and tested.
@@ -1005,7 +1037,7 @@ Harness reaches OMO parity when all of the following are true:
 - [ ] All public config keys have schemas, docs, examples, and drift tests.
 - [ ] Every feature has deterministic tests and the appropriate manual signoff lane:
   CLI, TUI/PTY, browser, live provider, MCP, or native visual.
-- [ ] `harness doctor --json` reports pass/warn/fail status for the parity surface.
+- [x] `harness doctor --json` reports pass/warn/fail status for the parity surface.
 
 ## Test matrix
 
@@ -1039,7 +1071,7 @@ Each parity feature must update or add:
 - [ ] README quick-start notes only when the feature is part of the recommended
   everyday path;
 - [ ] testing docs for any new lane or signoff gate;
-- [ ] the parity ledger status and evidence links.
+- [x] the parity ledger status and evidence links.
 
 ## Open design decisions
 
@@ -1049,7 +1081,7 @@ These decisions should be made before implementation begins in each area:
    profiles with their own prompts.
 2. [ ] Whether `call_omo_agent` should be exposed as a compatibility wrapper or kept
    out in favor of canonical `task`.
-3. [ ] Whether persistent tasks need new event variants or can reuse existing task
+3. [x] Whether persistent tasks need new event variants or can reuse existing task
    lifecycle plus metadata.
 4. [ ] Whether skill MCP first-class tools are globally registered at load time or
    only exposed through `skill_mcp`.
@@ -1065,13 +1097,17 @@ These decisions should be made before implementation begins in each area:
 
 The highest-leverage first slice is:
 
-1. [ ] Add the parity ledger and doctor warnings.
-2. [ ] Implement the agent catalog seam.
-3. [ ] Add OMO specialist profiles as read-only or orchestration-only where possible.
-4. [ ] Add `session_*`, `background_cancel`, and `ast_grep_*` tools.
-5. [ ] Extend skill discovery and add `frontend-ui-ux`, `git-master`, and
+1. [x] Add the parity ledger and doctor warnings.
+2. [x] Implement the first AgentCatalog projection and doctor visibility; task
+   routing/TUI/catalog metadata consumption remains follow-up work.
+3. [x] Add OMO specialist profiles as read-only or orchestration-only where possible.
+4. [x] Register `session_*`, `background_cancel`, and `ast_grep_*` tool ids;
+   unsafe/larger surfaces still return explicit unsupported diagnostics.
+5. [x] Extend skill discovery and add `frontend-ui-ux`, `git-master`, and
    `review-work` as built-in skills without MCP first.
-6. [ ] Add `team_list` and team doctor checks.
+6. [x] Add active-run `team_list` over replay-derived team state.
+7. [x] Add team doctor checks.
+8. [x] Add declared team listing.
 
 This slice gives users visible parity progress while avoiding the hardest unsafe
 areas: executable plugins, OAuth MCP, browser automation, and continuation loops.

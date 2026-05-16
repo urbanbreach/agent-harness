@@ -217,6 +217,8 @@ fn worker_profile(toolset: &[&str]) -> AgentProfile {
         category: "deep".to_string(),
         model_ref: "default:deep".to_string(),
         model_ref_explicit: true,
+        fallback_model_refs: Vec::new(),
+        fallback_model_settings: Vec::new(),
         system_prompt: "deep prompt".to_string(),
         max_iters: Some(12),
         temperature: Some(0.0),
@@ -231,6 +233,8 @@ fn named_worker_profile(name: &str, toolset: &[&str]) -> AgentProfile {
         category: name.to_string(),
         model_ref: "default:deep".to_string(),
         model_ref_explicit: true,
+        fallback_model_refs: Vec::new(),
+        fallback_model_settings: Vec::new(),
         system_prompt: format!("{name} prompt"),
         max_iters: Some(12),
         temperature: Some(0.0),
@@ -410,6 +414,18 @@ async fn foreground_task_waits_for_child_agent_turn_after_child_tool_result() {
         output.pointer("/child_tool_call_counts/requested"),
         Some(&json!(1))
     );
+    assert_eq!(
+        output.pointer("/route/resolved_profile"),
+        Some(&json!("general"))
+    );
+    assert_eq!(
+        output.pointer("/route/resolved_catalog_role"),
+        Some(&json!("specialist"))
+    );
+    assert_eq!(
+        output.pointer("/runtime/catalog_role"),
+        Some(&json!("specialist"))
+    );
 
     let child_request_id = output
         .get("child_request_id")
@@ -431,7 +447,7 @@ async fn foreground_task_waits_for_child_agent_turn_after_child_tool_result() {
             _ => None,
         })
         .expect("child tool task completion");
-    let child_agent_finish_seq = events
+    let (child_agent_finish_seq, child_route) = events
         .iter()
         .find_map(|event| match &event.payload {
             EventV1::TaskCompleted(data)
@@ -442,11 +458,23 @@ async fn foreground_task_waits_for_child_agent_turn_after_child_tool_result() {
                         .and_then(|metadata| metadata.task_scope)
                         == Some(TaskTerminalScope::AgentTurn) =>
             {
-                Some(event.seq)
+                Some((
+                    event.seq,
+                    data.metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.route.clone())
+                        .expect("child route metadata"),
+                ))
             }
             _ => None,
         })
         .expect("child agent task completion");
+    assert_eq!(child_route.resolved_profile.as_deref(), Some("general"));
+    assert_eq!(
+        child_route.resolved_catalog_role.as_deref(),
+        Some("specialist")
+    );
+    assert_eq!(child_route.model_ref.as_deref(), Some("default:deep"));
     let parent_task_tool_finish_seq = events
         .iter()
         .find_map(|event| match &event.payload {
@@ -1074,6 +1102,12 @@ async fn task_subagent_type_selects_explore_and_general_profiles() {
         assert_eq!(finished.status, ToolCallStatus::Succeeded);
         let output = finished.output_json.expect("task structured output");
         assert_eq!(output["profile"], json!(profile));
+        assert_eq!(output["route"]["requested_profile"], json!(profile));
+        assert_eq!(output["route"]["requested_category"], Value::Null);
+        assert_eq!(output["route"]["resolved_profile"], json!(profile));
+        assert_eq!(output["route"]["resolved_category"], json!(profile));
+        assert_eq!(output["route"]["explicit_subagent"], json!(true));
+        assert_eq!(output["route"]["category_fallback_applied"], json!(false));
         assert_eq!(output["runtime"]["profile"], json!(profile));
         assert_eq!(output["runtime"]["category"], json!(profile));
         assert_eq!(output["effective_model_ref"], json!("default:deep"));
@@ -1127,6 +1161,11 @@ async fn task_subagent_type_wins_when_category_hint_is_also_present() {
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
     let output = finished.output_json.expect("task structured output");
     assert_eq!(output["profile"], json!("general"));
+    assert_eq!(output["category"], Value::Null);
+    assert_eq!(output["route"]["requested_profile"], json!("general"));
+    assert_eq!(output["route"]["requested_category"], Value::Null);
+    assert_eq!(output["route"]["resolved_profile"], json!("general"));
+    assert_eq!(output["route"]["explicit_subagent"], json!(true));
     let child_session_id = output["child_session_id"]
         .as_str()
         .expect("child session id");
@@ -1185,7 +1224,7 @@ async fn worker_without_task_tool_cannot_redelegate() {
 }
 
 #[tokio::test]
-async fn task_category_without_matching_profile_falls_back_to_general() {
+async fn task_category_without_matching_profile_is_rejected_without_implicit_fallback() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
 
@@ -1198,7 +1237,7 @@ async fn task_category_without_matching_profile_falls_back_to_general() {
             "task",
             json!({
                 "category": "quick",
-                "description": "Category fallback child",
+                "description": "Unknown category child",
                 "prompt": "Return a short answer",
                 "run_in_background": true,
                 "load_skills": []
@@ -1210,17 +1249,15 @@ async fn task_category_without_matching_profile_falls_back_to_general() {
 
     let events = read_events(&run.events_path);
     let finished = find_finished(&events, &tool_call_id);
-    assert_eq!(finished.status, ToolCallStatus::Succeeded);
-    let output = finished.output_json.expect("task structured output");
-    assert_eq!(output["profile"], json!("general"));
-    let child_session_id = output["child_session_id"]
-        .as_str()
-        .expect("child session id");
-    assert!(events.iter().any(|event| matches!(
+    assert_eq!(finished.status, ToolCallStatus::Failed);
+    assert!(finished
+        .output_summary
+        .as_deref()
+        .expect("output summary")
+        .contains("Unknown category `quick`"));
+    assert!(!events.iter().any(|event| matches!(
         &event.payload,
-        EventV1::AgentSpawned(payload)
-            if payload.agent_id == child_session_id
-                && payload.profile == "general"
+        EventV1::AgentSpawned(payload) if payload.profile == "general"
     )));
 }
 
@@ -2338,7 +2375,7 @@ async fn task_tool_injects_loaded_skill_content_into_child_prompt() {
     fs::create_dir_all(&skill_dir).expect("skill dir");
     fs::write(
         skill_dir.join("SKILL.md"),
-        "---\nname: task-skill\ndescription: Task skill description\n---\n\nTask skill body marker.\n",
+        "---\nname: task-skill\ndescription: Task skill description\ntools: [read]\ncommands:\n  - cargo test -p harness-tools --test skill_load_discovery\nenvironment:\n  allow:\n    - CARGO_*\npermissions:\n  read: allow\n---\n\nTask skill body marker.\n",
     )
     .expect("write skill");
     let _cwd = CurrentDirGuard::set(&workspace);
@@ -2368,6 +2405,14 @@ async fn task_tool_injects_loaded_skill_content_into_child_prompt() {
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
     let output = finished.output_json.expect("task structured output");
     assert_eq!(output["loaded_skills"][0]["name"], json!("task-skill"));
+    assert_eq!(
+        output["loaded_skills"][0]["policy"]["tools"],
+        json!(["read"])
+    );
+    assert_eq!(
+        output["loaded_skills"][0]["policy"]["environment"]["allow"],
+        json!(["CARGO_*"])
+    );
     assert_eq!(output["load_skills"], json!(["task-skill"]));
     assert!(output["next_actions"]
         .as_array()
@@ -2394,6 +2439,8 @@ async fn task_tool_injects_loaded_skill_content_into_child_prompt() {
     assert!(prompt.contains("Task skill description"));
     assert!(prompt.contains("Task skill body marker."));
     assert!(prompt.contains("Base directory for this skill: file://"));
+    assert!(prompt.contains("<skill_policy name=\"task-skill\">"));
+    assert!(prompt.contains("\"tools\": ["));
     assert!(prompt.contains("Use the injected skill"));
 }
 

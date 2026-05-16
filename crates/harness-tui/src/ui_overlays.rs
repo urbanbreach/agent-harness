@@ -123,17 +123,24 @@ struct StatusDialogRow {
 }
 
 fn status_dialog_body(app: &AppState, theme: &Theme) -> Text<'static> {
-    status_dialog_body_from_rows(status_dialog_mcp_rows(), status_dialog_lsp_rows(app), theme)
+    status_dialog_body_from_rows(
+        status_dialog_mcp_rows(),
+        status_dialog_lsp_rows(app),
+        status_dialog_continuation_rows(app),
+        theme,
+    )
 }
 
 fn status_dialog_body_from_rows(
     mcp_rows: Vec<StatusDialogRow>,
     lsp_rows: Vec<StatusDialogRow>,
+    continuation_rows: Vec<StatusDialogRow>,
     theme: &Theme,
 ) -> Text<'static> {
     let mut lines = Vec::new();
     append_status_dialog_mcp_section(&mut lines, mcp_rows, theme);
     append_status_dialog_lsp_section(&mut lines, lsp_rows, theme);
+    append_status_dialog_continuation_section(&mut lines, continuation_rows, theme);
     append_status_dialog_formatters_section(&mut lines, theme);
     append_status_dialog_plugins_section(&mut lines, theme);
     Text::from(lines)
@@ -175,6 +182,22 @@ fn append_status_dialog_lsp_section(
         format!("{} LSP Servers", rows.len()),
         theme,
     ));
+    append_status_dialog_rows(lines, rows, theme);
+    lines.push(Line::default());
+}
+
+fn append_status_dialog_continuation_section(
+    lines: &mut Vec<Line<'static>>,
+    rows: Vec<StatusDialogRow>,
+    theme: &Theme,
+) {
+    if rows.is_empty() {
+        lines.push(status_dialog_plain_line("Continuation: inactive", theme));
+        lines.push(Line::default());
+        return;
+    }
+
+    lines.push(status_dialog_plain_line("Continuation", theme));
     append_status_dialog_rows(lines, rows, theme);
     lines.push(Line::default());
 }
@@ -358,6 +381,28 @@ pub(crate) fn exact_test_status_dialog_mcp_rows_match_harness_states() {
 }
 
 #[cfg(test)]
+pub(crate) fn exact_test_status_dialog_continuation_rows_show_active_loop() {
+    let mut app = AppState::new_live(Some(std::path::PathBuf::from("/tmp/session")), false, None);
+    app.active_continuation = Some(crate::app::ContinuationDisplayState {
+        continuation_id: "cont_000001".to_string(),
+        mode: "ultrawork".to_string(),
+        command: "/ulw-loop".to_string(),
+        iteration: 3,
+        status: "reminder queued".to_string(),
+    });
+
+    let rows = status_dialog_continuation_rows(&app);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].name, "ultrawork via /ulw-loop");
+    assert_eq!(
+        rows[0].suffix.as_deref(),
+        Some("reminder queued · iteration 3")
+    );
+    assert_eq!(rows[0].tone, StatusDialogTone::Success);
+    assert!(rows[0].enabled);
+}
+
+#[cfg(test)]
 pub(crate) fn exact_test_status_dialog_render_snapshot_covers_harness_sections() {
     let theme = Theme::default();
     let mcp_rows = vec![
@@ -405,7 +450,7 @@ pub(crate) fn exact_test_status_dialog_render_snapshot_covers_harness_sections()
                 frame,
                 &theme,
                 chunks[1],
-                status_dialog_body_from_rows(mcp_rows, lsp_rows, &theme),
+                status_dialog_body_from_rows(mcp_rows, lsp_rows, Vec::new(), &theme),
             );
         })
         .expect("draw status dialog");
@@ -455,6 +500,21 @@ fn status_dialog_lsp_rows(app: &AppState) -> Vec<StatusDialogRow> {
         }
     }
     rows.into_values().collect()
+}
+
+fn status_dialog_continuation_rows(app: &AppState) -> Vec<StatusDialogRow> {
+    let Some(active) = app.active_continuation.as_ref() else {
+        return Vec::new();
+    };
+    vec![StatusDialogRow {
+        name: format!("{} via {}", active.mode, active.command),
+        suffix: Some(format!(
+            "{} · iteration {}",
+            active.status, active.iteration
+        )),
+        tone: StatusDialogTone::Success,
+        enabled: true,
+    }]
 }
 
 fn status_dialog_lsp_server_name(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
@@ -738,7 +798,7 @@ fn render_slash_commands_list(frame: &mut Frame, app: &AppState, theme: &Theme, 
         frame.render_widget(
             Paragraph::new(slash_command_row(
                 command,
-                crate::app::slash_command_description(command),
+                app.slash_command_description(command),
                 is_selected,
                 theme,
                 row_area.width,
@@ -904,6 +964,7 @@ fn render_session_history_overlay(
     let content_width = overlay.width.saturating_sub(8);
     let header = Rect::new(content_x, overlay.y.saturating_add(1), content_width, 1);
     let input = Rect::new(content_x, overlay.y.saturating_add(3), content_width, 1);
+    let scope = Rect::new(content_x, overlay.y.saturating_add(4), content_width, 1);
     let actions = Rect::new(
         content_x,
         overlay.y.saturating_add(overlay.height.saturating_sub(2)),
@@ -921,8 +982,33 @@ fn render_session_history_overlay(
 
     render_command_palette_header(frame, theme, header, title);
     render_command_palette_input(frame, app, theme, input);
+    render_session_history_scope(frame, app, theme, scope);
     render_session_history_list(frame, app, theme, list);
     render_session_history_actions(frame, theme, actions);
+}
+
+fn render_session_history_scope(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
+    if area.width == 0 {
+        return;
+    }
+
+    let scope = match app.startup_launcher_action {
+        crate::app::StartupLauncherAction::ContinueSession => "Interactive histories",
+        crate::app::StartupLauncherAction::ReplaySession => {
+            "Read-only replays · interactive and prompt runs stay available"
+        }
+        crate::app::StartupLauncherAction::NewSession => "Saved sessions",
+    };
+    frame.render_widget(
+        Paragraph::new(truncate_plain_text(scope, usize::from(area.width)))
+            .style(
+                Style::default()
+                    .fg(ui_chrome::command_palette_muted(theme))
+                    .bg(ui_chrome::command_palette_surface(theme)),
+            )
+            .alignment(Alignment::Left),
+        area,
+    );
 }
 
 fn render_lineage_browser_overlay(

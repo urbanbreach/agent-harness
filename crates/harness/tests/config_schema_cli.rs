@@ -6,10 +6,11 @@ use std::sync::{Mutex, OnceLock};
 
 use harness_core::config::{
     harness_schema_pretty_json, harness_tui_schema_pretty_json, load_config_from_file,
-    load_config_from_str, AgentMode, OpenAiApiMode, PermissionMode, ProviderConfig,
-    PublicRuntimeConfig, PublicTuiConfig,
+    load_config_from_str, AgentMode, CompatibilityImportKind, CompatibilityImportState,
+    McpServerConfig, OpenAiApiMode, PermissionMode, ProviderConfig, PublicRuntimeConfig,
+    PublicTuiConfig,
 };
-use serde_json::Value;
+use serde_json::{json, Value};
 use tempfile::tempdir;
 
 mod common;
@@ -669,13 +670,16 @@ fn doctor_cli_reports_shipped_orchestration_health() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("doctor ok:"));
+    assert!(stdout.contains("doctor ok with warnings:"));
     assert!(stdout.contains("provider_credentials"));
     assert!(stdout.contains("model_references"));
     assert!(stdout.contains("workflow_profiles"));
     assert!(stdout.contains("category_routes"));
     assert!(stdout.contains("discipline"));
     assert!(stdout.contains("visual-engineering"));
+    assert!(stdout.contains("parity_ledger"));
+    assert!(stdout.contains("omo_parity_gaps"));
+    assert!(stdout.contains("team_mode"));
 }
 
 #[test]
@@ -715,6 +719,34 @@ fn doctor_cli_emits_json_report() {
         .expect("checks array")
         .iter()
         .any(|check| { check["name"] == "category_routes" && check["status"] == "pass" }));
+    let agent_catalog = report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .find(|check| check["id"] == "agent_catalog")
+        .expect("agent catalog check");
+    let catalog_entries = agent_catalog["details"]["entries"]
+        .as_array()
+        .expect("agent catalog entries");
+    let oracle = catalog_entries
+        .iter()
+        .find(|entry| entry["name"] == "oracle")
+        .expect("oracle catalog entry");
+    assert_eq!(oracle["role"], "specialist");
+    assert_eq!(oracle["permissions"]["edit"], "deny");
+    assert!(oracle["tools"]
+        .as_array()
+        .expect("oracle tools")
+        .contains(&json!("read")));
+    let visual_engineering = catalog_entries
+        .iter()
+        .find(|entry| entry["name"] == "visual-engineering")
+        .expect("visual-engineering catalog entry");
+    assert_eq!(visual_engineering["role"], "category");
+    assert_eq!(
+        visual_engineering["category_binding"],
+        json!("visual-engineering")
+    );
     assert!(report["checks"]
         .as_array()
         .expect("checks array")
@@ -725,6 +757,93 @@ fn doctor_cli_emits_json_report() {
         .expect("checks array")
         .iter()
         .any(|check| { check["name"] == "model_references" && check["status"] == "pass" }));
+    assert!(report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .all(|check| check["id"].as_str().is_some_and(|id| !id.is_empty())));
+    assert!(report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .any(|check| { check["id"] == "parity_ledger" && check["status"] == "pass" }));
+    assert!(report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .any(|check| { check["id"] == "team_mode" }));
+    assert!(report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .any(|check| { check["id"] == "command_registry" && check["status"] == "pass" }));
+    assert!(report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .any(|check| { check["id"] == "omo_parity_gaps" && check["status"] == "warn" }));
+}
+
+#[test]
+fn doctor_cli_reports_malformed_team_spec_json() {
+    let temp = tempdir().expect("tempdir");
+    fs::create_dir_all(temp.path().join(".agent-harness/teams")).expect("create team specs");
+    let config_path = temp.path().join("harness.jsonc");
+    fs::write(
+        &config_path,
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              baseURL: "http://127.0.0.1:8317/v1",
+              apiKey: "DUMMY",
+              models: {
+                "gpt-5.4-mini": { name: "GPT-5.4 mini" },
+              },
+            },
+          },
+          model: "default/gpt-5.4-mini",
+          permission: "ask",
+        }
+        "#,
+    )
+    .expect("write config");
+    fs::write(
+        temp.path().join(".agent-harness/teams/broken.json"),
+        "{ not valid json",
+    )
+    .expect("write malformed team spec");
+
+    let output = harness_command()
+        .current_dir(temp.path())
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "doctor",
+            "--json",
+        ])
+        .output()
+        .expect("run harness doctor with malformed team spec");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).expect("doctor json report");
+    let team_mode = report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .find(|check| check["id"] == "team_mode")
+        .expect("team_mode check");
+    assert_eq!(team_mode["status"], "warn");
+    let message = team_mode["message"].as_str().expect("message");
+    assert!(message.contains("1 invalid"));
+    assert!(message.contains("broken.json"));
+    assert!(message.contains("invalid JSON"));
 }
 
 #[test]
@@ -1336,8 +1455,8 @@ fn config_validate_cli_rejects_unsupported_upstream_top_level_keys() {
         );
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(
-            stderr.contains("unsupported active OpenCode config keys:"),
-            "unsupported key {key} stderr did not mention unsupported active OpenCode keys:\n{stderr}"
+            stderr.contains("unsupported active upstream config keys:"),
+            "unsupported key {key} stderr did not mention unsupported active upstream keys:\n{stderr}"
         );
         assert!(
             stderr.contains(&format!("`{key}`")),
@@ -1347,7 +1466,7 @@ fn config_validate_cli_rejects_unsupported_upstream_top_level_keys() {
 }
 
 #[test]
-fn opencode_config_shape_accepts_subagents_and_safe_inert_keys() {
+fn upstream_config_shape_accepts_subagents_and_safe_inert_keys() {
     let parsed = load_config_from_str(
         r#"
         {
@@ -1412,7 +1531,7 @@ fn opencode_config_shape_accepts_subagents_and_safe_inert_keys() {
         }
         "#,
     )
-    .expect("OpenCode-compatible config shape should parse");
+    .expect("upstream-compatible config shape should parse");
 
     assert!(parsed.agents.contains_key("build"));
     assert_eq!(
@@ -1598,6 +1717,7 @@ fn public_runtime_config_accepts_top_level_skills() {
         {
           skills: {
             walkToGitRoot: false,
+            disabledSkills: ["legacy-internal"],
             permissions: {
               "*": "allow"
             }
@@ -1608,10 +1728,881 @@ fn public_runtime_config_accepts_top_level_skills() {
     .expect("parse runtime config with top-level skills");
 
     assert!(!parsed.skills.walk_to_git_root);
+    assert!(parsed.skills.disabled_skills.contains("legacy-internal"));
     assert_eq!(
         parsed.skills.permissions.get("*"),
         Some(&PermissionMode::Allow)
     );
+}
+
+#[test]
+fn compatibility_disabled_shortcuts_merge_with_camel_case_aliases() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.jsonc");
+    let mut config = canonical_runtime_config();
+    config["compatibility"] = json!({
+        "disabledAgents": ["oracle"],
+        "disabledSkills": ["legacy-skill"],
+        "disabledCommands": ["legacy-command"],
+        "disabledMcps": ["legacy-mcp"],
+        "disabledHooks": ["legacy-hook"],
+        "disabledExtensions": ["legacy-extension"]
+    });
+    config["disabled_agents"] = json!(["librarian"]);
+    config["disabled_skills"] = json!(["local-skill"]);
+    config["disabled_commands"] = json!(["local-command"]);
+    config["disabled_mcp_servers"] = json!(["local-mcp"]);
+    config["disabled_mcps"] = json!(["alias-mcp"]);
+    config["disabled_hooks"] = json!(["local-hook"]);
+    config["disabled_extensions"] = json!(["local-extension"]);
+    write_config(&config_path, &config);
+
+    let parsed = load_config_from_file(&config_path).expect("merged aliases parse");
+
+    assert!(parsed.compatibility.disabled_agents.contains("oracle"));
+    assert!(parsed.compatibility.disabled_agents.contains("librarian"));
+    assert!(parsed
+        .compatibility
+        .disabled_skills
+        .contains("legacy-skill"));
+    assert!(parsed.compatibility.disabled_skills.contains("local-skill"));
+    assert!(parsed
+        .compatibility
+        .disabled_commands
+        .contains("legacy-command"));
+    assert!(parsed
+        .compatibility
+        .disabled_commands
+        .contains("local-command"));
+    assert!(parsed
+        .compatibility
+        .disabled_mcp_servers
+        .contains("legacy-mcp"));
+    assert!(parsed
+        .compatibility
+        .disabled_mcp_servers
+        .contains("local-mcp"));
+    assert!(parsed
+        .compatibility
+        .disabled_mcp_servers
+        .contains("alias-mcp"));
+    assert!(parsed.compatibility.disabled_hooks.contains("legacy-hook"));
+    assert!(parsed.compatibility.disabled_hooks.contains("local-hook"));
+    assert!(parsed
+        .compatibility
+        .disabled_extensions
+        .contains("legacy-extension"));
+    assert!(parsed
+        .compatibility
+        .disabled_extensions
+        .contains("local-extension"));
+}
+
+#[test]
+fn hooks_and_skills_disabled_shortcuts_merge_with_camel_case_aliases() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.jsonc");
+    let mut config = canonical_runtime_config();
+    config["hooks"] = json!({ "disabledHooks": ["hook-a"] });
+    config["skills"] = json!({ "disabledSkills": ["skill-a"] });
+    config["disabled_hooks"] = json!(["hook-b"]);
+    config["disabled_skills"] = json!(["skill-b"]);
+    write_config(&config_path, &config);
+
+    let parsed = load_config_from_file(&config_path).expect("merged aliases parse");
+
+    assert!(parsed.hooks.disabled_hooks.contains("hook-a"));
+    assert!(parsed.hooks.disabled_hooks.contains("hook-b"));
+    assert!(parsed.skills.disabled_skills.contains("skill-a"));
+    assert!(parsed.skills.disabled_skills.contains("skill-b"));
+}
+
+#[test]
+fn mcp_json_compatibility_file_imports_servers_without_env_expansion() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.jsonc");
+    fs::write(
+        &config_path,
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              baseURL: "http://127.0.0.1:1/v1",
+              apiKey: "DUMMY",
+              models: { "gpt-5.4-mini": { name: "GPT-5.4 Mini" } }
+            }
+          },
+          model: "default:gpt-5.4-mini"
+        }
+        "#,
+    )
+    .expect("write config");
+    fs::write(
+        temp.path().join(".mcp.json"),
+        r#"
+        {
+          "mcpServers": {
+            "docs": {
+              "command": "docs-mcp",
+              "args": ["serve"],
+              "env": { "DOCS_TOKEN": "${DOCS_TOKEN}" }
+            },
+            "search": {
+              "url": "https://mcp.example.test/mcp",
+              "enabled": false
+            }
+          }
+        }
+        "#,
+    )
+    .expect("write .mcp.json");
+
+    let parsed = load_config_from_file(&config_path).expect("load config with .mcp.json");
+    let docs = parsed
+        .integrations
+        .mcp
+        .servers
+        .get("docs")
+        .expect("docs mcp server");
+    match docs {
+        McpServerConfig::Stdio { command, env, .. } => {
+            assert_eq!(command, &vec!["docs-mcp".to_string(), "serve".to_string()]);
+            assert_eq!(env.get("DOCS_TOKEN"), Some(&"${DOCS_TOKEN}".to_string()));
+        }
+        other => panic!("expected stdio mcp server, got {other:?}"),
+    }
+    let search = parsed
+        .integrations
+        .mcp
+        .servers
+        .get("search")
+        .expect("search mcp server");
+    match search {
+        McpServerConfig::Http {
+            endpoint, enabled, ..
+        } => {
+            assert_eq!(endpoint, "https://mcp.example.test/mcp");
+            assert!(!enabled);
+        }
+        other => panic!("expected http mcp server, got {other:?}"),
+    }
+}
+
+#[test]
+fn mcp_json_compatibility_searches_project_root_when_config_is_nested() {
+    let temp = tempdir().expect("tempdir");
+    let config_dir = temp.path().join("configs");
+    fs::create_dir_all(&config_dir).expect("create config dir");
+    let config_path = config_dir.join("harness.jsonc");
+    fs::write(
+        &config_path,
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              baseURL: "http://127.0.0.1:1/v1",
+              apiKey: "DUMMY",
+              models: { "gpt-5.4-mini": { name: "GPT-5.4 Mini" } }
+            }
+          },
+          model: "default:gpt-5.4-mini"
+        }
+        "#,
+    )
+    .expect("write nested config");
+    fs::write(
+        temp.path().join(".mcp.json"),
+        r#"{ "mcpServers": { "project_docs": { "command": "project-docs-mcp" } } }"#,
+    )
+    .expect("write project root .mcp.json");
+
+    let parsed =
+        load_config_from_file(&config_path).expect("load config with project-root .mcp.json");
+
+    assert!(parsed.integrations.mcp.servers.contains_key("project_docs"));
+}
+
+#[test]
+fn compatibility_imports_agents_commands_hooks_manifests_and_disabled_items() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.jsonc");
+    fs::write(
+        &config_path,
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              baseURL: "http://127.0.0.1:1/v1",
+              apiKey: "DUMMY",
+              models: { "gpt-5.4-mini": { name: "GPT-5.4 Mini" } }
+            }
+          },
+          model: "default:gpt-5.4-mini",
+          disabled_agents: ["legacy-disabled"],
+          disabled_commands: ["disabled-command"],
+          disabled_hooks: ["compat:PostToolUse:claude-settings-json:0"],
+          disabled_extensions: ["demo-extension"],
+          disabled_mcps: ["disabled_mcp"]
+        }
+        "#,
+    )
+    .expect("write config");
+    fs::create_dir_all(temp.path().join(".opencode/agents")).expect("agent dir");
+    fs::write(
+        temp.path().join(".opencode/agents/legacy.md"),
+        "---\n{ description: \"Legacy agent\" }\n---\nLegacy prompt\n",
+    )
+    .expect("write agent");
+    fs::write(
+        temp.path().join(".opencode/agents/legacy-disabled.md"),
+        "---\n{ description: \"Disabled legacy agent\" }\n---\nDisabled prompt\n",
+    )
+    .expect("write disabled agent");
+    fs::create_dir_all(temp.path().join(".opencode/command")).expect("command dir");
+    fs::write(
+        temp.path().join(".opencode/command/review.md"),
+        "# Review\nReview {{args}} carefully.\n",
+    )
+    .expect("write command");
+    fs::write(
+        temp.path().join(".opencode/command/disabled-command.md"),
+        "Disabled command.\n",
+    )
+    .expect("write disabled command");
+    fs::create_dir_all(temp.path().join(".agent-harness/commands")).expect("harness command dir");
+    fs::write(
+        temp.path().join(".agent-harness/commands/plan.md"),
+        "# Plan\nPlan from the current context.\n",
+    )
+    .expect("write harness command");
+    fs::create_dir_all(temp.path().join(".opencode/skills/imported")).expect("skill dir");
+    fs::write(
+        temp.path().join(".opencode/skills/imported/SKILL.md"),
+        "---\nname: imported\n---\nSkill body\n",
+    )
+    .expect("write skill");
+    fs::create_dir_all(temp.path().join(".claude")).expect("claude dir");
+    fs::write(
+        temp.path().join(".claude/settings.json"),
+        r#"{ "hooks": { "PostToolUse": [{ "command": ["echo", "ok"] }] } }"#,
+    )
+    .expect("write hooks");
+    fs::write(
+        temp.path().join(".mcp.json"),
+        r#"{ "mcpServers": { "disabled_mcp": { "command": "demo-mcp" } } }"#,
+    )
+    .expect("write mcp");
+    fs::create_dir_all(temp.path().join(".codex-plugin")).expect("manifest dir");
+    fs::write(
+        temp.path().join(".codex-plugin/plugin.json"),
+        r#"{ "id": "demo-extension", "name": "Demo", "version": "1.0.0" }"#,
+    )
+    .expect("write manifest");
+
+    let parsed = load_config_from_file(&config_path).expect("compat config");
+    assert!(parsed.agents.contains_key("legacy"));
+    assert!(!parsed.agents.contains_key("legacy-disabled"));
+    assert!(parsed
+        .compatibility
+        .command_templates
+        .contains_key("review"));
+    assert!(parsed.compatibility.command_templates.contains_key("plan"));
+    assert!(!parsed
+        .compatibility
+        .command_templates
+        .contains_key("disabled-command"));
+    assert_eq!(parsed.hooks.lifecycle.len(), 0);
+    assert!(
+        !parsed
+            .compatibility
+            .extension_manifests
+            .get("demo-extension")
+            .expect("manifest")
+            .enabled
+    );
+    assert!(parsed
+        .compatibility
+        .imports
+        .iter()
+        .any(|item| item.name == "legacy" && item.enabled));
+    assert!(parsed
+        .compatibility
+        .imports
+        .iter()
+        .any(|item| item.name == "legacy-disabled" && !item.enabled));
+    assert!(parsed
+        .integrations
+        .mcp
+        .servers
+        .get("disabled_mcp")
+        .is_some_and(|server| !server.enabled()));
+}
+
+#[test]
+fn compatibility_command_import_preserves_first_root_precedence() {
+    let temp = tempdir().expect("tempdir");
+    let nested = temp.path().join("nested");
+    fs::create_dir_all(&nested).expect("nested dir");
+    let config_path = nested.join("harness.jsonc");
+    fs::write(
+        &config_path,
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              baseURL: "http://127.0.0.1:1/v1",
+              apiKey: "DUMMY",
+              models: { "gpt-5.4-mini": { name: "GPT-5.4 Mini" } }
+            }
+          },
+          model: "default:gpt-5.4-mini"
+        }
+        "#,
+    )
+    .expect("write config");
+    fs::create_dir_all(nested.join(".agent-harness/commands")).expect("local command dir");
+    fs::write(
+        nested.join(".agent-harness/commands/review.md"),
+        "# Local\nLocal prompt.\n",
+    )
+    .expect("write local command");
+    fs::create_dir_all(temp.path().join(".agent-harness/commands")).expect("ancestor command dir");
+    fs::write(
+        temp.path().join(".agent-harness/commands/review.md"),
+        "# Ancestor\nAncestor prompt.\n",
+    )
+    .expect("write ancestor command");
+
+    let parsed = load_config_from_file(&config_path).expect("compat config");
+    let template = parsed
+        .compatibility
+        .command_templates
+        .get("review")
+        .expect("review template");
+    assert_eq!(template.prompt, "# Local\nLocal prompt.");
+    assert!(parsed.compatibility.imports.iter().any(|item| {
+        item.kind == CompatibilityImportKind::Command
+            && item.name == "review"
+            && item.status == CompatibilityImportState::Skipped
+            && item
+                .message
+                .as_deref()
+                .is_some_and(|message| message.contains("higher-precedence"))
+    }));
+}
+
+#[cfg(unix)]
+#[test]
+fn compatibility_command_import_skips_symlinked_directories() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.jsonc");
+    fs::write(
+        &config_path,
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              baseURL: "http://127.0.0.1:1/v1",
+              apiKey: "DUMMY",
+              models: { "gpt-5.4-mini": { name: "GPT-5.4 Mini" } }
+            }
+          },
+          model: "default:gpt-5.4-mini"
+        }
+        "#,
+    )
+    .expect("write config");
+
+    let external = temp.path().join("external-commands");
+    fs::create_dir_all(&external).expect("external command dir");
+    fs::write(external.join("leak.md"), "# Leak\nDo not import me.").expect("leak command");
+    let commands = temp.path().join(".claude/commands");
+    fs::create_dir_all(&commands).expect("commands dir");
+    symlink(&external, commands.join("linked-external")).expect("symlink command dir");
+
+    let parsed = load_config_from_file(&config_path).expect("compat config");
+    assert!(
+        !parsed.compatibility.command_templates.contains_key("leak"),
+        "symlinked command directories must not be traversed"
+    );
+    assert!(parsed.compatibility.imports.iter().all(|item| {
+        item.kind != CompatibilityImportKind::Command || !item.source_path.ends_with("leak.md")
+    }));
+}
+
+#[cfg(unix)]
+#[test]
+fn compatibility_agent_import_skips_symlinked_directories() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.jsonc");
+    fs::write(
+        &config_path,
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              baseURL: "http://127.0.0.1:1/v1",
+              apiKey: "DUMMY",
+              models: { "gpt-5.4-mini": { name: "GPT-5.4 Mini" } }
+            }
+          },
+          model: "default:gpt-5.4-mini"
+        }
+        "#,
+    )
+    .expect("write config");
+
+    let external = temp.path().join("external-agents");
+    fs::create_dir_all(&external).expect("external agent dir");
+    fs::write(
+        external.join("leak.md"),
+        "---\n{ description: \"Leaked agent\" }\n---\nDo not import me.",
+    )
+    .expect("leak agent");
+    let agents = temp.path().join(".claude/agents");
+    fs::create_dir_all(&agents).expect("agents dir");
+    symlink(&external, agents.join("linked-external")).expect("symlink agent dir");
+
+    let parsed = load_config_from_file(&config_path).expect("compat config");
+    assert!(
+        !parsed.agents.contains_key("leak"),
+        "symlinked agent directories must not be traversed"
+    );
+    assert!(parsed.compatibility.imports.iter().all(|item| {
+        item.kind != CompatibilityImportKind::Agent || !item.source_path.ends_with("leak.md")
+    }));
+}
+
+#[test]
+fn compatibility_hook_imports_are_inert_without_explicit_opt_in() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.jsonc");
+    fs::write(
+        &config_path,
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              baseURL: "http://127.0.0.1:1/v1",
+              apiKey: "DUMMY",
+              models: { "gpt-5.4-mini": { name: "GPT-5.4 Mini" } }
+            }
+          },
+          model: "default:gpt-5.4-mini"
+        }
+        "#,
+    )
+    .expect("write config");
+
+    fs::create_dir_all(temp.path().join(".claude")).expect("claude dir");
+    fs::write(
+        temp.path().join(".claude/settings.json"),
+        r#"{ "hooks": { "SessionStart": [{ "command": ["echo", "must-not-run"] }] } }"#,
+    )
+    .expect("write hooks");
+
+    let parsed = load_config_from_file(&config_path).expect("compat config");
+    assert!(parsed.hooks.lifecycle.is_empty());
+    assert!(parsed.compatibility.imports.iter().any(|item| {
+        item.kind == CompatibilityImportKind::Hook
+            && item.status == CompatibilityImportState::Skipped
+            && item
+                .message
+                .as_deref()
+                .is_some_and(|message| message.contains("enable_imported_hooks"))
+    }));
+}
+
+#[test]
+fn compatibility_hook_import_ids_include_source_to_avoid_collisions() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.jsonc");
+    fs::write(
+        &config_path,
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              baseURL: "http://127.0.0.1:1/v1",
+              apiKey: "DUMMY",
+              models: { "gpt-5.4-mini": { name: "GPT-5.4 Mini" } }
+            }
+          },
+          model: "default:gpt-5.4-mini",
+          compatibility: { enable_imported_hooks: true }
+        }
+        "#,
+    )
+    .expect("write config");
+
+    fs::create_dir_all(temp.path().join(".claude")).expect("claude dir");
+    fs::write(
+        temp.path().join(".claude/settings.json"),
+        r#"{ "hooks": { "PostToolUse": [{ "command": ["echo", "claude"] }] } }"#,
+    )
+    .expect("write claude hooks");
+    fs::create_dir_all(temp.path().join(".opencode")).expect("compat hooks dir");
+    fs::write(
+        temp.path().join(".opencode/hooks.json"),
+        r#"{ "hooks": { "PostToolUse": [{ "command": ["echo", "legacy"] }] } }"#,
+    )
+    .expect("write upstream hooks");
+
+    let parsed = load_config_from_file(&config_path).expect("compat config");
+    let mut ids = parsed
+        .hooks
+        .lifecycle
+        .iter()
+        .map(|hook| hook.id.as_deref().expect("compat hook id").to_string())
+        .collect::<Vec<_>>();
+    ids.sort();
+
+    assert_eq!(ids.len(), 2, "ids: {ids:?}");
+    assert_ne!(ids[0], ids[1]);
+    assert!(ids.iter().any(|id| {
+        id.starts_with("compat:PostToolUse:claude-settings-json-") && id.ends_with(":0")
+    }));
+    assert!(ids.iter().any(|id| {
+        id.starts_with(concat!("compat:PostToolUse:", "open", "code-hooks-json-"))
+            && id.ends_with(":0")
+    }));
+}
+
+#[test]
+fn compatibility_hook_import_source_ids_do_not_collide_for_nested_same_named_files() {
+    let temp = tempdir().expect("tempdir");
+    let nested = temp.path().join("subproj");
+    fs::create_dir_all(&nested).expect("nested dir");
+    let config_path = nested.join("harness.jsonc");
+    fs::write(
+        &config_path,
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              baseURL: "http://127.0.0.1:1/v1",
+              apiKey: "DUMMY",
+              models: { "gpt-5.4-mini": { name: "GPT-5.4 Mini" } }
+            }
+          },
+          model: "default:gpt-5.4-mini",
+          compatibility: { enable_imported_hooks: true }
+        }
+        "#,
+    )
+    .expect("write config");
+
+    fs::create_dir_all(temp.path().join(".claude")).expect("root claude dir");
+    fs::write(
+        temp.path().join(".claude/settings.json"),
+        r#"{ "hooks": { "PostToolUse": [{ "command": ["echo", "root"] }] } }"#,
+    )
+    .expect("write root hooks");
+    fs::create_dir_all(nested.join(".claude")).expect("nested claude dir");
+    fs::write(
+        nested.join(".claude/settings.json"),
+        r#"{ "hooks": { "PostToolUse": [{ "command": ["echo", "nested"] }] } }"#,
+    )
+    .expect("write nested hooks");
+
+    let parsed = load_config_from_file(&config_path).expect("compat config");
+    let mut ids = parsed
+        .hooks
+        .lifecycle
+        .iter()
+        .map(|hook| hook.id.as_deref().expect("compat hook id").to_string())
+        .collect::<Vec<_>>();
+    ids.sort();
+    ids.dedup();
+
+    assert_eq!(ids.len(), 2, "ids: {ids:?}");
+    assert!(
+        ids.iter().all(|id| {
+            id.starts_with("compat:PostToolUse:claude-settings-json-") && id.ends_with(":0")
+        }),
+        "ids: {ids:?}"
+    );
+}
+
+#[test]
+fn compatibility_hook_import_skips_string_form_commands() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.jsonc");
+    fs::write(
+        &config_path,
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              baseURL: "http://127.0.0.1:1/v1",
+              apiKey: "DUMMY",
+              models: { "gpt-5.4-mini": { name: "GPT-5.4 Mini" } }
+            }
+          },
+          model: "default:gpt-5.4-mini",
+          compatibility: { enable_imported_hooks: true }
+        }
+        "#,
+    )
+    .expect("write config");
+
+    fs::create_dir_all(temp.path().join(".claude")).expect("claude dir");
+    fs::write(
+        temp.path().join(".claude/settings.json"),
+        r#"{
+          "hooks": {
+            "PostToolUse": [
+              { "command": "echo unsafe shell string" },
+              { "command": ["echo", "safe"] }
+            ]
+          }
+        }"#,
+    )
+    .expect("write hooks");
+
+    let parsed = load_config_from_file(&config_path).expect("compat config");
+    assert_eq!(parsed.hooks.lifecycle.len(), 1);
+    assert_eq!(parsed.hooks.lifecycle[0].command, vec!["echo", "safe"]);
+    assert!(parsed.compatibility.imports.iter().any(|item| {
+        item.name == "PostToolUse"
+            && item.status == CompatibilityImportState::Skipped
+            && item
+                .message
+                .as_deref()
+                .is_some_and(|message| message.contains("safe command argv array"))
+    }));
+}
+
+#[test]
+fn compatibility_hook_import_ignores_claude_settings_without_hooks_object() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.jsonc");
+    fs::write(
+        &config_path,
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              baseURL: "http://127.0.0.1:1/v1",
+              apiKey: "DUMMY",
+              models: { "gpt-5.4-mini": { name: "GPT-5.4 Mini" } }
+            }
+          },
+          model: "default:gpt-5.4-mini",
+          compatibility: { enable_imported_hooks: true }
+        }
+        "#,
+    )
+    .expect("write config");
+
+    fs::create_dir_all(temp.path().join(".claude")).expect("claude dir");
+    fs::write(
+        temp.path().join(".claude/settings.json"),
+        r#"{
+          "permissions": { "allow": ["Bash(cargo test:*)"] },
+          "SessionStart": [{ "command": ["echo", "should-not-import"] }]
+        }"#,
+    )
+    .expect("write settings");
+    fs::create_dir_all(temp.path().join(".opencode")).expect("hook-only dir");
+    fs::write(
+        temp.path().join(".opencode/hooks.json"),
+        r#"{ "SessionStart": [{ "command": ["echo", "hook-only-root"] }] }"#,
+    )
+    .expect("write hook-only file");
+
+    let parsed = load_config_from_file(&config_path).expect("compat config");
+    assert_eq!(parsed.hooks.lifecycle.len(), 1);
+    assert_eq!(
+        parsed.hooks.lifecycle[0].command,
+        vec!["echo", "hook-only-root"]
+    );
+    assert!(parsed.compatibility.imports.iter().all(|item| {
+        item.source_path != temp.path().join(".claude/settings.json")
+            || item.kind != CompatibilityImportKind::Hook
+    }));
+}
+
+#[test]
+fn compatibility_hook_import_skips_prompt_submit_hooks_without_session_start_mapping() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.jsonc");
+    fs::write(
+        &config_path,
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              baseURL: "http://127.0.0.1:1/v1",
+              apiKey: "DUMMY",
+              models: { "gpt-5.4-mini": { name: "GPT-5.4 Mini" } }
+            }
+          },
+          model: "default:gpt-5.4-mini",
+          compatibility: { enable_imported_hooks: true }
+        }
+        "#,
+    )
+    .expect("write config");
+
+    fs::create_dir_all(temp.path().join(".claude")).expect("claude dir");
+    fs::write(
+        temp.path().join(".claude/settings.json"),
+        r#"{
+          "hooks": {
+            "UserPromptSubmit": [
+              { "command": ["echo", "should-not-run-at-session-start"] }
+            ],
+            "SessionStart": [
+              { "command": ["echo", "session-start"] }
+            ]
+          }
+        }"#,
+    )
+    .expect("write hooks");
+
+    let parsed = load_config_from_file(&config_path).expect("compat config");
+    assert_eq!(parsed.hooks.lifecycle.len(), 1);
+    assert_eq!(parsed.hooks.lifecycle[0].event.as_str(), "run_started");
+    assert_eq!(
+        parsed.hooks.lifecycle[0].command,
+        vec!["echo", "session-start"]
+    );
+    assert!(parsed.compatibility.imports.iter().any(|item| {
+        item.name == "UserPromptSubmit"
+            && item.status == CompatibilityImportState::Skipped
+            && item
+                .message
+                .as_deref()
+                .is_some_and(|message| message.contains("no prompt-submission lifecycle event"))
+    }));
+}
+
+#[test]
+fn compatibility_import_errors_are_non_fatal_unless_required() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.jsonc");
+    fs::write(
+        &config_path,
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              baseURL: "http://127.0.0.1:1/v1",
+              apiKey: "DUMMY",
+              models: { "gpt-5.4-mini": { name: "GPT-5.4 Mini" } }
+            }
+          },
+          model: "default:gpt-5.4-mini"
+        }
+        "#,
+    )
+    .expect("write config");
+    fs::write(temp.path().join(".mcp.json"), "{ not json").expect("write bad mcp");
+    let parsed = load_config_from_file(&config_path).expect("non-required compat errors warn");
+    assert!(parsed
+        .compatibility
+        .imports
+        .iter()
+        .any(|item| item.name == ".mcp.json" && item.status == CompatibilityImportState::Error));
+
+    fs::write(
+        &config_path,
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              baseURL: "http://127.0.0.1:1/v1",
+              apiKey: "DUMMY",
+              models: { "gpt-5.4-mini": { name: "GPT-5.4 Mini" } }
+            }
+          },
+          model: "default:gpt-5.4-mini",
+          compatibility: { required: true }
+        }
+        "#,
+    )
+    .expect("write required config");
+    load_config_from_file(&config_path).expect_err("required compatibility import should fail");
+}
+
+#[test]
+fn doctor_json_reports_compatibility_import_sources() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.jsonc");
+    fs::write(
+        &config_path,
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              baseURL: "http://127.0.0.1:1/v1",
+              apiKey: "DUMMY",
+              models: { "gpt-5.4-mini": { name: "GPT-5.4 Mini" } }
+            }
+          },
+          model: "default:gpt-5.4-mini"
+        }
+        "#,
+    )
+    .expect("write config");
+    fs::create_dir_all(temp.path().join(".opencode/command")).expect("command dir");
+    fs::write(temp.path().join(".opencode/command/review.md"), "Review.").expect("write command");
+
+    let output = harness_command()
+        .current_dir(temp.path())
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "--session-dir",
+            temp.path().join("sessions").to_str().unwrap(),
+            "doctor",
+            "--json",
+        ])
+        .output()
+        .expect("doctor");
+    assert!(
+        output.status.success(),
+        "doctor failed: status={:?} stdout={} stderr={}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: Value = serde_json::from_slice(&output.stdout).expect("doctor json");
+    let check = json["checks"]
+        .as_array()
+        .expect("checks")
+        .iter()
+        .find(|check| check["id"] == "compatibility_imports")
+        .expect("compat check");
+    assert_eq!(check["status"], "pass");
+    assert!(check["details"]["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .any(|item| item["name"] == "review"
+            && item["source_path"]
+                .as_str()
+                .is_some_and(|path| path.contains(".opencode/command/review.md"))));
 }
 
 #[test]

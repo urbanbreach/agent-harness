@@ -612,10 +612,16 @@ fn collect_referenced_artifacts(
             | EventV1::TeamMessageSent(_)
             | EventV1::TeamTaskCreated(_)
             | EventV1::TeamTaskUpdated(_)
+            | EventV1::PersistentTaskCreated(_)
+            | EventV1::PersistentTaskUpdated(_)
             | EventV1::TeamShutdownRequested(_)
             | EventV1::TeamShutdownApproved(_)
             | EventV1::TeamShutdownRejected(_)
             | EventV1::TeamDeleted(_)
+            | EventV1::ContinuationStarted(_)
+            | EventV1::ContinuationReminderQueued(_)
+            | EventV1::ContinuationStopped(_)
+            | EventV1::ContinuationLimitReached(_)
             | EventV1::UiIntentReceived(_) => {}
         }
     }
@@ -1424,10 +1430,16 @@ impl PrefixState {
             | EventV1::TeamMessageSent(_)
             | EventV1::TeamTaskCreated(_)
             | EventV1::TeamTaskUpdated(_)
+            | EventV1::PersistentTaskCreated(_)
+            | EventV1::PersistentTaskUpdated(_)
             | EventV1::TeamShutdownRequested(_)
             | EventV1::TeamShutdownApproved(_)
             | EventV1::TeamShutdownRejected(_)
             | EventV1::TeamDeleted(_)
+            | EventV1::ContinuationStarted(_)
+            | EventV1::ContinuationReminderQueued(_)
+            | EventV1::ContinuationStopped(_)
+            | EventV1::ContinuationLimitReached(_)
             | EventV1::UiIntentReceived(_) => {}
         }
     }

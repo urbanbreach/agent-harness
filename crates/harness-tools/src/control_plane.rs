@@ -13,6 +13,7 @@ use crate::question_env::question_answers_from_env_or_request;
 use crate::text::has_trimmed_content;
 
 const TODO_STATE_FILE: &str = "control-plane/todos.json";
+const SKILL_MCP_STATE_FILE: &str = "control-plane/skill-mcp-sessions.json";
 const QUESTION_STATE_DIR: &str = "control-plane/questions";
 const SKILL_LOAD_CONFIRM_YES: &str = "Yes";
 const SKILL_LOAD_CONFIRM_NO: &str = "No";
@@ -52,6 +53,7 @@ impl ControlPlaneExecutor {
         let skill = match catalog
             .remove(name)
             .ok_or_else(|| ToolError::Execution(skill_not_found.clone()))?
+            .discovered
         {
             DiscoveredSkill::Visible(skill) => match skill.permission {
                 PermissionMode::Allow => skill,
@@ -63,11 +65,11 @@ impl ControlPlaneExecutor {
                     return Err(ToolError::Execution(skill_not_found));
                 }
             },
-            DiscoveredSkill::Denied | DiscoveredSkill::Invalid => {
+            DiscoveredSkill::Denied { .. } | DiscoveredSkill::Invalid { .. } => {
                 return Err(ToolError::Execution(skill_not_found));
             }
         };
-        let skill = TaskSkillContext::from(skill);
+        let skill = TaskSkillContext::from(*skill);
         let mut output = render_task_skill_context(&skill);
         if let Some(user_message) = user_message {
             output.push_str(&format!(
@@ -79,6 +81,70 @@ impl ControlPlaneExecutor {
             json!({
                 "name": skill.name,
                 "location": skill.location.display().to_string(),
+                "policy": skill.policy,
+            }),
+        ))
+    }
+
+    pub(crate) fn list_skills(&self, ctx: &ToolContext) -> Result<ToolResult, ToolError> {
+        let catalog = discover_skill_catalog(ctx.workspace_root.as_path())?;
+        let config = registered_skills_config();
+        let skills = catalog
+            .iter()
+            .map(|(name, skill)| skill_listing_json(name, skill))
+            .collect::<Vec<_>>();
+        let visible = catalog
+            .iter()
+            .filter_map(|(name, skill)| {
+                matches!(skill.discovered, DiscoveredSkill::Visible(_)).then_some(name.clone())
+            })
+            .collect::<Vec<_>>();
+        let denied = catalog
+            .iter()
+            .filter_map(|(name, skill)| {
+                matches!(skill.discovered, DiscoveredSkill::Denied { .. }).then_some(name.clone())
+            })
+            .collect::<Vec<_>>();
+        let invalid = catalog
+            .iter()
+            .filter_map(|(name, skill)| {
+                matches!(skill.discovered, DiscoveredSkill::Invalid { .. }).then_some(name.clone())
+            })
+            .collect::<Vec<_>>();
+        let shadowed = catalog
+            .iter()
+            .filter(|(_, skill)| !skill.shadowed.is_empty())
+            .flat_map(|(name, skill)| {
+                skill.shadowed.iter().map(move |shadow| {
+                    json!({
+                        "name": name,
+                        "location": shadow.location,
+                        "reason": shadow.reason,
+                    })
+                })
+            })
+            .collect::<Vec<_>>();
+        let roots = skill_search_dirs(ctx.workspace_root.as_path(), &config)
+            .into_iter()
+            .map(|dir| dir.path.display().to_string())
+            .collect::<Vec<_>>();
+        let display_text = format!(
+            "Skills: {} visible, {} denied, {} invalid, {} shadowed",
+            visible.len(),
+            denied.len(),
+            invalid.len(),
+            shadowed.len()
+        );
+        Ok(crate::text_json_tool_result(
+            display_text,
+            json!({
+                "disabled": config.disabled,
+                "roots": roots,
+                "visible": visible,
+                "denied": denied,
+                "invalid": invalid,
+                "shadowed": shadowed,
+                "skills": skills,
             }),
         ))
     }
@@ -87,6 +153,79 @@ impl ControlPlaneExecutor {
         ToolResult::text(format!(
             "The arguments provided to the tool are invalid: {} ({})",
             error, tool
+        ))
+    }
+
+    pub(crate) async fn skill_mcp(
+        &self,
+        ctx: &ToolContext,
+        request: SkillMcpRequest,
+    ) -> Result<ToolResult, ToolError> {
+        let skill = resolve_single_skill_for_mcp(ctx, &request.skill).await?;
+        let declarations = skill.policy.mcp_servers.clone();
+        let selected = select_skill_mcp_declarations(&declarations, request.server.as_deref())?;
+        let mut state = read_skill_mcp_state(ctx)?;
+        let action = request.action.unwrap_or(SkillMcpAction::Status);
+
+        match action {
+            SkillMcpAction::List | SkillMcpAction::Status => {}
+            SkillMcpAction::Start | SkillMcpAction::Stop => {
+                let status = match action {
+                    SkillMcpAction::Start => "started",
+                    SkillMcpAction::Stop => "stopped",
+                    SkillMcpAction::List | SkillMcpAction::Status => unreachable!(),
+                };
+                for server in &selected {
+                    state.insert(
+                        skill_mcp_state_key(&skill.name, &server.name),
+                        SkillMcpSessionState {
+                            skill: skill.name.clone(),
+                            server: server.name.clone(),
+                            status: status.to_string(),
+                            scope: "run".to_string(),
+                            transport: server.transport.clone(),
+                        },
+                    );
+                }
+                write_skill_mcp_state(ctx, &state)?;
+            }
+        }
+
+        let servers = selected
+            .iter()
+            .map(|server| {
+                let key = skill_mcp_state_key(&skill.name, &server.name);
+                let status = state
+                    .get(&key)
+                    .map(|entry| entry.status.as_str())
+                    .unwrap_or("declared");
+                json!({
+                    "skill": skill.name,
+                    "server": server.name,
+                    "status": status,
+                    "scope": "run",
+                    "transport": server.transport,
+                    "command": server.command,
+                    "endpoint": server.endpoint,
+                    "env_keys": server.env_keys,
+                    "env_values_redacted": true,
+                })
+            })
+            .collect::<Vec<_>>();
+
+        Ok(crate::text_json_tool_result(
+            format!(
+                "skill_mcp {}: {} server(s) for skill `{}`",
+                action.as_str(),
+                servers.len(),
+                skill.name
+            ),
+            json!({
+                "skill": skill.name,
+                "action": action.as_str(),
+                "servers": servers,
+                "cleanup": "state is scoped to the run artifacts; external MCP process startup remains owned by the first-class MCP executor",
+            }),
         ))
     }
 
@@ -157,6 +296,36 @@ pub(crate) struct QuestionPrompt {
 pub(crate) struct QuestionOption {
     pub(crate) label: String,
     pub(crate) description: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema, Clone, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SkillMcpRequest {
+    pub(crate) skill: String,
+    #[serde(default)]
+    pub(crate) server: Option<String>,
+    #[serde(default)]
+    pub(crate) action: Option<SkillMcpAction>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum SkillMcpAction {
+    List,
+    Status,
+    Start,
+    Stop,
+}
+
+impl SkillMcpAction {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::List => "list",
+            Self::Status => "status",
+            Self::Start => "start",
+            Self::Stop => "stop",
+        }
+    }
 }
 
 impl QuestionAnswerPrompt for QuestionPrompt {
@@ -462,13 +631,32 @@ struct SkillRecord {
     content: String,
     location: PathBuf,
     permission: PermissionMode,
+    policy: SkillBundlePolicy,
 }
 
 #[derive(Debug, Clone)]
 enum DiscoveredSkill {
-    Visible(SkillRecord),
-    Denied,
-    Invalid,
+    Visible(Box<SkillRecord>),
+    Denied {
+        location: Option<PathBuf>,
+        reason: String,
+    },
+    Invalid {
+        location: Option<PathBuf>,
+        reason: String,
+    },
+}
+
+#[derive(Debug, Clone)]
+struct CatalogSkill {
+    discovered: DiscoveredSkill,
+    shadowed: Vec<SkillShadowRecord>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct SkillShadowRecord {
+    location: String,
+    reason: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -477,6 +665,19 @@ pub(crate) struct TaskSkillContext {
     pub(crate) description: String,
     pub(crate) content: String,
     pub(crate) location: PathBuf,
+    pub(crate) policy: SkillBundlePolicy,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct SkillMcpServerPolicy {
+    pub(crate) name: String,
+    pub(crate) transport: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) command: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) endpoint: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) env_keys: Vec<String>,
 }
 
 impl From<SkillRecord> for TaskSkillContext {
@@ -486,12 +687,13 @@ impl From<SkillRecord> for TaskSkillContext {
             description: skill.description,
             content: skill.content,
             location: skill.location,
+            policy: skill.policy,
         }
     }
 }
 
 pub(crate) fn render_task_skill_context(skill: &TaskSkillContext) -> String {
-    format!(
+    let mut output = format!(
         "<skill_content name=\"{}\">\n# Skill: {}\n\n{}\n\n{}\n\nBase directory for this skill: file://{}\n</skill_content>",
         skill.name,
         skill.name,
@@ -502,13 +704,67 @@ pub(crate) fn render_task_skill_context(skill: &TaskSkillContext) -> String {
             .parent()
             .unwrap_or(skill.location.as_path())
             .display(),
-    )
+    );
+    if !skill.policy.is_empty() {
+        let policy =
+            serde_json::to_string_pretty(&skill.policy).unwrap_or_else(|_| "{}".to_string());
+        output.push_str(&format!(
+            "\n<skill_policy name=\"{}\">\n{}\n</skill_policy>",
+            skill.name, policy
+        ));
+    }
+    output
 }
 
 #[derive(Debug, Default)]
 struct SkillFrontmatter {
     name: Option<String>,
     description: Option<String>,
+    policy: SkillBundlePolicy,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub(crate) struct SkillBundlePolicy {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) mcp: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) mcp_servers: Vec<SkillMcpServerPolicy>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) permissions: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) tools: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) commands: Vec<String>,
+    #[serde(skip_serializing_if = "SkillEnvironmentPolicy::is_empty")]
+    pub(crate) environment: SkillEnvironmentPolicy,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) verification: Vec<String>,
+}
+
+impl SkillBundlePolicy {
+    fn is_empty(&self) -> bool {
+        self.mcp.is_empty()
+            && self.mcp_servers.is_empty()
+            && self.permissions.is_empty()
+            && self.tools.is_empty()
+            && self.commands.is_empty()
+            && self.environment.is_empty()
+            && self.verification.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub(crate) struct SkillEnvironmentPolicy {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) allow: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) deny: Vec<String>,
+}
+
+impl SkillEnvironmentPolicy {
+    fn is_empty(&self) -> bool {
+        self.allow.is_empty() && self.deny.is_empty()
+    }
 }
 
 struct FrontmatterFieldLine<'a> {
@@ -518,6 +774,10 @@ struct FrontmatterFieldLine<'a> {
 
 fn todo_state_path(ctx: &ToolContext) -> Result<PathBuf, ToolError> {
     run_root(ctx).map(|root| root.join(TODO_STATE_FILE))
+}
+
+fn skill_mcp_state_path(ctx: &ToolContext) -> Result<PathBuf, ToolError> {
+    run_root(ctx).map(|root| root.join(SKILL_MCP_STATE_FILE))
 }
 
 fn read_todo_state(ctx: &ToolContext) -> Result<Vec<TodoItem>, ToolError> {
@@ -600,6 +860,63 @@ fn write_todo_state(ctx: &ToolContext, todos: &[TodoItem]) -> Result<(), ToolErr
     })
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SkillMcpSessionState {
+    skill: String,
+    server: String,
+    status: String,
+    scope: String,
+    transport: String,
+}
+
+fn read_skill_mcp_state(
+    ctx: &ToolContext,
+) -> Result<BTreeMap<String, SkillMcpSessionState>, ToolError> {
+    let path = skill_mcp_state_path(ctx)?;
+    if !path.exists() {
+        return Ok(BTreeMap::new());
+    }
+    serde_json::from_slice(&std::fs::read(&path).map_err(|err| {
+        ToolError::Execution(format!(
+            "failed to read skill MCP state {}: {err}",
+            path.display()
+        ))
+    })?)
+    .map_err(|err| ToolError::Execution(format!("failed to parse skill MCP state: {err}")))
+}
+
+fn write_skill_mcp_state(
+    ctx: &ToolContext,
+    state: &BTreeMap<String, SkillMcpSessionState>,
+) -> Result<(), ToolError> {
+    let path = skill_mcp_state_path(ctx)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| {
+            ToolError::Execution(format!("failed to create skill MCP state directory: {err}"))
+        })?;
+    }
+    let bytes = serde_json::to_vec_pretty(state).map_err(|err| {
+        ToolError::Execution(format!("failed to serialize skill MCP state: {err}"))
+    })?;
+    let temp_path = path.with_extension(format!("{}.tmp", ctx.tool_call_id));
+    std::fs::write(&temp_path, bytes).map_err(|err| {
+        ToolError::Execution(format!(
+            "failed to write skill MCP state temp file {}: {err}",
+            temp_path.display()
+        ))
+    })?;
+    std::fs::rename(&temp_path, &path).map_err(|err| {
+        ToolError::Execution(format!(
+            "failed to atomically replace skill MCP state {}: {err}",
+            path.display()
+        ))
+    })
+}
+
+fn skill_mcp_state_key(skill: &str, server: &str) -> String {
+    format!("{skill}/{server}")
+}
+
 fn question_state_path(ctx: &ToolContext) -> Result<PathBuf, ToolError> {
     run_root(ctx).map(|root| {
         root.join(QUESTION_STATE_DIR)
@@ -641,6 +958,7 @@ pub(crate) async fn resolve_task_skill_context(
         let skill = match catalog
             .remove(name)
             .ok_or_else(|| ToolError::Execution(skill_not_found.clone()))?
+            .discovered
         {
             DiscoveredSkill::Visible(skill) => match skill.permission {
                 PermissionMode::Allow => skill,
@@ -652,20 +970,57 @@ pub(crate) async fn resolve_task_skill_context(
                     return Err(ToolError::Execution(skill_not_found));
                 }
             },
-            DiscoveredSkill::Denied | DiscoveredSkill::Invalid => {
+            DiscoveredSkill::Denied { .. } | DiscoveredSkill::Invalid { .. } => {
                 return Err(ToolError::Execution(skill_not_found));
             }
         };
+        let skill = *skill;
 
         resolved.push(TaskSkillContext {
             name: skill.name,
             description: skill.description,
             content: skill.content,
             location: skill.location,
+            policy: skill.policy,
         });
     }
 
     Ok(resolved)
+}
+
+async fn resolve_single_skill_for_mcp(
+    ctx: &ToolContext,
+    name: &str,
+) -> Result<TaskSkillContext, ToolError> {
+    let mut skills = resolve_task_skill_context(ctx, &[name.to_string()]).await?;
+    let skill = skills
+        .pop()
+        .ok_or_else(|| ToolError::Execution(format!("Skill \"{name}\" not found")))?;
+    if skill.policy.mcp_servers.is_empty() {
+        return Err(ToolError::Execution(format!(
+            "Skill \"{name}\" does not declare any MCP servers"
+        )));
+    }
+    Ok(skill)
+}
+
+fn select_skill_mcp_declarations(
+    declarations: &[SkillMcpServerPolicy],
+    server: Option<&str>,
+) -> Result<Vec<SkillMcpServerPolicy>, ToolError> {
+    match server {
+        Some(server) => declarations
+            .iter()
+            .find(|candidate| candidate.name == server)
+            .cloned()
+            .map(|server| vec![server])
+            .ok_or_else(|| {
+                ToolError::InvalidArguments(format!(
+                    "skill MCP server `{server}` is not declared by the loaded skill"
+                ))
+            }),
+        None => Ok(declarations.to_vec()),
+    }
 }
 
 async fn request_skill_load_approval(ctx: &ToolContext, name: &str) -> Result<(), ToolError> {
@@ -692,7 +1047,7 @@ async fn request_skill_load_approval(ctx: &ToolContext, name: &str) -> Result<()
     }
 }
 
-fn skill_not_found_message(name: &str, catalog: &BTreeMap<String, DiscoveredSkill>) -> String {
+fn skill_not_found_message(name: &str, catalog: &BTreeMap<String, CatalogSkill>) -> String {
     let trimmed = name.trim();
     let mut message = format!("Skill \"{trimmed}\" not found");
 
@@ -705,7 +1060,7 @@ fn skill_not_found_message(name: &str, catalog: &BTreeMap<String, DiscoveredSkil
     let visible = catalog
         .iter()
         .filter_map(|(name, skill)| {
-            matches!(skill, DiscoveredSkill::Visible(_)).then_some(name.as_str())
+            matches!(skill.discovered, DiscoveredSkill::Visible(_)).then_some(name.as_str())
         })
         .take(5)
         .collect::<Vec<_>>();
@@ -716,6 +1071,44 @@ fn skill_not_found_message(name: &str, catalog: &BTreeMap<String, DiscoveredSkil
     }
 
     message
+}
+
+fn skill_listing_json(name: &str, skill: &CatalogSkill) -> Value {
+    let shadowed = skill
+        .shadowed
+        .iter()
+        .map(|shadow| {
+            json!({
+                "location": shadow.location,
+                "reason": shadow.reason,
+            })
+        })
+        .collect::<Vec<_>>();
+    match &skill.discovered {
+        DiscoveredSkill::Visible(record) => json!({
+            "name": name,
+            "status": "visible",
+            "description": record.description,
+            "location": record.location.display().to_string(),
+            "permission": format!("{:?}", record.permission).to_ascii_lowercase(),
+            "policy": record.policy,
+            "shadowed": shadowed,
+        }),
+        DiscoveredSkill::Denied { location, reason } => json!({
+            "name": name,
+            "status": "denied",
+            "location": location.as_ref().map(|path| path.display().to_string()),
+            "reason": reason,
+            "shadowed": shadowed,
+        }),
+        DiscoveredSkill::Invalid { location, reason } => json!({
+            "name": name,
+            "status": "invalid",
+            "location": location.as_ref().map(|path| path.display().to_string()),
+            "reason": reason,
+            "shadowed": shadowed,
+        }),
+    }
 }
 
 fn known_agent_name(name: &str) -> Option<&'static str> {
@@ -775,9 +1168,12 @@ fn run_root(ctx: &ToolContext) -> Result<PathBuf, ToolError> {
 
 fn discover_skill_catalog(
     workspace_root: &Path,
-) -> Result<BTreeMap<String, DiscoveredSkill>, ToolError> {
+) -> Result<BTreeMap<String, CatalogSkill>, ToolError> {
     let config = registered_skills_config();
     let mut catalog = BTreeMap::new();
+    if config.disabled {
+        return Ok(catalog);
+    }
     for search_dir in skill_search_dirs(workspace_root, &config) {
         if !search_dir.path.exists() {
             continue;
@@ -802,13 +1198,39 @@ fn discover_skill_catalog(
 
         for entry in sorted_skill_entries(&canonical_dir)? {
             let name = entry.file_name().to_string_lossy().to_string();
-            if catalog.contains_key(&name) {
+            if let Some(existing) = catalog.get_mut(&name) {
+                existing.shadowed.push(SkillShadowRecord {
+                    location: entry.path().join("SKILL.md").display().to_string(),
+                    reason: format!("shadowed by higher-precedence skill `{name}`"),
+                });
                 continue;
             }
 
             let permission = resolve_skill_permission(&name, &config.permissions);
+            if config.disabled_skills.contains(&name) {
+                catalog.insert(
+                    name,
+                    CatalogSkill {
+                        discovered: DiscoveredSkill::Denied {
+                            location: Some(entry.path().join("SKILL.md")),
+                            reason: "disabled by skills.disabled_skills".to_string(),
+                        },
+                        shadowed: Vec::new(),
+                    },
+                );
+                continue;
+            }
             if permission == PermissionMode::Deny {
-                catalog.insert(name, DiscoveredSkill::Denied);
+                catalog.insert(
+                    name,
+                    CatalogSkill {
+                        discovered: DiscoveredSkill::Denied {
+                            location: Some(entry.path().join("SKILL.md")),
+                            reason: "denied by skills.permissions".to_string(),
+                        },
+                        shadowed: Vec::new(),
+                    },
+                );
                 continue;
             }
 
@@ -819,7 +1241,16 @@ fn discover_skill_catalog(
                 })?
                 .is_symlink()
             {
-                catalog.insert(name, DiscoveredSkill::Invalid);
+                catalog.insert(
+                    name,
+                    CatalogSkill {
+                        discovered: DiscoveredSkill::Invalid {
+                            location: Some(entry.path()),
+                            reason: "skill directory must not be a symlink".to_string(),
+                        },
+                        shadowed: Vec::new(),
+                    },
+                );
                 continue;
             }
 
@@ -834,7 +1265,16 @@ fn discover_skill_catalog(
                 ))
             })?;
             if !canonical_skill_file.starts_with(&canonical_dir) {
-                catalog.insert(name, DiscoveredSkill::Invalid);
+                catalog.insert(
+                    name,
+                    CatalogSkill {
+                        discovered: DiscoveredSkill::Invalid {
+                            location: Some(skill_file),
+                            reason: "skill file resolved outside its skill root".to_string(),
+                        },
+                        shadowed: Vec::new(),
+                    },
+                );
                 continue;
             }
 
@@ -847,10 +1287,25 @@ fn discover_skill_catalog(
 
             match build_skill_record(&name, &canonical_skill_file, &content, permission.clone()) {
                 Ok(skill) => {
-                    catalog.insert(name, DiscoveredSkill::Visible(skill));
+                    catalog.insert(
+                        name,
+                        CatalogSkill {
+                            discovered: DiscoveredSkill::Visible(Box::new(skill)),
+                            shadowed: Vec::new(),
+                        },
+                    );
                 }
-                Err(_) => {
-                    catalog.insert(name, DiscoveredSkill::Invalid);
+                Err(reason) => {
+                    catalog.insert(
+                        name,
+                        CatalogSkill {
+                            discovered: DiscoveredSkill::Invalid {
+                                location: Some(canonical_skill_file),
+                                reason,
+                            },
+                            shadowed: Vec::new(),
+                        },
+                    );
                 }
             }
         }
@@ -1055,6 +1510,7 @@ fn build_skill_record(
         content: content.to_string(),
         location: skill_file.to_path_buf(),
         permission,
+        policy: frontmatter.policy,
     })
 }
 
@@ -1120,6 +1576,42 @@ fn parse_frontmatter_fields(lines: &[&str]) -> Result<SkillFrontmatter, String> 
             "metadata" => {
                 index = parse_metadata_field(lines, index, field.raw_value)?;
             }
+            "mcp" | "mcps" => {
+                let (values, next_index) =
+                    parse_string_list_or_keys(lines, index, field.raw_value)?;
+                frontmatter.policy.mcp = values;
+                frontmatter.policy.mcp_servers =
+                    parse_mcp_server_policies(lines, index, field.raw_value)?;
+                index = next_index;
+            }
+            "tools" => {
+                let (values, next_index) =
+                    parse_string_list_or_keys(lines, index, field.raw_value)?;
+                frontmatter.policy.tools = values;
+                index = next_index;
+            }
+            "commands" | "command_templates" | "commandTemplates" => {
+                let (values, next_index) =
+                    parse_string_list_or_keys(lines, index, field.raw_value)?;
+                frontmatter.policy.commands = values;
+                index = next_index;
+            }
+            "verification" | "verification_hooks" | "verificationHooks" => {
+                let (values, next_index) =
+                    parse_string_list_or_keys(lines, index, field.raw_value)?;
+                frontmatter.policy.verification = values;
+                index = next_index;
+            }
+            "permissions" => {
+                let (values, next_index) = parse_string_map(lines, index, field.raw_value)?;
+                frontmatter.policy.permissions = values;
+                index = next_index;
+            }
+            "env" | "environment" => {
+                let (policy, next_index) = parse_environment_policy(lines, index, field.raw_value)?;
+                frontmatter.policy.environment = policy;
+                index = next_index;
+            }
             _ => {
                 index = skip_unknown_field(lines, index, field.raw_value)?;
             }
@@ -1127,6 +1619,259 @@ fn parse_frontmatter_fields(lines: &[&str]) -> Result<SkillFrontmatter, String> 
     }
 
     Ok(frontmatter)
+}
+
+fn parse_string_list_or_keys(
+    lines: &[&str],
+    index: usize,
+    raw_value: &str,
+) -> Result<(Vec<String>, usize), String> {
+    parse_string_list_or_keys_with_parent(lines, index, raw_value, 0)
+}
+
+fn parse_string_list_or_keys_with_parent(
+    lines: &[&str],
+    index: usize,
+    raw_value: &str,
+    parent_indent: usize,
+) -> Result<(Vec<String>, usize), String> {
+    if !raw_value.is_empty() {
+        return Ok((parse_inline_list_or_scalar(raw_value), index + 1));
+    }
+
+    let mut cursor = index + 1;
+    let mut values = Vec::new();
+    let mut item_indent = None;
+    while cursor < lines.len() {
+        let line = lines[cursor];
+        if !has_trimmed_content(line) {
+            cursor += 1;
+            continue;
+        }
+        let indent = leading_indent(line)?;
+        if indent <= parent_indent {
+            break;
+        }
+        let item_indent = *item_indent.get_or_insert(indent);
+        if indent > item_indent {
+            cursor += 1;
+            continue;
+        }
+        if indent < item_indent {
+            break;
+        }
+        let trimmed = line.trim();
+        if let Some(item) = trimmed.strip_prefix("- ") {
+            values.push(parse_inline_scalar(item));
+        } else if let Some((key, _)) = trimmed.split_once(':') {
+            if !key.trim().is_empty() {
+                values.push(key.trim().to_string());
+            }
+        }
+        cursor += 1;
+    }
+    Ok((dedup_non_empty(values), cursor))
+}
+
+fn parse_string_map(
+    lines: &[&str],
+    index: usize,
+    raw_value: &str,
+) -> Result<(BTreeMap<String, String>, usize), String> {
+    if !raw_value.is_empty() {
+        return Err("frontmatter map fields must use nested key/value entries".to_string());
+    }
+
+    let mut cursor = index + 1;
+    let mut values = BTreeMap::new();
+    while cursor < lines.len() {
+        let line = lines[cursor];
+        if !has_trimmed_content(line) {
+            cursor += 1;
+            continue;
+        }
+        let indent = leading_indent(line)?;
+        if indent == 0 {
+            break;
+        }
+        let field = parse_frontmatter_field_line(line.trim(), |trimmed| {
+            format!("frontmatter map entry `{trimmed}` must use `key: value` syntax")
+        })?;
+        if field.key.trim().is_empty() {
+            return Err("frontmatter map keys must not be empty".to_string());
+        }
+        values.insert(
+            field.key.trim().to_string(),
+            parse_inline_scalar(field.raw_value),
+        );
+        cursor += 1;
+    }
+    Ok((values, cursor))
+}
+
+fn parse_mcp_server_policies(
+    lines: &[&str],
+    index: usize,
+    raw_value: &str,
+) -> Result<Vec<SkillMcpServerPolicy>, String> {
+    if !raw_value.is_empty() {
+        return Ok(parse_inline_list_or_scalar(raw_value)
+            .into_iter()
+            .map(default_mcp_server_policy)
+            .collect());
+    }
+
+    let mut cursor = index + 1;
+    let mut policies = Vec::new();
+    let mut server_indent = None;
+    while cursor < lines.len() {
+        let line = lines[cursor];
+        if !has_trimmed_content(line) {
+            cursor += 1;
+            continue;
+        }
+        let indent = leading_indent(line)?;
+        if indent == 0 {
+            break;
+        }
+        let current_server_indent = *server_indent.get_or_insert(indent);
+        if indent > current_server_indent {
+            cursor += 1;
+            continue;
+        }
+        if indent < current_server_indent {
+            break;
+        }
+        let trimmed = line.trim();
+        if let Some(item) = trimmed.strip_prefix("- ") {
+            let name = parse_inline_scalar(item);
+            if !name.is_empty() {
+                policies.push(default_mcp_server_policy(name));
+            }
+            cursor += 1;
+            continue;
+        }
+        let Some((raw_name, raw_tail)) = trimmed.split_once(':') else {
+            cursor += 1;
+            continue;
+        };
+        let name = raw_name.trim();
+        if name.is_empty() || name.starts_with('-') {
+            cursor += 1;
+            continue;
+        }
+        let mut policy = default_mcp_server_policy(name.to_string());
+        if !raw_tail.trim().is_empty() {
+            policy.transport = raw_tail.trim().to_string();
+            policies.push(policy);
+            cursor += 1;
+            continue;
+        }
+
+        cursor += 1;
+        while cursor < lines.len() {
+            let child_line = lines[cursor];
+            if !has_trimmed_content(child_line) {
+                cursor += 1;
+                continue;
+            }
+            let child_indent = leading_indent(child_line)?;
+            if child_indent <= current_server_indent {
+                break;
+            }
+            let field = parse_frontmatter_field_line(child_line.trim(), |trimmed| {
+                format!("frontmatter mcp entry `{trimmed}` must use `key: value` syntax")
+            })?;
+            match field.key {
+                "transport" | "type" => {
+                    policy.transport = parse_inline_scalar(field.raw_value);
+                    cursor += 1;
+                }
+                "command" => {
+                    policy.command = parse_inline_list_or_scalar(field.raw_value);
+                    policy.transport = "stdio".to_string();
+                    cursor += 1;
+                }
+                "args" => {
+                    let (args, next_index) = parse_string_list_or_keys_with_parent(
+                        lines,
+                        cursor,
+                        field.raw_value,
+                        child_indent,
+                    )?;
+                    policy.command.extend(args);
+                    cursor = next_index;
+                }
+                "endpoint" | "url" => {
+                    policy.endpoint = Some(parse_inline_scalar(field.raw_value));
+                    policy.transport = "http".to_string();
+                    cursor += 1;
+                }
+                "env" | "environment" => {
+                    let (env, next_index) = parse_string_map(lines, cursor, field.raw_value)?;
+                    policy.env_keys = env.keys().cloned().collect();
+                    cursor = next_index;
+                }
+                _ => {
+                    cursor = skip_unknown_field(lines, cursor, field.raw_value)?;
+                }
+            }
+        }
+        policies.push(policy);
+    }
+    Ok(policies)
+}
+
+fn default_mcp_server_policy(name: String) -> SkillMcpServerPolicy {
+    SkillMcpServerPolicy {
+        name,
+        transport: "declared".to_string(),
+        command: Vec::new(),
+        endpoint: None,
+        env_keys: Vec::new(),
+    }
+}
+
+fn parse_environment_policy(
+    lines: &[&str],
+    index: usize,
+    raw_value: &str,
+) -> Result<(SkillEnvironmentPolicy, usize), String> {
+    if !raw_value.is_empty() {
+        return Ok((
+            SkillEnvironmentPolicy {
+                allow: parse_inline_list_or_scalar(raw_value),
+                deny: Vec::new(),
+            },
+            index + 1,
+        ));
+    }
+
+    let mut cursor = index + 1;
+    let mut policy = SkillEnvironmentPolicy::default();
+    while cursor < lines.len() {
+        let line = lines[cursor];
+        if !has_trimmed_content(line) {
+            cursor += 1;
+            continue;
+        }
+        let indent = leading_indent(line)?;
+        if indent == 0 {
+            break;
+        }
+        let field = parse_frontmatter_field_line(line.trim(), |trimmed| {
+            format!("frontmatter environment entry `{trimmed}` must use `key: value` syntax")
+        })?;
+        let (values, next_index) =
+            parse_string_list_or_keys_with_parent(lines, cursor, field.raw_value, indent)?;
+        match field.key {
+            "allow" | "allowlist" | "allowed" => policy.allow = values,
+            "deny" | "denylist" | "denied" => policy.deny = values,
+            _ => {}
+        }
+        cursor = next_index;
+    }
+    Ok((policy, cursor))
 }
 
 fn parse_frontmatter_field_line<'a>(
@@ -1320,6 +2065,34 @@ fn parse_inline_scalar(value: &str) -> String {
         }
     }
     trimmed.to_string()
+}
+
+fn parse_inline_list_or_scalar(value: &str) -> Vec<String> {
+    let trimmed = value.trim();
+    if trimmed.starts_with('[') && trimmed.ends_with(']') {
+        return dedup_non_empty(
+            trimmed[1..trimmed.len() - 1]
+                .split(',')
+                .map(parse_inline_scalar)
+                .collect(),
+        );
+    }
+    dedup_non_empty(vec![parse_inline_scalar(trimmed)])
+}
+
+fn dedup_non_empty(values: Vec<String>) -> Vec<String> {
+    let mut seen = BTreeSet::new();
+    let mut deduped = Vec::new();
+    for value in values {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if seen.insert(trimmed.to_string()) {
+            deduped.push(trimmed.to_string());
+        }
+    }
+    deduped
 }
 
 fn validate_skill_name(name: &str, skill_file: &Path) -> Result<(), String> {

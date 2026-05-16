@@ -539,6 +539,8 @@ pub struct ResumePlan {
     pub child_sessions: BTreeMap<String, ResumeChildSessionSnapshot>,
     pub workspace_root: Option<String>,
     pub provider_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_continuation_id: Option<String>,
     pub is_resumable: bool,
     pub resume_disabled_reason: Option<String>,
 }
@@ -565,6 +567,7 @@ impl ResumePlan {
             child_sessions: BTreeMap::new(),
             workspace_root: None,
             provider_model: None,
+            active_continuation_id: None,
             is_resumable: false,
             resume_disabled_reason: Some(reason),
         }
@@ -1281,6 +1284,7 @@ pub fn project_resume_plan<'a>(
     let mut agent_turns_terminal_pending_late = BTreeMap::new();
     let mut workspace_root = None;
     let mut provider_model = None;
+    let mut active_continuation_id = None;
     let mut run_id: Option<String> = None;
     let mut max_seq = 0_u64;
     let mut expected_seq = 1_u64;
@@ -1319,6 +1323,7 @@ pub fn project_resume_plan<'a>(
                 session_artifacts.clear();
                 agent_turns_in_flight.clear();
                 agent_turns_terminal_pending_late.clear();
+                active_continuation_id = None;
             }
             EventV1::SessionTitleUpdated(_) => {}
             EventV1::RunFinished(_) => {
@@ -1760,6 +1765,20 @@ pub fn project_resume_plan<'a>(
                     "request",
                 )?;
             }
+            EventV1::ContinuationStarted(payload) => {
+                active_continuation_id = Some(payload.continuation_id.clone());
+            }
+            EventV1::ContinuationReminderQueued(_) => {}
+            EventV1::ContinuationStopped(payload) => {
+                if active_continuation_id.as_deref() == Some(payload.continuation_id.as_str()) {
+                    active_continuation_id = None;
+                }
+            }
+            EventV1::ContinuationLimitReached(payload) => {
+                if active_continuation_id.as_deref() == Some(payload.continuation_id.as_str()) {
+                    active_continuation_id = None;
+                }
+            }
             _ => {}
         }
     }
@@ -1791,6 +1810,7 @@ pub fn project_resume_plan<'a>(
         child_sessions,
         workspace_root,
         provider_model,
+        active_continuation_id,
         is_resumable: resume_disabled_reason.is_none(),
         resume_disabled_reason,
     })
@@ -2434,10 +2454,16 @@ fn event_type_name(event: &EventV1) -> String {
         EventV1::TeamMessageSent(_) => "team_message_sent",
         EventV1::TeamTaskCreated(_) => "team_task_created",
         EventV1::TeamTaskUpdated(_) => "team_task_updated",
+        EventV1::PersistentTaskCreated(_) => "persistent_task_created",
+        EventV1::PersistentTaskUpdated(_) => "persistent_task_updated",
         EventV1::TeamShutdownRequested(_) => "team_shutdown_requested",
         EventV1::TeamShutdownApproved(_) => "team_shutdown_approved",
         EventV1::TeamShutdownRejected(_) => "team_shutdown_rejected",
         EventV1::TeamDeleted(_) => "team_deleted",
+        EventV1::ContinuationStarted(_) => "continuation_started",
+        EventV1::ContinuationReminderQueued(_) => "continuation_reminder_queued",
+        EventV1::ContinuationStopped(_) => "continuation_stopped",
+        EventV1::ContinuationLimitReached(_) => "continuation_limit_reached",
         EventV1::UiIntentReceived(_) => "ui_intent_received",
         EventV1::UserMessageSubmitted(_) => "user_message_submitted",
     }

@@ -1,9 +1,12 @@
 use std::time::Duration;
 
+use harness_core::agent_catalog::{
+    agent_catalog_category_binding, agent_catalog_display_order, agent_catalog_role,
+};
 use harness_core::coord::{AgentRuntimeInfo, ChildTaskRequestMetadata, CoordinatorError};
 use harness_core::event::{
-    ActorKind, EventActor, EventV1, TaskCancelledEvent, TaskCompletedEvent, TaskScheduleState,
-    TaskTerminalScope, ToolCallStatus,
+    ActorKind, EventActor, EventV1, TaskCancelledEvent, TaskCompletedEvent, TaskRouteMetadata,
+    TaskScheduleState, TaskTerminalScope, ToolCallStatus,
 };
 use harness_core::proj::{BackgroundRequestProjection, BackgroundToolCallCounts};
 use harness_core::store::{EventStoreError, EventStream};
@@ -25,7 +28,6 @@ const MAX_BACKGROUND_OUTPUT_TIMEOUT_MS: u64 = 300_000;
 const MAX_BATCH_CALLS: usize = 25;
 const BATCH_NESTED_ERROR: &str = "batch cannot be nested inside batch";
 const BATCH_MAX_CALLS_ERROR: &str = "Maximum of 25 tools allowed in batch";
-const CATEGORY_FALLBACK_PROFILE: &str = "general";
 
 pub(crate) struct AgentOpsExecutor;
 
@@ -51,7 +53,6 @@ impl AgentOpsExecutor {
                 .agent_runtime_info(session_id.clone())
                 .await
                 .map_err(|err| map_request_agent_turn_error(err, &request))?;
-            apply_category_fallback_for_existing_session(ctx, &mut request, &target_info);
             authorize_existing_child_session(ctx, &request, &target_info)?;
             (session_id, target_info)
         } else {
@@ -82,6 +83,10 @@ impl AgentOpsExecutor {
                     task_id: agent_id.clone(),
                     description: request.description.clone(),
                     run_in_background: request.run_in_background,
+                    route: Some(child_task_route_metadata(
+                        &request,
+                        &child_runtime_metadata(&runtime),
+                    )),
                 },
             )
             .await
@@ -403,15 +408,6 @@ pub(crate) struct AgentSelection {
     pub(crate) category_selector: Option<String>,
 }
 
-impl AgentSpawnRequest {
-    fn category_fallback_profile(&self) -> Option<&'static str> {
-        self.category_selector
-            .as_deref()
-            .filter(|category| !category.eq_ignore_ascii_case(CATEGORY_FALLBACK_PROFILE))
-            .map(|_| CATEGORY_FALLBACK_PROFILE)
-    }
-}
-
 #[derive(Debug, Clone)]
 pub(crate) struct BackgroundOutputRequest {
     pub(crate) task_id: Option<String>,
@@ -460,12 +456,34 @@ struct ChildPermissionMetadata {
 struct ChildRuntimeMetadata {
     profile: String,
     category: String,
+    catalog_role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    category_binding: Option<String>,
+    display_order: usize,
     model_ref: String,
     toolset: Vec<String>,
     can_redelegate: bool,
     has_background_output: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     parent_agent_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ChildRouteMetadata {
+    requested_profile: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    requested_category: Option<String>,
+    resolved_profile: String,
+    resolved_category: String,
+    resolved_catalog_role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    resolved_category_binding: Option<String>,
+    resolved_display_order: usize,
+    model_ref: String,
+    can_redelegate: bool,
+    category_fallback_applied: bool,
+    explicit_subagent: bool,
+    loaded_skills: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -629,23 +647,9 @@ async fn spawn_new_child_agent(
     request: &mut AgentSpawnRequest,
     supervisor: EventActor,
 ) -> Result<String, ToolError> {
-    match spawn_child_agent_once(ctx, request, supervisor.clone()).await {
-        Ok(agent_id) => Ok(agent_id),
-        Err(CoordinatorError::UnknownAgent(_))
-            if !category_fallback_disabled(ctx)
-                && request.category_fallback_profile().is_some() =>
-        {
-            let fallback = request
-                .category_fallback_profile()
-                .expect("fallback checked")
-                .to_string();
-            request.profile_name = fallback;
-            spawn_child_agent_once(ctx, request, supervisor)
-                .await
-                .map_err(|err| map_spawn_agent_error(err, request))
-        }
-        Err(err) => Err(map_spawn_agent_error(err, request)),
-    }
+    spawn_child_agent_once(ctx, request, supervisor)
+        .await
+        .map_err(|err| map_spawn_agent_error(err, request))
 }
 
 async fn spawn_child_agent_once(
@@ -666,19 +670,6 @@ async fn spawn_child_agent_once(
         .await
 }
 
-fn apply_category_fallback_for_existing_session(
-    ctx: &ToolContext,
-    request: &mut AgentSpawnRequest,
-    target_info: &AgentRuntimeInfo,
-) {
-    if category_fallback_disabled(ctx) {
-        return;
-    }
-    if request.category_fallback_profile() == Some(target_info.profile_name.as_str()) {
-        request.profile_name = target_info.profile_name.clone();
-    }
-}
-
 fn inherited_model_override(
     ctx: &ToolContext,
     runtime: &AgentRuntimeInfo,
@@ -691,10 +682,6 @@ fn inherited_model_override(
         ctx.current_model_ref.clone()?,
         ctx.current_model_settings.clone().unwrap_or_default(),
     ))
-}
-
-fn category_fallback_disabled(ctx: &ToolContext) -> bool {
-    ctx.category.as_deref() == Some(harness_core::plan::PLAN_AGENT_NAME)
 }
 
 pub(crate) fn select_agent_selection(
@@ -760,10 +747,18 @@ fn map_request_agent_turn_error(err: CoordinatorError, request: &AgentSpawnReque
 
 fn map_spawn_agent_error(err: CoordinatorError, request: &AgentSpawnRequest) -> ToolError {
     match err {
-        CoordinatorError::UnknownAgent(profile_name) => ToolError::InvalidArguments(format!(
-            "Unknown child profile `{profile_name}`. Configure that agent profile before using task with category/subagent_type `{}`.",
-            request.profile_name
-        )),
+        CoordinatorError::UnknownAgent(profile_name) => {
+            if request.category_selector.is_some() {
+                ToolError::InvalidArguments(format!(
+                    "Unknown category `{profile_name}`. Configure that category profile before using task(category=...). Harness no longer applies an implicit general fallback."
+                ))
+            } else {
+                ToolError::InvalidArguments(format!(
+                    "Unknown child profile `{profile_name}`. Configure that agent profile before using task with category/subagent_type `{}`.",
+                    request.profile_name
+                ))
+            }
+        }
         other => ToolError::Execution(format!("failed to spawn agent: {other}")),
     }
 }
@@ -1023,6 +1018,9 @@ fn child_runtime_metadata(runtime: &AgentRuntimeInfo) -> ChildRuntimeMetadata {
     ChildRuntimeMetadata {
         profile: runtime.profile_name.clone(),
         category: runtime.profile_category.clone(),
+        catalog_role: agent_catalog_role(&runtime.profile_name).to_string(),
+        category_binding: agent_catalog_category_binding(&runtime.profile_name),
+        display_order: agent_catalog_display_order(&runtime.profile_name, 0),
         model_ref: runtime.model_ref.clone(),
         can_redelegate: runtime.toolset.iter().any(|tool| tool == "task"),
         has_background_output: runtime
@@ -1031,6 +1029,54 @@ fn child_runtime_metadata(runtime: &AgentRuntimeInfo) -> ChildRuntimeMetadata {
             .any(|tool| tool == "background_output"),
         toolset: runtime.toolset.clone(),
         parent_agent_id: runtime.parent_agent_id.clone(),
+    }
+}
+
+fn child_task_route_metadata(
+    request: &AgentSpawnRequest,
+    runtime: &ChildRuntimeMetadata,
+) -> TaskRouteMetadata {
+    let route = child_route_metadata(request, runtime);
+    TaskRouteMetadata {
+        requested_profile: Some(route.requested_profile),
+        requested_category: route.requested_category,
+        resolved_profile: Some(route.resolved_profile),
+        resolved_category: Some(route.resolved_category),
+        resolved_catalog_role: Some(runtime.catalog_role.clone()),
+        resolved_category_binding: runtime.category_binding.clone(),
+        resolved_display_order: Some(runtime.display_order),
+        model_ref: Some(runtime.model_ref.clone()),
+        can_redelegate: Some(runtime.can_redelegate),
+        category_fallback_applied: Some(route.category_fallback_applied),
+        explicit_subagent: Some(route.explicit_subagent),
+        loaded_skills: route.loaded_skills,
+    }
+}
+
+fn child_route_metadata(
+    request: &AgentSpawnRequest,
+    runtime: &ChildRuntimeMetadata,
+) -> ChildRouteMetadata {
+    let requested_profile = request
+        .category_selector
+        .clone()
+        .unwrap_or_else(|| request.profile_name.clone());
+    ChildRouteMetadata {
+        requested_profile,
+        requested_category: request.category_selector.clone(),
+        resolved_profile: runtime.profile.clone(),
+        resolved_category: runtime.category.clone(),
+        resolved_catalog_role: runtime.catalog_role.clone(),
+        resolved_category_binding: runtime.category_binding.clone(),
+        resolved_display_order: runtime.display_order,
+        model_ref: runtime.model_ref.clone(),
+        can_redelegate: runtime.can_redelegate,
+        category_fallback_applied: request
+            .category_selector
+            .as_ref()
+            .is_some_and(|category| category != &runtime.profile),
+        explicit_subagent: request.category_selector.is_none(),
+        loaded_skills: request.load_skills.clone(),
     }
 }
 
@@ -1136,9 +1182,13 @@ fn spawn_result_json(
     lineage: Value,
     child_session: &ChildSessionObservability,
 ) -> Value {
+    let route = child_route_metadata(request, &child_session.runtime);
     json!({
         "description": request.description,
         "profile": request.profile_name,
+        "category": request.category_selector.clone(),
+        "route": route.clone(),
+        "resolved_route": route,
         "task_id": agent_id,
         "session_id": agent_id,
         "request_id": request_id,
@@ -1179,6 +1229,7 @@ fn loaded_skill_metadata(loaded_skills: &[TaskSkillContext]) -> Value {
                     "name": skill.name,
                     "description": skill.description,
                     "location": skill.location.display().to_string(),
+                    "policy": skill.policy,
                 })
             })
             .collect(),

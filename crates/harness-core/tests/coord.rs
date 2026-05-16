@@ -17,18 +17,20 @@ use harness_core::config::{
     CompactionRuntimeConfig, HookLifecycleEvent, HookRuntimeConfig, HooksConfig,
     LifecycleHookConfig, PermissionMode, ShellAllowlist,
 };
+use harness_core::continuation::ContinuationBounds;
 use harness_core::coord::{
     spawn_coordinator, ChildTaskRequestMetadata, CoordinatorConfig, CoordinatorError,
     CoordinatorHandle, JobOutcome, JobProgressKind, ManualCompactionOutcome, RunInfo,
 };
 use harness_core::event::{
     ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1, ExecutionTimingMetadata,
-    HookExecutionMetadata, HookExecutionStatus, PermissionDecision as EventPermissionDecision,
-    PermissionRequestedEvent, PermissionResolvedEvent, ProviderRequestStartedEvent,
-    RunFinishedEvent, RunStartedEvent, TaskCancelledEvent, TaskCompletedEvent,
-    TaskCompletionMetadata, TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState,
-    TaskScheduledEvent, ToolCallFinishedEvent, ToolCallMetadata, ToolCallRequestedEvent,
-    ToolCallStatus, SCHEMA_VERSION,
+    HookEffectKind, HookExecutionMetadata, HookExecutionStatus,
+    PermissionDecision as EventPermissionDecision, PermissionRequestedEvent,
+    PermissionResolvedEvent, PersistentTask, PersistentTaskStatus, PersistentTaskUpdatedEvent,
+    ProviderRequestStartedEvent, RunFinishedEvent, RunStartedEvent, TaskCancelledEvent,
+    TaskCompletedEvent, TaskCompletionMetadata, TaskLineageMetadata, TaskResultLateEvent,
+    TaskScheduleState, TaskScheduledEvent, ToolCallFinishedEvent, ToolCallMetadata,
+    ToolCallRequestedEvent, ToolCallStatus, SCHEMA_VERSION,
 };
 use harness_core::perm::{PermissionDecision as RuntimePermissionDecision, PermissionPolicy};
 use harness_core::proj::{inspect_resume_plan, ChildSessionTerminalState, LifecycleSegmentStatus};
@@ -311,6 +313,177 @@ impl Provider for SequentialScriptedProvider {
 }
 
 #[tokio::test]
+async fn runtime_model_fallback_retries_retryable_provider_errors_with_metadata() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::Error {
+                message: "429 rate limit exceeded".to_string(),
+            },
+        ],
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("fallback ok".to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 1,
+                    completion_tokens: 1,
+                    total_tokens: 2,
+                },
+            },
+        ],
+    ]);
+    let mut config = CoordinatorConfig::new(temp_dir.path().join("sessions"));
+    config.provider = Arc::new(provider.clone());
+    config.agent_profiles = BTreeMap::from([(
+        "alpha".to_string(),
+        AgentProfile {
+            name: "alpha".to_string(),
+            category: "alpha".to_string(),
+            model_ref: "mock:primary".to_string(),
+            model_ref_explicit: true,
+            fallback_model_refs: vec!["mock:fallback".to_string()],
+            fallback_model_settings: vec![AgentModelSettings {
+                variant: Some("fallback-variant".to_string()),
+                reasoning_effort: Some("low".to_string()),
+                text_verbosity: Some("low".to_string()),
+                reasoning_summary: Some("auto".to_string()),
+            }],
+            system_prompt: "alpha prompt".to_string(),
+            max_iters: Some(4),
+            temperature: Some(0.0),
+            tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+            toolset: vec![],
+        },
+    )]);
+
+    let coordinator = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = coordinator
+        .start_run("fallback_retry", temp_dir.path())
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn agent");
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "please answer")
+        .await
+        .expect("request turn");
+
+    let events = wait_for_events(&run.events_path, Duration::from_secs(2), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data) if data.result_summary == "fallback ok"
+            )
+        })
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let requests = provider.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].model_id, "primary");
+    assert_eq!(requests[1].model_id, "fallback");
+    assert_eq!(requests[1].variant.as_deref(), Some("fallback-variant"));
+    assert_eq!(requests[1].reasoning_effort.as_deref(), Some("low"));
+    assert_eq!(requests[1].text_verbosity.as_deref(), Some("low"));
+    assert_eq!(requests[1].reasoning_summary.as_deref(), Some("auto"));
+
+    let started = events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            EventV1::ProviderRequestStarted(started) => Some(started),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(started.len(), 2);
+    let fallback_metadata = started[1].metadata.as_ref().expect("fallback metadata");
+    assert_eq!(fallback_metadata.fallback_attempt, Some(1));
+    assert_eq!(
+        fallback_metadata.fallback_from_model_ref.as_deref(),
+        Some("mock:primary")
+    );
+    assert_eq!(
+        fallback_metadata.fallback_reason_class.as_deref(),
+        Some("rate_limit")
+    );
+    assert_eq!(fallback_metadata.fallback_retryable, Some(true));
+}
+
+#[tokio::test]
+async fn runtime_model_fallback_does_not_retry_non_retryable_provider_errors() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let provider = SequentialScriptedProvider::new(vec![vec![
+        ProviderStreamEvent::Start,
+        ProviderStreamEvent::Error {
+            message: "401 unauthorized invalid api key".to_string(),
+        },
+    ]]);
+    let mut config = CoordinatorConfig::new(temp_dir.path().join("sessions"));
+    config.provider = Arc::new(provider.clone());
+    config.agent_profiles = BTreeMap::from([(
+        "alpha".to_string(),
+        AgentProfile {
+            name: "alpha".to_string(),
+            category: "alpha".to_string(),
+            model_ref: "mock:primary".to_string(),
+            model_ref_explicit: true,
+            fallback_model_refs: vec!["mock:fallback".to_string()],
+            fallback_model_settings: Vec::new(),
+            system_prompt: "alpha prompt".to_string(),
+            max_iters: Some(4),
+            temperature: Some(0.0),
+            tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+            toolset: vec![],
+        },
+    )]);
+
+    let coordinator = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = coordinator
+        .start_run("fallback_no_retry", temp_dir.path())
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn agent");
+    coordinator
+        .request_agent_turn(supervisor_actor(), agent_id, "please answer")
+        .await
+        .expect("request turn");
+
+    let events = wait_for_events(&run.events_path, Duration::from_secs(2), |events| {
+        events
+            .iter()
+            .any(|event| matches!(event.payload, EventV1::TaskCancelled(_)))
+    })
+    .await;
+    coordinator.stop_run().await.expect("stop run");
+
+    assert_eq!(provider.requests().len(), 1);
+    let finished = events.iter().find_map(|event| match &event.payload {
+        EventV1::ProviderRequestFinished(finished) => Some(finished),
+        _ => None,
+    });
+    let metadata = finished
+        .and_then(|finished| finished.metadata.as_ref())
+        .expect("provider error metadata");
+    assert_eq!(metadata.provider_error_class.as_deref(), Some("auth"));
+    assert_eq!(metadata.provider_error_retryable, Some(false));
+}
+
+#[tokio::test]
 async fn coord_title_generation_uses_isolated_hidden_title_agent_request() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let provider = CapturingProvider::new(vec![
@@ -441,6 +614,8 @@ async fn coord_plan_mode_prompt_includes_workflow_and_plan_file_lifecycle() {
             category: harness_core::plan::PLAN_AGENT_NAME.to_string(),
             model_ref: "mock:model-1".to_string(),
             model_ref_explicit: true,
+            fallback_model_refs: Vec::new(),
+            fallback_model_settings: Vec::new(),
             system_prompt: "plan-prompt".to_string(),
             max_iters: Some(12),
             temperature: Some(0.0),
@@ -542,6 +717,326 @@ async fn coord_start_run_appends_run_started() {
         ),
         "first event must be RunStarted"
     );
+}
+
+#[tokio::test]
+async fn coord_continuation_start_stop_events_survive_resume_projection() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let coordinator = test_coordinator(temp_dir.path());
+
+    let run = coordinator
+        .start_run("coord_continuation", PathBuf::from("/workspace/project"))
+        .await
+        .expect("start run");
+    let actor = EventActor::new(ActorKind::User, Some("user".to_string()));
+    let continuation_id = coordinator
+        .start_continuation(
+            actor.clone(),
+            "ralph",
+            "/ralph-loop",
+            ContinuationBounds {
+                max_iterations: 2,
+                ..ContinuationBounds::default()
+            },
+        )
+        .await
+        .expect("start continuation");
+
+    let active_plan = inspect_resume_plan(&run.run_dir);
+    assert_eq!(
+        active_plan.active_continuation_id.as_deref(),
+        Some(continuation_id.as_str())
+    );
+
+    coordinator
+        .stop_continuation(actor, "/stop-continuation")
+        .await
+        .expect("stop continuation");
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::ContinuationStarted(payload)
+            if payload.continuation_id == continuation_id
+                && payload.mode == "ralph"
+                && payload.command == "/ralph-loop"
+                && payload.max_iterations == 2
+    )));
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::ContinuationStopped(payload)
+            if payload.continuation_id == continuation_id
+                && payload.reason == "/stop-continuation"
+    )));
+
+    let stopped_plan = inspect_resume_plan(&run.run_dir);
+    assert_eq!(stopped_plan.active_continuation_id, None);
+}
+
+#[tokio::test]
+async fn coord_continuation_reminder_schedules_turn_and_hits_limit() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let coordinator = test_agent_coordinator_with_provider(
+        temp_dir.path(),
+        Arc::new(PromptScriptedProvider::new(
+            BTreeMap::new(),
+            Duration::from_millis(1),
+        )),
+        1,
+    );
+
+    let run = coordinator
+        .start_run(
+            "coord_continuation_reminder_loop",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    let continuation_id = coordinator
+        .start_continuation(
+            supervisor_actor(),
+            "ralph",
+            "/ralph-loop",
+            ContinuationBounds {
+                max_iterations: 1,
+                ..ContinuationBounds::default()
+            },
+        )
+        .await
+        .expect("start continuation");
+    let reminder_request_id = coordinator
+        .trigger_continuation_reminder(supervisor_actor(), agent_id, "continuation_started")
+        .await
+        .expect("trigger reminder")
+        .expect("reminder request id");
+
+    let events = wait_for_events(&run.events_path, Duration::from_secs(1), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::ContinuationLimitReached(payload)
+                    if payload.continuation_id == continuation_id
+            )
+        })
+    })
+    .await;
+
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::ContinuationReminderQueued(payload)
+            if payload.continuation_id == continuation_id
+                && payload.iteration == 1
+                && payload.reason == "continuation_started"
+    )));
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::TaskScheduled(payload)
+            if event.correlation_id.as_deref() == Some(reminder_request_id.as_str())
+                && payload.state == TaskScheduleState::Started
+    )));
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::ContinuationLimitReached(payload)
+            if payload.continuation_id == continuation_id
+                && payload.limit == "max_iterations"
+                && payload.iteration == 1
+    )));
+    assert_eq!(
+        inspect_resume_plan(&run.run_dir).active_continuation_id,
+        None
+    );
+}
+
+#[tokio::test]
+async fn coord_continuation_wall_clock_bound_stops_without_scheduling_reminder() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let clock = Arc::new(FakeClock::new());
+    let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());
+    config.deterministic_store = true;
+    config.command_buffer = 64;
+    config.provider = Arc::new(PromptScriptedProvider::new(
+        BTreeMap::new(),
+        Duration::from_millis(1),
+    ));
+    config.agent_profiles = agent_profiles();
+    let coordinator =
+        spawn_coordinator(config, clock.clone(), Arc::new(DefaultRedactor::default()));
+
+    let run = coordinator
+        .start_run(
+            "coord_continuation_wall_clock_limit",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .expect("spawn idle alpha");
+    let continuation_id = coordinator
+        .start_continuation(
+            supervisor_actor(),
+            "ralph",
+            "/ralph-loop",
+            ContinuationBounds {
+                max_iterations: 10,
+                max_wall_clock_ms: 25,
+                ..ContinuationBounds::default()
+            },
+        )
+        .await
+        .expect("start continuation");
+
+    clock.advance(25);
+    assert_eq!(
+        coordinator
+            .trigger_continuation_reminder(supervisor_actor(), agent_id, "wall_clock_elapsed")
+            .await
+            .expect("trigger reminder"),
+        None
+    );
+
+    let events = load_events(&run.events_path);
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::ContinuationLimitReached(payload)
+            if payload.continuation_id == continuation_id
+                && payload.limit == "max_wall_clock_ms"
+                && payload.iteration == 0
+    )));
+    assert!(!events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::ContinuationReminderQueued(payload)
+            if payload.continuation_id == continuation_id
+    )));
+    assert_eq!(
+        inspect_resume_plan(&run.run_dir).active_continuation_id,
+        None
+    );
+}
+
+#[tokio::test]
+async fn coord_persistent_tasks_project_dependencies_and_block_updates() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let coordinator = test_coordinator(temp_dir.path());
+
+    let run = coordinator
+        .start_run(
+            "coord_persistent_tasks",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let actor = EventActor::new(ActorKind::User, Some("user".to_string()));
+    let task_a = persistent_task("task_a", Vec::new());
+    coordinator
+        .create_persistent_task(actor.clone(), task_a)
+        .await
+        .expect("create task_a");
+    let task_b = persistent_task("task_b", vec!["task_a".to_string()]);
+    let projection = coordinator
+        .create_persistent_task(actor.clone(), task_b)
+        .await
+        .expect("create task_b");
+
+    assert_eq!(projection.tasks["task_a"].blocks, vec!["task_b"]);
+    assert_eq!(projection.tasks["task_b"].blocked_by, vec!["task_a"]);
+
+    let blocked = coordinator
+        .update_persistent_task(
+            actor.clone(),
+            PersistentTaskUpdatedEvent {
+                task_id: "task_b".to_string(),
+                status: PersistentTaskStatus::InProgress,
+                active_form: None,
+                owner: Some("build".to_string()),
+                description: None,
+                subject: None,
+                blocked_by: None,
+                metadata: BTreeMap::new(),
+            },
+        )
+        .await
+        .expect_err("blocked dependency prevents progress");
+    assert!(
+        matches!(blocked, CoordinatorError::PolicyViolation(reason) if reason.contains("blocked by incomplete task"))
+    );
+
+    coordinator
+        .update_persistent_task(
+            actor.clone(),
+            PersistentTaskUpdatedEvent {
+                task_id: "task_a".to_string(),
+                status: PersistentTaskStatus::Completed,
+                active_form: None,
+                owner: None,
+                description: None,
+                subject: None,
+                blocked_by: None,
+                metadata: BTreeMap::from([("verified".to_string(), "yes".to_string())]),
+            },
+        )
+        .await
+        .expect("complete task_a");
+    let projection = coordinator
+        .update_persistent_task(
+            actor,
+            PersistentTaskUpdatedEvent {
+                task_id: "task_b".to_string(),
+                status: PersistentTaskStatus::InProgress,
+                active_form: Some("Implement dependent work".to_string()),
+                owner: Some("build".to_string()),
+                description: None,
+                subject: None,
+                blocked_by: None,
+                metadata: BTreeMap::new(),
+            },
+        )
+        .await
+        .expect("start task_b after dependency");
+
+    assert_eq!(
+        projection.tasks["task_b"].status,
+        PersistentTaskStatus::InProgress
+    );
+    assert_eq!(
+        projection.tasks["task_b"].active_form.as_deref(),
+        Some("Implement dependent work")
+    );
+
+    let cycle = coordinator
+        .update_persistent_task(
+            EventActor::new(ActorKind::Supervisor, Some("agent_supervisor".to_string())),
+            PersistentTaskUpdatedEvent {
+                task_id: "task_a".to_string(),
+                status: PersistentTaskStatus::Completed,
+                active_form: None,
+                owner: None,
+                description: None,
+                subject: None,
+                blocked_by: Some(vec!["task_b".to_string()]),
+                metadata: BTreeMap::new(),
+            },
+        )
+        .await
+        .expect_err("dependency cycles are rejected");
+    assert!(
+        matches!(cycle, CoordinatorError::PolicyViolation(reason) if reason.contains("dependency cycle"))
+    );
+
+    coordinator.stop_run().await.expect("stop run");
+    let events = load_events(&run.events_path);
+    assert!(events
+        .iter()
+        .any(|event| matches!(event.payload, EventV1::PersistentTaskCreated(_))));
+    assert!(events
+        .iter()
+        .any(|event| matches!(event.payload, EventV1::PersistentTaskUpdated(_))));
 }
 
 #[tokio::test]
@@ -1362,6 +1857,7 @@ async fn background_task_completion_after_tool_result_wakes_parent_in_followup_t
                 task_id: child_agent_id,
                 description: "Child background task".to_string(),
                 run_in_background: true,
+                route: None,
             },
         )
         .await
@@ -1809,6 +2305,8 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
         category: "deep".to_string(),
         model_ref: "mock:model-1".to_string(),
         model_ref_explicit: true,
+        fallback_model_refs: Vec::new(),
+        fallback_model_settings: Vec::new(),
         system_prompt: "single-call-system".to_string(),
         temperature: Some(0.0),
         max_iters: Some(12),
@@ -1823,6 +2321,8 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
         selected_agent_tags: Vec::new(),
         selected_resource_tags: Vec::new(),
         model_ref: "mock:model-1".to_string(),
+        fallback_model_refs: Vec::new(),
+        fallback_model_settings: Vec::new(),
         model_settings: AgentModelSettings::default(),
     };
     let tool_defs = build_provider_tool_defs(&profile, tool_registry.as_ref())
@@ -4710,6 +5210,8 @@ async fn critical_compaction_requested_hook_failure_records_compaction_failed() 
     ]);
     let hook_runtime_config = HookRuntimeConfig {
         hooks: HooksConfig {
+            disabled: false,
+            disabled_hooks: BTreeSet::new(),
             lifecycle: vec![LifecycleHookConfig {
                 id: Some("failed-terminal-compaction-blocker".to_string()),
                 event: HookLifecycleEvent::CompactionRequested,
@@ -5182,6 +5684,8 @@ async fn resume_existing_run_restores_subagent_parent_lineage_for_hooks_and_repl
     )]);
     let hook_runtime_config = HookRuntimeConfig {
         hooks: HooksConfig {
+            disabled: false,
+            disabled_hooks: BTreeSet::new(),
             lifecycle: vec![LifecycleHookConfig {
                 id: Some("provider-started".to_string()),
                 event: HookLifecycleEvent::ProviderRequestStarted,
@@ -7186,6 +7690,8 @@ async fn hook_summary_override_takes_precedence_over_model_backed_compaction() {
     ]);
     let hook_runtime_config = HookRuntimeConfig {
         hooks: HooksConfig {
+            disabled: false,
+            disabled_hooks: BTreeSet::new(),
             lifecycle: vec![LifecycleHookConfig {
                 id: Some("compaction-summary".to_string()),
                 event: HookLifecycleEvent::CompactionRequested,
@@ -8068,6 +8574,8 @@ async fn critical_hook_failure_fails_closed_and_records_metadata() {
     let hook_output_path = temp_dir.path().join("hook-finish.txt");
     let hook_runtime_config = HookRuntimeConfig {
         hooks: HooksConfig {
+            disabled: false,
+            disabled_hooks: BTreeSet::new(),
             lifecycle: vec![
                 LifecycleHookConfig {
                     id: Some("tool-start-timeout".to_string()),
@@ -8222,6 +8730,8 @@ async fn noncritical_hook_failure_records_metadata_without_cancelling_task() {
     let hook_output_path = temp_dir.path().join("hook-finish-noncritical.txt");
     let hook_runtime_config = HookRuntimeConfig {
         hooks: HooksConfig {
+            disabled: false,
+            disabled_hooks: BTreeSet::new(),
             lifecycle: vec![LifecycleHookConfig {
                 id: Some("tool-finish-noncritical".to_string()),
                 event: HookLifecycleEvent::ToolCallFinished,
@@ -8347,6 +8857,335 @@ async fn noncritical_hook_failure_records_metadata_without_cancelling_task() {
     );
 }
 
+#[tokio::test]
+async fn typed_hook_effects_are_recorded_redacted_and_disableable_by_id() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let disabled_output_path = temp_dir.path().join("disabled-hook-side-effect.txt");
+    let typed_effects = json!({
+        "effects": [
+            {
+                "kind": "transform_context",
+                "summary": "compaction_summary: preserve safe recap with sk-AbCdEf0123456789"
+            },
+            {
+                "kind": "truncate_output",
+                "summary": "cap grep/glob/lsp output to provider budget"
+            },
+            {
+                "kind": "recover",
+                "summary": "retry missing tool result once"
+            },
+            {
+                "kind": "notify",
+                "summary": "background completion notification"
+            },
+            {
+                "kind": "add_diagnostic",
+                "summary": "json error recovery available"
+            },
+            {
+                "kind": "write_artifact",
+                "summary": "redacted hook artifact",
+                "artifact_ref": {
+                    "path": "hooks/typed-hook.redacted.json",
+                    "digest": "digest-typed-hook"
+                }
+            }
+        ]
+    })
+    .to_string();
+    let hook_runtime_config = HookRuntimeConfig {
+        hooks: HooksConfig {
+            disabled: false,
+            disabled_hooks: BTreeSet::from(["disabled-finish".to_string()]),
+            lifecycle: vec![
+                LifecycleHookConfig {
+                    id: Some("disabled-finish".to_string()),
+                    event: HookLifecycleEvent::ToolCallFinished,
+                    command: vec![
+                        "bash".to_string(),
+                        "-lc".to_string(),
+                        "printf disabled > \"$DISABLED_OUTPUT_PATH\"".to_string(),
+                    ],
+                    cwd: Some(".".to_string()),
+                    timeout_ms: 4_000,
+                    critical: false,
+                    env: BTreeMap::from([(
+                        "DISABLED_OUTPUT_PATH".to_string(),
+                        disabled_output_path.display().to_string(),
+                    )]),
+                },
+                LifecycleHookConfig {
+                    id: Some("typed-finish".to_string()),
+                    event: HookLifecycleEvent::ToolCallFinished,
+                    command: vec![
+                        "bash".to_string(),
+                        "-lc".to_string(),
+                        "printf '%s' \"$TYPED_EFFECTS_JSON\"".to_string(),
+                    ],
+                    cwd: Some(".".to_string()),
+                    timeout_ms: 4_000,
+                    critical: false,
+                    env: BTreeMap::from([("TYPED_EFFECTS_JSON".to_string(), typed_effects)]),
+                },
+            ],
+        },
+        shell_allowlist: ShellAllowlist {
+            executables: vec!["bash".to_string()],
+            cwd_roots: vec![".".to_string()],
+        },
+        suppress_execution: false,
+    };
+
+    let clock = Arc::new(FakeClock::new());
+    let coordinator = test_tool_lifecycle_coordinator_with_hook_runtime(
+        temp_dir.path(),
+        clock,
+        lifecycle_tool_registry(Arc::new(Notify::new())),
+        Duration::from_millis(50),
+        15_000,
+        5,
+        1,
+        hook_runtime_config,
+    );
+
+    let run = coordinator
+        .start_run(
+            "typed_hook_effects_are_recorded_redacted_and_disableable_by_id",
+            temp_dir.path().to_path_buf(),
+        )
+        .await
+        .expect("start run");
+
+    let tool_call_id = coordinator
+        .request_tool_call(
+            supervisor_actor(),
+            Some("deep".to_string()),
+            "shell.run",
+            json!({"cmd": "true"}),
+        )
+        .await
+        .expect("request tool call");
+
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    coordinator.stop_run().await.expect("stop run");
+
+    assert!(
+        !disabled_output_path.exists(),
+        "disabled hook id must not execute its command"
+    );
+
+    let events = load_events(&run.events_path);
+    let tool_finished = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::ToolCallFinished(data) if data.tool_call_id == tool_call_id => Some(data),
+            _ => None,
+        })
+        .expect("tool finished event");
+    assert_eq!(tool_finished.status, ToolCallStatus::Succeeded);
+
+    let hook_executions = &tool_finished
+        .metadata
+        .as_ref()
+        .expect("tool metadata")
+        .hook_executions;
+    assert_eq!(hook_executions.len(), 2);
+    assert_eq!(hook_executions[0].hook_name, "disabled-finish");
+    assert_eq!(hook_executions[0].status, HookExecutionStatus::Skipped);
+    assert_eq!(
+        hook_executions[0].output_summary.as_deref(),
+        Some("disabled by hooks config")
+    );
+
+    let typed = &hook_executions[1];
+    assert_eq!(typed.hook_name, "typed-finish");
+    assert_eq!(typed.status, HookExecutionStatus::Succeeded);
+    assert_eq!(typed.hook_event.as_deref(), Some("tool_call_finished"));
+    assert_eq!(typed.hook_phase.as_deref(), Some("tool_result"));
+    assert!(
+        !typed
+            .output_summary
+            .as_deref()
+            .unwrap_or_default()
+            .contains("sk-AbCdEf0123456789"),
+        "hook output summaries must be redacted before persistence"
+    );
+    assert!(
+        typed
+            .effects
+            .iter()
+            .any(|effect| effect.kind == HookEffectKind::TransformContext),
+        "transform effect should be visible in metadata"
+    );
+    assert!(
+        typed
+            .effects
+            .iter()
+            .any(|effect| effect.kind == HookEffectKind::TruncateOutput),
+        "truncation effect should be visible in metadata"
+    );
+    assert!(
+        typed
+            .effects
+            .iter()
+            .any(|effect| effect.kind == HookEffectKind::Recover),
+        "recovery effect should be visible in metadata"
+    );
+    assert!(
+        typed
+            .effects
+            .iter()
+            .any(|effect| effect.kind == HookEffectKind::Notify),
+        "notification effect should be visible in metadata"
+    );
+    assert!(
+        typed.effects.iter().any(|effect| {
+            effect.kind == HookEffectKind::WriteArtifact
+                && effect
+                    .artifact_ref
+                    .as_ref()
+                    .is_some_and(|artifact| artifact.path == "hooks/typed-hook.redacted.json")
+        }),
+        "artifact effect should include the redacted artifact reference"
+    );
+    assert!(
+        typed.effects.iter().all(|effect| {
+            !effect
+                .summary
+                .as_deref()
+                .unwrap_or_default()
+                .contains("sk-AbCdEf0123456789")
+        }),
+        "hook effect summaries must be redacted"
+    );
+}
+
+#[tokio::test]
+async fn typed_hook_deny_effect_cancels_current_tool_through_events() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let deny_effect = json!({
+        "effects": [
+            {
+                "kind": "deny",
+                "summary": "policy blocked shell.run"
+            }
+        ]
+    })
+    .to_string();
+    let hook_runtime_config = HookRuntimeConfig {
+        hooks: HooksConfig {
+            disabled: false,
+            disabled_hooks: BTreeSet::new(),
+            lifecycle: vec![LifecycleHookConfig {
+                id: Some("typed-deny".to_string()),
+                event: HookLifecycleEvent::ToolCallFinished,
+                command: vec![
+                    "bash".to_string(),
+                    "-lc".to_string(),
+                    "printf '%s' \"$DENY_EFFECT_JSON\"".to_string(),
+                ],
+                cwd: Some(".".to_string()),
+                timeout_ms: 4_000,
+                critical: false,
+                env: BTreeMap::from([("DENY_EFFECT_JSON".to_string(), deny_effect)]),
+            }],
+        },
+        shell_allowlist: ShellAllowlist {
+            executables: vec!["bash".to_string()],
+            cwd_roots: vec![".".to_string()],
+        },
+        suppress_execution: false,
+    };
+
+    let clock = Arc::new(FakeClock::new());
+    let coordinator = test_tool_lifecycle_coordinator_with_hook_runtime(
+        temp_dir.path(),
+        clock,
+        lifecycle_tool_registry(Arc::new(Notify::new())),
+        Duration::from_millis(50),
+        15_000,
+        5,
+        1,
+        hook_runtime_config,
+    );
+
+    let run = coordinator
+        .start_run(
+            "typed_hook_deny_effect_cancels_current_tool_through_events",
+            temp_dir.path().to_path_buf(),
+        )
+        .await
+        .expect("start run");
+
+    let tool_call_id = coordinator
+        .request_tool_call(
+            supervisor_actor(),
+            Some("deep".to_string()),
+            "shell.run",
+            json!({"cmd": "true"}),
+        )
+        .await
+        .expect("request tool call");
+
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    let task_id = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::TaskScheduled(data) if data.queue_key.as_deref() == Some("tool:shell.run") => {
+                Some(data.task_id.clone())
+            }
+            _ => None,
+        })
+        .expect("tool task id");
+    assert!(
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCancelled(data)
+                    if data.task_id == task_id && data.reason.contains("typed-deny")
+            )
+        }),
+        "typed deny hook should cancel the task through coordinator events"
+    );
+    assert!(
+        !events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data) if data.task_id == task_id
+            )
+        }),
+        "typed deny hook must prevent successful task completion"
+    );
+
+    let tool_finished = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::ToolCallFinished(data) if data.tool_call_id == tool_call_id => Some(data),
+            _ => None,
+        })
+        .expect("tool finished event");
+    assert_eq!(tool_finished.status, ToolCallStatus::Failed);
+    let typed = tool_finished
+        .metadata
+        .as_ref()
+        .expect("tool metadata")
+        .hook_executions
+        .iter()
+        .find(|execution| execution.hook_name == "typed-deny")
+        .expect("typed deny hook metadata");
+    assert!(
+        typed
+            .effects
+            .iter()
+            .any(|effect| effect.kind == HookEffectKind::Deny),
+        "deny effect should be visible in hook metadata"
+    );
+}
+
 #[test]
 fn hook_runner_blocks_critical_and_reports_noncritical_failures() {
     critical_hook_failure_fails_closed_and_records_metadata();
@@ -8364,6 +9203,8 @@ async fn lifecycle_hooks_cover_provider_subagent_and_permission_events() {
     )]);
     let hook_runtime_config = HookRuntimeConfig {
         hooks: HooksConfig {
+            disabled: false,
+            disabled_hooks: BTreeSet::new(),
             lifecycle: vec![
                 LifecycleHookConfig {
                     id: Some("subagent-spawned".to_string()),
@@ -8740,6 +9581,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
                     result_digest: "digest-child-a-done".to_string(),
                     metadata: Some(TaskCompletionMetadata {
                         lineage: None,
+                        route: None,
                         task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
                         timing: Some(ExecutionTimingMetadata {
                             started_mono_ms: Some(9),
@@ -8875,10 +9717,12 @@ fn replay_suppresses_hooks_but_preserves_hook_history() {
         hook_name: "after_task".to_string(),
         status: HookExecutionStatus::Succeeded,
         hook_event: Some("task_completed".to_string()),
+        hook_phase: Some("agent_turn_finished".to_string()),
         command_digest: Some(side_effect_digest),
         output_digest: Some("hook-output-digest".to_string()),
         output_summary: Some("hook already executed live".to_string()),
         duration_ms: Some(12),
+        effects: Vec::new(),
     };
 
     let lineage = TaskLineageMetadata {
@@ -9001,6 +9845,7 @@ fn replay_suppresses_hooks_but_preserves_hook_history() {
                     result_digest: "digest-child-hook".to_string(),
                     metadata: Some(TaskCompletionMetadata {
                         lineage: Some(lineage),
+                        route: None,
                         task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
                         timing: Some(ExecutionTimingMetadata {
                             started_mono_ms: Some(6),
@@ -9071,6 +9916,8 @@ async fn deterministic_runs_suppress_live_hook_execution() {
     let hook_output_path = temp_dir.path().join("deterministic-hook-side-effect.txt");
     let hook_runtime_config = HookRuntimeConfig {
         hooks: HooksConfig {
+            disabled: false,
+            disabled_hooks: BTreeSet::new(),
             lifecycle: vec![LifecycleHookConfig {
                 id: Some("tool-finish-suppressed".to_string()),
                 event: HookLifecycleEvent::ToolCallFinished,
@@ -9163,6 +10010,23 @@ fn test_coordinator(session_dir: &Path) -> CoordinatorHandle {
     let clock = Arc::new(FakeClock::new());
     let redactor = Arc::new(DefaultRedactor::default());
     spawn_coordinator(config, clock, redactor)
+}
+
+fn persistent_task(task_id: &str, blocked_by: Vec<String>) -> PersistentTask {
+    PersistentTask {
+        version: 1,
+        task_id: task_id.to_string(),
+        run_id: Some("run_coord_test".to_string()),
+        thread_id: None,
+        subject: format!("Subject {task_id}"),
+        description: format!("Description {task_id}"),
+        status: PersistentTaskStatus::Pending,
+        active_form: None,
+        owner: None,
+        blocks: Vec::new(),
+        blocked_by,
+        metadata: BTreeMap::new(),
+    }
 }
 
 fn provider_text_events(text: &str) -> Vec<ProviderStreamEvent> {
@@ -9859,6 +10723,8 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
             model_ref_explicit: true,
+            fallback_model_refs: Vec::new(),
+            fallback_model_settings: Vec::new(),
             system_prompt: "alpha-prompt".to_string(),
             max_iters: Some(12),
             temperature: Some(0.0),
@@ -9873,6 +10739,8 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
             model_ref_explicit: true,
+            fallback_model_refs: Vec::new(),
+            fallback_model_settings: Vec::new(),
             system_prompt: "beta-prompt".to_string(),
             max_iters: Some(12),
             temperature: Some(0.0),
@@ -9892,6 +10760,8 @@ fn agent_profiles_with_title_agent() -> BTreeMap<String, AgentProfile> {
             category: harness_core::session_title::TITLE_AGENT_NAME.to_string(),
             model_ref: "mock:title-model".to_string(),
             model_ref_explicit: true,
+            fallback_model_refs: Vec::new(),
+            fallback_model_settings: Vec::new(),
             system_prompt: harness_core::session_title::TITLE_AGENT_SYSTEM_PROMPT.to_string(),
             max_iters: None,
             temperature: Some(harness_core::session_title::TITLE_AGENT_TEMPERATURE),

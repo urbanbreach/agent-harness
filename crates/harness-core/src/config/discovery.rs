@@ -37,7 +37,14 @@ pub(super) fn resolve_discovered_prompt_assets(
     parsed: &mut HarnessConfig,
     config_path: &Path,
 ) -> Result<(), ConfigError> {
-    parsed.agents = merge_configured_and_markdown_agents(&parsed.agents, config_path)?;
+    let (agents, mut imports) = merge_configured_and_markdown_agents(
+        &parsed.agents,
+        config_path,
+        &parsed.compatibility.disabled_agents,
+        parsed.compatibility.required,
+    )?;
+    parsed.agents = agents;
+    parsed.compatibility.imports.append(&mut imports);
     parsed.instruction_files = discover_instruction_files(config_path)?;
     Ok(())
 }
@@ -45,8 +52,17 @@ pub(super) fn resolve_discovered_prompt_assets(
 fn merge_configured_and_markdown_agents(
     configured: &BTreeMap<String, ProfileConfig>,
     config_path: &Path,
-) -> Result<BTreeMap<String, ProfileConfig>, ConfigError> {
-    let discovered = discover_markdown_agents(config_path)?;
+    disabled_agents: &BTreeSet<String>,
+    compatibility_required: bool,
+) -> Result<
+    (
+        BTreeMap<String, ProfileConfig>,
+        Vec<CompatibilityImportStatus>,
+    ),
+    ConfigError,
+> {
+    let (discovered, imports) =
+        discover_markdown_agents(config_path, disabled_agents, compatibility_required)?;
     let agent_names = discovered
         .keys()
         .chain(configured.keys())
@@ -75,7 +91,7 @@ fn merge_configured_and_markdown_agents(
         }
     }
 
-    Ok(merged)
+    Ok((merged, imports))
 }
 
 fn merge_markdown_agent_with_config(
@@ -161,49 +177,126 @@ fn profile_from_markdown_agent(
 
 fn discover_markdown_agents(
     config_path: &Path,
-) -> Result<BTreeMap<String, MarkdownAgentFile>, ConfigError> {
+    disabled_agents: &BTreeSet<String>,
+    compatibility_required: bool,
+) -> Result<
+    (
+        BTreeMap<String, MarkdownAgentFile>,
+        Vec<CompatibilityImportStatus>,
+    ),
+    ConfigError,
+> {
     let mut agents = BTreeMap::new();
+    let mut imports = Vec::new();
 
     for dir in agent_prompt_search_dirs(config_path) {
         if !dir.exists() {
             continue;
         }
+        let compat_dir = is_compatibility_agent_dir(&dir);
 
         for file in markdown_files_in_dir(&dir)? {
-            let name = file
+            let name = match file
                 .file_stem()
                 .and_then(|stem| stem.to_str())
                 .map(str::trim)
                 .filter(|stem| !stem.is_empty())
-                .ok_or_else(|| {
-                    ConfigError::InvalidReference(format!(
+            {
+                Some(stem) => stem.to_string(),
+                None => {
+                    let error = ConfigError::InvalidReference(format!(
                         "agent markdown `{}` must have a valid UTF-8 file stem",
                         file.display()
-                    ))
-                })?
-                .to_string();
+                    ));
+                    if compat_dir && !compatibility_required {
+                        imports.push(CompatibilityImportStatus::error(
+                            CompatibilityImportKind::Agent,
+                            file.display().to_string(),
+                            file.clone(),
+                            false,
+                            error.to_string(),
+                        ));
+                        continue;
+                    }
+                    return Err(error);
+                }
+            };
             if agents.contains_key(&name) {
                 continue;
             }
+            if compat_dir && disabled_agents.contains(&name) {
+                imports.push(CompatibilityImportStatus::disabled(
+                    CompatibilityImportKind::Agent,
+                    name,
+                    file,
+                ));
+                continue;
+            }
 
-            let content =
-                fs::read_to_string(&file).map_err(|source| ConfigError::ReadMarkdownAsset {
-                    path: file.display().to_string(),
-                    source,
-                })?;
+            let content = match fs::read_to_string(&file) {
+                Ok(content) => content,
+                Err(source) => {
+                    let error = ConfigError::ReadMarkdownAsset {
+                        path: file.display().to_string(),
+                        source,
+                    };
+                    if compat_dir && !compatibility_required {
+                        imports.push(CompatibilityImportStatus::error(
+                            CompatibilityImportKind::Agent,
+                            name,
+                            file,
+                            false,
+                            error.to_string(),
+                        ));
+                        continue;
+                    }
+                    return Err(error);
+                }
+            };
             let (frontmatter, prompt_body) =
-                parse_markdown_frontmatter::<MarkdownAgentFrontmatter>(&file, &content)?;
+                match parse_markdown_frontmatter::<MarkdownAgentFrontmatter>(&file, &content) {
+                    Ok(parsed) => parsed,
+                    Err(error) => {
+                        if compat_dir && !compatibility_required {
+                            imports.push(CompatibilityImportStatus::error(
+                                CompatibilityImportKind::Agent,
+                                name,
+                                file,
+                                false,
+                                error.to_string(),
+                            ));
+                            continue;
+                        }
+                        return Err(error);
+                    }
+                };
+            if compat_dir && frontmatter.description.is_none() {
+                imports.push(CompatibilityImportStatus::skipped(
+                    CompatibilityImportKind::Agent,
+                    name,
+                    file,
+                    "agent markdown missing description; not promoted to Harness profile",
+                ));
+                continue;
+            }
             agents.insert(
-                name,
+                name.clone(),
                 MarkdownAgentFile {
                     frontmatter,
                     prompt_body: (!prompt_body.is_empty()).then_some(prompt_body),
                 },
             );
+            if compat_dir {
+                imports.push(CompatibilityImportStatus::imported(
+                    CompatibilityImportKind::Agent,
+                    name,
+                    file,
+                ));
+            }
         }
     }
 
-    Ok(agents)
+    Ok((agents, imports))
 }
 
 fn discover_instruction_files(config_path: &Path) -> Result<Vec<InstructionFile>, ConfigError> {
@@ -297,12 +390,21 @@ fn collect_markdown_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), Co
 
     for entry in entries {
         let path = entry.path();
-        if path.is_dir() {
+        let file_type = entry
+            .file_type()
+            .map_err(|source| ConfigError::ReadMarkdownAsset {
+                path: path.display().to_string(),
+                source,
+            })?;
+        if file_type.is_symlink() {
+            continue;
+        }
+        if file_type.is_dir() {
             collect_markdown_files(&path, files)?;
             continue;
         }
 
-        if path.extension().and_then(|ext| ext.to_str()) == Some("md") {
+        if file_type.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("md") {
             files.push(path);
         }
     }
@@ -315,13 +417,31 @@ fn agent_prompt_search_dirs(config_path: &Path) -> Vec<PathBuf> {
 
     for base in discovery_search_bases(config_path) {
         push_unique_path(&mut dirs, base.join(".agent-harness").join("agents"));
+        push_unique_path(&mut dirs, base.join(".opencode").join("agent"));
+        push_unique_path(&mut dirs, base.join(".opencode").join("agents"));
+        push_unique_path(&mut dirs, base.join(".claude").join("agents"));
+        push_unique_path(&mut dirs, base.join(".agents").join("agents"));
     }
 
     if let Some(config_dir) = config_path.parent() {
         push_unique_path(&mut dirs, config_dir.join(".agent-harness").join("agents"));
+        push_unique_path(&mut dirs, config_dir.join(".opencode").join("agent"));
+        push_unique_path(&mut dirs, config_dir.join(".opencode").join("agents"));
+        push_unique_path(&mut dirs, config_dir.join(".claude").join("agents"));
+        push_unique_path(&mut dirs, config_dir.join(".agents").join("agents"));
     }
 
     dirs
+}
+
+fn is_compatibility_agent_dir(dir: &Path) -> bool {
+    let text = dir.to_string_lossy();
+    text.contains("/.opencode/")
+        || text.contains("/.claude/")
+        || text.contains("/.agents/")
+        || text.starts_with(".opencode/")
+        || text.starts_with(".claude/")
+        || text.starts_with(".agents/")
 }
 
 fn instruction_search_paths(config_path: &Path) -> Vec<PathBuf> {

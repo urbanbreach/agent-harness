@@ -106,6 +106,8 @@ pub struct HarnessConfig {
     #[serde(default)]
     pub skills: SkillsConfig,
     #[serde(default)]
+    pub compatibility: CompatibilityConfig,
+    #[serde(default)]
     pub lsp: LspConfig,
     #[serde(default)]
     #[serde(skip)]
@@ -344,8 +346,48 @@ impl HarnessConfig {
 
         self.validate_hook_definitions()?;
         self.validate_skill_roots()?;
+        self.validate_compatibility_settings()?;
         self.validate_lsp_overrides()?;
         self.validate_mcp_servers()?;
+
+        Ok(())
+    }
+
+    fn validate_compatibility_settings(&self) -> Result<(), ConfigError> {
+        for (label, names) in [
+            (
+                "compatibility.disabled_agents",
+                &self.compatibility.disabled_agents,
+            ),
+            (
+                "compatibility.disabled_skills",
+                &self.compatibility.disabled_skills,
+            ),
+            (
+                "compatibility.disabled_commands",
+                &self.compatibility.disabled_commands,
+            ),
+            (
+                "compatibility.disabled_mcp_servers",
+                &self.compatibility.disabled_mcp_servers,
+            ),
+            (
+                "compatibility.disabled_hooks",
+                &self.compatibility.disabled_hooks,
+            ),
+            (
+                "compatibility.disabled_extensions",
+                &self.compatibility.disabled_extensions,
+            ),
+        ] {
+            for name in names {
+                if is_blank_config_value(name) {
+                    return Err(ConfigError::InvalidReference(format!(
+                        "{label} entries must not be empty"
+                    )));
+                }
+            }
+        }
 
         Ok(())
     }
@@ -517,6 +559,13 @@ impl HarnessConfig {
                 return Err(ConfigError::InvalidReference(
                     "skills.permissions contains an empty pattern key; use explicit patterns like `*` or `internal-*`"
                         .to_string(),
+                ));
+            }
+        }
+        for name in &self.skills.disabled_skills {
+            if is_blank_config_value(name) {
+                return Err(ConfigError::InvalidReference(
+                    "skills.disabled_skills entries must not be empty".to_string(),
                 ));
             }
         }
@@ -742,6 +791,10 @@ impl Default for PromptRuntimeConfig {
 #[serde(deny_unknown_fields)]
 pub struct HooksConfig {
     #[serde(default)]
+    pub disabled: bool,
+    #[serde(default, alias = "disabledHooks")]
+    pub disabled_hooks: BTreeSet<String>,
+    #[serde(default)]
     pub lifecycle: Vec<LifecycleHookConfig>,
 }
 
@@ -760,6 +813,36 @@ pub struct LifecycleHookConfig {
     pub critical: bool,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HookPhase {
+    MessageReceived,
+    AgentTurnStarted,
+    ProviderParams,
+    ProviderContextTransform,
+    ToolPreflight,
+    ToolResult,
+    AgentTurnFinished,
+    SessionIdle,
+    CompactionRequested,
+}
+
+impl HookPhase {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::MessageReceived => "message_received",
+            Self::AgentTurnStarted => "agent_turn_started",
+            Self::ProviderParams => "provider_params",
+            Self::ProviderContextTransform => "provider_context_transform",
+            Self::ToolPreflight => "tool_preflight",
+            Self::ToolResult => "tool_result",
+            Self::AgentTurnFinished => "agent_turn_finished",
+            Self::SessionIdle => "session_idle",
+            Self::CompactionRequested => "compaction_requested",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -806,6 +889,25 @@ impl HookLifecycleEvent {
             Self::PermissionResolved => "permission_resolved",
         }
     }
+
+    pub fn phase(self) -> HookPhase {
+        match self {
+            Self::RunStarted | Self::RunFinished | Self::RunFailed => HookPhase::SessionIdle,
+            Self::AgentTurnStarted | Self::SubagentSpawned | Self::PermissionRequested => {
+                HookPhase::AgentTurnStarted
+            }
+            Self::ProviderRequestStarted => HookPhase::ProviderParams,
+            Self::CompactionRequested => HookPhase::CompactionRequested,
+            Self::CompactionWritten | Self::CompactionApplied | Self::CompactionFailed => {
+                HookPhase::ProviderContextTransform
+            }
+            Self::ToolCallStarted | Self::PermissionResolved => HookPhase::ToolPreflight,
+            Self::ToolCallFinished => HookPhase::ToolResult,
+            Self::ProviderRequestFinished | Self::AgentTurnFinished | Self::SubagentFinished => {
+                HookPhase::AgentTurnFinished
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
@@ -822,6 +924,8 @@ pub struct HookRuntimeConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SkillsConfig {
+    #[serde(default)]
+    pub disabled: bool,
     #[serde(default, alias = "projectRoots", alias = "paths")]
     pub project_roots: Vec<PathBuf>,
     #[serde(default, alias = "globalRoots")]
@@ -830,6 +934,8 @@ pub struct SkillsConfig {
     pub urls: Vec<String>,
     #[serde(default = "default_skills_walk_to_git_root", alias = "walkToGitRoot")]
     pub walk_to_git_root: bool,
+    #[serde(default, alias = "disabledSkills")]
+    pub disabled_skills: BTreeSet<String>,
     #[serde(default)]
     pub permissions: BTreeMap<String, PermissionMode>,
 }
@@ -837,13 +943,193 @@ pub struct SkillsConfig {
 impl Default for SkillsConfig {
     fn default() -> Self {
         Self {
+            disabled: false,
             project_roots: default_skills_project_roots(),
             global_roots: default_skills_global_roots(),
             urls: Vec::new(),
             walk_to_git_root: default_skills_walk_to_git_root(),
+            disabled_skills: BTreeSet::new(),
             permissions: default_skills_permissions(),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
+pub struct CompatibilityConfig {
+    /// Treat compatibility import failures as startup errors. The default keeps
+    /// migration safe by surfacing failures in doctor without aborting startup.
+    #[serde(default)]
+    pub required: bool,
+    #[serde(default, alias = "disabledAgents")]
+    pub disabled_agents: BTreeSet<String>,
+    #[serde(default, alias = "disabledSkills")]
+    pub disabled_skills: BTreeSet<String>,
+    #[serde(default, alias = "disabledCommands")]
+    pub disabled_commands: BTreeSet<String>,
+    #[serde(default, alias = "disabledMcps", alias = "disabledMcpServers")]
+    pub disabled_mcp_servers: BTreeSet<String>,
+    #[serde(default, alias = "disabledHooks")]
+    pub disabled_hooks: BTreeSet<String>,
+    #[serde(default, alias = "disabledExtensions")]
+    pub disabled_extensions: BTreeSet<String>,
+    /// Execute imported compatibility hook argv entries. Disabled by default so
+    /// repo-local compatibility files are discoverable without gaining startup
+    /// execution side effects.
+    #[serde(default, alias = "enableImportedHooks", alias = "hooksEnabled")]
+    pub enable_imported_hooks: bool,
+    #[serde(default)]
+    pub command_templates: BTreeMap<String, CompatibilityCommandTemplate>,
+    #[serde(default)]
+    pub extension_manifests: BTreeMap<String, ExtensionManifestRegistration>,
+    #[serde(default)]
+    pub imports: Vec<CompatibilityImportStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CompatibilityCommandTemplate {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub prompt: String,
+    pub source_path: PathBuf,
+    #[serde(default = "default_compatibility_enabled")]
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ExtensionManifestRegistration {
+    pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub version: Option<String>,
+    pub source_path: PathBuf,
+    #[serde(default = "default_compatibility_enabled")]
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CompatibilityImportStatus {
+    pub kind: CompatibilityImportKind,
+    pub name: String,
+    pub source_path: PathBuf,
+    #[serde(default = "default_compatibility_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub required: bool,
+    pub status: CompatibilityImportState,
+    #[serde(default)]
+    pub message: Option<String>,
+}
+
+impl CompatibilityImportStatus {
+    pub fn imported(
+        kind: CompatibilityImportKind,
+        name: impl Into<String>,
+        source_path: PathBuf,
+    ) -> Self {
+        Self {
+            kind,
+            name: name.into(),
+            source_path,
+            enabled: true,
+            required: false,
+            status: CompatibilityImportState::Imported,
+            message: None,
+        }
+    }
+
+    pub fn disabled(
+        kind: CompatibilityImportKind,
+        name: impl Into<String>,
+        source_path: PathBuf,
+    ) -> Self {
+        Self {
+            kind,
+            name: name.into(),
+            source_path,
+            enabled: false,
+            required: false,
+            status: CompatibilityImportState::Disabled,
+            message: None,
+        }
+    }
+
+    pub fn skipped(
+        kind: CompatibilityImportKind,
+        name: impl Into<String>,
+        source_path: PathBuf,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            kind,
+            name: name.into(),
+            source_path,
+            enabled: false,
+            required: false,
+            status: CompatibilityImportState::Skipped,
+            message: Some(message.into()),
+        }
+    }
+
+    pub fn error(
+        kind: CompatibilityImportKind,
+        name: impl Into<String>,
+        source_path: PathBuf,
+        required: bool,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            kind,
+            name: name.into(),
+            source_path,
+            enabled: false,
+            required,
+            status: CompatibilityImportState::Error,
+            message: Some(message.into()),
+        }
+    }
+}
+
+fn default_compatibility_enabled() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CompatibilityImportKind {
+    Agent,
+    Skill,
+    Command,
+    Mcp,
+    Hook,
+    ExtensionManifest,
+}
+
+impl CompatibilityImportKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Agent => "agent",
+            Self::Skill => "skill",
+            Self::Command => "command",
+            Self::Mcp => "mcp",
+            Self::Hook => "hook",
+            Self::ExtensionManifest => "extension_manifest",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CompatibilityImportState {
+    Imported,
+    Disabled,
+    Skipped,
+    Error,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
@@ -1694,12 +1980,20 @@ fn default_skills_walk_to_git_root() -> bool {
 fn default_skills_project_roots() -> Vec<PathBuf> {
     vec![
         PathBuf::from(".agent-harness/skills"),
+        PathBuf::from(".opencode/skills"),
+        PathBuf::from(".claude/skills"),
+        PathBuf::from(".agents/skills"),
         PathBuf::from(".harness/skills"),
     ]
 }
 
 fn default_skills_global_roots() -> Vec<PathBuf> {
-    vec![PathBuf::from("~/.config/agent-harness/skills")]
+    vec![
+        PathBuf::from("~/.config/agent-harness/skills"),
+        PathBuf::from("~/.config/opencode/skills"),
+        PathBuf::from("~/.claude/skills"),
+        PathBuf::from("~/.agents/skills"),
+    ]
 }
 
 fn default_skills_permissions() -> BTreeMap<String, PermissionMode> {
@@ -3851,6 +4145,26 @@ mod tests {
         assert!(parsed.permissions.rules.shell.is_empty());
         assert!(parsed.permissions.rules.edit.is_empty());
         assert!(parsed.permissions.rules.task.is_empty());
+    }
+
+    #[test]
+    fn permission_object_translates_safe_upstream_permission_aliases() {
+        let cfg = public_minimal_config_with_permission(
+            r#"{
+                write: "deny",
+                delegate_task: "allow",
+                read: "allow",
+                doom_loop: "deny",
+                external_directory: "deny"
+            }"#,
+        );
+        let parsed = load_config_from_str(&cfg).expect("compat permission aliases should parse");
+
+        assert_eq!(parsed.permissions.defaults.edit, PermissionMode::Deny);
+        assert_eq!(
+            parsed.permissions.defaults.task,
+            Some(PermissionMode::Allow)
+        );
     }
 
     #[test]

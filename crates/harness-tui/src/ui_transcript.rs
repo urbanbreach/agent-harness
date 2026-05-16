@@ -9211,6 +9211,7 @@ fn tool_task_completion_summary_does_not_render_as_assistant_body() {
                     parent_tool_call_id: Some("tc_docs_tokio".to_string()),
                     ..harness_core::event::TaskLineageMetadata::default()
                 }),
+                route: None,
                 task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
                 timing: None,
                 hook_executions: Vec::new(),
@@ -11461,6 +11462,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
                     child_request_id: Some("req_child".to_string()),
                     ..harness_core::event::TaskLineageMetadata::default()
                 }),
+                route: None,
                 task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
                 timing: Some(harness_core::event::ExecutionTimingMetadata {
                     started_mono_ms: Some(400),

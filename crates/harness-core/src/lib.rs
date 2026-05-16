@@ -1,8 +1,11 @@
 //! Core runtime and domain crate for Agent Harness.
 
 pub mod agent;
+pub mod agent_catalog;
 pub mod clock;
+pub mod command_registry;
 pub mod config;
+pub mod continuation;
 pub mod conversation;
 pub mod coord;
 pub(crate) mod counter_id;
@@ -13,9 +16,11 @@ pub mod file_tag;
 pub(crate) mod path_display;
 pub(crate) mod path_selector;
 pub mod perm;
+pub mod persistent_task;
 pub mod plan;
 pub mod proj;
 pub(crate) mod provider_args;
+pub mod provider_recovery;
 pub mod question_answers;
 pub mod redact;
 pub mod sched;

@@ -1225,6 +1225,7 @@ mod tests {
                     result_digest: "def456".to_string(),
                     metadata: Some(TaskCompletionMetadata {
                         lineage: None,
+                        route: None,
                         task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
                         timing: None,
                         hook_executions: Vec::new(),
@@ -1251,6 +1252,7 @@ mod tests {
                             parent_tool_call_id: Some("tool_call_000001".to_string()),
                             ..TaskLineageMetadata::default()
                         }),
+                        route: None,
                         task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
                         timing: None,
                         hook_executions: Vec::new(),
@@ -1276,6 +1278,7 @@ mod tests {
                         parent_tool_call_id: Some("tool_call_000001".to_string()),
                         ..TaskLineageMetadata::default()
                     }),
+                    route: None,
                     task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
                     timing: None,
                     hook_executions: Vec::new(),
@@ -1307,6 +1310,7 @@ mod tests {
                     result_digest: "abc123".to_string(),
                     metadata: Some(TaskCompletionMetadata {
                         lineage: None,
+                        route: None,
                         task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
                         timing: None,
                         hook_executions: Vec::new(),
@@ -1348,6 +1352,7 @@ mod tests {
                 result_digest: "abc123".to_string(),
                 metadata: Some(TaskCompletionMetadata {
                     lineage: None,
+                    route: None,
                     task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
                     timing: None,
                     hook_executions: Vec::new(),
@@ -1417,6 +1422,7 @@ mod tests {
                 result_digest: "abc123".to_string(),
                 metadata: Some(TaskCompletionMetadata {
                     lineage: None,
+                    route: None,
                     task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
                     timing: None,
                     hook_executions: Vec::new(),

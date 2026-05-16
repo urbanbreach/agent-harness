@@ -15,11 +15,11 @@ use harness_core::session_title::is_parent_default_title;
 use serde_json::Value;
 
 use super::{
-    json_string_field, set_pending_live_launch_metadata, set_pending_live_prompt_draft,
-    task_child_request_id_from_output, task_child_session_id_from_output, ActivityEntry, AppState,
-    Focus, PermissionConfirmSelection, PermissionModalSelection, PermissionModalStage,
-    PostRunHandoffAction, ReviewSurface, StartupLauncherAction, SubagentSessionInfo, Tab,
-    ToolCallEntry, UiIntent, SLASH_COMMANDS,
+    json_string_field, set_pending_live_launch_metadata, set_pending_live_prompt_auto_submit,
+    set_pending_live_prompt_draft, slash_command_description, task_child_request_id_from_output,
+    task_child_session_id_from_output, ActivityEntry, AppState, Focus, PermissionConfirmSelection,
+    PermissionModalSelection, PermissionModalStage, PostRunHandoffAction, ReviewSurface,
+    StartupLauncherAction, SubagentSessionInfo, Tab, ToolCallEntry, UiIntent, SLASH_COMMANDS,
 };
 use crate::keybindings::Action;
 use crate::text::{has_trimmed_content, non_empty_trimmed};
@@ -190,6 +190,7 @@ fn session_history_filter_matches(entry: &SessionHistoryEntry, input: &str) -> b
     session_history_display_title(entry)
         .to_lowercase()
         .contains(input)
+        || entry.catalog.run_id.to_lowercase().contains(input)
 }
 
 fn session_history_time_label(timestamp: &str) -> String {
@@ -1255,12 +1256,12 @@ impl AppState {
         let slash_query = self.active_slash_query().unwrap_or_default().to_lowercase();
 
         self.slash_visible = true;
-        let mut filtered = SLASH_COMMANDS
-            .iter()
-            .filter(|(command, _)| self.slash_command_available(command))
+        let mut filtered = self
+            .available_slash_commands()
+            .into_iter()
             .filter_map(|(command, description)| {
                 slash_command_match_rank(command, description, &slash_query)
-                    .map(|rank| (rank, (*command).to_string()))
+                    .map(|rank| (rank, command.to_string()))
             })
             .collect::<Vec<_>>();
         filtered.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
@@ -1272,27 +1273,81 @@ impl AppState {
         self.slash_selected = 0;
     }
 
-    pub(in crate::app) fn typed_slash_command(&self) -> Option<&'static str> {
-        self.prompt_buffer
-            .trim()
-            .strip_prefix('/')
-            .and_then(|command| {
-                SLASH_COMMANDS.iter().find_map(|(name, _)| {
-                    ((*name == command || slash_command_aliases(name).contains(&command))
-                        && self.slash_command_available(name))
-                    .then_some(*name)
-                })
-            })
+    #[cfg(test)]
+    pub(in crate::app) fn typed_slash_command(&self) -> Option<&str> {
+        self.typed_slash_invocation()
+            .map(|(command, _args)| command)
+    }
+
+    pub(in crate::app) fn typed_slash_invocation(&self) -> Option<(&str, Option<String>)> {
+        let command = self.prompt_buffer.trim().strip_prefix('/')?;
+        let (command, args) = command
+            .split_once(char::is_whitespace)
+            .map(|(command, args)| (command, Some(args.trim().to_string())))
+            .unwrap_or((command, None));
+        let command = command.trim();
+        if command.is_empty() {
+            return None;
+        }
+        let canonical = self.find_slash_command(command)?;
+        Some((canonical, args.filter(|args| !args.is_empty())))
     }
 
     pub(crate) fn slash_command_column_width(&self) -> usize {
-        SLASH_COMMANDS
-            .iter()
-            .filter(|(command, _)| self.slash_command_available(command))
+        self.available_slash_commands()
+            .into_iter()
             .map(|(command, _)| slash_command_display_width(command))
             .max()
             .unwrap_or(0)
             .saturating_add(2)
+    }
+
+    pub(crate) fn slash_command_description(&self, command: &str) -> &str {
+        self.slash_command_templates
+            .get(command)
+            .and_then(|template| template.description.as_deref())
+            .filter(|description| !description.trim().is_empty())
+            .unwrap_or_else(|| slash_command_description(command))
+    }
+
+    fn available_slash_commands(&self) -> Vec<(&str, &str)> {
+        let mut commands = SLASH_COMMANDS
+            .iter()
+            .filter(|(command, _)| self.slash_command_available(command))
+            .map(|(command, description)| (*command, *description))
+            .collect::<Vec<_>>();
+        commands.extend(
+            self.slash_command_templates
+                .iter()
+                .filter(|(command, _)| {
+                    self.slash_command_available(command)
+                        && !imported_slash_command_collides_with_builtin(command)
+                })
+                .map(|(command, template)| {
+                    (
+                        command.as_str(),
+                        template
+                            .description
+                            .as_deref()
+                            .filter(|description| !description.trim().is_empty())
+                            .unwrap_or("Imported command template"),
+                    )
+                }),
+        );
+        commands
+    }
+
+    fn find_slash_command(&self, name_or_alias: &str) -> Option<&str> {
+        if let Some((name, _)) = SLASH_COMMANDS.iter().find(|(name, _)| {
+            (*name == name_or_alias || slash_command_aliases(name).contains(&name_or_alias))
+                && self.slash_command_available(name)
+        }) {
+            return Some(*name);
+        }
+        self.slash_command_templates
+            .get_key_value(name_or_alias)
+            .filter(|(name, _)| self.slash_command_available(name))
+            .map(|(name, _)| name.as_str())
     }
 
     fn slash_command_available(&self, command: &str) -> bool {
@@ -1307,7 +1362,11 @@ impl AppState {
             "shell" => self.active_review_surface.is_some(),
             "follow" => !self.replay_mode && !self.startup_mode,
             "compact" => self.compact_session_supported,
-            _ => false,
+            "init-deep" | "refactor" | "start-work" | "remove-ai-slops" | "handoff"
+            | "hyperplan" => !self.replay_mode,
+            "ralph-loop" | "ulw-loop" => !self.replay_mode && !self.startup_mode,
+            "cancel-ralph" | "stop-continuation" => !self.replay_mode && !self.startup_mode,
+            _ => self.slash_command_templates.contains_key(command) && !self.replay_mode,
         }
     }
 
@@ -1323,6 +1382,19 @@ impl AppState {
 
     fn restore_slash_draft(&mut self, preserved_draft: Option<String>) {
         self.replace_prompt_input(preserved_draft.unwrap_or_default());
+    }
+
+    fn continuation_command_with_draft(
+        base_command: &str,
+        preserved_draft: Option<&str>,
+    ) -> String {
+        let Some(draft) = preserved_draft
+            .map(str::trim)
+            .filter(|draft| !draft.is_empty())
+        else {
+            return base_command.to_string();
+        };
+        format!("{base_command} {draft}")
     }
 
     fn navigate_to_home_shell(&mut self, draft: String) {
@@ -1360,6 +1432,7 @@ impl AppState {
         self.continued_post_run_handoff_active = false;
         self.continued_live_reopen_surface_active = false;
         self.continue_disabled_banner = None;
+        self.active_continuation = None;
         self.dismissed_permissions.clear();
         self.submitted_permission_id = None;
         self.permission_modal_permission_id = None;
@@ -1421,6 +1494,57 @@ impl AppState {
                 self.restore_slash_draft(preserved_draft);
                 self.emit_ui_intent(UiIntent::CompactSession);
             }
+            "ralph-loop" => {
+                let command = Self::continuation_command_with_draft("/ralph-loop", preserved_draft.as_deref());
+                self.restore_slash_draft(preserved_draft);
+                self.set_status_banner(Some("starting bounded Ralph continuation".to_string()));
+                self.emit_ui_intent(UiIntent::StartContinuation {
+                    mode: "ralph".to_string(),
+                    command,
+                });
+            }
+            "ulw-loop" => {
+                let command = Self::continuation_command_with_draft("/ulw-loop", preserved_draft.as_deref());
+                self.restore_slash_draft(preserved_draft);
+                self.set_status_banner(Some(
+                    "starting bounded ultrawork continuation".to_string(),
+                ));
+                self.emit_ui_intent(UiIntent::StartContinuation {
+                    mode: "ultrawork".to_string(),
+                    command,
+                });
+            }
+            "cancel-ralph" | "stop-continuation" => {
+                self.restore_slash_draft(preserved_draft);
+                self.set_status_banner(Some("stopping active continuation".to_string()));
+                self.emit_ui_intent(UiIntent::StopContinuation {
+                    reason: format!("/{command}"),
+                });
+            }
+            "init-deep" => self.dispatch_command_template_prompt(
+                preserved_draft,
+                "Deep interview this request before implementation. Identify constraints, success criteria, risks, and the smallest safe next step.",
+            ),
+            "refactor" => self.dispatch_command_template_prompt(
+                preserved_draft,
+                "Refactor safely: preserve behavior, prefer deletion and existing utilities, add or run regression tests first, then verify.",
+            ),
+            "start-work" => self.dispatch_command_template_prompt(
+                preserved_draft,
+                "Start work from the current plan. State objective, constraints, first task, and verification path before editing.",
+            ),
+            "remove-ai-slops" => self.dispatch_command_template_prompt(
+                preserved_draft,
+                "Remove AI slop from the touched files: simplify, delete redundant layers, preserve behavior, and verify.",
+            ),
+            "handoff" => self.dispatch_command_template_prompt(
+                preserved_draft,
+                "Create a concise handoff artifact with goal, current state, changed files, verification, risks, and next steps.",
+            ),
+            "hyperplan" => self.dispatch_command_template_prompt(
+                preserved_draft,
+                "Create a parallelizable implementation plan with independent lanes, ownership, verification, and handoff criteria.",
+            ),
             "fork" => self
                 .execute_passive_lineage_slash_command(preserved_draft, LineageSlashCommand::Fork),
             "tree" => self
@@ -1428,8 +1552,44 @@ impl AppState {
             "clone" => self
                 .execute_passive_lineage_slash_command(preserved_draft, LineageSlashCommand::Clone),
             "exit" => self.execute_action(Action::Quit),
-            _ => {}
+            _ => {
+                if let Some(template) = self
+                    .slash_command_templates
+                    .get(command)
+                    .map(|template| template.prompt.clone())
+                {
+                    self.dispatch_command_template_prompt(preserved_draft, &template);
+                }
+            }
         }
+    }
+
+    fn dispatch_command_template_prompt(
+        &mut self,
+        preserved_draft: Option<String>,
+        template: &str,
+    ) {
+        let draft = preserved_draft
+            .and_then(|draft| (!draft.trim().is_empty()).then_some(draft))
+            .unwrap_or_default();
+        let text = if template.contains("{{args}}") {
+            template.replace("{{args}}", draft.trim())
+        } else if draft.is_empty() {
+            template.to_string()
+        } else {
+            format!("{template}\n\nUser draft:\n{draft}")
+        };
+        if self.startup_mode {
+            set_pending_live_launch_metadata(self.launch_metadata.clone());
+            set_pending_live_prompt_auto_submit(Some(text.clone()));
+            self.startup_mode = false;
+            self.focus = Focus::Prompt;
+            self.record_submitted_prompt_locally(text);
+            self.emit_ui_intent(UiIntent::NewSession);
+            self.should_quit = true;
+            return;
+        }
+        self.dispatch_submitted_prompt(text);
     }
 
     fn execute_passive_lineage_slash_command(
@@ -1829,6 +1989,12 @@ impl AppState {
             "cycle_variant" => self.execute_action(Action::VariantCycle),
             "close_review_surface" => self.execute_action(Action::CloseReviewSurface),
             "open_event_log" => self.execute_action(Action::OpenEventLog),
+            "toggle_operator_sidebar" => {
+                if !self.replay_mode && !self.post_run_handoff_visible() {
+                    self.focus = Focus::Details;
+                    self.execute_action(Action::ToggleOperatorSidebar);
+                }
+            }
             "toggle_terminal_panel" => self.execute_action(Action::ToggleTerminalPanel),
             "toggle_follow" => self.execute_action(Action::ToggleFollow),
             "show_thinking" => self.show_transcript_thinking = true,
@@ -1986,6 +2152,8 @@ impl AppState {
             self.active_review_surface.is_some()
         } else if command_id == "open_event_log" {
             self.active_review_surface != Some(ReviewSurface::Events)
+        } else if command_id == "toggle_operator_sidebar" {
+            !self.replay_mode && !self.post_run_handoff_visible()
         } else if command_id == "toggle_terminal_panel" {
             !self.startup_shell_visible()
         } else {
@@ -3314,6 +3482,12 @@ impl AppState {
     }
 }
 
+fn imported_slash_command_collides_with_builtin(command: &str) -> bool {
+    SLASH_COMMANDS.iter().any(|(builtin, _)| {
+        *builtin == command || slash_command_aliases(builtin).contains(&command)
+    })
+}
+
 fn slash_command_match_rank(command: &str, description: &str, query: &str) -> Option<(u8, usize)> {
     if query.is_empty() {
         return Some((0, 0));
@@ -3367,6 +3541,9 @@ fn slash_command_aliases(command: &str) -> &'static [&'static str] {
         "events" => &["event-log"],
         "shell" => &["session-shell"],
         "compact" => &["summarize", "summary"],
+        "ulw-loop" => &["ultrawork", "ulw"],
+        "cancel-ralph" => &["stop-ralph"],
+        "remove-ai-slops" => &["deslop", "ai-slop-cleaner"],
         "exit" => &["quit", "q"],
         _ => &[],
     }

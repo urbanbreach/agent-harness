@@ -30,6 +30,7 @@ use crate::config::{
     CompactionRuntimeConfig, HookLifecycleEvent, HookRuntimeConfig, LifecycleHookConfig,
     ShellAllowlist, ToolFailureMode,
 };
+use crate::continuation::{ContinuationBounds, ContinuationController, ContinuationDecision};
 use crate::conversation::{
     ConversationAssistantMessage, ConversationMessage, ConversationToolCall,
     ConversationToolResultMessage, ConversationUserMessage,
@@ -40,18 +41,21 @@ use crate::edit::hashline::HashlinePatch;
 use crate::event::{
     ActorKind, AgentSpawnedEvent, ArtifactWrittenEvent, BackgroundTaskNotificationEvent,
     BackgroundTaskNotificationStatus, CompactionAppliedEvent, CompactionFailedEvent,
-    CompactionRequestedEvent, CompactionWrittenEvent, EditAppliedEvent, EditProposedEvent,
-    EditRejectedEvent, EventActor, EventArtifactRef, EventBuildError, EventBuilder, EventContext,
-    EventEnvelopeV1, EventV1, ExecutionTimingMetadata, HookExecutionMetadata, HookExecutionStatus,
+    CompactionRequestedEvent, CompactionWrittenEvent, ContinuationLimitReachedEvent,
+    ContinuationReminderQueuedEvent, ContinuationStartedEvent, ContinuationStoppedEvent,
+    EditAppliedEvent, EditProposedEvent, EditRejectedEvent, EventActor, EventArtifactRef,
+    EventBuildError, EventBuilder, EventContext, EventEnvelopeV1, EventV1, ExecutionTimingMetadata,
+    HookEffectKind, HookEffectMetadata, HookExecutionMetadata, HookExecutionStatus,
     PermissionDecision as EventPermissionDecision, PermissionGrantRecordedEvent,
-    PermissionRequestedArgs, PermissionResolvedEvent, PolicyViolationDetectedEvent,
+    PermissionRequestedArgs, PermissionResolvedEvent, PersistentTask, PersistentTaskCreatedEvent,
+    PersistentTaskStatus, PersistentTaskUpdatedEvent, PolicyViolationDetectedEvent,
     ProviderAssistantMessageMetadata, ProviderReasoningDeltaEvent, ProviderRequestFinishedMetadata,
     ProviderRequestStartedMetadata, ResolvedToolIdentity, RunFinishedEvent, RunStartedEvent,
     StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskCompletionMetadata,
-    TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState, TaskScheduledEvent,
-    TaskTerminalScope, TeamBounds, TeamCreatedEvent, TeamDeletedEvent, TeamMemberRole,
-    TeamMemberSelector, TeamMemberSpawnedEvent, TeamMemberSpec, TeamMessage, TeamMessageKind,
-    TeamMessageSentEvent, TeamShutdownApprovedEvent, TeamShutdownRejectedEvent,
+    TaskLineageMetadata, TaskResultLateEvent, TaskRouteMetadata, TaskScheduleState,
+    TaskScheduledEvent, TaskTerminalScope, TeamBounds, TeamCreatedEvent, TeamDeletedEvent,
+    TeamMemberRole, TeamMemberSelector, TeamMemberSpawnedEvent, TeamMemberSpec, TeamMessage,
+    TeamMessageKind, TeamMessageSentEvent, TeamShutdownApprovedEvent, TeamShutdownRejectedEvent,
     TeamShutdownRequestedEvent, TeamSpec, TeamTask, TeamTaskCreatedEvent, TeamTaskStatus,
     TeamTaskUpdatedEvent, ToolCallFinishedEvent, ToolCallMetadata, ToolCallStartedEvent,
     ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent,
@@ -63,14 +67,19 @@ use crate::perm::{
     PermissionKind, PermissionPolicy, PermissionRuleRequest, PermissionToolSelector,
     PolicyDecision,
 };
+use crate::persistent_task::{
+    apply_persistent_task_update, blocked_by_incomplete, has_persistent_task_dependency_path,
+    project_persistent_tasks, PersistentTaskProjection,
+};
 use crate::proj::{
     inspect_resume_plan, project_background_request, project_team_state,
     resolve_background_request_ref, BackgroundRequestProjection, BackgroundRequestProjectionError,
     RecordedRuntimeContext, RunMetadata, SessionModeSource, TeamProjection, TeamRunProjection,
 };
 use crate::provider_args::provider_tool_arguments_json;
+use crate::provider_recovery::{classify_provider_error, is_provider_context_overflow_reason};
 use crate::question_answers::{validate_question_answers, QuestionAnswerPrompt};
-use crate::redact::Redactor;
+use crate::redact::{redact_value, DefaultRedactor, Redactor};
 use crate::sched::{
     ConcurrencyKey, ScheduleDecision, Scheduler, SchedulerLimits, TaskProgressSnapshot,
 };
@@ -387,6 +396,19 @@ pub enum Command {
         metadata: BTreeMap<String, String>,
         respond_to: oneshot::Sender<Result<TeamRunProjection, CoordinatorError>>,
     },
+    GetPersistentTaskProjection {
+        respond_to: oneshot::Sender<Result<PersistentTaskProjection, CoordinatorError>>,
+    },
+    CreatePersistentTask {
+        actor: EventActor,
+        task: PersistentTask,
+        respond_to: oneshot::Sender<Result<PersistentTaskProjection, CoordinatorError>>,
+    },
+    UpdatePersistentTask {
+        actor: EventActor,
+        update: PersistentTaskUpdatedEvent,
+        respond_to: oneshot::Sender<Result<PersistentTaskProjection, CoordinatorError>>,
+    },
     RequestTeamShutdown {
         actor: EventActor,
         team_run_id: String,
@@ -456,6 +478,13 @@ pub enum Command {
     AllocateProviderRequestId {
         respond_to: oneshot::Sender<Result<String, CoordinatorError>>,
     },
+    SwitchAgentTurnProviderModelSlot {
+        task_id: String,
+        agent_id: String,
+        model_ref: String,
+        model_settings: AgentModelSettings,
+        respond_to: oneshot::Sender<Result<bool, CoordinatorError>>,
+    },
     CompactAgentContext {
         task_id: String,
         agent_id: String,
@@ -469,6 +498,43 @@ pub enum Command {
         through_request_id: Option<String>,
         trigger_reason: String,
         respond_to: oneshot::Sender<Result<ManualCompactionOutcome, CoordinatorError>>,
+    },
+    StartContinuation {
+        actor: EventActor,
+        mode: String,
+        command: String,
+        bounds: ContinuationBounds,
+        respond_to: oneshot::Sender<Result<String, CoordinatorError>>,
+    },
+    StopContinuation {
+        actor: EventActor,
+        reason: String,
+        respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
+    },
+    TriggerContinuationReminder {
+        actor: EventActor,
+        agent_id: String,
+        reason: String,
+        done_marker_seen: bool,
+        incomplete_todos: Option<bool>,
+        provider_calls: u32,
+        tool_calls: u32,
+        respond_to: oneshot::Sender<Result<Option<String>, CoordinatorError>>,
+    },
+    QueueContinuationReminder {
+        actor: EventActor,
+        continuation_id: String,
+        iteration: u32,
+        reminder: String,
+        reason: String,
+        respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
+    },
+    ReachContinuationLimit {
+        actor: EventActor,
+        continuation_id: String,
+        limit: String,
+        iteration: u32,
+        respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
     },
     AgentTurnFinished {
         task_id: String,
@@ -498,6 +564,7 @@ pub struct ChildTaskRequestMetadata {
     pub task_id: String,
     pub description: String,
     pub run_in_background: bool,
+    pub route: Option<TaskRouteMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -909,6 +976,55 @@ impl CoordinatorHandle {
         .await
     }
 
+    pub async fn start_continuation(
+        &self,
+        actor: EventActor,
+        mode: impl Into<String>,
+        command: impl Into<String>,
+        bounds: ContinuationBounds,
+    ) -> Result<String, CoordinatorError> {
+        self.request(|respond_to| Command::StartContinuation {
+            actor,
+            mode: mode.into(),
+            command: command.into(),
+            bounds,
+            respond_to,
+        })
+        .await
+    }
+
+    pub async fn stop_continuation(
+        &self,
+        actor: EventActor,
+        reason: impl Into<String>,
+    ) -> Result<(), CoordinatorError> {
+        self.request(|respond_to| Command::StopContinuation {
+            actor,
+            reason: reason.into(),
+            respond_to,
+        })
+        .await
+    }
+
+    pub async fn trigger_continuation_reminder(
+        &self,
+        actor: EventActor,
+        agent_id: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Result<Option<String>, CoordinatorError> {
+        self.request(|respond_to| Command::TriggerContinuationReminder {
+            actor,
+            agent_id: agent_id.into(),
+            reason: reason.into(),
+            done_marker_seen: false,
+            incomplete_todos: Some(true),
+            provider_calls: 0,
+            tool_calls: 0,
+            respond_to,
+        })
+        .await
+    }
+
     pub async fn resolve_permission(
         &self,
         permission_id: impl Into<String>,
@@ -1074,6 +1190,39 @@ impl CoordinatorHandle {
             status,
             owner,
             metadata,
+            respond_to,
+        })
+        .await
+    }
+
+    pub async fn persistent_task_projection(
+        &self,
+    ) -> Result<PersistentTaskProjection, CoordinatorError> {
+        self.request(|respond_to| Command::GetPersistentTaskProjection { respond_to })
+            .await
+    }
+
+    pub async fn create_persistent_task(
+        &self,
+        actor: EventActor,
+        task: PersistentTask,
+    ) -> Result<PersistentTaskProjection, CoordinatorError> {
+        self.request(|respond_to| Command::CreatePersistentTask {
+            actor,
+            task,
+            respond_to,
+        })
+        .await
+    }
+
+    pub async fn update_persistent_task(
+        &self,
+        actor: EventActor,
+        update: PersistentTaskUpdatedEvent,
+    ) -> Result<PersistentTaskProjection, CoordinatorError> {
+        self.request(|respond_to| Command::UpdatePersistentTask {
+            actor,
+            update,
             respond_to,
         })
         .await
@@ -1550,6 +1699,29 @@ impl Coordinator {
                     .await;
                 warn_oneshot_send_failure(respond_to.send(result), "update_team_task");
             }
+            Command::GetPersistentTaskProjection { respond_to } => {
+                let result = self.persistent_task_projection_internal().await;
+                warn_oneshot_send_failure(
+                    respond_to.send(result),
+                    "get_persistent_task_projection",
+                );
+            }
+            Command::CreatePersistentTask {
+                actor,
+                task,
+                respond_to,
+            } => {
+                let result = self.create_persistent_task_internal(actor, task).await;
+                warn_oneshot_send_failure(respond_to.send(result), "create_persistent_task");
+            }
+            Command::UpdatePersistentTask {
+                actor,
+                update,
+                respond_to,
+            } => {
+                let result = self.update_persistent_task_internal(actor, update).await;
+                warn_oneshot_send_failure(respond_to.send(result), "update_persistent_task");
+            }
             Command::RequestTeamShutdown {
                 actor,
                 team_run_id,
@@ -1699,6 +1871,26 @@ impl Coordinator {
                 let result = self.allocate_provider_request_id_internal();
                 warn_oneshot_send_failure(respond_to.send(result), "allocate_provider_request_id");
             }
+            Command::SwitchAgentTurnProviderModelSlot {
+                task_id,
+                agent_id,
+                model_ref,
+                model_settings,
+                respond_to,
+            } => {
+                let result = self
+                    .switch_agent_turn_provider_model_slot_internal(
+                        task_id,
+                        agent_id,
+                        model_ref,
+                        model_settings,
+                    )
+                    .await;
+                warn_oneshot_send_failure(
+                    respond_to.send(result),
+                    "switch_agent_turn_provider_model_slot",
+                );
+            }
             Command::CompactAgentContext {
                 task_id,
                 agent_id,
@@ -1736,6 +1928,79 @@ impl Coordinator {
                     .await
                     .map(CompactAgentContextResult::into_manual_outcome);
                 warn_oneshot_send_failure(respond_to.send(result), "manual_compact_agent_context");
+            }
+            Command::StartContinuation {
+                actor,
+                mode,
+                command,
+                bounds,
+                respond_to,
+            } => {
+                let result = self.start_continuation_internal(actor, mode, command, bounds);
+                warn_oneshot_send_failure(respond_to.send(result), "start_continuation");
+            }
+            Command::StopContinuation {
+                actor,
+                reason,
+                respond_to,
+            } => {
+                let result = self.stop_continuation_internal(actor, reason);
+                warn_oneshot_send_failure(respond_to.send(result), "stop_continuation");
+            }
+            Command::TriggerContinuationReminder {
+                actor,
+                agent_id,
+                reason,
+                done_marker_seen,
+                incomplete_todos,
+                provider_calls,
+                tool_calls,
+                respond_to,
+            } => {
+                let result = self
+                    .trigger_continuation_reminder_internal(ContinuationReminderTrigger {
+                        actor,
+                        agent_id,
+                        reason,
+                        done_marker_seen,
+                        incomplete_todos,
+                        provider_calls,
+                        tool_calls,
+                    })
+                    .await;
+                warn_oneshot_send_failure(respond_to.send(result), "trigger_continuation_reminder");
+            }
+            Command::QueueContinuationReminder {
+                actor,
+                continuation_id,
+                iteration,
+                reminder,
+                reason,
+                respond_to,
+            } => {
+                let result = self.queue_continuation_reminder_internal(
+                    actor,
+                    continuation_id,
+                    iteration,
+                    reminder,
+                    reason,
+                );
+                warn_oneshot_send_failure(respond_to.send(result), "queue_continuation_reminder");
+            }
+            Command::ReachContinuationLimit {
+                actor,
+                continuation_id,
+                limit,
+                iteration,
+                respond_to,
+            } => {
+                let result = self.reach_continuation_limit_internal(
+                    actor,
+                    continuation_id,
+                    limit,
+                    iteration,
+                );
+                warn_oneshot_send_failure(respond_to.send(result), "reach_continuation_limit");
             }
             Command::AgentTurnFinished {
                 task_id,
@@ -1830,6 +2095,8 @@ impl Coordinator {
             running_agent_turns: BTreeMap::new(),
             failed_terminal_compaction_attempts: BTreeSet::new(),
             overflow_retry_compacted_context_by_attempt: BTreeMap::new(),
+            active_continuation_id: None,
+            continuation_controller: ContinuationController::default(),
             scheduler: Scheduler::new(SchedulerLimits {
                 provider_model: self.config.provider_model_concurrency,
                 tool: self.config.tool_concurrency,
@@ -1983,6 +2250,8 @@ impl Coordinator {
 
         let provider_context_by_agent =
             restore_provider_context_from_history(&self.config.session_dir, &run_id)?;
+        let continuation_controller =
+            restore_continuation_controller_from_history(&self.config.session_dir, &run_id)?;
 
         let next_agent_id =
             next_agent_counter_for_run(&self.config.session_dir, &run_id, max_agent_id)?;
@@ -2048,6 +2317,8 @@ impl Coordinator {
             running_agent_turns: BTreeMap::new(),
             failed_terminal_compaction_attempts: BTreeSet::new(),
             overflow_retry_compacted_context_by_attempt: BTreeMap::new(),
+            active_continuation_id: resume_plan.active_continuation_id.clone(),
+            continuation_controller,
             scheduler: Scheduler::new(SchedulerLimits {
                 provider_model: self.config.provider_model_concurrency,
                 tool: self.config.tool_concurrency,
@@ -2319,6 +2590,8 @@ impl Coordinator {
                 selected_agent_tags: Vec::new(),
                 selected_resource_tags: Vec::new(),
                 model_ref: profile_cfg.model_ref.clone(),
+                fallback_model_refs: profile_cfg.fallback_model_refs.clone(),
+                fallback_model_settings: profile_cfg.fallback_model_settings.clone(),
                 model_settings: default_model_settings_for_profile(&profile_cfg.name),
             };
 
@@ -2401,6 +2674,7 @@ impl Coordinator {
             task_id: metadata.task_id,
             description: metadata.description,
             run_in_background: metadata.run_in_background,
+            route: metadata.route,
         });
 
         let prompt = if profile.name == crate::plan::PLAN_AGENT_NAME {
@@ -2421,6 +2695,7 @@ impl Coordinator {
             &selected_tags.resources,
         );
 
+        let explicit_model_override = model_ref_override.is_some();
         let request = AgentRequest {
             agent_id,
             prompt,
@@ -2429,6 +2704,16 @@ impl Coordinator {
             selected_agent_tags: selected_tags.agents,
             selected_resource_tags: selected_tags.resources,
             model_ref: model_ref_override.unwrap_or_else(|| profile.model_ref.clone()),
+            fallback_model_refs: if explicit_model_override {
+                Vec::new()
+            } else {
+                profile.fallback_model_refs.clone()
+            },
+            fallback_model_settings: if explicit_model_override {
+                Vec::new()
+            } else {
+                profile.fallback_model_settings.clone()
+            },
             model_settings: model_settings_override
                 .unwrap_or_else(|| default_model_settings_for_profile(&profile.name)),
         };
@@ -3632,6 +3917,60 @@ impl Coordinator {
             .map_err(|err| CoordinatorError::PolicyViolation(err.to_string()))
     }
 
+    async fn persistent_task_projection_internal(
+        &self,
+    ) -> Result<PersistentTaskProjection, CoordinatorError> {
+        let events = self.replay_current_run_events().await?;
+        Ok(project_persistent_tasks(&events))
+    }
+
+    async fn create_persistent_task_internal(
+        &mut self,
+        actor: EventActor,
+        mut task: PersistentTask,
+    ) -> Result<PersistentTaskProjection, CoordinatorError> {
+        validate_persistent_task_create(&self.persistent_task_projection_internal().await?, &task)?;
+        task.blocks.clear();
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        if task.run_id.is_none() {
+            task.run_id = Some(run_state.info.run_id.clone());
+        }
+        append_payload_event(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            actor,
+            Some(format!("persistent_task:{}", task.task_id)),
+            EventV1::PersistentTaskCreated(PersistentTaskCreatedEvent { task }),
+        )?;
+        self.persistent_task_projection_internal().await
+    }
+
+    async fn update_persistent_task_internal(
+        &mut self,
+        actor: EventActor,
+        update: PersistentTaskUpdatedEvent,
+    ) -> Result<PersistentTaskProjection, CoordinatorError> {
+        let projection = self.persistent_task_projection_internal().await?;
+        validate_persistent_task_update(&projection, &update)?;
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        append_payload_event(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            actor,
+            Some(format!("persistent_task:{}", update.task_id)),
+            EventV1::PersistentTaskUpdated(update),
+        )?;
+        self.persistent_task_projection_internal().await
+    }
+
     async fn create_team_internal(
         &mut self,
         actor: EventActor,
@@ -4568,6 +4907,7 @@ impl Coordinator {
                         result_summary: result_summary.clone(),
                         metadata: Some(TaskCompletionMetadata {
                             lineage: Some(lineage.clone()),
+                            route: None,
                             task_scope: Some(TaskTerminalScope::ToolCall),
                             timing: Some(timing.clone()),
                             hook_executions: hook_executions.clone(),
@@ -5348,6 +5688,373 @@ impl Coordinator {
         .await
     }
 
+    fn start_continuation_internal(
+        &mut self,
+        actor: EventActor,
+        mode: String,
+        command: String,
+        bounds: ContinuationBounds,
+    ) -> Result<String, CoordinatorError> {
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        let continuation_id = format!("cont_{:06}", run_state.next_event_seq);
+        append_payload_event_with_correlation(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            actor,
+            Some(format!("continuation:{continuation_id}")),
+            None,
+            EventV1::ContinuationStarted(ContinuationStartedEvent {
+                continuation_id: continuation_id.clone(),
+                mode: mode.clone(),
+                command: command.clone(),
+                max_iterations: bounds.max_iterations,
+                max_wall_clock_ms: bounds.max_wall_clock_ms,
+                max_provider_calls: bounds.max_provider_calls,
+                max_tool_calls: bounds.max_tool_calls,
+            }),
+        )?;
+        run_state.active_continuation_id = Some(continuation_id.clone());
+        run_state.continuation_controller.start_at(
+            continuation_id.clone(),
+            mode,
+            command,
+            bounds,
+            self.clock.mono_ms(),
+        );
+        Ok(continuation_id)
+    }
+
+    fn stop_continuation_internal(
+        &mut self,
+        actor: EventActor,
+        reason: String,
+    ) -> Result<(), CoordinatorError> {
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        let continuation_id = run_state
+            .active_continuation_id
+            .clone()
+            .unwrap_or_else(|| "none".to_string());
+        append_payload_event_with_correlation(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            actor,
+            Some(format!("continuation:{continuation_id}")),
+            None,
+            EventV1::ContinuationStopped(ContinuationStoppedEvent {
+                continuation_id,
+                reason,
+            }),
+        )?;
+        run_state.active_continuation_id = None;
+        run_state.continuation_controller.stop();
+        Ok(())
+    }
+
+    async fn trigger_continuation_reminder_internal(
+        &mut self,
+        trigger: ContinuationReminderTrigger,
+    ) -> Result<Option<String>, CoordinatorError> {
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+
+        if agent_has_active_or_queued_turn(run_state, &trigger.agent_id) {
+            return Ok(None);
+        }
+
+        let Some(profile) = run_state.agents.get(&trigger.agent_id).cloned() else {
+            return Err(CoordinatorError::UnknownAgent(trigger.agent_id));
+        };
+        if profile.name == crate::plan::PLAN_AGENT_NAME {
+            return Err(CoordinatorError::PolicyViolation(
+                "continuation is disabled for the plan profile".to_string(),
+            ));
+        }
+
+        let Some(active) = run_state.continuation_controller.active().cloned() else {
+            return Ok(None);
+        };
+        let continuation_id = active.continuation_id.clone();
+        run_state
+            .continuation_controller
+            .record_activity(trigger.provider_calls, trigger.tool_calls);
+        let incomplete_todos = trigger
+            .incomplete_todos
+            .unwrap_or(!trigger.done_marker_seen);
+        let decision = run_state.continuation_controller.queue_idle_reminder(
+            incomplete_todos,
+            trigger.done_marker_seen,
+            self.clock.mono_ms(),
+        );
+
+        match decision {
+            Some(ContinuationDecision::ReminderQueued {
+                iteration,
+                reminder,
+            }) => {
+                append_payload_event_with_correlation(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    run_state,
+                    trigger.actor,
+                    Some(format!("continuation:{continuation_id}")),
+                    None,
+                    EventV1::ContinuationReminderQueued(ContinuationReminderQueuedEvent {
+                        continuation_id,
+                        iteration,
+                        reminder: reminder.clone(),
+                        reason: trigger.reason,
+                    }),
+                )?;
+                let request_id = allocate_provider_request_id(run_state);
+                let prompt = continuation_reminder_prompt(
+                    &active.mode,
+                    iteration,
+                    &reminder,
+                    &active.command,
+                );
+                schedule_agent_turn(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    self.job_tx.clone(),
+                    run_state,
+                    self.config.hook_runtime_config.clone(),
+                    self.config.compaction.clone(),
+                    ScheduleAgentTurnArgs {
+                        provider: self.config.provider.clone(),
+                        tool_registry: self.config.tool_registry.clone(),
+                        profile: profile.clone(),
+                        request: AgentRequest {
+                            agent_id: trigger.agent_id,
+                            prompt,
+                            prompt_context: None,
+                            selected_file_tags: Vec::new(),
+                            selected_agent_tags: Vec::new(),
+                            selected_resource_tags: Vec::new(),
+                            model_ref: profile.model_ref.clone(),
+                            fallback_model_refs: profile.fallback_model_refs.clone(),
+                            fallback_model_settings: profile.fallback_model_settings.clone(),
+                            model_settings: default_model_settings_for_profile(&profile.name),
+                        },
+                        request_id: request_id.clone(),
+                        child_task: None,
+                    },
+                )
+                .await?;
+                Ok(Some(request_id))
+            }
+            Some(ContinuationDecision::LimitReached { limit, iteration }) => {
+                append_payload_event_with_correlation(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    run_state,
+                    trigger.actor,
+                    Some(format!("continuation:{continuation_id}")),
+                    None,
+                    EventV1::ContinuationLimitReached(ContinuationLimitReachedEvent {
+                        continuation_id,
+                        limit: limit.to_string(),
+                        iteration,
+                    }),
+                )?;
+                run_state.active_continuation_id = None;
+                Ok(None)
+            }
+            Some(ContinuationDecision::Stopped) => {
+                let reason = if trigger.done_marker_seen {
+                    "done_marker"
+                } else {
+                    "todos_completed"
+                };
+                append_payload_event_with_correlation(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    run_state,
+                    trigger.actor,
+                    Some(format!("continuation:{continuation_id}")),
+                    None,
+                    EventV1::ContinuationStopped(ContinuationStoppedEvent {
+                        continuation_id,
+                        reason: reason.to_string(),
+                    }),
+                )?;
+                run_state.active_continuation_id = None;
+                Ok(None)
+            }
+            None => Ok(None),
+        }
+    }
+
+    fn queue_continuation_reminder_internal(
+        &mut self,
+        actor: EventActor,
+        continuation_id: String,
+        iteration: u32,
+        reminder: String,
+        reason: String,
+    ) -> Result<(), CoordinatorError> {
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        append_payload_event_with_correlation(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            actor,
+            Some(format!("continuation:{continuation_id}")),
+            None,
+            EventV1::ContinuationReminderQueued(ContinuationReminderQueuedEvent {
+                continuation_id,
+                iteration,
+                reminder,
+                reason,
+            }),
+        )?;
+        Ok(())
+    }
+
+    fn reach_continuation_limit_internal(
+        &mut self,
+        actor: EventActor,
+        continuation_id: String,
+        limit: String,
+        iteration: u32,
+    ) -> Result<(), CoordinatorError> {
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        append_payload_event_with_correlation(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            actor,
+            Some(format!("continuation:{continuation_id}")),
+            None,
+            EventV1::ContinuationLimitReached(ContinuationLimitReachedEvent {
+                continuation_id,
+                limit,
+                iteration,
+            }),
+        )?;
+        run_state.active_continuation_id = None;
+        run_state.continuation_controller.stop();
+        Ok(())
+    }
+
+    async fn switch_agent_turn_provider_model_slot_internal(
+        &mut self,
+        task_id: String,
+        agent_id: String,
+        model_ref: String,
+        model_settings: AgentModelSettings,
+    ) -> Result<bool, CoordinatorError> {
+        let model = crate::agent::AgentModelRef::parse(&model_ref);
+        let provider_id = model.provider_id;
+        let model_id = model.model_id;
+        let base_new_key = ConcurrencyKey::ProviderModel {
+            provider_id: provider_id.clone(),
+            model_id: model_id.clone(),
+        };
+        let dequeued = {
+            let Some(run_state) = self.run_state.as_mut() else {
+                return Err(CoordinatorError::RunNotStarted);
+            };
+            let new_key = nested_provider_model_queue_key(
+                run_state,
+                &agent_id,
+                provider_id,
+                model_id,
+                base_new_key,
+            );
+            let Some(running) = run_state.running_agent_turns.get(&task_id) else {
+                return Err(CoordinatorError::UnknownTask(task_id));
+            };
+            if running.agent_id != agent_id {
+                return Err(CoordinatorError::PolicyViolation(format!(
+                    "agent turn `{task_id}` is not owned by agent `{agent_id}`"
+                )));
+            }
+            let old_key = running.queue_key.clone();
+            if old_key == new_key {
+                if let Some(running) = run_state.running_agent_turns.get_mut(&task_id) {
+                    running.model_ref = model_ref;
+                    running.model_settings = model_settings;
+                }
+                return Ok(true);
+            }
+
+            match run_state
+                .scheduler
+                .schedule(task_id.clone(), new_key.clone())
+            {
+                ScheduleDecision::Started(_) => {
+                    let dequeued = run_state.scheduler.complete(&old_key);
+                    if let Some(running) = run_state.running_agent_turns.get_mut(&task_id) {
+                        running.queue_key = new_key;
+                        running.model_ref = model_ref;
+                        running.model_settings = model_settings;
+                    }
+                    dequeued
+                }
+                ScheduleDecision::Queued(_) => {
+                    let _ = run_state.scheduler.cancel_queued(&task_id);
+                    return Ok(false);
+                }
+            }
+        };
+
+        if !dequeued.is_empty() {
+            let Some(run_state) = self.run_state.as_mut() else {
+                return Err(CoordinatorError::RunNotStarted);
+            };
+            for task in dequeued {
+                if let Some(queued) = run_state.queued_agent_turns.get(&task.task_id).cloned() {
+                    append_agent_turn_task_scheduled_event(
+                        self.clock.as_ref(),
+                        self.redactor.as_ref(),
+                        run_state,
+                        AgentTurnTaskScheduledEventArgs {
+                            task_id: &queued.task_id,
+                            agent_id: &queued.agent_id,
+                            request_id: &queued.request_id,
+                            queue_key: &queued.queue_key,
+                            state: TaskScheduleState::Started,
+                        },
+                    )?;
+
+                    let Some(queued) = run_state.queued_agent_turns.remove(&task.task_id) else {
+                        continue;
+                    };
+                    start_agent_turn_execution(
+                        self.clock.as_ref(),
+                        self.redactor.as_ref(),
+                        self.job_tx.clone(),
+                        run_state,
+                        self.config.hook_runtime_config.clone(),
+                        self.config.compaction.clone(),
+                        self.config.provider.clone(),
+                        self.config.tool_registry.clone(),
+                        queued,
+                    )
+                    .await?;
+                }
+            }
+        }
+
+        Ok(true)
+    }
+
     async fn promote_next_agent_blocked_turn(
         &mut self,
         agent_id: &str,
@@ -5421,7 +6128,15 @@ impl Coordinator {
         request_id: String,
         outcome: AgentTurnTaskOutcome,
     ) -> Result<(), CoordinatorError> {
-        let (dequeued, terminal_compaction, finished_agent_id) = {
+        let (
+            dequeued,
+            terminal_compaction,
+            finished_agent_id,
+            continuation_should_check,
+            continuation_done_marker_seen,
+            continuation_incomplete_todos,
+            continuation_tool_calls,
+        ) = {
             let Some(run_state) = self.run_state.as_mut() else {
                 return Ok(());
             };
@@ -5431,6 +6146,18 @@ impl Coordinator {
             };
 
             let finished_agent_id = running.agent_id.clone();
+            let continuation_should_check =
+                matches!(&outcome, AgentTurnTaskOutcome::Succeeded { .. });
+            let continuation_done_marker_seen = match &outcome {
+                AgentTurnTaskOutcome::Succeeded { output, .. } => {
+                    continuation_done_marker_seen(output)
+                }
+                AgentTurnTaskOutcome::Failed { .. } => true,
+            };
+            let continuation_incomplete_todos =
+                continuation_incomplete_todos_for_request(run_state, &request_id);
+            let continuation_tool_calls =
+                continuation_tool_call_count_for_request(run_state, &request_id);
             let was_cancelled = run_state.cancelled_running_tasks.remove(&task_id);
             let dequeued = run_state.scheduler.complete(&running.queue_key);
             let finished_mono_ms = self.clock.mono_ms();
@@ -5612,6 +6339,10 @@ impl Coordinator {
                                     result_summary: output,
                                     metadata: Some(TaskCompletionMetadata {
                                         lineage,
+                                        route: running
+                                            .child_task
+                                            .as_ref()
+                                            .and_then(|child_task| child_task.route.clone()),
                                         task_scope: Some(TaskTerminalScope::AgentTurn),
                                         timing: Some(execution_timing_metadata(
                                             running.started_mono_ms,
@@ -5774,7 +6505,15 @@ impl Coordinator {
                 }
             }
 
-            (dequeued, terminal_compaction, finished_agent_id)
+            (
+                dequeued,
+                terminal_compaction,
+                finished_agent_id,
+                continuation_should_check && !was_cancelled,
+                continuation_done_marker_seen,
+                continuation_incomplete_todos,
+                continuation_tool_calls,
+            )
         };
 
         if let Some(request) = terminal_compaction {
@@ -5834,8 +6573,106 @@ impl Coordinator {
         self.promote_next_agent_blocked_turn(&finished_agent_id)
             .await?;
 
+        if continuation_should_check {
+            self.trigger_continuation_reminder_internal(ContinuationReminderTrigger {
+                actor: system_actor(),
+                agent_id: finished_agent_id,
+                reason: format!("agent_turn_finished:{request_id}"),
+                done_marker_seen: continuation_done_marker_seen,
+                incomplete_todos: continuation_incomplete_todos,
+                provider_calls: 1,
+                tool_calls: continuation_tool_calls,
+            })
+            .await?;
+        }
+
         Ok(())
     }
+}
+
+fn continuation_reminder_prompt(
+    mode: &str,
+    iteration: u32,
+    reminder: &str,
+    command: &str,
+) -> String {
+    let command = command.trim();
+    format!(
+        "[CONTINUATION {mode} iteration {iteration}]\n{reminder}\n\nContinuation command: {command}\n\nContinue the requested work from that continuation command through the normal coordinator/tool flow. If every required task is complete, respond with `DONE` and do not start new work."
+    )
+}
+
+fn continuation_done_marker_seen(output: &str) -> bool {
+    output.lines().any(|line| {
+        let normalized = line
+            .trim()
+            .trim_matches(|ch: char| ch.is_ascii_punctuation() || matches!(ch, '✅' | '✓' | '✔'))
+            .trim()
+            .to_ascii_lowercase();
+        matches!(
+            normalized.as_str(),
+            "done"
+                | "complete"
+                | "completed"
+                | "all done"
+                | "all tasks complete"
+                | "no pending work"
+        )
+    })
+}
+
+fn continuation_tool_call_count_for_request(run_state: &RunState, request_id: &str) -> u32 {
+    let through_seq = run_state.next_event_seq.saturating_sub(1);
+    let Ok(events) = read_historical_events_until(
+        &run_state.info.run_id,
+        &run_state.info.events_path,
+        through_seq,
+    ) else {
+        return 0;
+    };
+    events
+        .iter()
+        .filter(|event| event.correlation_id.as_deref() == Some(request_id))
+        .filter(|event| matches!(event.payload, EventV1::ToolCallFinished(_)))
+        .count()
+        .try_into()
+        .unwrap_or(u32::MAX)
+}
+
+fn continuation_incomplete_todos_for_request(
+    run_state: &RunState,
+    request_id: &str,
+) -> Option<bool> {
+    let through_seq = run_state.next_event_seq.saturating_sub(1);
+    let events = read_historical_events_until(
+        &run_state.info.run_id,
+        &run_state.info.events_path,
+        through_seq,
+    )
+    .ok()?;
+    events
+        .iter()
+        .filter(|event| event.correlation_id.as_deref() == Some(request_id))
+        .filter_map(|event| match &event.payload {
+            EventV1::ToolCallFinished(payload) => payload.output_json.as_ref(),
+            _ => None,
+        })
+        .filter_map(todo_output_has_incomplete_items)
+        .next_back()
+}
+
+fn todo_output_has_incomplete_items(value: &Value) -> Option<bool> {
+    let todos = value.get("todos").and_then(Value::as_array)?;
+    if todos.is_empty() {
+        return Some(false);
+    }
+    Some(todos.iter().any(|todo| {
+        let status = todo
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        !matches!(status, "completed" | "done" | "cancelled")
+    }))
 }
 
 struct RunState {
@@ -5864,6 +6701,8 @@ struct RunState {
     running_agent_turns: BTreeMap<String, RunningAgentTurn>,
     failed_terminal_compaction_attempts: BTreeSet<(String, String)>,
     overflow_retry_compacted_context_by_attempt: BTreeMap<(String, String), ProviderContext>,
+    active_continuation_id: Option<String>,
+    continuation_controller: ContinuationController,
     scheduler: Scheduler,
     recorded_runtime_context: Option<RecordedRuntimeContext>,
     allow_initial_runtime_context_recording: bool,
@@ -5898,12 +6737,23 @@ struct ChildTaskTurnState {
     task_id: String,
     description: String,
     run_in_background: bool,
+    route: Option<TaskRouteMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PendingAgentWakeup {
     request_id: String,
     notification_text: String,
+}
+
+struct ContinuationReminderTrigger {
+    actor: EventActor,
+    agent_id: String,
+    reason: String,
+    done_marker_seen: bool,
+    incomplete_todos: Option<bool>,
+    provider_calls: u32,
+    tool_calls: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -6534,6 +7384,126 @@ fn validate_team_task_create(
     Ok(())
 }
 
+fn validate_persistent_task_create(
+    projection: &PersistentTaskProjection,
+    task: &PersistentTask,
+) -> Result<(), CoordinatorError> {
+    if task.version != 1 {
+        return Err(CoordinatorError::PolicyViolation(
+            "persistent task version must be 1".to_string(),
+        ));
+    }
+    if non_empty_trimmed(&task.task_id).is_none() {
+        return Err(CoordinatorError::PolicyViolation(
+            "persistent task id cannot be empty".to_string(),
+        ));
+    }
+    validate_team_text_field("persistent task id", &task.task_id)?;
+    if let Some(run_id) = task.run_id.as_deref() {
+        validate_team_text_field("persistent task run_id", run_id)?;
+    }
+    if let Some(thread_id) = task.thread_id.as_deref() {
+        validate_team_text_field("persistent task thread_id", thread_id)?;
+    }
+    validate_team_text_field("persistent task subject", &task.subject)?;
+    validate_team_text_field("persistent task description", &task.description)?;
+    if let Some(active_form) = task.active_form.as_deref() {
+        validate_team_text_field("persistent task active_form", active_form)?;
+    }
+    if let Some(owner) = task.owner.as_deref() {
+        validate_team_text_field("persistent task owner", owner)?;
+    }
+    if projection.tasks.contains_key(&task.task_id) {
+        return Err(CoordinatorError::PolicyViolation(format!(
+            "persistent task `{}` already exists",
+            task.task_id
+        )));
+    }
+    validate_team_metadata(&task.metadata)?;
+    for blocker in &task.blocked_by {
+        validate_team_text_field("persistent task blocker", blocker)?;
+        if blocker == &task.task_id {
+            return Err(CoordinatorError::PolicyViolation(format!(
+                "persistent task `{}` cannot block itself",
+                task.task_id
+            )));
+        }
+        if !projection.tasks.contains_key(blocker) {
+            return Err(CoordinatorError::PolicyViolation(format!(
+                "persistent task `{}` depends on unknown task `{blocker}`",
+                task.task_id
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_persistent_task_update(
+    projection: &PersistentTaskProjection,
+    update: &PersistentTaskUpdatedEvent,
+) -> Result<(), CoordinatorError> {
+    let mut candidate = projection
+        .tasks
+        .get(&update.task_id)
+        .cloned()
+        .ok_or_else(|| CoordinatorError::UnknownTask(format!("persistent:{}", update.task_id)))?;
+    if let Some(subject) = update.subject.as_deref() {
+        validate_team_text_field("persistent task subject", subject)?;
+    }
+    if let Some(description) = update.description.as_deref() {
+        validate_team_text_field("persistent task description", description)?;
+    }
+    if let Some(active_form) = update.active_form.as_deref() {
+        validate_team_text_field("persistent task active_form", active_form)?;
+    }
+    if let Some(owner) = update.owner.as_deref() {
+        validate_team_text_field("persistent task owner", owner)?;
+    }
+    if let Some(blocked_by) = update.blocked_by.as_ref() {
+        for blocker in blocked_by {
+            validate_team_text_field("persistent task blocker", blocker)?;
+            if blocker == &update.task_id {
+                return Err(CoordinatorError::PolicyViolation(format!(
+                    "persistent task `{}` cannot block itself",
+                    update.task_id
+                )));
+            }
+            if !projection.tasks.contains_key(blocker) {
+                return Err(CoordinatorError::PolicyViolation(format!(
+                    "persistent task `{}` depends on unknown task `{blocker}`",
+                    update.task_id
+                )));
+            }
+        }
+    }
+    validate_team_metadata(&update.metadata)?;
+    apply_persistent_task_update(&mut candidate, update);
+    let mut candidate_tasks = projection.tasks.clone();
+    candidate_tasks.insert(candidate.task_id.clone(), candidate.clone());
+    if let Some(blocker) = candidate.blocked_by.iter().find(|blocker| {
+        has_persistent_task_dependency_path(&candidate_tasks, blocker, &candidate.task_id)
+    }) {
+        return Err(CoordinatorError::PolicyViolation(format!(
+            "persistent task `{}` dependency cycle through `{blocker}`",
+            candidate.task_id
+        )));
+    }
+    if matches!(
+        candidate.status,
+        PersistentTaskStatus::Claimed
+            | PersistentTaskStatus::InProgress
+            | PersistentTaskStatus::Completed
+    ) {
+        if let Some(blocker) = blocked_by_incomplete(&candidate_tasks, &candidate.task_id) {
+            return Err(CoordinatorError::PolicyViolation(format!(
+                "persistent task `{}` is blocked by incomplete task `{blocker}`",
+                candidate.task_id
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn validate_team_task_update(
     team: &TeamRunProjection,
     task_id: &str,
@@ -6798,6 +7768,8 @@ where
                 selected_agent_tags: Vec::new(),
                 selected_resource_tags: Vec::new(),
                 model_ref: parent_profile.model_ref.clone(),
+                fallback_model_refs: parent_profile.fallback_model_refs.clone(),
+                fallback_model_settings: parent_profile.fallback_model_settings.clone(),
                 model_settings: default_model_settings_for_profile(&parent_profile.name),
             },
             request_id: delivered_turn_request_id,
@@ -6861,6 +7833,8 @@ where
                     selected_agent_tags: Vec::new(),
                     selected_resource_tags: Vec::new(),
                     model_ref: parent_profile.model_ref.clone(),
+                    fallback_model_refs: parent_profile.fallback_model_refs.clone(),
+                    fallback_model_settings: parent_profile.fallback_model_settings.clone(),
                     model_settings: default_model_settings_for_profile(&parent_profile.name),
                 },
                 request_id: wakeup.request_id,
@@ -7137,6 +8111,12 @@ struct HookExecutionBatch {
     critical_failure: Option<String>,
 }
 
+struct LifecycleHookCommandOutput {
+    output_digest: String,
+    output_summary: String,
+    effects: Vec<HookEffectMetadata>,
+}
+
 #[derive(Debug, Clone)]
 struct HookInvocationContext {
     event: HookLifecycleEvent,
@@ -7288,27 +8268,45 @@ where
             continue;
         }
 
-        if runtime.suppress_execution {
+        let hook_name = hook_identifier(hook, index);
+        let command_digest = digest12(hook.command.join("\u{0}").as_bytes());
+        if runtime.hooks.disabled || runtime.hooks.disabled_hooks.contains(&hook_name) {
             batch.hook_executions.push(HookExecutionMetadata {
-                hook_name: hook_identifier(hook, index),
+                hook_name,
                 status: HookExecutionStatus::Skipped,
                 hook_event: Some(context.event.as_str().to_string()),
-                command_digest: Some(digest12(hook.command.join("\u{0}").as_bytes())),
+                hook_phase: Some(context.event.phase().as_str().to_string()),
+                command_digest: Some(command_digest),
+                output_digest: None,
+                output_summary: Some("disabled by hooks config".to_string()),
+                duration_ms: Some(0),
+                effects: Vec::new(),
+            });
+            continue;
+        }
+
+        if runtime.suppress_execution {
+            batch.hook_executions.push(HookExecutionMetadata {
+                hook_name,
+                status: HookExecutionStatus::Skipped,
+                hook_event: Some(context.event.as_str().to_string()),
+                hook_phase: Some(context.event.phase().as_str().to_string()),
+                command_digest: Some(command_digest),
                 output_digest: None,
                 output_summary: Some("suppressed during deterministic execution".to_string()),
                 duration_ms: Some(0),
+                effects: Vec::new(),
             });
             continue;
         }
 
         let (metadata, failure) =
             execute_lifecycle_hook(clock, runtime, hook, index, &context).await;
+        let deny_failure = hook_deny_failure(&metadata, &context);
         batch.hook_executions.push(metadata);
-        if hook.critical {
-            if let Some(failure) = failure {
-                batch.critical_failure = Some(failure);
-                break;
-            }
+        if let Some(failure) = deny_failure.or_else(|| hook.critical.then_some(failure).flatten()) {
+            batch.critical_failure = Some(failure);
+            break;
         }
     }
 
@@ -7333,15 +8331,17 @@ where
     let finished_mono_ms = clock.mono_ms();
 
     match execution {
-        Ok((output_digest, output_summary)) => (
+        Ok(output) => (
             HookExecutionMetadata {
                 hook_name,
                 status: HookExecutionStatus::Succeeded,
                 hook_event: Some(context.event.as_str().to_string()),
+                hook_phase: Some(context.event.phase().as_str().to_string()),
                 command_digest: Some(command_digest),
-                output_digest: Some(output_digest),
-                output_summary: Some(output_summary),
+                output_digest: Some(output.output_digest),
+                output_summary: Some(output.output_summary),
                 duration_ms: Some(finished_mono_ms.saturating_sub(started_mono_ms)),
+                effects: output.effects,
             },
             None,
         ),
@@ -7355,10 +8355,12 @@ where
                     hook_name,
                     status: HookExecutionStatus::Failed,
                     hook_event: Some(context.event.as_str().to_string()),
+                    hook_phase: Some(context.event.phase().as_str().to_string()),
                     command_digest: Some(command_digest),
                     output_digest: Some(digest12(reason.as_bytes())),
                     output_summary: Some(output_summary),
                     duration_ms: Some(finished_mono_ms.saturating_sub(started_mono_ms)),
+                    effects: Vec::new(),
                 },
                 Some(failure),
             )
@@ -7371,7 +8373,7 @@ async fn execute_lifecycle_hook_command(
     hook: &LifecycleHookConfig,
     hook_name: &str,
     context: &HookInvocationContext,
-) -> Result<(String, String), (String, String)> {
+) -> Result<LifecycleHookCommandOutput, (String, String)> {
     let executable = hook.command.first().ok_or_else(|| {
         (
             format!("hook `{hook_name}` is missing a command executable"),
@@ -7415,14 +8417,20 @@ async fn execute_lifecycle_hook_command(
             )
         })?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let redactor = DefaultRedactor::default();
+    let stdout = redactor.redact_text(&String::from_utf8_lossy(&output.stdout));
+    let stderr = redactor.redact_text(&String::from_utf8_lossy(&output.stderr));
     let output_summary = summarize_hook_output(&stdout, &stderr);
     let output_digest =
         digest12(format!("{}\u{0}{}\u{0}{:?}", stdout, stderr, output.status).as_bytes());
+    let effects = parse_hook_effects(&stdout, &stderr);
 
     if output.status.success() {
-        Ok((output_digest, output_summary))
+        Ok(LifecycleHookCommandOutput {
+            output_digest,
+            output_summary,
+            effects,
+        })
     } else {
         Err((
             format!(
@@ -7432,6 +8440,28 @@ async fn execute_lifecycle_hook_command(
             output_summary,
         ))
     }
+}
+
+fn hook_deny_failure(
+    metadata: &HookExecutionMetadata,
+    context: &HookInvocationContext,
+) -> Option<String> {
+    metadata.effects.iter().find_map(|effect| {
+        if effect.kind != HookEffectKind::Deny {
+            return None;
+        }
+        let summary = effect
+            .summary
+            .as_deref()
+            .and_then(non_empty_trimmed)
+            .unwrap_or("hook requested denial");
+        Some(format!(
+            "hook `{}` denied `{}` during `{}`: {summary}",
+            metadata.hook_name,
+            context.event.as_str(),
+            context.event.phase().as_str()
+        ))
+    })
 }
 
 fn hook_identifier(hook: &LifecycleHookConfig, index: usize) -> String {
@@ -7618,6 +8648,117 @@ fn summarize_hook_output(stdout: &str, stderr: &str) -> String {
     combined
         .map(|output| truncate_with_ellipsis(output, 160))
         .unwrap_or_else(|| "no output".to_string())
+}
+
+fn parse_hook_effects(stdout: &str, stderr: &str) -> Vec<HookEffectMetadata> {
+    let redactor = DefaultRedactor::default();
+    [stdout, stderr]
+        .iter()
+        .filter_map(|raw| parse_hook_effect_source(&redactor, raw))
+        .flatten()
+        .collect()
+}
+
+fn parse_hook_effect_source<R: Redactor + ?Sized>(
+    redactor: &R,
+    raw: &str,
+) -> Option<Vec<HookEffectMetadata>> {
+    let trimmed = non_empty_trimmed(raw)?;
+    let json_value: Value = serde_json::from_str(trimmed).ok()?;
+    let redacted = redact_value(redactor, &json_value);
+    let mut effects = Vec::new();
+
+    if let Some(items) = redacted.get("effects").and_then(Value::as_array) {
+        for item in items {
+            if let Some(effect) = parse_hook_effect_metadata(item) {
+                effects.push(effect);
+            }
+        }
+    }
+
+    if let Some(items) = redacted.get("hook_effects").and_then(Value::as_array) {
+        for item in items {
+            if let Some(effect) = parse_hook_effect_metadata(item) {
+                effects.push(effect);
+            }
+        }
+    }
+
+    if let Some(effect) = parse_hook_effect_metadata(&redacted) {
+        effects.push(effect);
+    }
+
+    if let Some(items) = redacted.get("artifact_refs").and_then(Value::as_array) {
+        for item in items {
+            let Some(artifact_ref) = parse_hook_artifact_ref(item) else {
+                continue;
+            };
+            effects.push(HookEffectMetadata {
+                kind: HookEffectKind::WriteArtifact,
+                summary: Some("hook wrote redacted artifact".to_string()),
+                artifact_ref: Some(artifact_ref),
+            });
+        }
+    }
+
+    if effects.is_empty() {
+        None
+    } else {
+        Some(deduplicate_hook_effects(effects))
+    }
+}
+
+fn deduplicate_hook_effects(effects: Vec<HookEffectMetadata>) -> Vec<HookEffectMetadata> {
+    let mut deduped = Vec::new();
+    for effect in effects {
+        if deduped.iter().any(|existing| existing == &effect) {
+            continue;
+        }
+        deduped.push(effect);
+    }
+    deduped
+}
+
+fn parse_hook_effect_metadata(value: &Value) -> Option<HookEffectMetadata> {
+    let object = value.as_object()?;
+    let kind = extract_object_string(object, &["kind", "effect", "type", "action"])
+        .and_then(|kind| parse_hook_effect_kind(&kind))?;
+    let summary = extract_object_string(object, &["summary", "message", "reason", "diagnostic"])
+        .map(|summary| truncate_with_ellipsis(&summary, 240));
+    let artifact_ref = object
+        .get("artifact_ref")
+        .or_else(|| object.get("artifact"))
+        .and_then(parse_hook_artifact_ref);
+
+    Some(HookEffectMetadata {
+        kind,
+        summary,
+        artifact_ref,
+    })
+}
+
+fn parse_hook_artifact_ref(value: &Value) -> Option<EventArtifactRef> {
+    let object = value.as_object()?;
+    let path = extract_object_string(object, &["path", "rel_path", "relative_path"])?;
+    let digest = extract_object_string(object, &["digest", "sha256", "blake3"]);
+    Some(EventArtifactRef { path, digest })
+}
+
+fn parse_hook_effect_kind(kind: &str) -> Option<HookEffectKind> {
+    match kind.trim().to_ascii_lowercase().replace('-', "_").as_str() {
+        "allow" => Some(HookEffectKind::Allow),
+        "deny" | "block" | "cancel" => Some(HookEffectKind::Deny),
+        "modify_context" | "transform" | "transform_context" | "context_transform" => {
+            Some(HookEffectKind::TransformContext)
+        }
+        "reminder" | "request_reminder" | "usage_reminder" => Some(HookEffectKind::RequestReminder),
+        "artifact" | "write_artifact" | "redacted_artifact" => Some(HookEffectKind::WriteArtifact),
+        "diagnostic" | "add_diagnostic" | "diagnostics" => Some(HookEffectKind::AddDiagnostic),
+        "truncate" | "truncate_output" | "truncation" => Some(HookEffectKind::TruncateOutput),
+        "recover" | "recovery" | "retry" => Some(HookEffectKind::Recover),
+        "notify" | "notification" => Some(HookEffectKind::Notify),
+        _ => None,
+    }
 }
 
 async fn start_tool_call_execution<C, R>(
@@ -8334,6 +9475,7 @@ where
                         prior_context: &prior_context,
                         job_tx: job_tx.clone(),
                         cancellation_token: cancellation_token.clone(),
+                        allow_context_window_fallback: overflow_retry_attempted,
                     })
                     .await;
 
@@ -8430,13 +9572,23 @@ struct AgentTurnPhaseLoopRequest<'a> {
     prior_context: &'a ProviderContext,
     job_tx: mpsc::Sender<Command>,
     cancellation_token: CancellationToken,
+    allow_context_window_fallback: bool,
 }
 
 struct AgentProviderTurnState {
     model: AgentModelRef,
+    model_settings: AgentModelSettings,
     tool_defs: Vec<ToolDef>,
     messages: Vec<CompletionMessage>,
     total_tool_calls: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ProviderFallbackAttempt {
+    attempt: u32,
+    from_model_ref: String,
+    reason_class: String,
+    retryable: bool,
 }
 
 enum AgentToolPhaseDecision {
@@ -8456,6 +9608,8 @@ struct ProviderStreamPhaseRequest<'a> {
     job_tx: mpsc::Sender<Command>,
     task_id: &'a str,
     agent_id: &'a str,
+    fallback_attempt: Option<ProviderFallbackAttempt>,
+    model_settings: AgentModelSettings,
 }
 
 async fn run_agent_turn_phase_loop(request: AgentTurnPhaseLoopRequest<'_>) -> AgentTurnOutcome {
@@ -8466,6 +9620,7 @@ async fn run_agent_turn_phase_loop(request: AgentTurnPhaseLoopRequest<'_>) -> Ag
         prior_context,
         job_tx,
         cancellation_token,
+        allow_context_window_fallback,
     } = request;
 
     let mut turn_state = match prepare_provider_transform_phase(
@@ -8478,6 +9633,11 @@ async fn run_agent_turn_phase_loop(request: AgentTurnPhaseLoopRequest<'_>) -> Ag
         Err(reason) => return AgentTurnOutcome::failed(reason),
     };
     let current_turn_start_index = turn_state.messages.len().saturating_sub(1);
+    let mut fallback_models = fallback_models_with_settings(&task.request);
+    let mut fallback_cooldowns = BTreeSet::from([task.request.model_ref.clone()]);
+    fallback_models.retain(|(model_ref, _)| !fallback_cooldowns.contains(model_ref));
+    let mut fallback_attempt: Option<ProviderFallbackAttempt> = None;
+    let mut fallback_attempt_count = 0_u32;
 
     loop {
         if cancellation_token.is_cancelled() {
@@ -8510,6 +9670,8 @@ async fn run_agent_turn_phase_loop(request: AgentTurnPhaseLoopRequest<'_>) -> Ag
             job_tx: job_tx.clone(),
             task_id: &task.task_id,
             agent_id: &task.agent_id,
+            fallback_attempt: fallback_attempt.take(),
+            model_settings: turn_state.model_settings.clone(),
         })
         .await
         {
@@ -8517,6 +9679,53 @@ async fn run_agent_turn_phase_loop(request: AgentTurnPhaseLoopRequest<'_>) -> Ag
             Err(mut failure) => {
                 let reason = normalize_provider_phase_error(failure.to_string());
                 failure.reason = reason.clone();
+                let class = classify_provider_error(&reason);
+                let can_try_fallback = class.is_retryable()
+                    && (!matches!(
+                        class,
+                        crate::provider_recovery::ProviderErrorClass::ContextWindow
+                    ) || allow_context_window_fallback);
+                if can_try_fallback {
+                    let from_model_ref = agent_model_ref_to_model_ref(&turn_state.model);
+                    fallback_cooldowns.insert(from_model_ref.clone());
+                    while let Some((next_model_ref, next_model_settings)) =
+                        fallback_models.first().cloned()
+                    {
+                        fallback_models.remove(0);
+                        if fallback_cooldowns.contains(&next_model_ref) {
+                            continue;
+                        }
+                        let slot_acquired = match switch_agent_turn_provider_model_slot_phase(
+                            &job_tx,
+                            &task.task_id,
+                            &task.agent_id,
+                            &next_model_ref,
+                            next_model_settings.clone(),
+                        )
+                        .await
+                        {
+                            Ok(acquired) => acquired,
+                            Err(reason) => return AgentTurnOutcome::failed(reason),
+                        };
+                        if !slot_acquired {
+                            fallback_cooldowns.insert(next_model_ref);
+                            continue;
+                        }
+                        turn_state.model = AgentModelRef::parse(&next_model_ref);
+                        turn_state.model_settings = next_model_settings;
+                        fallback_attempt_count = fallback_attempt_count.saturating_add(1);
+                        fallback_attempt = Some(ProviderFallbackAttempt {
+                            attempt: fallback_attempt_count,
+                            from_model_ref,
+                            reason_class: class.as_str().to_string(),
+                            retryable: true,
+                        });
+                        break;
+                    }
+                    if fallback_attempt.is_some() {
+                        continue;
+                    }
+                }
                 return AgentTurnOutcome::Failed {
                     reason,
                     memory: (failure.failure_stage == "provider_error").then_some(failure),
@@ -8598,6 +9807,10 @@ async fn run_agent_turn_phase_loop(request: AgentTurnPhaseLoopRequest<'_>) -> Ag
             );
         }
     }
+}
+
+fn agent_model_ref_to_model_ref(model: &AgentModelRef) -> String {
+    format!("{}:{}", model.provider_id, model.model_id)
 }
 
 fn normalize_provider_phase_error(reason: String) -> String {
@@ -8684,10 +9897,53 @@ fn prepare_provider_transform_phase(
 
     Ok(AgentProviderTurnState {
         model,
+        model_settings: request.model_settings.clone(),
         tool_defs,
         messages,
         total_tool_calls: 0,
     })
+}
+
+fn fallback_models_with_settings(request: &AgentRequest) -> Vec<(String, AgentModelSettings)> {
+    request
+        .fallback_model_refs
+        .iter()
+        .enumerate()
+        .map(|(index, model_ref)| {
+            (
+                model_ref.clone(),
+                request
+                    .fallback_model_settings
+                    .get(index)
+                    .cloned()
+                    .unwrap_or_default(),
+            )
+        })
+        .collect()
+}
+
+async fn switch_agent_turn_provider_model_slot_phase(
+    job_tx: &mpsc::Sender<Command>,
+    task_id: &str,
+    agent_id: &str,
+    model_ref: &str,
+    model_settings: AgentModelSettings,
+) -> Result<bool, String> {
+    let (respond_to, response) = oneshot::channel();
+    job_tx
+        .send(Command::SwitchAgentTurnProviderModelSlot {
+            task_id: task_id.to_string(),
+            agent_id: agent_id.to_string(),
+            model_ref: model_ref.to_string(),
+            model_settings,
+            respond_to,
+        })
+        .await
+        .map_err(|err| format!("failed to switch provider model scheduler slot: {err}"))?;
+    response
+        .await
+        .map_err(|_| "coordinator dropped provider model scheduler slot switch".to_string())?
+        .map_err(|err| err.to_string())
 }
 
 async fn allocate_provider_request_id_phase(
@@ -8719,6 +9975,8 @@ async fn run_provider_stream_phase(
         job_tx,
         task_id,
         agent_id,
+        fallback_attempt,
+        model_settings,
     } = request;
     let task_id = task_id.to_string();
     let agent_id = agent_id.to_string();
@@ -8728,7 +9986,7 @@ async fn run_provider_stream_phase(
             provider,
             profile,
             model,
-            model_settings: request.model_settings.clone(),
+            model_settings,
             turn_request_id: turn_request_id.to_string(),
             provider_request_id,
             prompt_summary: &request.prompt,
@@ -8736,6 +9994,7 @@ async fn run_provider_stream_phase(
             tool_defs,
         },
         |event| {
+            let event = apply_fallback_metadata(event, fallback_attempt.as_ref());
             let job_tx = job_tx.clone();
             let task_id = task_id.clone();
             let agent_id = agent_id.clone();
@@ -8749,6 +10008,35 @@ async fn run_provider_stream_phase(
         },
     )
     .await
+}
+
+fn apply_fallback_metadata(
+    event: AgentRuntimeEvent,
+    fallback: Option<&ProviderFallbackAttempt>,
+) -> AgentRuntimeEvent {
+    let Some(fallback) = fallback else {
+        return event;
+    };
+
+    match event {
+        AgentRuntimeEvent::ProviderRequestStarted(mut started) => {
+            let metadata = started.metadata.get_or_insert_with(Default::default);
+            metadata.fallback_attempt = Some(fallback.attempt);
+            metadata.fallback_from_model_ref = Some(fallback.from_model_ref.clone());
+            metadata.fallback_reason_class = Some(fallback.reason_class.clone());
+            metadata.fallback_retryable = Some(fallback.retryable);
+            AgentRuntimeEvent::ProviderRequestStarted(started)
+        }
+        AgentRuntimeEvent::ProviderRequestFinished(mut finished) => {
+            let metadata = finished.metadata.get_or_insert_with(Default::default);
+            metadata.fallback_attempt = Some(fallback.attempt);
+            metadata.fallback_from_model_ref = Some(fallback.from_model_ref.clone());
+            metadata.fallback_reason_class = Some(fallback.reason_class.clone());
+            metadata.fallback_retryable = Some(fallback.retryable);
+            AgentRuntimeEvent::ProviderRequestFinished(finished)
+        }
+        event => event,
+    }
 }
 
 async fn emit_agent_runtime_event_phase(
@@ -11580,6 +12868,23 @@ fn compaction_summary_override_from_hooks(batch: &HookExecutionBatch) -> Option<
         if execution.status != HookExecutionStatus::Succeeded {
             return None;
         }
+        if let Some(summary) = execution.effects.iter().rev().find_map(|effect| {
+            if effect.kind != HookEffectKind::TransformContext {
+                return None;
+            }
+            effect
+                .summary
+                .as_deref()
+                .and_then(|summary| {
+                    summary
+                        .strip_prefix("compaction_summary:")
+                        .or(Some(summary))
+                })
+                .and_then(non_empty_trimmed)
+                .map(ToOwned::to_owned)
+        }) {
+            return Some(summary);
+        }
         let summary = execution.output_summary.as_deref()?.trim();
         summary
             .strip_prefix("compaction_summary:")
@@ -12755,23 +14060,6 @@ where
     )
 }
 
-fn is_provider_context_overflow_reason(reason: &str) -> bool {
-    let normalized = reason.to_ascii_lowercase();
-    [
-        "context length",
-        "context window",
-        "too many tokens",
-        "prompt token count",
-        "maximum context",
-        "input token",
-        "reduce the length",
-        "token count of",
-        "exceeds the limit",
-    ]
-    .iter()
-    .any(|needle| normalized.contains(needle))
-}
-
 fn event_permission_decision(decision: PermissionDecision) -> EventPermissionDecision {
     match decision {
         PermissionDecision::Allow => EventPermissionDecision::Allow,
@@ -13071,8 +14359,6 @@ fn active_plan_symlink_denial(workspace_root: &Path, active_plan: &str) -> Optio
 }
 
 fn task_agent_rule_selectors(args_json: &Value) -> Vec<PermissionRuleRequest> {
-    const CATEGORY_FALLBACK_PROFILE: &str = "general";
-
     let mut team_selectors = Vec::new();
     if let Some(members) = args_json.get("members").and_then(Value::as_array) {
         for member in members {
@@ -13102,15 +14388,7 @@ fn task_agent_rule_selectors(args_json: &Value) -> Vec<PermissionRuleRequest> {
         (Some(_), Some(subagent_type)) | (None, Some(subagent_type)) => {
             vec![PermissionRuleRequest::TaskAgent(subagent_type)]
         }
-        (Some(category), None) => {
-            let mut selectors = vec![PermissionRuleRequest::TaskAgent(category.clone())];
-            if category != CATEGORY_FALLBACK_PROFILE {
-                selectors.push(PermissionRuleRequest::TaskAgent(
-                    CATEGORY_FALLBACK_PROFILE.to_string(),
-                ));
-            }
-            selectors
-        }
+        (Some(category), None) => vec![PermissionRuleRequest::TaskAgent(category.clone())],
         (None, None) => Vec::new(),
     }
 }
@@ -13572,6 +14850,10 @@ fn parse_hook_execution_metadata(value: &Value) -> Option<HookExecutionMetadata>
         hook_name,
         status,
         hook_event: extract_object_string(object, &["hook_event", "event", "phase", "trigger"]),
+        hook_phase: extract_object_string(
+            object,
+            &["hook_phase", "phase_name", "middleware_phase"],
+        ),
         command_digest: extract_object_string(
             object,
             &["command_digest", "command_hash", "command_blake3"],
@@ -13582,6 +14864,17 @@ fn parse_hook_execution_metadata(value: &Value) -> Option<HookExecutionMetadata>
             &["output_summary", "summary", "message", "output_message"],
         ),
         duration_ms: extract_object_u64(object, &["duration_ms", "elapsed_ms"]),
+        effects: object
+            .get("effects")
+            .or_else(|| object.get("hook_effects"))
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(parse_hook_effect_metadata)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default(),
     })
 }
 
@@ -14203,6 +15496,58 @@ fn restore_provider_context_from_history(
     }
 
     Ok(histories)
+}
+
+fn restore_continuation_controller_from_history(
+    session_dir: &Path,
+    run_id: &str,
+) -> Result<ContinuationController, CoordinatorError> {
+    let run_dir = session_dir.join(run_id);
+    let events_path = run_dir.join(EVENTS_FILE_NAME);
+    let historical_events = read_historical_events_until(run_id, &events_path, u64::MAX)?;
+    let mut controller = ContinuationController::default();
+
+    for event in historical_events {
+        let event_mono_ms = event.mono_ms;
+        match event.payload {
+            EventV1::ContinuationStarted(payload) => {
+                controller.start_at(
+                    payload.continuation_id,
+                    payload.mode,
+                    payload.command,
+                    ContinuationBounds {
+                        max_iterations: payload.max_iterations,
+                        max_wall_clock_ms: payload.max_wall_clock_ms,
+                        max_provider_calls: payload.max_provider_calls,
+                        max_tool_calls: payload.max_tool_calls,
+                    },
+                    event_mono_ms,
+                );
+            }
+            EventV1::ContinuationReminderQueued(payload) => {
+                controller.record_reminder(&payload.continuation_id, payload.iteration);
+            }
+            EventV1::ContinuationStopped(payload) => {
+                if controller
+                    .active()
+                    .is_some_and(|active| active.continuation_id == payload.continuation_id)
+                {
+                    controller.stop();
+                }
+            }
+            EventV1::ContinuationLimitReached(payload) => {
+                if controller
+                    .active()
+                    .is_some_and(|active| active.continuation_id == payload.continuation_id)
+                {
+                    controller.stop();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok(controller)
 }
 
 fn should_replay_agent_scoped_event(

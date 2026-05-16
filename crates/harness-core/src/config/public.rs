@@ -8,6 +8,14 @@ const ALLOWED_PUBLIC_TOP_LEVEL_CONFIG_KEYS: &[&str] = &[
     "autoupdate",
     "command",
     "compaction",
+    "compatibility",
+    "disabled_agents",
+    "disabled_commands",
+    "disabled_hooks",
+    "disabled_mcps",
+    "disabled_mcp_servers",
+    "disabled_skills",
+    "disabled_extensions",
     "disabled_providers",
     "enabled_providers",
     "enterprise",
@@ -57,7 +65,7 @@ const ALLOWED_PUBLIC_TOP_LEVEL_CONFIG_KEYS: &[&str] = &[
     "watcher",
 ];
 
-const UNSUPPORTED_ACTIVE_OPENCODE_TOP_LEVEL_CONFIG_KEYS: &[&str] = &[
+const UNSUPPORTED_ACTIVE_UPSTREAM_TOP_LEVEL_CONFIG_KEYS: &[&str] = &[
     "autoshare",
     "autoupdate",
     "command",
@@ -132,11 +140,25 @@ pub struct PublicRuntimeConfig {
     #[serde(default)]
     pub permission: PublicPermissionValue,
     #[serde(default)]
-    pub mcp: BTreeMap<String, serde_json::Value>,
+    pub mcp: BTreeMap<String, McpServerConfig>,
     #[serde(default)]
     pub runtime: PublicRuntimeSettingsConfig,
     #[serde(default)]
     pub skills: SkillsConfig,
+    #[serde(default)]
+    pub compatibility: CompatibilityConfig,
+    #[serde(default)]
+    pub disabled_agents: Option<Vec<String>>,
+    #[serde(default)]
+    pub disabled_skills: Option<Vec<String>>,
+    #[serde(default)]
+    pub disabled_commands: Option<Vec<String>>,
+    #[serde(default, alias = "disabled_mcp_servers")]
+    pub disabled_mcps: Option<Vec<String>>,
+    #[serde(default)]
+    pub disabled_hooks: Option<Vec<String>>,
+    #[serde(default)]
+    pub disabled_extensions: Option<Vec<String>>,
     #[serde(default)]
     pub instructions: Option<InstructionList>,
     #[serde(default)]
@@ -190,7 +212,7 @@ pub struct PublicRuntimeSettingsConfig {
     pub compaction: CompactionRuntimeConfig,
 }
 
-/// Named agent definitions. Built-in OpenCode-compatible agents are explicit so
+/// Named agent definitions. Built-in upstream-compatible agents are explicit so
 /// editors can complete them, and custom names are accepted through the same
 /// shape.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -205,6 +227,28 @@ pub struct PublicAgentMap {
     pub general: Option<PublicAgentConfig>,
     #[serde(default)]
     pub explore: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub oracle: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub librarian: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub metis: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub momus: Option<PublicAgentConfig>,
+    #[serde(default)]
+    #[serde(rename = "multimodal-looker", alias = "multimodalLooker")]
+    pub multimodal_looker: Option<PublicAgentConfig>,
+    #[serde(default)]
+    #[serde(rename = "sisyphus-junior", alias = "sisyphusJunior")]
+    pub sisyphus_junior: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub atlas: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub prometheus: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub sisyphus: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub hephaestus: Option<PublicAgentConfig>,
     #[serde(default)]
     #[serde(rename = "visual-engineering", alias = "visualEngineering")]
     pub visual_engineering: Option<PublicAgentConfig>,
@@ -239,6 +283,16 @@ impl PublicAgentMap {
             && self.discipline.is_none()
             && self.general.is_none()
             && self.explore.is_none()
+            && self.oracle.is_none()
+            && self.librarian.is_none()
+            && self.metis.is_none()
+            && self.momus.is_none()
+            && self.multimodal_looker.is_none()
+            && self.sisyphus_junior.is_none()
+            && self.atlas.is_none()
+            && self.prometheus.is_none()
+            && self.sisyphus.is_none()
+            && self.hephaestus.is_none()
             && self.visual_engineering.is_none()
             && self.artistry.is_none()
             && self.ultrabrain.is_none()
@@ -261,6 +315,16 @@ impl PublicAgentMap {
             ("discipline", self.discipline),
             ("general", self.general),
             ("explore", self.explore),
+            ("oracle", self.oracle),
+            ("librarian", self.librarian),
+            ("metis", self.metis),
+            ("momus", self.momus),
+            ("multimodal-looker", self.multimodal_looker),
+            ("sisyphus-junior", self.sisyphus_junior),
+            ("atlas", self.atlas),
+            ("prometheus", self.prometheus),
+            ("sisyphus", self.sisyphus),
+            ("hephaestus", self.hephaestus),
             ("visual-engineering", self.visual_engineering),
             ("artistry", self.artistry),
             ("ultrabrain", self.ultrabrain),
@@ -312,7 +376,7 @@ pub struct PublicAgentConfig {
     /// default remains active. `enabled` is accepted as an alias.
     #[serde(default, alias = "enabled")]
     pub enable: Option<bool>,
-    /// OpenCode-compatible negative toggle. Equivalent to `enable: false`.
+    /// Upstream-compatible negative toggle. Equivalent to `enable: false`.
     #[serde(default)]
     pub disable: bool,
     #[serde(default, alias = "permissions")]
@@ -356,12 +420,12 @@ impl PublicAgentTools {
 #[serde(untagged)]
 pub enum PublicPermissionValue {
     Mode(PermissionMode),
-    Config(PublicPermissionConfig),
+    Config(Box<PublicPermissionConfig>),
 }
 
 impl Default for PublicPermissionValue {
     fn default() -> Self {
-        Self::Config(PublicPermissionConfig::default())
+        Self::Config(Box::<PublicPermissionConfig>::default())
     }
 }
 
@@ -385,6 +449,8 @@ pub struct PublicPermissionConfig {
     pub question: Option<PermissionMode>,
     #[serde(default)]
     pub task: Option<PublicRulePermissionValue>,
+    #[serde(default, alias = "delegateTask")]
+    pub delegate_task: Option<PublicRulePermissionValue>,
     #[serde(default, alias = "webFetch")]
     pub webfetch: Option<PermissionMode>,
     #[serde(default, alias = "webSearch")]
@@ -393,6 +459,14 @@ pub struct PublicPermissionConfig {
     pub codesearch: Option<PermissionMode>,
     #[serde(default, alias = "codeLsp")]
     pub lsp: Option<PermissionMode>,
+    #[serde(default)]
+    pub write: Option<PublicRulePermissionValue>,
+    #[serde(default)]
+    pub read: Option<PermissionMode>,
+    #[serde(default)]
+    pub doom_loop: Option<PermissionMode>,
+    #[serde(default)]
+    pub external_directory: Option<PermissionMode>,
     #[serde(default, skip_serializing)]
     #[schemars(skip)]
     pub network: Option<PermissionMode>,
@@ -413,6 +487,8 @@ pub struct PublicProfilePermissions {
     pub question: Option<PermissionMode>,
     #[serde(default)]
     pub task: Option<PublicRulePermissionValue>,
+    #[serde(default, alias = "delegateTask")]
+    pub delegate_task: Option<PublicRulePermissionValue>,
     #[serde(default, alias = "webFetch")]
     pub webfetch: Option<PermissionMode>,
     #[serde(default, alias = "webSearch")]
@@ -421,6 +497,14 @@ pub struct PublicProfilePermissions {
     pub codesearch: Option<PermissionMode>,
     #[serde(default, alias = "codeLsp")]
     pub lsp: Option<PermissionMode>,
+    #[serde(default)]
+    pub write: Option<PublicRulePermissionValue>,
+    #[serde(default)]
+    pub read: Option<PermissionMode>,
+    #[serde(default)]
+    pub doom_loop: Option<PermissionMode>,
+    #[serde(default)]
+    pub external_directory: Option<PermissionMode>,
     #[serde(default, skip_serializing)]
     #[schemars(skip)]
     pub network: Option<PermissionMode>,
@@ -474,19 +558,19 @@ pub(super) fn validate_public_root_config_object(
         )));
     }
 
-    let mut unsupported_active = UNSUPPORTED_ACTIVE_OPENCODE_TOP_LEVEL_CONFIG_KEYS
+    let mut unsupported_active = UNSUPPORTED_ACTIVE_UPSTREAM_TOP_LEVEL_CONFIG_KEYS
         .iter()
         .copied()
         .filter(|key| {
             object
                 .get(*key)
-                .is_some_and(|value| !is_inactive_opencode_unsupported_value(key, value))
+                .is_some_and(|value| !is_inactive_upstream_unsupported_value(key, value))
         })
         .collect::<Vec<_>>();
     if !unsupported_active.is_empty() {
         unsupported_active.sort_unstable();
         return Err(ConfigError::RetiredConfigKeys(format!(
-            "unsupported active OpenCode config keys: {}; this harness accepts the OpenCode config shape, but does not execute server, command, plugin, sharing, update, or enterprise product features",
+            "unsupported active upstream config keys: {}; this harness accepts the compatible config shape, but does not execute server, command, plugin, sharing, update, or enterprise product features",
             format_backticked_list(unsupported_active)
         )));
     }
@@ -494,7 +578,7 @@ pub(super) fn validate_public_root_config_object(
     Ok(())
 }
 
-fn is_inactive_opencode_unsupported_value(key: &str, value: &serde_json::Value) -> bool {
+fn is_inactive_upstream_unsupported_value(key: &str, value: &serde_json::Value) -> bool {
     match key {
         "autoshare" | "autoupdate" => matches!(value, serde_json::Value::Bool(false)),
         "share" => matches!(value, serde_json::Value::String(mode) if mode == "disabled"),
@@ -530,6 +614,13 @@ fn public_rule_mode(value: &Option<PublicRulePermissionValue>) -> Option<Permiss
         Some(PublicRulePermissionValue::Mode(mode)) => Some(mode.clone()),
         Some(PublicRulePermissionValue::Rules(_)) | None => None,
     }
+}
+
+fn merge_public_rule_permission(
+    primary: Option<PublicRulePermissionValue>,
+    compat: Option<PublicRulePermissionValue>,
+) -> Option<PublicRulePermissionValue> {
+    primary.or(compat)
 }
 
 fn public_selector_rules(
@@ -659,6 +750,83 @@ fn canonicalize_object_aliases(
     }
 }
 
+fn merge_top_level_disabled_list(
+    compatibility: &mut serde_json::Value,
+    key: &str,
+    value: Option<&serde_json::Value>,
+) {
+    let Some(value) = value else {
+        return;
+    };
+    let Some(object) = compatibility.as_object_mut() else {
+        return;
+    };
+    canonicalize_disabled_key_alias(object, key);
+    match object.get_mut(key) {
+        Some(existing) => merge_disabled_value(existing, value),
+        None => {
+            object.insert(key.to_string(), value.clone());
+        }
+    }
+}
+
+fn merge_disabled_value(existing: &mut serde_json::Value, incoming: &serde_json::Value) {
+    let mut merged = BTreeSet::new();
+    for value in [existing.clone(), incoming.clone()] {
+        if let Some(items) = value.as_array() {
+            for item in items {
+                if let Some(name) = item.as_str().map(str::trim).filter(|name| !name.is_empty()) {
+                    merged.insert(name.to_string());
+                }
+            }
+        }
+    }
+    *existing =
+        serde_json::Value::Array(merged.into_iter().map(serde_json::Value::String).collect());
+}
+
+fn merge_disabled_set_alias(value: &mut serde_json::Value, key: &str, names: &BTreeSet<String>) {
+    if names.is_empty() {
+        return;
+    }
+    let Some(object) = value.as_object_mut() else {
+        return;
+    };
+    canonicalize_disabled_key_alias(object, key);
+    let incoming = serde_json::Value::Array(
+        names
+            .iter()
+            .cloned()
+            .map(serde_json::Value::String)
+            .collect(),
+    );
+    match object.get_mut(key) {
+        Some(existing) => merge_disabled_value(existing, &incoming),
+        None => {
+            object.insert(key.to_string(), incoming);
+        }
+    }
+}
+
+fn canonicalize_disabled_key_alias(
+    object: &mut serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) {
+    let aliases = match key {
+        "disabled_agents" => &[("disabledAgents", "disabled_agents")][..],
+        "disabled_skills" => &[("disabledSkills", "disabled_skills")][..],
+        "disabled_commands" => &[("disabledCommands", "disabled_commands")][..],
+        "disabled_mcp_servers" => &[
+            ("disabledMcps", "disabled_mcp_servers"),
+            ("disabledMcpServers", "disabled_mcp_servers"),
+        ][..],
+        "disabled_hooks" => &[("disabledHooks", "disabled_hooks")][..],
+        "disabled_extensions" => &[("disabledExtensions", "disabled_extensions")][..],
+        _ => &[][..],
+    };
+    canonicalize_object_aliases(object, aliases);
+}
+
 fn canonicalize_runtime_aliases(runtime: &mut serde_json::Value) {
     let Some(runtime_object) = runtime.as_object_mut() else {
         return;
@@ -766,7 +934,9 @@ fn default_shipped_agents(
                     crate::plan::PLAN_ENTER_TOOL_ID,
                     "task",
                     "background_output",
+                    "background_cancel",
                     "team_create",
+                    "team_list",
                     "team_status",
                     "team_send_message",
                     "team_task_create",
@@ -778,6 +948,24 @@ fn default_shipped_agents(
                     "team_shutdown_reject",
                     "team_delete",
                     "skill",
+                    "session_list",
+                    "session_read",
+                    "session_search",
+                    "session_info",
+                    "ast_grep_search",
+                    "ast_grep_replace",
+                    "task_create",
+                    "task_list",
+                    "task_get",
+                    "task_update",
+                    "look_at",
+                    "interactive_bash",
+                    "terminal_spawn",
+                    "terminal_write",
+                    "terminal_screenshot",
+                    "terminal_resize",
+                    "terminal_kill",
+                    "terminal_list",
                     "websearch",
                     "webfetch",
                     "codesearch",
@@ -848,7 +1036,14 @@ fn default_shipped_agents(
                     "question",
                     "task",
                     "background_output",
+                    "background_cancel",
                     "skill",
+                    "session_list",
+                    "session_read",
+                    "session_search",
+                    "session_info",
+                    "ast_grep_search",
+                    "ast_grep_replace",
                     "websearch",
                     "webfetch",
                     "codesearch",
@@ -905,7 +1100,9 @@ fn default_shipped_agents(
                     crate::plan::PLAN_ENTER_TOOL_ID,
                     "task",
                     "background_output",
+                    "background_cancel",
                     "team_create",
+                    "team_list",
                     "team_status",
                     "team_send_message",
                     "team_task_create",
@@ -917,6 +1114,24 @@ fn default_shipped_agents(
                     "team_shutdown_reject",
                     "team_delete",
                     "skill",
+                    "session_list",
+                    "session_read",
+                    "session_search",
+                    "session_info",
+                    "ast_grep_search",
+                    "ast_grep_replace",
+                    "task_create",
+                    "task_list",
+                    "task_get",
+                    "task_update",
+                    "look_at",
+                    "interactive_bash",
+                    "terminal_spawn",
+                    "terminal_write",
+                    "terminal_screenshot",
+                    "terminal_resize",
+                    "terminal_kill",
+                    "terminal_list",
                     "websearch",
                     "webfetch",
                     "codesearch",
@@ -1013,6 +1228,24 @@ fn default_shipped_agents(
                 tools: vec![
                     "question",
                     "skill",
+                    "session_list",
+                    "session_read",
+                    "session_search",
+                    "session_info",
+                    "ast_grep_search",
+                    "ast_grep_replace",
+                    "task_create",
+                    "task_list",
+                    "task_get",
+                    "task_update",
+                    "look_at",
+                    "interactive_bash",
+                    "terminal_spawn",
+                    "terminal_write",
+                    "terminal_screenshot",
+                    "terminal_resize",
+                    "terminal_kill",
+                    "terminal_list",
                     "websearch",
                     "webfetch",
                     "codesearch",
@@ -1077,6 +1310,76 @@ fn default_shipped_agents(
             "Documentation, prose, technical writing, and editing subagent.",
             "You are the writing category subagent. Produce clear documentation, prose, or technical writing that matches the repository voice and keeps examples aligned with behavior.",
             model_ref,
+        ),
+        specialist_profile(
+            "oracle",
+            "Read-only architecture, debugging, and high-difficulty reasoning specialist.",
+            "You are Oracle, a read-only consultant for architecture, debugging, and complex reasoning. Inspect evidence, reason rigorously, and return implementation guidance without editing files or spawning subagents.",
+            model_ref,
+            SpecialistProfileKind::ReadOnly,
+        ),
+        specialist_profile(
+            "librarian",
+            "Read-only documentation, library, and open-source implementation research specialist.",
+            "You are Librarian, a read-only research specialist. Find official documentation, local references, and implementation examples, then summarize actionable findings with source paths or URLs.",
+            model_ref,
+            SpecialistProfileKind::ReadOnly,
+        ),
+        specialist_profile(
+            "metis",
+            "Read-only pre-planning and ambiguity analysis specialist.",
+            "You are Metis, a read-only planning consultant. Identify hidden requirements, ambiguities, risks, and missing context before implementation begins.",
+            model_ref,
+            SpecialistProfileKind::ReadOnly,
+        ),
+        specialist_profile(
+            "momus",
+            "Read-only plan and quality critic specialist.",
+            "You are Momus, a read-only critic. Review plans or completed work for gaps, unclear verification, risky assumptions, and missed constraints.",
+            model_ref,
+            SpecialistProfileKind::ReadOnly,
+        ),
+        specialist_profile(
+            "multimodal-looker",
+            "Read-only media interpretation specialist placeholder.",
+            "You are Multimodal-Looker, a media interpretation specialist. In this Harness build, media extraction is unavailable unless a configured tool provides it; report the missing capability clearly.",
+            model_ref,
+            SpecialistProfileKind::ReadOnly,
+        ),
+        specialist_profile(
+            "sisyphus-junior",
+            "Focused category execution worker used by OMO-style category routing.",
+            "You are Sisyphus-Junior, a focused worker for category-routed tasks. Complete the delegated scope directly, avoid redelegation, and report concise verification evidence.",
+            model_ref,
+            SpecialistProfileKind::Worker,
+        ),
+        specialist_profile(
+            "atlas",
+            "Execution specialist for focused implementation tasks.",
+            "You are Atlas, an execution specialist. Complete the delegated task with small, correct changes and concise verification evidence.",
+            model_ref,
+            SpecialistProfileKind::Worker,
+        ),
+        specialist_profile(
+            "prometheus",
+            "Read-only planning specialist for implementation plans.",
+            "You are Prometheus, a read-only planning specialist. Produce concrete implementation plans and handoff-ready context without editing files.",
+            model_ref,
+            SpecialistProfileKind::ReadOnly,
+        ),
+        specialist_profile(
+            "sisyphus",
+            "Autonomous execution specialist for persistent delivery work.",
+            "You are Sisyphus, an autonomous execution specialist. Drive delegated work to completion while preserving Harness safety invariants.",
+            model_ref,
+            SpecialistProfileKind::Worker,
+        ),
+        specialist_profile(
+            "hephaestus",
+            "Autonomous deep worker for software engineering tasks.",
+            "You are Hephaestus, an autonomous deep worker for software engineering. Implement requested outcomes end-to-end with focused diffs and observable verification.",
+            model_ref,
+            SpecialistProfileKind::Worker,
         ),
         (
             crate::session_title::TITLE_AGENT_NAME.to_string(),
@@ -1224,6 +1527,130 @@ fn category_routing_profile(
     )
 }
 
+#[derive(Debug, Clone, Copy)]
+enum SpecialistProfileKind {
+    ReadOnly,
+    Worker,
+}
+
+fn specialist_profile(
+    name: &str,
+    description: &str,
+    system_prompt: &str,
+    model_ref: &str,
+    kind: SpecialistProfileKind,
+) -> (String, ProfileConfig) {
+    let read_only = matches!(kind, SpecialistProfileKind::ReadOnly);
+    let permissions = if read_only {
+        ProfilePermissions {
+            fallback: None,
+            edit: Some(PermissionMode::Deny),
+            shell: Some(PermissionMode::Deny),
+            network: Some(PermissionMode::Allow),
+            question: Some(PermissionMode::Allow),
+            task: Some(PermissionMode::Deny),
+            webfetch: Some(PermissionMode::Allow),
+            websearch: Some(PermissionMode::Allow),
+            codesearch: Some(PermissionMode::Allow),
+            lsp: Some(PermissionMode::Allow),
+            rules: PermissionRuleSet::default(),
+        }
+    } else {
+        ProfilePermissions {
+            fallback: None,
+            edit: Some(PermissionMode::Allow),
+            shell: Some(PermissionMode::Allow),
+            network: Some(PermissionMode::Allow),
+            question: Some(PermissionMode::Allow),
+            task: Some(PermissionMode::Deny),
+            webfetch: Some(PermissionMode::Allow),
+            websearch: Some(PermissionMode::Allow),
+            codesearch: Some(PermissionMode::Allow),
+            lsp: Some(PermissionMode::Allow),
+            rules: PermissionRuleSet::default(),
+        }
+    };
+    let tools = if read_only {
+        vec![
+            "question",
+            "skill",
+            "session_list",
+            "session_read",
+            "session_search",
+            "session_info",
+            "ast_grep_search",
+            "ast_grep_replace",
+            "look_at",
+            "websearch",
+            "webfetch",
+            "codesearch",
+            "lsp",
+            "read",
+            "glob",
+            "grep",
+            "list",
+            "batch",
+        ]
+    } else {
+        vec![
+            "question",
+            "skill",
+            "background_output",
+            "background_cancel",
+            "session_list",
+            "session_read",
+            "session_search",
+            "session_info",
+            "ast_grep_search",
+            "ast_grep_replace",
+            "task_create",
+            "task_list",
+            "task_get",
+            "task_update",
+            "look_at",
+            "interactive_bash",
+            "terminal_spawn",
+            "terminal_write",
+            "terminal_screenshot",
+            "terminal_resize",
+            "terminal_kill",
+            "terminal_list",
+            "websearch",
+            "webfetch",
+            "codesearch",
+            "lsp",
+            "read",
+            "glob",
+            "grep",
+            "list",
+            "edit",
+            "bash",
+            "batch",
+        ]
+    };
+    (
+        name.to_string(),
+        ProfileConfig {
+            name: None,
+            description: description.to_string(),
+            system_prompt: Some(system_prompt.to_string()),
+            model_ref: model_ref.to_string(),
+            model_ref_explicit: false,
+            variant: None,
+            temperature: None,
+            top_p: None,
+            mode: AgentMode::Subagent,
+            hidden: false,
+            color: None,
+            options: BTreeMap::new(),
+            permissions: Some(permissions),
+            max_iters: None,
+            tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
+            tools: tools.into_iter().map(str::to_string).collect(),
+        },
+    )
+}
+
 fn fallback_public_agent_description(name: &str) -> String {
     let words = name
         .split(['_', '-', ' '])
@@ -1352,12 +1779,14 @@ fn public_agent_to_profile(
 fn translate_public_profile_permissions(
     permissions: PublicProfilePermissions,
 ) -> Result<ProfilePermissions, ConfigError> {
-    let edit = public_rule_mode(&permissions.edit);
+    let edit_permission = merge_public_rule_permission(permissions.edit, permissions.write);
+    let task_permission = merge_public_rule_permission(permissions.task, permissions.delegate_task);
+    let edit = public_rule_mode(&edit_permission);
     let shell = public_rule_mode(&permissions.bash);
-    let task = public_rule_mode(&permissions.task);
-    let edit_rules = public_selector_rules("edit", permissions.edit)?;
+    let task = public_rule_mode(&task_permission);
+    let edit_rules = public_selector_rules("edit", edit_permission)?;
     let shell_rules = public_selector_rules("bash", permissions.bash)?;
-    let task_rules = public_selector_rules("task", permissions.task)?;
+    let task_rules = public_selector_rules("task", task_permission)?;
 
     Ok(ProfilePermissions {
         fallback: permissions.fallback,
@@ -1394,7 +1823,7 @@ fn translate_public_permission_value(
     let fallback = default_internal_permissions_config();
 
     let parsed = match parsed {
-        PublicPermissionValue::Config(parsed) => parsed,
+        PublicPermissionValue::Config(parsed) => *parsed,
         PublicPermissionValue::Mode(mode) => {
             return serde_json::to_value(PermissionsConfig {
                 defaults: PermissionDefaultsConfig {
@@ -1417,18 +1846,20 @@ fn translate_public_permission_value(
     };
 
     let global = parsed.fallback.clone();
-    let edit = public_rule_mode(&parsed.edit)
+    let edit_permission = merge_public_rule_permission(parsed.edit, parsed.write);
+    let task_permission = merge_public_rule_permission(parsed.task, parsed.delegate_task);
+    let edit = public_rule_mode(&edit_permission)
         .or_else(|| global.clone())
         .unwrap_or(fallback.defaults.edit);
     let shell = public_rule_mode(&parsed.bash)
         .or_else(|| global.clone())
         .unwrap_or(fallback.defaults.shell);
-    let task = public_rule_mode(&parsed.task)
+    let task = public_rule_mode(&task_permission)
         .or_else(|| global.clone())
         .or(fallback.defaults.task);
-    let edit_rules = public_selector_rules("edit", parsed.edit)?;
+    let edit_rules = public_selector_rules("edit", edit_permission)?;
     let shell_rules = public_selector_rules("bash", parsed.bash)?;
-    let task_rules = public_selector_rules("task", parsed.task)?;
+    let task_rules = public_selector_rules("task", task_permission)?;
 
     serde_json::to_value(PermissionsConfig {
         defaults: PermissionDefaultsConfig {
@@ -1601,7 +2032,50 @@ pub(super) fn translate_public_runtime_root(
         .map(|model_ref| default_shipped_agents(model_ref, small_model.as_deref()))
         .unwrap_or_default();
 
-    let mut disabled_agents = BTreeSet::new();
+    let mut compatibility = object
+        .get("compatibility")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    merge_top_level_disabled_list(
+        &mut compatibility,
+        "disabled_agents",
+        object.get("disabled_agents"),
+    );
+    merge_top_level_disabled_list(
+        &mut compatibility,
+        "disabled_skills",
+        object.get("disabled_skills"),
+    );
+    merge_top_level_disabled_list(
+        &mut compatibility,
+        "disabled_commands",
+        object.get("disabled_commands"),
+    );
+    merge_top_level_disabled_list(
+        &mut compatibility,
+        "disabled_mcp_servers",
+        object.get("disabled_mcp_servers"),
+    );
+    merge_top_level_disabled_list(
+        &mut compatibility,
+        "disabled_mcp_servers",
+        object.get("disabled_mcps"),
+    );
+    merge_top_level_disabled_list(
+        &mut compatibility,
+        "disabled_hooks",
+        object.get("disabled_hooks"),
+    );
+    merge_top_level_disabled_list(
+        &mut compatibility,
+        "disabled_extensions",
+        object.get("disabled_extensions"),
+    );
+    let compatibility_config: CompatibilityConfig =
+        serde_json::from_value(compatibility.clone())
+            .map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
+
+    let mut disabled_agents = compatibility_config.disabled_agents.clone();
     for key in ["mode", "agent"] {
         if let Some(value) = object.get(key) {
             let public_agents: PublicAgentMap = serde_json::from_value(value.clone())
@@ -1634,6 +2108,7 @@ pub(super) fn translate_public_runtime_root(
         "agents".to_string(),
         serde_json::to_value(agents).map_err(|err| ConfigError::ParseJson5(err.to_string()))?,
     );
+    translated.insert("compatibility".to_string(), compatibility);
 
     if let Some(default_agent) = object
         .get("default_agent")
@@ -1737,8 +2212,17 @@ pub(super) fn translate_public_runtime_root(
     }
     translated.insert("integrations".to_string(), integrations);
 
+    let hooks_value = object.get("hooks").map(|value| {
+        let mut hooks = value.clone();
+        merge_disabled_set_alias(
+            &mut hooks,
+            "disabled_hooks",
+            &compatibility_config.disabled_hooks,
+        );
+        hooks
+    });
     for (key, value) in [
-        ("hooks", object.get("hooks")),
+        ("hooks", hooks_value.as_ref()),
         ("logging", object.get("logging")),
         ("ui", object.get("ui")),
         (
@@ -1752,9 +2236,30 @@ pub(super) fn translate_public_runtime_root(
             translated.insert(key.to_string(), value.clone());
         }
     }
+    if hooks_value.is_none() && !compatibility_config.disabled_hooks.is_empty() {
+        translated.insert(
+            "hooks".to_string(),
+            serde_json::json!({ "disabled_hooks": compatibility_config.disabled_hooks }),
+        );
+    }
 
     if let Some(value) = object.get("skills") {
-        translated.insert("skills".to_string(), normalize_public_skills_config(value));
+        let mut skills = normalize_public_skills_config(value);
+        merge_disabled_set_alias(
+            &mut skills,
+            "disabled_skills",
+            &compatibility_config.disabled_skills,
+        );
+        translated.insert("skills".to_string(), skills);
+    } else if !compatibility_config.disabled_skills.is_empty() {
+        let mut skills = serde_json::to_value(SkillsConfig::default())
+            .map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
+        merge_disabled_set_alias(
+            &mut skills,
+            "disabled_skills",
+            &compatibility_config.disabled_skills,
+        );
+        translated.insert("skills".to_string(), skills);
     }
 
     if let Some(value) = object.get("lsp").and_then(normalize_public_lsp_config) {

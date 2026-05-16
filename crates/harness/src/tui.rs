@@ -12,11 +12,13 @@ use std::time::Instant;
 
 use clap::Args;
 use harness_core::agent::{AgentModelSettings, AgentProfile};
+use harness_core::agent_catalog::resolve_agent_catalog;
 use harness_core::clock::{Clock, Determinism, FakeClock, RealClock};
 use harness_core::config::{
     configured_model_catalog, resolve_profile_model_metadata, AgentMode, HarnessConfig,
     ShellAllowlist,
 };
+use harness_core::continuation::ContinuationBounds;
 use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle,
     ManualCompactionOutcome,
@@ -34,7 +36,8 @@ use harness_core::store::{EventStore, EventStoreError};
 use harness_tools::coordinator_registry;
 use harness_tui::app::{
     set_pending_live_launch_metadata, set_pending_live_prompt_auto_submit, LaunchMetadata,
-    ModelOption, SessionHistoryEntry, ToggleEntryConfig, ToggleEntryKind, TogglesConfig,
+    ModelOption, SessionHistoryEntry, SlashCommandTemplate, ToggleEntryConfig, ToggleEntryKind,
+    TogglesConfig,
 };
 use harness_tui::{
     close_preserved_terminal_session, run_tui_with_options, set_pending_replay_launch_metadata,
@@ -153,6 +156,7 @@ struct LiveSettings {
     launch_metadata: LaunchMetadata,
     launch_mode_label: Option<String>,
     toggles: TogglesConfig,
+    slash_command_templates: Vec<SlashCommandTemplate>,
 }
 
 struct LiveBootstrap {
@@ -376,6 +380,7 @@ fn execute_replay_mode(run_dir: &Path, exit_on_finish: bool) -> ExitCode {
         on_ui_intent: None,
         keybindings: None,
         toggles: None,
+        slash_command_templates: None,
         preserve_terminal_on_exit: false,
     }) {
         eprintln!("TUI error: {err}");
@@ -472,6 +477,7 @@ fn resolve_live_settings(
         launch_metadata
     };
     let toggles = runtime_toggles_config(live_config.as_ref());
+    let slash_command_templates = runtime_slash_command_templates(live_config.as_ref());
 
     Ok(LiveSettings {
         config: live_config,
@@ -484,7 +490,22 @@ fn resolve_live_settings(
         launch_metadata,
         launch_mode_label,
         toggles,
+        slash_command_templates,
     })
+}
+
+fn runtime_slash_command_templates(config: Option<&HarnessConfig>) -> Vec<SlashCommandTemplate> {
+    config
+        .into_iter()
+        .flat_map(|config| config.compatibility.command_templates.values())
+        .filter(|template| template.enabled)
+        .map(|template| SlashCommandTemplate {
+            name: template.name.clone(),
+            description: template.description.clone(),
+            prompt: template.prompt.clone(),
+            enabled: template.enabled,
+        })
+        .collect()
 }
 
 fn runtime_toggles_config(config: Option<&HarnessConfig>) -> TogglesConfig {
@@ -767,16 +788,17 @@ fn switchable_profile_names(
 ) -> Vec<String> {
     let mut profiles = config
         .map(|config| {
-            config
-                .agents
-                .iter()
-                .filter(|(name, profile)| {
-                    agent_profiles.contains_key(name.as_str())
-                        && !profile.hidden
-                        && !profile.mode.is_subagent_only()
-                        && name.as_str() != harness_core::session_title::TITLE_AGENT_NAME
-                })
-                .map(|(name, _)| name.clone())
+            let mut entries = resolve_agent_catalog(config).entries;
+            entries.retain(|entry| {
+                agent_profiles.contains_key(entry.name.as_str())
+                    && !entry.hidden
+                    && !entry.mode.is_subagent_only()
+                    && entry.name.as_str() != harness_core::session_title::TITLE_AGENT_NAME
+            });
+            entries.sort_by_key(|entry| entry.display_order);
+            entries
+                .into_iter()
+                .map(|entry| entry.name)
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
@@ -1060,12 +1082,14 @@ async fn run_interactive_mode(
         },
         {
             let launch_selection = Arc::clone(&launch_selection);
+            let slash_command_templates = settings.slash_command_templates.clone();
             move |session_history_entries| {
                 run_startup_launcher(
                     cmd.exit_on_finish,
                     session_history_entries,
                     Arc::clone(&launch_selection),
                     persist_model_selection,
+                    slash_command_templates.clone(),
                 )
             }
         },
@@ -1196,12 +1220,14 @@ async fn run_direct_continue_mode(
         },
         {
             let launch_selection = Arc::clone(&launch_selection);
+            let slash_command_templates = settings.slash_command_templates.clone();
             move |session_history_entries| {
                 run_startup_launcher(
                     cmd.exit_on_finish,
                     session_history_entries,
                     Arc::clone(&launch_selection),
                     persist_model_selection,
+                    slash_command_templates.clone(),
                 )
             }
         },
@@ -1280,6 +1306,7 @@ async fn run_startup_launcher(
     session_history_entries: Vec<SessionHistoryEntry>,
     launch_selection: LaunchSelection,
     persist_model_selection: bool,
+    slash_command_templates: Vec<SlashCommandTemplate>,
 ) -> Result<InteractiveWorkflow, String> {
     profile_handoff("startup_launcher.begin");
     let selected_intent = Arc::new(Mutex::new(None::<UiIntent>));
@@ -1317,6 +1344,7 @@ async fn run_startup_launcher(
             on_ui_intent: Some(on_ui_intent),
             keybindings: None,
             toggles: None,
+            slash_command_templates: Some(slash_command_templates),
             preserve_terminal_on_exit: true,
         })
     })
@@ -1348,6 +1376,8 @@ fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> InteractiveWorkfl
         | None
         | Some(UiIntent::ResolvePermission { .. })
         | Some(UiIntent::CompactSession)
+        | Some(UiIntent::StartContinuation { .. })
+        | Some(UiIntent::StopContinuation { .. })
         | Some(UiIntent::InterruptSession { .. })
         | Some(UiIntent::ForkSession { .. })
         | Some(UiIntent::CloneSession { .. })
@@ -1376,6 +1406,7 @@ async fn run_replay_tui(
             on_ui_intent: Some(on_ui_intent),
             keybindings: None,
             toggles: None,
+            slash_command_templates: None,
             preserve_terminal_on_exit: true,
         })
     })
@@ -1507,6 +1538,7 @@ async fn run_continue_session_bootstrap(
 
     let exit_on_finish = cmd.exit_on_finish;
     let toggles = Some(settings.toggles.clone());
+    let slash_command_templates = settings.slash_command_templates.clone();
     set_pending_live_launch_metadata(continue_metadata);
     let session_history_entries =
         load_live_session_history_entries(&run.run_dir, &settings.session_dir)?;
@@ -1521,6 +1553,7 @@ async fn run_continue_session_bootstrap(
             ui_intent_sender,
             true,
             toggles,
+            slash_command_templates,
         ))
     })
     .await
@@ -1557,6 +1590,7 @@ fn continue_live_tui_options(
     ui_intent_sender: UiIntentSink,
     compact_session_supported: bool,
     toggles: Option<TogglesConfig>,
+    slash_command_templates: Vec<SlashCommandTemplate>,
 ) -> TuiOptions {
     TuiOptions {
         mode: TuiMode::Live {
@@ -1570,10 +1604,15 @@ fn continue_live_tui_options(
         on_ui_intent: Some(ui_intent_sender),
         keybindings: None,
         toggles,
+        slash_command_templates: Some(slash_command_templates),
         preserve_terminal_on_exit: true,
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "TUI runtime options are assembled from independent live bootstrap channels"
+)]
 fn new_live_tui_options(
     run_dir: PathBuf,
     session_history_entries: Vec<SessionHistoryEntry>,
@@ -1582,6 +1621,7 @@ fn new_live_tui_options(
     ui_intent_sender: UiIntentSink,
     compact_session_supported: bool,
     toggles: Option<TogglesConfig>,
+    slash_command_templates: Vec<SlashCommandTemplate>,
 ) -> TuiOptions {
     TuiOptions {
         mode: TuiMode::Live {
@@ -1595,6 +1635,7 @@ fn new_live_tui_options(
         on_ui_intent: Some(ui_intent_sender),
         keybindings: None,
         toggles,
+        slash_command_templates: Some(slash_command_templates),
         preserve_terminal_on_exit: true,
     }
 }
@@ -1709,6 +1750,8 @@ fn live_workflow_from_intent(intent: &UiIntent) -> Option<InteractiveWorkflow> {
         UiIntent::ResolvePermission { .. }
         | UiIntent::SubmitPrompt { .. }
         | UiIntent::CompactSession
+        | UiIntent::StartContinuation { .. }
+        | UiIntent::StopContinuation { .. }
         | UiIntent::InterruptSession { .. }
         | UiIntent::ForkSession { .. }
         | UiIntent::CloneSession { .. }
@@ -1722,6 +1765,8 @@ fn forward_intent_to_live_run(intent: &UiIntent) -> bool {
         UiIntent::ResolvePermission { .. }
             | UiIntent::SubmitPrompt { .. }
             | UiIntent::CompactSession
+            | UiIntent::StartContinuation { .. }
+            | UiIntent::StopContinuation { .. }
             | UiIntent::InterruptSession { .. }
             | UiIntent::ForkSession { .. }
             | UiIntent::CloneSession { .. }
@@ -1873,6 +1918,7 @@ async fn run_new_live_session(
 
     let exit_on_finish = cmd.exit_on_finish;
     let toggles = Some(settings.toggles.clone());
+    let slash_command_templates = settings.slash_command_templates.clone();
     set_pending_live_launch_metadata(launch_metadata);
 
     let tui_result = tokio::task::spawn_blocking(move || {
@@ -1885,6 +1931,7 @@ async fn run_new_live_session(
             ui_intent_sender,
             true,
             toggles,
+            slash_command_templates,
         ))
     })
     .await;
@@ -2211,6 +2258,7 @@ async fn run_live_mode(
 
     let exit_on_finish = cmd.exit_on_finish;
     let toggles = Some(settings.toggles.clone());
+    let slash_command_templates = settings.slash_command_templates.clone();
     set_pending_live_launch_metadata(scenario_launch_metadata());
     let session_history_entries =
         load_live_session_history_entries(&run_dir, &settings.session_dir)?;
@@ -2225,6 +2273,7 @@ async fn run_live_mode(
             ui_intent_sender,
             false,
             toggles,
+            slash_command_templates,
         ))
     })
     .await
@@ -2582,6 +2631,77 @@ async fn handle_ui_intents(
                     ),
                 };
                 let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
+            }
+            UiIntent::StartContinuation { mode, command } => {
+                match coordinator
+                    .start_continuation(
+                        user_actor.clone(),
+                        mode.clone(),
+                        command.clone(),
+                        ContinuationBounds::default(),
+                    )
+                    .await
+                {
+                    Ok(continuation_id) => {
+                        let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                            message: format!(
+                                "continuation started: {mode} via {command} ({continuation_id})"
+                            ),
+                            level: OperatorNoticeLevel::Info,
+                        });
+                        let target_agent_id = live_agent_target.as_ref().and_then(|target| {
+                            target
+                                .lock()
+                                .ok()
+                                .and_then(|target| target.agent_id.clone())
+                        });
+                        if let Some(agent_id) = target_agent_id {
+                            match coordinator
+                                .trigger_continuation_reminder(
+                                    supervisor_actor(),
+                                    agent_id,
+                                    format!("continuation_started:{continuation_id}"),
+                                )
+                                .await
+                            {
+                                Ok(Some(_)) | Ok(None) => {}
+                                Err(err) => {
+                                    let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                                        message: format!(
+                                            "continuation reminder scheduling failed: {err}"
+                                        ),
+                                        level: OperatorNoticeLevel::Error,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                            message: format!("continuation start failed: {err}"),
+                            level: OperatorNoticeLevel::Error,
+                        });
+                    }
+                }
+            }
+            UiIntent::StopContinuation { reason } => {
+                match coordinator
+                    .stop_continuation(user_actor.clone(), reason.clone())
+                    .await
+                {
+                    Ok(()) => {
+                        let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                            message: format!("continuation stopped: {reason}"),
+                            level: OperatorNoticeLevel::Info,
+                        });
+                    }
+                    Err(err) => {
+                        let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                            message: format!("continuation stop failed: {err}"),
+                            level: OperatorNoticeLevel::Error,
+                        });
+                    }
+                }
             }
             UiIntent::InterruptSession { task_ids } => {
                 for task_id in task_ids {
@@ -3026,6 +3146,7 @@ mod tests {
             Arc::clone(&sink),
             true,
             None,
+            Vec::new(),
         );
         assert!(fresh.preserve_terminal_on_exit);
         assert!(matches!(
@@ -3046,6 +3167,7 @@ mod tests {
             sink,
             true,
             None,
+            Vec::new(),
         );
         assert!(resumed.preserve_terminal_on_exit);
         assert!(matches!(
@@ -3064,8 +3186,16 @@ mod tests {
         let (_tx, rx) = std_mpsc::channel::<LiveUpdate>();
         let sink: UiIntentSink = Arc::new(|_| {});
 
-        let options =
-            new_live_tui_options(run_dir.clone(), Vec::new(), rx, false, sink, true, None);
+        let options = new_live_tui_options(
+            run_dir.clone(),
+            Vec::new(),
+            rx,
+            false,
+            sink,
+            true,
+            None,
+            Vec::new(),
+        );
 
         let TuiMode::Live {
             run_dir: configured_run_dir,
@@ -3129,8 +3259,17 @@ mod tests {
 
         let (_tx, rx) = std_mpsc::channel::<LiveUpdate>();
         let sink: UiIntentSink = Arc::new(|_| {});
-        let options =
-            continue_live_tui_options(child_dir, Vec::new(), entries, rx, false, sink, true, None);
+        let options = continue_live_tui_options(
+            child_dir,
+            Vec::new(),
+            entries,
+            rx,
+            false,
+            sink,
+            true,
+            None,
+            Vec::new(),
+        );
 
         let TuiMode::Live {
             session_history_entries,
@@ -3910,10 +4049,22 @@ mod tests {
             .collect::<Vec<_>>();
         mini_variants.sort_unstable();
         assert_eq!(mini_variants, vec!["high", "low", "medium", "xhigh"]);
+        let switchable = metadata.switchable_profiles();
+        assert_eq!(switchable.first().map(String::as_str), Some("build"));
+        assert!(
+            switchable
+                .iter()
+                .position(|profile| profile == "plan")
+                .is_some_and(|plan| switchable
+                    .iter()
+                    .position(|profile| profile == "ops")
+                    .is_some_and(|ops| plan < ops)),
+            "AgentCatalog display order should keep shipped primary profiles before custom profiles: {switchable:?}"
+        );
     }
 
     #[test]
-    fn shipped_example_config_does_not_synthesize_unconfigured_model_variant() {
+    fn shipped_example_config_preserves_configured_model_variant() {
         let config_path = crate::cli_config::shipped_example_config_path();
         let config = harness_core::config::load_config_from_file(&config_path)
             .expect("shipped example config should parse with discovered prompts");
@@ -3924,7 +4075,7 @@ mod tests {
             .expect("launch metadata should build");
 
         assert_eq!(metadata.profile(), "build");
-        assert_eq!(metadata.variant(), None);
+        assert_eq!(metadata.variant(), Some("high"));
     }
 
     #[test]
@@ -4164,6 +4315,7 @@ mod tests {
                 .expect("launch metadata should build"),
             launch_mode_label: None,
             toggles: TogglesConfig::default(),
+            slash_command_templates: Vec::new(),
         };
 
         let runtime = tokio::runtime::Builder::new_current_thread()

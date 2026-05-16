@@ -1,6 +1,6 @@
 //! Headless session recovery helpers shared by CLI entrypoints.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use harness_core::event::{ActorKind, EventEnvelopeV1, EventV1};
@@ -82,6 +82,18 @@ pub struct RecoveryArtifactEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RecoveryIssueEntry {
+    pub kind: String,
+    pub severity: String,
+    pub summary: String,
+    pub suggested_action: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seq: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SessionRecoverySummary {
     pub run_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -114,6 +126,8 @@ pub struct SessionRecoverySummary {
     pub child_sessions: Vec<RecoveryChildSessionEntry>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub artifacts: Vec<RecoveryArtifactEntry>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub recovery_issues: Vec<RecoveryIssueEntry>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub continue_hint: Option<String>,
 }
@@ -173,6 +187,14 @@ pub fn inspect_session_recovery(run_dir: &Path) -> Result<SessionRecoverySummary
     } else {
         None
     };
+    let pending_permissions = run_summary.pending_permissions.clone();
+    let tasks_in_flight = run_summary.tasks_in_flight.clone();
+    let recovery_issues = collect_recovery_issues(
+        &events,
+        run_summary.last_error.as_deref(),
+        &pending_permissions,
+        &tasks_in_flight,
+    );
 
     Ok(SessionRecoverySummary {
         run_id: catalog.run_id.clone(),
@@ -188,11 +210,12 @@ pub fn inspect_session_recovery(run_dir: &Path) -> Result<SessionRecoverySummary
         resumable: catalog.is_resumable,
         resume_disabled_reason: catalog.resume_disabled_reason,
         resume_agent_id: resume_agent_id.clone(),
-        pending_permissions: run_summary.pending_permissions.into_iter().collect(),
-        tasks_in_flight: run_summary.tasks_in_flight.into_iter().collect(),
+        pending_permissions: pending_permissions.into_iter().collect(),
+        tasks_in_flight: tasks_in_flight.into_iter().collect(),
         prompt_context: collect_prompt_context(&events),
         child_sessions: collect_child_sessions(&resume_plan),
         artifacts: collect_artifacts(&resume_plan),
+        recovery_issues,
         continue_hint: resume_agent_id.map(|_| {
             format!(
                 "harness prompt --resume {} --text \"<next prompt>\"",
@@ -200,6 +223,121 @@ pub fn inspect_session_recovery(run_dir: &Path) -> Result<SessionRecoverySummary
             )
         }),
     })
+}
+
+fn collect_recovery_issues(
+    events: &[EventEnvelopeV1],
+    last_error: Option<&str>,
+    pending_permissions: &BTreeSet<String>,
+    tasks_in_flight: &BTreeSet<String>,
+) -> Vec<RecoveryIssueEntry> {
+    let mut issues = Vec::new();
+
+    if let Some(last_error) = last_error.filter(|value| !value.trim().is_empty()) {
+        issues.push(RecoveryIssueEntry {
+            kind: "run_error".to_string(),
+            severity: "error".to_string(),
+            summary: last_error.to_string(),
+            suggested_action:
+                "Inspect the final failed turn, then continue the session or fork from a stable prefix."
+                    .to_string(),
+            request_id: None,
+            seq: None,
+        });
+    }
+
+    for permission_id in pending_permissions {
+        issues.push(RecoveryIssueEntry {
+            kind: "pending_permission".to_string(),
+            severity: "warn".to_string(),
+            summary: format!("permission `{permission_id}` was pending at session end"),
+            suggested_action:
+                "Reopen/continue the session and resolve or cancel the permission request."
+                    .to_string(),
+            request_id: None,
+            seq: None,
+        });
+    }
+
+    for task_id in tasks_in_flight {
+        issues.push(RecoveryIssueEntry {
+            kind: "task_in_flight".to_string(),
+            severity: "warn".to_string(),
+            summary: format!("task `{task_id}` was still in flight at session end"),
+            suggested_action:
+                "Use session replay/inspect artifacts, then continue or fork before retrying work."
+                    .to_string(),
+            request_id: None,
+            seq: None,
+        });
+    }
+
+    for event in events {
+        match &event.payload {
+            EventV1::ProviderRequestStarted(payload)
+                if payload.prompt_summary.trim().is_empty() =>
+            {
+                issues.push(RecoveryIssueEntry {
+                    kind: "empty_provider_prompt".to_string(),
+                    severity: "warn".to_string(),
+                    summary: "provider request prompt summary was empty".to_string(),
+                    suggested_action:
+                        "Continue with an explicit prompt or fork before the empty provider request."
+                            .to_string(),
+                    request_id: Some(payload.request_id.clone()),
+                    seq: Some(event.seq),
+                });
+            }
+            EventV1::ProviderRequestFinished(payload) if payload.finish_reason == "error" => {
+                let class = payload
+                    .metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.provider_error_class.clone())
+                    .unwrap_or_else(|| "unknown".to_string());
+                issues.push(RecoveryIssueEntry {
+                    kind: "provider_error".to_string(),
+                    severity: if class == "auth" { "error" } else { "warn" }.to_string(),
+                    summary: format!("provider request finished with error class `{class}`"),
+                    suggested_action: if class == "context_window" {
+                        "Run/continue with compaction enabled or fork from a stable prefix before retrying."
+                            .to_string()
+                    } else {
+                        "Continue the session; configured runtime fallback can retry safe transient provider classes."
+                            .to_string()
+                    },
+                    request_id: Some(payload.request_id.clone()),
+                    seq: Some(event.seq),
+                });
+            }
+            EventV1::AssistantMessageFinished(payload) if payload.tool_call_count > 0 => {
+                let has_terminal_tool_result = events.iter().any(|candidate| {
+                    candidate.seq > event.seq
+                        && matches!(
+                            &candidate.payload,
+                            EventV1::TaskCompleted(_) | EventV1::TaskCancelled(_)
+                        )
+                });
+                if !has_terminal_tool_result {
+                    issues.push(RecoveryIssueEntry {
+                        kind: "missing_tool_result".to_string(),
+                        severity: "warn".to_string(),
+                        summary: format!(
+                            "assistant message declared {} tool call(s) without a later terminal task result",
+                            payload.tool_call_count
+                        ),
+                        suggested_action:
+                            "Inspect tool artifacts and continue or fork; repair must append new events or create a child session, not edit events.jsonl in place."
+                                .to_string(),
+                        request_id: Some(payload.request_id.clone()),
+                        seq: Some(event.seq),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    issues
 }
 
 pub fn latest_run_name(events: &[EventEnvelopeV1]) -> Option<String> {
@@ -415,8 +553,8 @@ mod tests {
     use super::*;
     use harness_core::event::{
         ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1,
-        ProviderRequestStartedEvent, RunFinishedEvent, RunStartedEvent, SessionTitleUpdatedEvent,
-        SCHEMA_VERSION,
+        ProviderRequestFinishedEvent, ProviderRequestFinishedMetadata, ProviderRequestStartedEvent,
+        RunFinishedEvent, RunStartedEvent, SessionTitleUpdatedEvent, SCHEMA_VERSION,
     };
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -491,7 +629,7 @@ mod tests {
                 3,
                 Some("agent-1"),
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req-1".to_string(),
+                    request_id: "req_000001".to_string(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "hello".to_string(),
@@ -501,6 +639,17 @@ mod tests {
             ),
             envelope(
                 4,
+                Some("agent-1"),
+                EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                    request_id: "req_000001".to_string(),
+                    finish_reason: "done".to_string(),
+                    output_digest: Some("digest-output".to_string()),
+                    usage: None,
+                    metadata: None,
+                }),
+            ),
+            envelope(
+                5,
                 None,
                 EventV1::RunFinished(RunFinishedEvent {
                     summary: "done".to_string(),
@@ -512,9 +661,64 @@ mod tests {
         let summary = inspect_session_recovery(&run_dir).unwrap();
         assert_eq!(summary.run_id, "test-run");
         assert_eq!(summary.run_name, Some("interactive".to_string()));
-        assert!(summary.resumable);
+        assert!(summary.resumable, "{:?}", summary.resume_disabled_reason);
         assert_eq!(summary.resume_agent_id, Some("agent-1".to_string()));
-        assert_eq!(summary.total_events, 4);
+        assert_eq!(summary.total_events, 5);
+    }
+
+    #[test]
+    fn test_inspect_session_recovery_reports_provider_error_issue() {
+        let root = tempdir().unwrap();
+        let sessions_dir = root.path().join("sessions");
+        fs::create_dir_all(&sessions_dir).unwrap();
+        let run_dir = setup_session_dir(&sessions_dir, "test-run");
+
+        let events = vec![
+            envelope(
+                1,
+                None,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".to_string(),
+                    workspace_root: "/tmp".to_string(),
+                }),
+            ),
+            envelope(
+                2,
+                Some("agent-1"),
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent-1".to_string(),
+                    profile: "default".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            envelope(
+                3,
+                Some("agent-1"),
+                EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                    request_id: "req_000001".to_string(),
+                    finish_reason: "error".to_string(),
+                    output_digest: None,
+                    usage: None,
+                    metadata: Some(ProviderRequestFinishedMetadata {
+                        provider_error_class: Some("context_window".to_string()),
+                        provider_error_retryable: Some(true),
+                        ..Default::default()
+                    }),
+                }),
+            ),
+        ];
+        write_events(&run_dir, &events);
+
+        let summary = inspect_session_recovery(&run_dir).unwrap();
+        assert_eq!(summary.recovery_issues.len(), 1);
+        assert_eq!(summary.recovery_issues[0].kind, "provider_error");
+        assert_eq!(
+            summary.recovery_issues[0].request_id.as_deref(),
+            Some("req_000001")
+        );
+        assert!(summary.recovery_issues[0]
+            .suggested_action
+            .contains("compaction"));
     }
 
     #[test]
@@ -704,7 +908,7 @@ mod tests {
                 4,
                 Some("agent-1"),
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req-1".to_string(),
+                    request_id: "req_000001".to_string(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "hello from 1".to_string(),
@@ -716,7 +920,7 @@ mod tests {
                 5,
                 Some("agent-2"),
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req-2".to_string(),
+                    request_id: "req_000002".to_string(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "hello from 2".to_string(),
@@ -726,6 +930,17 @@ mod tests {
             ),
             envelope(
                 6,
+                Some("agent-2"),
+                EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                    request_id: "req_000002".to_string(),
+                    finish_reason: "done".to_string(),
+                    output_digest: Some("digest-output".to_string()),
+                    usage: None,
+                    metadata: None,
+                }),
+            ),
+            envelope(
+                7,
                 None,
                 EventV1::RunFinished(RunFinishedEvent {
                     summary: "done".to_string(),

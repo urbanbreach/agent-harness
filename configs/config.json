@@ -49,6 +49,215 @@
       },
       "type": "object"
     },
+    "CompatibilityCommandTemplate": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "source_path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "prompt",
+        "source_path"
+      ],
+      "type": "object"
+    },
+    "CompatibilityConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "command_templates": {
+          "additionalProperties": {
+            "$ref": "#/definitions/CompatibilityCommandTemplate"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "disabled_agents": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "disabled_commands": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "disabled_extensions": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "disabled_hooks": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "disabled_mcp_servers": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "disabled_skills": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "enable_imported_hooks": {
+          "default": false,
+          "description": "Execute imported compatibility hook argv entries. Disabled by default so repo-local compatibility files are discoverable without gaining startup execution side effects.",
+          "type": "boolean"
+        },
+        "extension_manifests": {
+          "additionalProperties": {
+            "$ref": "#/definitions/ExtensionManifestRegistration"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "imports": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/CompatibilityImportStatus"
+          },
+          "type": "array"
+        },
+        "required": {
+          "default": false,
+          "description": "Treat compatibility import failures as startup errors. The default keeps migration safe by surfacing failures in doctor without aborting startup.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "CompatibilityImportKind": {
+      "enum": [
+        "agent",
+        "skill",
+        "command",
+        "mcp",
+        "hook",
+        "extension_manifest"
+      ],
+      "type": "string"
+    },
+    "CompatibilityImportState": {
+      "enum": [
+        "imported",
+        "disabled",
+        "skipped",
+        "error"
+      ],
+      "type": "string"
+    },
+    "CompatibilityImportStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "kind": {
+          "$ref": "#/definitions/CompatibilityImportKind"
+        },
+        "message": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "required": {
+          "default": false,
+          "type": "boolean"
+        },
+        "source_path": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/CompatibilityImportState"
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "source_path",
+        "status"
+      ],
+      "type": "object"
+    },
+    "ExtensionManifestRegistration": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_path": {
+          "type": "string"
+        },
+        "version": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "source_path"
+      ],
+      "type": "object"
+    },
     "InstructionList": {
       "anyOf": [
         {
@@ -59,6 +268,92 @@
             "type": "string"
           },
           "type": "array"
+        }
+      ]
+    },
+    "McpServerConfig": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "command": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "cwd": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "env": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "default": {},
+              "type": "object"
+            },
+            "timeout_secs": {
+              "default": 30,
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "transport": {
+              "enum": [
+                "stdio"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "command",
+            "transport"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "endpoint": {
+              "type": "string"
+            },
+            "headers": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "default": {},
+              "type": "object"
+            },
+            "timeout_secs": {
+              "default": 30,
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "transport": {
+              "enum": [
+                "http"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "endpoint",
+            "transport"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -621,7 +916,7 @@
         },
         "disable": {
           "default": false,
-          "description": "OpenCode-compatible negative toggle. Equivalent to `enable: false`.",
+          "description": "Upstream-compatible negative toggle. Equivalent to `enable: false`.",
           "type": "boolean"
         },
         "enable": {
@@ -746,9 +1041,20 @@
       "additionalProperties": {
         "$ref": "#/definitions/PublicAgentConfig"
       },
-      "description": "Named agent definitions. Built-in OpenCode-compatible agents are explicit so editors can complete them, and custom names are accepted through the same shape.",
+      "description": "Named agent definitions. Built-in upstream-compatible agents are explicit so editors can complete them, and custom names are accepted through the same shape.",
       "properties": {
         "artistry": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "atlas": {
           "anyOf": [
             {
               "$ref": "#/definitions/PublicAgentConfig"
@@ -825,6 +1131,72 @@
           ],
           "default": null
         },
+        "hephaestus": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "librarian": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "metis": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "momus": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "multimodal-looker": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "oracle": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "plan": {
           "anyOf": [
             {
@@ -836,7 +1208,40 @@
           ],
           "default": null
         },
+        "prometheus": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "quick": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sisyphus": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sisyphus-junior": {
           "anyOf": [
             {
               "$ref": "#/definitions/PublicAgentConfig"
@@ -979,10 +1384,43 @@
           ],
           "default": null
         },
+        "delegate_task": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicRulePermissionValue"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "doom_loop": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "edit": {
           "anyOf": [
             {
               "$ref": "#/definitions/PublicRulePermissionValue"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "external_directory": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
             },
             {
               "type": "null"
@@ -1002,6 +1440,17 @@
           "default": null
         },
         "question": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "read": {
           "anyOf": [
             {
               "$ref": "#/definitions/PermissionMode"
@@ -1049,6 +1498,17 @@
           "anyOf": [
             {
               "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "write": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicRulePermissionValue"
             },
             {
               "type": "null"
@@ -1105,10 +1565,43 @@
           ],
           "default": null
         },
+        "delegate_task": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicRulePermissionValue"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "doom_loop": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "edit": {
           "anyOf": [
             {
               "$ref": "#/definitions/PublicRulePermissionValue"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "external_directory": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
             },
             {
               "type": "null"
@@ -1128,6 +1621,17 @@
           "default": null
         },
         "question": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "read": {
           "anyOf": [
             {
               "$ref": "#/definitions/PermissionMode"
@@ -1164,6 +1668,17 @@
           "anyOf": [
             {
               "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "write": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicRulePermissionValue"
             },
             {
               "type": "null"
@@ -1232,6 +1747,18 @@
     "SkillsConfig": {
       "additionalProperties": false,
       "properties": {
+        "disabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "disabled_skills": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
         "global_roots": {
           "default": [],
           "items": {
@@ -1291,14 +1818,24 @@
       ],
       "default": {
         "artistry": null,
+        "atlas": null,
         "build": null,
         "compaction": null,
         "deep": null,
         "discipline": null,
         "explore": null,
         "general": null,
+        "hephaestus": null,
+        "librarian": null,
+        "metis": null,
+        "momus": null,
+        "multimodal-looker": null,
+        "oracle": null,
         "plan": null,
+        "prometheus": null,
         "quick": null,
+        "sisyphus": null,
+        "sisyphus-junior": null,
         "summary": null,
         "title": null,
         "ultrabrain": null,
@@ -1324,6 +1861,26 @@
     "compaction": {
       "default": null
     },
+    "compatibility": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/CompatibilityConfig"
+        }
+      ],
+      "default": {
+        "command_templates": {},
+        "disabled_agents": [],
+        "disabled_commands": [],
+        "disabled_extensions": [],
+        "disabled_hooks": [],
+        "disabled_mcp_servers": [],
+        "disabled_skills": [],
+        "enable_imported_hooks": false,
+        "extension_manifests": {},
+        "imports": [],
+        "required": false
+      }
+    },
     "default_agent": {
       "default": null,
       "type": [
@@ -1331,7 +1888,67 @@
         "null"
       ]
     },
+    "disabled_agents": {
+      "default": null,
+      "items": {
+        "type": "string"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "disabled_commands": {
+      "default": null,
+      "items": {
+        "type": "string"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "disabled_extensions": {
+      "default": null,
+      "items": {
+        "type": "string"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "disabled_hooks": {
+      "default": null,
+      "items": {
+        "type": "string"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "disabled_mcps": {
+      "default": null,
+      "items": {
+        "type": "string"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
     "disabled_providers": {
+      "default": null,
+      "items": {
+        "type": "string"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "disabled_skills": {
       "default": null,
       "items": {
         "type": "string"
@@ -1389,7 +2006,9 @@
       "default": null
     },
     "mcp": {
-      "additionalProperties": true,
+      "additionalProperties": {
+        "$ref": "#/definitions/McpServerConfig"
+      },
       "default": {},
       "type": "object"
     },
@@ -1401,14 +2020,24 @@
       ],
       "default": {
         "artistry": null,
+        "atlas": null,
         "build": null,
         "compaction": null,
         "deep": null,
         "discipline": null,
         "explore": null,
         "general": null,
+        "hephaestus": null,
+        "librarian": null,
+        "metis": null,
+        "momus": null,
+        "multimodal-looker": null,
+        "oracle": null,
         "plan": null,
+        "prometheus": null,
         "quick": null,
+        "sisyphus": null,
+        "sisyphus-junior": null,
         "summary": null,
         "title": null,
         "ultrabrain": null,
@@ -1442,13 +2071,18 @@
         "*": null,
         "bash": null,
         "codesearch": null,
+        "delegate_task": null,
+        "doom_loop": null,
         "edit": null,
+        "external_directory": null,
         "lsp": null,
         "question": null,
+        "read": null,
         "shell_allowlist": null,
         "task": null,
         "webfetch": null,
-        "websearch": null
+        "websearch": null,
+        "write": null
       }
     },
     "plugin": {
@@ -1499,8 +2133,13 @@
         }
       ],
       "default": {
+        "disabled": false,
+        "disabled_skills": [],
         "global_roots": [
-          "~/.config/agent-harness/skills"
+          "~/.config/agent-harness/skills",
+          "~/.config/opencode/skills",
+          "~/.claude/skills",
+          "~/.agents/skills"
         ],
         "permissions": {
           "*": "allow",
@@ -1509,6 +2148,9 @@
         },
         "project_roots": [
           ".agent-harness/skills",
+          ".opencode/skills",
+          ".claude/skills",
+          ".agents/skills",
           ".harness/skills"
         ],
         "urls": [],

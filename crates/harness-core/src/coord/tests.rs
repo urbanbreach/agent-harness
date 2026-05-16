@@ -20,6 +20,7 @@ use crate::config::{
     resolve_profile_model_metadata, set_registered_mcp_server_first_class_tool_ids,
     CategoryPermissions, CompactionRuntimeConfig, PermissionMode,
 };
+use crate::continuation::ContinuationController;
 use crate::conversation::{
     ConversationAssistantMessage, ConversationMessage, ConversationToolCall,
     ConversationToolResultMessage, ConversationUserMessage,
@@ -47,14 +48,16 @@ use super::{
     append_background_task_notification_and_schedule, append_payload_event_with_correlation,
     build_model_compaction_prompt, build_provider_context_summary, compact_provider_context,
     compaction_summary_override_from_hooks, completion_messages_to_conversation_messages,
+    continuation_done_marker_seen, continuation_reminder_prompt,
     mark_failed_terminal_compaction_attempt, permission_rule_request_selectors,
     plan_mode_shell_boundary_denial, provider_context_summary_required_headings,
     provider_tool_message_status, restore_provider_context_from_history,
     schedule_pending_agent_wakeups_for_idle_agent, spawn_coordinator, summarize_hook_output,
-    validate_model_compaction_summary, ChildTaskTurnState, Coordinator, CoordinatorConfig,
-    CoordinatorError, FailedTerminalCompactionRequest, HookExecutionBatch, JobOutcome,
-    JobProgressKind, ProviderCompactionTrigger, ProviderContextCompactionPlan, RunInfo, RunState,
-    RunningAgentTurn, TaskExecutionState, TaskState,
+    todo_output_has_incomplete_items, validate_model_compaction_summary, ChildTaskTurnState,
+    Coordinator, CoordinatorConfig, CoordinatorError, FailedTerminalCompactionRequest,
+    HookExecutionBatch, JobOutcome, JobProgressKind, ProviderCompactionTrigger,
+    ProviderContextCompactionPlan, RunInfo, RunState, RunningAgentTurn, TaskExecutionState,
+    TaskState,
 };
 use harness_providers::{CompletionMessage, MessageRole};
 
@@ -65,6 +68,47 @@ struct TestTaskTool;
 struct TestMcpEchoTool;
 
 struct TestMcpWrapperTool;
+
+#[test]
+fn continuation_done_marker_and_todo_projection_are_deterministic() {
+    assert!(continuation_done_marker_seen("Summary\n\nDONE\n"));
+    assert!(continuation_done_marker_seen("All tasks complete."));
+    assert!(!continuation_done_marker_seen(
+        "Continue with the next task before reporting back"
+    ));
+
+    assert_eq!(
+        todo_output_has_incomplete_items(&json!({
+            "todos": [
+                {"content": "finish", "status": "completed"},
+                {"content": "verify", "status": "pending"}
+            ]
+        })),
+        Some(true)
+    );
+    assert_eq!(
+        todo_output_has_incomplete_items(&json!({
+            "todos": [
+                {"content": "finish", "status": "completed"},
+                {"content": "cleanup", "status": "cancelled"}
+            ]
+        })),
+        Some(false)
+    );
+}
+
+#[test]
+fn continuation_reminder_prompt_preserves_requested_command() {
+    let prompt = continuation_reminder_prompt(
+        "ralph",
+        2,
+        "continue ralph loop iteration 2 unless all todos are complete",
+        "/ralph-loop fix tests",
+    );
+
+    assert!(prompt.contains("Continuation command: /ralph-loop fix tests"));
+    assert!(prompt.contains("Continue the requested work from that continuation command"));
+}
 
 fn mcp_identity_registry_test_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -313,6 +357,8 @@ fn test_agent_profile(name: &str) -> AgentProfile {
         category: name.to_string(),
         model_ref: "mock:model-1".to_string(),
         model_ref_explicit: true,
+        fallback_model_refs: Vec::new(),
+        fallback_model_settings: Vec::new(),
         system_prompt: "sys".to_string(),
         max_iters: Some(1),
         temperature: None,
@@ -457,7 +503,7 @@ async fn permission_rule_bash_selector_is_enforced_at_tool_call_site() {
               tools: ["shell.run"]
             }
           },
-          default_agent: "deep",
+          default_agent: "build",
           permission: {
             bash: {
               "git status": "deny",
@@ -477,6 +523,16 @@ async fn permission_rule_bash_selector_is_enforced_at_tool_call_site() {
     .expect("permission rule config should parse");
     let mut config = test_config(temp_dir.path());
     config.permission_policy = PermissionPolicy::from_config(&parsed);
+    assert_eq!(
+        config.permission_policy.evaluate_request(
+            None,
+            PermissionKind::Shell,
+            Some(&PermissionRuleRequest::ShellCommand(
+                "git status".to_string()
+            ))
+        ),
+        crate::perm::PolicyDecision::Deny
+    );
 
     let handle = spawn_coordinator(
         config,
@@ -493,7 +549,7 @@ async fn permission_rule_bash_selector_is_enforced_at_tool_call_site() {
     let denied = handle
         .request_tool_call(
             actor.clone(),
-            Some("deep".to_string()),
+            None,
             "shell.run",
             json!({"cmd": "git status"}),
         )
@@ -502,12 +558,7 @@ async fn permission_rule_bash_selector_is_enforced_at_tool_call_site() {
     assert!(matches!(denied, CoordinatorError::PermissionDenied(_)));
 
     let allowed_tool_call_id = handle
-        .request_tool_call(
-            actor,
-            Some("deep".to_string()),
-            "shell.run",
-            json!({"cmd": "git diff"}),
-        )
+        .request_tool_call(actor, None, "shell.run", json!({"cmd": "git diff"}))
         .await
         .expect("catch-all bash rule should allow");
 
@@ -562,10 +613,7 @@ fn task_permission_rule_selector_uses_subagent_type_before_aliases() {
             PermissionKind::Task,
             &json!({"category": "quick"}),
         ),
-        vec![
-            PermissionRuleRequest::TaskAgent("quick".to_string()),
-            PermissionRuleRequest::TaskAgent("general".to_string()),
-        ]
+        vec![PermissionRuleRequest::TaskAgent("quick".to_string())]
     );
 }
 
@@ -587,19 +635,19 @@ async fn permission_rule_task_selector_is_enforced_at_tool_call_site() {
           },
           model: "default/gpt-4o-mini",
           agent: {
-            deep: {
+            build: {
               system_prompt: "Deep work",
               tools: ["task"]
             }
           },
-          default_agent: "deep",
+          default_agent: "build",
           permission: {
             bash: "allow",
             edit: "allow",
             question: "allow",
             task: {
               general: "deny",
-              quick: "allow",
+              quick: "deny",
               "*": "allow"
             },
             webfetch: "allow",
@@ -644,7 +692,7 @@ async fn permission_rule_task_selector_is_enforced_at_tool_call_site() {
         CoordinatorError::PermissionDenied(_)
     ));
 
-    let fallback_denied = handle
+    let category_denied = handle
         .request_tool_call(
             actor,
             Some("deep".to_string()),
@@ -657,9 +705,9 @@ async fn permission_rule_task_selector_is_enforced_at_tool_call_site() {
             }),
         )
         .await
-        .expect_err("category fallback selector should deny general fallback");
+        .expect_err("category selector should enforce the selected category only");
     assert!(matches!(
-        fallback_denied,
+        category_denied,
         CoordinatorError::PermissionDenied(_)
     ));
 
@@ -1452,6 +1500,122 @@ fn mcp_effective_identity_uses_registered_first_class_ids_for_reserved_wrapper_n
     assert_eq!(direct_metadata.alias_source_tool_id.as_deref(), None);
 
     clear_registered_mcp_server_first_class_tool_ids();
+}
+
+#[test]
+fn fallback_slot_switch_preserves_nested_parent_child_scheduler_key() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let mut config = test_config(temp_dir.path());
+    config.provider_model_concurrency = 1;
+    let clock = Arc::new(FakeClock::new());
+    let redactor = Arc::new(DefaultRedactor::default());
+    let (_command_tx, command_rx) = mpsc::channel(1);
+    let (job_tx, job_rx) = mpsc::channel(1);
+    let mut coordinator = Coordinator::new(config, clock, redactor, command_rx, job_tx, job_rx);
+    coordinator.run_state = Some(test_run_state(temp_dir.path(), "fallback_nested_scheduler"));
+
+    let parent_key = ConcurrencyKey::ProviderModel {
+        provider_id: "mock".to_string(),
+        model_id: "fallback-model".to_string(),
+    };
+    let child_old_key = ConcurrencyKey::ProviderModel {
+        provider_id: "mock".to_string(),
+        model_id: "primary-model".to_string(),
+    };
+    {
+        let run_state = coordinator.run_state.as_mut().expect("run state");
+        run_state
+            .subagent_parent_by_id
+            .insert("agent_child".to_string(), "agent_parent".to_string());
+        assert!(matches!(
+            run_state
+                .scheduler
+                .schedule("task_parent".to_string(), parent_key.clone()),
+            ScheduleDecision::Started(_)
+        ));
+        assert!(matches!(
+            run_state
+                .scheduler
+                .schedule("task_child".to_string(), child_old_key.clone()),
+            ScheduleDecision::Started(_)
+        ));
+        run_state.running_agent_turns.insert(
+            "task_parent".to_string(),
+            RunningAgentTurn {
+                agent_id: "agent_parent".to_string(),
+                request_id: "req_parent".to_string(),
+                request_prompt: "parent".to_string(),
+                profile_name: "parent".to_string(),
+                model_ref: "mock:fallback-model".to_string(),
+                model_settings: Default::default(),
+                category: Some("parent".to_string()),
+                queue_key: parent_key,
+                cancellation_token: CancellationToken::new(),
+                started_mono_ms: 0,
+                hook_executions: Vec::new(),
+                latest_provider_usage: None,
+                latest_provider_request_id: None,
+                latest_assistant_output: None,
+                latest_provider_id: None,
+                latest_model_id: None,
+                child_task: None,
+            },
+        );
+        run_state.running_agent_turns.insert(
+            "task_child".to_string(),
+            RunningAgentTurn {
+                agent_id: "agent_child".to_string(),
+                request_id: "req_child".to_string(),
+                request_prompt: "child".to_string(),
+                profile_name: "child".to_string(),
+                model_ref: "mock:primary-model".to_string(),
+                model_settings: Default::default(),
+                category: Some("child".to_string()),
+                queue_key: child_old_key,
+                cancellation_token: CancellationToken::new(),
+                started_mono_ms: 0,
+                hook_executions: Vec::new(),
+                latest_provider_usage: None,
+                latest_provider_request_id: None,
+                latest_assistant_output: None,
+                latest_provider_id: None,
+                latest_model_id: None,
+                child_task: None,
+            },
+        );
+    }
+
+    let switched = super::block_on_coordinator_future(
+        coordinator.switch_agent_turn_provider_model_slot_internal(
+            "task_child".to_string(),
+            "agent_child".to_string(),
+            "mock:fallback-model".to_string(),
+            Default::default(),
+        ),
+    )
+    .expect("switch fallback model slot");
+
+    assert!(
+        switched,
+        "fallback to parent-held model should use nested slot"
+    );
+    let run_state = coordinator.run_state.as_ref().expect("run state");
+    let child = run_state
+        .running_agent_turns
+        .get("task_child")
+        .expect("running child");
+    assert!(matches!(
+        &child.queue_key,
+        ConcurrencyKey::NestedProviderModel {
+            provider_id,
+            model_id,
+            parent_agent_id,
+            agent_id,
+        } if provider_id == "mock"
+            && model_id == "fallback-model"
+            && parent_agent_id == "agent_parent"
+            && agent_id == "agent_child"
+    ));
 }
 
 #[test]
@@ -3162,6 +3326,8 @@ fn provider_neutral_reconstruction_marks_continue_as_tool_message_failures() {
         category: "deep".to_string(),
         model_ref: "mock:model-1".to_string(),
         model_ref_explicit: true,
+        fallback_model_refs: Vec::new(),
+        fallback_model_settings: Vec::new(),
         system_prompt: "sys".to_string(),
         max_iters: Some(12),
         temperature: Some(0.0),
@@ -4173,19 +4339,23 @@ fn compaction_summary_override_uses_explicit_hook_prefix_only() {
                 hook_name: "ignored".to_string(),
                 status: HookExecutionStatus::Succeeded,
                 hook_event: Some("compaction_requested".to_string()),
+                hook_phase: Some("compaction_requested".to_string()),
                 command_digest: None,
                 output_digest: None,
                 output_summary: Some("ordinary hook output".to_string()),
                 duration_ms: Some(1),
+                effects: Vec::new(),
             },
             HookExecutionMetadata {
                 hook_name: "summary".to_string(),
                 status: HookExecutionStatus::Succeeded,
                 hook_event: Some("compaction_requested".to_string()),
+                hook_phase: Some("compaction_requested".to_string()),
                 command_digest: None,
                 output_digest: None,
                 output_summary: Some("compaction_summary: custom compacted recap".to_string()),
                 duration_ms: Some(1),
+                effects: Vec::new(),
             },
         ],
         critical_failure: None,
@@ -5599,6 +5769,8 @@ fn parent_agent_profile() -> AgentProfile {
         category: "parent".to_string(),
         model_ref: "mock:parent-model".to_string(),
         model_ref_explicit: true,
+        fallback_model_refs: Vec::new(),
+        fallback_model_settings: Vec::new(),
         system_prompt: "parent system".to_string(),
         max_iters: Some(1),
         temperature: None,
@@ -5613,6 +5785,8 @@ fn child_agent_profile() -> AgentProfile {
         category: "child".to_string(),
         model_ref: "mock:child-model".to_string(),
         model_ref_explicit: true,
+        fallback_model_refs: Vec::new(),
+        fallback_model_settings: Vec::new(),
         system_prompt: "child system".to_string(),
         max_iters: Some(1),
         temperature: None,
@@ -5631,6 +5805,7 @@ fn background_child_task(run_in_background: bool) -> ChildTaskTurnState {
         task_id: "agent_child".to_string(),
         description: "Summarize the repository".to_string(),
         run_in_background,
+        route: None,
     }
 }
 
@@ -5673,6 +5848,8 @@ fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
         running_agent_turns: std::collections::BTreeMap::new(),
         failed_terminal_compaction_attempts: std::collections::BTreeSet::new(),
         overflow_retry_compacted_context_by_attempt: std::collections::BTreeMap::new(),
+        active_continuation_id: None,
+        continuation_controller: ContinuationController::default(),
         scheduler: Scheduler::new(SchedulerLimits {
             provider_model: 1,
             tool: 1,

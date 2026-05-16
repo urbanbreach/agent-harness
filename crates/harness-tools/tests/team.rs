@@ -52,6 +52,17 @@ async fn native_team_tools_append_events_and_return_projected_state() {
         .expect("team_create tool");
     assert!(created.display_text.contains("team created"));
 
+    let team_list = handle
+        .execute_agent_tool_call(actor.clone(), None, "team_list", json!({}))
+        .await
+        .expect("team_list tool");
+    assert!(team_list.display_text.contains("1 active team(s)"));
+    let team_list_json = team_list
+        .structured_json
+        .expect("team_list structured json");
+    assert_eq!(team_list_json["teams"][0]["team_run_id"], "team_tool");
+    assert_eq!(team_list_json["source"], "event_replay");
+
     handle
         .execute_agent_tool_call(
             actor.clone(),
@@ -192,6 +203,212 @@ async fn native_team_tools_append_events_and_return_projected_state() {
     assert!(events
         .iter()
         .any(|event| matches!(event.payload, EventV1::TeamDeleted(_))));
+}
+
+#[tokio::test]
+async fn native_persistent_task_tools_append_events_and_project_dependencies() {
+    let tempdir = tempfile::tempdir().expect("tempdir");
+    let mut config = CoordinatorConfig::new(tempdir.path());
+    config.run_id_override = Some("run_tool_persistent_tasks".to_string());
+    config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = handle
+        .start_run("tool-persistent-tasks", tempdir.path())
+        .await
+        .expect("start run");
+    let actor = anonymous_supervisor_actor();
+
+    handle
+        .execute_agent_tool_call(
+            actor.clone(),
+            None,
+            "task_create",
+            json!({
+                "task_id": "task_a",
+                "subject": "A",
+                "description": "Do A"
+            }),
+        )
+        .await
+        .expect("task_create task_a");
+    let created_b = handle
+        .execute_agent_tool_call(
+            actor.clone(),
+            None,
+            "task_create",
+            json!({
+                "task_id": "task_b",
+                "subject": "B",
+                "description": "Do B",
+                "blocked_by": ["task_a"]
+            }),
+        )
+        .await
+        .expect("task_create task_b");
+    assert!(created_b.display_text.contains("persistent task created"));
+
+    let blocked = handle
+        .execute_agent_tool_call(
+            actor.clone(),
+            None,
+            "task_update",
+            json!({
+                "task_id": "task_b",
+                "status": "in_progress"
+            }),
+        )
+        .await
+        .expect_err("dependency blocks task_b");
+    assert!(blocked.to_string().contains("blocked by incomplete task"));
+
+    handle
+        .execute_agent_tool_call(
+            actor.clone(),
+            None,
+            "task_update",
+            json!({
+                "task_id": "task_a",
+                "status": "completed"
+            }),
+        )
+        .await
+        .expect("complete task_a");
+    let updated_b = handle
+        .execute_agent_tool_call(
+            actor.clone(),
+            None,
+            "task_update",
+            json!({
+                "task_id": "task_b",
+                "status": "in_progress",
+                "owner": "build",
+                "active_form": "Implement B"
+            }),
+        )
+        .await
+        .expect("update task_b");
+    assert_eq!(
+        updated_b.structured_json.as_ref().unwrap()["task"]["owner"],
+        "build"
+    );
+
+    let list = handle
+        .execute_agent_tool_call(actor.clone(), None, "task_list", json!({}))
+        .await
+        .expect("task_list");
+    let list_json = list.structured_json.expect("task_list json");
+    assert_eq!(list_json["tasks"].as_array().expect("tasks").len(), 2);
+    assert_eq!(list_json["tasks"][0]["blocks"], json!(["task_b"]));
+    assert_eq!(list_json["ready_task_ids"], json!([]));
+
+    let got = handle
+        .execute_agent_tool_call(actor, None, "task_get", json!({ "task_id": "task_b" }))
+        .await
+        .expect("task_get");
+    assert_eq!(
+        got.structured_json.unwrap()["task"]["active_form"],
+        "Implement B"
+    );
+
+    let events = read_events(&run.events_path);
+    assert!(events
+        .iter()
+        .any(|event| matches!(event.payload, EventV1::PersistentTaskCreated(_))));
+    assert!(events
+        .iter()
+        .any(|event| matches!(event.payload, EventV1::PersistentTaskUpdated(_))));
+}
+
+#[tokio::test]
+async fn team_list_reports_declared_team_specs_with_validation() {
+    let tempdir = tempfile::tempdir().expect("tempdir");
+    let teams_dir = tempdir.path().join(".agent-harness/teams");
+    std::fs::create_dir_all(&teams_dir).expect("teams dir");
+    std::fs::write(
+        teams_dir.join("triage.json"),
+        r#"
+        {
+          "version": 1,
+          "name": "triage",
+          "description": "Triage team",
+          "lead": { "kind": "subagent_type", "subagent_type": "alpha" },
+          "members": [
+            {
+              "name": "research",
+              "role": "research",
+              "selector": { "kind": "subagent_type", "subagent_type": "oracle" }
+            },
+            {
+              "name": "builder",
+              "selector": { "kind": "subagent_type", "subagent_type": "alpha" }
+            }
+          ],
+          "bounds": {
+            "max_members": 4,
+            "max_parallel_members": 2,
+            "max_messages_per_run": 20,
+            "max_wall_clock_minutes": 30,
+            "max_member_turns": 10
+          }
+        }
+        "#,
+    )
+    .expect("team spec");
+    std::fs::write(
+        teams_dir.join("bad.json"),
+        r#"
+        {
+          "version": 1,
+          "name": "bad",
+          "lead": { "kind": "subagent_type", "subagent_type": "oracle" },
+          "members": []
+        }
+        "#,
+    )
+    .expect("invalid team spec");
+
+    let mut config = CoordinatorConfig::new(tempdir.path().join("sessions"));
+    config.run_id_override = Some("run_declared_team_list".to_string());
+    config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
+    config.agent_profiles = BTreeMap::from([("alpha".to_string(), profile("alpha"))]);
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    handle
+        .start_run("declared-team-list", tempdir.path())
+        .await
+        .expect("start run");
+
+    let listed = handle
+        .execute_agent_tool_call(anonymous_supervisor_actor(), None, "team_list", json!({}))
+        .await
+        .expect("team_list tool");
+    let output = listed.structured_json.expect("team_list json");
+    assert_eq!(
+        output["declared_teams"].as_array().expect("declared").len(),
+        2
+    );
+    let triage = output["declared_teams"]
+        .as_array()
+        .expect("declared")
+        .iter()
+        .find(|team| team["name"] == "triage")
+        .expect("triage");
+    assert_eq!(triage["status"], "valid");
+    let bad = output["declared_teams"]
+        .as_array()
+        .expect("declared")
+        .iter()
+        .find(|team| team["name"] == "bad")
+        .expect("bad");
+    assert_eq!(bad["status"], "invalid");
+    assert_eq!(output["declared_team_validation"]["invalid"], 1);
 }
 
 #[tokio::test]
@@ -573,6 +790,8 @@ fn profile(name: &str) -> AgentProfile {
         category: "deep".to_string(),
         model_ref: "mock:model-1".to_string(),
         model_ref_explicit: true,
+        fallback_model_refs: Vec::new(),
+        fallback_model_settings: Vec::new(),
         system_prompt: format!("{name}-prompt"),
         max_iters: Some(1),
         temperature: Some(0.0),

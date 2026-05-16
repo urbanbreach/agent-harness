@@ -55,6 +55,7 @@ use ui_lifecycle::{live_empty_state_visible, render_live_empty_state, startup_sh
 use ui_overlays::render_overlays;
 #[cfg(test)]
 pub(crate) use ui_overlays::{
+    exact_test_status_dialog_continuation_rows_show_active_loop,
     exact_test_status_dialog_mcp_rows_match_harness_states,
     exact_test_status_dialog_render_snapshot_covers_harness_sections,
 };

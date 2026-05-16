@@ -83,6 +83,10 @@ fn git_text(cwd: &Path, args: &[&str]) -> Option<String> {
         .args(args)
         .current_dir(cwd)
         .env("GIT_TERMINAL_PROMPT", "0")
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
+        .env_remove("GIT_COMMON_DIR")
         .output()
         .ok()?;
     if !output.status.success() {
@@ -107,15 +111,61 @@ fn resolve_git_path(cwd: &Path, value: &str) -> PathBuf {
 mod tests {
     use super::*;
 
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn tempdir_without_git_ancestor() -> tempfile::TempDir {
+        for base in ["/var/tmp", "/dev/shm", "/tmp"] {
+            let base = Path::new(base);
+            if !base.is_dir() || ancestor_git_root(base).is_some() {
+                continue;
+            }
+            if let Ok(temp_dir) = tempfile::Builder::new()
+                .prefix("harness-workspace-nongit-")
+                .tempdir_in(base)
+            {
+                if ancestor_git_root(temp_dir.path()).is_none() {
+                    return temp_dir;
+                }
+            }
+        }
+        panic!("no writable temp parent without a .git ancestor");
+    }
+
     #[test]
     fn non_git_directory_uses_working_directory_as_workspace_root() {
-        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let temp_dir = tempdir_without_git_ancestor();
         let environment = WorkspaceEnvironment::discover(temp_dir.path());
 
         assert_eq!(environment.working_directory, temp_dir.path());
         assert_eq!(environment.workspace_root, temp_dir.path());
         assert!(!environment.is_git_repository);
         assert_eq!(environment.git_branch, None);
+    }
+
+    #[test]
+    fn git_discovery_ignores_inherited_git_environment() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let temp_dir = tempdir_without_git_ancestor();
+        let inherited_work_tree = tempfile::tempdir().expect("inherited git worktree");
+        std::fs::create_dir(inherited_work_tree.path().join(".git")).expect("git marker");
+
+        let previous_work_tree = std::env::var_os("GIT_WORK_TREE");
+        let previous_dir = std::env::var_os("GIT_DIR");
+        std::env::set_var("GIT_WORK_TREE", inherited_work_tree.path());
+        std::env::set_var("GIT_DIR", inherited_work_tree.path().join(".git"));
+        let environment = WorkspaceEnvironment::discover(temp_dir.path());
+        match previous_work_tree {
+            Some(value) => std::env::set_var("GIT_WORK_TREE", value),
+            None => std::env::remove_var("GIT_WORK_TREE"),
+        }
+        match previous_dir {
+            Some(value) => std::env::set_var("GIT_DIR", value),
+            None => std::env::remove_var("GIT_DIR"),
+        }
+
+        assert_eq!(environment.working_directory, temp_dir.path());
+        assert_eq!(environment.workspace_root, temp_dir.path());
+        assert!(!environment.is_git_repository);
     }
 
     #[test]

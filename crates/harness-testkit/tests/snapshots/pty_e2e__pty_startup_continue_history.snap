@@ -1,13 +1,12 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
-assertion_line: 1357
 expression: "checkpoint_visual_snapshot_without_focus_hash(&history_screen,\n&[STARTUP_CONTINUE_HISTORY_MARKER, STARTUP_CONTINUE_HISTORY_READY_MARKER,\n\"Interactive histories\",], &history_visual,)"
 ---
 Continue session: true
 continue ready: true
 Interactive histories: true
 focus_marker: continue ready
-focus_region_cells: row=25, col=63, height=3, width=28
+focus_region_cells: row=25, col=110, height=3, width=28
 image: pty_startup_continue_history.png
 manifest_json: pty-manifests/startup_session_history/manifest.json
 manifest_jsonl: pty-manifests/startup_session_history/manifest.jsonl

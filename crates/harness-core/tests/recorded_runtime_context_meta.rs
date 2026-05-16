@@ -267,6 +267,8 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             category: "deep".to_string(),
             model_ref: MODEL_REF.to_string(),
             model_ref_explicit: true,
+            fallback_model_refs: Vec::new(),
+            fallback_model_settings: Vec::new(),
             system_prompt: "system prompt".to_string(),
             max_iters: Some(12),
             temperature: Some(0.0),

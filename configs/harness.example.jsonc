@@ -137,11 +137,43 @@
   // when a project needs per-tool rules.
   "permission": "ask",
 
+  // Optional migration adapters for upstream-style local files.
+  // Imports are prompts/config only; executable plugin loading remains disabled.
+  "compatibility": {
+    "required": false,
+    "disabled_agents": [],
+    "disabled_skills": [],
+    "disabled_commands": [],
+    "disabled_mcp_servers": [],
+    "disabled_hooks": [],
+    "disabled_extensions": []
+  },
+
   // Optional MCP servers. Disabled entries stay documented but do not launch.
   "mcp": {
     "cargo-mcp": {
       "transport": "stdio",
       "command": ["cargo-mcp", "serve"],
+      "enabled": false
+    },
+    "exa": {
+      "transport": "http",
+      "endpoint": "https://mcp.exa.ai/mcp",
+      "enabled": false
+    },
+    "tavily": {
+      "transport": "http",
+      "endpoint": "https://mcp.tavily.com/mcp",
+      "enabled": false
+    },
+    "context7": {
+      "transport": "http",
+      "endpoint": "https://mcp.context7.com/mcp",
+      "enabled": false
+    },
+    "grep-app": {
+      "transport": "http",
+      "endpoint": "https://mcp.grep.app",
       "enabled": false
     }
   }

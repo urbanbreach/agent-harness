@@ -3,6 +3,9 @@ use std::fs;
 use harness_core::agent::{build_provider_tool_defs, AgentProfile};
 use harness_core::config::ShellAllowlist;
 use harness_core::edit::hashline::compute_line_hash;
+use harness_core::event::{
+    ActorKind, EventActor, EventEnvelopeV1, EventV1, RunStartedEvent, UserMessageSubmittedEvent,
+};
 use harness_tools::{coordinator_registry, coordinator_registry_with_internal_hashline_tools};
 use serde_json::json;
 
@@ -83,6 +86,241 @@ async fn native_execution_surface_tools_execute_through_native_ids() {
         .await
         .expect("invalid");
     assert!(invalid_result.display_text.contains("bad args"));
+}
+
+#[tokio::test]
+async fn native_look_at_extracts_text_and_routes_media() {
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
+    let registry = coordinator_registry(ShellAllowlist::default());
+    fs::write(workspace.join("look.txt"), "visible text evidence").expect("look fixture");
+
+    let tool = registry.get("look_at").expect("look_at in registry");
+    let result = tool
+        .call(
+            test_context(workspace, "look-at"),
+            json!({ "goal": "describe file", "file_path": "look.txt" }),
+        )
+        .await
+        .expect("look_at text file");
+    let structured = result.structured_json.expect("look_at json");
+    assert_eq!(structured["status"], "ok");
+    assert_eq!(
+        structured["inputs"][0]["extracted_text"],
+        "visible text evidence"
+    );
+    assert!(structured["route"].is_null());
+
+    let image_result = tool
+        .call(
+            test_context(workspace, "look-at-image"),
+            json!({ "goal": "describe image", "image_data": "iVBORw0KGgo=" }),
+        )
+        .await
+        .expect("look_at image_data");
+    assert_eq!(
+        image_result.structured_json.unwrap()["route"]["subagent_type"],
+        "multimodal-looker"
+    );
+}
+
+#[tokio::test]
+async fn native_terminal_tools_are_registered_and_dependency_gated() {
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
+    let registry = coordinator_registry(ShellAllowlist::default());
+
+    let list = registry
+        .get("terminal_list")
+        .expect("terminal_list")
+        .call(test_context(workspace, "terminal-list"), json!({}))
+        .await
+        .expect("terminal_list reports even when tmux missing");
+    assert!(list.structured_json.unwrap().get("sessions").is_some());
+
+    let spawn = registry.get("terminal_spawn").expect("terminal_spawn");
+    if std::process::Command::new("tmux")
+        .arg("-V")
+        .output()
+        .is_err()
+    {
+        let err = spawn
+            .call(
+                test_context(workspace, "terminal-spawn"),
+                json!({ "session_id": "demo", "command": "printf hi" }),
+            )
+            .await
+            .expect_err("missing tmux is dependency-gated");
+        assert!(err.to_string().contains("tmux"));
+    }
+}
+
+#[tokio::test]
+async fn native_session_tools_read_replay_safe_session_logs() {
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
+    let session_dir = workspace.parent().expect("workspace parent").join("run_1");
+    fs::create_dir_all(&session_dir).expect("session dir");
+    let run_started = EventEnvelopeV1 {
+        schema_version: 1,
+        event_id: "event_1".to_string(),
+        seq: 1,
+        run_id: "run_1".to_string(),
+        mono_ms: 1,
+        ts: Some("2026-05-15T00:00:00Z".to_string()),
+        actor: EventActor::new(ActorKind::System, None),
+        correlation_id: None,
+        causation_id: None,
+        stream_key: None,
+        payload: EventV1::RunStarted(RunStartedEvent {
+            run_name: "fixture run".to_string(),
+            workspace_root: workspace.display().to_string(),
+        }),
+    };
+    let user_message = EventEnvelopeV1 {
+        schema_version: 1,
+        event_id: "event_2".to_string(),
+        seq: 2,
+        run_id: "run_1".to_string(),
+        mono_ms: 2,
+        ts: Some("2026-05-15T00:00:01Z".to_string()),
+        actor: EventActor::new(ActorKind::User, None),
+        correlation_id: None,
+        causation_id: None,
+        stream_key: None,
+        payload: EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_1".to_string(),
+            text: "find the needle".to_string(),
+        }),
+    };
+    fs::write(
+        session_dir.join("events.jsonl"),
+        format!(
+            "{}\n{}\n",
+            serde_json::to_string(&run_started).expect("serialize run_started"),
+            serde_json::to_string(&user_message).expect("serialize user_message")
+        ),
+    )
+    .expect("events");
+
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let list = registry
+        .get("session_list")
+        .expect("session_list")
+        .call(test_context(workspace, "session-list"), json!({}))
+        .await
+        .expect("session list");
+    assert_eq!(
+        list.structured_json
+            .as_ref()
+            .and_then(|value| value.pointer("/sessions/0/session_id")),
+        Some(&json!("run_1"))
+    );
+
+    let read = registry
+        .get("session_read")
+        .expect("session_read")
+        .call(
+            test_context(workspace, "session-read"),
+            json!({ "session_id": "run_1", "include_transcript": true }),
+        )
+        .await
+        .expect("session read");
+    assert_eq!(
+        read.structured_json
+            .as_ref()
+            .and_then(|value| value.get("event_count")),
+        Some(&json!(2))
+    );
+
+    let search = registry
+        .get("session_search")
+        .expect("session_search")
+        .call(
+            test_context(workspace, "session-search"),
+            json!({ "query": "needle", "session_id": "run_1" }),
+        )
+        .await
+        .expect("session search");
+    assert_eq!(
+        search
+            .structured_json
+            .as_ref()
+            .and_then(|value| value.get("match_count")),
+        Some(&json!(1))
+    );
+
+    for invalid_session_id in [".", "..", "run_1/../run_1", r"run_1\..\run_1"] {
+        let err = registry
+            .get("session_read")
+            .expect("session_read")
+            .call(
+                test_context(workspace, "session-read-invalid"),
+                json!({ "session_id": invalid_session_id }),
+            )
+            .await
+            .expect_err("session ids must not traverse outside the session directory");
+        assert!(
+            err.to_string().contains("non-traversing"),
+            "unexpected error for {invalid_session_id}: {err}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn native_ast_grep_tools_are_first_class_and_dependency_gated() {
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
+    fs::write(
+        workspace.join("sample.rs"),
+        "fn main() { println!(\"hi\"); }\n",
+    )
+    .expect("sample");
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let search = registry.get("ast_grep_search").expect("ast_grep_search");
+    let outcome = search
+        .call(
+            test_context(workspace, "ast-grep-search"),
+            json!({
+                "pattern": "fn $NAME() { $$$ }",
+                "lang": "rust",
+                "paths": ["sample.rs"]
+            }),
+        )
+        .await;
+    match outcome {
+        Ok(result) => {
+            assert_ne!(
+                result
+                    .structured_json
+                    .as_ref()
+                    .and_then(|value| value.get("status")),
+                Some(&json!("unsupported"))
+            );
+        }
+        Err(err) => {
+            assert!(
+                err.to_string().contains("ast-grep CLI not found"),
+                "unexpected ast-grep error: {err}"
+            );
+        }
+    }
+
+    let replace = registry.get("ast_grep_replace").expect("ast_grep_replace");
+    let denied = replace
+        .call(
+            test_context(workspace, "ast-grep-replace"),
+            json!({
+                "pattern": "println!($$$)",
+                "rewrite": "eprintln!($$$)",
+                "lang": "rust",
+                "paths": ["sample.rs"],
+                "dry_run": false
+            }),
+        )
+        .await
+        .expect_err("non-dry-run replace must stay mediated");
+    assert!(denied.to_string().contains("dry-run previews only"));
 }
 
 #[tokio::test]
@@ -396,6 +634,8 @@ fn native_provider_tool_defs_accept_edit_and_question_export_schemas() {
         category: "test".to_string(),
         model_ref: "mock:model".to_string(),
         model_ref_explicit: true,
+        fallback_model_refs: Vec::new(),
+        fallback_model_settings: Vec::new(),
         system_prompt: "test".to_string(),
         max_iters: Some(4),
         temperature: Some(0.0),

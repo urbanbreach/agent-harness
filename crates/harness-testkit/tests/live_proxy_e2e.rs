@@ -1304,9 +1304,13 @@ fn example_config_keeps_minimal_surface_and_live_helper_prepares_runtime_profile
         Some("build")
     );
 
+    let shipped_agents = config
+        .get("agent")
+        .and_then(Value::as_object)
+        .expect("the shipped public example should expose discoverable built-in agents");
     assert!(
-        config.get("agent").is_none(),
-        "the shipped public example should rely on runtime-synthesized build defaults"
+        shipped_agents.contains_key("build"),
+        "the shipped public example should list the default build agent for operator toggles"
     );
 
     let build_prompt = shipped_agent_prompt_body("build");
@@ -1370,8 +1374,8 @@ fn example_config_keeps_minimal_surface_and_live_helper_prepares_runtime_profile
             .and_then(|provider| provider.get("models"))
             .and_then(|models| models.get("gpt-5.4-mini"))
             .and_then(|model| model.get("variants"))
-            .is_none(),
-        "the shipped public example should not expose model variant clutter"
+            .is_some(),
+        "the shipped public example should expose documented model variants for operator selection"
     );
 
     assert!(
@@ -1382,8 +1386,8 @@ fn example_config_keeps_minimal_surface_and_live_helper_prepares_runtime_profile
             .and_then(|models| models.get("gpt-5.4-mini"))
             .and_then(|model| model.get("variants"))
             .and_then(|variants| variants.get("low"))
-            .is_none(),
-        "live signoff helpers synthesize low when they need a live-only variant"
+            .is_some(),
+        "the shipped public example should expose the low variant used by live signoff helpers"
     );
 
     let low_variant = prepared_config
@@ -1398,9 +1402,13 @@ fn example_config_keeps_minimal_surface_and_live_helper_prepares_runtime_profile
     assert_eq!(
         low_variant
             .get("metadata")
-            .and_then(|metadata| metadata.get("recommended_for"))
+            .and_then(|metadata| {
+                metadata
+                    .get("reasoningEffort")
+                    .or_else(|| metadata.get("reasoning_effort"))
+            })
             .and_then(Value::as_str),
-        Some("live_proxy")
+        Some("low")
     );
 }
 

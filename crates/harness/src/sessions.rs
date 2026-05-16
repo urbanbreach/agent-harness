@@ -493,6 +493,7 @@ fn inspect_session(
             return ExitCode::from(1);
         }
     };
+    let recovery = inspect_session_recovery(&session.run_dir).ok();
 
     if command.json {
         return write_json_output(
@@ -500,6 +501,7 @@ fn inspect_session(
                 "run_dir": session.run_dir.display().to_string(),
                 "catalog": session.catalog,
                 "replay": summary,
+                "recovery": recovery,
             }),
             None,
         );
@@ -511,6 +513,17 @@ fn inspect_session(
         println!("resume_reason: {reason}");
     }
     print_human_summary(&summary);
+    if let Some(recovery) = recovery {
+        if !recovery.recovery_issues.is_empty() {
+            println!("recovery_issues:");
+            for issue in &recovery.recovery_issues {
+                println!(
+                    "  - [{}] {}: {} | action: {}",
+                    issue.severity, issue.kind, issue.summary, issue.suggested_action
+                );
+            }
+        }
+    }
     ExitCode::SUCCESS
 }
 
@@ -1124,6 +1137,24 @@ fn print_recovery_summary(summary: &SessionRecoverySummary) {
                 artifact.kind.as_deref().unwrap_or("<unavailable>"),
                 artifact.path,
                 artifact.digest.as_deref().unwrap_or("<unavailable>")
+            );
+        }
+    }
+    if !summary.recovery_issues.is_empty() {
+        println!("recovery_issues:");
+        for issue in &summary.recovery_issues {
+            println!(
+                "  - [{}] {} request={} seq={} summary={} action={}",
+                issue.severity,
+                issue.kind,
+                issue.request_id.as_deref().unwrap_or("<none>"),
+                issue
+                    .seq
+                    .map(|seq| seq.to_string())
+                    .as_deref()
+                    .unwrap_or("<none>"),
+                issue.summary,
+                issue.suggested_action
             );
         }
     }
