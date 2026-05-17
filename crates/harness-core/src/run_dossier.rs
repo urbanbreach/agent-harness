@@ -7,6 +7,7 @@ use crate::workflow::{
     WorkflowCompletionReadiness, WorkflowContinuationProjection, WorkflowProjection,
     WorkflowSignoffPolicy, WorkflowSignoffReadiness,
 };
+use crate::workflow_closeout::{WorkflowCloseoutPolicy, WorkflowDossierCloseoutSection};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct RunDossier {
@@ -30,6 +31,7 @@ pub struct WorkflowDossierEntry {
     pub operator_decisions: Vec<String>,
     pub signoff: WorkflowSignoffReadiness,
     pub completion: WorkflowCompletionReadiness,
+    pub closeout: WorkflowDossierCloseoutSection,
     pub quality_gate: WorkflowDossierQualityGate,
     pub continuations: Vec<WorkflowDossierContinuation>,
 }
@@ -88,6 +90,20 @@ pub fn build_run_dossier_with_tasks(
     persistent_tasks: &PersistentTaskProjection,
     signoff_policy: &WorkflowSignoffPolicy,
 ) -> RunDossier {
+    build_run_dossier_with_tasks_and_closeout_policy(
+        projection,
+        persistent_tasks,
+        signoff_policy,
+        &WorkflowCloseoutPolicy::default_policy(),
+    )
+}
+
+pub fn build_run_dossier_with_tasks_and_closeout_policy(
+    projection: &WorkflowProjection,
+    persistent_tasks: &PersistentTaskProjection,
+    signoff_policy: &WorkflowSignoffPolicy,
+    closeout_policy: &WorkflowCloseoutPolicy,
+) -> RunDossier {
     let workflows = projection
         .workflows
         .values()
@@ -109,6 +125,12 @@ pub fn build_run_dossier_with_tasks(
                 &workflow.workflow_id,
                 persistent_tasks,
                 signoff_policy,
+            );
+            let closeout_readiness = projection.closeout_readiness(
+                &workflow.workflow_id,
+                persistent_tasks,
+                signoff_policy,
+                closeout_policy,
             );
             let continuations = workflow_continuations(projection, &workflow.workflow_id);
             let prompt_to_artifact_complete = workflow.context_snapshot.is_some()
@@ -135,6 +157,16 @@ pub fn build_run_dossier_with_tasks(
                 evidence,
                 operator_decisions: workflow.operator_decisions.clone(),
                 signoff: signoff_policy.evaluate(projection, workflow.workflow_id.clone()),
+                closeout: WorkflowDossierCloseoutSection {
+                    policy_id: closeout_readiness.policy_id,
+                    policy_version: closeout_readiness.policy_version,
+                    schema_version: closeout_readiness.schema_version,
+                    matrix: closeout_readiness.dimensions,
+                    legal_next_actions: closeout_readiness.legal_next_actions,
+                    stale_export: closeout_readiness.stale_export,
+                    require_export_artifact: closeout_policy.require_export_artifact,
+                    overall_allowed: closeout_readiness.overall_allowed,
+                },
                 quality_gate: WorkflowDossierQualityGate {
                     passed: completion.allowed && prompt_to_artifact_complete,
                     prompt_to_artifact_complete,
@@ -226,6 +258,16 @@ mod tests {
         let workflow = &dossier.workflows[0];
         assert_eq!(workflow.evidence.len(), 1);
         assert!(!workflow.signoff.allowed);
+        assert_eq!(
+            workflow.closeout.policy_id.0,
+            "workflow.closeout.default".to_string()
+        );
+        assert!(!workflow.closeout.overall_allowed);
+        assert!(workflow
+            .closeout
+            .matrix
+            .iter()
+            .any(|dimension| dimension.id == "evidence"));
         assert_eq!(
             workflow.signoff.missing_evidence_categories,
             vec![SIMULATED_TOOL_EVIDENCE_CATEGORY.to_string()]
