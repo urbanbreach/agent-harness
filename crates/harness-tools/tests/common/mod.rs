@@ -35,7 +35,7 @@ pub(crate) use repo_root::repo_root;
 #[allow(unused_imports)]
 pub use tool_context::test_context;
 #[allow(unused_imports)]
-pub use workspace::{setup_workspace, setup_workspace_fixture};
+pub use workspace::{setup_workspace, setup_workspace_fixture, WorkspaceFixture};
 
 #[derive(Debug, Clone)]
 pub struct TestRequest {

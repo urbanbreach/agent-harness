@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use harness_core::config::{registered_skills_config, PermissionMode};
 use harness_core::question_answers::{validate_question_answers, QuestionAnswerPrompt};
 use harness_core::tool::{ToolContext, ToolError, ToolResult};
+use harness_core::workflow_closeout::WorkflowCatalogHealthReport;
 use schemars::JsonSchema;
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -271,6 +272,75 @@ impl ControlPlaneExecutor {
             }),
         ))
     }
+}
+
+pub fn workflow_catalog_health_report(
+    workspace_root: &Path,
+) -> Result<WorkflowCatalogHealthReport, ToolError> {
+    let config = registered_skills_config();
+    let catalog = discover_skill_catalog(workspace_root)?;
+    let mut visible = Vec::new();
+    let mut missing = Vec::new();
+    let mut disabled = Vec::new();
+    let mut shadowed = Vec::new();
+    let mut resolution_roots = skill_search_dirs(workspace_root, &config)
+        .into_iter()
+        .map(|dir| dir.path.display().to_string())
+        .collect::<Vec<_>>();
+
+    let agent_root = workspace_root.join(".agent-harness/agents");
+    resolution_roots.push(agent_root.display().to_string());
+    for required in ["build", "plan", "discipline"] {
+        let role = format!("role:{required}");
+        if agent_root.join(format!("{required}.md")).exists() {
+            visible.push(role);
+        } else {
+            missing.push(role);
+        }
+    }
+
+    if config.disabled {
+        disabled.push("skills:*".to_string());
+    }
+    disabled.extend(
+        config
+            .disabled_skills
+            .iter()
+            .map(|name| format!("skill:{name}")),
+    );
+
+    for (name, skill) in catalog {
+        match skill.discovered {
+            DiscoveredSkill::Visible(_) => visible.push(format!("skill:{name}")),
+            DiscoveredSkill::Denied { .. } => disabled.push(format!("skill:{name}")),
+            DiscoveredSkill::Invalid { .. } => missing.push(format!("skill:{name}")),
+        }
+        shadowed.extend(
+            skill
+                .shadowed
+                .into_iter()
+                .map(|record| format!("skill:{name}@{}", record.location)),
+        );
+    }
+
+    visible.sort();
+    visible.dedup();
+    missing.sort();
+    missing.dedup();
+    disabled.sort();
+    disabled.dedup();
+    shadowed.sort();
+    shadowed.dedup();
+    resolution_roots.sort();
+    resolution_roots.dedup();
+
+    Ok(WorkflowCatalogHealthReport {
+        visible,
+        missing,
+        disabled,
+        shadowed,
+        resolution_roots,
+    })
 }
 
 #[derive(Debug, Serialize, JsonSchema, Clone, PartialEq, Eq)]

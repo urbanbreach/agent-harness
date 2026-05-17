@@ -58,6 +58,10 @@ fn coordinator_registry_exposes_single_native_tool_surface() {
         "todowrite",
         "webfetch",
         "websearch",
+        "workflow_dossier_export",
+        "workflow_question_record",
+        "workflow_signoff",
+        "workflow_status",
         "session_info",
         "session_list",
         "session_read",
@@ -124,4 +128,36 @@ fn persistent_task_tools_do_not_use_delegation_capability() {
             "{tool_id} reads coordinator-owned persistent task projections without spawning agents"
         );
     }
+}
+
+#[test]
+fn workflow_tools_expose_read_vs_mutation_capabilities() {
+    let registry = coordinator_registry(ShellAllowlist::default());
+
+    for tool_id in ["workflow_status", "workflow_dossier_export"] {
+        let tool = registry.get(tool_id).expect("workflow read tool");
+        assert_eq!(
+            tool.capability(),
+            ToolCapability::ReadFs,
+            "{tool_id} is projection/dossier read-only from the workflow event log"
+        );
+    }
+
+    let signoff = registry
+        .get("workflow_signoff")
+        .expect("workflow signoff tool");
+    assert_eq!(
+        signoff.capability(),
+        ToolCapability::EditFs,
+        "workflow_signoff mutates coordinator-owned workflow state"
+    );
+
+    let question_record = registry
+        .get("workflow_question_record")
+        .expect("workflow question lifecycle tool");
+    assert_eq!(
+        question_record.capability(),
+        ToolCapability::EditFs,
+        "workflow_question_record appends coordinator-owned question lifecycle evidence"
+    );
 }

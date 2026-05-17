@@ -43,6 +43,7 @@ use network::NetworkExecutor;
 mod mcp;
 
 mod control_plane;
+pub use control_plane::workflow_catalog_health_report;
 use control_plane::ControlPlaneExecutor;
 
 mod question_env;
@@ -99,6 +100,11 @@ mod terminal_session;
 use terminal_session::{
     InteractiveBashTool, TerminalKillTool, TerminalListTool, TerminalResizeTool,
     TerminalScreenshotTool, TerminalSpawnTool, TerminalWriteTool,
+};
+
+mod workflow_tools;
+use workflow_tools::{
+    WorkflowDossierExportTool, WorkflowQuestionRecordTool, WorkflowSignoffTool, WorkflowStatusTool,
 };
 
 pub use harness_core::tool::canonical_tool_id_for;
@@ -191,6 +197,10 @@ pub fn coordinator_registry_with_mcp_and_editing(
     registry.register(Arc::new(TeamShutdownApproveTool));
     registry.register(Arc::new(TeamShutdownRejectTool));
     registry.register(Arc::new(TeamDeleteTool));
+    registry.register(Arc::new(WorkflowStatusTool));
+    registry.register(Arc::new(WorkflowSignoffTool));
+    registry.register(Arc::new(WorkflowDossierExportTool));
+    registry.register(Arc::new(WorkflowQuestionRecordTool));
     registry.register(Arc::new(PlanEnterTool));
     registry.register(Arc::new(PlanExitTool));
     registry.register(Arc::new(HashlineEditTool));
@@ -437,6 +447,9 @@ mod tests {
             "team_task_update",
             "webfetch",
             "websearch",
+            "workflow_dossier_export",
+            "workflow_signoff",
+            "workflow_status",
         ] {
             let tool = registry
                 .get(tool_id)

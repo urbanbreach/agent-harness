@@ -513,6 +513,8 @@ pub fn permission_kind_for_tool(tool_id: &str) -> Option<PermissionKind> {
         "codesearch" => Some(PermissionKind::CodeSearch),
         "lsp" => Some(PermissionKind::Lsp),
         "lsp.rename" => Some(PermissionKind::EditFs),
+        "workflow_question_record" => Some(PermissionKind::Question),
+        "workflow_signoff" => Some(PermissionKind::EditFs),
         "bash" => Some(PermissionKind::Shell),
         _ if canonical_tool_id.starts_with("edit.") => Some(PermissionKind::EditFs),
         _ if canonical_tool_id.starts_with("shell.") => Some(PermissionKind::Shell),
@@ -1113,6 +1115,14 @@ mod tests {
         assert_eq!(permission_kind_for_tool("lsp"), Some(PermissionKind::Lsp));
         assert_eq!(
             permission_kind_for_tool("lsp.rename"),
+            Some(PermissionKind::EditFs)
+        );
+        assert_eq!(
+            permission_kind_for_tool("workflow_question_record"),
+            Some(PermissionKind::Question)
+        );
+        assert_eq!(
+            permission_kind_for_tool("workflow_signoff"),
             Some(PermissionKind::EditFs)
         );
         assert_eq!(permission_kind_for_tool("user.question"), None);
