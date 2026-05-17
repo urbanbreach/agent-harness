@@ -38,5 +38,6 @@ pub mod tool;
 pub mod transcript_projection;
 pub mod wiki;
 pub mod workflow;
+pub mod workflow_closeout;
 pub mod workflow_registry;
 pub mod workspace;

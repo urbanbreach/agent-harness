@@ -10,6 +10,10 @@ use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
 use crate::text::non_empty_trimmed;
+use crate::workflow_closeout::{
+    default_policy_map, WorkflowCloseoutPolicy, WorkflowCloseoutPolicyConfig,
+    WorkflowCloseoutPolicyError, WORKFLOW_CLOSEOUT_DEFAULT_POLICY_ID,
+};
 
 pub const DEFAULT_REMOTE_SEARCH_ENDPOINT: &str = "https://mcp.exa.ai/mcp";
 pub const DEFAULT_REMOTE_SEARCH_TIMEOUT_SECS: u64 = 30;
@@ -726,6 +730,8 @@ pub struct WorkflowRuntimeConfig {
     #[serde(default)]
     pub run: WorkflowRunRuntimeConfig,
     #[serde(default)]
+    pub closeout: WorkflowCloseoutRuntimeConfig,
+    #[serde(default)]
     pub interview: WorkflowInterviewRuntimeConfig,
     #[serde(default, alias = "planConsensus")]
     pub plan_consensus: WorkflowPlanConsensusRuntimeConfig,
@@ -748,6 +754,7 @@ impl Default for WorkflowRuntimeConfig {
             aliases: default_workflow_aliases(),
             project_artifacts: false,
             run: WorkflowRunRuntimeConfig::default(),
+            closeout: WorkflowCloseoutRuntimeConfig::default(),
             interview: WorkflowInterviewRuntimeConfig::default(),
             plan_consensus: WorkflowPlanConsensusRuntimeConfig::default(),
             work_loop: WorkflowWorkLoopRuntimeConfig::default(),
@@ -755,6 +762,62 @@ impl Default for WorkflowRuntimeConfig {
             goal: WorkflowGoalRuntimeConfig::default(),
             research_loop: WorkflowResearchLoopRuntimeConfig::default(),
             wiki: WorkflowWikiRuntimeConfig::default(),
+        }
+    }
+}
+
+impl WorkflowRuntimeConfig {
+    pub fn effective_closeout_policy(
+        &self,
+        policy_id: impl AsRef<str>,
+    ) -> Result<WorkflowCloseoutPolicy, WorkflowCloseoutPolicyError> {
+        let policy_id = policy_id.as_ref();
+        let mut policy_config =
+            self.closeout
+                .policies
+                .get(policy_id)
+                .cloned()
+                .ok_or_else(|| WorkflowCloseoutPolicyError::UnknownPolicy {
+                    policy_id: policy_id.to_string(),
+                    known_policy_ids: self.closeout.policies.keys().cloned().collect(),
+                })?;
+        if policy_id == WORKFLOW_CLOSEOUT_DEFAULT_POLICY_ID {
+            policy_config.require_evidence = self.run.require_evidence;
+            policy_config.require_dossier = self.run.require_dossier;
+        }
+        WorkflowCloseoutPolicy::from_config(policy_id.to_string(), policy_config)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WorkflowCloseoutRuntimeConfig {
+    #[serde(
+        default = "default_workflow_closeout_default_policy",
+        alias = "defaultPolicy"
+    )]
+    pub default_policy: String,
+    #[serde(
+        default = "default_workflow_closeout_require_replay_equivalence",
+        alias = "requireReplayEquivalence"
+    )]
+    pub require_replay_equivalence: bool,
+    #[serde(
+        default = "default_workflow_closeout_allow_audit_only",
+        alias = "allowAuditOnly"
+    )]
+    pub allow_audit_only: bool,
+    #[serde(default = "default_policy_map")]
+    pub policies: BTreeMap<String, WorkflowCloseoutPolicyConfig>,
+}
+
+impl Default for WorkflowCloseoutRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            default_policy: default_workflow_closeout_default_policy(),
+            require_replay_equivalence: default_workflow_closeout_require_replay_equivalence(),
+            allow_audit_only: default_workflow_closeout_allow_audit_only(),
+            policies: default_policy_map(),
         }
     }
 }
@@ -2185,6 +2248,18 @@ fn default_workflow_aliases() -> bool {
 
 fn default_workflow_run_default_lane() -> String {
     "simulated".to_string()
+}
+
+fn default_workflow_closeout_default_policy() -> String {
+    WORKFLOW_CLOSEOUT_DEFAULT_POLICY_ID.to_string()
+}
+
+fn default_workflow_closeout_require_replay_equivalence() -> bool {
+    true
+}
+
+fn default_workflow_closeout_allow_audit_only() -> bool {
+    true
 }
 
 fn default_workflow_run_require_dossier() -> bool {
