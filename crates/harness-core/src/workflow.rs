@@ -5,9 +5,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::event::{
     ContinuationLimitReachedEvent, ContinuationReminderQueuedEvent, ContinuationStartedEvent,
-    ContinuationStoppedEvent, EventV1, WorkflowCompletedEvent, WorkflowEvidenceRecordedEvent,
-    WorkflowOperatorDecisionRecordedEvent, WorkflowStartedEvent, WorkflowTransitionDeniedEvent,
-    WorkflowTransitionRecordedEvent,
+    ContinuationStoppedEvent, EventV1, TeamCreatedEvent, TeamDeletedEvent, TeamMemberSpawnedEvent,
+    TeamMessageSentEvent, TeamShutdownApprovedEvent, TeamShutdownRejectedEvent,
+    TeamShutdownRequestedEvent, TeamTaskCreatedEvent, TeamTaskUpdatedEvent, WorkflowCompletedEvent,
+    WorkflowEvidenceRecordedEvent, WorkflowOperatorDecisionRecordedEvent, WorkflowStartedEvent,
+    WorkflowTransitionDeniedEvent, WorkflowTransitionRecordedEvent,
 };
 use crate::event::{PersistentTaskStatus, WorkflowEventMetadata};
 use crate::goal_ledger::GoalLedgerProjection;
@@ -19,6 +21,24 @@ pub const SIMULATED_TOOL_EVIDENCE_CATEGORY: &str = "evidence.simulated_tool_resu
 pub const SIGNOFF_WAIVER_DECISION: &str = "waive-missing-evidence";
 pub const PENDING_TASK_WAIVER_DECISION: &str = "waive-pending-workflow-tasks";
 pub const WORKFLOW_TASK_METADATA_KEY: &str = "workflow_id";
+pub const WORKFLOW_QUESTION_EVIDENCE_CATEGORY: &str = "evidence.question";
+pub const WORKFLOW_QUESTION_STATUS_ASKED: &str = "asked";
+pub const WORKFLOW_QUESTION_STATUS_ANSWERED: &str = "answered";
+pub const WORKFLOW_QUESTION_STATUS_CLOSED: &str = "closed";
+pub const WORKFLOW_QUESTION_STATUS_TIMED_OUT: &str = "timed_out";
+pub const WORKFLOW_QUESTION_STATUS_ERROR: &str = "error";
+
+pub const WORKFLOW_QUESTION_METADATA_ID: &str = "question_id";
+pub const WORKFLOW_QUESTION_METADATA_STATUS: &str = "question_status";
+pub const WORKFLOW_QUESTION_METADATA_REASON_CODE: &str = "reason_code";
+pub const WORKFLOW_QUESTION_METADATA_PROMPT_REF: &str = "prompt_ref";
+pub const WORKFLOW_QUESTION_METADATA_ANSWER_REF: &str = "answer_ref";
+const TEAM_METADATA_WORKFLOW_ID: &str = "workflow_id";
+const TEAM_METADATA_EVIDENCE_REF: &str = "evidence_ref";
+const TEAM_METADATA_VERIFICATION_EVIDENCE_REF: &str = "verification_evidence_ref";
+const TEAM_METADATA_SYNTHESIS_REF: &str = "synthesis_ref";
+const TEAM_METADATA_ABORT_REASON: &str = "abort_reason";
+const TEAM_METADATA_BLOCKER_REF: &str = "blocker_ref";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct WorkflowRunProjection {
@@ -37,6 +57,8 @@ pub struct WorkflowRunProjection {
     pub evidence_categories: BTreeSet<String>,
     #[serde(default)]
     pub operator_decisions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub operator_decision_records: Vec<WorkflowOperatorDecisionRecordedEvent>,
     #[serde(default)]
     pub denied_transition_count: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -82,6 +104,37 @@ pub struct WorkflowContinuationProjection {
     pub stop_reason: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WorkflowQuestionProjection {
+    pub question_id: String,
+    pub workflow_id: String,
+    pub status: String,
+    pub summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason_code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_ref: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answer_ref: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WorkflowTeamCloseoutProjection {
+    pub team_run_id: String,
+    pub workflow_id: String,
+    pub status: String,
+    #[serde(default)]
+    pub task_statuses: BTreeMap<String, String>,
+    #[serde(default)]
+    pub verification_evidence_refs: Vec<String>,
+    #[serde(default)]
+    pub synthesis_refs: Vec<String>,
+    #[serde(default)]
+    pub blocker_refs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub abort_reason: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct WorkflowProjection {
     pub workflows: BTreeMap<String, WorkflowRunProjection>,
@@ -90,6 +143,10 @@ pub struct WorkflowProjection {
     pub denied_transitions: Vec<WorkflowTransitionDeniedEvent>,
     pub continuations: BTreeMap<String, WorkflowContinuationProjection>,
     pub context_snapshots: BTreeMap<String, WorkflowContextSnapshotRef>,
+    #[serde(default)]
+    pub questions: BTreeMap<String, WorkflowQuestionProjection>,
+    #[serde(default)]
+    pub teams: BTreeMap<String, WorkflowTeamCloseoutProjection>,
     #[serde(default)]
     pub plan_consensus: BTreeMap<String, PlanConsensusProjection>,
     #[serde(default)]
@@ -109,6 +166,15 @@ impl WorkflowProjection {
                 self.apply_operator_decision(payload)
             }
             EventV1::WorkflowCompleted(payload) => self.apply_completed(payload),
+            EventV1::TeamCreated(payload) => self.apply_team_created(payload),
+            EventV1::TeamMemberSpawned(payload) => self.apply_team_member_spawned(payload),
+            EventV1::TeamMessageSent(payload) => self.apply_team_message(payload),
+            EventV1::TeamTaskCreated(payload) => self.apply_team_task_created(payload),
+            EventV1::TeamTaskUpdated(payload) => self.apply_team_task_updated(payload),
+            EventV1::TeamShutdownRequested(payload) => self.apply_team_shutdown_requested(payload),
+            EventV1::TeamShutdownApproved(payload) => self.apply_team_shutdown_approved(payload),
+            EventV1::TeamShutdownRejected(payload) => self.apply_team_shutdown_rejected(payload),
+            EventV1::TeamDeleted(payload) => self.apply_team_deleted(payload),
             EventV1::ContinuationStarted(payload) => self.apply_continuation_started(payload),
             EventV1::ContinuationReminderQueued(payload) => {
                 self.apply_continuation_reminder(payload)
@@ -134,6 +200,7 @@ impl WorkflowProjection {
                     idempotency_key: payload.idempotency_key.clone(),
                     evidence_categories: BTreeSet::new(),
                     operator_decisions: Vec::new(),
+                    operator_decision_records: Vec::new(),
                     denied_transition_count: 0,
                     context_snapshot: None,
                 },
@@ -171,6 +238,7 @@ impl WorkflowProjection {
             &mut self.research_missions,
             payload,
         );
+        self.apply_question_evidence(payload);
         let snapshot_ref = (payload.category
             == crate::context_snapshot::CONTEXT_SNAPSHOT_EVIDENCE_CATEGORY)
             .then(|| context_snapshot_ref_from_evidence(payload))
@@ -191,9 +259,47 @@ impl WorkflowProjection {
             .push(payload.clone());
     }
 
+    fn apply_question_evidence(&mut self, payload: &WorkflowEvidenceRecordedEvent) {
+        if payload.category != WORKFLOW_QUESTION_EVIDENCE_CATEGORY {
+            return;
+        }
+        let question_id = payload
+            .metadata
+            .get(WORKFLOW_QUESTION_METADATA_ID)
+            .cloned()
+            .or_else(|| payload.acceptance_ref.clone())
+            .unwrap_or_else(|| payload.workflow_id.clone());
+        self.questions.insert(
+            question_id.clone(),
+            WorkflowQuestionProjection {
+                question_id,
+                workflow_id: payload.workflow_id.clone(),
+                status: payload
+                    .metadata
+                    .get(WORKFLOW_QUESTION_METADATA_STATUS)
+                    .cloned()
+                    .unwrap_or_else(|| WORKFLOW_QUESTION_STATUS_ASKED.to_string()),
+                summary: payload.summary.clone(),
+                reason_code: payload
+                    .metadata
+                    .get(WORKFLOW_QUESTION_METADATA_REASON_CODE)
+                    .cloned(),
+                prompt_ref: payload
+                    .metadata
+                    .get(WORKFLOW_QUESTION_METADATA_PROMPT_REF)
+                    .cloned(),
+                answer_ref: payload
+                    .metadata
+                    .get(WORKFLOW_QUESTION_METADATA_ANSWER_REF)
+                    .cloned(),
+            },
+        );
+    }
+
     fn apply_operator_decision(&mut self, payload: &WorkflowOperatorDecisionRecordedEvent) {
         if let Some(run) = self.workflows.get_mut(&payload.workflow_id) {
             run.operator_decisions.push(payload.decision.clone());
+            run.operator_decision_records.push(payload.clone());
         }
     }
 
@@ -206,6 +312,158 @@ impl WorkflowProjection {
             run.owner = payload.owner.clone();
             run.terminal = true;
         }
+    }
+
+    fn apply_team_created(&mut self, payload: &TeamCreatedEvent) {
+        let Some(workflow_id) =
+            workflow_id_from_metadata(payload.workflow.as_ref()).or_else(|| {
+                payload
+                    .spec
+                    .metadata
+                    .get(TEAM_METADATA_WORKFLOW_ID)
+                    .cloned()
+            })
+        else {
+            return;
+        };
+        let team = self
+            .teams
+            .entry(payload.team_run_id.clone())
+            .or_insert_with(|| WorkflowTeamCloseoutProjection {
+                team_run_id: payload.team_run_id.clone(),
+                workflow_id: workflow_id.clone(),
+                status: "active".to_string(),
+                ..WorkflowTeamCloseoutProjection::default()
+            });
+        team.workflow_id = workflow_id;
+        team.status = "active".to_string();
+        merge_team_metadata(team, &payload.spec.metadata);
+    }
+
+    fn apply_team_member_spawned(&mut self, payload: &TeamMemberSpawnedEvent) {
+        if let Some(team) = self.team_from_optional_metadata_mut(
+            &payload.team_run_id,
+            payload.workflow.as_ref(),
+            None,
+        ) {
+            team.status = "active".to_string();
+        }
+    }
+
+    fn apply_team_message(&mut self, payload: &TeamMessageSentEvent) {
+        if let Some(team) = self.team_from_optional_metadata_mut(
+            &payload.team_run_id,
+            payload.workflow.as_ref(),
+            None,
+        ) {
+            for reference in &payload.message.references {
+                merge_unique(
+                    &mut team.synthesis_refs,
+                    std::iter::once(reference.path.clone()),
+                );
+            }
+        }
+    }
+
+    fn apply_team_task_created(&mut self, payload: &TeamTaskCreatedEvent) {
+        if let Some(team) = self.team_from_optional_metadata_mut(
+            &payload.team_run_id,
+            payload.workflow.as_ref(),
+            Some(&payload.task.metadata),
+        ) {
+            team.task_statuses.insert(
+                payload.task.task_id.clone(),
+                payload.task.status.as_str().to_string(),
+            );
+            merge_team_metadata(team, &payload.task.metadata);
+            merge_unique(&mut team.blocker_refs, payload.task.blocked_by.clone());
+        }
+    }
+
+    fn apply_team_task_updated(&mut self, payload: &TeamTaskUpdatedEvent) {
+        if let Some(team) = self.team_from_optional_metadata_mut(
+            &payload.team_run_id,
+            payload.workflow.as_ref(),
+            Some(&payload.metadata),
+        ) {
+            team.task_statuses
+                .insert(payload.task_id.clone(), payload.status.as_str().to_string());
+            merge_team_metadata(team, &payload.metadata);
+        }
+    }
+
+    fn apply_team_shutdown_requested(&mut self, payload: &TeamShutdownRequestedEvent) {
+        if let Some(team) = self.team_from_optional_metadata_mut(
+            &payload.team_run_id,
+            payload.workflow.as_ref(),
+            None,
+        ) {
+            team.status = "shutdown_requested".to_string();
+        }
+    }
+
+    fn apply_team_shutdown_approved(&mut self, payload: &TeamShutdownApprovedEvent) {
+        if let Some(team) = self.team_from_optional_metadata_mut(
+            &payload.team_run_id,
+            payload.workflow.as_ref(),
+            Some(&payload.metadata),
+        ) {
+            team.status = "shutdown_approved".to_string();
+            merge_team_metadata(team, &payload.metadata);
+        }
+    }
+
+    fn apply_team_shutdown_rejected(&mut self, payload: &TeamShutdownRejectedEvent) {
+        if let Some(team) = self.team_from_optional_metadata_mut(
+            &payload.team_run_id,
+            payload.workflow.as_ref(),
+            None,
+        ) {
+            team.status = "shutdown_rejected".to_string();
+            merge_unique(
+                &mut team.blocker_refs,
+                std::iter::once(format!("shutdown_rejected:{}", payload.member_name)),
+            );
+        }
+    }
+
+    fn apply_team_deleted(&mut self, payload: &TeamDeletedEvent) {
+        if let Some(team) = self.team_from_optional_metadata_mut(
+            &payload.team_run_id,
+            payload.workflow.as_ref(),
+            Some(&payload.metadata),
+        ) {
+            team.status = "deleted".to_string();
+            merge_team_metadata(team, &payload.metadata);
+        }
+    }
+
+    fn team_from_optional_metadata_mut(
+        &mut self,
+        team_run_id: &str,
+        workflow: Option<&WorkflowEventMetadata>,
+        metadata: Option<&BTreeMap<String, String>>,
+    ) -> Option<&mut WorkflowTeamCloseoutProjection> {
+        let workflow_id = workflow_id_from_metadata(workflow)
+            .or_else(|| {
+                metadata.and_then(|metadata| metadata.get(TEAM_METADATA_WORKFLOW_ID).cloned())
+            })
+            .or_else(|| {
+                self.teams
+                    .get(team_run_id)
+                    .map(|team| team.workflow_id.clone())
+            })?;
+        let team = self
+            .teams
+            .entry(team_run_id.to_string())
+            .or_insert_with(|| WorkflowTeamCloseoutProjection {
+                team_run_id: team_run_id.to_string(),
+                workflow_id: workflow_id.clone(),
+                status: "active".to_string(),
+                ..WorkflowTeamCloseoutProjection::default()
+            });
+        team.workflow_id = workflow_id;
+        Some(team)
     }
 
     fn apply_continuation_started(&mut self, payload: &ContinuationStartedEvent) {
@@ -287,6 +545,62 @@ fn merge_workflow_metadata(
     }
     if let Some(evidence_category) = metadata.evidence_category.as_ref() {
         continuation.evidence_category = Some(evidence_category.clone());
+    }
+}
+
+fn workflow_id_from_metadata(metadata: Option<&WorkflowEventMetadata>) -> Option<String> {
+    metadata
+        .and_then(|metadata| metadata.workflow_id.as_ref())
+        .map(|workflow_id| workflow_id.trim())
+        .filter(|workflow_id| !workflow_id.is_empty())
+        .map(str::to_string)
+}
+
+fn merge_team_metadata(
+    team: &mut WorkflowTeamCloseoutProjection,
+    metadata: &BTreeMap<String, String>,
+) {
+    merge_unique(
+        &mut team.verification_evidence_refs,
+        metadata_refs(
+            metadata,
+            &[
+                TEAM_METADATA_EVIDENCE_REF,
+                TEAM_METADATA_VERIFICATION_EVIDENCE_REF,
+            ],
+        ),
+    );
+    merge_unique(
+        &mut team.synthesis_refs,
+        metadata_refs(
+            metadata,
+            &[TEAM_METADATA_SYNTHESIS_REF, "lead_synthesis_ref"],
+        ),
+    );
+    merge_unique(
+        &mut team.blocker_refs,
+        metadata_refs(metadata, &[TEAM_METADATA_BLOCKER_REF]),
+    );
+    if team.abort_reason.is_none() {
+        team.abort_reason = metadata.get(TEAM_METADATA_ABORT_REASON).cloned();
+    }
+}
+
+fn metadata_refs(metadata: &BTreeMap<String, String>, keys: &[&str]) -> Vec<String> {
+    keys.iter()
+        .filter_map(|key| metadata.get(*key))
+        .flat_map(|value| value.split([',', '\n']))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn merge_unique(values: &mut Vec<String>, refs: impl IntoIterator<Item = String>) {
+    for value in refs {
+        if !values.contains(&value) {
+            values.push(value);
+        }
     }
 }
 
@@ -575,6 +889,16 @@ impl WorkflowProjection {
             missing_quality_gates,
             recovery_hints,
         }
+    }
+
+    pub fn closeout_readiness(
+        &self,
+        workflow_id: impl Into<String>,
+        persistent_tasks: &PersistentTaskProjection,
+        signoff_policy: &WorkflowSignoffPolicy,
+        closeout_policy: &crate::workflow_closeout::WorkflowCloseoutPolicy,
+    ) -> crate::workflow_closeout::WorkflowCloseoutReadiness {
+        closeout_policy.evaluate(self, workflow_id, persistent_tasks, signoff_policy)
     }
 }
 
