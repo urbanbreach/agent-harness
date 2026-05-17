@@ -107,6 +107,7 @@ use crate::workflow::{
     WorkflowStartDecision, WorkflowStartRequest, WorkflowStartResult, WorkflowTransitionPolicy,
     WorkflowTransitionRequest,
 };
+use crate::workflow_closeout::{WorkflowCloseoutPolicy, WorkflowCloseoutReadiness};
 use harness_providers::{
     AssistantToolCall, CompletionMessage, CompletionRequest, MessageRole, Provider,
     ProviderStreamEvent, ToolDef,
@@ -286,6 +287,11 @@ pub enum Command {
         run_name: String,
         respond_to: oneshot::Sender<Result<RunInfo, CoordinatorError>>,
     },
+    AttachWorkflowMutationRun {
+        run_id: String,
+        run_name: String,
+        respond_to: oneshot::Sender<Result<RunInfo, CoordinatorError>>,
+    },
     StopRun {
         respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
     },
@@ -394,6 +400,16 @@ pub enum Command {
         reason: String,
         owner: String,
         signoff_policy: WorkflowSignoffPolicy,
+        respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
+    },
+    CompleteWorkflowWithCloseoutPolicy {
+        actor: EventActor,
+        workflow_id: String,
+        outcome: String,
+        reason: String,
+        owner: String,
+        signoff_policy: WorkflowSignoffPolicy,
+        closeout_policy: WorkflowCloseoutPolicy,
         respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
     },
     ResolvePermission {
@@ -844,6 +860,19 @@ impl CoordinatorHandle {
         .await
     }
 
+    pub async fn attach_workflow_mutation_run(
+        &self,
+        run_id: impl Into<String>,
+        run_name: impl Into<String>,
+    ) -> Result<RunInfo, CoordinatorError> {
+        self.request(|respond_to| Command::AttachWorkflowMutationRun {
+            run_id: run_id.into(),
+            run_name: run_name.into(),
+            respond_to,
+        })
+        .await
+    }
+
     pub async fn stop_run(&self) -> Result<(), CoordinatorError> {
         self.request(|respond_to| Command::StopRun { respond_to })
             .await
@@ -1266,6 +1295,33 @@ impl CoordinatorHandle {
             reason: reason.into(),
             owner: owner.into(),
             signoff_policy,
+            respond_to,
+        })
+        .await
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "workflow closeout completion mirrors workflow identity, terminal outcome, owner, and two policy inputs"
+    )]
+    pub async fn complete_workflow_with_closeout_policy(
+        &self,
+        actor: EventActor,
+        workflow_id: impl Into<String>,
+        outcome: impl Into<String>,
+        reason: impl Into<String>,
+        owner: impl Into<String>,
+        signoff_policy: WorkflowSignoffPolicy,
+        closeout_policy: WorkflowCloseoutPolicy,
+    ) -> Result<(), CoordinatorError> {
+        self.request(|respond_to| Command::CompleteWorkflowWithCloseoutPolicy {
+            actor,
+            workflow_id: workflow_id.into(),
+            outcome: outcome.into(),
+            reason: reason.into(),
+            owner: owner.into(),
+            signoff_policy,
+            closeout_policy,
             respond_to,
         })
         .await
@@ -1712,6 +1768,14 @@ impl Coordinator {
                 let result = self.resume_run_internal(run_id, run_name);
                 warn_oneshot_send_failure(respond_to.send(result), "resume_run");
             }
+            Command::AttachWorkflowMutationRun {
+                run_id,
+                run_name,
+                respond_to,
+            } => {
+                let result = self.attach_workflow_mutation_run_internal(run_id, run_name);
+                warn_oneshot_send_failure(respond_to.send(result), "attach_workflow_mutation_run");
+            }
             Command::StopRun { respond_to } => {
                 let result = self.stop_run_internal("run stopped".to_string()).await;
                 warn_oneshot_send_failure(respond_to.send(result), "stop_run");
@@ -1920,6 +1984,30 @@ impl Coordinator {
                 warn_oneshot_send_failure(
                     respond_to.send(result),
                     "complete_workflow_with_signoff_policy",
+                );
+            }
+            Command::CompleteWorkflowWithCloseoutPolicy {
+                actor,
+                workflow_id,
+                outcome,
+                reason,
+                owner,
+                signoff_policy,
+                closeout_policy,
+                respond_to,
+            } => {
+                let result = self.complete_workflow_with_closeout_policy_internal(
+                    actor,
+                    workflow_id,
+                    outcome,
+                    reason,
+                    owner,
+                    signoff_policy,
+                    closeout_policy,
+                );
+                warn_oneshot_send_failure(
+                    respond_to.send(result),
+                    "complete_workflow_with_closeout_policy",
                 );
             }
             Command::ResolvePermission {
@@ -2703,6 +2791,106 @@ impl Coordinator {
         }
 
         self.run_state = Some(run_state);
+        Ok(run_info)
+    }
+
+    fn attach_workflow_mutation_run_internal(
+        &mut self,
+        run_id: String,
+        run_name: String,
+    ) -> Result<RunInfo, CoordinatorError> {
+        if self.run_state.is_some() {
+            return Err(CoordinatorError::RunAlreadyStarted);
+        }
+
+        let run_dir = self.config.session_dir.join(&run_id);
+        let event_store = JsonlFileEventStore::open_existing(
+            &self.config.session_dir,
+            &run_id,
+            self.config.deterministic_store,
+        )?;
+        let event_store = Arc::new(event_store);
+        let events_path = event_store.file_path().to_path_buf();
+        let historical_events = read_historical_events_until(&run_id, &events_path, u64::MAX)?;
+        let workspace_root = historical_events
+            .iter()
+            .find_map(|event| match &event.payload {
+                EventV1::RunStarted(payload) => Some(PathBuf::from(&payload.workspace_root)),
+                _ => None,
+            })
+            .ok_or_else(|| CoordinatorError::ResumeRestoreFailed {
+                run_id: run_id.clone(),
+                reason: "run started event is unavailable for workflow mutation".to_string(),
+            })?;
+        let store_next_seq = event_store.next_seq()?;
+        let expected_next_seq = checked_next_counter(
+            historical_events.last().map_or(0, |event| event.seq),
+            &run_id,
+            "event sequence",
+        )?;
+        if store_next_seq != expected_next_seq {
+            return Err(CoordinatorError::ResumeRestoreFailed {
+                run_id,
+                reason: format!(
+                    "event-store sequence mismatch: historical events expect {expected_next_seq}, store reports {store_next_seq}"
+                ),
+            });
+        }
+
+        let artifacts_dir = run_dir.join(ARTIFACTS_DIR_NAME);
+        fs::create_dir_all(&artifacts_dir).map_err(|source| {
+            CoordinatorError::CreateSessionDirectory {
+                path: artifacts_dir.display().to_string(),
+                source,
+            }
+        })?;
+        let run_info = RunInfo {
+            run_id: run_id.clone(),
+            run_name,
+            workspace_root: workspace_root.clone(),
+            run_dir,
+            artifacts_dir,
+            events_path,
+        };
+        let next_agent_id = next_agent_counter_for_run(&self.config.session_dir, &run_id, 0)?;
+        self.run_state = Some(RunState {
+            info: run_info.clone(),
+            event_store,
+            next_event_seq: store_next_seq,
+            next_agent_id,
+            next_tool_call_id: 1,
+            next_task_id: 1,
+            next_provider_request_id: 1,
+            next_permission_id: 1,
+            agents: BTreeMap::new(),
+            provider_context_by_agent: BTreeMap::new(),
+            tasks: BTreeMap::new(),
+            task_hook_state: BTreeMap::new(),
+            agent_hook_state: BTreeMap::new(),
+            subagent_parent_by_id: BTreeMap::new(),
+            child_session_mirrors: BTreeMap::new(),
+            child_request_session_by_id: BTreeMap::new(),
+            background_notification_child_requests: BTreeSet::new(),
+            pending_agent_wakeups: BTreeMap::new(),
+            pending_permissions: BTreeMap::new(),
+            active_permission_grants: PermissionGrantSet::default(),
+            cancelled_running_tasks: BTreeSet::new(),
+            queued_agent_turns: BTreeMap::new(),
+            running_agent_turns: BTreeMap::new(),
+            failed_terminal_compaction_attempts: BTreeSet::new(),
+            overflow_retry_compacted_context_by_attempt: BTreeMap::new(),
+            active_continuation_id: None,
+            active_continuation_workflow: None,
+            continuation_controller: ContinuationController::default(),
+            scheduler: Scheduler::new(SchedulerLimits {
+                provider_model: self.config.provider_model_concurrency,
+                tool: self.config.tool_concurrency,
+            }),
+            recorded_runtime_context: None,
+            allow_initial_runtime_context_recording: false,
+            shutdown_token: CancellationToken::new(),
+        });
+
         Ok(run_info)
     }
 
@@ -4485,6 +4673,78 @@ impl Coordinator {
                         current_owner: current.map(|run| run.owner.clone()),
                         current_status: current.map(|run| run.status.clone()),
                         policy_id: denial_policy.to_string(),
+                    }),
+                )?;
+                return Err(CoordinatorError::PolicyViolation(denial_reason));
+            }
+        }
+
+        append_payload_event(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            actor,
+            Some(format!("workflow:{workflow_id}")),
+            EventV1::WorkflowCompleted(WorkflowCompletedEvent {
+                workflow_id,
+                outcome,
+                reason,
+                owner,
+            }),
+        )
+        .map(|_| ())
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "workflow closeout completion mirrors workflow identity, terminal outcome, owner, and two policy inputs"
+    )]
+    fn complete_workflow_with_closeout_policy_internal(
+        &mut self,
+        actor: EventActor,
+        workflow_id: String,
+        outcome: String,
+        reason: String,
+        owner: String,
+        signoff_policy: WorkflowSignoffPolicy,
+        closeout_policy: WorkflowCloseoutPolicy,
+    ) -> Result<(), CoordinatorError> {
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        if outcome == "outcome.finished" {
+            let historical_events = read_historical_events_until(
+                &run_state.info.run_id,
+                &run_state.info.events_path,
+                u64::MAX,
+            )?;
+            let projection =
+                project_workflows(historical_events.iter().map(|event| &event.payload));
+            let persistent_tasks = project_persistent_tasks(&historical_events);
+            let readiness = projection.closeout_readiness(
+                workflow_id.clone(),
+                &persistent_tasks,
+                &signoff_policy,
+                &closeout_policy,
+            );
+            if !readiness.overall_allowed {
+                let current = projection.workflows.get(&workflow_id);
+                let denial_reason = workflow_closeout_denial_reason(&readiness);
+                append_payload_event(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    run_state,
+                    actor,
+                    Some(format!("workflow:{workflow_id}")),
+                    EventV1::WorkflowTransitionDenied(WorkflowTransitionDeniedEvent {
+                        workflow_id,
+                        requested_status: outcome,
+                        reason: denial_reason.clone(),
+                        owner,
+                        current_owner: current.map(|run| run.owner.clone()),
+                        current_status: current.map(|run| run.status.clone()),
+                        policy_id: readiness.policy_id.to_string(),
                     }),
                 )?;
                 return Err(CoordinatorError::PolicyViolation(denial_reason));
@@ -16815,6 +17075,40 @@ fn workflow_completion_denial_reason(readiness: &WorkflowCompletionReadiness) ->
         format!(
             "workflow completion blocked by active continuations: {}",
             readiness.active_continuation_ids.join(", ")
+        )
+    }
+}
+
+fn workflow_closeout_denial_reason(readiness: &WorkflowCloseoutReadiness) -> String {
+    let blockers = readiness
+        .dimensions
+        .iter()
+        .filter(|dimension| !dimension.allowed)
+        .map(|dimension| {
+            if dimension.blocking_refs.is_empty() && dimension.missing_categories.is_empty() {
+                dimension.id.clone()
+            } else if !dimension.missing_categories.is_empty() {
+                format!(
+                    "{} missing {}",
+                    dimension.id,
+                    dimension.missing_categories.join(", ")
+                )
+            } else {
+                format!(
+                    "{} blocked by {}",
+                    dimension.id,
+                    dimension.blocking_refs.join(", ")
+                )
+            }
+        })
+        .collect::<Vec<_>>();
+    if blockers.is_empty() {
+        "workflow closeout policy denied terminal approval".to_string()
+    } else {
+        format!(
+            "workflow closeout policy `{}` denied terminal approval: {}",
+            readiness.policy_id,
+            blockers.join("; ")
         )
     }
 }
