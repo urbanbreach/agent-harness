@@ -1729,6 +1729,69 @@
           ],
           "default": {
             "aliases": true,
+            "closeout": {
+              "allow_audit_only": true,
+              "default_policy": "workflow.closeout.default",
+              "policies": {
+                "workflow.closeout.default": {
+                  "allow_live_approval": false,
+                  "enabled": true,
+                  "require_dossier": true,
+                  "require_evidence": true,
+                  "require_export_artifact": false,
+                  "version": 1
+                },
+                "workflow.closeout.goal": {
+                  "allow_live_approval": false,
+                  "enabled": true,
+                  "require_dossier": true,
+                  "require_evidence": true,
+                  "require_export_artifact": false,
+                  "version": 1
+                },
+                "workflow.closeout.live": {
+                  "allow_live_approval": true,
+                  "enabled": true,
+                  "require_dossier": true,
+                  "require_evidence": true,
+                  "require_export_artifact": false,
+                  "version": 1
+                },
+                "workflow.closeout.mission": {
+                  "allow_live_approval": false,
+                  "enabled": true,
+                  "require_dossier": true,
+                  "require_evidence": true,
+                  "require_export_artifact": false,
+                  "version": 1
+                },
+                "workflow.closeout.simulated": {
+                  "allow_live_approval": false,
+                  "enabled": true,
+                  "require_dossier": true,
+                  "require_evidence": true,
+                  "require_export_artifact": false,
+                  "version": 1
+                },
+                "workflow.closeout.team": {
+                  "allow_live_approval": false,
+                  "enabled": true,
+                  "require_dossier": true,
+                  "require_evidence": true,
+                  "require_export_artifact": false,
+                  "version": 1
+                },
+                "workflow.closeout.wiki": {
+                  "allow_live_approval": false,
+                  "enabled": true,
+                  "require_dossier": true,
+                  "require_evidence": true,
+                  "require_export_artifact": false,
+                  "version": 1
+                }
+              },
+              "require_replay_equivalence": true
+            },
             "enabled": true,
             "goal": {
               "require_final_quality_gate": true
@@ -1854,6 +1917,120 @@
       ],
       "type": "string"
     },
+    "WorkflowCloseoutPolicyConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_live_approval": {
+          "default": false,
+          "type": "boolean"
+        },
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "require_dossier": {
+          "default": true,
+          "type": "boolean"
+        },
+        "require_evidence": {
+          "default": true,
+          "type": "boolean"
+        },
+        "require_export_artifact": {
+          "default": false,
+          "type": "boolean"
+        },
+        "version": {
+          "default": 1,
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "WorkflowCloseoutRuntimeConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_audit_only": {
+          "default": true,
+          "type": "boolean"
+        },
+        "default_policy": {
+          "default": "workflow.closeout.default",
+          "type": "string"
+        },
+        "policies": {
+          "additionalProperties": {
+            "$ref": "#/definitions/WorkflowCloseoutPolicyConfig"
+          },
+          "default": {
+            "workflow.closeout.default": {
+              "allow_live_approval": false,
+              "enabled": true,
+              "require_dossier": true,
+              "require_evidence": true,
+              "require_export_artifact": false,
+              "version": 1
+            },
+            "workflow.closeout.goal": {
+              "allow_live_approval": false,
+              "enabled": true,
+              "require_dossier": true,
+              "require_evidence": true,
+              "require_export_artifact": false,
+              "version": 1
+            },
+            "workflow.closeout.live": {
+              "allow_live_approval": true,
+              "enabled": true,
+              "require_dossier": true,
+              "require_evidence": true,
+              "require_export_artifact": false,
+              "version": 1
+            },
+            "workflow.closeout.mission": {
+              "allow_live_approval": false,
+              "enabled": true,
+              "require_dossier": true,
+              "require_evidence": true,
+              "require_export_artifact": false,
+              "version": 1
+            },
+            "workflow.closeout.simulated": {
+              "allow_live_approval": false,
+              "enabled": true,
+              "require_dossier": true,
+              "require_evidence": true,
+              "require_export_artifact": false,
+              "version": 1
+            },
+            "workflow.closeout.team": {
+              "allow_live_approval": false,
+              "enabled": true,
+              "require_dossier": true,
+              "require_evidence": true,
+              "require_export_artifact": false,
+              "version": 1
+            },
+            "workflow.closeout.wiki": {
+              "allow_live_approval": false,
+              "enabled": true,
+              "require_dossier": true,
+              "require_evidence": true,
+              "require_export_artifact": false,
+              "version": 1
+            }
+          },
+          "type": "object"
+        },
+        "require_replay_equivalence": {
+          "default": true,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
     "WorkflowGoalRuntimeConfig": {
       "additionalProperties": false,
       "properties": {
@@ -1946,6 +2123,76 @@
         "aliases": {
           "default": true,
           "type": "boolean"
+        },
+        "closeout": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/WorkflowCloseoutRuntimeConfig"
+            }
+          ],
+          "default": {
+            "allow_audit_only": true,
+            "default_policy": "workflow.closeout.default",
+            "policies": {
+              "workflow.closeout.default": {
+                "allow_live_approval": false,
+                "enabled": true,
+                "require_dossier": true,
+                "require_evidence": true,
+                "require_export_artifact": false,
+                "version": 1
+              },
+              "workflow.closeout.goal": {
+                "allow_live_approval": false,
+                "enabled": true,
+                "require_dossier": true,
+                "require_evidence": true,
+                "require_export_artifact": false,
+                "version": 1
+              },
+              "workflow.closeout.live": {
+                "allow_live_approval": true,
+                "enabled": true,
+                "require_dossier": true,
+                "require_evidence": true,
+                "require_export_artifact": false,
+                "version": 1
+              },
+              "workflow.closeout.mission": {
+                "allow_live_approval": false,
+                "enabled": true,
+                "require_dossier": true,
+                "require_evidence": true,
+                "require_export_artifact": false,
+                "version": 1
+              },
+              "workflow.closeout.simulated": {
+                "allow_live_approval": false,
+                "enabled": true,
+                "require_dossier": true,
+                "require_evidence": true,
+                "require_export_artifact": false,
+                "version": 1
+              },
+              "workflow.closeout.team": {
+                "allow_live_approval": false,
+                "enabled": true,
+                "require_dossier": true,
+                "require_evidence": true,
+                "require_export_artifact": false,
+                "version": 1
+              },
+              "workflow.closeout.wiki": {
+                "allow_live_approval": false,
+                "enabled": true,
+                "require_dossier": true,
+                "require_evidence": true,
+                "require_export_artifact": false,
+                "version": 1
+              }
+            },
+            "require_replay_equivalence": true
+          }
         },
         "enabled": {
           "default": true,
@@ -2427,6 +2674,69 @@
         },
         "workflow": {
           "aliases": true,
+          "closeout": {
+            "allow_audit_only": true,
+            "default_policy": "workflow.closeout.default",
+            "policies": {
+              "workflow.closeout.default": {
+                "allow_live_approval": false,
+                "enabled": true,
+                "require_dossier": true,
+                "require_evidence": true,
+                "require_export_artifact": false,
+                "version": 1
+              },
+              "workflow.closeout.goal": {
+                "allow_live_approval": false,
+                "enabled": true,
+                "require_dossier": true,
+                "require_evidence": true,
+                "require_export_artifact": false,
+                "version": 1
+              },
+              "workflow.closeout.live": {
+                "allow_live_approval": true,
+                "enabled": true,
+                "require_dossier": true,
+                "require_evidence": true,
+                "require_export_artifact": false,
+                "version": 1
+              },
+              "workflow.closeout.mission": {
+                "allow_live_approval": false,
+                "enabled": true,
+                "require_dossier": true,
+                "require_evidence": true,
+                "require_export_artifact": false,
+                "version": 1
+              },
+              "workflow.closeout.simulated": {
+                "allow_live_approval": false,
+                "enabled": true,
+                "require_dossier": true,
+                "require_evidence": true,
+                "require_export_artifact": false,
+                "version": 1
+              },
+              "workflow.closeout.team": {
+                "allow_live_approval": false,
+                "enabled": true,
+                "require_dossier": true,
+                "require_evidence": true,
+                "require_export_artifact": false,
+                "version": 1
+              },
+              "workflow.closeout.wiki": {
+                "allow_live_approval": false,
+                "enabled": true,
+                "require_dossier": true,
+                "require_evidence": true,
+                "require_export_artifact": false,
+                "version": 1
+              }
+            },
+            "require_replay_equivalence": true
+          },
           "enabled": true,
           "goal": {
             "require_final_quality_gate": true

@@ -227,6 +227,21 @@ pub const WORKFLOW_DOCTOR_CHECKS: &[WorkflowDoctorCheckSpec] = &[
         description: "Validates staged runtime.workflow defaults and operator limits.",
     },
     WorkflowDoctorCheckSpec {
+        id: "workflow_closeout_policy",
+        description:
+            "Validates runtime.workflow.closeout policy ids, defaults, and fail-closed behavior.",
+    },
+    WorkflowDoctorCheckSpec {
+        id: "workflow_closeout_readiness",
+        description:
+            "Reports replay-derived closeout blockers and legal next actions for the latest run.",
+    },
+    WorkflowDoctorCheckSpec {
+        id: "workflow_catalog_health",
+        description:
+            "Reports redacted workflow skill/role catalog visibility, missing assets, disabled entries, and shadowed prompt roots.",
+    },
+    WorkflowDoctorCheckSpec {
         id: "workflow_simulator",
         description: "Validates deterministic simulator evidence/signoff/dossier readiness.",
     },

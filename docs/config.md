@@ -314,6 +314,12 @@ split by crate responsibility:
 - `harness doctor --json` includes `workflow_runtime_config`, which validates
   staged `runtime.workflow` defaults and operator limits without launching
   providers, tools, tmux, or workers.
+- `harness doctor --json` includes `workflow_closeout_policy`, which validates
+  typed `runtime.workflow.closeout` defaults, policy ids, and fail-closed
+  unknown-policy behavior.
+- `harness doctor --json` includes `workflow_closeout_readiness`, which projects
+  the latest run's closeout blockers, stale dossier/export state, and legal
+  next actions without appending events.
 - `harness doctor --json` includes `workflow_simulator`, which verifies the
   deterministic testkit simulator contract requires context snapshot evidence
   plus `evidence.simulated_tool_result` before signoff unless an operator waiver
@@ -744,8 +750,17 @@ redacted artifacts:
 | `aliases` | `true` | Enables canonical workflow aliases such as `/workflow`, `/signoff`, and `/dossier` in command registries. |
 | `projectArtifacts` / `project_artifacts` | `false` | Reserves a future opt-in for writing durable project workflow artifacts outside session runs. |
 | `run.defaultLane` / `run.default_lane` | `simulated` | Default workflow lane recorded by `harness workflow run` when `--lane` is omitted. |
-| `run.requireDossier` / `run.require_dossier` | `true` | Future signoff policy flag requiring a Run Dossier before terminal success. |
-| `run.requireEvidence` / `run.require_evidence` | `true` | Future signoff policy flag requiring mapped evidence or waiver before terminal success. |
+| `run.requireDossier` / `run.require_dossier` | `true` | Compatibility input for the default closeout policy's `require_dossier` behavior. Dossier regenerability from replay is required; an export artifact is only required by `closeout.policies.<policy_id>.requireExportArtifact`. |
+| `run.requireEvidence` / `run.require_evidence` | `true` | Compatibility input for the default closeout policy's `require_evidence` behavior before terminal success. |
+| `closeout.defaultPolicy` / `closeout.default_policy` | `workflow.closeout.default` | Default closeout policy id used by status, signoff, dossier, doctor, and native workflow-tool reports. Unknown policy ids fail closed. |
+| `closeout.requireReplayEquivalence` / `closeout.require_replay_equivalence` | `true` | Requires closeout reports and dossiers to be replay-derived from `events.jsonl` and referenced redacted artifacts. |
+| `closeout.allowAuditOnly` / `closeout.allow_audit_only` | `true` | Enables explicit `harness workflow signoff --audit-only` compatibility; normal signoff targets an existing workflow/run. |
+| `closeout.policies.<policy_id>.enabled` | `true` | Enables a built-in closeout policy id such as `workflow.closeout.default`, `workflow.closeout.simulated`, `workflow.closeout.goal`, `workflow.closeout.team`, `workflow.closeout.mission`, `workflow.closeout.wiki`, or `workflow.closeout.live`. |
+| `closeout.policies.<policy_id>.version` | `1` | Public policy contract version serialized in closeout readiness and Run Dossier JSON. |
+| `closeout.policies.<policy_id>.requireEvidence` / `require_evidence` | `true` | Requires mapped closeout evidence unless waived by a scoped operator decision. |
+| `closeout.policies.<policy_id>.requireDossier` / `require_dossier` | `true` | Requires dossier regenerability from replay; this alone does not require an exported dossier file. |
+| `closeout.policies.<policy_id>.requireExportArtifact` / `require_export_artifact` | `false` | When `true`, closeout blocks until dossier export evidence (`evidence.dossier`) is recorded and reports stale export state. |
+| `closeout.policies.<policy_id>.allowLiveApproval` / `allow_live_approval` | `false` | Allows explicit `approve-live` legal next action for opt-in live policies such as `workflow.closeout.live`; default closeout does not require live lanes. |
 | `interview.defaultProfile` / `interview.default_profile` | `standard` | Default profile name for future workflow intake interviews. |
 | `interview.threshold` | `0.2` | Ambiguity threshold used by intake gating. |
 | `interview.maxRounds` / `interview.max_rounds` | `12` | Maximum interview rounds before handoff or blocker. |

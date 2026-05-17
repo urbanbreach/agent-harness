@@ -150,6 +150,23 @@
         "require_dossier": true,
         "require_evidence": true,
       },
+      "closeout": {
+        "default_policy": "workflow.closeout.default",
+        "require_replay_equivalence": true,
+        "allow_audit_only": true,
+        // Policy maps default to all built-in workflow.closeout.* ids. Override
+        // only when a workflow needs stricter export or live-approval behavior.
+        // "policies": {
+        //   "workflow.closeout.default": {
+        //     "enabled": true,
+        //     "version": 1,
+        //     "require_evidence": true,
+        //     "require_dossier": true,
+        //     "require_export_artifact": false,
+        //     "allow_live_approval": false
+        //   }
+        // }
+      },
       "interview": {
         "default_profile": "standard",
         "threshold": 0.2,

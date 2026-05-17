@@ -651,6 +651,12 @@ fn config_validate_cli_accepts_shipped_example_config() {
     assert_eq!(parsed.runtime.workflow.run.default_lane, "simulated");
     assert!(parsed.runtime.workflow.run.require_dossier);
     assert!(parsed.runtime.workflow.run.require_evidence);
+    assert_eq!(
+        parsed.runtime.workflow.closeout.default_policy,
+        "workflow.closeout.default"
+    );
+    assert!(parsed.runtime.workflow.closeout.require_replay_equivalence);
+    assert!(parsed.runtime.workflow.closeout.allow_audit_only);
 }
 
 #[test]
@@ -680,6 +686,8 @@ fn doctor_cli_reports_shipped_orchestration_health() {
     assert!(stdout.contains("model_references"));
     assert!(stdout.contains("workflow_profiles"));
     assert!(stdout.contains("workflow_runtime_config"));
+    assert!(stdout.contains("workflow_closeout_policy"));
+    assert!(stdout.contains("workflow_closeout_readiness"));
     assert!(stdout.contains("category_routes"));
     assert!(stdout.contains("discipline"));
     assert!(stdout.contains("visual-engineering"));
@@ -788,6 +796,16 @@ fn doctor_cli_emits_json_report() {
         .expect("checks array")
         .iter()
         .any(|check| { check["id"] == "workflow_context_snapshot" && check["status"] == "pass" }));
+    assert!(report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .any(|check| { check["id"] == "workflow_closeout_policy" && check["status"] == "pass" }));
+    assert!(report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .any(|check| { check["id"] == "workflow_closeout_readiness" }));
     let workflow_contract = report["checks"]
         .as_array()
         .expect("checks array")
@@ -2698,6 +2716,21 @@ fn public_runtime_config_accepts_workflow_settings() {
                 requireDossier: false,
                 requireEvidence: true,
               },
+              closeout: {
+                defaultPolicy: "workflow.closeout.default",
+                requireReplayEquivalence: true,
+                allowAuditOnly: false,
+                policies: {
+                  "workflow.closeout.default": {
+                    enabled: true,
+                    version: 1,
+                    requireEvidence: true,
+                    requireDossier: false,
+                    requireExportArtifact: true,
+                    allowLiveApproval: false,
+                  }
+                }
+              },
               interview: {
                 defaultProfile: "deep",
                 threshold: 0.35,
@@ -2726,6 +2759,19 @@ fn public_runtime_config_accepts_workflow_settings() {
     assert!(parsed.runtime.workflow.project_artifacts);
     assert_eq!(parsed.runtime.workflow.run.default_lane, "deterministic");
     assert!(!parsed.runtime.workflow.run.require_dossier);
+    assert_eq!(
+        parsed.runtime.workflow.closeout.default_policy,
+        "workflow.closeout.default"
+    );
+    assert!(!parsed.runtime.workflow.closeout.allow_audit_only);
+    let default_closeout = parsed
+        .runtime
+        .workflow
+        .closeout
+        .policies
+        .get("workflow.closeout.default")
+        .expect("default closeout policy");
+    assert!(default_closeout.require_export_artifact);
     assert_eq!(parsed.runtime.workflow.interview.default_profile, "deep");
     assert_eq!(parsed.runtime.workflow.interview.threshold, 0.35);
     assert_eq!(parsed.runtime.workflow.interview.max_rounds, 7);

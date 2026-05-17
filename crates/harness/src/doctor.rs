@@ -17,6 +17,9 @@ use harness_core::context_snapshot::{
 use harness_core::workflow::{
     project_workflows, WorkflowSignoffPolicy, SIMULATED_TOOL_EVIDENCE_CATEGORY,
 };
+use harness_core::workflow_closeout::{
+    builtin_policy_ids, is_builtin_policy_id, WORKFLOW_CLOSEOUT_DOSSIER_EVIDENCE_CATEGORY,
+};
 use harness_core::workflow_registry::{
     stable_id_groups, WORKFLOW_DOCS_ANCHORS, WORKFLOW_DOCTOR_CHECKS,
 };
@@ -218,6 +221,9 @@ fn build_report(config_display: String, config: &HarnessConfig) -> DoctorReport 
         check_workflow_contract_registry(),
         check_workflow_context_snapshot_contract(),
         check_workflow_runtime_config(config),
+        check_workflow_closeout_policy(config),
+        check_workflow_closeout_readiness(config),
+        check_workflow_catalog_health(config),
         check_workflow_simulator_contract(),
         check_workflow_stale_work_loop(config),
         check_permissions(config),
@@ -1345,9 +1351,190 @@ fn check_workflow_runtime_config(config: &HarnessConfig) -> DoctorCheck {
                 "enabled": workflow.wiki.enabled,
                 "root": workflow.wiki.root,
                 "auto_capture": workflow.wiki.auto_capture,
+            },
+            "closeout": {
+                "default_policy": workflow.closeout.default_policy,
+                "require_replay_equivalence": workflow.closeout.require_replay_equivalence,
+                "allow_audit_only": workflow.closeout.allow_audit_only,
+                "policy_count": workflow.closeout.policies.len(),
             }
         })),
     }
+}
+
+fn check_workflow_closeout_policy(config: &HarnessConfig) -> DoctorCheck {
+    let workflow = &config.runtime.workflow;
+    let builtin_ids = builtin_policy_ids();
+    let unknown = workflow
+        .closeout
+        .policies
+        .keys()
+        .filter(|policy_id| !is_builtin_policy_id(policy_id))
+        .cloned()
+        .collect::<Vec<_>>();
+    if !unknown.is_empty() {
+        return fail(
+            "workflow_closeout_policy",
+            format!(
+                "unknown workflow closeout policy id(s): {}",
+                unknown.join(", ")
+            ),
+        );
+    }
+    let default_policy_id = workflow.closeout.default_policy.as_str();
+    let policy = match workflow.effective_closeout_policy(default_policy_id) {
+        Ok(policy) => policy,
+        Err(err) => {
+            return fail(
+                "workflow_closeout_policy",
+                format!("runtime.workflow.closeout.default_policy is invalid: {err:?}"),
+            );
+        }
+    };
+    pass_with_details(
+        "workflow_closeout_policy",
+        format!(
+            "workflow closeout policy `{}` v{} is enabled; unknown ids fail closed",
+            policy.policy_id, policy.version
+        ),
+        Some(serde_json::json!({
+            "default_policy": workflow.closeout.default_policy,
+            "known_builtin_policy_ids": builtin_ids,
+            "require_evidence": policy.require_evidence,
+            "require_dossier": policy.require_dossier,
+            "require_export_artifact": policy.require_export_artifact,
+            "require_replay_equivalence": workflow.closeout.require_replay_equivalence,
+            "allow_audit_only": workflow.closeout.allow_audit_only,
+        })),
+    )
+}
+
+fn check_workflow_catalog_health(config: &HarnessConfig) -> DoctorCheck {
+    let workspace_root = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let mut report = match harness_tools::workflow_catalog_health_report(&workspace_root) {
+        Ok(report) => report,
+        Err(err) => {
+            return warn(
+                "workflow_catalog_health",
+                format!("could not inspect workflow skill/role catalog health: {err}"),
+            );
+        }
+    };
+
+    report.disabled.extend(
+        config
+            .compatibility
+            .disabled_agents
+            .iter()
+            .map(|name| format!("role:{name}")),
+    );
+    report.disabled.sort();
+    report.disabled.dedup();
+
+    let message = format!(
+        "workflow catalog health: {} visible, {} missing, {} disabled, {} shadowed; prompt contents are redacted",
+        report.visible.len(),
+        report.missing.len(),
+        report.disabled.len(),
+        report.shadowed.len()
+    );
+    let details = serde_json::to_value(report).ok();
+    if details
+        .as_ref()
+        .and_then(|value| value.get("missing"))
+        .and_then(Value::as_array)
+        .is_some_and(|missing| !missing.is_empty())
+    {
+        warn_with_details("workflow_catalog_health", message, details)
+    } else {
+        pass_with_details("workflow_catalog_health", message, details)
+    }
+}
+
+fn check_workflow_closeout_readiness(config: &HarnessConfig) -> DoctorCheck {
+    let Some(run_dir) = latest_event_run_dir(&config.paths.session_dir) else {
+        return pass_with_details(
+            "workflow_closeout_readiness",
+            "no session event logs found; no workflow closeout blockers to inspect",
+            Some(serde_json::json!({
+                "session_dir": config.paths.session_dir,
+            })),
+        );
+    };
+    let events = match load_events_from_run_dir(&run_dir) {
+        Ok(events) => events,
+        Err(err) => {
+            return warn(
+                "workflow_closeout_readiness",
+                format!(
+                    "could not inspect latest workflow run {} for closeout readiness: {err}",
+                    run_dir.display()
+                ),
+            );
+        }
+    };
+    let projection = project_workflows(events.iter().map(|event| &event.payload));
+    let persistent_tasks = harness_core::persistent_task::project_persistent_tasks(&events);
+    let signoff_policy = WorkflowSignoffPolicy::simulator_default();
+    let closeout_policy = match config
+        .runtime
+        .workflow
+        .effective_closeout_policy(&config.runtime.workflow.closeout.default_policy)
+    {
+        Ok(policy) => policy,
+        Err(err) => {
+            return fail(
+                "workflow_closeout_readiness",
+                format!("cannot evaluate workflow closeout readiness: {err:?}"),
+            );
+        }
+    };
+    let blockers = projection
+        .workflows
+        .keys()
+        .filter_map(|workflow_id| {
+            let readiness = projection.closeout_readiness(
+                workflow_id.clone(),
+                &persistent_tasks,
+                &signoff_policy,
+                &closeout_policy,
+            );
+            (!readiness.overall_allowed).then(|| {
+                let blocking_dimensions = readiness
+                    .dimensions
+                    .iter()
+                    .filter(|dimension| !dimension.allowed)
+                    .map(|dimension| dimension.id.clone())
+                    .collect::<Vec<_>>();
+                serde_json::json!({
+                    "workflow_id": workflow_id,
+                    "blocking_dimensions": blocking_dimensions,
+                    "legal_next_actions": readiness.legal_next_actions,
+                    "stale_export": readiness.stale_export,
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+    if blockers.is_empty() {
+        return pass_with_details(
+            "workflow_closeout_readiness",
+            "latest workflow run has no closeout blockers under the default policy",
+            Some(serde_json::json!({
+                "run_dir": run_dir,
+                "policy_id": closeout_policy.policy_id,
+                "dossier_evidence_category": WORKFLOW_CLOSEOUT_DOSSIER_EVIDENCE_CATEGORY,
+            })),
+        );
+    }
+    warn_with_details(
+        "workflow_closeout_readiness",
+        "latest workflow run has closeout blockers; inspect workflow status/dossier legal_next_actions",
+        Some(serde_json::json!({
+            "run_dir": run_dir,
+            "policy_id": closeout_policy.policy_id,
+            "blockers": blockers,
+        })),
+    )
 }
 
 fn check_parity_ledger() -> DoctorCheck {
