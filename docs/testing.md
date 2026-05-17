@@ -129,7 +129,10 @@ commands are:
 `events.jsonl`; do not edit an exported dossier as the workflow authority. Status, dossier,
 snapshot, goal, and mission reads must stay projection-only and must not append events. The
 deterministic simulator and workflow CLI tests cover intake restart/replay, missing-evidence
-denials, mapped evidence, operator waiver/signoff, and dossier export without live providers.
+denials, mapped evidence, active continuations, workflow-owned tasks, question blockers, required
+dossier-export evidence, operator waiver/signoff, audit-only non-mutation, closeout
+legal-next-actions/readiness JSON, replay read-only equivalence, stale dossier export semantics, and
+dossier export without live providers.
 
 ## Deterministic signoff PTY lane
 
