@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -38,7 +39,7 @@ use harness_core::research_mission::{
     ResearchValidatorArtifact, ResearchValidatorCommand, ResearchValidatorMode,
     RESEARCH_MISSION_EVIDENCE_CATEGORY, RESEARCH_MISSION_MODE, RESEARCH_MISSION_SCHEMA_VERSION,
 };
-use harness_core::run_dossier::{build_run_dossier_with_tasks, RunDossier};
+use harness_core::run_dossier::{build_run_dossier_with_tasks_and_closeout_policy, RunDossier};
 use harness_core::tool::ArtifactStore;
 use harness_core::wiki::{
     parse_wiki_page, render_wiki_page, wiki_digest, wiki_evidence_metadata, wiki_lint,
@@ -48,6 +49,10 @@ use harness_core::wiki::{
 use harness_core::workflow::{
     project_workflows, WorkflowEvidenceRequest, WorkflowProjection, WorkflowSignoffPolicy,
     WorkflowStartRequest, WorkflowStartResult,
+};
+use harness_core::workflow_closeout::{
+    WorkflowCloseoutPolicy, WorkflowCloseoutReadiness, WorkflowSignoffDecision,
+    WorkflowSignoffReport, WorkflowStatusCloseoutReport,
 };
 use serde::Serialize;
 use serde_json::json;
@@ -67,7 +72,7 @@ enum WorkflowCommands {
     Run(WorkflowRunCommand),
     /// Inspect replay-derived workflow status without appending events.
     Status(WorkflowStatusCommand),
-    /// Record an operator signoff decision in a coordinator-owned audit run.
+    /// Record an operator signoff decision against a target workflow.
     Signoff(WorkflowSignoffCommand),
     /// Record a workflow cancellation outcome in a coordinator-owned audit run.
     Cancel(WorkflowCancelCommand),
@@ -135,9 +140,12 @@ struct WorkflowStatusCommand {
 #[command(group(
     ArgGroup::new("decision")
         .required(true)
-        .args(["approve", "fail", "request_evidence"])
+        .args(["approve", "fail", "request_evidence", "waive", "abort", "redirect", "approve_live"])
 ))]
 struct WorkflowSignoffCommand {
+    #[command(flatten)]
+    target: WorkflowReadTargetArgs,
+
     /// Workflow id receiving the operator decision.
     #[arg(long)]
     workflow_id: String,
@@ -154,6 +162,30 @@ struct WorkflowSignoffCommand {
     #[arg(long = "request-evidence", default_value_t = false)]
     request_evidence: bool,
 
+    /// Waive a closeout blocker scope without terminalizing the workflow.
+    #[arg(long, default_value_t = false)]
+    waive: bool,
+
+    /// Abort and terminally cancel the workflow.
+    #[arg(long, default_value_t = false)]
+    abort: bool,
+
+    /// Record a redirect decision for a closeout scope without terminalizing the workflow.
+    #[arg(long, default_value_t = false)]
+    redirect: bool,
+
+    /// Approve terminal success through an explicit live-approval closeout policy.
+    #[arg(long = "approve-live", default_value_t = false)]
+    approve_live: bool,
+
+    /// Closeout dimension/category/domain scope for waive or redirect decisions.
+    #[arg(long)]
+    scope: Option<String>,
+
+    /// Closeout policy id. Defaults to runtime.workflow.closeout.default_policy.
+    #[arg(long)]
+    policy_id: Option<String>,
+
     /// Operator id recorded with the decision.
     #[arg(long, default_value = "operator")]
     operator: String,
@@ -161,6 +193,10 @@ struct WorkflowSignoffCommand {
     /// Decision reason.
     #[arg(long)]
     reason: Option<String>,
+
+    /// Use the legacy detached audit-run behavior instead of target workflow closeout.
+    #[arg(long, default_value_t = false)]
+    audit_only: bool,
 
     /// Emit machine-readable JSON.
     #[arg(long, default_value_t = false)]
@@ -868,6 +904,7 @@ struct WorkflowStatusReport {
     active_count: usize,
     projection: WorkflowProjection,
     persistent_tasks: PersistentTaskProjection,
+    closeout: BTreeMap<String, WorkflowStatusCloseoutReport>,
 }
 
 #[derive(Debug, Serialize)]
@@ -878,6 +915,9 @@ struct WorkflowMutationReport {
     workflow_id: String,
     decision: String,
     terminal_outcome: Option<String>,
+    audit_only: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    signoff: Option<WorkflowSignoffReport>,
 }
 
 #[derive(Debug, Serialize)]
@@ -993,6 +1033,8 @@ struct DossierExportReport {
     events_path: String,
     format: String,
     output: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dossier: Option<RunDossier>,
     body: String,
 }
 
@@ -1204,9 +1246,14 @@ fn execute_status(
             report.workflow_count, report.active_count, report.run_dir
         );
         for workflow in report.projection.workflows.values() {
+            let closeout = report
+                .closeout
+                .get(&workflow.workflow_id)
+                .map(|report| report.closeout.overall_allowed)
+                .unwrap_or(false);
             println!(
-                "- {} mode={} status={} owner={}",
-                workflow.workflow_id, workflow.mode, workflow.status, workflow.owner
+                "- {} mode={} status={} owner={} closeout_allowed={}",
+                workflow.workflow_id, workflow.mode, workflow.status, workflow.owner, closeout
             );
         }
     }
@@ -1218,45 +1265,291 @@ async fn execute_signoff(
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
 ) -> Result<(), String> {
-    let decision = if cmd.approve {
-        "signoff-approved"
-    } else if cmd.fail {
-        "signoff-failed"
-    } else {
-        "request-evidence"
-    };
-    let terminal_outcome = if cmd.approve {
-        Some("outcome.finished")
-    } else if cmd.fail {
-        Some("outcome.failed")
-    } else {
-        None
-    };
+    let signoff_decision = signoff_decision_from_command(&cmd);
+    let scope = closeout_decision_scope(&cmd, &signoff_decision)?;
+    let decision = workflow_operator_decision(&signoff_decision, scope.as_deref())?;
+    let terminal_outcome = terminal_outcome_for_decision(&signoff_decision);
+    if signoff_decision.requires_reason() && cmd.reason.is_none() {
+        return Err(format!(
+            "`--reason` is required for workflow signoff decision `{decision}`"
+        ));
+    }
     let reason = cmd
         .reason
         .clone()
         .unwrap_or_else(|| format!("workflow signoff decision: {decision}"));
-    let report = execute_workflow_audit_mutation(WorkflowAuditMutationRequest {
-        config_path,
-        global_session_dir,
-        run_name: "workflow signoff",
-        workflow_id: &cmd.workflow_id,
-        decision,
-        owner: &cmd.operator,
-        reason: &reason,
-        terminal_outcome,
-    })
-    .await?;
+    let report = if cmd.audit_only {
+        execute_workflow_audit_mutation(WorkflowAuditMutationRequest {
+            config_path,
+            global_session_dir,
+            run_name: "workflow signoff",
+            workflow_id: &cmd.workflow_id,
+            decision: &decision,
+            owner: &cmd.operator,
+            reason: &reason,
+            terminal_outcome,
+            audit_only: true,
+        })
+        .await?
+    } else {
+        execute_workflow_target_signoff(
+            &cmd,
+            &decision,
+            signoff_decision,
+            terminal_outcome,
+            &reason,
+            config_path,
+            global_session_dir,
+        )
+        .await?
+    };
 
     if cmd.json {
         print_json(&report, "workflow signoff JSON")?;
     } else {
         println!(
-            "workflow signoff recorded: {} decision={} audit_run={}",
-            report.workflow_id, report.decision, report.run_id
+            "workflow signoff recorded: {} decision={} run={} audit_only={}",
+            report.workflow_id, report.decision, report.run_id, report.audit_only
         );
+        if report.audit_only {
+            println!("audit-only signoff recorded a detached audit run and did not close a target workflow");
+        }
     }
     Ok(())
+}
+
+fn signoff_decision_from_command(cmd: &WorkflowSignoffCommand) -> WorkflowSignoffDecision {
+    if cmd.approve {
+        WorkflowSignoffDecision::Approve
+    } else if cmd.fail {
+        WorkflowSignoffDecision::Fail
+    } else if cmd.waive {
+        WorkflowSignoffDecision::Waive
+    } else if cmd.abort {
+        WorkflowSignoffDecision::Abort
+    } else if cmd.redirect {
+        WorkflowSignoffDecision::Redirect
+    } else if cmd.approve_live {
+        WorkflowSignoffDecision::ApproveLive
+    } else {
+        WorkflowSignoffDecision::RequestEvidence
+    }
+}
+
+fn closeout_decision_scope(
+    cmd: &WorkflowSignoffCommand,
+    decision: &WorkflowSignoffDecision,
+) -> Result<Option<String>, String> {
+    if decision.requires_scope() {
+        let scope = cmd
+            .scope
+            .as_deref()
+            .map(str::trim)
+            .filter(|scope| !scope.is_empty());
+        return scope.map(|scope| Some(scope.to_string())).ok_or_else(|| {
+            format!("`--scope` is required for workflow signoff decision `{decision:?}`")
+        });
+    }
+    Ok(cmd.scope.clone())
+}
+
+fn workflow_operator_decision(
+    decision: &WorkflowSignoffDecision,
+    scope: Option<&str>,
+) -> Result<String, String> {
+    match decision {
+        WorkflowSignoffDecision::Approve => Ok("signoff-approved".to_string()),
+        WorkflowSignoffDecision::Fail => Ok("signoff-failed".to_string()),
+        WorkflowSignoffDecision::RequestEvidence => Ok("request-evidence".to_string()),
+        WorkflowSignoffDecision::Waive => {
+            let scope = scope.ok_or_else(|| {
+                "`--scope` is required for workflow signoff decision `Waive`".to_string()
+            })?;
+            Ok(format!("waive:{scope}"))
+        }
+        WorkflowSignoffDecision::Abort => Ok("abort".to_string()),
+        WorkflowSignoffDecision::Redirect => {
+            let scope = scope.ok_or_else(|| {
+                "`--scope` is required for workflow signoff decision `Redirect`".to_string()
+            })?;
+            Ok(format!("redirect:{scope}"))
+        }
+        WorkflowSignoffDecision::ApproveLive => Ok("approve-live".to_string()),
+    }
+}
+
+fn terminal_outcome_for_decision(decision: &WorkflowSignoffDecision) -> Option<&'static str> {
+    match decision {
+        WorkflowSignoffDecision::Approve | WorkflowSignoffDecision::ApproveLive => {
+            Some("outcome.finished")
+        }
+        WorkflowSignoffDecision::Fail => Some("outcome.failed"),
+        WorkflowSignoffDecision::Abort => Some("outcome.cancelled"),
+        WorkflowSignoffDecision::RequestEvidence
+        | WorkflowSignoffDecision::Waive
+        | WorkflowSignoffDecision::Redirect => None,
+    }
+}
+
+async fn execute_workflow_target_signoff(
+    cmd: &WorkflowSignoffCommand,
+    decision: &str,
+    signoff_decision: WorkflowSignoffDecision,
+    terminal_outcome: Option<&str>,
+    reason: &str,
+    config_path: Option<PathBuf>,
+    global_session_dir: Option<PathBuf>,
+) -> Result<WorkflowMutationReport, String> {
+    let context = resolve_workflow_context(config_path.clone(), global_session_dir.clone())?;
+    let run_dir = resolve_read_run_dir(cmd.target.clone(), config_path, global_session_dir)?;
+    let (session_dir, run_id) = session_dir_and_run_id_from_run_dir(&run_dir)?;
+    let events = load_events_from_run_dir(&run_dir)?;
+    let projection = project_workflows(events.iter().map(|event| &event.payload));
+    let persistent_tasks = project_persistent_tasks(&events);
+    let workflow = projection
+        .workflows
+        .get(&cmd.workflow_id)
+        .ok_or_else(|| {
+            format!(
+                "workflow `{}` was not found in target run {}; pass --audit-only for detached compatibility",
+                cmd.workflow_id,
+                run_dir.display()
+            )
+        })?;
+    if workflow.terminal {
+        if cmd.approve && workflow.status == "outcome.finished" {
+            return Ok(WorkflowMutationReport {
+                run_id,
+                run_dir: run_dir.display().to_string(),
+                events_path: run_dir.join(EVENTS_FILE_NAME).display().to_string(),
+                workflow_id: cmd.workflow_id.clone(),
+                decision: decision.to_string(),
+                terminal_outcome: terminal_outcome.map(str::to_string),
+                audit_only: false,
+                signoff: None,
+            });
+        }
+        return Err(format!(
+            "workflow `{}` is already terminal with status `{}`",
+            cmd.workflow_id, workflow.status
+        ));
+    }
+
+    let signoff_policy = WorkflowSignoffPolicy::simulator_default();
+    let closeout_policy = effective_closeout_policy(&context, cmd.policy_id.as_deref())?;
+    if cmd.approve {
+        let readiness = projection.closeout_readiness(
+            cmd.workflow_id.clone(),
+            &persistent_tasks,
+            &signoff_policy,
+            &closeout_policy,
+        );
+        if !readiness.overall_allowed {
+            let coordinator = workflow_mutation_coordinator(&context, session_dir.clone());
+            coordinator
+                .attach_workflow_mutation_run(run_id.clone(), "workflow signoff")
+                .await
+                .map_err(|err| err.to_string())?;
+            let premature_result = coordinator
+                .complete_workflow_with_closeout_policy(
+                    supervisor_actor(),
+                    cmd.workflow_id.clone(),
+                    "outcome.finished".to_string(),
+                    reason.to_string(),
+                    cmd.operator.clone(),
+                    signoff_policy,
+                    closeout_policy,
+                )
+                .await;
+            return match premature_result {
+                Ok(_) => Err(format!(
+                    "workflow `{}` premature approval unexpectedly passed closeout policy",
+                    cmd.workflow_id
+                )),
+                Err(err) => Err(err.to_string()),
+            };
+        }
+    }
+    if cmd.approve_live && !closeout_policy.allow_live_approval {
+        return Err(format!(
+            "workflow closeout policy `{}` does not allow approve-live",
+            closeout_policy.policy_id
+        ));
+    }
+
+    let coordinator = workflow_mutation_coordinator(&context, session_dir);
+    let run = coordinator
+        .attach_workflow_mutation_run(run_id.clone(), "workflow signoff")
+        .await
+        .map_err(|err| err.to_string())?;
+    coordinator
+        .record_workflow_operator_decision(
+            supervisor_actor(),
+            cmd.workflow_id.clone(),
+            decision.to_string(),
+            cmd.operator.clone(),
+            Some(reason.to_string()),
+            None,
+        )
+        .await
+        .map_err(|err| err.to_string())?;
+    if let Some(outcome) = terminal_outcome {
+        if outcome == "outcome.finished" && cmd.approve {
+            coordinator
+                .complete_workflow_with_closeout_policy(
+                    supervisor_actor(),
+                    cmd.workflow_id.clone(),
+                    outcome.to_string(),
+                    reason.to_string(),
+                    cmd.operator.clone(),
+                    signoff_policy.clone(),
+                    closeout_policy.clone(),
+                )
+                .await
+                .map_err(|err| err.to_string())?;
+        } else {
+            coordinator
+                .complete_workflow(
+                    supervisor_actor(),
+                    cmd.workflow_id.clone(),
+                    outcome.to_string(),
+                    reason.to_string(),
+                    cmd.operator.clone(),
+                )
+                .await
+                .map_err(|err| err.to_string())?;
+        }
+    }
+    let refreshed_events = load_events_from_run_dir(&run.run_dir)?;
+    let refreshed_projection =
+        project_workflows(refreshed_events.iter().map(|event| &event.payload));
+    let refreshed_tasks = project_persistent_tasks(&refreshed_events);
+    let closeout = closeout_readiness_for_report(
+        &refreshed_projection,
+        &refreshed_tasks,
+        &signoff_policy,
+        &closeout_policy,
+        &cmd.workflow_id,
+        Some(run.run_id.clone()),
+    );
+
+    Ok(WorkflowMutationReport {
+        run_id: run.run_id,
+        run_dir: run.run_dir.display().to_string(),
+        events_path: run.events_path.display().to_string(),
+        workflow_id: cmd.workflow_id.clone(),
+        decision: decision.to_string(),
+        terminal_outcome: terminal_outcome.map(str::to_string),
+        audit_only: false,
+        signoff: Some(WorkflowSignoffReport {
+            workflow_id: cmd.workflow_id.clone(),
+            decision: signoff_decision,
+            audit_only: false,
+            accepted: true,
+            closeout,
+            reason: Some(reason.to_string()),
+        }),
+    })
 }
 
 async fn execute_cancel(
@@ -1274,6 +1567,7 @@ async fn execute_cancel(
         owner: &cmd.owner,
         reason: &reason,
         terminal_outcome: Some("outcome.cancelled"),
+        audit_only: false,
     })
     .await?;
 
@@ -1297,6 +1591,7 @@ struct WorkflowAuditMutationRequest<'a> {
     owner: &'a str,
     reason: &'a str,
     terminal_outcome: Option<&'a str>,
+    audit_only: bool,
 }
 
 async fn execute_workflow_audit_mutation(
@@ -1311,8 +1606,15 @@ async fn execute_workflow_audit_mutation(
         owner,
         reason,
         terminal_outcome,
+        audit_only,
     } = request;
     let context = resolve_workflow_context(config_path, global_session_dir)?;
+    if audit_only && !context.workflow.closeout.allow_audit_only {
+        return Err(
+            "runtime.workflow.closeout.allow_audit_only=false disables detached workflow signoff"
+                .to_string(),
+        );
+    }
     fs::create_dir_all(&context.session_dir).map_err(|err| {
         format!(
             "failed to create session dir {}: {err}",
@@ -1384,6 +1686,8 @@ async fn execute_workflow_audit_mutation(
         workflow_id: workflow_id.to_string(),
         decision: decision.to_string(),
         terminal_outcome: terminal_outcome.map(str::to_string),
+        audit_only,
+        signoff: None,
     })
 }
 
@@ -1392,11 +1696,14 @@ fn execute_dossier_export(
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
 ) -> Result<(), String> {
+    let context = resolve_workflow_context(config_path.clone(), global_session_dir.clone())?;
+    let closeout_policy = effective_closeout_policy(&context, None)?;
     let report = status_report(cmd.target, cmd.workflow_id, config_path, global_session_dir)?;
-    let dossier = build_run_dossier_with_tasks(
+    let dossier = build_run_dossier_with_tasks_and_closeout_policy(
         &report.projection,
         &report.persistent_tasks,
         &WorkflowSignoffPolicy::simulator_default(),
+        &closeout_policy,
     );
     let body = match cmd.format {
         DossierFormat::Json => serde_json::to_string_pretty(&dossier)
@@ -1415,6 +1722,7 @@ fn execute_dossier_export(
                 DossierFormat::Markdown => "markdown".to_string(),
             },
             output: cmd.output.map(|path| path.display().to_string()),
+            dossier: matches!(cmd.format, DossierFormat::Json).then_some(dossier),
             body,
         };
         print_json(&export, "workflow dossier export JSON")?;
@@ -2525,7 +2833,10 @@ fn status_report(
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
 ) -> Result<WorkflowStatusReport, String> {
-    let run_dir = resolve_read_run_dir(target, config_path, global_session_dir)?;
+    let run_dir = resolve_read_run_dir(target, config_path.clone(), global_session_dir.clone())?;
+    let context = resolve_workflow_context(config_path, global_session_dir)?;
+    let closeout_policy = effective_closeout_policy(&context, None)?;
+    let signoff_policy = WorkflowSignoffPolicy::simulator_default();
     let events_path = run_dir.join(EVENTS_FILE_NAME);
     let events = load_events_from_run_dir(&run_dir)?;
     let mut projection = project_workflows(events.iter().map(|event| &event.payload));
@@ -2552,6 +2863,27 @@ fn status_report(
                 == Some(&workflow_id)
         });
     }
+    let run_id = run_id_from_run_dir(&run_dir);
+    let closeout = projection
+        .workflows
+        .keys()
+        .map(|workflow_id| {
+            let readiness = closeout_readiness_for_report(
+                &projection,
+                &persistent_tasks,
+                &signoff_policy,
+                &closeout_policy,
+                workflow_id,
+                run_id.clone(),
+            );
+            (
+                workflow_id.clone(),
+                WorkflowStatusCloseoutReport {
+                    closeout: readiness,
+                },
+            )
+        })
+        .collect();
     let workflow_count = projection.workflows.len();
     let active_count = projection
         .workflows
@@ -2565,7 +2897,44 @@ fn status_report(
         active_count,
         projection,
         persistent_tasks,
+        closeout,
     })
+}
+
+fn effective_closeout_policy(
+    context: &WorkflowRuntimeContext,
+    policy_id: Option<&str>,
+) -> Result<WorkflowCloseoutPolicy, String> {
+    let policy_id = policy_id.unwrap_or(&context.workflow.closeout.default_policy);
+    context
+        .workflow
+        .effective_closeout_policy(policy_id)
+        .map_err(|err| format!("invalid workflow closeout policy `{policy_id}`: {err:?}"))
+}
+
+fn closeout_readiness_for_report(
+    projection: &WorkflowProjection,
+    persistent_tasks: &PersistentTaskProjection,
+    signoff_policy: &WorkflowSignoffPolicy,
+    closeout_policy: &WorkflowCloseoutPolicy,
+    workflow_id: &str,
+    run_id: Option<String>,
+) -> WorkflowCloseoutReadiness {
+    let mut readiness = projection.closeout_readiness(
+        workflow_id.to_string(),
+        persistent_tasks,
+        signoff_policy,
+        closeout_policy,
+    );
+    readiness.run_id = run_id;
+    readiness
+}
+
+fn run_id_from_run_dir(run_dir: &Path) -> Option<String> {
+    run_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(str::to_string)
 }
 
 fn goal_status_report(
@@ -2894,6 +3263,36 @@ fn coordinator_config_for_workflow(context: &WorkflowRuntimeContext) -> Coordina
     coordinator_config
 }
 
+fn workflow_mutation_coordinator(
+    context: &WorkflowRuntimeContext,
+    session_dir: PathBuf,
+) -> harness_core::coord::CoordinatorHandle {
+    let mut coordinator_config = coordinator_config_for_workflow(context);
+    coordinator_config.session_dir = session_dir;
+    let clock: Arc<dyn Clock + Send + Sync> = Arc::new(RealClock::new());
+    spawn_coordinator(
+        coordinator_config,
+        Arc::clone(&clock),
+        Arc::new(DefaultRedactor::default()),
+    )
+}
+
+fn session_dir_and_run_id_from_run_dir(run_dir: &Path) -> Result<(PathBuf, String), String> {
+    let run_id = run_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| format!("run dir {} has no run id file name", run_dir.display()))?
+        .to_string();
+    let session_dir = run_dir.parent().ok_or_else(|| {
+        format!(
+            "run dir {} has no parent session directory",
+            run_dir.display()
+        )
+    })?;
+    Ok((session_dir.to_path_buf(), run_id))
+}
+
 fn resolve_read_run_dir(
     target: WorkflowReadTargetArgs,
     config_path: Option<PathBuf>,
@@ -2945,14 +3344,35 @@ fn render_dossier_markdown(report: &WorkflowStatusReport, dossier: &RunDossier) 
     );
     for workflow in &dossier.workflows {
         body.push_str(&format!(
-            "## `{}`\n\n- Mode: `{}`\n- Status: `{}`\n- Owner: `{}`\n- Terminal: `{}`\n- Signoff allowed: `{}`\n\n",
+            "## `{}`\n\n- Mode: `{}`\n- Status: `{}`\n- Owner: `{}`\n- Terminal: `{}`\n- Signoff allowed: `{}`\n- Closeout policy: `{}` v{}\n- Closeout allowed: `{}`\n- Dossier export stale: `{}`\n\n",
             workflow.workflow_id,
             workflow.mode,
             workflow.status,
             workflow.owner,
             workflow.terminal,
-            workflow.signoff.allowed
+            workflow.signoff.allowed,
+            workflow.closeout.policy_id,
+            workflow.closeout.policy_version,
+            workflow.closeout.overall_allowed,
+            workflow.closeout.stale_export
         ));
+        if !workflow.closeout.matrix.is_empty() {
+            body.push_str("Closeout matrix:\n");
+            for dimension in &workflow.closeout.matrix {
+                body.push_str(&format!(
+                    "- `{}` allowed={} waived={} blockers={}\n",
+                    dimension.id,
+                    dimension.allowed,
+                    dimension.waived,
+                    if dimension.blocking_refs.is_empty() {
+                        "none".to_string()
+                    } else {
+                        dimension.blocking_refs.join(", ")
+                    }
+                ));
+            }
+            body.push('\n');
+        }
         body.push_str(&format!(
             "- Quality gate passed: `{}`\n",
             workflow.quality_gate.passed

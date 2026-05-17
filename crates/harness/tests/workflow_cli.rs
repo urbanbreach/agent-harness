@@ -145,6 +145,20 @@ fn workflow_status_json_is_projection_only() {
         status["projection"]["workflows"]["wf_status_projection"]["status"],
         "active"
     );
+    let closeout = &status["closeout"]["wf_status_projection"]["closeout"];
+    assert_eq!(closeout["policy_id"], "workflow.closeout.default");
+    assert_eq!(closeout["schema_version"], 1);
+    assert_eq!(closeout["overall_allowed"], false);
+    assert!(closeout["legal_next_actions"]
+        .as_array()
+        .expect("legal next actions")
+        .iter()
+        .any(|action| action["action"] == "request_evidence"));
+    assert!(closeout["dimensions"]
+        .as_array()
+        .expect("closeout dimensions")
+        .iter()
+        .any(|dimension| dimension["id"] == "evidence"));
 }
 
 #[test]
@@ -211,6 +225,18 @@ fn workflow_dossier_json_reports_signoff_gate_without_appending_events() {
     let workflow = &dossier["workflows"][0];
     assert_eq!(workflow["workflow_id"], "wf_dossier_signoff");
     assert_eq!(workflow["signoff"]["allowed"], false);
+    assert_eq!(
+        workflow["closeout"]["policy_id"],
+        "workflow.closeout.default"
+    );
+    assert_eq!(workflow["closeout"]["schema_version"], 1);
+    assert_eq!(workflow["closeout"]["overall_allowed"], false);
+    assert_eq!(workflow["closeout"]["stale_export"], false);
+    assert!(workflow["closeout"]["matrix"]
+        .as_array()
+        .expect("closeout matrix")
+        .iter()
+        .any(|dimension| dimension["id"] == "evidence"));
     assert_eq!(workflow["quality_gate"]["passed"], false);
     assert!(workflow["quality_gate"]["missing"]
         .as_array()
@@ -244,6 +270,7 @@ fn workflow_signoff_audit_run_projects_terminal_decision() {
             "--workflow-id",
             "wf_signoff_audit",
             "--approve",
+            "--audit-only",
             "--json",
         ])
         .output()
@@ -257,6 +284,7 @@ fn workflow_signoff_audit_run_projects_terminal_decision() {
     );
     let signoff: Value = serde_json::from_slice(&signoff_output.stdout).expect("signoff json");
     let run_dir = signoff["run_dir"].as_str().expect("run dir");
+    assert_eq!(signoff["audit_only"], true);
 
     let status_output = harness_command()
         .current_dir(repo_root())
@@ -284,6 +312,533 @@ fn workflow_signoff_audit_run_projects_terminal_decision() {
     assert_eq!(workflow["status"], "outcome.finished");
     assert_eq!(workflow["terminal"], true);
     assert_eq!(workflow["operator_decisions"][0], "signoff-approved");
+}
+
+#[test]
+fn workflow_signoff_default_targets_existing_run_and_blocks_premature_approval() {
+    let temp = tempdir().expect("tempdir");
+    let session_dir = temp.path().join("sessions");
+
+    let run_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "--session-dir",
+            session_dir.to_str().expect("session dir utf-8"),
+            "workflow",
+            "run",
+            "--workflow-id",
+            "wf_signoff_target",
+            "--title",
+            "Target signoff",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow run");
+    assert!(
+        run_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run_output.stdout),
+        String::from_utf8_lossy(&run_output.stderr)
+    );
+    let run_report: Value = serde_json::from_slice(&run_output.stdout).expect("run json");
+    let run_dir = run_report["run_dir"].as_str().expect("run dir");
+
+    let signoff_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "workflow",
+            "signoff",
+            "--run-dir",
+            run_dir,
+            "--workflow-id",
+            "wf_signoff_target",
+            "--approve",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow signoff");
+    assert!(
+        !signoff_output.status.success(),
+        "premature target approval should fail stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&signoff_output.stdout),
+        String::from_utf8_lossy(&signoff_output.stderr)
+    );
+
+    let status_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "workflow",
+            "status",
+            "--run-dir",
+            run_dir,
+            "--workflow-id",
+            "wf_signoff_target",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow status");
+    assert!(
+        status_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&status_output.stdout),
+        String::from_utf8_lossy(&status_output.stderr)
+    );
+    let status: Value = serde_json::from_slice(&status_output.stdout).expect("status json");
+    let workflow = &status["projection"]["workflows"]["wf_signoff_target"];
+    assert_eq!(workflow["terminal"], false);
+    assert_eq!(workflow["status"], "active");
+    assert_eq!(workflow["denied_transition_count"], 1);
+}
+
+#[test]
+fn workflow_signoff_waiver_requires_reason_and_scope_without_mutating_target() {
+    let temp = tempdir().expect("tempdir");
+    let session_dir = temp.path().join("sessions");
+
+    let run_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "--session-dir",
+            session_dir.to_str().expect("session dir utf-8"),
+            "workflow",
+            "run",
+            "--workflow-id",
+            "wf_waiver_guard",
+            "--title",
+            "Waiver guard",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow run");
+    assert!(
+        run_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run_output.stdout),
+        String::from_utf8_lossy(&run_output.stderr)
+    );
+    let run_report: Value = serde_json::from_slice(&run_output.stdout).expect("run json");
+    let run_dir = run_report["run_dir"].as_str().expect("run dir");
+    let events_path = run_report["events_path"].as_str().expect("events path");
+    let before = fs::read_to_string(events_path).expect("read events before invalid waiver");
+
+    let missing_reason = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "workflow",
+            "signoff",
+            "--run-dir",
+            run_dir,
+            "--workflow-id",
+            "wf_waiver_guard",
+            "--waive",
+            "--scope",
+            "dimension:evidence",
+            "--json",
+        ])
+        .output()
+        .expect("run waiver without reason");
+    assert!(!missing_reason.status.success());
+    assert!(String::from_utf8_lossy(&missing_reason.stderr).contains("`--reason` is required"));
+
+    let missing_scope = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "workflow",
+            "signoff",
+            "--run-dir",
+            run_dir,
+            "--workflow-id",
+            "wf_waiver_guard",
+            "--waive",
+            "--reason",
+            "operator accepts missing evidence for this dry run",
+            "--json",
+        ])
+        .output()
+        .expect("run waiver without scope");
+    assert!(!missing_scope.status.success());
+    assert!(String::from_utf8_lossy(&missing_scope.stderr).contains("`--scope` is required"));
+
+    let after = fs::read_to_string(events_path).expect("read events after invalid waiver");
+    assert_eq!(
+        before, after,
+        "invalid waiver attempts must not append target workflow events"
+    );
+}
+
+#[test]
+fn workflow_signoff_valid_waiver_allows_later_target_approval() {
+    let temp = tempdir().expect("tempdir");
+    let session_dir = temp.path().join("sessions");
+
+    let run_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "--session-dir",
+            session_dir.to_str().expect("session dir utf-8"),
+            "workflow",
+            "run",
+            "--workflow-id",
+            "wf_waiver_approval",
+            "--title",
+            "Waiver approval",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow run");
+    assert!(
+        run_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run_output.stdout),
+        String::from_utf8_lossy(&run_output.stderr)
+    );
+    let run_report: Value = serde_json::from_slice(&run_output.stdout).expect("run json");
+    let run_dir = run_report["run_dir"].as_str().expect("run dir");
+
+    let waiver_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "workflow",
+            "signoff",
+            "--run-dir",
+            run_dir,
+            "--workflow-id",
+            "wf_waiver_approval",
+            "--waive",
+            "--scope",
+            "dimension:evidence",
+            "--reason",
+            "operator accepts missing dry-run evidence",
+            "--json",
+        ])
+        .output()
+        .expect("record valid waiver");
+    assert!(
+        waiver_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&waiver_output.stdout),
+        String::from_utf8_lossy(&waiver_output.stderr)
+    );
+
+    let approve_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "workflow",
+            "signoff",
+            "--run-dir",
+            run_dir,
+            "--workflow-id",
+            "wf_waiver_approval",
+            "--approve",
+            "--json",
+        ])
+        .output()
+        .expect("approve after valid waiver");
+    assert!(
+        approve_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&approve_output.stdout),
+        String::from_utf8_lossy(&approve_output.stderr)
+    );
+    let approval: Value = serde_json::from_slice(&approve_output.stdout).expect("approval json");
+    assert_eq!(approval["terminal_outcome"], "outcome.finished");
+
+    let status_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "workflow",
+            "status",
+            "--run-dir",
+            run_dir,
+            "--workflow-id",
+            "wf_waiver_approval",
+            "--json",
+        ])
+        .output()
+        .expect("status after waiver approval");
+    assert!(
+        status_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&status_output.stdout),
+        String::from_utf8_lossy(&status_output.stderr)
+    );
+    let status: Value = serde_json::from_slice(&status_output.stdout).expect("status json");
+    let workflow = &status["projection"]["workflows"]["wf_waiver_approval"];
+    assert_eq!(workflow["terminal"], true);
+    assert_eq!(workflow["status"], "outcome.finished");
+    let evidence_dimension = status["closeout"]["wf_waiver_approval"]["closeout"]["dimensions"]
+        .as_array()
+        .expect("dimensions")
+        .iter()
+        .find(|dimension| dimension["id"] == "evidence")
+        .expect("evidence dimension");
+    assert_eq!(evidence_dimension["allowed"], true);
+    assert_eq!(evidence_dimension["waived"], true);
+}
+
+#[test]
+fn workflow_signoff_audit_only_ignores_target_run_and_leaves_it_open() {
+    let temp = tempdir().expect("tempdir");
+    let target_session_dir = temp.path().join("target-sessions");
+    let audit_session_dir = temp.path().join("audit-sessions");
+
+    let run_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "--session-dir",
+            target_session_dir
+                .to_str()
+                .expect("target session dir utf-8"),
+            "workflow",
+            "run",
+            "--workflow-id",
+            "wf_audit_target",
+            "--title",
+            "Audit target",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow run");
+    assert!(
+        run_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run_output.stdout),
+        String::from_utf8_lossy(&run_output.stderr)
+    );
+    let run_report: Value = serde_json::from_slice(&run_output.stdout).expect("run json");
+    let target_run_dir = run_report["run_dir"].as_str().expect("target run dir");
+    let target_events_path = run_report["events_path"]
+        .as_str()
+        .expect("target events path");
+    let before = fs::read_to_string(target_events_path).expect("read target events");
+
+    let audit_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "--session-dir",
+            audit_session_dir.to_str().expect("audit session dir utf-8"),
+            "workflow",
+            "signoff",
+            "--run-dir",
+            target_run_dir,
+            "--workflow-id",
+            "wf_audit_target",
+            "--approve",
+            "--audit-only",
+            "--json",
+        ])
+        .output()
+        .expect("run audit-only signoff");
+    assert!(
+        audit_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&audit_output.stdout),
+        String::from_utf8_lossy(&audit_output.stderr)
+    );
+    let audit: Value = serde_json::from_slice(&audit_output.stdout).expect("audit json");
+    assert_eq!(audit["audit_only"], true);
+    assert_ne!(audit["run_dir"], target_run_dir);
+    let after = fs::read_to_string(target_events_path).expect("read target events after audit");
+    assert_eq!(
+        before, after,
+        "audit-only signoff must not mutate the target run event log"
+    );
+
+    let status_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "workflow",
+            "status",
+            "--run-dir",
+            target_run_dir,
+            "--workflow-id",
+            "wf_audit_target",
+            "--json",
+        ])
+        .output()
+        .expect("run target status");
+    assert!(status_output.status.success());
+    let status: Value = serde_json::from_slice(&status_output.stdout).expect("status json");
+    let workflow = &status["projection"]["workflows"]["wf_audit_target"];
+    assert_eq!(workflow["terminal"], false);
+    assert_eq!(workflow["status"], "active");
+}
+
+#[test]
+fn workflow_replay_summary_is_read_only_after_denied_signoff() {
+    let temp = tempdir().expect("tempdir");
+    let session_dir = temp.path().join("sessions");
+
+    let run_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "--session-dir",
+            session_dir.to_str().expect("session dir utf-8"),
+            "workflow",
+            "run",
+            "--workflow-id",
+            "wf_replay_guard",
+            "--title",
+            "Replay guard",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow run");
+    assert!(run_output.status.success());
+    let run_report: Value = serde_json::from_slice(&run_output.stdout).expect("run json");
+    let run_dir = run_report["run_dir"].as_str().expect("run dir");
+    let events_path = run_report["events_path"].as_str().expect("events path");
+
+    let denied = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "workflow",
+            "signoff",
+            "--run-dir",
+            run_dir,
+            "--workflow-id",
+            "wf_replay_guard",
+            "--approve",
+            "--json",
+        ])
+        .output()
+        .expect("run denied signoff");
+    assert!(!denied.status.success());
+
+    let before = fs::read_to_string(events_path).expect("read events before replay");
+    let replay_output = harness_command()
+        .current_dir(repo_root())
+        .args(["replay", "--session", run_dir, "--json"])
+        .output()
+        .expect("run replay summary");
+    assert!(
+        replay_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&replay_output.stdout),
+        String::from_utf8_lossy(&replay_output.stderr)
+    );
+    let after = fs::read_to_string(events_path).expect("read events after replay");
+    assert_eq!(
+        before, after,
+        "replay must not append signoff or status events"
+    );
+
+    let replay: Value = serde_json::from_slice(&replay_output.stdout).expect("replay json");
+    assert_eq!(
+        replay["total_events"],
+        before.lines().count() as u64,
+        "replay event count should match the target event log"
+    );
+
+    let status_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "workflow",
+            "status",
+            "--run-dir",
+            run_dir,
+            "--workflow-id",
+            "wf_replay_guard",
+            "--json",
+        ])
+        .output()
+        .expect("run status after replay");
+    assert!(status_output.status.success());
+    let status: Value = serde_json::from_slice(&status_output.stdout).expect("status json");
+    let workflow = &status["projection"]["workflows"]["wf_replay_guard"];
+    assert_eq!(workflow["terminal"], false);
+    assert_eq!(workflow["denied_transition_count"], 1);
+}
+
+#[test]
+fn workflow_signoff_request_evidence_targets_existing_run() {
+    let temp = tempdir().expect("tempdir");
+    let session_dir = temp.path().join("sessions");
+
+    let run_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "--session-dir",
+            session_dir.to_str().expect("session dir utf-8"),
+            "workflow",
+            "run",
+            "--workflow-id",
+            "wf_request_evidence",
+            "--title",
+            "Request evidence target",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow run");
+    assert!(
+        run_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run_output.stdout),
+        String::from_utf8_lossy(&run_output.stderr)
+    );
+    let run_report: Value = serde_json::from_slice(&run_output.stdout).expect("run json");
+    let run_dir = run_report["run_dir"].as_str().expect("run dir");
+
+    let signoff_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "workflow",
+            "signoff",
+            "--run-dir",
+            run_dir,
+            "--workflow-id",
+            "wf_request_evidence",
+            "--request-evidence",
+            "--reason",
+            "need deterministic verification evidence",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow signoff");
+    assert!(
+        signoff_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&signoff_output.stdout),
+        String::from_utf8_lossy(&signoff_output.stderr)
+    );
+    let signoff: Value = serde_json::from_slice(&signoff_output.stdout).expect("signoff json");
+    assert_eq!(signoff["run_dir"], run_dir);
+    assert_eq!(signoff["audit_only"], false);
+    assert_eq!(signoff["terminal_outcome"], Value::Null);
+    assert_eq!(signoff["signoff"]["decision"], "request_evidence");
+    assert_eq!(
+        signoff["signoff"]["closeout"]["policy_id"],
+        "workflow.closeout.default"
+    );
+    assert!(signoff["signoff"]["closeout"]["legal_next_actions"]
+        .as_array()
+        .expect("signoff legal next actions")
+        .iter()
+        .any(|action| action["action"] == "request_evidence"));
+
+    let status_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "workflow",
+            "status",
+            "--run-dir",
+            run_dir,
+            "--workflow-id",
+            "wf_request_evidence",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow status");
+    assert!(
+        status_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&status_output.stdout),
+        String::from_utf8_lossy(&status_output.stderr)
+    );
+    let status: Value = serde_json::from_slice(&status_output.stdout).expect("status json");
+    let workflow = &status["projection"]["workflows"]["wf_request_evidence"];
+    assert_eq!(workflow["terminal"], false);
+    assert_eq!(workflow["operator_decisions"][0], "request-evidence");
 }
 
 #[test]
