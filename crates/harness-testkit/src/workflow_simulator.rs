@@ -17,11 +17,17 @@ use harness_core::perm::{PermissionDecision, PermissionPolicy};
 use harness_core::persistent_task::project_persistent_tasks;
 use harness_core::proj::SessionModeSource;
 use harness_core::redact::DefaultRedactor;
-use harness_core::run_dossier::{build_run_dossier_with_tasks, RunDossier};
+use harness_core::run_dossier::{build_run_dossier_with_tasks_and_closeout_policy, RunDossier};
 use harness_core::workflow::{
     project_workflows, WorkflowEvidenceRequest, WorkflowProjection, WorkflowSignoffPolicy,
     WorkflowStartRequest, WorkflowStartResult, SIMULATED_TOOL_EVIDENCE_CATEGORY,
-    WORKFLOW_TASK_METADATA_KEY,
+    WORKFLOW_QUESTION_EVIDENCE_CATEGORY, WORKFLOW_QUESTION_METADATA_ANSWER_REF,
+    WORKFLOW_QUESTION_METADATA_ID, WORKFLOW_QUESTION_METADATA_STATUS,
+    WORKFLOW_QUESTION_STATUS_ANSWERED, WORKFLOW_QUESTION_STATUS_ASKED, WORKFLOW_TASK_METADATA_KEY,
+};
+use harness_core::workflow_closeout::{
+    WorkflowCloseoutPolicy, WorkflowCloseoutPolicyConfig, WORKFLOW_CLOSEOUT_DEFAULT_POLICY_ID,
+    WORKFLOW_CLOSEOUT_DOSSIER_EVIDENCE_CATEGORY,
 };
 use harness_providers::mock::{request_digest, MockProvider};
 use harness_providers::{
@@ -43,10 +49,14 @@ pub struct WorkflowSimulationReport {
     pub workflow_id: String,
     pub provider_output: String,
     pub missing_evidence_blocked_completion: bool,
+    pub active_continuation_blocked_completion: bool,
     pub permission_denied_after_start: bool,
     pub owner_conflict_denied: bool,
     pub pending_task_blocked_completion: bool,
+    pub question_blocked_completion: bool,
+    pub missing_dossier_blocked_completion: bool,
     pub late_completion_ignored: bool,
+    pub closeout_replay_equivalent: bool,
     pub replay_event_count: usize,
     pub projection: WorkflowProjection,
     pub dossier: RunDossier,
@@ -140,6 +150,18 @@ pub async fn run_deterministic_workflow_simulator(
         )
         .await
         .map_err(|err| err.to_string())?;
+    let active_continuation_blocked_completion = coordinator
+        .complete_workflow_with_closeout_policy(
+            actor.clone(),
+            SIMULATOR_WORKFLOW_ID,
+            "outcome.finished",
+            "attempted closeout while continuation was still active",
+            "simulator",
+            WorkflowSignoffPolicy::simulator_default(),
+            closeout_policy_without_evidence_or_dossier(),
+        )
+        .await
+        .is_err();
     coordinator
         .stop_continuation(
             actor.clone(),
@@ -197,6 +219,71 @@ pub async fn run_deterministic_workflow_simulator(
                 metadata: BTreeMap::from([
                     ("tool_id".to_string(), "bash".to_string()),
                     ("side_effect_class".to_string(), "no-op".to_string()),
+                ]),
+            },
+        )
+        .await
+        .map_err(|err| err.to_string())?;
+
+    coordinator
+        .record_workflow_evidence(
+            actor.clone(),
+            WorkflowEvidenceRequest {
+                workflow_id: SIMULATOR_WORKFLOW_ID.to_string(),
+                category: WORKFLOW_QUESTION_EVIDENCE_CATEGORY.to_string(),
+                summary: "operator clarification is pending".to_string(),
+                artifact_path: None,
+                artifact_digest: None,
+                acceptance_ref: Some("question.closeout-ready".to_string()),
+                metadata: BTreeMap::from([
+                    (
+                        WORKFLOW_QUESTION_METADATA_ID.to_string(),
+                        "question.closeout-ready".to_string(),
+                    ),
+                    (
+                        WORKFLOW_QUESTION_METADATA_STATUS.to_string(),
+                        WORKFLOW_QUESTION_STATUS_ASKED.to_string(),
+                    ),
+                ]),
+            },
+        )
+        .await
+        .map_err(|err| err.to_string())?;
+    let question_blocked_completion = coordinator
+        .complete_workflow_with_closeout_policy(
+            actor.clone(),
+            SIMULATOR_WORKFLOW_ID,
+            "outcome.finished",
+            "attempted closeout with an unanswered operator question",
+            "simulator",
+            WorkflowSignoffPolicy::simulator_default(),
+            closeout_policy_without_evidence_or_dossier(),
+        )
+        .await
+        .is_err();
+    coordinator
+        .record_workflow_evidence(
+            actor.clone(),
+            WorkflowEvidenceRequest {
+                workflow_id: SIMULATOR_WORKFLOW_ID.to_string(),
+                category: WORKFLOW_QUESTION_EVIDENCE_CATEGORY.to_string(),
+                summary: "operator clarification was answered".to_string(),
+                artifact_path: None,
+                artifact_digest: None,
+                acceptance_ref: Some("question.closeout-ready".to_string()),
+                metadata: BTreeMap::from([
+                    (
+                        WORKFLOW_QUESTION_METADATA_ID.to_string(),
+                        "question.closeout-ready".to_string(),
+                    ),
+                    (
+                        WORKFLOW_QUESTION_METADATA_STATUS.to_string(),
+                        WORKFLOW_QUESTION_STATUS_ANSWERED.to_string(),
+                    ),
+                    (
+                        WORKFLOW_QUESTION_METADATA_ANSWER_REF.to_string(),
+                        "answers/closeout-ready.json".to_string(),
+                    ),
                 ]),
             },
         )
@@ -268,6 +355,35 @@ pub async fn run_deterministic_workflow_simulator(
         .await
         .map_err(|err| err.to_string())?;
 
+    let closeout_policy = closeout_policy_requiring_dossier_artifact();
+    let missing_dossier_blocked_completion = coordinator
+        .complete_workflow_with_closeout_policy(
+            actor.clone(),
+            SIMULATOR_WORKFLOW_ID,
+            "outcome.finished",
+            "attempted closeout before dossier export evidence",
+            "simulator",
+            WorkflowSignoffPolicy::simulator_default(),
+            closeout_policy.clone(),
+        )
+        .await
+        .is_err();
+    coordinator
+        .record_workflow_evidence(
+            actor.clone(),
+            WorkflowEvidenceRequest {
+                workflow_id: SIMULATOR_WORKFLOW_ID.to_string(),
+                category: WORKFLOW_CLOSEOUT_DOSSIER_EVIDENCE_CATEGORY.to_string(),
+                summary: "replay-derived dossier export recorded".to_string(),
+                artifact_path: Some("artifacts/workflow_dossiers/simulator.json".to_string()),
+                artifact_digest: Some("simulator-dossier-digest".to_string()),
+                acceptance_ref: Some("dossier.simulator".to_string()),
+                metadata: BTreeMap::from([("dossier_status".to_string(), "exported".to_string())]),
+            },
+        )
+        .await
+        .map_err(|err| err.to_string())?;
+
     coordinator
         .record_workflow_operator_decision(
             actor.clone(),
@@ -280,13 +396,14 @@ pub async fn run_deterministic_workflow_simulator(
         .await
         .map_err(|err| err.to_string())?;
     coordinator
-        .complete_workflow_with_signoff_policy(
+        .complete_workflow_with_closeout_policy(
             actor.clone(),
             SIMULATOR_WORKFLOW_ID,
             "outcome.finished",
             "deterministic simulator completed with mapped evidence",
             "simulator",
             WorkflowSignoffPolicy::simulator_default(),
+            closeout_policy.clone(),
         )
         .await
         .map_err(|err| err.to_string())?;
@@ -308,11 +425,15 @@ pub async fn run_deterministic_workflow_simulator(
     let events = load_events(&run)?;
     let projection = project_workflows(events.iter().map(|event| &event.payload));
     let persistent_tasks = project_persistent_tasks(&events);
-    let dossier = build_run_dossier_with_tasks(
+    let dossier = build_run_dossier_with_tasks_and_closeout_policy(
         &projection,
         &persistent_tasks,
         &WorkflowSignoffPolicy::simulator_default(),
+        &closeout_policy,
     );
+    let replay_projection =
+        project_workflows(load_events(&run)?.iter().map(|event| &event.payload));
+    let closeout_replay_equivalent = replay_projection == projection;
     let workflow = projection
         .workflows
         .get(SIMULATOR_WORKFLOW_ID)
@@ -331,14 +452,41 @@ pub async fn run_deterministic_workflow_simulator(
         workflow_id: SIMULATOR_WORKFLOW_ID.to_string(),
         provider_output,
         missing_evidence_blocked_completion,
+        active_continuation_blocked_completion,
         permission_denied_after_start,
         owner_conflict_denied,
         pending_task_blocked_completion,
+        question_blocked_completion,
+        missing_dossier_blocked_completion,
         late_completion_ignored,
+        closeout_replay_equivalent,
         replay_event_count: events.len(),
         projection,
         dossier,
     })
+}
+
+fn closeout_policy_without_evidence_or_dossier() -> WorkflowCloseoutPolicy {
+    WorkflowCloseoutPolicy::from_config(
+        WORKFLOW_CLOSEOUT_DEFAULT_POLICY_ID,
+        WorkflowCloseoutPolicyConfig {
+            require_evidence: false,
+            require_dossier: false,
+            ..WorkflowCloseoutPolicyConfig::default()
+        },
+    )
+    .expect("test closeout policy")
+}
+
+fn closeout_policy_requiring_dossier_artifact() -> WorkflowCloseoutPolicy {
+    WorkflowCloseoutPolicy::from_config(
+        WORKFLOW_CLOSEOUT_DEFAULT_POLICY_ID,
+        WorkflowCloseoutPolicyConfig {
+            require_export_artifact: true,
+            ..WorkflowCloseoutPolicyConfig::default()
+        },
+    )
+    .expect("test closeout policy")
 }
 
 async fn start_simulator_run(
@@ -497,13 +645,18 @@ fn load_events(run: &RunInfo) -> Result<Vec<EventEnvelopeV1>, String> {
 
 pub fn simulator_negative_evidence(report: &WorkflowSimulationReport) -> bool {
     report.missing_evidence_blocked_completion
+        && report.active_continuation_blocked_completion
         && report.permission_denied_after_start
         && report.owner_conflict_denied
         && report.pending_task_blocked_completion
+        && report.question_blocked_completion
+        && report.missing_dossier_blocked_completion
         && report.late_completion_ignored
+        && report.closeout_replay_equivalent
         && has_denied_transition(report, "transition.owner_conflict_denied")
         && has_denied_transition(report, "transition.evidence_gated_completion")
         && has_denied_transition(report, "transition.workflow_tasks_incomplete")
+        && has_denied_transition(report, WORKFLOW_CLOSEOUT_DEFAULT_POLICY_ID)
         && report.dossier.denied_transitions == report.projection.denied_transitions
 }
 
@@ -573,7 +726,11 @@ mod tests {
         assert!(report.provider_output.contains("direct simulator path"));
         assert!(simulator_negative_evidence(&report));
         assert!(simulator_replay_evidence(&report));
+        assert!(report.active_continuation_blocked_completion);
         assert!(report.pending_task_blocked_completion);
+        assert!(report.question_blocked_completion);
+        assert!(report.missing_dossier_blocked_completion);
+        assert!(report.closeout_replay_equivalent);
         let workflow = &report.projection.workflows[SIMULATOR_WORKFLOW_ID];
         assert_eq!(workflow.status, "outcome.finished");
         assert!(workflow.terminal);
