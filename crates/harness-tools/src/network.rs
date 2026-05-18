@@ -1,4 +1,5 @@
 use std::fs;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use harness_core::config::{
@@ -769,14 +770,9 @@ fn artifact_extension(mime: &str, kind: WebFetchBodyKind) -> &'static str {
 }
 
 fn html_to_text(html: &str) -> String {
-    let without_tags = Regex::new(r"<[^>]+>")
-        .expect("html tag regex")
-        .replace_all(html, " ");
+    let without_tags = RE_HTML_TAGS.replace_all(html, " ");
     let decoded = decode_basic_html_entities(&without_tags);
-    Regex::new(r"\s+")
-        .expect("whitespace regex")
-        .replace_all(decoded.trim(), " ")
-        .to_string()
+    RE_WHITESPACE.replace_all(decoded.trim(), " ").to_string()
 }
 
 fn html_to_markdown(html: &str) -> String {
@@ -785,41 +781,18 @@ fn html_to_markdown(html: &str) -> String {
         .replace("<br>", "\n")
         .replace("<br/>", "\n")
         .replace("<br />", "\n");
-    let markdown = Regex::new(r"(?is)<h1[^>]*>(.*?)</h1>")
-        .expect("h1 regex")
-        .replace_all(&markdown, "# $1\n\n")
-        .into_owned();
-    let markdown = Regex::new(r"(?is)<h2[^>]*>(.*?)</h2>")
-        .expect("h2 regex")
-        .replace_all(&markdown, "## $1\n\n")
-        .into_owned();
-    let markdown = Regex::new(r"(?is)<h3[^>]*>(.*?)</h3>")
-        .expect("h3 regex")
-        .replace_all(&markdown, "### $1\n\n")
-        .into_owned();
-    let markdown = Regex::new(r"(?is)<li[^>]*>(.*?)</li>")
-        .expect("li regex")
-        .replace_all(&markdown, "- $1\n")
-        .into_owned();
-    let markdown = Regex::new(r"(?is)</?(p|div|section|article|main|header|footer|ul|ol)[^>]*>")
-        .expect("block regex")
-        .replace_all(&markdown, "\n\n")
-        .into_owned();
-    let markdown = Regex::new(r#"(?is)<a[^>]*href=["']([^"']+)["'][^>]*>(.*?)</a>"#)
-        .expect("link regex")
-        .replace_all(&markdown, "[$2]($1)")
-        .into_owned();
-    let markdown = Regex::new(r"<[^>]+>")
-        .expect("html tag regex")
-        .replace_all(&markdown, " ")
-        .into_owned();
+    let markdown = RE_H1.replace_all(&markdown, "# $1\n\n").into_owned();
+    let markdown = RE_H2.replace_all(&markdown, "## $1\n\n").into_owned();
+    let markdown = RE_H3.replace_all(&markdown, "### $1\n\n").into_owned();
+    let markdown = RE_LI.replace_all(&markdown, "- $1\n").into_owned();
+    let markdown = RE_BLOCK.replace_all(&markdown, "\n\n").into_owned();
+    let markdown = RE_LINK.replace_all(&markdown, "[$2]($1)").into_owned();
+    let markdown = RE_HTML_TAGS.replace_all(&markdown, " ").into_owned();
     let decoded = decode_basic_html_entities(&markdown);
-    let collapsed_spaces = Regex::new(r"[ \t]+")
-        .expect("markdown whitespace regex")
+    let collapsed_spaces = RE_MD_WHITESPACE
         .replace_all(decoded.trim(), " ")
         .to_string();
-    Regex::new(r"\n{3,}")
-        .expect("markdown blank line regex")
+    RE_MD_BLANK_LINE
         .replace_all(&collapsed_spaces, "\n\n")
         .to_string()
 }
@@ -939,3 +912,17 @@ fn extract_text_result(content: &[Value]) -> Option<String> {
             .map(ToOwned::to_owned)
     })
 }
+
+static RE_HTML_TAGS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<[^>]+>").unwrap());
+static RE_WHITESPACE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").unwrap());
+static RE_H1: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?is)<h1[^>]*>(.*?)</h1>").unwrap());
+static RE_H2: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?is)<h2[^>]*>(.*?)</h2>").unwrap());
+static RE_H3: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?is)<h3[^>]*>(.*?)</h3>").unwrap());
+static RE_LI: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?is)<li[^>]*>(.*?)</li>").unwrap());
+static RE_BLOCK: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?is)</?(p|div|section|article|main|header|footer|ul|ol)[^>]*>").unwrap()
+});
+static RE_LINK: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"(?is)<a[^>]*href=["']([^"']+)["'][^>]*>(.*?)</a>"#).unwrap());
+static RE_MD_WHITESPACE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[ \t]+").unwrap());
+static RE_MD_BLANK_LINE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\n{3,}").unwrap());
