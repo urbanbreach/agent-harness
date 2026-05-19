@@ -1,23 +1,21 @@
 ---
-name: frontend-ui-ux
-description: Frontend implementation guidance for usable, domain-appropriate interfaces with responsive visual verification.
+name: help
+description: Explain available Harness skills, workflows, tools, and how to choose the right lane.
+tools: [read, grep]
+permissions:
+  read: allow
+  grep: allow
 ---
 
-# Frontend UI UX
+# Help
 
-Use this skill when building or reviewing a user-facing web, app, TUI, or visual workflow.
+Use this skill when the user asks how to use Harness skills or workflows.
 
-## Product fit
-- Build the actual working surface first, not a marketing placeholder.
-- Match density, layout, and tone to the domain.
-- Keep controls familiar: icons for tools, toggles for binary settings, tabs for views, and menus for option sets.
-- Avoid nested cards, decorative blobs, and one-note color palettes.
-
-## Responsive quality
-- Give fixed-format UI elements stable dimensions with responsive constraints.
-- Ensure text fits in buttons, panels, and cards across mobile and desktop widths.
-- Verify screenshots or rendered output for overlap, blank states, and asset loading when the change affects visuals.
-- Keep visual assets relevant to the real product, place, object, or workflow.
+## Response shape
+- Identify the user's likely goal.
+- Recommend the smallest matching workflow or skill.
+- Mention important constraints: permissions, verification, team/task availability, and deprecated shims.
+- Keep examples concrete and repository-native.
 
 ## Harness state contract
 
