@@ -108,6 +108,18 @@ use crate::workflow::{
     WorkflowTransitionRequest,
 };
 use crate::workflow_closeout::{WorkflowCloseoutPolicy, WorkflowCloseoutReadiness};
+use crate::workflow_registry::REVIEW_EVIDENCE_CATEGORY;
+use crate::workflow_review::{
+    code_review_verdict_from_evidence, review_return_to_ralplan_reason, CodeReviewVerdict,
+    AUTOPILOT_WORKFLOW_ID_METADATA_KEY, PARENT_WORKFLOW_ID_METADATA_KEY,
+    RETURN_TO_RALPLAN_REASON_METADATA_KEY, REVIEW_ARCHITECTURAL_STATUS_METADATA_KEY,
+    REVIEW_RECOMMENDATION_METADATA_KEY, REVIEW_VERDICT_METADATA_KEY,
+    SOURCE_REVIEW_WORKFLOW_ID_METADATA_KEY,
+};
+use crate::workflow_transitions::{
+    normalize_workflow_mode, WorkflowTransitionAllowlist, WorkflowTransitionAllowlistDecision,
+    POLICY_AUTO_COMPLETE,
+};
 use harness_providers::{
     AssistantToolCall, CompletionMessage, CompletionRequest, MessageRole, Provider,
     ProviderStreamEvent, ToolDef,
@@ -4475,6 +4487,80 @@ impl Coordinator {
         match WorkflowTransitionPolicy::decide_start(&projection, request) {
             WorkflowStartDecision::Start(event) => {
                 let workflow_id = event.workflow_id.clone();
+                let active_workflows = active_workflows_for_allowlist(&projection);
+                let active_modes = active_workflows
+                    .iter()
+                    .map(|workflow| workflow.mode.as_str())
+                    .collect::<Vec<_>>();
+                let transition_decision =
+                    WorkflowTransitionAllowlist::evaluate(active_modes, &event.mode);
+                let auto_complete_workflows =
+                    auto_complete_workflows(&active_workflows, &event.mode, &transition_decision);
+                if let WorkflowTransitionAllowlistDecision::Denied {
+                    reason,
+                    suggested_action,
+                    policy_id,
+                } = transition_decision
+                {
+                    append_payload_event(
+                        self.clock.as_ref(),
+                        self.redactor.as_ref(),
+                        run_state,
+                        actor,
+                        Some(format!("workflow:{workflow_id}")),
+                        EventV1::WorkflowTransitionDenied(WorkflowTransitionDeniedEvent {
+                            workflow_id: workflow_id.clone(),
+                            requested_status: "active".to_string(),
+                            reason: format!("{reason} {suggested_action}"),
+                            owner: event.owner,
+                            current_owner: None,
+                            current_status: Some(
+                                active_workflows
+                                    .iter()
+                                    .map(|workflow| workflow.mode.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(","),
+                            ),
+                            policy_id: policy_id.to_string(),
+                        }),
+                    )?;
+                    return Ok(WorkflowStartResult::Denied {
+                        workflow_id,
+                        reason,
+                        policy_id: policy_id.to_string(),
+                    });
+                }
+                for auto_complete in auto_complete_workflows {
+                    append_payload_event(
+                        self.clock.as_ref(),
+                        self.redactor.as_ref(),
+                        run_state,
+                        actor.clone(),
+                        Some(format!("workflow:{}", auto_complete.workflow_id)),
+                        EventV1::WorkflowTransitionRecorded(WorkflowTransitionRecordedEvent {
+                            workflow_id: auto_complete.workflow_id.clone(),
+                            from_status: Some(auto_complete.from_status),
+                            to_status: "outcome.finished".to_string(),
+                            reason: auto_complete.transition_reason,
+                            owner: event.owner.clone(),
+                            policy_id: Some(POLICY_AUTO_COMPLETE.to_string()),
+                            idempotency_key: None,
+                        }),
+                    )?;
+                    append_payload_event(
+                        self.clock.as_ref(),
+                        self.redactor.as_ref(),
+                        run_state,
+                        actor.clone(),
+                        Some(format!("workflow:{}", auto_complete.workflow_id)),
+                        EventV1::WorkflowCompleted(WorkflowCompletedEvent {
+                            workflow_id: auto_complete.workflow_id,
+                            outcome: "outcome.finished".to_string(),
+                            reason: auto_complete.completion_reason,
+                            owner: event.owner.clone(),
+                        }),
+                    )?;
+                }
                 append_payload_event(
                     self.clock.as_ref(),
                     self.redactor.as_ref(),
@@ -4551,11 +4637,13 @@ impl Coordinator {
             .run_state
             .as_mut()
             .ok_or(CoordinatorError::RunNotStarted)?;
+        let projection = workflow_projection_for_run(run_state)?;
+        let autopilot_decision = autopilot_review_phase_decision(&projection, &request);
         append_payload_event(
             self.clock.as_ref(),
             self.redactor.as_ref(),
             run_state,
-            actor,
+            actor.clone(),
             Some(format!("workflow:{}", request.workflow_id)),
             EventV1::WorkflowEvidenceRecorded(WorkflowEvidenceRecordedEvent {
                 workflow_id: request.workflow_id,
@@ -4566,8 +4654,17 @@ impl Coordinator {
                 acceptance_ref: request.acceptance_ref,
                 metadata: request.metadata,
             }),
-        )
-        .map(|_| ())
+        )?;
+        if let Some(decision) = autopilot_decision {
+            append_autopilot_review_phase_events(
+                self.clock.as_ref(),
+                self.redactor.as_ref(),
+                run_state,
+                actor,
+                decision,
+            )?;
+        }
+        Ok(())
     }
 
     fn record_workflow_operator_decision_internal(
@@ -6695,19 +6792,55 @@ impl Coordinator {
             .clone()
             .unwrap_or_else(|| "none".to_string());
         let workflow = run_state.active_continuation_workflow.clone();
+        let active_workflow_ids: Vec<String> = workflow_projection_for_run(run_state)?
+            .workflows
+            .values()
+            .filter(|run| !run.terminal)
+            .map(|run| run.workflow_id.clone())
+            .collect();
+        let operator = workflow_cancel_operator(&actor);
         append_payload_event_with_correlation(
             self.clock.as_ref(),
             self.redactor.as_ref(),
             run_state,
-            actor,
+            actor.clone(),
             Some(format!("continuation:{continuation_id}")),
             None,
             EventV1::ContinuationStopped(ContinuationStoppedEvent {
                 continuation_id,
-                reason,
+                reason: reason.clone(),
                 workflow,
             }),
         )?;
+        for workflow_id in active_workflow_ids {
+            append_payload_event(
+                self.clock.as_ref(),
+                self.redactor.as_ref(),
+                run_state,
+                actor.clone(),
+                Some(format!("workflow:{workflow_id}")),
+                EventV1::WorkflowOperatorDecisionRecorded(WorkflowOperatorDecisionRecordedEvent {
+                    workflow_id: workflow_id.clone(),
+                    decision: "cancel".to_string(),
+                    operator: operator.clone(),
+                    reason: Some(reason.clone()),
+                    correlation_id: None,
+                }),
+            )?;
+            append_payload_event(
+                self.clock.as_ref(),
+                self.redactor.as_ref(),
+                run_state,
+                actor.clone(),
+                Some(format!("workflow:{workflow_id}")),
+                EventV1::WorkflowCompleted(WorkflowCompletedEvent {
+                    workflow_id,
+                    outcome: "outcome.cancelled".to_string(),
+                    reason: reason.clone(),
+                    owner: operator.clone(),
+                }),
+            )?;
+        }
         run_state.active_continuation_id = None;
         run_state.active_continuation_workflow = None;
         run_state.continuation_controller.stop();
@@ -17033,6 +17166,288 @@ fn append_built_event(
 
 fn system_actor() -> EventActor {
     EventActor::new(ActorKind::System, Some(COORDINATOR_AGENT_ID.to_string()))
+}
+
+fn workflow_cancel_operator(actor: &EventActor) -> String {
+    actor.agent_id.clone().unwrap_or_else(|| match actor.kind {
+        ActorKind::Supervisor => "supervisor".to_string(),
+        ActorKind::Worker => "worker".to_string(),
+        ActorKind::User => "operator".to_string(),
+        ActorKind::System => "system".to_string(),
+    })
+}
+
+#[derive(Debug, Clone)]
+struct ActiveWorkflowForAllowlist {
+    workflow_id: String,
+    mode: String,
+    status: String,
+}
+
+#[derive(Debug, Clone)]
+struct AutoCompleteWorkflow {
+    workflow_id: String,
+    from_status: String,
+    transition_reason: String,
+    completion_reason: String,
+}
+
+#[derive(Debug, Clone)]
+struct AutopilotReviewPhaseDecision {
+    workflow_id: String,
+    source_review_workflow_id: String,
+    from_status: String,
+    owner: String,
+    verdict: CodeReviewVerdict,
+}
+
+fn active_workflows_for_allowlist(
+    projection: &crate::workflow::WorkflowProjection,
+) -> Vec<ActiveWorkflowForAllowlist> {
+    projection
+        .workflows
+        .values()
+        .filter(|run| !run.terminal)
+        .map(|run| ActiveWorkflowForAllowlist {
+            workflow_id: run.workflow_id.clone(),
+            mode: run.mode.clone(),
+            status: run.status.clone(),
+        })
+        .collect()
+}
+
+fn autopilot_review_phase_decision(
+    projection: &crate::workflow::WorkflowProjection,
+    request: &WorkflowEvidenceRequest,
+) -> Option<AutopilotReviewPhaseDecision> {
+    if request.category != REVIEW_EVIDENCE_CATEGORY {
+        return None;
+    }
+    let verdict = code_review_verdict_from_evidence(&request.summary, &request.metadata)?;
+    let workflow_id = autopilot_workflow_id_for_review(projection, request)?;
+    let workflow = projection.workflows.get(&workflow_id)?;
+    if workflow.terminal {
+        return None;
+    }
+
+    Some(AutopilotReviewPhaseDecision {
+        workflow_id,
+        source_review_workflow_id: request.workflow_id.clone(),
+        from_status: workflow.status.clone(),
+        owner: workflow.owner.clone(),
+        verdict,
+    })
+}
+
+fn autopilot_workflow_id_for_review(
+    projection: &crate::workflow::WorkflowProjection,
+    request: &WorkflowEvidenceRequest,
+) -> Option<String> {
+    [
+        AUTOPILOT_WORKFLOW_ID_METADATA_KEY,
+        PARENT_WORKFLOW_ID_METADATA_KEY,
+    ]
+    .into_iter()
+    .filter_map(|key| request.metadata.get(key))
+    .find_map(|workflow_id| active_autopilot_workflow(projection, workflow_id))
+    .or_else(|| active_autopilot_workflow(projection, &request.workflow_id))
+    .or_else(|| {
+        let mut active_autopilot_ids = projection
+            .workflows
+            .values()
+            .filter(|workflow| {
+                !workflow.terminal
+                    && normalize_workflow_mode(&workflow.mode)
+                        .is_some_and(|mode| mode == "autopilot")
+            })
+            .map(|workflow| workflow.workflow_id.clone());
+        let workflow_id = active_autopilot_ids.next()?;
+        active_autopilot_ids.next().is_none().then_some(workflow_id)
+    })
+}
+
+fn active_autopilot_workflow(
+    projection: &crate::workflow::WorkflowProjection,
+    workflow_id: &str,
+) -> Option<String> {
+    let workflow = projection.workflows.get(workflow_id.trim())?;
+    (!workflow.terminal
+        && normalize_workflow_mode(&workflow.mode).is_some_and(|mode| mode == "autopilot"))
+    .then(|| workflow.workflow_id.clone())
+}
+
+fn append_autopilot_review_phase_events(
+    clock: &(dyn Clock + Send + Sync),
+    redactor: &dyn Redactor,
+    run_state: &mut RunState,
+    actor: EventActor,
+    decision: AutopilotReviewPhaseDecision,
+) -> Result<(), CoordinatorError> {
+    if decision.verdict.is_clean() {
+        append_payload_event(
+            clock,
+            redactor,
+            run_state,
+            actor.clone(),
+            Some(format!("workflow:{}", decision.workflow_id)),
+            EventV1::WorkflowTransitionRecorded(WorkflowTransitionRecordedEvent {
+                workflow_id: decision.workflow_id.clone(),
+                from_status: Some(decision.from_status.clone()),
+                to_status: "review.approved".to_string(),
+                reason: "autopilot review verdict approved".to_string(),
+                owner: decision.owner.clone(),
+                policy_id: Some("transition.autopilot_review_approved".to_string()),
+                idempotency_key: None,
+            }),
+        )?;
+        if decision.source_review_workflow_id != decision.workflow_id {
+            append_payload_event(
+                clock,
+                redactor,
+                run_state,
+                actor.clone(),
+                Some(format!("workflow:{}", decision.workflow_id)),
+                EventV1::WorkflowEvidenceRecorded(WorkflowEvidenceRecordedEvent {
+                    workflow_id: decision.workflow_id.clone(),
+                    category: REVIEW_EVIDENCE_CATEGORY.to_string(),
+                    summary: format!(
+                        "autopilot review clean: recommendation={}, architectural_status={}",
+                        decision.verdict.normalized_recommendation(),
+                        decision.verdict.normalized_architectural_status()
+                    ),
+                    artifact_path: None,
+                    artifact_digest: None,
+                    acceptance_ref: Some(decision.source_review_workflow_id.clone()),
+                    metadata: autopilot_review_metadata(&decision, "complete", None),
+                }),
+            )?;
+        }
+        append_payload_event(
+            clock,
+            redactor,
+            run_state,
+            actor,
+            Some(format!("workflow:{}", decision.workflow_id)),
+            EventV1::WorkflowCompleted(WorkflowCompletedEvent {
+                workflow_id: decision.workflow_id,
+                outcome: "outcome.finished".to_string(),
+                reason: "autopilot review verdict approved".to_string(),
+                owner: decision.owner,
+            }),
+        )?;
+    } else {
+        let return_reason = review_return_to_ralplan_reason(&decision.verdict);
+        append_payload_event(
+            clock,
+            redactor,
+            run_state,
+            actor.clone(),
+            Some(format!("workflow:{}", decision.workflow_id)),
+            EventV1::WorkflowTransitionRecorded(WorkflowTransitionRecordedEvent {
+                workflow_id: decision.workflow_id.clone(),
+                from_status: Some(decision.from_status.clone()),
+                to_status: "ralplan".to_string(),
+                reason: return_reason.clone(),
+                owner: decision.owner.clone(),
+                policy_id: Some("transition.autopilot_review_return_to_ralplan".to_string()),
+                idempotency_key: None,
+            }),
+        )?;
+        append_payload_event(
+            clock,
+            redactor,
+            run_state,
+            actor,
+            Some(format!("workflow:{}", decision.workflow_id)),
+            EventV1::WorkflowEvidenceRecorded(WorkflowEvidenceRecordedEvent {
+                workflow_id: decision.workflow_id.clone(),
+                category: REVIEW_EVIDENCE_CATEGORY.to_string(),
+                summary: format!("autopilot returning to ralplan: {return_reason}"),
+                artifact_path: None,
+                artifact_digest: None,
+                acceptance_ref: Some(decision.source_review_workflow_id.clone()),
+                metadata: autopilot_review_metadata(&decision, "ralplan", Some(&return_reason)),
+            }),
+        )?;
+    }
+    Ok(())
+}
+
+fn autopilot_review_metadata(
+    decision: &AutopilotReviewPhaseDecision,
+    phase: &str,
+    return_reason: Option<&str>,
+) -> BTreeMap<String, String> {
+    let mut metadata = BTreeMap::from([
+        ("phase".to_string(), phase.to_string()),
+        (
+            REVIEW_RECOMMENDATION_METADATA_KEY.to_string(),
+            decision.verdict.normalized_recommendation(),
+        ),
+        (
+            REVIEW_ARCHITECTURAL_STATUS_METADATA_KEY.to_string(),
+            decision.verdict.normalized_architectural_status(),
+        ),
+        (
+            REVIEW_VERDICT_METADATA_KEY.to_string(),
+            if decision.verdict.is_clean() {
+                "clean".to_string()
+            } else {
+                "non_clean".to_string()
+            },
+        ),
+        (
+            SOURCE_REVIEW_WORKFLOW_ID_METADATA_KEY.to_string(),
+            decision.source_review_workflow_id.clone(),
+        ),
+    ]);
+    if let Some(reason) = return_reason {
+        metadata.insert(
+            RETURN_TO_RALPLAN_REASON_METADATA_KEY.to_string(),
+            reason.to_string(),
+        );
+    }
+    metadata
+}
+
+fn auto_complete_workflows(
+    active_workflows: &[ActiveWorkflowForAllowlist],
+    requested_mode: &str,
+    decision: &WorkflowTransitionAllowlistDecision,
+) -> Vec<AutoCompleteWorkflow> {
+    let WorkflowTransitionAllowlistDecision::Allowed {
+        source_auto_completes,
+        transition_message,
+        ..
+    } = decision
+    else {
+        return Vec::new();
+    };
+
+    let normalized_requested_mode =
+        normalize_workflow_mode(requested_mode).unwrap_or(requested_mode);
+    let completion_reason = format!(
+        "auto_completed: transition_to_{}",
+        normalized_requested_mode.replace('-', "_")
+    );
+
+    active_workflows
+        .iter()
+        .filter_map(|workflow| {
+            let normalized_mode = normalize_workflow_mode(&workflow.mode)?;
+            source_auto_completes
+                .iter()
+                .any(|mode| mode == normalized_mode)
+                .then(|| AutoCompleteWorkflow {
+                    workflow_id: workflow.workflow_id.clone(),
+                    from_status: workflow.status.clone(),
+                    transition_reason: transition_message.clone().unwrap_or_else(|| {
+                        format!("mode transiting: {normalized_mode} -> {normalized_requested_mode}")
+                    }),
+                    completion_reason: completion_reason.clone(),
+                })
+        })
+        .collect()
 }
 
 fn workflow_projection_for_run(

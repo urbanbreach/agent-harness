@@ -37,6 +37,13 @@ use harness_core::proj::{inspect_resume_plan, ChildSessionTerminalState, Lifecyc
 use harness_core::redact::DefaultRedactor;
 use harness_core::store::EventStoreError;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
+use harness_core::workflow::{
+    project_workflows, WorkflowEvidenceRequest, WorkflowSignoffPolicy, WorkflowStartRequest,
+    WorkflowStartResult,
+};
+use harness_core::workflow_closeout::{
+    WorkflowCloseoutPolicy, WorkflowCloseoutPolicyConfig, WORKFLOW_CLOSEOUT_DEFAULT_POLICY_ID,
+};
 use harness_providers::mock::{request_digest, MockProvider};
 use harness_providers::{
     CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider,
@@ -772,6 +779,550 @@ async fn coord_continuation_start_stop_events_survive_resume_projection() {
 
     let stopped_plan = inspect_resume_plan(&run.run_dir);
     assert_eq!(stopped_plan.active_continuation_id, None);
+}
+
+#[tokio::test]
+async fn stop_continuation_cancels_active_workflow_runs() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let coordinator = test_coordinator(temp_dir.path());
+
+    let run = coordinator
+        .start_run(
+            "coord_cancel_active_workflows",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let actor = EventActor::new(ActorKind::User, Some("operator".to_string()));
+
+    for workflow_id in ["wf_cancel_one", "wf_cancel_two"] {
+        coordinator
+            .start_workflow(
+                actor.clone(),
+                WorkflowStartRequest {
+                    workflow_id: workflow_id.to_string(),
+                    mode: "workflow.run".to_string(),
+                    owner: "tui-operator".to_string(),
+                    lane: Some("lane.operator_decision".to_string()),
+                    title: Some(format!("cancel target {workflow_id}")),
+                    idempotency_key: None,
+                },
+            )
+            .await
+            .expect("start workflow");
+    }
+
+    coordinator
+        .stop_continuation(actor, "$cancel")
+        .await
+        .expect("cancel active workflows");
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    let cancel_decisions = events
+        .iter()
+        .filter(|event| {
+            matches!(
+                &event.payload,
+                EventV1::WorkflowOperatorDecisionRecorded(payload)
+                    if payload.decision == "cancel" && payload.reason.as_deref() == Some("$cancel")
+            )
+        })
+        .count();
+    assert_eq!(
+        cancel_decisions, 2,
+        "each active workflow records cancel decision"
+    );
+
+    let projection = project_workflows(events.iter().map(|event| &event.payload));
+    for workflow_id in ["wf_cancel_one", "wf_cancel_two"] {
+        let workflow = projection
+            .workflows
+            .get(workflow_id)
+            .expect("workflow projected");
+        assert_eq!(workflow.status, "outcome.cancelled");
+        assert!(workflow.terminal);
+        assert_eq!(workflow.owner, "operator");
+    }
+}
+
+#[tokio::test]
+async fn start_workflow_auto_completes_allowed_source_transition() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let coordinator = test_coordinator(temp_dir.path());
+
+    let run = coordinator
+        .start_run(
+            "coord_workflow_transition_auto_complete",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let actor = EventActor::new(ActorKind::User, Some("operator".to_string()));
+
+    coordinator
+        .start_workflow(
+            actor.clone(),
+            WorkflowStartRequest {
+                workflow_id: "wf_deep_interview".to_string(),
+                mode: "deep-interview".to_string(),
+                owner: "operator".to_string(),
+                lane: Some("lane.discovery".to_string()),
+                title: Some("deep interview".to_string()),
+                idempotency_key: None,
+            },
+        )
+        .await
+        .expect("start deep interview");
+
+    let result = coordinator
+        .start_workflow(
+            actor,
+            WorkflowStartRequest {
+                workflow_id: "wf_ralplan".to_string(),
+                mode: "ralplan".to_string(),
+                owner: "operator".to_string(),
+                lane: Some("lane.planning".to_string()),
+                title: Some("ralplan".to_string()),
+                idempotency_key: None,
+            },
+        )
+        .await
+        .expect("start ralplan");
+    assert_eq!(
+        result,
+        WorkflowStartResult::Started {
+            workflow_id: "wf_ralplan".to_string()
+        }
+    );
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::WorkflowTransitionRecorded(payload)
+            if payload.workflow_id == "wf_deep_interview"
+                && payload.to_status == "outcome.finished"
+                && payload.policy_id.as_deref() == Some("transition.workflow_mode_auto_complete")
+    )));
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::WorkflowCompleted(payload)
+            if payload.workflow_id == "wf_deep_interview"
+                && payload.outcome == "outcome.finished"
+                && payload.reason == "auto_completed: transition_to_ralplan"
+    )));
+
+    let projection = project_workflows(events.iter().map(|event| &event.payload));
+    let deep_interview = &projection.workflows["wf_deep_interview"];
+    assert_eq!(deep_interview.status, "outcome.finished");
+    assert!(deep_interview.terminal);
+    let ralplan = &projection.workflows["wf_ralplan"];
+    assert_eq!(ralplan.status, "active");
+    assert!(!ralplan.terminal);
+}
+
+#[tokio::test]
+async fn start_workflow_denies_execution_to_planning_rollback() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let coordinator = test_coordinator(temp_dir.path());
+
+    let run = coordinator
+        .start_run(
+            "coord_workflow_transition_denied",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let actor = EventActor::new(ActorKind::User, Some("operator".to_string()));
+
+    coordinator
+        .start_workflow(
+            actor.clone(),
+            WorkflowStartRequest {
+                workflow_id: "wf_ralph".to_string(),
+                mode: "ralph".to_string(),
+                owner: "operator".to_string(),
+                lane: Some("lane.delivery".to_string()),
+                title: Some("ralph".to_string()),
+                idempotency_key: None,
+            },
+        )
+        .await
+        .expect("start ralph");
+
+    let result = coordinator
+        .start_workflow(
+            actor,
+            WorkflowStartRequest {
+                workflow_id: "wf_ralplan".to_string(),
+                mode: "ralplan".to_string(),
+                owner: "operator".to_string(),
+                lane: Some("lane.planning".to_string()),
+                title: Some("ralplan".to_string()),
+                idempotency_key: None,
+            },
+        )
+        .await
+        .expect("denial is recorded as start result");
+    assert!(matches!(
+        result,
+        WorkflowStartResult::Denied {
+            workflow_id,
+            policy_id,
+            ..
+        } if workflow_id == "wf_ralplan" && policy_id == "transition.workflow_mode_denied"
+    ));
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::WorkflowTransitionDenied(payload)
+            if payload.workflow_id == "wf_ralplan"
+                && payload.policy_id == "transition.workflow_mode_denied"
+                && payload.reason.contains("Execution-to-planning rollback")
+    )));
+    assert!(!events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::WorkflowStarted(payload) if payload.workflow_id == "wf_ralplan"
+    )));
+}
+
+#[tokio::test]
+async fn review_verdict_clean_completes_active_autopilot_workflow() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let coordinator = test_coordinator(temp_dir.path());
+
+    let run = coordinator
+        .start_run(
+            "coord_autopilot_review_clean",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let actor = EventActor::new(ActorKind::User, Some("operator".to_string()));
+
+    coordinator
+        .start_workflow(
+            actor.clone(),
+            WorkflowStartRequest {
+                workflow_id: "wf_autopilot".to_string(),
+                mode: "workflow.autopilot".to_string(),
+                owner: "operator".to_string(),
+                lane: Some("lane.autopilot".to_string()),
+                title: Some("autopilot".to_string()),
+                idempotency_key: None,
+            },
+        )
+        .await
+        .expect("start autopilot");
+    coordinator
+        .record_workflow_evidence(
+            actor,
+            WorkflowEvidenceRequest {
+                workflow_id: "wf_autopilot".to_string(),
+                category: harness_core::workflow_registry::REVIEW_EVIDENCE_CATEGORY.to_string(),
+                summary:
+                    r#"{"recommendation":"APPROVE","architectural_status":"CLEAR","findings":[]}"#
+                        .to_string(),
+                artifact_path: None,
+                artifact_digest: None,
+                acceptance_ref: Some("review-clean".to_string()),
+                metadata: BTreeMap::new(),
+            },
+        )
+        .await
+        .expect("record clean review");
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::WorkflowTransitionRecorded(payload)
+            if payload.workflow_id == "wf_autopilot"
+                && payload.to_status == "review.approved"
+                && payload.policy_id.as_deref() == Some("transition.autopilot_review_approved")
+    )));
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::WorkflowCompleted(payload)
+            if payload.workflow_id == "wf_autopilot"
+                && payload.outcome == "outcome.finished"
+                && payload.reason == "autopilot review verdict approved"
+    )));
+
+    let projection = project_workflows(events.iter().map(|event| &event.payload));
+    let autopilot = &projection.workflows["wf_autopilot"];
+    assert_eq!(autopilot.status, "outcome.finished");
+    assert_eq!(autopilot.phase.as_deref(), Some("finished"));
+    assert!(autopilot.terminal);
+    assert!(autopilot
+        .review_verdict
+        .as_ref()
+        .expect("review verdict")
+        .is_clean());
+}
+
+#[tokio::test]
+async fn review_verdict_non_clean_returns_autopilot_to_ralplan_phase() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let coordinator = test_coordinator(temp_dir.path());
+
+    let run = coordinator
+        .start_run(
+            "coord_autopilot_review_loopback",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let actor = EventActor::new(ActorKind::User, Some("operator".to_string()));
+
+    coordinator
+        .start_workflow(
+            actor.clone(),
+            WorkflowStartRequest {
+                workflow_id: "wf_autopilot".to_string(),
+                mode: "workflow.autopilot".to_string(),
+                owner: "operator".to_string(),
+                lane: Some("lane.autopilot".to_string()),
+                title: Some("autopilot".to_string()),
+                idempotency_key: None,
+            },
+        )
+        .await
+        .expect("start autopilot");
+    coordinator
+        .start_workflow(
+            actor.clone(),
+            WorkflowStartRequest {
+                workflow_id: "wf_review".to_string(),
+                mode: "workflow.review".to_string(),
+                owner: "operator".to_string(),
+                lane: Some("lane.review".to_string()),
+                title: Some("code review".to_string()),
+                idempotency_key: None,
+            },
+        )
+        .await
+        .expect("start review");
+    coordinator
+        .record_workflow_evidence(
+            actor,
+            WorkflowEvidenceRequest {
+                workflow_id: "wf_review".to_string(),
+                category: harness_core::workflow_registry::REVIEW_EVIDENCE_CATEGORY.to_string(),
+                summary: r#"{"recommendation":"REQUEST CHANGES","architectural_status":"WATCH","findings":["missing regression"]}"#.to_string(),
+                artifact_path: None,
+                artifact_digest: None,
+                acceptance_ref: Some("review-non-clean".to_string()),
+                metadata: BTreeMap::from([(
+                    harness_core::workflow_review::AUTOPILOT_WORKFLOW_ID_METADATA_KEY.to_string(),
+                    "wf_autopilot".to_string(),
+                )]),
+            },
+        )
+        .await
+        .expect("record non-clean review");
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::WorkflowTransitionRecorded(payload)
+            if payload.workflow_id == "wf_autopilot"
+                && payload.to_status == "ralplan"
+                && payload.policy_id.as_deref()
+                    == Some("transition.autopilot_review_return_to_ralplan")
+    )));
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::WorkflowEvidenceRecorded(payload)
+            if payload.workflow_id == "wf_autopilot"
+                && payload.category == harness_core::workflow_registry::REVIEW_EVIDENCE_CATEGORY
+                && payload
+                    .metadata
+                    .contains_key(harness_core::workflow_review::RETURN_TO_RALPLAN_REASON_METADATA_KEY)
+    )));
+
+    let projection = project_workflows(events.iter().map(|event| &event.payload));
+    let autopilot = &projection.workflows["wf_autopilot"];
+    assert_eq!(autopilot.status, "ralplan");
+    assert_eq!(autopilot.phase.as_deref(), Some("ralplan"));
+    assert!(!autopilot.terminal);
+    assert!(autopilot
+        .return_to_ralplan_reason
+        .as_deref()
+        .expect("loopback reason")
+        .contains("REQUEST_CHANGES"));
+    assert_eq!(
+        autopilot
+            .review_verdict
+            .as_ref()
+            .expect("review verdict")
+            .architectural_status,
+        "WATCH"
+    );
+}
+
+#[tokio::test]
+async fn direct_ralplan_start_does_not_complete_autopilot_without_review_verdict() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let coordinator = test_coordinator(temp_dir.path());
+
+    let run = coordinator
+        .start_run(
+            "coord_autopilot_direct_ralplan_denied",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let actor = EventActor::new(ActorKind::User, Some("operator".to_string()));
+
+    coordinator
+        .start_workflow(
+            actor.clone(),
+            WorkflowStartRequest {
+                workflow_id: "wf_autopilot".to_string(),
+                mode: "workflow.autopilot".to_string(),
+                owner: "operator".to_string(),
+                lane: Some("lane.autopilot".to_string()),
+                title: Some("autopilot".to_string()),
+                idempotency_key: None,
+            },
+        )
+        .await
+        .expect("start autopilot");
+
+    let result = coordinator
+        .start_workflow(
+            actor,
+            WorkflowStartRequest {
+                workflow_id: "wf_ralplan".to_string(),
+                mode: "ralplan".to_string(),
+                owner: "operator".to_string(),
+                lane: Some("lane.planning".to_string()),
+                title: Some("ralplan".to_string()),
+                idempotency_key: None,
+            },
+        )
+        .await
+        .expect("denial is recorded as start result");
+    assert!(matches!(
+        result,
+        WorkflowStartResult::Denied {
+            workflow_id,
+            policy_id,
+            ..
+        } if workflow_id == "wf_ralplan" && policy_id == "transition.workflow_mode_denied"
+    ));
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    assert!(!events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::WorkflowCompleted(payload) if payload.workflow_id == "wf_autopilot"
+    )));
+    let projection = project_workflows(events.iter().map(|event| &event.payload));
+    let autopilot = &projection.workflows["wf_autopilot"];
+    assert_eq!(autopilot.status, "active");
+    assert_eq!(autopilot.phase.as_deref(), Some("planning"));
+    assert!(!autopilot.terminal);
+}
+
+#[tokio::test]
+async fn closeout_policy_denies_autopilot_finish_until_review_gate_is_present() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let coordinator = test_coordinator(temp_dir.path());
+
+    let run = coordinator
+        .start_run(
+            "coord_autopilot_closeout_gate",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .expect("start run");
+    let actor = EventActor::new(ActorKind::User, Some("operator".to_string()));
+    let closeout_policy = WorkflowCloseoutPolicy::from_config(
+        WORKFLOW_CLOSEOUT_DEFAULT_POLICY_ID,
+        WorkflowCloseoutPolicyConfig {
+            require_evidence: false,
+            require_dossier: false,
+            ..WorkflowCloseoutPolicyConfig::default()
+        },
+    )
+    .expect("closeout policy");
+    let signoff_policy = WorkflowSignoffPolicy::new(Vec::<String>::new());
+
+    coordinator
+        .start_workflow(
+            actor.clone(),
+            WorkflowStartRequest {
+                workflow_id: "wf_autopilot".to_string(),
+                mode: "workflow.autopilot".to_string(),
+                owner: "operator".to_string(),
+                lane: Some("lane.autopilot".to_string()),
+                title: Some("autopilot".to_string()),
+                idempotency_key: None,
+            },
+        )
+        .await
+        .expect("start autopilot");
+
+    let denied = coordinator
+        .complete_workflow_with_closeout_policy(
+            actor.clone(),
+            "wf_autopilot",
+            "outcome.finished",
+            "premature finish",
+            "operator",
+            signoff_policy.clone(),
+            closeout_policy.clone(),
+        )
+        .await
+        .expect_err("missing review gate should deny finish");
+    assert!(
+        matches!(denied, CoordinatorError::PolicyViolation(ref reason) if reason.contains("review missing evidence.review")),
+        "unexpected denial: {denied:?}"
+    );
+
+    coordinator
+        .record_workflow_evidence(
+            actor.clone(),
+            WorkflowEvidenceRequest {
+                workflow_id: "wf_autopilot".to_string(),
+                category: harness_core::workflow_registry::REVIEW_EVIDENCE_CATEGORY.to_string(),
+                summary:
+                    r#"{"recommendation":"APPROVE","architectural_status":"CLEAR","findings":[]}"#
+                        .to_string(),
+                artifact_path: None,
+                artifact_digest: None,
+                acceptance_ref: Some("review-clean".to_string()),
+                metadata: BTreeMap::new(),
+            },
+        )
+        .await
+        .expect("record review gate");
+    coordinator
+        .complete_workflow_with_closeout_policy(
+            actor,
+            "wf_autopilot",
+            "outcome.finished",
+            "review gate present",
+            "operator",
+            signoff_policy,
+            closeout_policy,
+        )
+        .await
+        .expect("review-gated finish");
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+    let projection = project_workflows(events.iter().map(|event| &event.payload));
+    assert_eq!(
+        projection.workflows["wf_autopilot"].status,
+        "outcome.finished"
+    );
 }
 
 #[tokio::test]
