@@ -37,7 +37,7 @@ Core runtime and domain logic:
 
 Interactive agent runtime settings still come from structured config, but prompt bodies are now resolved separately from markdown assets and project instructions:
 
-- Built-in `build` and `plan` use runtime-synthesized dynamic prompts when their shipped markdown assets contain only frontmatter.
+- Built-in `operator`, `build`, and `plan` use runtime-synthesized dynamic prompts when their shipped markdown assets contain only frontmatter; `operator` is the default-visible profile and `build`/`plan` are compatibility/escalation profiles.
 - `.agent-harness/agents/<agent>.md` can provide a file-backed prompt body for custom agents or local overrides.
 - inline `system_prompt` in config remains a compatibility override and wins over the markdown body.
 - `AGENTS.md` is loaded as a separate project-instruction layer and composed into the final runtime system prompt.
@@ -287,9 +287,14 @@ are rejected by the coordinator; projections keep first-seen state if old logs c
 Workflow state is replayed by the pure `workflow` projection. Old logs with no workflow events
 project to empty workflow state. Start decisions are idempotent by idempotency key and by same-owner
 duplicate workflow id; conflicting owners append denied-transition evidence instead of rewriting the
-existing run. Workflow status, dossier, and replay readers consume projections only and must not
-append events. Continuation events may carry optional workflow metadata so bounded continuation loops
-can be associated with a workflow lane/iteration/stop reason without changing old-log semantics.
+existing run. Workflow status, dossier, session inspection, and replay readers consume projections
+only and must not append events, execute tools, rerun routers, re-enter providers, launch team
+workers, or replay hooks. Replay/session summaries expose workflow state, pending questions,
+evidence refs, closeout/legal next actions, permissions, child sessions, and team state from the
+same event-derived projections so operators can inspect prior workflow state without creating new
+runtime authority. Continuation events may carry optional workflow metadata so bounded continuation
+loops can be associated with a workflow lane/iteration/stop reason without changing old-log
+semantics.
 Context snapshots use this workflow evidence path: the coordinator writes a redacted/capped
 `artifacts/context_snapshots/<snapshot-id>.json` artifact, appends `ArtifactWritten`, then appends
 `WorkflowEvidenceRecorded` using the `evidence.context_snapshot` category with snapshot id, slug,
@@ -297,7 +302,7 @@ ambiguity score, artifact path, and digest metadata. Replay projects these refs 
 workspace files; artifact write failure prevents the workflow evidence event. The CLI write path
 `harness workflow snapshot write` uses the same coordinator command. The workflow command
 foundation also exposes `run`, `status`, `signoff`, `cancel`, `dossier`, `snapshot`,
-`plan-consensus`, `goal`, `mission`, `wiki`, and `init`: mutating commands append through coordinator command
+`plan-consensus`, `goal`, `mission`, `wiki`, `evidence`, and `init`: mutating commands append through coordinator command
 handlers, while status/dossier/snapshot/goal reads derive from event projections only and do not
 append events. Specialized plan and goal projections derive from `WorkflowEvidenceRecorded`
 metadata categories (`evidence.plan_consensus` and `evidence.goal_ledger`) so replay exposes
@@ -305,6 +310,12 @@ plan verdicts, goal story status, checkpoint refs, and final quality-gate readin
 launching workers or reading artifact contents. Research mission projections require validator or
 review artifact refs before completion, while wiki write/delete events record page digests and
 wiki read/list/query surfaces remain explicit live-read operations over the configured wiki root.
+The generic `workflow evidence record` path covers staged review/security/QA/performance/visual,
+advisor, setup/doctor, skill, status/HUD, note/memory, and continuation families by appending
+registered evidence categories (for example `evidence.review`, `evidence.security_review`,
+`evidence.qa`, `evidence.performance`, `evidence.visual`, and `evidence.status_hud`) with
+artifact refs plus status metadata; closeout treats failed/blocked/denied statuses as replayed
+blockers rather than executing live validators during replay.
 
 **Continuation**
 - `ContinuationStarted` - Starts an explicit, bounded continuation loop from a slash command or tool action. The event records the stable continuation id, mode, originating command, and max iteration/wall-clock/provider/tool-call bounds.
@@ -451,8 +462,8 @@ a single native tool surface, so profiles opt in by naming canonical tool ids su
 includes `edit` only for the active workspace-relative `.agent-harness/plans/<run>.md` file through
 runtime permission rules, exposes `bash` only behind shell permission and an additional runtime
 read-only inspection guard, may delegate read-only exploration only through the `explore` profile via
-`task`/`background_output`, and uses `plan_exit` approval before the coordinator schedules a `build`
-continuation with the active plan-file path. By default, `read` emits
+`task`/`background_output`, and uses `plan_exit` approval before the coordinator schedules an
+operator continuation with the active plan-file path. By default, `read` emits
 `LINE#HASH|text` anchors and `edit` consumes hashline operations on that anchored view.
 
 ## Hashline Spec
@@ -558,6 +569,17 @@ After an overflow-style provider failure, the coordinator may compact and retry 
 ### Session artifacts vs UI memory caps
 
 Compaction is a provider-context persistence feature. It is separate from TUI/session presentation caps that trim or collapse on-screen history for usability. UI memory caps do not rewrite provider context, do not create compaction checkpoints, and should not be treated as compaction.
+
+## Headless and server/API boundary
+
+Headless execution uses the same coordinator/provider/tool loop as interactive
+sessions and is entered through CLI commands such as `prompt`. It is not a
+separate server runtime. Any future server or API surface is staged as a
+projection/API boundary over persisted events, workflow projections, session
+catalogs, and replay summaries. It may inspect or submit explicit coordinator
+commands, but it must not become independent execution authority, rerun tools
+from replay, launch plugins from config, or bypass permission-before-side-effect
+ordering.
 
 ## Replay Contract
 
