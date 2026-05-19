@@ -1,26 +1,19 @@
 ---
-name: team-mode
-description: Usage guidance for declared teams, active team runs, mailbox/task coordination, and shutdown approval flow.
-tools: [team_list, team_create, team_status, team_send_message, team_task_create, team_task_list, team_task_get, team_task_update, team_shutdown_request, team_shutdown_approve, team_shutdown_reject, team_delete]
-commands:
-  - team_list
+name: trace
+description: Show workflow, task, team, and tool-call trace evidence for debugging or audit.
+tools: [workflow_status, workflow_evidence, team_status, team_task_list]
 permissions:
-  task: ask
+  read: allow
 ---
 
-# Team mode
+# Trace
 
-Use this skill when coordinating multiple Harness agents through declared teams or active team runs.
+Use this skill when the user asks what happened, why a workflow is stuck, or how agents/tools moved through a task.
 
-## Declared teams
-- Declared teams live in `.agent-harness/teams/<name>.json` or the user Harness team directory.
-- Run `team_list` first to inspect declared specs, validation warnings, active runs, and environment readiness.
-- Validate lead/member eligibility before spawning; read-only members should stay in research roles.
-
-## Active runs
-- Keep team state event-sourced through the team tools.
-- Use team tasks/mailbox messages for shared coordination instead of hidden side channels.
-- Shutdown requires request plus approve/reject, and delete is only valid after a terminal team state.
+## Rules
+- Use event/workflow/team projections and evidence listings as authority.
+- Summarize timeline, actors, state transitions, tool calls, approvals, blockers, and current next step.
+- Separate recorded events from inference.
 
 ## Harness state contract
 
