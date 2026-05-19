@@ -40,4 +40,6 @@ pub mod wiki;
 pub mod workflow;
 pub mod workflow_closeout;
 pub mod workflow_registry;
+pub mod workflow_review;
+pub mod workflow_transitions;
 pub mod workspace;
