@@ -3201,7 +3201,10 @@ fn workflow_projection_surfaces_footer_and_operator_sidebar_rows() {
                     artifact_path: None,
                     artifact_digest: None,
                     acceptance_ref: Some("acceptance.tests".to_string()),
-                    metadata: Default::default(),
+                    metadata: std::collections::BTreeMap::from([(
+                        "current_phase".to_string(),
+                        "verifying".to_string(),
+                    )]),
                 },
             ),
         ),
@@ -3227,13 +3230,13 @@ fn workflow_projection_surfaces_footer_and_operator_sidebar_rows() {
     assert_eq!(rows[0].evidence_count, 1);
     assert_eq!(
         app.workflow_footer_summary().as_deref(),
-        Some("Workflow wf_docs attention · 1 ev · 1 decision")
+        Some("Workflow wf_docs attention · phase verifying · 1 ev · 1 decision")
     );
 
     let sidebar = operator_sidebar_text(&app);
     assert!(sidebar.contains("▼ Workflow"), "{sidebar}");
     assert!(
-        sidebar.contains("Docs release · workflow_run · active · simulated"),
+        sidebar.contains("Docs release · workflow_run · active · phase verifying · simulated"),
         "{sidebar}"
     );
     assert!(
@@ -3369,12 +3372,18 @@ fn workflow_projection_surfaces_attention_questions_closeout_and_subordinate_tea
     assert!(rows[0].needs_attention());
     assert_eq!(
         app.workflow_footer_summary().as_deref(),
-        Some("Workflow wf_attention attention · 1 ev · 1 question · 1 team")
+        Some("Workflow wf_attention attention · phase planning · 1 ev · 1 question · 1 team")
     );
 
     let sidebar = operator_sidebar_text(&app);
     assert!(
         sidebar.contains("1 active · 1 attention · 0 done"),
+        "{sidebar}"
+    );
+    assert!(
+        sidebar.contains(
+            "Operator control center · workflow.plan_consensus · active · phase planning"
+        ),
         "{sidebar}"
     );
     assert!(

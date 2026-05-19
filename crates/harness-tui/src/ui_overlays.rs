@@ -286,6 +286,9 @@ fn status_dialog_workflow_rows(app: &AppState) -> Vec<StatusDialogRow> {
                 .unwrap_or(&row.workflow_id)
                 .to_string();
             let mut suffix = format!("{} · {} · owner {}", row.mode, row.status, row.owner);
+            if let Some(phase) = row.phase.as_deref() {
+                suffix.push_str(&format!(" · phase {phase}"));
+            }
             if row.evidence_count > 0 {
                 suffix.push_str(&format!(" · {} evidence", row.evidence_count));
             }

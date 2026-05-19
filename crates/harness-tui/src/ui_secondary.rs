@@ -4197,13 +4197,21 @@ fn operator_sidebar_workflow_items(app: &AppState) -> Vec<OperatorRailItem> {
             .as_deref()
             .map(|lane| format!(" · {lane}"))
             .unwrap_or_default();
+        let phase = row
+            .phase
+            .as_deref()
+            .map(|phase| format!(" · phase {phase}"))
+            .unwrap_or_default();
         let blocked = if row.needs_attention() {
             " · attention"
         } else {
             ""
         };
         items.push(OperatorRailItem::Plain(sanitize_operator_sidebar_line(
-            &format!("{title} · {} · {}{lane}{blocked}", row.mode, row.status),
+            &format!(
+                "{title} · {} · {}{phase}{lane}{blocked}",
+                row.mode, row.status
+            ),
         )));
 
         if let Some(category) = row.latest_evidence_category.as_deref() {
