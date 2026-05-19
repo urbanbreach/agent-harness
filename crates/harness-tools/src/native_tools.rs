@@ -1417,11 +1417,37 @@ fn validate_shell_path_arguments(
     workspace_root: &Path,
 ) -> Result<(), ToolError> {
     for token in &command.args {
-        if !looks_like_shell_path_argument(token) {
+        let candidate = if token.starts_with('-') {
+            if let Some((_, value)) = token.split_once('=') {
+                value
+            } else {
+                continue;
+            }
+        } else {
+            token
+        };
+
+        if candidate.contains('$') || candidate.starts_with('~') {
             continue;
         }
 
-        let _ = normalize_shell_workspace_path(token, cwd, workspace_root)?;
+        let mut extracted_path = candidate;
+        if let Some(prefix_end) = candidate.find(|c| c == '*' || c == '?' || c == '[') {
+            extracted_path = &candidate[..prefix_end];
+        }
+        if extracted_path.is_empty() {
+            continue;
+        }
+
+        if extracted_path.starts_with('/')
+            || extracted_path.starts_with("./")
+            || extracted_path.starts_with("../")
+            || extracted_path == "."
+            || extracted_path == ".."
+            || extracted_path.contains('/')
+        {
+            let _ = normalize_shell_workspace_path(extracted_path, cwd, workspace_root)?;
+        }
     }
 
     Ok(())
@@ -1444,20 +1470,6 @@ fn parse_shell_segment_tokens(segment: &str) -> Result<Vec<String>, ToolError> {
     shell_words::split(segment).map_err(|err| {
         ToolError::InvalidArguments(format!("failed to parse command string: {err}"))
     })
-}
-
-fn looks_like_shell_path_argument(token: &str) -> bool {
-    !token.starts_with('-')
-        && !token.contains('*')
-        && !token.contains('?')
-        && !token.contains('[')
-        && !token.contains('$')
-        && !token.starts_with('~')
-        && (token.starts_with('/')
-            || token.starts_with("./")
-            || token.starts_with("../")
-            || token == "."
-            || token == "..")
 }
 
 #[cfg(test)]
@@ -1498,6 +1510,33 @@ mod tests {
         let err = validate_bash_command("ls /tmp", tempdir.path(), tempdir.path(), &allowlist)
             .expect_err("external path should be blocked");
         assert!(matches!(err, ToolError::PathEscapesWorkspace { .. }));
+
+        let err2 = validate_bash_command(
+            "ls foo/../../../etc/passwd",
+            tempdir.path(),
+            tempdir.path(),
+            &allowlist,
+        )
+        .expect_err("external relative path should be blocked");
+        assert!(matches!(err2, ToolError::PathEscapesWorkspace { .. }));
+
+        let err3 = validate_bash_command(
+            "ls --files-from=foo/../../../etc/passwd",
+            tempdir.path(),
+            tempdir.path(),
+            &allowlist,
+        )
+        .expect_err("external relative path inside option should be blocked");
+        assert!(matches!(err3, ToolError::PathEscapesWorkspace { .. }));
+
+        let err4 = validate_bash_command(
+            "ls foo/../../../etc/pas*",
+            tempdir.path(),
+            tempdir.path(),
+            &allowlist,
+        )
+        .expect_err("external relative path with glob should be blocked");
+        assert!(matches!(err4, ToolError::PathEscapesWorkspace { .. }));
     }
 
     #[test]
