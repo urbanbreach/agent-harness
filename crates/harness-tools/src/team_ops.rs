@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use harness_core::event::{
-    TeamBounds, TeamMemberRole, TeamMemberSelector, TeamMemberSpec, TeamMessage, TeamMessageKind,
-    TeamReference, TeamSpec, TeamTask, TeamTaskStatus,
+    ActorKind, TeamBounds, TeamMemberRole, TeamMemberSelector, TeamMemberSpec, TeamMessage,
+    TeamMessageKind, TeamReference, TeamSpec, TeamTask, TeamTaskStatus,
 };
 use harness_core::proj::{
     TEAM_METADATA_ABORT_REASON, TEAM_METADATA_EVIDENCE_REF, TEAM_METADATA_SYNTHESIS_REF,
@@ -125,7 +125,8 @@ struct TeamStatusArgs {
 struct TeamSendMessageArgs {
     #[serde(rename = "teamRunId", alias = "team_run_id")]
     team_run_id: String,
-    from: String,
+    #[serde(default)]
+    from: Option<String>,
     to: String,
     #[serde(default = "default_team_message_kind")]
     kind: TeamMessageKind,
@@ -241,6 +242,60 @@ fn default_include_declared_teams() -> bool {
     true
 }
 
+async fn default_team_message_sender(
+    ctx: &ToolContext,
+    team_run_id: &str,
+) -> Result<String, ToolError> {
+    if ctx.actor.kind != ActorKind::Worker {
+        return Ok("lead".to_string());
+    }
+
+    let actor_agent_id = ctx.actor.agent_id.as_deref().ok_or_else(|| {
+        ToolError::InvalidArguments("worker team message is missing actor agent_id".to_string())
+    })?;
+    let projection = ctx
+        .coordinator
+        .team_projection()
+        .await
+        .map_err(map_coord_err)?;
+    let team = projection
+        .teams
+        .get(team_run_id)
+        .ok_or_else(|| ToolError::InvalidArguments(format!("unknown team `{team_run_id}`")))?;
+    if team.lead.as_ref().and_then(|lead| lead.agent_id.as_deref()) == Some(actor_agent_id) {
+        return Ok("lead".to_string());
+    }
+    team.members
+        .values()
+        .find(|member| member.agent_id.as_deref() == Some(actor_agent_id))
+        .map(|member| member.name.clone())
+        .ok_or_else(|| {
+            ToolError::InvalidArguments(format!(
+                "worker `{actor_agent_id}` is not a participant in team `{team_run_id}`"
+            ))
+        })
+}
+
+async fn resolve_team_message_sender(
+    ctx: &ToolContext,
+    team_run_id: &str,
+    requested_from: Option<String>,
+) -> Result<String, ToolError> {
+    if ctx.actor.kind != ActorKind::Worker {
+        return Ok(requested_from.unwrap_or_else(|| "lead".to_string()));
+    }
+
+    let expected_from = default_team_message_sender(ctx, team_run_id).await?;
+    if let Some(requested_from) = requested_from {
+        if requested_from != expected_from {
+            return Err(ToolError::InvalidArguments(format!(
+                "worker team message sender `{requested_from}` does not match authenticated team participant `{expected_from}`"
+            )));
+        }
+    }
+    Ok(expected_from)
+}
+
 impl TryFrom<TeamMemberArgs> for TeamMemberSpec {
     type Error = ToolError;
 
@@ -319,9 +374,27 @@ fn insert_joined_metadata(metadata: &mut BTreeMap<String, String>, key: &str, va
 }
 
 fn team_result(label: &str, team: harness_core::proj::TeamRunProjection) -> ToolResult {
+    let mut structured =
+        serde_json::to_value(team).unwrap_or_else(|_| json!({ "error": "serialization failed" }));
+    if let serde_json::Value::Object(object) = &mut structured {
+        object.insert(
+            "lane_policy".to_string(),
+            json!("operator-owned subordinate escalation"),
+        );
+    }
     text_json_tool_result(
-        format!("{label}: {} ({})", team.name, team.team_run_id),
-        serde_json::to_value(team).unwrap_or_else(|_| json!({ "error": "serialization failed" })),
+        format!(
+            "{label}: {} ({}) · operator-owned subordinate escalation",
+            structured
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("<unknown-team>"),
+            structured
+                .get("team_run_id")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("<unknown-team-run>")
+        ),
+        structured,
     )
 }
 
@@ -593,6 +666,7 @@ impl Tool for TeamListTool {
                     "team_run_id": &team.team_run_id,
                     "name": &team.name,
                     "status": &team.status,
+                    "lane_policy": "operator-owned subordinate escalation",
                     "members": team.members.len(),
                     "tasks": team.tasks.len(),
                     "task_status_counts": &team.task_status_counts,
@@ -705,13 +779,14 @@ impl Tool for TeamSendMessageTool {
         args_json: serde_json::Value,
     ) -> Result<ToolResult, ToolError> {
         let args: TeamSendMessageArgs = parse_tool_args(args_json)?;
-        let team_run_id = args.team_run_id.clone();
+        let team_run_id = args.team_run_id;
+        let from = resolve_team_message_sender(&ctx, &team_run_id, args.from).await?;
         let message = TeamMessage {
             version: 1,
             message_id: args
                 .message_id
                 .unwrap_or_else(|| format!("msg_{}", ctx.tool_call_id)),
-            from: args.from,
+            from,
             to: args.to,
             kind: args.kind,
             body: args.body,

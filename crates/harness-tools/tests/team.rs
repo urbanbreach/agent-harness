@@ -13,7 +13,7 @@ use serde_json::json;
 
 mod common;
 
-use common::{anonymous_supervisor_actor, read_events};
+use common::{anonymous_supervisor_actor, read_events, worker_actor};
 
 #[tokio::test]
 async fn native_team_tools_append_events_and_return_projected_state() {
@@ -51,6 +51,13 @@ async fn native_team_tools_append_events_and_return_projected_state() {
         .await
         .expect("team_create tool");
     assert!(created.display_text.contains("team created"));
+    assert_eq!(
+        created
+            .structured_json
+            .as_ref()
+            .and_then(|json| json["lane_policy"].as_str()),
+        Some("operator-owned subordinate escalation")
+    );
 
     let team_list = handle
         .execute_agent_tool_call(actor.clone(), None, "team_list", json!({}))
@@ -61,22 +68,31 @@ async fn native_team_tools_append_events_and_return_projected_state() {
         .structured_json
         .expect("team_list structured json");
     assert_eq!(team_list_json["teams"][0]["team_run_id"], "team_tool");
+    assert_eq!(
+        team_list_json["teams"][0]["lane_policy"],
+        "operator-owned subordinate escalation"
+    );
     assert_eq!(team_list_json["source"], "event_replay");
 
-    handle
+    let sent = handle
         .execute_agent_tool_call(
             actor.clone(),
             None,
             "team_send_message",
             json!({
                 "teamRunId": "team_tool",
-                "from": "lead",
                 "to": "alpha",
                 "body": "hello"
             }),
         )
         .await
         .expect("team_send_message tool");
+    assert_eq!(
+        sent.structured_json
+            .as_ref()
+            .and_then(|json| json["messages"][0]["from"].as_str()),
+        Some("lead")
+    );
 
     handle
         .execute_agent_tool_call(
@@ -221,6 +237,102 @@ async fn native_team_tools_append_events_and_return_projected_state() {
     assert!(events
         .iter()
         .any(|event| matches!(event.payload, EventV1::TeamDeleted(_))));
+}
+
+#[tokio::test]
+async fn native_team_send_message_rejects_worker_sender_impersonation() {
+    let tempdir = tempfile::tempdir().expect("tempdir");
+    let mut config = CoordinatorConfig::new(tempdir.path());
+    config.run_id_override = Some("run_tool_team_sender".to_string());
+    config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
+    config.agent_profiles = BTreeMap::from([
+        (
+            "alpha".to_string(),
+            profile_with_toolset("alpha", &["team_send_message"]),
+        ),
+        (
+            "beta".to_string(),
+            profile_with_toolset("beta", &["team_send_message"]),
+        ),
+    ]);
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = handle
+        .start_run("tool-team-sender", tempdir.path())
+        .await
+        .expect("start run");
+    let actor = anonymous_supervisor_actor();
+
+    let created = handle
+        .execute_agent_tool_call(
+            actor,
+            None,
+            "team_create",
+            json!({
+                "teamRunId": "team_tool_sender",
+                "name": "tool-team-sender",
+                "members": [
+                    {
+                        "name": "alpha",
+                        "kind": "subagent_type",
+                        "subagent_type": "alpha"
+                    },
+                    {
+                        "name": "beta",
+                        "kind": "subagent_type",
+                        "subagent_type": "beta"
+                    }
+                ]
+            }),
+        )
+        .await
+        .expect("team_create tool");
+    let created_json = created.structured_json.as_ref().expect("created json");
+    let alpha_agent_id = created_json["members"]["alpha"]["agent_id"]
+        .as_str()
+        .expect("alpha agent id");
+
+    let forged = handle
+        .execute_agent_tool_call(
+            worker_actor(alpha_agent_id),
+            None,
+            "team_send_message",
+            json!({
+                "teamRunId": "team_tool_sender",
+                "from": "beta",
+                "to": "lead",
+                "body": "forged sender"
+            }),
+        )
+        .await
+        .expect_err("worker cannot impersonate another team participant");
+    assert!(forged.contains("does not match authenticated team participant `alpha`"));
+    let events = read_events(&run.events_path);
+    assert!(!events
+        .iter()
+        .any(|event| matches!(event.payload, EventV1::TeamMessageSent(_))));
+
+    let sent = handle
+        .execute_agent_tool_call(
+            worker_actor(alpha_agent_id),
+            None,
+            "team_send_message",
+            json!({
+                "teamRunId": "team_tool_sender",
+                "from": "alpha",
+                "to": "lead",
+                "body": "authenticated sender"
+            }),
+        )
+        .await
+        .expect("worker can use its authenticated sender");
+    assert_eq!(
+        sent.structured_json.as_ref().unwrap()["messages"][0]["from"],
+        "alpha"
+    );
 }
 
 #[tokio::test]
@@ -821,6 +933,10 @@ async fn native_team_create_accepts_research_role_but_mutations_stay_coordinator
 }
 
 fn profile(name: &str) -> AgentProfile {
+    profile_with_toolset(name, &["team_status"])
+}
+
+fn profile_with_toolset(name: &str, toolset: &[&str]) -> AgentProfile {
     AgentProfile {
         name: name.to_string(),
         category: "deep".to_string(),
@@ -832,6 +948,6 @@ fn profile(name: &str) -> AgentProfile {
         max_iters: Some(1),
         temperature: Some(0.0),
         tool_failure_mode: ToolFailureMode::FailTurn,
-        toolset: vec!["team_status".to_string()],
+        toolset: toolset.iter().map(|tool| (*tool).to_string()).collect(),
     }
 }
