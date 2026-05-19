@@ -1,5 +1,5 @@
 ---
 {
-  description: "The default Build agent"
+  description: "Hidden compatibility implementation lane; operator is the visible default."
 }
 ---

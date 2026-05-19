@@ -1,5 +1,5 @@
 ---
 {
-  description: "Plan mode. Disallows all edit tools except the active plan file."
+  description: "Hidden planning escalation. Disallows all edit tools except the active plan file."
 }
 ---
