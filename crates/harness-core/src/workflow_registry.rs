@@ -69,7 +69,6 @@ pub const SECURITY_REVIEW_EVIDENCE_CATEGORY: &str = "evidence.security_review";
 pub const QA_EVIDENCE_CATEGORY: &str = "evidence.qa";
 pub const PERFORMANCE_EVIDENCE_CATEGORY: &str = "evidence.performance";
 pub const VISUAL_EVIDENCE_CATEGORY: &str = "evidence.visual";
-pub const ADVISOR_EVIDENCE_CATEGORY: &str = "evidence.advisor";
 pub const SETUP_DOCTOR_EVIDENCE_CATEGORY: &str = "evidence.setup_doctor";
 pub const SKILL_MANAGEMENT_EVIDENCE_CATEGORY: &str = "evidence.skill_management";
 pub const STATUS_HUD_EVIDENCE_CATEGORY: &str = "evidence.status_hud";
@@ -83,7 +82,7 @@ pub const WORKFLOW_MODES: &[WorkflowModeSpec] = &[
     },
     WorkflowModeSpec {
         id: "workflow.deep_interview",
-        availability: WorkflowAvailability::Staged,
+        availability: WorkflowAvailability::Present,
         description: "One-question-at-a-time intake and context snapshot workflow.",
     },
     WorkflowModeSpec {
@@ -113,34 +112,133 @@ pub const WORKFLOW_MODES: &[WorkflowModeSpec] = &[
     },
     WorkflowModeSpec {
         id: "workflow.review",
-        availability: WorkflowAvailability::Staged,
+        availability: WorkflowAvailability::Present,
         description: "Code-review findings workflow with closeout blockers.",
     },
     WorkflowModeSpec {
         id: "workflow.security_review",
-        availability: WorkflowAvailability::Staged,
+        availability: WorkflowAvailability::Present,
         description: "Security-review findings workflow with closeout blockers.",
     },
     WorkflowModeSpec {
         id: "workflow.qa",
-        availability: WorkflowAvailability::Staged,
+        availability: WorkflowAvailability::Present,
         description: "Deterministic QA scenario workflow.",
     },
     WorkflowModeSpec {
         id: "workflow.performance",
-        availability: WorkflowAvailability::Staged,
+        availability: WorkflowAvailability::Present,
         description: "Evaluator-gated performance workflow.",
     },
     WorkflowModeSpec {
         id: "workflow.visual",
-        availability: WorkflowAvailability::Staged,
+        availability: WorkflowAvailability::Present,
         description: "Visual verdict/evidence workflow with env-gated live capture.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.autopilot",
+        availability: WorkflowAvailability::Present,
+        description: "Autonomous plan-execute-review workflow.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.analysis",
+        availability: WorkflowAvailability::Present,
+        description: "Read-only repository analysis workflow.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.doctor",
+        availability: WorkflowAvailability::Present,
+        description: "Runtime and installation diagnostics workflow.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.help",
+        availability: WorkflowAvailability::Present,
+        description: "Command help and discovery workflow.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.hud",
+        availability: WorkflowAvailability::Present,
+        description: "HUD and status projection workflow.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.note",
+        availability: WorkflowAvailability::Present,
+        description: "Note and project-memory capture workflow.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.skill_management",
+        availability: WorkflowAvailability::Present,
+        description: "Skill inventory and management workflow.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.trace",
+        availability: WorkflowAvailability::Present,
+        description: "Trace timeline and summary workflow.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.configure_notifications",
+        availability: WorkflowAvailability::Present,
+        description: "Notification configuration workflow.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.design",
+        availability: WorkflowAvailability::Present,
+        description: "Design source-of-truth workflow.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.cleanup",
+        availability: WorkflowAvailability::Present,
+        description: "Cleanup, refactor, and anti-slop workflow.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.pipeline",
+        availability: WorkflowAvailability::Present,
+        description: "Sequenced pipeline workflow.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.tdd",
+        availability: WorkflowAvailability::Present,
+        description: "Test-driven-development workflow.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.web_clone",
+        availability: WorkflowAvailability::Present,
+        description: "URL-driven web clone verification workflow.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.ecomode",
+        availability: WorkflowAvailability::Present,
+        description: "Token-efficient model routing workflow.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.deepsearch",
+        availability: WorkflowAvailability::Present,
+        description: "Deep search and evidence capture workflow.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.ralph_init",
+        availability: WorkflowAvailability::Present,
+        description: "Ralph initialization compatibility workflow.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.start_work",
+        availability: WorkflowAvailability::Present,
+        description: "Work-start handoff workflow.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.handoff",
+        availability: WorkflowAvailability::Present,
+        description: "Handoff artifact workflow.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.hyperplan",
+        availability: WorkflowAvailability::Present,
+        description: "Parallel planning handoff workflow.",
     },
     WorkflowModeSpec {
         id: "workflow.operator_utility",
         availability: WorkflowAvailability::Present,
-        description:
-            "Status, HUD, note, trace, doctor, setup, skill, and advisor utility workflow.",
+        description: "Status, HUD, note, trace, doctor, notification, and skill utility workflow.",
     },
     WorkflowModeSpec {
         id: "workflow.wiki",
@@ -295,10 +393,6 @@ pub const EVIDENCE_CATEGORIES: &[EvidenceCategorySpec] = &[
     EvidenceCategorySpec {
         id: VISUAL_EVIDENCE_CATEGORY,
         description: "Visual verdicts, screenshot refs, pixel-diff refs, and live-gate status.",
-    },
-    EvidenceCategorySpec {
-        id: ADVISOR_EVIDENCE_CATEGORY,
-        description: "External advisor transcript or artifact refs after permission approval.",
     },
     EvidenceCategorySpec {
         id: SETUP_DOCTOR_EVIDENCE_CATEGORY,
@@ -459,11 +553,11 @@ mod tests {
 
     use super::{
         evidence_category_ids, is_evidence_category, stable_id_groups, WorkflowAvailability,
-        ADVISOR_EVIDENCE_CATEGORY, EVIDENCE_CATEGORIES, NOTE_MEMORY_EVIDENCE_CATEGORY,
-        PERFORMANCE_EVIDENCE_CATEGORY, QA_EVIDENCE_CATEGORY, REVIEW_EVIDENCE_CATEGORY,
-        SECURITY_REVIEW_EVIDENCE_CATEGORY, SETUP_DOCTOR_EVIDENCE_CATEGORY,
-        SKILL_MANAGEMENT_EVIDENCE_CATEGORY, STATUS_HUD_EVIDENCE_CATEGORY, VISUAL_EVIDENCE_CATEGORY,
-        WORKFLOW_DOCS_ANCHORS, WORKFLOW_MODES, WORKFLOW_REJECTED_SURFACES,
+        EVIDENCE_CATEGORIES, NOTE_MEMORY_EVIDENCE_CATEGORY, PERFORMANCE_EVIDENCE_CATEGORY,
+        QA_EVIDENCE_CATEGORY, REVIEW_EVIDENCE_CATEGORY, SECURITY_REVIEW_EVIDENCE_CATEGORY,
+        SETUP_DOCTOR_EVIDENCE_CATEGORY, SKILL_MANAGEMENT_EVIDENCE_CATEGORY,
+        STATUS_HUD_EVIDENCE_CATEGORY, VISUAL_EVIDENCE_CATEGORY, WORKFLOW_DOCS_ANCHORS,
+        WORKFLOW_MODES, WORKFLOW_REJECTED_SURFACES,
     };
 
     #[test]
@@ -547,11 +641,37 @@ mod tests {
 
         for present in [
             "workflow.run",
+            "workflow.deep_interview",
             "workflow.plan_consensus",
             "workflow.continuation",
             "workflow.goal_ledger",
             "workflow.research_mission",
             "workflow.team_escalation",
+            "workflow.review",
+            "workflow.security_review",
+            "workflow.qa",
+            "workflow.performance",
+            "workflow.visual",
+            "workflow.autopilot",
+            "workflow.analysis",
+            "workflow.doctor",
+            "workflow.help",
+            "workflow.hud",
+            "workflow.note",
+            "workflow.skill_management",
+            "workflow.trace",
+            "workflow.configure_notifications",
+            "workflow.design",
+            "workflow.cleanup",
+            "workflow.pipeline",
+            "workflow.tdd",
+            "workflow.web_clone",
+            "workflow.ecomode",
+            "workflow.deepsearch",
+            "workflow.ralph_init",
+            "workflow.start_work",
+            "workflow.handoff",
+            "workflow.hyperplan",
             "workflow.operator_utility",
             "workflow.wiki",
         ] {
@@ -559,21 +679,6 @@ mod tests {
                 modes[present].availability,
                 WorkflowAvailability::Present,
                 "{present} should be classified as present"
-            );
-        }
-
-        for staged in [
-            "workflow.deep_interview",
-            "workflow.review",
-            "workflow.security_review",
-            "workflow.qa",
-            "workflow.performance",
-            "workflow.visual",
-        ] {
-            assert_eq!(
-                modes[staged].availability,
-                WorkflowAvailability::Staged,
-                "{staged} should be classified as staged until its top-level surface is fully proven"
             );
         }
 
@@ -594,7 +699,6 @@ mod tests {
             QA_EVIDENCE_CATEGORY,
             PERFORMANCE_EVIDENCE_CATEGORY,
             VISUAL_EVIDENCE_CATEGORY,
-            ADVISOR_EVIDENCE_CATEGORY,
             SETUP_DOCTOR_EVIDENCE_CATEGORY,
             SKILL_MANAGEMENT_EVIDENCE_CATEGORY,
             STATUS_HUD_EVIDENCE_CATEGORY,
