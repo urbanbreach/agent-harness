@@ -7,12 +7,22 @@ use std::time::SystemTime;
 use harness_core::event::{
     ActorKind, AgentSpawnedEvent, ArtifactWrittenEvent, BackgroundTaskNotificationEvent,
     BackgroundTaskNotificationStatus, EventActor, EventArtifactRef, EventEnvelopeV1, EventV1,
-    ExecutionTimingMetadata, PermissionDecision, PermissionRequestedEvent,
-    ProviderRequestFinishedEvent, ProviderRequestStartedEvent, RunFailedEvent, RunFinishedEvent,
-    RunStartedEvent, TaskCompletedEvent, TaskCompletionMetadata, TaskLineageMetadata,
-    TaskScheduleState, TaskScheduledEvent, ToolCallFinishedEvent, ToolCallMetadata,
+    ExecutionTimingMetadata, PermissionDecision, PermissionRequestedEvent, PersistentTask,
+    PersistentTaskCreatedEvent, PersistentTaskStatus, ProviderRequestFinishedEvent,
+    ProviderRequestStartedEvent, RunFailedEvent, RunFinishedEvent, RunStartedEvent,
+    TaskCompletedEvent, TaskCompletionMetadata, TaskLineageMetadata, TaskScheduleState,
+    TaskScheduledEvent, TeamBounds, TeamCreatedEvent, TeamMemberRole, TeamMemberSelector,
+    TeamMemberSpawnedEvent, TeamMemberSpec, TeamSpec, TeamTask, TeamTaskCreatedEvent,
+    TeamTaskStatus, TeamTaskUpdatedEvent, ToolCallFinishedEvent, ToolCallMetadata,
     ToolCallRequestedEvent, ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent,
-    SCHEMA_VERSION,
+    WorkflowEventMetadata, WorkflowEvidenceRecordedEvent, WorkflowOperatorDecisionRecordedEvent,
+    WorkflowStartedEvent, SCHEMA_VERSION,
+};
+use harness_core::workflow::{
+    SIMULATED_TOOL_EVIDENCE_CATEGORY, WORKFLOW_QUESTION_EVIDENCE_CATEGORY,
+    WORKFLOW_QUESTION_METADATA_ID, WORKFLOW_QUESTION_METADATA_PROMPT_REF,
+    WORKFLOW_QUESTION_METADATA_REASON_CODE, WORKFLOW_QUESTION_METADATA_STATUS,
+    WORKFLOW_QUESTION_STATUS_ASKED, WORKFLOW_TASK_METADATA_KEY,
 };
 use tempfile::tempdir;
 
@@ -200,6 +210,370 @@ fn replay_cli_prints_human_summary() {
     assert!(stdout.contains("counts:"));
     assert!(stdout.contains("artifacts: 0"));
     assert!(stdout.contains("child_sessions: 0"));
+}
+
+#[test]
+fn replay_projects_workflow_questions_closeout_team_permissions_and_evidence_without_mutation() {
+    let run_dir = tempdir().expect("tempdir");
+    let events = vec![
+        envelope(
+            "run_workflow_projection",
+            1,
+            EventV1::RunStarted(RunStartedEvent {
+                run_name: "workflow-projection".to_string(),
+                workspace_root: "/tmp/workspace".to_string(),
+            }),
+        ),
+        envelope(
+            "run_workflow_projection",
+            2,
+            EventV1::WorkflowStarted(WorkflowStartedEvent {
+                workflow_id: "wf_projection".to_string(),
+                mode: "workflow.plan_consensus".to_string(),
+                owner: "operator".to_string(),
+                lane: Some("planning".to_string()),
+                title: Some("Projection-only replay".to_string()),
+                idempotency_key: None,
+            }),
+        ),
+        envelope(
+            "run_workflow_projection",
+            3,
+            EventV1::PermissionRequested(PermissionRequestedEvent {
+                permission_id: "perm_000001".to_string(),
+                kind: "bash".to_string(),
+                tool_call_id: None,
+                summary: "approve validation command".to_string(),
+                request_digest: "digest-permission".to_string(),
+                timeout_ms: 30_000,
+                default_decision: PermissionDecision::Deny,
+            }),
+        ),
+        envelope(
+            "run_workflow_projection",
+            4,
+            EventV1::WorkflowEvidenceRecorded(WorkflowEvidenceRecordedEvent {
+                workflow_id: "wf_projection".to_string(),
+                category: WORKFLOW_QUESTION_EVIDENCE_CATEGORY.to_string(),
+                summary: "Need acceptance boundary".to_string(),
+                artifact_path: Some("artifacts/questions/q-projection.json".to_string()),
+                artifact_digest: Some("digest-question".to_string()),
+                acceptance_ref: Some("question:q-projection".to_string()),
+                metadata: BTreeMap::from([
+                    (
+                        WORKFLOW_QUESTION_METADATA_ID.to_string(),
+                        "q-projection".to_string(),
+                    ),
+                    (
+                        WORKFLOW_QUESTION_METADATA_STATUS.to_string(),
+                        WORKFLOW_QUESTION_STATUS_ASKED.to_string(),
+                    ),
+                    (
+                        WORKFLOW_QUESTION_METADATA_REASON_CODE.to_string(),
+                        "missing_boundary".to_string(),
+                    ),
+                    (
+                        WORKFLOW_QUESTION_METADATA_PROMPT_REF.to_string(),
+                        "prompts/q-projection.md".to_string(),
+                    ),
+                ]),
+            }),
+        ),
+        envelope(
+            "run_workflow_projection",
+            5,
+            EventV1::WorkflowEvidenceRecorded(WorkflowEvidenceRecordedEvent {
+                workflow_id: "wf_projection".to_string(),
+                category: SIMULATED_TOOL_EVIDENCE_CATEGORY.to_string(),
+                summary: "Recorded projection evidence".to_string(),
+                artifact_path: Some("artifacts/workflow/evidence.json".to_string()),
+                artifact_digest: Some("digest-evidence".to_string()),
+                acceptance_ref: Some("acceptance:projection".to_string()),
+                metadata: BTreeMap::new(),
+            }),
+        ),
+        envelope(
+            "run_workflow_projection",
+            6,
+            EventV1::WorkflowOperatorDecisionRecorded(WorkflowOperatorDecisionRecordedEvent {
+                workflow_id: "wf_projection".to_string(),
+                decision: "request_evidence".to_string(),
+                operator: "operator".to_string(),
+                reason: Some("question remains open".to_string()),
+                correlation_id: None,
+            }),
+        ),
+        envelope(
+            "run_workflow_projection",
+            7,
+            EventV1::PersistentTaskCreated(PersistentTaskCreatedEvent {
+                task: PersistentTask {
+                    version: 1,
+                    task_id: "task-workflow".to_string(),
+                    run_id: Some("run_workflow_projection".to_string()),
+                    thread_id: None,
+                    subject: "finish projection proof".to_string(),
+                    description: "projection-only replay proof".to_string(),
+                    status: PersistentTaskStatus::Pending,
+                    active_form: None,
+                    owner: Some("operator".to_string()),
+                    blocks: Vec::new(),
+                    blocked_by: Vec::new(),
+                    metadata: BTreeMap::from([(
+                        WORKFLOW_TASK_METADATA_KEY.to_string(),
+                        "wf_projection".to_string(),
+                    )]),
+                },
+            }),
+        ),
+        envelope(
+            "run_workflow_projection",
+            8,
+            EventV1::TeamCreated(TeamCreatedEvent {
+                team_run_id: "team_projection".to_string(),
+                spec: TeamSpec {
+                    version: 1,
+                    name: "operator-owned team escalation".to_string(),
+                    description: Some("subordinate projection lane".to_string()),
+                    lead: None,
+                    members: vec![TeamMemberSpec {
+                        name: "worker-1".to_string(),
+                        role: TeamMemberRole::Member,
+                        selector: TeamMemberSelector::SubagentType {
+                            subagent_type: "general".to_string(),
+                        },
+                        prompt: None,
+                    }],
+                    bounds: TeamBounds::default(),
+                    metadata: BTreeMap::from([
+                        (
+                            WORKFLOW_TASK_METADATA_KEY.to_string(),
+                            "wf_projection".to_string(),
+                        ),
+                        (
+                            "verification_evidence_ref".to_string(),
+                            "artifacts/team/verification.md".to_string(),
+                        ),
+                    ]),
+                },
+                workflow: Some(WorkflowEventMetadata {
+                    workflow_id: Some("wf_projection".to_string()),
+                    lane: Some("team".to_string()),
+                    owner: Some("operator".to_string()),
+                    ..WorkflowEventMetadata::default()
+                }),
+            }),
+        ),
+        envelope(
+            "run_workflow_projection",
+            9,
+            EventV1::TeamMemberSpawned(TeamMemberSpawnedEvent {
+                team_run_id: "team_projection".to_string(),
+                member_name: "worker-1".to_string(),
+                agent_id: "agent-team-worker-1".to_string(),
+                profile: "general".to_string(),
+                workflow: Some(WorkflowEventMetadata {
+                    workflow_id: Some("wf_projection".to_string()),
+                    lane: Some("team".to_string()),
+                    owner: Some("operator".to_string()),
+                    ..WorkflowEventMetadata::default()
+                }),
+            }),
+        ),
+        envelope(
+            "run_workflow_projection",
+            10,
+            EventV1::TeamTaskCreated(TeamTaskCreatedEvent {
+                team_run_id: "team_projection".to_string(),
+                task: TeamTask {
+                    version: 1,
+                    task_id: "team-task-projection".to_string(),
+                    subject: "verify replay projection".to_string(),
+                    description: "projection visibility".to_string(),
+                    status: TeamTaskStatus::Pending,
+                    owner: Some("worker-1".to_string()),
+                    blocks: Vec::new(),
+                    blocked_by: Vec::new(),
+                    metadata: BTreeMap::from([
+                        (
+                            WORKFLOW_TASK_METADATA_KEY.to_string(),
+                            "wf_projection".to_string(),
+                        ),
+                        (
+                            "blocker_ref".to_string(),
+                            "artifacts/team/blocker.md".to_string(),
+                        ),
+                    ]),
+                },
+                workflow: Some(WorkflowEventMetadata {
+                    workflow_id: Some("wf_projection".to_string()),
+                    lane: Some("team".to_string()),
+                    owner: Some("operator".to_string()),
+                    ..WorkflowEventMetadata::default()
+                }),
+            }),
+        ),
+        envelope(
+            "run_workflow_projection",
+            11,
+            EventV1::TeamTaskUpdated(TeamTaskUpdatedEvent {
+                team_run_id: "team_projection".to_string(),
+                task_id: "team-task-projection".to_string(),
+                status: TeamTaskStatus::Completed,
+                owner: Some("worker-1".to_string()),
+                metadata: BTreeMap::from([
+                    (
+                        WORKFLOW_TASK_METADATA_KEY.to_string(),
+                        "wf_projection".to_string(),
+                    ),
+                    (
+                        "evidence_ref".to_string(),
+                        "artifacts/team/task-verification.md".to_string(),
+                    ),
+                ]),
+                workflow: Some(WorkflowEventMetadata {
+                    workflow_id: Some("wf_projection".to_string()),
+                    lane: Some("team".to_string()),
+                    owner: Some("operator".to_string()),
+                    ..WorkflowEventMetadata::default()
+                }),
+            }),
+        ),
+    ];
+    write_events_jsonl(run_dir.path(), &events);
+    let before = std::fs::read_to_string(run_dir.path().join("events.jsonl")).expect("read events");
+
+    let json = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "replay",
+            "--session",
+            run_dir.path().to_str().expect("run dir utf-8"),
+            "--json",
+        ])
+        .output()
+        .expect("run harness replay json workflow projection");
+
+    assert!(
+        json.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&json.stderr)
+    );
+    let summary: serde_json::Value =
+        serde_json::from_slice(&json.stdout).expect("replay json output should parse");
+    assert_eq!(
+        summary["pending_permissions"],
+        serde_json::json!(["perm_000001"])
+    );
+    assert_eq!(
+        summary["workflow_projection"]["workflows"]["wf_projection"]["mode"],
+        "workflow.plan_consensus"
+    );
+    assert_eq!(
+        summary["workflow_projection"]["questions"]["q-projection"]["status"],
+        WORKFLOW_QUESTION_STATUS_ASKED
+    );
+    assert_eq!(
+        summary["workflow_projection"]["evidence"]["wf_projection"][1]["artifact_path"],
+        "artifacts/workflow/evidence.json"
+    );
+    assert_eq!(
+        summary["workflow_projection"]["teams"]["team_projection"]["task_statuses"]
+            ["team-task-projection"],
+        "completed"
+    );
+    assert_eq!(summary["teams"][0]["workflow_id"], "wf_projection");
+    assert_eq!(
+        summary["teams"][0]["lane_policy"],
+        "operator-owned subordinate escalation"
+    );
+    assert_eq!(
+        summary["teams"][0]["members"][0]["agent_id"],
+        "agent-team-worker-1"
+    );
+    assert!(summary["teams"][0]["verification_evidence_refs"]
+        .as_array()
+        .expect("team evidence refs should be visible")
+        .iter()
+        .any(|reference| reference == "artifacts/team/task-verification.md"));
+    assert!(summary["workflow_projection"]["teams"]["team_projection"]
+        ["verification_evidence_refs"]
+        .as_array()
+        .expect("workflow team evidence refs should be visible")
+        .iter()
+        .any(|reference| reference == "artifacts/team/task-verification.md"));
+    assert!(
+        summary["workflow_projection"]["teams"]["team_projection"]["blocker_refs"]
+            .as_array()
+            .expect("workflow team blocker refs should be visible")
+            .iter()
+            .any(|reference| reference == "artifacts/team/blocker.md")
+    );
+    assert_eq!(summary["teams"][0]["task_status_counts"]["completed"], 1);
+    assert_eq!(
+        summary["workflow_closeout"]["wf_projection"]["overall_allowed"],
+        false
+    );
+    assert!(
+        summary["workflow_closeout"]["wf_projection"]["legal_next_actions"]
+            .as_array()
+            .expect("legal actions should be an array")
+            .iter()
+            .any(|action| action["action"] == "request_evidence")
+    );
+    assert!(summary["workflow_closeout"]["wf_projection"]["dimensions"]
+        .as_array()
+        .expect("closeout dimensions should be an array")
+        .iter()
+        .any(|dimension| dimension["id"] == "question"
+            && dimension["blocking_refs"]
+                .as_array()
+                .expect("question refs should be an array")
+                .iter()
+                .any(|reference| reference == "question:q-projection")));
+
+    let human = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "replay",
+            "--session",
+            run_dir.path().to_str().expect("run dir utf-8"),
+        ])
+        .output()
+        .expect("run harness replay human workflow projection");
+
+    assert!(
+        human.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&human.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&human.stdout);
+    assert!(stdout.contains("pending_permissions:"));
+    assert!(stdout.contains("perm_000001"));
+    assert!(stdout.contains("workflows: 1"));
+    assert!(stdout.contains("wf_projection"));
+    assert!(stdout.contains("questions:"));
+    assert!(stdout.contains("q-projection"));
+    assert!(stdout.contains("legal_next_actions=request_evidence"));
+    assert!(stdout.contains("artifacts/workflow/evidence.json"));
+    assert!(stdout.contains("operator-owned team escalation (team_projection)"));
+    assert!(stdout.contains("lane=operator-owned subordinate escalation"));
+    assert!(stdout.contains("workflow=wf_projection"));
+    assert!(
+        stdout.contains("task_statuses=pending:0 claimed:0 in_progress:0 completed:1 deleted:0")
+    );
+    assert!(stdout.contains("agent=agent-team-worker-1"));
+    assert!(
+        stdout.contains(
+            "evidence_refs=artifacts/team/task-verification.md,artifacts/team/verification.md"
+        ) || stdout.contains(
+            "evidence_refs=artifacts/team/verification.md,artifacts/team/task-verification.md"
+        )
+    );
+    assert!(stdout.contains("blocker_refs=artifacts/team/blocker.md"));
+    assert_eq!(
+        std::fs::read_to_string(run_dir.path().join("events.jsonl")).expect("read events"),
+        before,
+        "replay projection inspection must not mutate events.jsonl"
+    );
 }
 
 #[test]

@@ -8,9 +8,16 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Args;
 use harness_core::event::{EventEnvelopeV1, EventV1, RunStartedEvent};
+use harness_core::persistent_task::project_persistent_tasks;
 use harness_core::proj::{
     project_resume_plan, project_run_summary, project_session_catalog_entry, project_team_state,
     ChildSessionTerminalState, RunStatus, SessionCatalogEntry, SessionCatalogMetadata,
+    TeamShutdownProof, TeamTaskStatusCounts, TEAM_METADATA_EVIDENCE_REF,
+    TEAM_METADATA_SYNTHESIS_REF, TEAM_METADATA_VERIFICATION_EVIDENCE_REF,
+};
+use harness_core::workflow::{project_workflows, WorkflowProjection, WorkflowSignoffPolicy};
+use harness_core::workflow_closeout::{
+    WorkflowCloseoutPolicy, WorkflowCloseoutReadiness, WorkflowSignoffDecision,
 };
 use serde::Serialize;
 
@@ -115,6 +122,10 @@ pub struct ReplaySummary {
     pub child_sessions: Vec<ReplayChildSessionSummary>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub teams: Vec<ReplayTeamSummary>,
+    #[serde(default, skip_serializing_if = "workflow_projection_is_empty")]
+    pub workflow_projection: WorkflowProjection,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub workflow_closeout: BTreeMap<String, WorkflowCloseoutReadiness>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -123,16 +134,42 @@ pub struct ReplayTeamSummary {
     pub name: String,
     pub status: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow_id: Option<String>,
+    pub lane_policy: &'static str,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lead_profile: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lead_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lead_agent_id: Option<String>,
     pub member_count: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub members: Vec<ReplayTeamMemberSummary>,
     pub running_members: u32,
     pub pending_members: u32,
     pub message_count: usize,
     pub task_count: usize,
+    pub task_status_counts: TeamTaskStatusCounts,
     pub shutdown_request_count: usize,
     pub member_turns: u32,
+    pub shutdown_proof: TeamShutdownProof,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub verification_evidence_refs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub synthesis_refs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blocker_refs: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ReplayTeamMemberSummary {
+    pub name: String,
+    pub role: String,
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -190,6 +227,8 @@ pub fn summarize_session(run_dir: &Path) -> Result<ReplaySummary, String> {
     let run_name = run_started_event(&events).map(|data| data.run_name.clone());
     let (artifacts, child_sessions) = summarize_recovery_story(run_dir, &events, &run_id);
     let teams = summarize_teams(&events);
+    let workflow_projection = project_workflows(events.iter().map(|event| &event.payload));
+    let workflow_closeout = summarize_workflow_closeout(&workflow_projection, &events, &run_id);
 
     Ok(ReplaySummary {
         run_id,
@@ -211,7 +250,49 @@ pub fn summarize_session(run_dir: &Path) -> Result<ReplaySummary, String> {
         artifacts,
         child_sessions,
         teams,
+        workflow_projection,
+        workflow_closeout,
     })
+}
+
+fn summarize_workflow_closeout(
+    projection: &WorkflowProjection,
+    events: &[EventEnvelopeV1],
+    run_id: &str,
+) -> BTreeMap<String, WorkflowCloseoutReadiness> {
+    if projection.workflows.is_empty() {
+        return BTreeMap::new();
+    }
+    let persistent_tasks = project_persistent_tasks(events);
+    let signoff_policy = WorkflowSignoffPolicy::simulator_default();
+    let closeout_policy = WorkflowCloseoutPolicy::default_policy();
+    projection
+        .workflows
+        .keys()
+        .map(|workflow_id| {
+            let mut readiness = projection.closeout_readiness(
+                workflow_id.clone(),
+                &persistent_tasks,
+                &signoff_policy,
+                &closeout_policy,
+            );
+            readiness.run_id = Some(run_id.to_string());
+            (workflow_id.clone(), readiness)
+        })
+        .collect()
+}
+
+fn workflow_projection_is_empty(projection: &WorkflowProjection) -> bool {
+    projection.workflows.is_empty()
+        && projection.evidence.is_empty()
+        && projection.denied_transitions.is_empty()
+        && projection.continuations.is_empty()
+        && projection.context_snapshots.is_empty()
+        && projection.questions.is_empty()
+        && projection.teams.is_empty()
+        && projection.plan_consensus.is_empty()
+        && projection.goal_ledger.goals.is_empty()
+        && projection.research_missions.missions.is_empty()
 }
 
 fn summarize_teams(events: &[EventEnvelopeV1]) -> Vec<ReplayTeamSummary> {
@@ -225,17 +306,87 @@ fn summarize_teams(events: &[EventEnvelopeV1]) -> Vec<ReplayTeamSummary> {
             team_run_id,
             name: team.name,
             status: format!("{:?}", team.status),
+            workflow_id: team.workflow_id,
+            lane_policy: "operator-owned subordinate escalation",
             lead_profile: team.lead.as_ref().and_then(|lead| lead.profile.clone()),
             lead_status: team.lead.as_ref().map(|lead| format!("{:?}", lead.status)),
+            lead_agent_id: team.lead.as_ref().and_then(|lead| lead.agent_id.clone()),
             member_count: team.members.len(),
+            members: team
+                .members
+                .values()
+                .map(|member| ReplayTeamMemberSummary {
+                    name: member.name.clone(),
+                    role: member.role.as_str().to_string(),
+                    status: format!("{:?}", member.status),
+                    profile: member.profile.clone(),
+                    agent_id: member.agent_id.clone(),
+                })
+                .collect(),
             running_members: team.bounds_consumption.running_members,
             pending_members: team.bounds_consumption.pending_members,
             message_count: team.messages.len(),
             task_count: team.tasks.len(),
+            task_status_counts: team.task_status_counts,
             shutdown_request_count: team.shutdown_requests.len(),
             member_turns: team.bounds_consumption.member_turns,
+            verification_evidence_refs: team_evidence_refs(&team.metadata, &team.shutdown_proof),
+            synthesis_refs: team_synthesis_refs(&team.metadata, &team.shutdown_proof),
+            blocker_refs: team.shutdown_proof.blocker_refs.clone(),
+            shutdown_proof: team.shutdown_proof,
         })
         .collect()
+}
+
+fn team_evidence_refs(
+    metadata: &BTreeMap<String, String>,
+    shutdown_proof: &TeamShutdownProof,
+) -> Vec<String> {
+    let mut refs = shutdown_proof.verification_evidence_refs.clone();
+    merge_unique_refs(
+        &mut refs,
+        metadata_refs(
+            metadata,
+            &[
+                TEAM_METADATA_EVIDENCE_REF,
+                TEAM_METADATA_VERIFICATION_EVIDENCE_REF,
+            ],
+        ),
+    );
+    refs
+}
+
+fn team_synthesis_refs(
+    metadata: &BTreeMap<String, String>,
+    shutdown_proof: &TeamShutdownProof,
+) -> Vec<String> {
+    let mut refs = shutdown_proof.synthesis_refs.clone();
+    merge_unique_refs(
+        &mut refs,
+        metadata_refs(
+            metadata,
+            &[TEAM_METADATA_SYNTHESIS_REF, "lead_synthesis_ref"],
+        ),
+    );
+    refs
+}
+
+fn metadata_refs(metadata: &BTreeMap<String, String>, keys: &[&str]) -> Vec<String> {
+    keys.iter()
+        .filter_map(|key| metadata.get(*key))
+        .flat_map(|value| value.split([',', '\n']))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn merge_unique_refs(values: &mut Vec<String>, refs: impl IntoIterator<Item = String>) {
+    for value in refs {
+        if !values.contains(&value) {
+            values.push(value);
+        }
+    }
 }
 
 pub fn inspect_session_catalog(session_dir: &Path) -> Result<Vec<SessionInspectionEntry>, String> {
@@ -908,6 +1059,7 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary) {
     println!("child_sessions: {}", summary.child_session_count);
     println!("artifacts: {}", summary.artifact_count);
     println!("teams: {}", summary.teams.len());
+    println!("workflows: {}", summary.workflow_projection.workflows.len());
     println!("total_events: {}", summary.total_events);
     if let Some(last_error) = &summary.last_error {
         println!("last_error: {}", sanitize_human_text(last_error));
@@ -929,6 +1081,19 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary) {
     println!("counts:");
     for (event_type, count) in &summary.counts_by_type {
         println!("  {event_type}: {count}");
+    }
+
+    if !summary.pending_permissions.is_empty() {
+        println!("pending_permissions:");
+        for permission_id in &summary.pending_permissions {
+            println!("  - {}", sanitize_human_text(permission_id));
+        }
+    }
+    if !summary.tasks_in_flight.is_empty() {
+        println!("tasks_in_flight:");
+        for task_id in &summary.tasks_in_flight {
+            println!("  - {}", sanitize_human_text(task_id));
+        }
     }
 
     println!("artifacts: {}", summary.artifact_count);
@@ -1076,8 +1241,9 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary) {
                 sanitize_human_text(&team.team_run_id)
             );
             println!(
-                "    status={}, members={} (running={}, pending={}), messages={}, tasks={}, shutdown_requests={}, member_turns={}",
+                "    status={}, lane={}, members={} (running={}, pending={}), messages={}, tasks={}, shutdown_requests={}, member_turns={}",
                 sanitize_human_text(&team.status),
+                sanitize_human_text(team.lane_policy),
                 team.member_count,
                 team.running_members,
                 team.pending_members,
@@ -1086,14 +1252,258 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary) {
                 team.shutdown_request_count,
                 team.member_turns
             );
+            if let Some(workflow_id) = team.workflow_id.as_deref() {
+                println!("    workflow={}", sanitize_human_text(workflow_id));
+            }
+            println!(
+                "    task_statuses=pending:{} claimed:{} in_progress:{} completed:{} deleted:{}",
+                team.task_status_counts.pending,
+                team.task_status_counts.claimed,
+                team.task_status_counts.in_progress,
+                team.task_status_counts.completed,
+                team.task_status_counts.deleted
+            );
             if let Some(lead_profile) = team.lead_profile.as_deref() {
                 println!(
-                    "    lead={} ({})",
+                    "    lead={} ({}){}",
                     sanitize_human_text(lead_profile),
-                    sanitize_human_text(team.lead_status.as_deref().unwrap_or("unknown"))
+                    sanitize_human_text(team.lead_status.as_deref().unwrap_or("unknown")),
+                    team.lead_agent_id
+                        .as_deref()
+                        .map(|agent_id| format!(" agent={}", sanitize_human_text(agent_id)))
+                        .unwrap_or_default()
+                );
+            }
+            if !team.members.is_empty() {
+                println!("    members:");
+                for member in &team.members {
+                    let mut details = vec![
+                        format!("name={}", sanitize_human_text(&member.name)),
+                        format!("role={}", sanitize_human_text(&member.role)),
+                        format!("status={}", sanitize_human_text(&member.status)),
+                    ];
+                    push_sanitized_detail(&mut details, "profile", member.profile.as_deref());
+                    push_sanitized_detail(&mut details, "agent", member.agent_id.as_deref());
+                    println!("      - {}", details.join(", "));
+                }
+            }
+            if !team.verification_evidence_refs.is_empty() {
+                println!(
+                    "    evidence_refs={}",
+                    team.verification_evidence_refs
+                        .iter()
+                        .map(|value| sanitize_human_text(value))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                );
+            }
+            if !team.synthesis_refs.is_empty() {
+                println!(
+                    "    synthesis_refs={}",
+                    team.synthesis_refs
+                        .iter()
+                        .map(|value| sanitize_human_text(value))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                );
+            }
+            if !team.blocker_refs.is_empty() {
+                println!(
+                    "    blocker_refs={}",
+                    team.blocker_refs
+                        .iter()
+                        .map(|value| sanitize_human_text(value))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                );
+            }
+            if !team.shutdown_proof.ready {
+                println!(
+                    "    shutdown_missing={}",
+                    team.shutdown_proof
+                        .missing
+                        .iter()
+                        .map(|value| sanitize_human_text(value))
+                        .collect::<Vec<_>>()
+                        .join(",")
                 );
             }
         }
+    }
+
+    println!("workflows: {}", summary.workflow_projection.workflows.len());
+    if summary.workflow_projection.workflows.is_empty() {
+        println!("  <none>");
+    } else {
+        for workflow in summary.workflow_projection.workflows.values() {
+            println!(
+                "  - {} mode={} status={} owner={}",
+                sanitize_human_text(&workflow.workflow_id),
+                sanitize_human_text(&workflow.mode),
+                sanitize_human_text(&workflow.status),
+                sanitize_human_text(&workflow.owner)
+            );
+            let mut details = Vec::new();
+            push_sanitized_detail(&mut details, "lane", workflow.lane.as_deref());
+            push_sanitized_detail(&mut details, "title", workflow.title.as_deref());
+            if workflow.terminal {
+                details.push("terminal=true".to_string());
+            }
+            if workflow.denied_transition_count > 0 {
+                details.push(format!(
+                    "denied_transitions={}",
+                    workflow.denied_transition_count
+                ));
+            }
+            if !workflow.operator_decisions.is_empty() {
+                details.push(format!(
+                    "operator_decisions={}",
+                    workflow
+                        .operator_decisions
+                        .iter()
+                        .map(|value| sanitize_human_text(value))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                ));
+            }
+            if !workflow.evidence_categories.is_empty() {
+                details.push(format!(
+                    "evidence_categories={}",
+                    workflow
+                        .evidence_categories
+                        .iter()
+                        .map(|value| sanitize_human_text(value))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                ));
+            }
+            if !details.is_empty() {
+                println!("    {}", details.join(", "));
+            }
+
+            if let Some(evidence) = summary
+                .workflow_projection
+                .evidence
+                .get(&workflow.workflow_id)
+            {
+                println!("    evidence:");
+                for item in evidence {
+                    let mut item_details =
+                        vec![format!("category={}", sanitize_human_text(&item.category))];
+                    push_sanitized_detail(
+                        &mut item_details,
+                        "acceptance",
+                        item.acceptance_ref.as_deref(),
+                    );
+                    push_sanitized_detail(
+                        &mut item_details,
+                        "artifact",
+                        item.artifact_path.as_deref(),
+                    );
+                    push_sanitized_detail(
+                        &mut item_details,
+                        "digest",
+                        item.artifact_digest.as_deref(),
+                    );
+                    item_details.push(format!("summary={}", sanitize_human_text(&item.summary)));
+                    println!("      - {}", item_details.join(", "));
+                }
+            }
+
+            let questions = summary
+                .workflow_projection
+                .questions
+                .values()
+                .filter(|question| question.workflow_id == workflow.workflow_id)
+                .collect::<Vec<_>>();
+            if !questions.is_empty() {
+                println!("    questions:");
+                for question in questions {
+                    let mut question_details = vec![
+                        format!("id={}", sanitize_human_text(&question.question_id)),
+                        format!("status={}", sanitize_human_text(&question.status)),
+                    ];
+                    push_sanitized_detail(
+                        &mut question_details,
+                        "reason",
+                        question.reason_code.as_deref(),
+                    );
+                    push_sanitized_detail(
+                        &mut question_details,
+                        "prompt",
+                        question.prompt_ref.as_deref(),
+                    );
+                    push_sanitized_detail(
+                        &mut question_details,
+                        "answer",
+                        question.answer_ref.as_deref(),
+                    );
+                    question_details.push(format!(
+                        "summary={}",
+                        sanitize_human_text(&question.summary)
+                    ));
+                    println!("      - {}", question_details.join(", "));
+                }
+            }
+
+            if let Some(closeout) = summary.workflow_closeout.get(&workflow.workflow_id) {
+                println!(
+                    "    closeout: allowed={} terminal={} policy={}",
+                    closeout.overall_allowed,
+                    closeout.terminal,
+                    sanitize_human_text(&closeout.policy_id.to_string())
+                );
+                if !closeout.legal_next_actions.is_empty() {
+                    println!(
+                        "    legal_next_actions={}",
+                        closeout
+                            .legal_next_actions
+                            .iter()
+                            .map(|action| workflow_action_label(&action.action))
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    );
+                }
+                let blocked = closeout
+                    .dimensions
+                    .iter()
+                    .filter(|dimension| !dimension.allowed)
+                    .collect::<Vec<_>>();
+                if !blocked.is_empty() {
+                    println!("    blocked_closeout_dimensions:");
+                    for dimension in blocked {
+                        println!(
+                            "      - {} refs={} actions={}",
+                            sanitize_human_text(&dimension.id),
+                            dimension
+                                .blocking_refs
+                                .iter()
+                                .map(|value| sanitize_human_text(value))
+                                .collect::<Vec<_>>()
+                                .join(","),
+                            dimension
+                                .recovery_hints
+                                .iter()
+                                .map(|value| sanitize_human_text(value))
+                                .collect::<Vec<_>>()
+                                .join(" | ")
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn workflow_action_label(action: &WorkflowSignoffDecision) -> &'static str {
+    match action {
+        WorkflowSignoffDecision::Approve => "approve",
+        WorkflowSignoffDecision::Fail => "fail",
+        WorkflowSignoffDecision::RequestEvidence => "request_evidence",
+        WorkflowSignoffDecision::Waive => "waive",
+        WorkflowSignoffDecision::Abort => "abort",
+        WorkflowSignoffDecision::Redirect => "redirect",
+        WorkflowSignoffDecision::ApproveLive => "approve_live",
     }
 }
 
