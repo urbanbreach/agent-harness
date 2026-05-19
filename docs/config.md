@@ -42,9 +42,10 @@ fills in the default details for each listed agent unless you override them.
   },
   "model": "default/gpt-5.4-mini",
   "agent": {
-    "build": { "enable": true },
-    "plan": { "enable": true },
-    "discipline": { "enable": true },
+    "operator": { "enable": true },
+    "build": { "enable": true, "hidden": true },
+    "plan": { "enable": true, "hidden": true },
+    "discipline": { "enable": true, "hidden": true },
     "general": { "enable": true },
     "explore": { "enable": true },
     "visual-engineering": { "enable": true },
@@ -59,7 +60,7 @@ fills in the default details for each listed agent unless you override them.
     "summary": { "enable": true, "hidden": true },
     "compaction": { "enable": true, "hidden": true }
   },
-  "default_agent": "build",
+  "default_agent": "operator",
   "permission": "ask"
 }
 ```
@@ -125,6 +126,19 @@ models, agents, permissions, MCP, skills, instructions, and compaction. TUI
 config stays limited to `$schema` plus `keybinds`; use `tui.json` or `tui.jsonc`
 for those settings instead of mixing them into runtime config.
 
+## Headless/server boundary
+
+Headless Harness execution is the `prompt` command: it runs the normal
+coordinator/provider/tool loop, persists events, and can later be inspected
+through replay/session projections. Future server or API surfaces are staged as a
+projection/API boundary over the same event store and workflow projections, not
+as execution authority and not as a second runtime. Runtime config therefore
+rejects active OpenCode-style `server`, `command`, `plugin`, `share`,
+`autoshare`, `autoupdate`, and `enterprise` product features. Empty or disabled
+forms are accepted only as migration placeholders so upstream-shaped config can
+round-trip without launching servers, configured commands, plugins, sharing, or
+updaters.
+
 ## Runtime top-level keys
 
 | Key | Purpose |
@@ -136,7 +150,7 @@ for those settings instead of mixing them into runtime config.
 | `command` | OpenCode command configuration; accepted only when empty because the harness does not execute configured commands. |
 | `compaction` | OpenCode-compatible compaction settings accepted as inert compatibility input; harness compaction knobs live under `runtime.compaction`. |
 | `compatibility` | Safe migration controls and import diagnostics for Claude/OpenCode/OMO-compatible agents, skills, commands, MCP files, hooks, and extension manifests. |
-| `default_agent` | Default interactive agent selected at startup; the shipped example keeps `build` as the default while `plan` remains selectable. |
+| `default_agent` | Default interactive agent selected at startup; the shipped example uses the single visible `operator` profile. Legacy `build`, `plan`, and `discipline` names are compatibility profiles, not the default-visible primary set. |
 | `disabled_agents` | Top-level compatibility shortcut merged into `compatibility.disabled_agents`. |
 | `disabled_commands` | Top-level compatibility shortcut merged into `compatibility.disabled_commands`. |
 | `disabled_extensions` | Top-level compatibility shortcut merged into `compatibility.disabled_extensions`. |
@@ -218,27 +232,31 @@ Project instructions are still auto-discovered from `AGENTS.md`. If
 `instructions` is set in the runtime config, those entries are prepended ahead
 of the discovered `AGENTS.md` content.
 
-The shipped `plan` agent provides a stable planning mode, not an experimental
-feature flag. It can read/search, ask questions, write only the active
-workspace-relative `.agent-harness/plans/<run>.md` plan file, and call
-`plan_exit` to ask whether to switch to `build`. The coordinator reminder tells
-Plan whether that active plan file already exists: the first Plan turn creates
-the file, while later turns should read and update the same path. The edit
-boundary is enforced by per-agent permission rules, not just prompt text.
+The visible default `operator` profile owns normal implementation and workflow
+intake. The hidden `plan` compatibility profile provides a stable planning
+escalation, not an experimental feature flag. It can read/search, ask questions,
+write only the active workspace-relative `.agent-harness/plans/<run>.md` plan
+file, and call `plan_exit` to ask whether to return to the operator path. The
+coordinator reminder tells Plan whether that active plan file already exists:
+the first Plan turn creates the file, while later turns should read and update
+the same path. The edit boundary is enforced by per-agent permission rules, not
+just prompt text.
 
-The shipped `build` agent exposes `plan_enter`, which asks whether to switch to
-Plan before complex implementation work and schedules a coordinator-owned Plan
-continuation when approved. To match the reference Plan workflow, the shipped
-Plan profile exposes `bash` behind shell permission prompts; Plan instructions
-and a coordinator-side shell guard still restrict bash to read-only inspection and
-forbid edits, config changes, commits, or other mutations. Plan-mode delegation
-remains restricted to the read-only `explore` profile by default; `general` and
-user-defined write-capable subagents are rejected before spawn unless a future
-profile deliberately adds parent-permission inheritance and tests for it.
+The operator/build compatibility tool surface exposes `plan_enter`, which asks
+whether to switch to Plan before complex implementation work and schedules a
+coordinator-owned Plan continuation when approved. To match the reference Plan
+workflow, the shipped Plan profile exposes `bash` behind shell permission
+prompts; Plan instructions and a coordinator-side shell guard still restrict
+bash to read-only inspection and forbid edits, config changes, commits, or other
+mutations. Plan-mode delegation remains restricted to the read-only `explore`
+profile by default; `general` and user-defined write-capable subagents are
+rejected before spawn unless a future profile deliberately adds
+parent-permission inheritance and tests for it.
 
-The shipped `build` agent also exposes the coordinator-owned `team_*` tools for
-lead-agent coordination. A team has four stable roles: supervisor/operator,
-lead, write-capable member, and read-only research member. `team_create.lead`
+The operator/build compatibility tool surface also exposes the coordinator-owned
+`team_*` tools for explicit team escalation. A team has four stable roles:
+supervisor/operator, lead, write-capable member, and read-only research member.
+`team_create.lead`
 selects an optional write-capable lead profile; when present, the coordinator
 spawns and projects it separately from members. Team member entries default to
 `role: "member"`; set `role: "research"` only for read-only profiles such as
@@ -263,10 +281,10 @@ must have approved shutdown and the projection must show no pending/claimed/
 in-progress team tasks plus verification evidence, unless `abort_reason`
 metadata is supplied explicitly.
 
-The shipped `discipline` agent is the opt-in autonomous delivery workflow. It is
-a separate primary profile, not a global toggle: use it when a turn should enforce
-todo hygiene, focused delegation, and end-to-end surface verification. The
-behavior remains prompt/profile-scoped and does not add coordinator-owned
+The shipped `discipline` agent is a hidden strict-delivery escalation, not a
+second visible primary path or a global toggle. Use it only when a turn should
+enforce todo hygiene, focused delegation, and end-to-end surface verification.
+The behavior remains prompt/profile-scoped and does not add coordinator-owned
 background scheduler loops, plugin loading, or hidden continuation semantics.
 
 `harness doctor` validates the operator-facing orchestration surface without
@@ -306,6 +324,14 @@ split by crate responsibility:
   including evidence refs and final quality-gate refs, so replay can derive
   aggregate goal status and block final completion until checkpoint evidence
   plus verification/review quality evidence are present.
+- Workflow-family evidence categories cover the G004 native workflow surface:
+  `evidence.continuation`, `evidence.review`, `evidence.security_review`,
+  `evidence.qa`, `evidence.performance`, `evidence.visual`,
+  `evidence.advisor`, `evidence.setup_doctor`,
+  `evidence.skill_management`, `evidence.status_hud`, and
+  `evidence.note_memory`. Their status metadata is replay-derived closeout
+  input; blocking statuses such as `failed`, `blocked`, or `denied` prevent
+  signoff until resolved or explicitly waived.
 - `harness doctor --json` includes the `workflow_contract_registry` check so docs
   anchors and stable id groups drift visibly.
 - `harness doctor --json` also includes `workflow_context_snapshot`, which
@@ -327,7 +353,7 @@ split by crate responsibility:
 - `harness doctor --json` includes `workflow_stale_work_loop`, which inspects
   the latest `events.jsonl` under the configured session directory and warns
   when workflow-owned continuations are still active or reminder-queued.
-- `harness workflow run/status/signoff/cancel/dossier/snapshot/plan-consensus/goal/mission/wiki/init`
+- `harness workflow run/status/signoff/cancel/dossier/snapshot/plan-consensus/goal/mission/wiki/evidence/init`
   are the CLI foundation commands. `status`, goal status/read/list, and
   dossier/snapshot/mission reads are projection-only over `events.jsonl`; dossier export
   includes the replay-derived quality gate and prompt-to-artifact completion audit.
@@ -335,7 +361,11 @@ split by crate responsibility:
   goal-ledger surface, `harness workflow mission init/run/status/read` is the
   validator-gated research surface, and
   `harness workflow wiki add/read/list/query/lint/refresh/delete` is the
-  markdown wiki surface. `init --check` reports planned files without writing and
+  markdown wiki surface. `harness workflow evidence record` is the generic
+  family-evidence surface for staged review/security/QA/performance/visual,
+  advisor, setup/doctor, skill, status/HUD, note/memory, and continuation
+  workflows; it appends coordinator-owned evidence with artifact refs and status
+  metadata instead of executing live side effects. `init --check` reports planned files without writing and
   `init --apply` is the explicit write path for safe generated files under
   `.agent-harness/`.
 - `harness workflow snapshot write --json` is the minimal coordinator-backed
@@ -349,17 +379,45 @@ split by crate responsibility:
   slice, while replayable workflow state must still come from coordinator-owned
   events and redacted artifact references.
 
+### Operator workflow examples
+
+These examples are written with the installed `harness` binary for readability;
+from this repository, prefix them with
+`cargo run -p harness -- --config configs/harness.example.jsonc`. The important
+contract is the authority boundary: write commands append coordinator-owned
+events/artifact refs, while status/dossier/snapshot/goal/mission reads project
+from an existing run instead of rerunning hooks, validators, providers, tmux, or
+workers.
+
+| Flow | Example | Authority and blocker rule |
+| --- | --- | --- |
+| Direct operator work | `harness prompt "Summarize the workspace constraints"` | Starts from the visible `operator` profile. Provider/tool behavior still goes through coordinator events and permission policy. |
+| Deep-interview intake to Ralplan | `harness workflow snapshot write --workflow-id wf-demo --source-command /interview --task "Clarify the risky change" --desired-outcome "approved plan" --unknown "migration boundary" --ambiguity-score 0.45 --handoff-ready --json` then `harness workflow plan-consensus --workflow-id wf-demo --task "Implement the approved change" --option A="operator-spine patch" --chosen-option A --adr "Use operator spine; keep replay pure" --acceptance "evidence mapped" --evidence-ref snapshot:<id> --json` | The snapshot is coordinator-backed `evidence.context_snapshot`; Ralplan is `evidence.plan_consensus`. Hidden `/init-deep` stays blocked until its interview rounds produce equivalent workflow evidence. |
+| Team escalation | Use the operator's `team_*` native tools only after an explicit escalation decision; inspect with `team_list`/team status projections before shutdown. | Team state is event-sourced. Team specs, worktree paths, and tmux panes are metadata/diagnostics, not replay side effects or a default work path. |
+| Goal and mission | `harness workflow goal create --goal-id g-demo --objective "deliver slice" --story s1="patch docs" --acceptance "tests pass" --json`; `harness workflow mission init --mission-id m-demo --objective "answer risk" --question "what blocks release?" --validator-mode prompt-architect-artifact --json` | Goal and mission status/read/list are projection-only. Mission validator shell execution is permission-gated before process or artifact side effects. |
+| Review and security evidence | `harness workflow evidence record --workflow-id wf-demo --category evidence.review --status passed --summary "review approved" --artifact-path artifacts/review.md --acceptance-ref AC6`; use `evidence.security_review` the same way for security findings. | Generic family evidence is explicit. `failed`, `blocked`, or `denied` status metadata blocks closeout until resolved or waived. |
+| Note/wiki memory | `harness workflow wiki add --workflow-id wf-demo --slug release-note --title "Release note" --category handoff --body "operator handoff" --json`; use `harness workflow evidence record --category evidence.note_memory ...` for note/project-memory evidence. | Wiki add/delete require edit permission before project-visible writes. Wiki read/list/query are explicit live reads over the configured wiki root; workflow-significant wiki writes are event-digested. |
+| Closeout and dossier | `harness workflow status --run-dir <run> --workflow-id wf-demo --json`; `harness workflow dossier export --run-dir <run> --workflow-id wf-demo --format markdown --output dossier.md --json` | Closeout and dossier are replay-derived. Do not edit an exported dossier as authority; regenerate it from `events.jsonl` and referenced artifacts. |
+
+The inventory at `docs/harness-omx-workflow-inventory.md` is the honest blocker
+ledger for broader OMX parity. Rows marked `partial` or `missing` are acceptable
+only when they are hidden staged aliases, blocked reference workflows,
+non-default explicit escalations, specialist helpers, team internals,
+non-applicable entries, or coordinator-owned decisions/denials; they must not
+appear as visible prompt-only workflow completions.
+
 ### Plan operator workflow
 
 Use Plan when the operator wants a reviewed implementation plan before changing
-project files. Harness ships Plan as a stable public runtime surface, not an
-experimental upstream-compatible flag, and the safety boundary is enforced by coordinator
-permissions as well as prompt instructions.
+project files. Harness ships Plan as a stable hidden escalation behind the
+single default operator, not an experimental upstream-compatible flag, and the
+safety boundary is enforced by coordinator permissions as well as prompt
+instructions.
 
-1. Start in the primary `build` agent for normal implementation work.
-2. Switch to the primary `plan` agent with the TUI primary-agent switcher, or let
-   Build call `plan_enter` and approve the coordinator-owned switch when the work
-   is complex enough to plan first.
+1. Start in the visible `operator` profile for normal implementation work.
+2. Escalate explicitly through the plan workflow (`/plan-consensus`,
+   `plan_enter`, or a compatible hidden `plan` profile switch), rather than
+   cycling primary agents in the TUI.
 3. Let Plan inspect the workspace with read/search/LSP tools and, when useful,
    delegate read-only codebase research only to `explore`. Plan cannot launch
    `general`, `build`, or user-defined writer subagents under the shipped policy.
@@ -369,23 +427,25 @@ permissions as well as prompt instructions.
    feedback or clarifying answers.
 5. Review the plan file. If Plan needs information that read-only exploration
    cannot determine, answer its clarifying question and let it update the plan.
-6. When the plan is ready, Plan calls `plan_exit`. Approving that prompt switches
-   back to Build with the approved plan-file path in the continuation prompt;
-   declining leaves the session in Plan so the plan can be revised further.
+6. When the plan is ready, Plan calls `plan_exit`. Approving that prompt returns
+   to the operator path with the approved plan-file path in the continuation
+   prompt; declining leaves the session in Plan so the plan can be revised
+   further.
 
 This differs intentionally from broader upstream experimental Plan behavior:
 Harness keeps `plan_exit` available in the shipped `plan` profile and keeps
 Plan-spawned child work restricted to `explore` unless a future policy adds tested
 parent-permission inheritance for write-capable subagents.
 
-The shipped agent names are available without extra config: primary
-`build`, `plan`, and `discipline`, subagents `general`, `explore`,
-`visual-engineering`, `artistry`, `ultrabrain`, `deep`, `quick`,
-`unspecified-low`, `unspecified-high`, and `writing`, plus hidden `title`,
-`summary`, and `compaction` profiles. `explore` is a read-only local codebase
-search profile for `task(subagent_type: "explore")`. `general` is a broader
+The shipped default-visible primary agent is `operator`. Legacy `build`, `plan`,
+and `discipline` profiles remain available as hidden compatibility/escalation
+profiles while the operator path is the normal entrypoint. Shipped subagents
+include `general`, `explore`, `visual-engineering`, `artistry`, `ultrabrain`,
+`deep`, `quick`, `unspecified-low`, `unspecified-high`, and `writing`, plus
+hidden `title`, `summary`, and `compaction` profiles. `explore` is a read-only
+local codebase search profile for `task(subagent_type: "explore")`. `general` is a broader
 focused implementation/research profile for `task(subagent_type: "general")`.
-The category profiles are OMO-style routing lanes for `task(category: "...")`:
+The category profiles are explicit routing lanes for `task(category: "...")`:
 the task tool selects the matching profile first and falls back to `general` only
 when no matching category profile is configured. `visual-engineering` covers UI,
 UX, layout, styling, animation, and design; `artistry` covers complex creative
@@ -643,17 +703,20 @@ lifecycle event onto a typed middleware phase before recording metadata:
 ## Slash command and continuation surface
 
 Harness keeps the command registry separate from TUI-only actions. Built-in OMO-compatible
-commands include `/init-deep`, `/ralph-loop`, `/ulw-loop`, `/cancel-ralph`, `/refactor`,
-`/start-work`, `/stop-continuation`, `/remove-ai-slops`, `/handoff`, and `/hyperplan`.
-Built-in registry actions may load prompts/skills, create plan or handoff artifacts,
-or start/stop a coordinator-owned continuation. Workflow commands also expose
-typed TUI intents for `/workflow-*`, `/plan-consensus`, `/goal-ledger`,
-`/research-mission`, and `/wiki` surfaces, with compatibility aliases such as
-`/ralplan`, `/ultragoal`, `/autoresearch`, and `/workflow-wiki`. Imported command
-templates are prompt-only slash commands; they submit the template text (with
-`{{args}}` expanded from the preserved draft when present) back through the
-normal coordinator path. They do not execute shell code directly; shell
-execution still requires the normal native tool permission flow.
+commands include default-visible workflow and continuation entries such as
+`/ralph-loop`, `/ulw-loop`, `/cancel-ralph`, and `/stop-continuation`. Staged
+helper commands such as `/init-deep`, `/refactor`, `/start-work`,
+`/remove-ai-slops`, `/handoff`, and `/hyperplan` remain registered compatibility
+aliases, but they are disabled in the default TUI menu and resolve to explicit
+blocked workflow actions until they produce coordinator-owned evidence instead
+of prompt-only placeholder text. Workflow commands expose typed TUI intents for
+`/workflow-*`, `/plan-consensus`, `/goal-ledger`, `/research-mission`, and
+`/wiki` surfaces, with compatibility aliases such as `/ralplan`, `/ultragoal`,
+`/autoresearch`, and `/workflow-wiki`. Imported command templates are prompt-only
+slash commands; they submit the template text (with `{{args}}` expanded from the
+preserved draft when present) back through the normal coordinator path. They do
+not execute shell code directly; shell execution still requires the normal native
+tool permission flow.
 
 Custom command lookup roots include Harness, OpenCode, Claude, and Agents-compatible locations:
 `.agent-harness/commands`, `.opencode/command`, `.opencode/commands`, `.claude/commands`,
