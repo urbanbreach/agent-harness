@@ -1,4 +1,5 @@
 use std::fs;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use harness_core::config::{
@@ -768,15 +769,34 @@ fn artifact_extension(mime: &str, kind: WebFetchBodyKind) -> &'static str {
     }
 }
 
+static HTML_TAGS_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"<[^>]+>").expect("html tag regex"));
+static WHITESPACE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\s+").expect("whitespace regex"));
+static H1_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?is)<h1[^>]*>(.*?)</h1>").expect("h1 regex"));
+static H2_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?is)<h2[^>]*>(.*?)</h2>").expect("h2 regex"));
+static H3_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?is)<h3[^>]*>(.*?)</h3>").expect("h3 regex"));
+static LI_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?is)<li[^>]*>(.*?)</li>").expect("li regex"));
+static BLOCK_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?is)</?(p|div|section|article|main|header|footer|ul|ol)[^>]*>")
+        .expect("block regex")
+});
+static LINK_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?is)<a[^>]*href=["']([^"']+)["'][^>]*>(.*?)</a>"#).expect("link regex")
+});
+static MARKDOWN_WHITESPACE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[ \t]+").expect("markdown whitespace regex"));
+static MARKDOWN_BLANK_LINE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\n{3,}").expect("markdown blank line regex"));
+
 fn html_to_text(html: &str) -> String {
-    let without_tags = Regex::new(r"<[^>]+>")
-        .expect("html tag regex")
-        .replace_all(html, " ");
+    let without_tags = HTML_TAGS_RE.replace_all(html, " ");
     let decoded = decode_basic_html_entities(&without_tags);
-    Regex::new(r"\s+")
-        .expect("whitespace regex")
-        .replace_all(decoded.trim(), " ")
-        .to_string()
+    WHITESPACE_RE.replace_all(decoded.trim(), " ").to_string()
 }
 
 fn html_to_markdown(html: &str) -> String {
@@ -785,41 +805,18 @@ fn html_to_markdown(html: &str) -> String {
         .replace("<br>", "\n")
         .replace("<br/>", "\n")
         .replace("<br />", "\n");
-    let markdown = Regex::new(r"(?is)<h1[^>]*>(.*?)</h1>")
-        .expect("h1 regex")
-        .replace_all(&markdown, "# $1\n\n")
-        .into_owned();
-    let markdown = Regex::new(r"(?is)<h2[^>]*>(.*?)</h2>")
-        .expect("h2 regex")
-        .replace_all(&markdown, "## $1\n\n")
-        .into_owned();
-    let markdown = Regex::new(r"(?is)<h3[^>]*>(.*?)</h3>")
-        .expect("h3 regex")
-        .replace_all(&markdown, "### $1\n\n")
-        .into_owned();
-    let markdown = Regex::new(r"(?is)<li[^>]*>(.*?)</li>")
-        .expect("li regex")
-        .replace_all(&markdown, "- $1\n")
-        .into_owned();
-    let markdown = Regex::new(r"(?is)</?(p|div|section|article|main|header|footer|ul|ol)[^>]*>")
-        .expect("block regex")
-        .replace_all(&markdown, "\n\n")
-        .into_owned();
-    let markdown = Regex::new(r#"(?is)<a[^>]*href=["']([^"']+)["'][^>]*>(.*?)</a>"#)
-        .expect("link regex")
-        .replace_all(&markdown, "[$2]($1)")
-        .into_owned();
-    let markdown = Regex::new(r"<[^>]+>")
-        .expect("html tag regex")
-        .replace_all(&markdown, " ")
-        .into_owned();
+    let markdown = H1_RE.replace_all(&markdown, "# $1\n\n").into_owned();
+    let markdown = H2_RE.replace_all(&markdown, "## $1\n\n").into_owned();
+    let markdown = H3_RE.replace_all(&markdown, "### $1\n\n").into_owned();
+    let markdown = LI_RE.replace_all(&markdown, "- $1\n").into_owned();
+    let markdown = BLOCK_RE.replace_all(&markdown, "\n\n").into_owned();
+    let markdown = LINK_RE.replace_all(&markdown, "[$2]($1)").into_owned();
+    let markdown = HTML_TAGS_RE.replace_all(&markdown, " ").into_owned();
     let decoded = decode_basic_html_entities(&markdown);
-    let collapsed_spaces = Regex::new(r"[ \t]+")
-        .expect("markdown whitespace regex")
+    let collapsed_spaces = MARKDOWN_WHITESPACE_RE
         .replace_all(decoded.trim(), " ")
         .to_string();
-    Regex::new(r"\n{3,}")
-        .expect("markdown blank line regex")
+    MARKDOWN_BLANK_LINE_RE
         .replace_all(&collapsed_spaces, "\n\n")
         .to_string()
 }
