@@ -333,6 +333,10 @@ split by crate responsibility:
   signoff until resolved or explicitly waived.
 - `harness doctor --json` includes the `workflow_contract_registry` check so docs
   anchors and stable id groups drift visibly.
+- `harness doctor --json` includes `workflow_skill_protocol_native`, which
+  validates shipped workflow `SKILL.md` files for Harness-native protocol
+  sections and fails closed on forbidden operational substrate tokens such as
+  state-file authority, tmux orchestration, and external goal-mode authority.
 - `harness doctor --json` also includes `workflow_context_snapshot`, which
   reports the redacted/capped context snapshot artifact contract that workflow
   status and dossier projections consume from events.

@@ -72,6 +72,9 @@ Current stage commands:
 - `cargo test -p harness --test event_docs_reference`
 - `cargo run -p harness -- --config configs/harness.example.jsonc config validate`
 - `cargo run -p harness -- --config configs/harness.example.jsonc doctor --json`
+  - confirm `workflow_skill_protocol_native` passes and any forbidden-substrate
+    findings are explicit, machine-readable diagnostics rather than accepted
+    workflow authority
 - `cargo test -p harness --test workflow_cli`
 - `cargo test -p harness-core workflow`
 - `cargo test -p harness-testkit workflow_simulator`
