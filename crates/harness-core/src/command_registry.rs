@@ -349,9 +349,7 @@ impl CommandRegistry {
                 "plan-consensus",
                 "Create a reviewed consensus plan artifact",
                 &["plan", "ralplan", "consensus-plan", "workflow-plan-consensus"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::PlanConsensus,
-                },
+                workflow_skill("plan", WorkflowIntent::PlanConsensus),
             )
             .with_dollar_aliases(&["plan", "ralplan"])
             .with_dollar_alias_descriptions(&[
@@ -362,9 +360,7 @@ impl CommandRegistry {
                 "goal-ledger",
                 "Inspect or checkpoint workflow goal ledger state",
                 &["goal", "ultragoal", "workflow-goal"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::GoalLedger,
-                },
+                workflow_skill("ultragoal", WorkflowIntent::GoalLedger),
             )
             .with_dollar_aliases(&["goal", "ultragoal"])
             .with_dollar_alias_descriptions(&[
@@ -383,45 +379,35 @@ impl CommandRegistry {
                     "autoresearch",
                     "workflow-mission",
                 ],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::ResearchMission,
-                },
+                workflow_skill("autoresearch", WorkflowIntent::ResearchMission),
             )
             .with_dollar_aliases(&["autoresearch"]),
             spec(
                 "wiki",
                 "Read, query, or update the markdown workflow wiki",
                 &["workflow-wiki"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Wiki,
-                },
+                workflow_skill("wiki", WorkflowIntent::Wiki),
             )
             .with_dollar_aliases(&["wiki"]),
             spec(
                 "init-deep",
                 "Run one-question-at-a-time intake with mathematical ambiguity gating before execution",
                 &["deep-interview"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::DeepInterview,
-                },
+                workflow_skill("deep-interview", WorkflowIntent::DeepInterview),
             )
             .with_dollar_aliases(&["deep-interview"]),
             spec(
                 "ralph-loop",
                 "Run a self-referential completion loop with architect verification",
                 &["ralph"],
-                CommandAction::StartContinuation {
-                    mode: ContinuationMode::Ralph,
-                },
+                continuation_skill("ralph", WorkflowIntent::Run, ContinuationMode::Ralph),
             )
             .with_dollar_aliases(&["ralph"]),
             spec(
                 "ulw-loop",
                 "Run parallel execution for high-throughput task completion",
                 &["ultrawork", "ulw"],
-                CommandAction::StartContinuation {
-                    mode: ContinuationMode::Ultrawork,
-                },
+                continuation_skill("ultrawork", WorkflowIntent::Run, ContinuationMode::Ultrawork),
             )
             .with_dollar_aliases(&["ultrawork"]),
             spec(
@@ -441,9 +427,7 @@ impl CommandRegistry {
                 "refactor",
                 "Run a refactor workflow with behavior locks and verification evidence",
                 &[],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Cleanup,
-                },
+                workflow_skill("ai-slop-cleaner", WorkflowIntent::Cleanup),
             )
             .with_dollar_aliases(&["refactor"]),
             spec(
@@ -458,9 +442,7 @@ impl CommandRegistry {
                 "remove-ai-slops",
                 "Run an anti-slop cleanup, refactor, or deslop workflow",
                 &["deslop", "ai-slop-cleaner"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Cleanup,
-                },
+                workflow_skill("ai-slop-cleaner", WorkflowIntent::Cleanup),
             )
             .with_dollar_aliases(&["ai-slop-cleaner", "deslop"]),
             spec(
@@ -483,62 +465,50 @@ impl CommandRegistry {
                 "omx-skill:team",
                 "Coordinate multiple agents on a shared task list",
                 &["team"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Team,
-                },
+                workflow_skill("team", WorkflowIntent::Team),
             )
             .with_dollar_aliases(&["team"]),
             spec(
                 "omx-skill:swarm",
                 "Coordinate team-style parallel execution through the team workflow",
                 &["swarm"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Team,
-                },
+                workflow_skill("swarm", WorkflowIntent::Team),
             )
             .with_dollar_aliases(&["swarm"]),
             spec(
                 "omx-skill:ultraqa",
                 "Run adversarial dynamic end-to-end QA: generate hostile scenarios, test, verify, fix, report, and clean up",
                 &["ultraqa"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Qa,
-                },
+                workflow_skill("ultraqa", WorkflowIntent::Qa),
             )
             .with_dollar_aliases(&["ultraqa"]),
             spec(
                 "omx-skill:ask",
                 "Ask a local external advisor CLI and capture a reusable artifact",
                 &["ask"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Ask,
-                },
+                workflow_skill("ask", WorkflowIntent::Ask),
             )
             .with_dollar_aliases(&["ask"]),
             spec(
                 "omx-skill:ask-claude",
                 "Deprecated Claude advisor shim routed through the local advisor workflow",
                 &["ask-claude"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Ask,
-                },
+                workflow_skill("ask", WorkflowIntent::Ask),
             )
             .with_dollar_aliases(&["ask-claude"]),
             spec(
                 "omx-skill:ask-gemini",
                 "Deprecated Gemini advisor shim routed through the local advisor workflow",
                 &["ask-gemini"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Ask,
-                },
+                workflow_skill("ask", WorkflowIntent::Ask),
             )
             .with_dollar_aliases(&["ask-gemini"]),
             spec(
                 "omx-skill:analyze",
                 "Run read-only deep repository analysis with ranked findings, explicit confidence, and file evidence",
                 &["analyze"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Analyze,
+                CommandAction::SlashAgent {
+                    role: "analyst",
                 },
             )
             .with_dollar_aliases(&["analyze"]),
@@ -546,8 +516,8 @@ impl CommandRegistry {
                 "omx-skill:code-review",
                 "Run a comprehensive code review",
                 &["code-review"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Review,
+                CommandAction::SlashAgent {
+                    role: "code-reviewer",
                 },
             )
             .with_dollar_aliases(&["code-review"]),
@@ -555,17 +525,15 @@ impl CommandRegistry {
                 "omx-skill:review",
                 "Run a review workflow and record findings as workflow evidence",
                 &["review"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Review,
-                },
+                workflow_skill("review", WorkflowIntent::Review),
             )
             .with_dollar_aliases(&["review"]),
             spec(
                 "omx-skill:security-review",
                 "Run a security review for vulnerabilities, trust boundaries, authentication, and authorization",
                 &["security-review"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::SecurityReview,
+                CommandAction::SlashAgent {
+                    role: "security-reviewer",
                 },
             )
             .with_dollar_aliases(&["security-review"]),
@@ -573,71 +541,60 @@ impl CommandRegistry {
                 "omx-skill:doctor",
                 "Diagnose and fix Harness installation and runtime issues",
                 &["doctor"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Doctor,
-                },
+                workflow_skill("doctor", WorkflowIntent::Doctor),
             )
             .with_dollar_aliases(&["doctor"]),
             spec(
                 "omx-skill:help",
                 "Show Harness workflow and command help",
                 &["help"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Help,
-                },
+                workflow_skill("help", WorkflowIntent::Help),
             )
             .with_dollar_aliases(&["help"]),
             spec(
                 "omx-skill:hud",
                 "Show or configure the Harness HUD and status projection",
                 &["hud"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Hud,
-                },
+                workflow_skill("hud", WorkflowIntent::Hud),
             )
             .with_dollar_aliases(&["hud"]),
             spec(
                 "omx-skill:note",
                 "Capture a workflow note or project-memory evidence artifact",
                 &["note"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Note,
-                },
+                workflow_skill("note", WorkflowIntent::Note),
             )
             .with_dollar_aliases(&["note"]),
             spec(
                 "omx-skill:skill",
                 "Manage local skills: list, add, remove, search, edit, and verify",
                 &["skill"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Skill,
-                },
+                workflow_skill("skill", WorkflowIntent::Skill),
             )
             .with_dollar_aliases(&["skill"]),
             spec(
                 "omx-skill:trace",
                 "Show agent flow trace timeline and summary",
                 &["trace"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Trace,
-                },
+                workflow_skill("trace", WorkflowIntent::Trace),
             )
             .with_dollar_aliases(&["trace"]),
             spec(
                 "omx-skill:configure-notifications",
                 "Configure Harness notifications through an explicit workflow",
                 &["configure-notifications"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::ConfigureNotifications,
-                },
+                workflow_skill(
+                    "configure-notifications",
+                    WorkflowIntent::ConfigureNotifications,
+                ),
             )
             .with_dollar_aliases(&["configure-notifications"]),
             spec(
                 "omx-skill:design",
                 "Maintain a canonical repo-local design source of truth for product, UI, UX, and frontend decisions",
                 &["design"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Design,
+                CommandAction::SlashAgent {
+                    role: "designer",
                 },
             )
             .with_dollar_aliases(&["design"]),
@@ -645,89 +602,74 @@ impl CommandRegistry {
                 "omx-skill:frontend-ui-ux",
                 "Route frontend UI and UX work through design or visual workflow evidence",
                 &["frontend-ui-ux"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Design,
-                },
+                workflow_skill("frontend-ui-ux", WorkflowIntent::Design),
             )
             .with_dollar_aliases(&["frontend-ui-ux"]),
             spec(
                 "omx-skill:autopilot",
                 "Run an autonomous loop over planning, completion, and code review gates",
                 &["autopilot"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Autopilot,
-                },
+                workflow_skill("autopilot", WorkflowIntent::Autopilot),
             )
             .with_dollar_aliases(&["autopilot"]),
             spec(
                 "omx-skill:best-practice-research",
                 "Run a bounded best-practice research wrapper using official and upstream evidence first",
                 &["best-practice-research"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::BestPracticeResearch,
-                },
+                workflow_skill(
+                    "best-practice-research",
+                    WorkflowIntent::BestPracticeResearch,
+                ),
             )
             .with_dollar_aliases(&["best-practice-research"]),
             spec(
                 "omx-skill:autoresearch-goal",
                 "Run a durable professor-critic research workflow over goal artifacts",
                 &["autoresearch-goal"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::ResearchMission,
-                },
+                workflow_skill("autoresearch-goal", WorkflowIntent::ResearchMission),
             )
             .with_dollar_aliases(&["autoresearch-goal"]),
             spec(
                 "omx-skill:deepsearch",
                 "Run a deep search workflow with research and evidence capture",
                 &["deepsearch"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::DeepSearch,
-                },
+                workflow_skill("deepsearch", WorkflowIntent::DeepSearch),
             )
             .with_dollar_aliases(&["deepsearch"]),
             spec(
                 "omx-skill:performance-goal",
                 "Run an evaluator-gated performance optimization workflow with durable artifacts and safe goal handoffs",
                 &["performance-goal"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Performance,
-                },
+                workflow_skill("performance-goal", WorkflowIntent::Performance),
             )
             .with_dollar_aliases(&["performance-goal"]),
             spec(
                 "omx-skill:pipeline",
                 "Run a configurable pipeline orchestrator for sequencing workflow stages",
                 &["pipeline"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Pipeline,
-                },
+                workflow_skill("pipeline", WorkflowIntent::Pipeline),
             )
             .with_dollar_aliases(&["pipeline"]),
             spec(
                 "omx-skill:ecomode",
                 "Apply token-efficient model-routing guidance through a Harness workflow",
                 &["ecomode"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Ecomode,
-                },
+                workflow_skill("ecomode", WorkflowIntent::Ecomode),
             )
             .with_dollar_aliases(&["ecomode"]),
             spec(
                 "omx-skill:tdd",
                 "Run a test-driven-development workflow with test-first state and verification evidence",
                 &["tdd"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Tdd,
-                },
+                workflow_skill("tdd", WorkflowIntent::Tdd),
             )
             .with_dollar_aliases(&["tdd"]),
             spec(
                 "omx-skill:build-fix",
                 "Route build-failure repair through the build-fixer workflow contract",
                 &["build-fix"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::BuildFix,
+                CommandAction::SlashAgent {
+                    role: "build-fixer",
                 },
             )
             .with_dollar_aliases(&["build-fix"]),
@@ -744,45 +686,35 @@ impl CommandRegistry {
                 "omx-skill:visual-ralph",
                 "Run a measured visual-reference implementation loop with verdict and pixel-diff evidence",
                 &["visual-ralph"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Visual,
-                },
+                workflow_skill("visual-ralph", WorkflowIntent::Visual),
             )
             .with_dollar_aliases(&["visual-ralph"]),
             spec(
                 "omx-skill:visual-verdict",
                 "Run structured visual QA verdicts for screenshot-to-reference comparisons",
                 &["visual-verdict"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Visual,
-                },
+                workflow_skill("visual-verdict", WorkflowIntent::Visual),
             )
             .with_dollar_aliases(&["visual-verdict"]),
             spec(
                 "omx-skill:web-clone",
                 "Clone a website from a URL with visual and functional verification evidence",
                 &["web-clone"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::WebClone,
-                },
+                workflow_skill("web-clone", WorkflowIntent::WebClone),
             )
             .with_dollar_aliases(&["web-clone"]),
             spec(
                 "omx-skill:ralph-init",
                 "Initialize a Ralph-style completion workflow through the bounded continuation contract",
                 &["ralph-init"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::RalphInit,
-                },
+                workflow_skill("ralph-init", WorkflowIntent::RalphInit),
             )
             .with_dollar_aliases(&["ralph-init"]),
             spec(
                 "omx-skill:omx-setup",
                 "Set up or refresh compatible Harness assets and runtime configuration",
                 &["omx-setup"],
-                CommandAction::WorkflowIntent {
-                    intent: WorkflowIntent::Setup,
-                },
+                workflow_skill("omx-setup", WorkflowIntent::Setup),
             )
             .with_dollar_aliases(&["omx-setup"]),
         ])
@@ -855,6 +787,28 @@ fn spec(
         action,
         availability: WorkflowCommandAvailability::Present,
         enabled_by_default: true,
+    }
+}
+
+fn workflow_skill(skill: &'static str, intent: WorkflowIntent) -> CommandAction {
+    CommandAction::WorkflowSkill {
+        skill,
+        intent,
+        continuation_mode: None,
+        requires_user_task: false,
+    }
+}
+
+fn continuation_skill(
+    skill: &'static str,
+    intent: WorkflowIntent,
+    mode: ContinuationMode,
+) -> CommandAction {
+    CommandAction::WorkflowSkill {
+        skill,
+        intent,
+        continuation_mode: Some(mode),
+        requires_user_task: true,
     }
 }
 
@@ -1046,10 +1000,7 @@ mod tests {
             ("omx-skill:ask", WorkflowIntent::Ask),
             ("omx-skill:ask-claude", WorkflowIntent::Ask),
             ("omx-skill:ask-gemini", WorkflowIntent::Ask),
-            ("omx-skill:analyze", WorkflowIntent::Analyze),
-            ("omx-skill:code-review", WorkflowIntent::Review),
             ("omx-skill:review", WorkflowIntent::Review),
-            ("omx-skill:security-review", WorkflowIntent::SecurityReview),
             ("omx-skill:doctor", WorkflowIntent::Doctor),
             ("omx-skill:help", WorkflowIntent::Help),
             ("omx-skill:hud", WorkflowIntent::Hud),
@@ -1060,7 +1011,6 @@ mod tests {
                 "omx-skill:configure-notifications",
                 WorkflowIntent::ConfigureNotifications,
             ),
-            ("omx-skill:design", WorkflowIntent::Design),
             ("omx-skill:frontend-ui-ux", WorkflowIntent::Design),
             ("omx-skill:autopilot", WorkflowIntent::Autopilot),
             (
@@ -1076,7 +1026,6 @@ mod tests {
             ("omx-skill:pipeline", WorkflowIntent::Pipeline),
             ("omx-skill:ecomode", WorkflowIntent::Ecomode),
             ("omx-skill:tdd", WorkflowIntent::Tdd),
-            ("omx-skill:build-fix", WorkflowIntent::BuildFix),
             ("omx-skill:visual-ralph", WorkflowIntent::Visual),
             ("omx-skill:visual-verdict", WorkflowIntent::Visual),
             ("omx-skill:web-clone", WorkflowIntent::WebClone),
@@ -1086,12 +1035,18 @@ mod tests {
             let command = registry
                 .get(name)
                 .unwrap_or_else(|| panic!("missing {name}"));
-            assert_eq!(
-                command.action,
-                CommandAction::WorkflowIntent { intent },
-                "{name} drifted from workflow intent {}",
-                intent.as_str()
-            );
+            match &command.action {
+                CommandAction::WorkflowIntent { intent: actual }
+                | CommandAction::WorkflowSkill { intent: actual, .. } => {
+                    assert_eq!(
+                        *actual,
+                        intent,
+                        "{name} drifted from workflow intent {}",
+                        intent.as_str()
+                    );
+                }
+                other => panic!("{name} drifted from workflow action: {other:?}"),
+            }
             assert_eq!(command.surface, CommandSurface::WorkflowCommand);
             assert_eq!(command.effect, intent.effect());
         }
@@ -1116,6 +1071,32 @@ mod tests {
                     "duplicate dollar command alias {alias}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn specialist_dollar_aliases_resolve_to_slash_agent_shortcuts() {
+        let registry = CommandRegistry::builtins();
+        for (alias, role) in [
+            ("analyze", "analyst"),
+            ("build-fix", "build-fixer"),
+            ("code-review", "code-reviewer"),
+            ("design", "designer"),
+            ("git-master", "git-master"),
+            ("security-review", "security-reviewer"),
+        ] {
+            let command = registry
+                .commands()
+                .iter()
+                .find(|command| command.dollar_aliases.contains(&alias))
+                .unwrap_or_else(|| panic!("missing specialist dollar alias ${alias}"));
+            assert_eq!(
+                command.action,
+                CommandAction::SlashAgent { role },
+                "${alias} must dispatch through a slash-agent shortcut"
+            );
+            assert_eq!(command.surface, CommandSurface::AgentShortcut);
+            assert_eq!(command.effect, CommandEffect::ScheduleAgentTask);
         }
     }
 
@@ -1290,6 +1271,103 @@ mod tests {
     #[test]
     fn dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions() {
         let registry = CommandRegistry::builtins();
+        let workflow_skill_aliases = [
+            (
+                "ai-slop-cleaner",
+                "ai-slop-cleaner",
+                WorkflowIntent::Cleanup,
+                None,
+            ),
+            ("ask", "ask", WorkflowIntent::Ask, None),
+            ("ask-claude", "ask", WorkflowIntent::Ask, None),
+            ("ask-gemini", "ask", WorkflowIntent::Ask, None),
+            ("autopilot", "autopilot", WorkflowIntent::Autopilot, None),
+            (
+                "autoresearch",
+                "autoresearch",
+                WorkflowIntent::ResearchMission,
+                None,
+            ),
+            (
+                "autoresearch-goal",
+                "autoresearch-goal",
+                WorkflowIntent::ResearchMission,
+                None,
+            ),
+            (
+                "best-practice-research",
+                "best-practice-research",
+                WorkflowIntent::BestPracticeResearch,
+                None,
+            ),
+            (
+                "configure-notifications",
+                "configure-notifications",
+                WorkflowIntent::ConfigureNotifications,
+                None,
+            ),
+            (
+                "deep-interview",
+                "deep-interview",
+                WorkflowIntent::DeepInterview,
+                None,
+            ),
+            ("deepsearch", "deepsearch", WorkflowIntent::DeepSearch, None),
+            ("deslop", "ai-slop-cleaner", WorkflowIntent::Cleanup, None),
+            ("doctor", "doctor", WorkflowIntent::Doctor, None),
+            ("ecomode", "ecomode", WorkflowIntent::Ecomode, None),
+            (
+                "frontend-ui-ux",
+                "frontend-ui-ux",
+                WorkflowIntent::Design,
+                None,
+            ),
+            ("goal", "ultragoal", WorkflowIntent::GoalLedger, None),
+            ("help", "help", WorkflowIntent::Help, None),
+            ("hud", "hud", WorkflowIntent::Hud, None),
+            ("note", "note", WorkflowIntent::Note, None),
+            ("omx-setup", "omx-setup", WorkflowIntent::Setup, None),
+            (
+                "performance-goal",
+                "performance-goal",
+                WorkflowIntent::Performance,
+                None,
+            ),
+            ("pipeline", "pipeline", WorkflowIntent::Pipeline, None),
+            ("plan", "plan", WorkflowIntent::PlanConsensus, None),
+            (
+                "ralph",
+                "ralph",
+                WorkflowIntent::Run,
+                Some(ContinuationMode::Ralph),
+            ),
+            ("ralph-init", "ralph-init", WorkflowIntent::RalphInit, None),
+            ("ralplan", "plan", WorkflowIntent::PlanConsensus, None),
+            ("refactor", "ai-slop-cleaner", WorkflowIntent::Cleanup, None),
+            ("review", "review", WorkflowIntent::Review, None),
+            ("skill", "skill", WorkflowIntent::Skill, None),
+            ("swarm", "swarm", WorkflowIntent::Team, None),
+            ("tdd", "tdd", WorkflowIntent::Tdd, None),
+            ("team", "team", WorkflowIntent::Team, None),
+            ("trace", "trace", WorkflowIntent::Trace, None),
+            ("ultragoal", "ultragoal", WorkflowIntent::GoalLedger, None),
+            ("ultraqa", "ultraqa", WorkflowIntent::Qa, None),
+            (
+                "ultrawork",
+                "ultrawork",
+                WorkflowIntent::Run,
+                Some(ContinuationMode::Ultrawork),
+            ),
+            ("visual-ralph", "visual-ralph", WorkflowIntent::Visual, None),
+            (
+                "visual-verdict",
+                "visual-verdict",
+                WorkflowIntent::Visual,
+                None,
+            ),
+            ("web-clone", "web-clone", WorkflowIntent::WebClone, None),
+            ("wiki", "wiki", WorkflowIntent::Wiki, None),
+        ];
 
         for alias in [
             "ai-slop-cleaner",
@@ -1375,28 +1453,58 @@ mod tests {
                     "${alias} staged command must not mutate state"
                 );
             }
+            if let Some((_, expected_skill, expected_intent, expected_mode)) =
+                workflow_skill_aliases
+                    .iter()
+                    .find(|(expected_alias, ..)| expected_alias == &alias)
+            {
+                assert_eq!(
+                    command.action,
+                    CommandAction::WorkflowSkill {
+                        skill: expected_skill,
+                        intent: *expected_intent,
+                        continuation_mode: *expected_mode,
+                        requires_user_task: expected_mode.is_some(),
+                    },
+                    "${alias} must dispatch through WorkflowSkill instead of raw intent/continuation"
+                );
+            }
         }
     }
 
     #[test]
-    fn formerly_removed_omx_commands_now_resolve_to_parity_workflows() {
+    fn formerly_removed_omx_commands_now_resolve_to_parity_actions() {
         let registry = CommandRegistry::builtins();
         for (name, intent) in [
             ("omx-skill:ask", WorkflowIntent::Ask),
             ("omx-skill:ask-claude", WorkflowIntent::Ask),
             ("omx-skill:ask-gemini", WorkflowIntent::Ask),
-            ("omx-skill:build-fix", WorkflowIntent::BuildFix),
             ("omx-skill:omx-setup", WorkflowIntent::Setup),
             ("ask", WorkflowIntent::Ask),
             ("ask-claude", WorkflowIntent::Ask),
             ("ask-gemini", WorkflowIntent::Ask),
-            ("build-fix", WorkflowIntent::BuildFix),
             ("omx-setup", WorkflowIntent::Setup),
         ] {
             let command = registry
                 .get(name)
                 .unwrap_or_else(|| panic!("missing restored parity command {name}"));
-            assert_eq!(command.action, CommandAction::WorkflowIntent { intent });
+            match &command.action {
+                CommandAction::WorkflowIntent { intent: actual }
+                | CommandAction::WorkflowSkill { intent: actual, .. } => {
+                    assert_eq!(*actual, intent);
+                }
+                other => panic!("{name} drifted from workflow action: {other:?}"),
+            }
+            assert_eq!(command.availability, WorkflowCommandAvailability::Present);
+        }
+        for (name, role) in [
+            ("omx-skill:build-fix", "build-fixer"),
+            ("build-fix", "build-fixer"),
+        ] {
+            let command = registry
+                .get(name)
+                .unwrap_or_else(|| panic!("missing restored parity command {name}"));
+            assert_eq!(command.action, CommandAction::SlashAgent { role });
             assert_eq!(command.availability, WorkflowCommandAvailability::Present);
         }
     }
