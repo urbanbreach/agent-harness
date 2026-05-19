@@ -14,6 +14,7 @@ use clap::Args;
 use harness_core::agent::{AgentModelSettings, AgentProfile};
 use harness_core::agent_catalog::resolve_agent_catalog;
 use harness_core::clock::{Clock, Determinism, FakeClock, RealClock};
+use harness_core::command_registry::{CommandEffect, WorkflowIntent};
 use harness_core::config::{
     configured_model_catalog, resolve_profile_model_metadata, AgentMode, HarnessConfig,
     ShellAllowlist,
@@ -33,6 +34,7 @@ use harness_core::session_lineage::{
 };
 use harness_core::session_title::create_default_title;
 use harness_core::store::{EventStore, EventStoreError};
+use harness_core::workflow::WorkflowStartRequest;
 use harness_tools::coordinator_registry;
 use harness_tui::app::{
     set_pending_live_launch_metadata, set_pending_live_prompt_auto_submit, LaunchMetadata,
@@ -1377,6 +1379,7 @@ fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> InteractiveWorkfl
         | Some(UiIntent::ResolvePermission { .. })
         | Some(UiIntent::CompactSession)
         | Some(UiIntent::WorkflowIntent { .. })
+        | Some(UiIntent::SlashAgentTask { .. })
         | Some(UiIntent::StartContinuation { .. })
         | Some(UiIntent::StopContinuation { .. })
         | Some(UiIntent::InterruptSession { .. })
@@ -1752,6 +1755,7 @@ fn live_workflow_from_intent(intent: &UiIntent) -> Option<InteractiveWorkflow> {
         | UiIntent::SubmitPrompt { .. }
         | UiIntent::CompactSession
         | UiIntent::WorkflowIntent { .. }
+        | UiIntent::SlashAgentTask { .. }
         | UiIntent::StartContinuation { .. }
         | UiIntent::StopContinuation { .. }
         | UiIntent::InterruptSession { .. }
@@ -1767,6 +1771,7 @@ fn forward_intent_to_live_run(intent: &UiIntent) -> bool {
         UiIntent::ResolvePermission { .. }
             | UiIntent::SubmitPrompt { .. }
             | UiIntent::CompactSession
+            | UiIntent::SlashAgentTask { .. }
             | UiIntent::StartContinuation { .. }
             | UiIntent::StopContinuation { .. }
             | UiIntent::InterruptSession { .. }
@@ -2522,6 +2527,62 @@ fn compact_token_estimate(value: u32) -> String {
     value.to_string()
 }
 
+async fn record_tui_workflow_intent(
+    coordinator: &CoordinatorHandle,
+    actor: EventActor,
+    intent: WorkflowIntent,
+    command: &str,
+) -> Result<String, CoordinatorError> {
+    let workflow_id = tui_workflow_intent_id(intent);
+    coordinator
+        .start_workflow(
+            actor.clone(),
+            WorkflowStartRequest {
+                workflow_id: workflow_id.clone(),
+                mode: tui_workflow_intent_mode(intent).to_string(),
+                owner: "tui-operator".to_string(),
+                lane: Some("lane.operator_decision".to_string()),
+                title: Some(format!("TUI workflow intent: {}", intent.as_str())),
+                idempotency_key: None,
+            },
+        )
+        .await?;
+    coordinator
+        .record_workflow_operator_decision(
+            actor,
+            workflow_id.clone(),
+            format!("tui-intent:{}", intent.as_str()),
+            "operator".to_string(),
+            Some(format!(
+                "{command} recorded as a coordinator-owned TUI workflow intent; complete command-specific arguments through the workflow CLI or follow-up operator prompt"
+            )),
+            None,
+        )
+        .await?;
+    Ok(workflow_id)
+}
+
+fn tui_workflow_intent_id(intent: WorkflowIntent) -> String {
+    let run_id = unique_interactive_run_id();
+    let suffix = run_id.strip_prefix("run_").unwrap_or(run_id.as_str());
+    format!("wf_tui_{}_{}", intent.as_str().replace('.', "_"), suffix)
+}
+
+fn tui_workflow_intent_mode(intent: WorkflowIntent) -> &'static str {
+    match intent {
+        WorkflowIntent::Run => "workflow.run",
+        WorkflowIntent::PlanConsensus => "workflow.plan_consensus",
+        WorkflowIntent::GoalLedger => "workflow.goal_ledger",
+        WorkflowIntent::ResearchMission => "workflow.research_mission",
+        WorkflowIntent::Wiki => "workflow.wiki",
+        WorkflowIntent::Status
+        | WorkflowIntent::Signoff
+        | WorkflowIntent::Cancel
+        | WorkflowIntent::DossierExport
+        | WorkflowIntent::Snapshot => "workflow.operator_utility",
+    }
+}
+
 async fn handle_ui_intents(
     coordinator: CoordinatorHandle,
     mut intent_rx: mpsc::UnboundedReceiver<UiIntent>,
@@ -2635,13 +2696,63 @@ async fn handle_ui_intents(
                 let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
             }
             UiIntent::WorkflowIntent { intent, command } => {
-                let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
-                    message: format!(
-                        "workflow intent handled in-process: {} via {command}",
-                        intent.as_str()
+                let (message, level) = if intent.effect() == CommandEffect::ReadProjection {
+                    (
+                        format!(
+                            "workflow projection available: {} via {command} (read-only; no coordinator event recorded)",
+                            intent.as_str()
+                        ),
+                        OperatorNoticeLevel::Info,
+                    )
+                } else {
+                    match record_tui_workflow_intent(
+                        &coordinator,
+                        user_actor.clone(),
+                        intent,
+                        &command,
+                    )
+                    .await
+                    {
+                        Ok(workflow_id) => (
+                            format!(
+                                "workflow intent recorded: {} via {command} ({workflow_id})",
+                                intent.as_str()
+                            ),
+                            OperatorNoticeLevel::Info,
+                        ),
+                        Err(err) => (
+                            format!("workflow intent record failed: {err}"),
+                            OperatorNoticeLevel::Error,
+                        ),
+                    }
+                };
+                let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
+            }
+            UiIntent::SlashAgentTask {
+                role,
+                task,
+                command,
+                launch_metadata: _,
+            } => {
+                let (message, level) = match request_slash_agent_task(
+                    &coordinator,
+                    live_agent_target.as_ref(),
+                    &role,
+                    &task,
+                    &command,
+                )
+                .await
+                {
+                    Ok(tool_call_id) => (
+                        format!("slash-agent task queued: /{role} via {tool_call_id}"),
+                        OperatorNoticeLevel::Info,
                     ),
-                    level: OperatorNoticeLevel::Info,
-                });
+                    Err(err) => (
+                        format!("slash-agent /{role} failed: {err}"),
+                        OperatorNoticeLevel::Error,
+                    ),
+                };
+                let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
             }
             UiIntent::StartContinuation { mode, command } => {
                 match coordinator
@@ -2785,6 +2896,51 @@ async fn handle_ui_intents(
     Ok(())
 }
 
+async fn request_slash_agent_task(
+    coordinator: &CoordinatorHandle,
+    live_agent_target: Option<&LiveAgentTargetState>,
+    role: &str,
+    task: &str,
+    command: &str,
+) -> Result<String, String> {
+    let live_agent_target =
+        live_agent_target.ok_or_else(|| "no live agent target is available".to_string())?;
+    let parent_agent_id = live_agent_target
+        .lock()
+        .map_err(|_| "live agent target lock poisoned".to_string())?
+        .agent_id
+        .clone()
+        .ok_or_else(|| "no active live agent is available".to_string())?;
+
+    coordinator
+        .request_tool_call(
+            EventActor::new(ActorKind::Worker, Some(parent_agent_id)),
+            None,
+            "task",
+            serde_json::json!({
+                "description": slash_agent_task_description(role, task),
+                "prompt": task,
+                "subagent_type": role,
+                "run_in_background": true,
+                "load_skills": [],
+                "command": command,
+            }),
+        )
+        .await
+        .map_err(|err| err.to_string())
+}
+
+fn slash_agent_task_description(role: &str, task: &str) -> String {
+    let task_summary = task
+        .lines()
+        .find_map(|line| {
+            let trimmed = line.trim();
+            (!trimmed.is_empty()).then_some(trimmed)
+        })
+        .unwrap_or("task");
+    format!("slash-agent /{role}: {task_summary}")
+}
+
 fn materialize_tui_lineage_child(
     operation: &'static str,
     source_run_dir: PathBuf,
@@ -2891,11 +3047,12 @@ pub(crate) fn replay_launch_metadata_for_test(
 mod tests {
     use super::*;
     use crate::recovery::most_recent_conversational_agent_id;
-    use harness_core::config::load_config_from_str;
+    use harness_core::config::{load_config_from_str, PermissionMode, ToolFailureMode};
     use harness_core::event::{
         AgentSpawnedEvent, ProviderRequestFinishedEvent, ProviderRequestStartedEvent,
         RunFinishedEvent, RunStartedEvent, SCHEMA_VERSION,
     };
+    use harness_core::perm::PermissionPolicy;
     use harness_tui::app::{set_pending_live_prompt_draft, AppState};
     use std::sync::{Mutex, OnceLock};
 
@@ -3352,6 +3509,303 @@ mod tests {
         ));
 
         coordinator.stop_run().await.expect("stop run");
+    }
+
+    #[tokio::test]
+    async fn workflow_intent_records_coordinator_owned_decision() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());
+        config.deterministic_store = true;
+        config.agent_profiles = golden_path_profiles();
+
+        let coordinator = spawn_coordinator(
+            config,
+            Arc::new(FakeClock::new()),
+            Arc::new(DefaultRedactor::default()),
+        );
+        let run = coordinator
+            .start_run("tui_workflow_intent", temp_dir.path())
+            .await
+            .expect("start run");
+        let (intent_tx, intent_rx) = mpsc::unbounded_channel();
+        let (status_tx, status_rx) = std_mpsc::channel();
+
+        let handle = tokio::spawn(handle_ui_intents(
+            coordinator.clone(),
+            intent_rx,
+            user_actor(),
+            None,
+            status_tx,
+        ));
+
+        intent_tx
+            .send(UiIntent::WorkflowIntent {
+                intent: WorkflowIntent::PlanConsensus,
+                command: "/ralplan hard migration".to_string(),
+            })
+            .expect("send workflow intent");
+        drop(intent_tx);
+
+        handle
+            .await
+            .expect("ui intent task join")
+            .expect("ui intent task ok");
+        let status = status_rx.recv().expect("status update");
+        assert!(matches!(
+            status,
+            LiveUpdate::OperatorNotice {
+                message,
+                level: OperatorNoticeLevel::Info,
+            } if message.contains("workflow intent recorded: workflow.plan_consensus")
+                && message.contains("wf_tui_workflow_plan_consensus")
+        ));
+
+        coordinator.stop_run().await.expect("stop run");
+        let events = load_events_from_run_dir(&run.run_dir).expect("load run events");
+        assert!(events.iter().any(|event| matches!(
+            &event.payload,
+            EventV1::WorkflowStarted(payload)
+                if payload.mode == "workflow.plan_consensus"
+                    && payload.owner == "tui-operator"
+        )));
+        assert!(events.iter().any(|event| matches!(
+            &event.payload,
+            EventV1::WorkflowOperatorDecisionRecorded(payload)
+                if payload.decision == "tui-intent:workflow.plan_consensus"
+                    && payload.reason.as_deref().is_some_and(|reason| reason.contains("/ralplan hard migration"))
+        )));
+        assert!(!events
+            .iter()
+            .any(|event| matches!(&event.payload, EventV1::WorkflowCompleted(_))));
+    }
+
+    #[tokio::test]
+    async fn read_projection_workflow_intents_report_without_recording_events() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());
+        config.deterministic_store = true;
+        config.agent_profiles = golden_path_profiles();
+
+        let coordinator = spawn_coordinator(
+            config,
+            Arc::new(FakeClock::new()),
+            Arc::new(DefaultRedactor::default()),
+        );
+        let run = coordinator
+            .start_run("tui_workflow_read_projection", temp_dir.path())
+            .await
+            .expect("start run");
+        let (intent_tx, intent_rx) = mpsc::unbounded_channel();
+        let (status_tx, status_rx) = std_mpsc::channel();
+
+        let handle = tokio::spawn(handle_ui_intents(
+            coordinator.clone(),
+            intent_rx,
+            user_actor(),
+            None,
+            status_tx,
+        ));
+
+        intent_tx
+            .send(UiIntent::WorkflowIntent {
+                intent: WorkflowIntent::Status,
+                command: "/workflow-status".to_string(),
+            })
+            .expect("send workflow status intent");
+        intent_tx
+            .send(UiIntent::WorkflowIntent {
+                intent: WorkflowIntent::DossierExport,
+                command: "/workflow-dossier".to_string(),
+            })
+            .expect("send workflow dossier intent");
+        drop(intent_tx);
+
+        handle
+            .await
+            .expect("ui intent task join")
+            .expect("ui intent task ok");
+        let notices = [
+            status_rx.recv().expect("status projection notice"),
+            status_rx.recv().expect("dossier projection notice"),
+        ];
+        assert!(notices.iter().any(|status| matches!(
+            status,
+            LiveUpdate::OperatorNotice {
+                message,
+                level: OperatorNoticeLevel::Info,
+            } if message.contains("workflow projection available: workflow.status")
+                && message.contains("read-only; no coordinator event recorded")
+        )));
+        assert!(notices.iter().any(|status| matches!(
+            status,
+            LiveUpdate::OperatorNotice {
+                message,
+                level: OperatorNoticeLevel::Info,
+            } if message.contains("workflow projection available: workflow.dossier_export")
+                && message.contains("read-only; no coordinator event recorded")
+        )));
+
+        coordinator.stop_run().await.expect("stop run");
+        let events = load_events_from_run_dir(&run.run_dir).expect("load run events");
+        assert!(!events.iter().any(|event| matches!(
+            &event.payload,
+            EventV1::WorkflowStarted(_)
+                | EventV1::WorkflowOperatorDecisionRecorded(_)
+                | EventV1::WorkflowCompleted(_)
+        )));
+    }
+
+    #[tokio::test]
+    async fn slash_agent_task_intent_routes_through_native_task_tool() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());
+        config.deterministic_store = true;
+        config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
+        config.provider = Arc::new(golden_path_provider());
+        config.permission_policy = PermissionPolicy::new(
+            PermissionMode::Allow,
+            PermissionMode::Allow,
+            PermissionMode::Allow,
+        );
+        config.agent_profiles = slash_agent_task_test_profiles();
+
+        let coordinator = spawn_coordinator(
+            config,
+            Arc::new(FakeClock::new()),
+            Arc::new(DefaultRedactor::default()),
+        );
+        let run = coordinator
+            .start_run("slash_agent_task", temp_dir.path())
+            .await
+            .expect("start run");
+        let parent_agent_id = coordinator
+            .spawn_agent_idle(supervisor_actor(), "operator", None)
+            .await
+            .expect("spawn parent agent");
+        let live_agent_target = Arc::new(Mutex::new(LiveAgentTarget {
+            agent_id: Some(parent_agent_id.clone()),
+            profile: "operator".to_string(),
+            last_request_id: None,
+        }));
+        let (intent_tx, intent_rx) = mpsc::unbounded_channel();
+        let (status_tx, status_rx) = std_mpsc::channel();
+
+        let handle = tokio::spawn(handle_ui_intents(
+            coordinator.clone(),
+            intent_rx,
+            user_actor(),
+            Some(live_agent_target),
+            status_tx,
+        ));
+
+        intent_tx
+            .send(UiIntent::SlashAgentTask {
+                role: "executor".to_string(),
+                task: "fix tests".to_string(),
+                command: "/executor fix tests".to_string(),
+                launch_metadata: LaunchMetadata::default(),
+            })
+            .expect("send slash-agent intent");
+        drop(intent_tx);
+
+        handle
+            .await
+            .expect("ui intent task join")
+            .expect("ui intent task ok");
+        let status = status_rx.recv().expect("status update");
+        assert!(matches!(
+            status,
+            LiveUpdate::OperatorNotice {
+                message,
+                level: OperatorNoticeLevel::Info,
+            } if message.contains("slash-agent task queued: /executor")
+                && message.contains("toolcall_")
+        ));
+
+        let tool_call_id = load_events_from_run_dir(&run.run_dir)
+            .expect("load events")
+            .into_iter()
+            .find_map(|event| match event.payload {
+                EventV1::ToolCallRequested(payload) if payload.tool_id == "task" => {
+                    Some(payload.tool_call_id)
+                }
+                _ => None,
+            })
+            .expect("task tool requested");
+        let status = wait_for_tool_finished(
+            &run.events_path,
+            &tool_call_id,
+            Some(DEFAULT_EVENT_WAIT_TIMEOUT),
+            ToolFinishTerminalEvents::Error,
+        )
+        .await
+        .expect("wait for task tool finish");
+        assert_eq!(status, ToolCallStatus::Succeeded);
+
+        coordinator.stop_run().await.expect("stop run");
+        let events = load_events_from_run_dir(&run.run_dir).expect("load final events");
+        assert!(events.iter().any(|event| matches!(
+            (&event.actor.kind, event.actor.agent_id.as_deref(), &event.payload),
+            (
+                ActorKind::Worker,
+                Some(actor_agent_id),
+                EventV1::ToolCallRequested(payload)
+            ) if actor_agent_id == parent_agent_id && payload.tool_id == "task"
+        )));
+        assert!(events.iter().any(|event| matches!(
+            &event.payload,
+            EventV1::AgentSpawned(payload)
+                if payload.profile == "executor"
+                    && payload.parent_agent_id.as_deref() == Some(parent_agent_id.as_str())
+        )));
+        assert!(events.iter().any(|event| matches!(
+            &event.payload,
+            EventV1::ToolCallFinished(payload)
+                if payload.tool_call_id == tool_call_id
+                    && payload.output_json.as_ref().is_some_and(|output| {
+                        output.get("profile").and_then(serde_json::Value::as_str)
+                            == Some("executor")
+                            && output.get("command").and_then(serde_json::Value::as_str)
+                                == Some("/executor fix tests")
+                    })
+        )));
+    }
+
+    fn slash_agent_task_test_profiles() -> BTreeMap<String, AgentProfile> {
+        BTreeMap::from([
+            (
+                "operator".to_string(),
+                AgentProfile {
+                    name: "operator".to_string(),
+                    category: "operator".to_string(),
+                    model_ref: "mock:model-1".to_string(),
+                    model_ref_explicit: true,
+                    fallback_model_refs: Vec::new(),
+                    fallback_model_settings: Vec::new(),
+                    system_prompt: "operator-prompt".to_string(),
+                    max_iters: Some(12),
+                    temperature: Some(0.0),
+                    tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
+                    toolset: vec!["task".to_string()],
+                },
+            ),
+            (
+                "executor".to_string(),
+                AgentProfile {
+                    name: "executor".to_string(),
+                    category: "build".to_string(),
+                    model_ref: "mock:model-1".to_string(),
+                    model_ref_explicit: true,
+                    fallback_model_refs: Vec::new(),
+                    fallback_model_settings: Vec::new(),
+                    system_prompt: "executor-prompt".to_string(),
+                    max_iters: Some(12),
+                    temperature: Some(0.0),
+                    tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
+                    toolset: Vec::new(),
+                },
+            ),
+        ])
     }
 
     #[test]
