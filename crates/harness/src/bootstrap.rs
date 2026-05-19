@@ -714,7 +714,9 @@ mod tests {
         let task_description = task_description_for_profile(&coordinator_config, profile);
 
         assert!(task_description.contains("Available subagents:"));
-        assert!(task_description.contains("- explore: Read-only contextual codebase search agent"));
+        assert!(
+            task_description.contains("- explore: Fast codebase search and file/symbol mapping")
+        );
         assert!(task_description.contains("- general: General-purpose implementation"));
         assert!(!task_description.contains("- build:"));
         assert!(!task_description.contains("- plan:"));
@@ -730,7 +732,9 @@ mod tests {
         let profile = &coordinator_config.agent_profiles["plan"];
         let task_description = task_description_for_profile(&coordinator_config, profile);
 
-        assert!(task_description.contains("- explore: Read-only contextual codebase search agent"));
+        assert!(
+            task_description.contains("- explore: Fast codebase search and file/symbol mapping")
+        );
         assert!(!task_description.contains("- general:"));
     }
 

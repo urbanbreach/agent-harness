@@ -34,7 +34,7 @@ use harness_core::session_lineage::{
 };
 use harness_core::session_title::create_default_title;
 use harness_core::store::{EventStore, EventStoreError};
-use harness_core::workflow::WorkflowStartRequest;
+use harness_core::workflow::{WorkflowEvidenceRequest, WorkflowStartRequest};
 use harness_tools::coordinator_registry;
 use harness_tui::app::{
     set_pending_live_launch_metadata, set_pending_live_prompt_auto_submit, LaunchMetadata,
@@ -2534,16 +2534,41 @@ async fn record_tui_workflow_intent(
     command: &str,
 ) -> Result<String, CoordinatorError> {
     let workflow_id = tui_workflow_intent_id(intent);
+    let mode = tui_workflow_intent_mode(intent);
     coordinator
         .start_workflow(
             actor.clone(),
             WorkflowStartRequest {
                 workflow_id: workflow_id.clone(),
-                mode: tui_workflow_intent_mode(intent).to_string(),
+                mode: mode.to_string(),
                 owner: "tui-operator".to_string(),
                 lane: Some("lane.operator_decision".to_string()),
                 title: Some(format!("TUI workflow intent: {}", intent.as_str())),
                 idempotency_key: None,
+            },
+        )
+        .await?;
+    let mut metadata = BTreeMap::from([
+        ("command".to_string(), command.to_string()),
+        ("intent".to_string(), intent.as_str().to_string()),
+        ("mode".to_string(), mode.to_string()),
+        ("source".to_string(), "tui".to_string()),
+        ("status".to_string(), "requested".to_string()),
+    ]);
+    if let Some(status_key) = tui_workflow_status_key(intent) {
+        metadata.insert(status_key.to_string(), "requested".to_string());
+    }
+    coordinator
+        .record_workflow_evidence(
+            actor.clone(),
+            WorkflowEvidenceRequest {
+                workflow_id: workflow_id.clone(),
+                category: tui_workflow_evidence_category(intent).to_string(),
+                summary: format!("TUI workflow command requested: {command}"),
+                artifact_path: None,
+                artifact_digest: None,
+                acceptance_ref: Some(format!("tui-command:{}", intent.as_str())),
+                metadata,
             },
         )
         .await?;
@@ -2554,7 +2579,7 @@ async fn record_tui_workflow_intent(
             format!("tui-intent:{}", intent.as_str()),
             "operator".to_string(),
             Some(format!(
-                "{command} recorded as a coordinator-owned TUI workflow intent; complete command-specific arguments through the workflow CLI or follow-up operator prompt"
+                "{command} recorded as a coordinator-owned TUI workflow intent with initial workflow evidence; continue through the command-specific CLI or follow-up operator prompt"
             )),
             None,
         )
@@ -2575,11 +2600,94 @@ fn tui_workflow_intent_mode(intent: WorkflowIntent) -> &'static str {
         WorkflowIntent::GoalLedger => "workflow.goal_ledger",
         WorkflowIntent::ResearchMission => "workflow.research_mission",
         WorkflowIntent::Wiki => "workflow.wiki",
+        WorkflowIntent::DeepInterview => "workflow.deep_interview",
+        WorkflowIntent::Team => "workflow.team_escalation",
+        WorkflowIntent::Autopilot => "workflow.autopilot",
+        WorkflowIntent::Analyze => "workflow.analysis",
+        WorkflowIntent::Review => "workflow.review",
+        WorkflowIntent::SecurityReview => "workflow.security_review",
+        WorkflowIntent::Doctor => "workflow.doctor",
+        WorkflowIntent::Help => "workflow.help",
+        WorkflowIntent::Hud => "workflow.hud",
+        WorkflowIntent::Note => "workflow.note",
+        WorkflowIntent::Skill => "workflow.skill_management",
+        WorkflowIntent::Trace => "workflow.trace",
+        WorkflowIntent::ConfigureNotifications => "workflow.configure_notifications",
+        WorkflowIntent::Design => "workflow.design",
+        WorkflowIntent::Cleanup => "workflow.cleanup",
+        WorkflowIntent::Qa => "workflow.qa",
+        WorkflowIntent::Performance => "workflow.performance",
+        WorkflowIntent::Pipeline => "workflow.pipeline",
+        WorkflowIntent::Tdd => "workflow.tdd",
+        WorkflowIntent::Visual => "workflow.visual",
+        WorkflowIntent::WebClone => "workflow.web_clone",
+        WorkflowIntent::Ecomode => "workflow.ecomode",
+        WorkflowIntent::DeepSearch => "workflow.deepsearch",
+        WorkflowIntent::RalphInit => "workflow.ralph_init",
+        WorkflowIntent::StartWork => "workflow.start_work",
+        WorkflowIntent::Handoff => "workflow.handoff",
+        WorkflowIntent::Hyperplan => "workflow.hyperplan",
         WorkflowIntent::Status
         | WorkflowIntent::Signoff
         | WorkflowIntent::Cancel
         | WorkflowIntent::DossierExport
         | WorkflowIntent::Snapshot => "workflow.operator_utility",
+    }
+}
+
+fn tui_workflow_evidence_category(intent: WorkflowIntent) -> &'static str {
+    match intent {
+        WorkflowIntent::DeepInterview => "evidence.context_snapshot",
+        WorkflowIntent::PlanConsensus => "evidence.plan_consensus",
+        WorkflowIntent::GoalLedger => "evidence.goal_ledger",
+        WorkflowIntent::ResearchMission | WorkflowIntent::DeepSearch => "evidence.research_mission",
+        WorkflowIntent::Wiki => "evidence.wiki",
+        WorkflowIntent::Review => "evidence.review",
+        WorkflowIntent::SecurityReview => "evidence.security_review",
+        WorkflowIntent::Qa => "evidence.qa",
+        WorkflowIntent::Performance => "evidence.performance",
+        WorkflowIntent::Visual | WorkflowIntent::WebClone => "evidence.visual",
+        WorkflowIntent::Doctor | WorkflowIntent::ConfigureNotifications => "evidence.setup_doctor",
+        WorkflowIntent::Help | WorkflowIntent::Hud | WorkflowIntent::Trace => "evidence.status_hud",
+        WorkflowIntent::Skill => "evidence.skill_management",
+        WorkflowIntent::Note => "evidence.note_memory",
+        WorkflowIntent::Run
+        | WorkflowIntent::Signoff
+        | WorkflowIntent::Cancel
+        | WorkflowIntent::Snapshot
+        | WorkflowIntent::Autopilot
+        | WorkflowIntent::Analyze
+        | WorkflowIntent::Team
+        | WorkflowIntent::Design
+        | WorkflowIntent::Cleanup
+        | WorkflowIntent::Pipeline
+        | WorkflowIntent::Tdd
+        | WorkflowIntent::Ecomode
+        | WorkflowIntent::RalphInit
+        | WorkflowIntent::StartWork
+        | WorkflowIntent::Handoff
+        | WorkflowIntent::Hyperplan => "evidence.verification",
+        WorkflowIntent::Status | WorkflowIntent::DossierExport => "evidence.dossier",
+    }
+}
+
+fn tui_workflow_status_key(intent: WorkflowIntent) -> Option<&'static str> {
+    match intent {
+        WorkflowIntent::PlanConsensus => Some("plan_status"),
+        WorkflowIntent::GoalLedger => Some("goal_status"),
+        WorkflowIntent::ResearchMission | WorkflowIntent::DeepSearch => Some("mission_status"),
+        WorkflowIntent::Review => Some("review_status"),
+        WorkflowIntent::SecurityReview => Some("security_status"),
+        WorkflowIntent::Qa => Some("qa_status"),
+        WorkflowIntent::Performance => Some("performance_status"),
+        WorkflowIntent::Visual | WorkflowIntent::WebClone => Some("visual_status"),
+        WorkflowIntent::Doctor | WorkflowIntent::ConfigureNotifications => Some("setup_status"),
+        WorkflowIntent::Help | WorkflowIntent::Hud | WorkflowIntent::Trace => {
+            Some("status_hud_status")
+        }
+        WorkflowIntent::Skill => Some("skill_status"),
+        WorkflowIntent::Note => Some("note_memory_status"),
+        _ => None,
     }
 }
 
@@ -3512,7 +3620,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn workflow_intent_records_coordinator_owned_decision() {
+    async fn workflow_intent_records_coordinator_owned_evidence_and_decision() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());
         config.deterministic_store = true;
@@ -3567,6 +3675,16 @@ mod tests {
             EventV1::WorkflowStarted(payload)
                 if payload.mode == "workflow.plan_consensus"
                     && payload.owner == "tui-operator"
+        )));
+        assert!(events.iter().any(|event| matches!(
+            &event.payload,
+            EventV1::WorkflowEvidenceRecorded(payload)
+                if payload.category == "evidence.plan_consensus"
+                    && payload.summary.contains("/ralplan hard migration")
+                    && payload.metadata.get("command").map(String::as_str)
+                        == Some("/ralplan hard migration")
+                    && payload.metadata.get("plan_status").map(String::as_str)
+                        == Some("requested")
         )));
         assert!(events.iter().any(|event| matches!(
             &event.payload,
@@ -3650,6 +3768,7 @@ mod tests {
         assert!(!events.iter().any(|event| matches!(
             &event.payload,
             EventV1::WorkflowStarted(_)
+                | EventV1::WorkflowEvidenceRecorded(_)
                 | EventV1::WorkflowOperatorDecisionRecorded(_)
                 | EventV1::WorkflowCompleted(_)
         )));
