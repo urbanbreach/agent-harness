@@ -426,6 +426,7 @@ fn schema_cli_prints_runtime_json_schema() {
         .and_then(Value::as_object)
         .expect("PublicAgentMap properties");
     for agent in [
+        "operator",
         "build",
         "plan",
         "discipline",
@@ -1236,7 +1237,7 @@ fn load_config_allows_public_agents_without_explicit_description() {
 
     assert_eq!(
         plan.description,
-        "Plan mode. Disallows all edit tools except the active plan file."
+        "Hidden planning escalation. Disallows all edit tools except the active plan file."
     );
     assert_eq!(plan.model_ref, "default/gpt-4o-mini");
 }
@@ -1507,6 +1508,45 @@ fn config_validate_cli_rejects_unsupported_upstream_top_level_keys() {
 }
 
 #[test]
+fn upstream_product_side_effect_keys_accept_only_inactive_placeholders() {
+    let parsed = load_config_from_str(
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              options: {
+                baseURL: "http://127.0.0.1:1/v1",
+                apiKey: "DUMMY"
+              },
+              models: {
+                "gpt-4o": { name: "GPT-4o" }
+              }
+            }
+          },
+          model: "default/gpt-4o",
+          permission: "ask",
+          server: {},
+          command: {},
+          plugin: [],
+          share: "disabled",
+          autoshare: false,
+          autoupdate: false,
+          enterprise: {}
+        }
+        "#,
+    )
+    .expect("inactive upstream product placeholders should not activate side effects");
+
+    assert!(parsed.providers.contains_key("default"));
+    assert_eq!(parsed.permissions.defaults.shell, PermissionMode::Ask);
+    assert!(
+        parsed.compatibility.imports.is_empty(),
+        "inactive upstream product placeholders should not create compatibility imports"
+    );
+}
+
+#[test]
 fn upstream_config_shape_accepts_subagents_and_safe_inert_keys() {
     let parsed = load_config_from_str(
         r#"
@@ -1694,7 +1734,7 @@ fn shipped_runtime_example_parses_as_public_runtime_config() {
     let parsed: PublicRuntimeConfig =
         json5::from_str(&shipped).expect("parse shipped runtime example");
 
-    assert_eq!(parsed.default_agent.as_deref(), Some("build"));
+    assert_eq!(parsed.default_agent.as_deref(), Some("operator"));
     assert_eq!(parsed.model.as_deref(), Some("default/gpt-5.4-mini"));
     assert_eq!(parsed.small_model.as_deref(), None);
     assert_eq!(parsed.provider.len(), 1);
@@ -1706,6 +1746,7 @@ fn shipped_runtime_example_parses_as_public_runtime_config() {
     assert_eq!(provider.models.len(), 2);
     assert!(provider.models.contains_key("gpt-5.5"));
     assert!(provider.models.contains_key("gpt-5.4-mini"));
+    assert!(parsed.agent.operator.is_some());
     assert!(parsed.agent.build.is_some());
     assert!(parsed.agent.plan.is_some());
     assert!(parsed.agent.discipline.is_some());

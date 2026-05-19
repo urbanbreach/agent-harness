@@ -220,6 +220,8 @@ pub struct PublicRuntimeSettingsConfig {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct PublicAgentMap {
     #[serde(default)]
+    pub operator: Option<PublicAgentConfig>,
+    #[serde(default)]
     pub build: Option<PublicAgentConfig>,
     #[serde(default)]
     pub plan: Option<PublicAgentConfig>,
@@ -228,7 +230,73 @@ pub struct PublicAgentMap {
     #[serde(default)]
     pub general: Option<PublicAgentConfig>,
     #[serde(default)]
+    pub executor: Option<PublicAgentConfig>,
+    #[serde(default, rename = "team-executor", alias = "teamExecutor")]
+    pub team_executor: Option<PublicAgentConfig>,
+    #[serde(default, rename = "build-fixer", alias = "buildFixer")]
+    pub build_fixer: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub debugger: Option<PublicAgentConfig>,
+    #[serde(default, rename = "code-simplifier", alias = "codeSimplifier")]
+    pub code_simplifier: Option<PublicAgentConfig>,
+    #[serde(default, rename = "git-master", alias = "gitMaster")]
+    pub git_master: Option<PublicAgentConfig>,
+    #[serde(default)]
     pub explore: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub analyst: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub planner: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub architect: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub critic: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub researcher: Option<PublicAgentConfig>,
+    #[serde(default, rename = "dependency-expert", alias = "dependencyExpert")]
+    pub dependency_expert: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub verifier: Option<PublicAgentConfig>,
+    #[serde(default, rename = "test-engineer", alias = "testEngineer")]
+    pub test_engineer: Option<PublicAgentConfig>,
+    #[serde(default, rename = "code-reviewer", alias = "codeReviewer")]
+    pub code_reviewer: Option<PublicAgentConfig>,
+    #[serde(default, rename = "quality-reviewer", alias = "qualityReviewer")]
+    pub quality_reviewer: Option<PublicAgentConfig>,
+    #[serde(default, rename = "style-reviewer", alias = "styleReviewer")]
+    pub style_reviewer: Option<PublicAgentConfig>,
+    #[serde(default, rename = "security-reviewer", alias = "securityReviewer")]
+    pub security_reviewer: Option<PublicAgentConfig>,
+    #[serde(
+        default,
+        rename = "performance-reviewer",
+        alias = "performanceReviewer"
+    )]
+    pub performance_reviewer: Option<PublicAgentConfig>,
+    #[serde(default, rename = "api-reviewer", alias = "apiReviewer")]
+    pub api_reviewer: Option<PublicAgentConfig>,
+    #[serde(default, rename = "quality-strategist", alias = "qualityStrategist")]
+    pub quality_strategist: Option<PublicAgentConfig>,
+    #[serde(default, rename = "product-manager", alias = "productManager")]
+    pub product_manager: Option<PublicAgentConfig>,
+    #[serde(default, rename = "product-analyst", alias = "productAnalyst")]
+    pub product_analyst: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub designer: Option<PublicAgentConfig>,
+    #[serde(default, rename = "ux-researcher", alias = "uxResearcher")]
+    pub ux_researcher: Option<PublicAgentConfig>,
+    #[serde(
+        default,
+        rename = "information-architect",
+        alias = "informationArchitect"
+    )]
+    pub information_architect: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub writer: Option<PublicAgentConfig>,
+    #[serde(default)]
+    pub vision: Option<PublicAgentConfig>,
+    #[serde(default, rename = "qa-tester", alias = "qaTester")]
+    pub qa_tester: Option<PublicAgentConfig>,
     #[serde(default)]
     pub oracle: Option<PublicAgentConfig>,
     #[serde(default)]
@@ -280,11 +348,41 @@ pub struct PublicAgentMap {
 
 impl PublicAgentMap {
     pub fn is_empty(&self) -> bool {
-        self.build.is_none()
+        self.operator.is_none()
+            && self.build.is_none()
             && self.plan.is_none()
             && self.discipline.is_none()
             && self.general.is_none()
+            && self.executor.is_none()
+            && self.team_executor.is_none()
+            && self.build_fixer.is_none()
+            && self.debugger.is_none()
+            && self.code_simplifier.is_none()
+            && self.git_master.is_none()
             && self.explore.is_none()
+            && self.analyst.is_none()
+            && self.planner.is_none()
+            && self.architect.is_none()
+            && self.critic.is_none()
+            && self.researcher.is_none()
+            && self.dependency_expert.is_none()
+            && self.verifier.is_none()
+            && self.test_engineer.is_none()
+            && self.code_reviewer.is_none()
+            && self.quality_reviewer.is_none()
+            && self.style_reviewer.is_none()
+            && self.security_reviewer.is_none()
+            && self.performance_reviewer.is_none()
+            && self.api_reviewer.is_none()
+            && self.quality_strategist.is_none()
+            && self.product_manager.is_none()
+            && self.product_analyst.is_none()
+            && self.designer.is_none()
+            && self.ux_researcher.is_none()
+            && self.information_architect.is_none()
+            && self.writer.is_none()
+            && self.vision.is_none()
+            && self.qa_tester.is_none()
             && self.oracle.is_none()
             && self.librarian.is_none()
             && self.metis.is_none()
@@ -312,11 +410,41 @@ impl PublicAgentMap {
     fn into_entries(self) -> BTreeMap<String, PublicAgentConfig> {
         let mut agents = self.custom;
         for (name, agent) in [
+            ("operator", self.operator),
             ("build", self.build),
             ("plan", self.plan),
             ("discipline", self.discipline),
             ("general", self.general),
+            ("executor", self.executor),
+            ("team-executor", self.team_executor),
+            ("build-fixer", self.build_fixer),
+            ("debugger", self.debugger),
+            ("code-simplifier", self.code_simplifier),
+            ("git-master", self.git_master),
             ("explore", self.explore),
+            ("analyst", self.analyst),
+            ("planner", self.planner),
+            ("architect", self.architect),
+            ("critic", self.critic),
+            ("researcher", self.researcher),
+            ("dependency-expert", self.dependency_expert),
+            ("verifier", self.verifier),
+            ("test-engineer", self.test_engineer),
+            ("code-reviewer", self.code_reviewer),
+            ("quality-reviewer", self.quality_reviewer),
+            ("style-reviewer", self.style_reviewer),
+            ("security-reviewer", self.security_reviewer),
+            ("performance-reviewer", self.performance_reviewer),
+            ("api-reviewer", self.api_reviewer),
+            ("quality-strategist", self.quality_strategist),
+            ("product-manager", self.product_manager),
+            ("product-analyst", self.product_analyst),
+            ("designer", self.designer),
+            ("ux-researcher", self.ux_researcher),
+            ("information-architect", self.information_architect),
+            ("writer", self.writer),
+            ("vision", self.vision),
+            ("qa-tester", self.qa_tester),
             ("oracle", self.oracle),
             ("librarian", self.librarian),
             ("metis", self.metis),
@@ -896,13 +1024,13 @@ fn default_shipped_agents(
     model_ref: &str,
     small_model_ref: Option<&str>,
 ) -> BTreeMap<String, ProfileConfig> {
-    BTreeMap::from([
+    let mut agents = BTreeMap::from([
         (
             crate::plan::BUILD_AGENT_NAME.to_string(),
             ProfileConfig {
                 name: None,
                 description:
-                    "Implementation lane: execute the requested work and verify the result."
+                    "Hidden compatibility implementation lane; operator is the visible default."
                         .to_string(),
                 system_prompt: None,
                 model_ref: model_ref.to_string(),
@@ -989,8 +1117,9 @@ fn default_shipped_agents(
             crate::plan::PLAN_AGENT_NAME.to_string(),
             ProfileConfig {
                 name: None,
-                description: "Plan mode. Disallows all edit tools except the active plan file."
-                    .to_string(),
+                description:
+                    "Hidden planning escalation. Disallows all edit tools except the active plan file."
+                        .to_string(),
                 system_prompt: None,
                 model_ref: model_ref.to_string(),
                 model_ref_explicit: false,
@@ -1068,7 +1197,7 @@ fn default_shipped_agents(
             ProfileConfig {
                 name: None,
                 description:
-                    "Disciplined autonomous delivery lane with strict todo, delegation, and verification behavior."
+                    "Hidden strict-delivery escalation with todo, delegation, and verification guardrails."
                         .to_string(),
                 system_prompt: None,
                 model_ref: model_ref.to_string(),
@@ -1482,7 +1611,214 @@ fn default_shipped_agents(
                 tools: Vec::new(),
             },
         ),
-    ])
+    ]);
+
+    for definition in crate::agent_catalog::slash_agent_definitions() {
+        if let Some(profile) = agents.get_mut(definition.name) {
+            apply_slash_agent_metadata(profile, definition);
+        } else {
+            agents.insert(
+                definition.name.to_string(),
+                slash_agent_profile(definition, model_ref, small_model_ref),
+            );
+        }
+    }
+
+    if let Some(build_profile) = agents.get(crate::plan::BUILD_AGENT_NAME).cloned() {
+        let mut operator = build_profile;
+        operator.description =
+            "Single default operator lane for normal Harness work and explicit escalation."
+                .to_string();
+        operator.hidden = false;
+        agents.insert(
+            crate::agent_catalog::OPERATOR_AGENT_NAME.to_string(),
+            operator,
+        );
+    }
+
+    for legacy in crate::agent_catalog::LEGACY_PRIMARY_PROFILE_ALIASES {
+        if let Some(profile) = agents.get_mut(*legacy) {
+            profile.hidden = true;
+        }
+    }
+
+    agents
+}
+
+fn slash_agent_profile(
+    definition: &crate::agent_catalog::SlashAgentDefinition,
+    model_ref: &str,
+    small_model_ref: Option<&str>,
+) -> ProfileConfig {
+    let read_only = definition.tools == "read-only";
+    let analysis_only = definition.tools == "analysis";
+    let model_ref = if definition.model_class == "fast" {
+        small_model_ref.unwrap_or(model_ref)
+    } else {
+        model_ref
+    };
+    let mut profile = ProfileConfig {
+        name: None,
+        description: definition.description.to_string(),
+        system_prompt: Some(slash_agent_system_prompt(definition)),
+        model_ref: model_ref.to_string(),
+        model_ref_explicit: definition.model_class == "fast" && small_model_ref.is_some(),
+        variant: None,
+        temperature: None,
+        top_p: None,
+        mode: AgentMode::Subagent,
+        hidden: false,
+        color: None,
+        options: BTreeMap::new(),
+        permissions: Some(slash_agent_permissions(read_only, analysis_only)),
+        max_iters: None,
+        tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
+        tools: slash_agent_tools(read_only, analysis_only),
+    };
+    apply_slash_agent_metadata(&mut profile, definition);
+    profile
+}
+
+fn apply_slash_agent_metadata(
+    profile: &mut ProfileConfig,
+    definition: &crate::agent_catalog::SlashAgentDefinition,
+) {
+    profile.description = definition.description.to_string();
+    profile.options.insert(
+        "omx_slash_agent".to_string(),
+        serde_json::json!({
+            "name": definition.name,
+            "description": definition.description,
+            "reasoning_effort": definition.reasoning_effort,
+            "posture": definition.posture,
+            "model_class": definition.model_class,
+            "routing_role": definition.routing_role,
+            "tools": definition.tools,
+            "category": definition.category,
+            "command": format!("/{}", definition.name),
+            "source": "inspirations/oh-my-codex/src/agents/definitions.ts",
+        }),
+    );
+}
+
+fn slash_agent_system_prompt(definition: &crate::agent_catalog::SlashAgentDefinition) -> String {
+    format!(
+        "You are the `{}` slash-agent role. Purpose: {}. Reference metadata: reasoning_effort={}, posture={}, model_class={}, routing_role={}, tools={}, category={}. Complete the delegated task directly, stay within the requested role boundaries, preserve Harness safety invariants, and return concise verification evidence.",
+        definition.name,
+        definition.description,
+        definition.reasoning_effort,
+        definition.posture,
+        definition.model_class,
+        definition.routing_role,
+        definition.tools,
+        definition.category
+    )
+}
+
+fn slash_agent_permissions(read_only: bool, analysis_only: bool) -> ProfilePermissions {
+    ProfilePermissions {
+        fallback: None,
+        edit: Some(if read_only || analysis_only {
+            PermissionMode::Deny
+        } else {
+            PermissionMode::Allow
+        }),
+        shell: Some(if read_only {
+            PermissionMode::Deny
+        } else {
+            PermissionMode::Allow
+        }),
+        network: Some(PermissionMode::Allow),
+        question: Some(PermissionMode::Allow),
+        task: Some(PermissionMode::Deny),
+        webfetch: Some(PermissionMode::Allow),
+        websearch: Some(PermissionMode::Allow),
+        codesearch: Some(PermissionMode::Allow),
+        lsp: Some(PermissionMode::Allow),
+        rules: PermissionRuleSet::default(),
+    }
+}
+
+fn slash_agent_tools(read_only: bool, analysis_only: bool) -> Vec<String> {
+    let tools = if read_only {
+        vec![
+            "question",
+            "skill",
+            "session_list",
+            "session_read",
+            "session_search",
+            "session_info",
+            "ast_grep_search",
+            "look_at",
+            "websearch",
+            "webfetch",
+            "codesearch",
+            "lsp",
+            "read",
+            "glob",
+            "grep",
+            "list",
+            "batch",
+        ]
+    } else if analysis_only {
+        vec![
+            "question",
+            "skill",
+            "session_list",
+            "session_read",
+            "session_search",
+            "session_info",
+            "ast_grep_search",
+            "look_at",
+            "websearch",
+            "webfetch",
+            "codesearch",
+            "lsp",
+            "read",
+            "glob",
+            "grep",
+            "list",
+            "bash",
+            "batch",
+        ]
+    } else {
+        vec![
+            "question",
+            "skill",
+            "background_output",
+            "background_cancel",
+            "session_list",
+            "session_read",
+            "session_search",
+            "session_info",
+            "ast_grep_search",
+            "ast_grep_replace",
+            "task_create",
+            "task_list",
+            "task_get",
+            "task_update",
+            "look_at",
+            "interactive_bash",
+            "terminal_spawn",
+            "terminal_write",
+            "terminal_screenshot",
+            "terminal_resize",
+            "terminal_kill",
+            "terminal_list",
+            "websearch",
+            "webfetch",
+            "codesearch",
+            "lsp",
+            "read",
+            "glob",
+            "grep",
+            "list",
+            "edit",
+            "bash",
+            "batch",
+        ]
+    };
+    tools.into_iter().map(str::to_string).collect()
 }
 
 fn category_routing_profile(
@@ -2028,6 +2364,13 @@ pub(super) fn translate_public_runtime_root(
             agents.extend(legacy);
         }
     }
+    let mut explicit_operator_profile =
+        agents.contains_key(crate::agent_catalog::OPERATOR_AGENT_NAME);
+    let requested_default_agent = object
+        .get("default_agent")
+        .or_else(|| object.get("defaultAgent"))
+        .and_then(serde_json::Value::as_str)
+        .map(|name| name.trim().to_string());
 
     let shipped = model
         .as_deref()
@@ -2083,6 +2426,9 @@ pub(super) fn translate_public_runtime_root(
             let public_agents: PublicAgentMap = serde_json::from_value(value.clone())
                 .map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
             for (name, public_agent) in public_agents.into_entries() {
+                if name == crate::agent_catalog::OPERATOR_AGENT_NAME {
+                    explicit_operator_profile = true;
+                }
                 if public_agent.disable || public_agent.enable == Some(false) {
                     agents.remove(&name);
                     disabled_agents.insert(name);
@@ -2103,6 +2449,23 @@ pub(super) fn translate_public_runtime_root(
     for (name, profile) in shipped {
         if !disabled_agents.contains(&name) {
             agents.entry(name).or_insert(profile);
+        }
+    }
+    if let Some(legacy_default) = requested_default_agent
+        .as_deref()
+        .filter(|name| crate::agent_catalog::LEGACY_PRIMARY_PROFILE_ALIASES.contains(name))
+    {
+        if !explicit_operator_profile {
+            if let Some(mut operator) = agents.get(legacy_default).cloned() {
+                operator.description =
+                    "Single default operator lane for normal Harness work and explicit escalation."
+                        .to_string();
+                operator.hidden = false;
+                agents.insert(
+                    crate::agent_catalog::OPERATOR_AGENT_NAME.to_string(),
+                    operator,
+                );
+            }
         }
     }
 

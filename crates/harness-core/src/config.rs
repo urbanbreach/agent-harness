@@ -286,6 +286,13 @@ impl HarnessConfig {
         }
 
         if let Some(default_agent) = self.default_agent.clone() {
+            self.default_agent = Some(self.normalize_default_profile_name(&default_agent));
+        }
+        if let Some(default_profile) = self.ui.default_profile.clone() {
+            self.ui.default_profile = Some(self.normalize_default_profile_name(&default_profile));
+        }
+
+        if let Some(default_agent) = self.default_agent.clone() {
             match self.ui.default_profile.as_deref() {
                 None => self.ui.default_profile = Some(default_agent),
                 Some(profile) if profile == default_agent => {}
@@ -300,6 +307,18 @@ impl HarnessConfig {
         }
 
         Ok(())
+    }
+
+    fn normalize_default_profile_name(&self, profile: &str) -> String {
+        if crate::agent_catalog::LEGACY_PRIMARY_PROFILE_ALIASES.contains(&profile)
+            && self
+                .agents
+                .contains_key(crate::agent_catalog::OPERATOR_AGENT_NAME)
+        {
+            crate::agent_catalog::OPERATOR_AGENT_NAME.to_string()
+        } else {
+            profile.to_string()
+        }
     }
 
     fn validate_references(&mut self) -> Result<(), ConfigError> {
@@ -321,18 +340,12 @@ impl HarnessConfig {
             resolve_agent_model_selection(self, agent_name, agent)?;
         }
 
-        if let Some(mut default_profile) = self.ui.default_profile.clone() {
+        if let Some(default_profile) = self.ui.default_profile.clone() {
             if !self.agents.contains_key(default_profile.as_str()) {
-                if self.agents.contains_key("build") {
-                    self.ui.default_profile = Some("build".to_string());
-                    self.default_agent = Some("build".to_string());
-                    default_profile = "build".to_string();
-                } else {
-                    return Err(ConfigError::InvalidReference(format!(
-                        "ui.default_profile references unknown agent `{default_profile}`; available agents: {}",
-                        format_name_list(self.agents.keys().map(|name| name.as_str()))
-                    )));
-                }
+                return Err(ConfigError::InvalidReference(format!(
+                    "ui.default_profile references unknown agent `{default_profile}`; available agents: {}",
+                    format_name_list(self.agents.keys().map(|name| name.as_str()))
+                )));
             }
             if let Some(profile) = self.agents.get(default_profile.as_str()) {
                 if profile.mode.is_subagent_only() {
@@ -4378,12 +4391,12 @@ mod tests {
           }},
           model: "default/gpt-4o-mini",
           agent: {{
-            build: {{
-              prompt: "Build work",
+            custom: {{
+              prompt: "Custom work",
               {field}: {value}
             }}
           }},
-          default_agent: "build",
+          default_agent: "custom",
           permission: "allow"
         }}
         "#
@@ -4804,7 +4817,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_explicit_default_profile_falls_back_to_build_when_available() {
+    fn invalid_explicit_default_profile_does_not_fall_back_to_build() {
         let cfg = r#"
         {
           providers: {
@@ -4859,9 +4872,110 @@ mod tests {
         }
         "#;
 
-        let parsed = load_config_from_str(cfg).expect("invalid default should fall back to build");
-        assert_eq!(parsed.ui.default_profile.as_deref(), Some("build"));
-        assert_eq!(parsed.default_agent.as_deref(), Some("build"));
+        let err = load_config_from_str(cfg).expect_err("invalid default should fail clearly");
+        assert_eq!(
+            err.to_string(),
+            "ui.default_profile references unknown agent `ops`; available agents: build, plan"
+        );
+    }
+
+    #[test]
+    fn legacy_public_default_agents_normalize_to_operator_when_shipped() {
+        for legacy in ["build", "plan", "discipline"] {
+            let cfg = format!(
+                r#"
+        {{
+          provider: {{
+            default: {{
+              type: "openai_compatible",
+              options: {{
+                baseURL: "http://127.0.0.1:8317/v1",
+                apiKey: "test-key",
+              }},
+              models: {{
+                "gpt-4o-mini": {{ name: "GPT-4o mini" }}
+              }}
+            }}
+          }},
+          model: "default/gpt-4o-mini",
+          default_agent: "{legacy}",
+          permission: "allow"
+        }}
+        "#
+            );
+            let parsed = load_config_from_str(&cfg).expect("legacy default should migrate");
+            assert!(parsed.agents.contains_key("operator"));
+            assert_eq!(parsed.default_agent.as_deref(), Some("operator"));
+            assert_eq!(parsed.ui.default_profile.as_deref(), Some("operator"));
+            assert!(
+                parsed.agents[legacy].hidden,
+                "{legacy} should remain hidden compatibility"
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_public_default_agent_operator_preserves_resolved_legacy_override() {
+        let cfg = r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              options: {
+                baseURL: "http://127.0.0.1:8317/v1",
+                apiKey: "test-key",
+              },
+              models: {
+                "gpt-4o-mini": { name: "GPT-4o mini" }
+              }
+            }
+          },
+          model: "default/gpt-4o-mini",
+          agent: {
+            build: {
+              name: "Legacy Builder",
+              prompt: "Use the legacy build override",
+              model: "default/gpt-4o-mini",
+              permission: {
+                bash: "deny",
+                edit: "allow"
+              },
+              tools: ["read", "task"]
+            }
+          },
+          default_agent: "build",
+          permission: "allow"
+        }
+        "#;
+
+        let parsed = load_config_from_str(cfg).expect("legacy default should migrate");
+        let operator = parsed.agents.get("operator").expect("operator profile");
+        let build = parsed.agents.get("build").expect("legacy build profile");
+
+        assert_eq!(parsed.default_agent.as_deref(), Some("operator"));
+        assert_eq!(parsed.ui.default_profile.as_deref(), Some("operator"));
+        assert_eq!(operator.name.as_deref(), Some("Legacy Builder"));
+        assert_eq!(
+            operator.system_prompt.as_deref(),
+            Some("Use the legacy build override")
+        );
+        assert_eq!(operator.tools, vec!["read".to_string(), "task".to_string()]);
+        assert_eq!(
+            operator
+                .permissions
+                .as_ref()
+                .and_then(|permissions| permissions.shell.as_ref()),
+            Some(&PermissionMode::Deny)
+        );
+        assert_eq!(
+            operator
+                .permissions
+                .as_ref()
+                .and_then(|permissions| permissions.edit.as_ref()),
+            Some(&PermissionMode::Allow)
+        );
+        assert!(!operator.hidden);
+        assert_eq!(build.system_prompt, operator.system_prompt);
     }
 
     #[test]

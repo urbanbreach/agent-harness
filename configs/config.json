@@ -1043,6 +1043,39 @@
       },
       "description": "Named agent definitions. Built-in upstream-compatible agents are explicit so editors can complete them, and custom names are accepted through the same shape.",
       "properties": {
+        "analyst": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "api-reviewer": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "architect": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "artistry": {
           "anyOf": [
             {
@@ -1076,7 +1109,62 @@
           ],
           "default": null
         },
+        "build-fixer": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "code-reviewer": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "code-simplifier": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "compaction": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "critic": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "debugger": {
           "anyOf": [
             {
               "$ref": "#/definitions/PublicAgentConfig"
@@ -1098,7 +1186,40 @@
           ],
           "default": null
         },
+        "dependency-expert": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "designer": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "discipline": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "executor": {
           "anyOf": [
             {
               "$ref": "#/definitions/PublicAgentConfig"
@@ -1131,7 +1252,29 @@
           ],
           "default": null
         },
+        "git-master": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "hephaestus": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "information-architect": {
           "anyOf": [
             {
               "$ref": "#/definitions/PublicAgentConfig"
@@ -1186,7 +1329,29 @@
           ],
           "default": null
         },
+        "operator": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "oracle": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "performance-reviewer": {
           "anyOf": [
             {
               "$ref": "#/definitions/PublicAgentConfig"
@@ -1208,6 +1373,39 @@
           ],
           "default": null
         },
+        "planner": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "product-analyst": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "product-manager": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "prometheus": {
           "anyOf": [
             {
@@ -1219,7 +1417,62 @@
           ],
           "default": null
         },
+        "qa-tester": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "quality-reviewer": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "quality-strategist": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "quick": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "researcher": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "security-reviewer": {
           "anyOf": [
             {
               "$ref": "#/definitions/PublicAgentConfig"
@@ -1252,7 +1505,40 @@
           ],
           "default": null
         },
+        "style-reviewer": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "summary": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "team-executor": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "test-engineer": {
           "anyOf": [
             {
               "$ref": "#/definitions/PublicAgentConfig"
@@ -1307,7 +1593,51 @@
           ],
           "default": null
         },
+        "ux-researcher": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "verifier": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "vision": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "visual-engineering": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "writer": {
           "anyOf": [
             {
               "$ref": "#/definitions/PublicAgentConfig"
@@ -2378,31 +2708,61 @@
         }
       ],
       "default": {
+        "analyst": null,
+        "api-reviewer": null,
+        "architect": null,
         "artistry": null,
         "atlas": null,
         "build": null,
+        "build-fixer": null,
+        "code-reviewer": null,
+        "code-simplifier": null,
         "compaction": null,
+        "critic": null,
+        "debugger": null,
         "deep": null,
+        "dependency-expert": null,
+        "designer": null,
         "discipline": null,
+        "executor": null,
         "explore": null,
         "general": null,
+        "git-master": null,
         "hephaestus": null,
+        "information-architect": null,
         "librarian": null,
         "metis": null,
         "momus": null,
         "multimodal-looker": null,
+        "operator": null,
         "oracle": null,
+        "performance-reviewer": null,
         "plan": null,
+        "planner": null,
+        "product-analyst": null,
+        "product-manager": null,
         "prometheus": null,
+        "qa-tester": null,
+        "quality-reviewer": null,
+        "quality-strategist": null,
         "quick": null,
+        "researcher": null,
+        "security-reviewer": null,
         "sisyphus": null,
         "sisyphus-junior": null,
+        "style-reviewer": null,
         "summary": null,
+        "team-executor": null,
+        "test-engineer": null,
         "title": null,
         "ultrabrain": null,
         "unspecified-high": null,
         "unspecified-low": null,
+        "ux-researcher": null,
+        "verifier": null,
+        "vision": null,
         "visual-engineering": null,
+        "writer": null,
         "writing": null
       }
     },
@@ -2580,31 +2940,61 @@
         }
       ],
       "default": {
+        "analyst": null,
+        "api-reviewer": null,
+        "architect": null,
         "artistry": null,
         "atlas": null,
         "build": null,
+        "build-fixer": null,
+        "code-reviewer": null,
+        "code-simplifier": null,
         "compaction": null,
+        "critic": null,
+        "debugger": null,
         "deep": null,
+        "dependency-expert": null,
+        "designer": null,
         "discipline": null,
+        "executor": null,
         "explore": null,
         "general": null,
+        "git-master": null,
         "hephaestus": null,
+        "information-architect": null,
         "librarian": null,
         "metis": null,
         "momus": null,
         "multimodal-looker": null,
+        "operator": null,
         "oracle": null,
+        "performance-reviewer": null,
         "plan": null,
+        "planner": null,
+        "product-analyst": null,
+        "product-manager": null,
         "prometheus": null,
+        "qa-tester": null,
+        "quality-reviewer": null,
+        "quality-strategist": null,
         "quick": null,
+        "researcher": null,
+        "security-reviewer": null,
         "sisyphus": null,
         "sisyphus-junior": null,
+        "style-reviewer": null,
         "summary": null,
+        "team-executor": null,
+        "test-engineer": null,
         "title": null,
         "ultrabrain": null,
         "unspecified-high": null,
         "unspecified-low": null,
+        "ux-researcher": null,
+        "verifier": null,
+        "vision": null,
         "visual-engineering": null,
+        "writer": null,
         "writing": null
       }
     },
