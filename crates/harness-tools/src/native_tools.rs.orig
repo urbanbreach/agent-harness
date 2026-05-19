@@ -1519,24 +1519,6 @@ mod tests {
         )
         .expect_err("external relative path should be blocked");
         assert!(matches!(err2, ToolError::PathEscapesWorkspace { .. }));
-
-        let err3 = validate_bash_command(
-            "ls --files-from=foo/../../../etc/passwd",
-            tempdir.path(),
-            tempdir.path(),
-            &allowlist,
-        )
-        .expect_err("external relative path inside option should be blocked");
-        assert!(matches!(err3, ToolError::PathEscapesWorkspace { .. }));
-
-        let err4 = validate_bash_command(
-            "ls foo/../../../etc/pas*",
-            tempdir.path(),
-            tempdir.path(),
-            &allowlist,
-        )
-        .expect_err("external relative path with glob should be blocked");
-        assert!(matches!(err4, ToolError::PathEscapesWorkspace { .. }));
     }
 
     #[test]
