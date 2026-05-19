@@ -159,6 +159,10 @@ pub enum WorkflowIntent {
     Design,
     Cleanup,
     Qa,
+    Ask,
+    BestPracticeResearch,
+    BuildFix,
+    Setup,
     Performance,
     Pipeline,
     Tdd,
@@ -201,6 +205,10 @@ impl WorkflowIntent {
             Self::Design => "workflow.design",
             Self::Cleanup => "workflow.cleanup",
             Self::Qa => "workflow.qa",
+            Self::Ask => "workflow.ask_local_advisor",
+            Self::BestPracticeResearch => "workflow.best_practice_research",
+            Self::BuildFix => "workflow.build_fix",
+            Self::Setup => "workflow.setup",
             Self::Performance => "workflow.performance",
             Self::Pipeline => "workflow.pipeline",
             Self::Tdd => "workflow.tdd",
@@ -242,6 +250,10 @@ impl WorkflowIntent {
             | Self::Design
             | Self::Cleanup
             | Self::Qa
+            | Self::Ask
+            | Self::BestPracticeResearch
+            | Self::BuildFix
+            | Self::Setup
             | Self::Performance
             | Self::Pipeline
             | Self::Tdd
@@ -489,6 +501,33 @@ impl CommandRegistry {
             )
             .with_dollar_aliases(&["ultraqa"]),
             spec(
+                "omx-skill:ask",
+                "Ask a local external advisor CLI and capture a reusable artifact",
+                &["ask"],
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Ask,
+                },
+            )
+            .with_dollar_aliases(&["ask"]),
+            spec(
+                "omx-skill:ask-claude",
+                "Deprecated Claude advisor shim routed through the local advisor workflow",
+                &["ask-claude"],
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Ask,
+                },
+            )
+            .with_dollar_aliases(&["ask-claude"]),
+            spec(
+                "omx-skill:ask-gemini",
+                "Deprecated Gemini advisor shim routed through the local advisor workflow",
+                &["ask-gemini"],
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Ask,
+                },
+            )
+            .with_dollar_aliases(&["ask-gemini"]),
+            spec(
                 "omx-skill:analyze",
                 "Run read-only deep repository analysis with ranked findings, explicit confidence, and file evidence",
                 &["analyze"],
@@ -615,6 +654,15 @@ impl CommandRegistry {
             )
             .with_dollar_aliases(&["autopilot"]),
             spec(
+                "omx-skill:best-practice-research",
+                "Run a bounded best-practice research wrapper using official and upstream evidence first",
+                &["best-practice-research"],
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::BestPracticeResearch,
+                },
+            )
+            .with_dollar_aliases(&["best-practice-research"]),
+            spec(
                 "omx-skill:autoresearch-goal",
                 "Run a durable professor-critic research workflow over goal artifacts",
                 &["autoresearch-goal"],
@@ -669,6 +717,15 @@ impl CommandRegistry {
             )
             .with_dollar_aliases(&["tdd"]),
             spec(
+                "omx-skill:build-fix",
+                "Route build-failure repair through the build-fixer workflow contract",
+                &["build-fix"],
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::BuildFix,
+                },
+            )
+            .with_dollar_aliases(&["build-fix"]),
+            spec(
                 "omx-skill:git-master",
                 "Use a git expert for atomic commits, rebasing, and history hygiene",
                 &["git-master"],
@@ -713,6 +770,15 @@ impl CommandRegistry {
                 },
             )
             .with_dollar_aliases(&["ralph-init"]),
+            spec(
+                "omx-skill:omx-setup",
+                "Set up or refresh compatible Harness assets and runtime configuration",
+                &["omx-setup"],
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Setup,
+                },
+            )
+            .with_dollar_aliases(&["omx-setup"]),
         ])
     }
 
@@ -865,6 +931,9 @@ mod tests {
             "omx-skill:team",
             "omx-skill:swarm",
             "omx-skill:ultraqa",
+            "omx-skill:ask",
+            "omx-skill:ask-claude",
+            "omx-skill:ask-gemini",
             "omx-skill:analyze",
             "omx-skill:code-review",
             "omx-skill:review",
@@ -879,17 +948,20 @@ mod tests {
             "omx-skill:design",
             "omx-skill:frontend-ui-ux",
             "omx-skill:autopilot",
+            "omx-skill:best-practice-research",
             "omx-skill:autoresearch-goal",
             "omx-skill:deepsearch",
             "omx-skill:performance-goal",
             "omx-skill:pipeline",
             "omx-skill:ecomode",
             "omx-skill:tdd",
+            "omx-skill:build-fix",
             "omx-skill:git-master",
             "omx-skill:visual-ralph",
             "omx-skill:visual-verdict",
             "omx-skill:web-clone",
             "omx-skill:ralph-init",
+            "omx-skill:omx-setup",
         ] {
             assert!(registry.get(name).is_some(), "missing {name}");
         }
@@ -928,6 +1000,9 @@ mod tests {
             ("omx-skill:team", WorkflowIntent::Team),
             ("omx-skill:swarm", WorkflowIntent::Team),
             ("omx-skill:ultraqa", WorkflowIntent::Qa),
+            ("omx-skill:ask", WorkflowIntent::Ask),
+            ("omx-skill:ask-claude", WorkflowIntent::Ask),
+            ("omx-skill:ask-gemini", WorkflowIntent::Ask),
             ("omx-skill:analyze", WorkflowIntent::Analyze),
             ("omx-skill:code-review", WorkflowIntent::Review),
             ("omx-skill:review", WorkflowIntent::Review),
@@ -946,6 +1021,10 @@ mod tests {
             ("omx-skill:frontend-ui-ux", WorkflowIntent::Design),
             ("omx-skill:autopilot", WorkflowIntent::Autopilot),
             (
+                "omx-skill:best-practice-research",
+                WorkflowIntent::BestPracticeResearch,
+            ),
+            (
                 "omx-skill:autoresearch-goal",
                 WorkflowIntent::ResearchMission,
             ),
@@ -954,10 +1033,12 @@ mod tests {
             ("omx-skill:pipeline", WorkflowIntent::Pipeline),
             ("omx-skill:ecomode", WorkflowIntent::Ecomode),
             ("omx-skill:tdd", WorkflowIntent::Tdd),
+            ("omx-skill:build-fix", WorkflowIntent::BuildFix),
             ("omx-skill:visual-ralph", WorkflowIntent::Visual),
             ("omx-skill:visual-verdict", WorkflowIntent::Visual),
             ("omx-skill:web-clone", WorkflowIntent::WebClone),
             ("omx-skill:ralph-init", WorkflowIntent::RalphInit),
+            ("omx-skill:omx-setup", WorkflowIntent::Setup),
         ] {
             let command = registry
                 .get(name)
@@ -1170,9 +1251,14 @@ mod tests {
         for alias in [
             "ai-slop-cleaner",
             "analyze",
+            "ask",
+            "ask-claude",
+            "ask-gemini",
             "autopilot",
             "autoresearch",
             "autoresearch-goal",
+            "best-practice-research",
+            "build-fix",
             "code-review",
             "configure-notifications",
             "deep-interview",
@@ -1187,6 +1273,7 @@ mod tests {
             "help",
             "hud",
             "note",
+            "omx-setup",
             "performance-goal",
             "pipeline",
             "plan",
@@ -1249,24 +1336,25 @@ mod tests {
     }
 
     #[test]
-    fn removed_omx_commands_are_not_registered() {
+    fn formerly_removed_omx_commands_now_resolve_to_parity_workflows() {
         let registry = CommandRegistry::builtins();
-        for name in [
-            "omx-skill:ask",
-            "omx-skill:ask-claude",
-            "omx-skill:ask-gemini",
-            "omx-skill:build-fix",
-            "omx-skill:omx-setup",
-            "ask",
-            "ask-claude",
-            "ask-gemini",
-            "build-fix",
-            "omx-setup",
+        for (name, intent) in [
+            ("omx-skill:ask", WorkflowIntent::Ask),
+            ("omx-skill:ask-claude", WorkflowIntent::Ask),
+            ("omx-skill:ask-gemini", WorkflowIntent::Ask),
+            ("omx-skill:build-fix", WorkflowIntent::BuildFix),
+            ("omx-skill:omx-setup", WorkflowIntent::Setup),
+            ("ask", WorkflowIntent::Ask),
+            ("ask-claude", WorkflowIntent::Ask),
+            ("ask-gemini", WorkflowIntent::Ask),
+            ("build-fix", WorkflowIntent::BuildFix),
+            ("omx-setup", WorkflowIntent::Setup),
         ] {
-            assert!(
-                registry.get(name).is_none(),
-                "{name} should not resolve after command removal"
-            );
+            let command = registry
+                .get(name)
+                .unwrap_or_else(|| panic!("missing restored parity command {name}"));
+            assert_eq!(command.action, CommandAction::WorkflowIntent { intent });
+            assert_eq!(command.availability, WorkflowCommandAvailability::Present);
         }
     }
 }

@@ -2616,6 +2616,10 @@ fn tui_workflow_intent_mode(intent: WorkflowIntent) -> &'static str {
         WorkflowIntent::Design => "workflow.design",
         WorkflowIntent::Cleanup => "workflow.cleanup",
         WorkflowIntent::Qa => "workflow.qa",
+        WorkflowIntent::Ask => "workflow.ask_local_advisor",
+        WorkflowIntent::BestPracticeResearch => "workflow.best_practice_research",
+        WorkflowIntent::BuildFix => "workflow.build_fix",
+        WorkflowIntent::Setup => "workflow.setup",
         WorkflowIntent::Performance => "workflow.performance",
         WorkflowIntent::Pipeline => "workflow.pipeline",
         WorkflowIntent::Tdd => "workflow.tdd",
@@ -2640,14 +2644,18 @@ fn tui_workflow_evidence_category(intent: WorkflowIntent) -> &'static str {
         WorkflowIntent::DeepInterview => "evidence.context_snapshot",
         WorkflowIntent::PlanConsensus => "evidence.plan_consensus",
         WorkflowIntent::GoalLedger => "evidence.goal_ledger",
-        WorkflowIntent::ResearchMission | WorkflowIntent::DeepSearch => "evidence.research_mission",
+        WorkflowIntent::ResearchMission
+        | WorkflowIntent::DeepSearch
+        | WorkflowIntent::BestPracticeResearch => "evidence.research_mission",
         WorkflowIntent::Wiki => "evidence.wiki",
         WorkflowIntent::Review => "evidence.review",
         WorkflowIntent::SecurityReview => "evidence.security_review",
         WorkflowIntent::Qa => "evidence.qa",
         WorkflowIntent::Performance => "evidence.performance",
         WorkflowIntent::Visual | WorkflowIntent::WebClone => "evidence.visual",
-        WorkflowIntent::Doctor | WorkflowIntent::ConfigureNotifications => "evidence.setup_doctor",
+        WorkflowIntent::Doctor | WorkflowIntent::ConfigureNotifications | WorkflowIntent::Setup => {
+            "evidence.setup_doctor"
+        }
         WorkflowIntent::Help | WorkflowIntent::Hud | WorkflowIntent::Trace => "evidence.status_hud",
         WorkflowIntent::Skill => "evidence.skill_management",
         WorkflowIntent::Note => "evidence.note_memory",
@@ -2657,9 +2665,11 @@ fn tui_workflow_evidence_category(intent: WorkflowIntent) -> &'static str {
         | WorkflowIntent::Snapshot
         | WorkflowIntent::Autopilot
         | WorkflowIntent::Analyze
+        | WorkflowIntent::Ask
         | WorkflowIntent::Team
         | WorkflowIntent::Design
         | WorkflowIntent::Cleanup
+        | WorkflowIntent::BuildFix
         | WorkflowIntent::Pipeline
         | WorkflowIntent::Tdd
         | WorkflowIntent::Ecomode

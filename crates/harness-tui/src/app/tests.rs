@@ -5544,9 +5544,14 @@ fn dollar_command_catalog_covers_applicable_reference_skills_with_sanitized_desc
     for alias in [
         "ai-slop-cleaner",
         "analyze",
+        "ask",
+        "ask-claude",
+        "ask-gemini",
         "autopilot",
         "autoresearch",
         "autoresearch-goal",
+        "best-practice-research",
+        "build-fix",
         "cancel",
         "code-review",
         "configure-notifications",
@@ -5562,6 +5567,7 @@ fn dollar_command_catalog_covers_applicable_reference_skills_with_sanitized_desc
         "help",
         "hud",
         "note",
+        "omx-setup",
         "performance-goal",
         "pipeline",
         "plan",
@@ -5602,12 +5608,6 @@ fn dollar_command_catalog_covers_applicable_reference_skills_with_sanitized_desc
         !commands.contains_key("worker"),
         "$worker is a team-internal protocol, not a user-facing dollar command"
     );
-    for removed in ["ask", "ask-claude", "ask-gemini", "build-fix", "omx-setup"] {
-        assert!(
-            !commands.contains_key(removed),
-            "${removed} should not be in the dollar command catalog"
-        );
-    }
     assert_eq!(
         commands["ultragoal"],
         "Create and execute durable repo-native multi-goal plans over goal artifacts"
