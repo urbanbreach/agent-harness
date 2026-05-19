@@ -2,20 +2,20 @@
 
 
 
-                /exit               Quit Harness
-                /goal-ledger        Inspect or checkpoint workflow goals
-                /handoff            Create a continuation handoff artifact
-                /hyperplan          Start team/parallel planning handoff
-                /init-deep          Start a deep requirements interview
-                /model              Switch model
-                /new                Return to the home shell
-                /plan-consensus     Create a reviewed consensus plan
-                /refactor           Load refactor cleanup guidance
-                /remove-ai-slops    Load AI slop removal guidance
+
+
+                /exit      Quit Harness
+                /model     Switch model
+                /new       Return to the home shell
+                /replay    Replay a saved session
+                /resume    Continue a saved session
+                /sessions  Switch session
+                /status    View status
+                /toggles   Open toggles
             ┃
             ┃  /
             ┃
-            ┃  Worker model-1 mock · Demo
+            ┃  model-1 mock · Demo
             ┃
             ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
                                            ctrl+t variants  tab agents  ctrl+p commands
