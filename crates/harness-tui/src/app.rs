@@ -12,7 +12,8 @@ use std::sync::{
 use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-use harness_core::command_registry::WorkflowIntent;
+use harness_core::agent_catalog::slash_agent_definitions;
+use harness_core::command_registry::{CommandAction, CommandRegistry, WorkflowIntent};
 use harness_core::event::{
     ActorKind, EventArtifactRef, EventEnvelopeV1, EventV1, ExecutionTimingMetadata,
     ProviderRequestStartedEvent, ResolvedToolIdentity, TaskCompletionMetadata, TaskLineageMetadata,
@@ -21,7 +22,12 @@ use harness_core::event::{
 #[cfg(test)]
 use harness_core::event::{ContinuationReminderQueuedEvent, ContinuationStartedEvent, EventActor};
 use harness_core::perm::{PermissionDecision, PermissionGrantScope};
-use harness_core::workflow::project_workflows;
+use harness_core::persistent_task::project_persistent_tasks;
+use harness_core::workflow::{
+    project_workflows, WorkflowSignoffPolicy, WORKFLOW_QUESTION_STATUS_ANSWERED,
+    WORKFLOW_QUESTION_STATUS_CLOSED,
+};
+use harness_core::workflow_closeout::{WorkflowCloseoutPolicy, WorkflowSignoffDecision};
 use harness_core::workspace::WorkspaceEnvironment;
 use ratatui::layout::Rect;
 
@@ -83,7 +89,7 @@ const TOOL_OUTPUT_DISPLAY_MAX_CHARS: usize = 100;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_CHARS: usize = 72;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_FIELDS: usize = 3;
 const INTERRUPT_CONFIRM_TIMEOUT: Duration = Duration::from_secs(5);
-pub(crate) const SLASH_COMMANDS: [(&str, &str); 35] = [
+pub(crate) const SLASH_COMMANDS: [(&str, &str); 15] = [
     ("new", "Return to the home shell"),
     ("sessions", "Switch session"),
     ("resume", "Continue a saved session"),
@@ -98,40 +104,70 @@ pub(crate) const SLASH_COMMANDS: [(&str, &str); 35] = [
     ("shell", "Return to the session shell"),
     ("follow", "Toggle follow mode"),
     ("compact", "Write a manual context checkpoint"),
-    ("workflow-run", "Start a coordinator-owned workflow run"),
-    ("workflow-status", "Inspect projected workflow status"),
-    ("workflow-signoff", "Record a workflow signoff decision"),
-    ("workflow-cancel", "Cancel a coordinator-owned workflow run"),
-    (
-        "workflow-dossier",
-        "Export a replay-derived workflow dossier",
-    ),
-    ("workflow-snapshot", "Inspect workflow context snapshots"),
-    ("plan-consensus", "Create a reviewed consensus plan"),
-    ("goal-ledger", "Inspect or checkpoint workflow goals"),
-    (
-        "research-mission",
-        "Inspect validator-gated research missions",
-    ),
-    ("wiki", "Read or query the workflow wiki"),
-    ("init-deep", "Start a deep requirements interview"),
-    ("ralph-loop", "Start bounded Ralph continuation"),
-    ("ulw-loop", "Start bounded ultrawork continuation"),
-    ("cancel-ralph", "Stop Ralph continuation"),
-    ("refactor", "Load refactor cleanup guidance"),
-    ("start-work", "Create a work handoff artifact"),
-    ("stop-continuation", "Stop active continuation"),
-    ("remove-ai-slops", "Load AI slop removal guidance"),
-    ("handoff", "Create a continuation handoff artifact"),
-    ("hyperplan", "Start team/parallel planning handoff"),
     ("exit", "Quit Harness"),
 ];
 
-pub(crate) fn slash_command_description(command: &str) -> &'static str {
-    SLASH_COMMANDS
+pub(crate) fn builtin_slash_commands() -> Vec<(&'static str, &'static str)> {
+    let mut commands = SLASH_COMMANDS.to_vec();
+    commands.extend(registered_slash_commands());
+    commands.extend(slash_agent_commands());
+    commands
+}
+
+pub(crate) fn registered_slash_commands() -> Vec<(&'static str, &'static str)> {
+    CommandRegistry::builtins()
+        .commands()
         .iter()
-        .find_map(|(name, description)| (*name == command).then_some(*description))
+        .filter(|command| command.enabled_by_default)
+        .filter(|command| {
+            matches!(
+                command.action,
+                CommandAction::WorkflowIntent { .. }
+                    | CommandAction::StartContinuation { .. }
+                    | CommandAction::StopContinuation
+            )
+        })
+        .map(|command| (command.name, command.description))
+        .collect()
+}
+
+pub(crate) fn slash_agent_commands() -> Vec<(&'static str, &'static str)> {
+    slash_agent_definitions()
+        .iter()
+        .map(|definition| (definition.name, definition.description))
+        .collect()
+}
+
+pub(crate) fn slash_command_description(command: &str) -> &'static str {
+    builtin_slash_commands()
+        .into_iter()
+        .find_map(|(name, description)| (name == command).then_some(description))
         .unwrap_or("")
+}
+
+pub(crate) fn dollar_command_description(command: &str) -> &'static str {
+    builtin_dollar_commands()
+        .into_iter()
+        .find_map(|(name, description)| (name == command).then_some(description))
+        .unwrap_or("")
+}
+
+pub(crate) fn builtin_dollar_commands() -> Vec<(&'static str, &'static str)> {
+    registered_dollar_commands()
+}
+
+pub(crate) fn registered_dollar_commands() -> Vec<(&'static str, &'static str)> {
+    CommandRegistry::builtins()
+        .commands()
+        .iter()
+        .flat_map(|command| {
+            command
+                .dollar_aliases
+                .iter()
+                .copied()
+                .map(move |alias| (alias, command.description))
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -846,11 +882,19 @@ pub(crate) struct WorkflowStatusRow {
     pub evidence_count: usize,
     pub latest_evidence_category: Option<String>,
     pub latest_evidence_summary: Option<String>,
+    pub latest_evidence_ref: Option<String>,
     pub operator_decision_count: usize,
     pub latest_operator_decision: Option<String>,
     pub denied_transition_count: u32,
     pub context_snapshot_slug: Option<String>,
     pub context_snapshot_ambiguity: Option<String>,
+    pub question_count: usize,
+    pub pending_question_count: usize,
+    pub team_count: usize,
+    pub blocked_team_count: usize,
+    pub closeout_allowed: bool,
+    pub legal_next_actions: Vec<String>,
+    pub blocked_closeout_dimensions: Vec<String>,
 }
 
 impl WorkflowStatusRow {
@@ -859,13 +903,32 @@ impl WorkflowStatusRow {
             || self.status.contains("denied")
             || self.denied_transition_count > 0
     }
+
+    pub(crate) fn needs_attention(&self) -> bool {
+        self.is_blocked()
+            || self.pending_question_count > 0
+            || self.blocked_team_count > 0
+            || (!self.terminal && !self.closeout_allowed)
+    }
+}
+
+fn workflow_signoff_action_label(action: &WorkflowSignoffDecision) -> &'static str {
+    match action {
+        WorkflowSignoffDecision::Approve => "approve",
+        WorkflowSignoffDecision::Fail => "fail",
+        WorkflowSignoffDecision::RequestEvidence => "request_evidence",
+        WorkflowSignoffDecision::Waive => "waive",
+        WorkflowSignoffDecision::Abort => "abort",
+        WorkflowSignoffDecision::Redirect => "redirect",
+        WorkflowSignoffDecision::ApproveLive => "approve_live",
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct WorkflowStatusSummary {
     pub total: usize,
     pub active: usize,
-    pub blocked: usize,
+    pub attention: usize,
     pub terminal: usize,
 }
 
@@ -1050,6 +1113,12 @@ pub enum UiIntent {
     WorkflowIntent {
         intent: WorkflowIntent,
         command: String,
+    },
+    SlashAgentTask {
+        role: String,
+        task: String,
+        command: String,
+        launch_metadata: LaunchMetadata,
     },
     StopContinuation {
         reason: String,
@@ -1483,6 +1552,9 @@ impl AppState {
 
     pub(crate) fn workflow_status_rows(&self) -> Vec<WorkflowStatusRow> {
         let projection = project_workflows(self.events.iter().map(|event| &event.payload));
+        let persistent_tasks = project_persistent_tasks(&self.events);
+        let signoff_policy = WorkflowSignoffPolicy::simulator_default();
+        let closeout_policy = WorkflowCloseoutPolicy::default_policy();
         let mut rows = projection
             .workflows
             .values()
@@ -1493,6 +1565,41 @@ impl AppState {
                     .map(Vec::as_slice)
                     .unwrap_or(&[]);
                 let latest_evidence = evidence.last();
+                let questions = projection
+                    .questions
+                    .values()
+                    .filter(|question| question.workflow_id == workflow.workflow_id)
+                    .collect::<Vec<_>>();
+                let pending_question_count = questions
+                    .iter()
+                    .filter(|question| {
+                        !matches!(
+                            question.status.as_str(),
+                            WORKFLOW_QUESTION_STATUS_ANSWERED | WORKFLOW_QUESTION_STATUS_CLOSED
+                        )
+                    })
+                    .count();
+                let teams = projection
+                    .teams
+                    .values()
+                    .filter(|team| team.workflow_id == workflow.workflow_id)
+                    .collect::<Vec<_>>();
+                let blocked_team_count = teams
+                    .iter()
+                    .filter(|team| {
+                        !team.blocker_refs.is_empty()
+                            || team
+                                .task_statuses
+                                .values()
+                                .any(|status| !matches!(status.as_str(), "completed" | "deleted"))
+                    })
+                    .count();
+                let closeout = projection.closeout_readiness(
+                    workflow.workflow_id.clone(),
+                    &persistent_tasks,
+                    &signoff_policy,
+                    &closeout_policy,
+                );
                 WorkflowStatusRow {
                     workflow_id: workflow.workflow_id.clone(),
                     mode: workflow.mode.clone(),
@@ -1504,6 +1611,12 @@ impl AppState {
                     evidence_count: evidence.len(),
                     latest_evidence_category: latest_evidence.map(|event| event.category.clone()),
                     latest_evidence_summary: latest_evidence.map(|event| event.summary.clone()),
+                    latest_evidence_ref: latest_evidence.and_then(|event| {
+                        event
+                            .artifact_path
+                            .clone()
+                            .or_else(|| event.acceptance_ref.clone())
+                    }),
                     operator_decision_count: workflow.operator_decisions.len(),
                     latest_operator_decision: workflow.operator_decisions.last().cloned(),
                     denied_transition_count: workflow.denied_transition_count,
@@ -1515,15 +1628,36 @@ impl AppState {
                         .context_snapshot
                         .as_ref()
                         .and_then(|snapshot| snapshot.ambiguity_score.clone()),
+                    question_count: questions.len(),
+                    pending_question_count,
+                    team_count: teams.len(),
+                    blocked_team_count,
+                    closeout_allowed: closeout.overall_allowed,
+                    legal_next_actions: closeout
+                        .legal_next_actions
+                        .iter()
+                        .map(|action| workflow_signoff_action_label(&action.action).to_string())
+                        .collect(),
+                    blocked_closeout_dimensions: closeout
+                        .dimensions
+                        .iter()
+                        .filter(|dimension| !dimension.allowed)
+                        .map(|dimension| dimension.id.clone())
+                        .collect(),
                 }
             })
             .collect::<Vec<_>>();
         rows.sort_by(|left, right| {
-            (left.terminal, !left.is_blocked(), left.workflow_id.as_str()).cmp(&(
-                right.terminal,
-                !right.is_blocked(),
-                right.workflow_id.as_str(),
-            ))
+            (
+                left.terminal,
+                !left.needs_attention(),
+                left.workflow_id.as_str(),
+            )
+                .cmp(&(
+                    right.terminal,
+                    !right.needs_attention(),
+                    right.workflow_id.as_str(),
+                ))
         });
         rows
     }
@@ -1538,8 +1672,8 @@ impl AppState {
                 } else {
                     summary.active += 1;
                 }
-                if row.is_blocked() {
-                    summary.blocked += 1;
+                if row.needs_attention() {
+                    summary.attention += 1;
                 }
                 summary
             },
@@ -1549,14 +1683,26 @@ impl AppState {
     pub(crate) fn workflow_footer_summary(&self) -> Option<String> {
         let rows = self.workflow_status_rows();
         let latest = rows.first()?;
-        let status = if latest.is_blocked() {
-            "blocked"
+        let status = if latest.needs_attention() {
+            "attention"
         } else {
             latest.status.as_str()
         };
         let mut summary = format!("Workflow {} {status}", latest.workflow_id);
         if latest.evidence_count > 0 {
             summary.push_str(&format!(" · {} ev", latest.evidence_count));
+        }
+        if latest.pending_question_count > 0 {
+            summary.push_str(&format!(" · {} question", latest.pending_question_count));
+            if latest.pending_question_count != 1 {
+                summary.push('s');
+            }
+        }
+        if latest.team_count > 0 {
+            summary.push_str(&format!(" · {} team", latest.team_count));
+            if latest.team_count != 1 {
+                summary.push('s');
+            }
         }
         if latest.operator_decision_count > 0 {
             summary.push_str(&format!(" · {} decision", latest.operator_decision_count));
@@ -2659,7 +2805,10 @@ impl AppState {
 
     fn insert_prompt_char(&mut self, c: char) {
         self.continued_live_reopen_surface_active = false;
-        if c == '/' && self.prompt_cursor == 0 && !self.prompt_buffer.starts_with('/') {
+        if matches!(c, '/' | '$')
+            && self.prompt_cursor == 0
+            && !self.prompt_buffer_starts_with_command_prefix()
+        {
             self.slash_draft_snapshot = Some(self.prompt_buffer.clone());
         }
         let byte_idx = self.prompt_cursor_byte_index();
@@ -4199,6 +4348,16 @@ impl AppState {
                 );
                 return;
             }
+            if let Some((command, args)) = self
+                .typed_dollar_invocation()
+                .map(|(command, args)| (command.to_string(), args))
+            {
+                self.execute_dollar_command(
+                    &command,
+                    args.or_else(|| self.slash_draft_snapshot.clone()),
+                );
+                return;
+            }
         }
 
         if self.prompt_buffer.trim().is_empty() || self.composer_disabled() || self.replay_mode {
@@ -4426,15 +4585,12 @@ pub(crate) fn exact_test_startup_slash_commands_execute_without_menu() {
         app.slash_filtered,
         vec![
             "exit".to_string(),
-            "goal-ledger".to_string(),
-            "handoff".to_string(),
-            "hyperplan".to_string(),
-            "init-deep".to_string(),
             "new".to_string(),
-            "plan-consensus".to_string(),
-            "refactor".to_string(),
-            "remove-ai-slops".to_string(),
             "replay".to_string(),
+            "resume".to_string(),
+            "sessions".to_string(),
+            "status".to_string(),
+            "toggles".to_string(),
         ]
     );
 }
@@ -4605,7 +4761,7 @@ pub(crate) fn exact_test_live_slash_compact_emits_ui_intent() {
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_live_slash_continuation_commands_emit_ui_intents() {
+pub(crate) fn exact_test_live_dollar_continuation_commands_emit_ui_intents() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
@@ -4615,15 +4771,23 @@ pub(crate) fn exact_test_live_slash_continuation_commands_emit_ui_intents() {
     };
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(sink));
 
-    app.replace_prompt_input("/ralph-loop fix tests".to_string());
+    app.replace_prompt_input("$ralph".to_string());
     app.sync_slash_overlay();
-    assert_eq!(app.typed_slash_command(), Some("ralph-loop"));
+    assert_eq!(app.slash_filtered, vec!["ralph".to_string()]);
+    assert_eq!(
+        app.typed_dollar_invocation().map(|(command, _)| command),
+        Some("ralph")
+    );
+    app.replace_prompt_input("$ralph fix tests".to_string());
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-    app.replace_prompt_input("/stop-continuation".to_string());
+    app.replace_prompt_input("$cancel".to_string());
     app.sync_slash_overlay();
-    assert_eq!(app.slash_filtered, vec!["stop-continuation".to_string()]);
-    assert_eq!(app.typed_slash_command(), Some("stop-continuation"));
+    assert_eq!(app.slash_filtered, vec!["cancel".to_string()]);
+    assert_eq!(
+        app.typed_dollar_invocation().map(|(command, _)| command),
+        Some("cancel")
+    );
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
     assert_eq!(
@@ -4631,10 +4795,10 @@ pub(crate) fn exact_test_live_slash_continuation_commands_emit_ui_intents() {
         &[
             UiIntent::StartContinuation {
                 mode: "ralph".to_string(),
-                command: "/ralph-loop fix tests".to_string(),
+                command: "$ralph fix tests".to_string(),
             },
             UiIntent::StopContinuation {
-                reason: "/stop-continuation".to_string(),
+                reason: "$cancel".to_string(),
             },
         ]
     );
@@ -4678,7 +4842,7 @@ pub(crate) fn exact_test_imported_slash_command_template_dispatches_prompt() {
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_startup_template_slash_command_bootstraps_live_session() {
+pub(crate) fn exact_test_startup_dollar_command_reports_blocked_workflow() {
     let startup_intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let startup_sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let startup_intents = Arc::clone(&startup_intents);
@@ -4694,17 +4858,20 @@ pub(crate) fn exact_test_startup_template_slash_command_bootstraps_live_session(
     );
     let mut app = AppState::new_startup(Vec::new(), Some(startup_sink));
 
-    app.execute_slash_command("init-deep", Some("the current diff".to_string()));
+    app.execute_dollar_command("deep-interview", Some("the current diff".to_string()));
 
-    assert!(app.should_quit);
-    assert!(!app.startup_mode);
-    assert_eq!(
-        startup_intents
-            .lock()
-            .expect("lock startup intents")
-            .as_slice(),
-        &[UiIntent::NewSession]
+    assert!(!app.should_quit);
+    assert!(app.startup_mode);
+    assert!(
+        app.status_banner
+            .as_deref()
+            .is_some_and(|banner| banner.contains("workflow command hidden")),
+        "staged built-in command should report a blocked workflow banner"
     );
+    assert!(startup_intents
+        .lock()
+        .expect("lock startup intents")
+        .is_empty());
 
     let live_intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let live_sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
@@ -4713,23 +4880,22 @@ pub(crate) fn exact_test_startup_template_slash_command_bootstraps_live_session(
             live_intents.lock().expect("lock live intents").push(intent);
         })
     };
-    let live = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(live_sink));
+    let _live = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(live_sink));
 
-    assert_eq!(live.active_profile(), "build");
     let live_intents = live_intents.lock().expect("lock live intents");
-    let [UiIntent::SubmitPrompt {
-        text,
-        launch_metadata,
-        ..
-    }] = live_intents.as_slice()
-    else {
-        panic!("expected startup template command to auto-submit, got {live_intents:?}");
-    };
-    assert_eq!(
-        text,
-        "Deep interview this request before implementation. Identify constraints, success criteria, risks, and the smallest safe next step.\n\nUser draft:\nthe current diff"
+    assert!(
+        live_intents.is_empty(),
+        "hidden staged command must not auto-submit prompt-only placeholder text"
     );
-    assert_eq!(launch_metadata.profile(), "build");
+
+    let mut live = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
+    live.execute_dollar_command("team", Some("coordinate this slice".to_string()));
+    assert!(
+        live.status_banner
+            .as_deref()
+            .is_some_and(|banner| banner.contains("workflow command hidden")),
+        "staged dollar family command should fail closed through the registry"
+    );
 }
 
 #[cfg(test)]

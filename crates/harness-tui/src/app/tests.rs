@@ -2741,7 +2741,7 @@ fn live_switch_model_labels_next_turn_only() {
 }
 
 #[test]
-fn tab_cycles_build_and_plan_primary_agents() {
+fn tab_focus_does_not_cycle_legacy_primary_agents_by_default() {
     let build_option =
         runtime_context_model_option("build", "default", "gpt-5.4-mini", None, "GPT-5.4 Mini");
     let plan_option =
@@ -2764,6 +2764,42 @@ fn tab_cycles_build_and_plan_primary_agents() {
 
     app.handle_key(key(KeyCode::Tab));
 
+    assert_eq!(app.active_profile(), "build");
+    assert_eq!(app.current_agent_label().as_deref(), Some("Build"));
+    assert!(
+        intents.lock().expect("lock intents").is_empty(),
+        "default Tab focus traversal must not switch legacy primary profiles"
+    );
+}
+
+#[test]
+fn explicit_agent_cycle_keybinding_switches_escalation_profiles() {
+    let build_option =
+        runtime_context_model_option("build", "default", "gpt-5.4-mini", None, "GPT-5.4 Mini");
+    let plan_option =
+        runtime_context_model_option("plan", "default", "gpt-5.4-mini", None, "GPT-5.4 Mini");
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(None, false, None);
+    app.on_ui_intent = Some(sink);
+    app.apply_keybindings(BTreeMap::from([
+        ("agent_cycle".to_string(), "alt+a".to_string()),
+        ("agent_cycle_reverse".to_string(), "alt+b".to_string()),
+    ]));
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_option(&build_option)
+            .with_available_models(vec![build_option.clone(), plan_option])
+            .with_switchable_profiles(vec!["build".to_string(), "plan".to_string()]),
+    );
+
+    app.handle_key(key_with_modifiers(KeyCode::Char('a'), KeyModifiers::ALT));
+
     assert_eq!(app.active_profile(), "plan");
     assert_eq!(app.current_agent_label().as_deref(), Some("Plan"));
     {
@@ -2780,7 +2816,7 @@ fn tab_cycles_build_and_plan_primary_agents() {
         assert_eq!(launch_metadata.switchable_profiles(), &["build", "plan"]);
     }
 
-    app.handle_key(key(KeyCode::BackTab));
+    app.handle_key(key_with_modifiers(KeyCode::Char('b'), KeyModifiers::ALT));
 
     assert_eq!(app.active_profile(), "build");
     let intents = intents.lock().expect("lock intents");
@@ -5371,6 +5407,174 @@ fn slash_menu_closes_after_whitespace() {
 }
 
 #[test]
+fn dollar_command_trigger_opens_command_menu() {
+    let mut app = AppState::new_startup(Vec::new(), None);
+
+    app.handle_key(key(KeyCode::Char('$')));
+    for ch in "deep".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+
+    assert!(app.slash_visible);
+    assert_eq!(app.active_command_prefix(), Some('$'));
+    assert!(app
+        .slash_filtered
+        .iter()
+        .any(|command| command == "deep-interview"));
+    assert!(!app.slash_filtered.iter().any(|command| command == "new"));
+}
+
+#[test]
+fn dollar_command_menu_renders_dollar_prefixed_labels() {
+    let mut app = AppState::new_startup(Vec::new(), None);
+    app.handle_key(key(KeyCode::Char('$')));
+    for ch in "deep".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+
+    let backend = TestBackend::new(100, 30);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    terminal
+        .draw(|frame| render_app(frame, &app))
+        .expect("draw frame");
+    let rendered = format!("{:?}", terminal.backend().buffer());
+
+    assert!(rendered.contains("$deep-interview"), "{rendered}");
+    assert!(!rendered.contains("$ralplan"), "{rendered}");
+    assert!(!rendered.contains("$new"), "{rendered}");
+}
+
+#[test]
+fn dollar_command_invocation_executes_workflow_command() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(None, false, Some(sink));
+    for ch in "$ralplan hard migration".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
+
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[UiIntent::WorkflowIntent {
+            intent: WorkflowIntent::PlanConsensus,
+            command: "$ralplan hard migration".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn slash_agent_invocation_emits_task_intent_instead_of_prompt() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(None, false, Some(sink));
+    for ch in "/executor".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    assert_eq!(app.typed_slash_command(), Some("executor"));
+    assert!(app
+        .slash_filtered
+        .iter()
+        .any(|command| command == "executor"));
+    for ch in " fix tests".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+
+    app.handle_key(key(KeyCode::Enter));
+
+    let intents = intents.lock().expect("lock intents");
+    let [UiIntent::SlashAgentTask {
+        role,
+        task,
+        command,
+        ..
+    }] = intents.as_slice()
+    else {
+        panic!("expected slash-agent task intent, got {intents:?}");
+    };
+    assert_eq!(role, "executor");
+    assert_eq!(task, "fix tests");
+    assert_eq!(command, "/executor fix tests");
+}
+
+#[test]
+fn slash_agent_invocation_preserves_imported_template_collision_boundary() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(None, false, Some(sink));
+    app.set_slash_command_templates(vec![SlashCommandTemplate {
+        name: "executor".to_string(),
+        description: Some("Imported executor prompt".to_string()),
+        prompt: "Template {{args}}".to_string(),
+        enabled: true,
+    }]);
+    app.execute_slash_command("executor", Some("use native routing".to_string()));
+
+    let intents = intents.lock().expect("lock intents");
+    assert!(matches!(
+        intents.as_slice(),
+        [UiIntent::SlashAgentTask { task, .. }] if task == "use native routing"
+    ));
+}
+
+#[test]
+fn startup_hidden_dollar_commands_do_not_execute_when_typed_directly() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_startup(Vec::new(), Some(Arc::clone(&sink)));
+    for ch in "$ralph fix tests".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
+
+    assert!(intents.lock().expect("lock intents").is_empty());
+    assert!(!app.should_quit);
+    assert_eq!(app.prompt_buffer, "fix tests");
+    assert!(app
+        .status_banner
+        .as_deref()
+        .is_some_and(|banner| banner.contains("not available")));
+
+    let mut app = AppState::new_startup(Vec::new(), Some(Arc::clone(&sink)));
+    for ch in "$ralplan fix tests".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
+
+    assert!(intents.lock().expect("lock intents").is_empty());
+    assert!(!app.should_quit);
+    assert_eq!(app.prompt_buffer, "fix tests");
+    assert!(app
+        .status_banner
+        .as_deref()
+        .is_some_and(|banner| banner.contains("not available")));
+}
+
+#[test]
 fn slash_menu_resets_selection_when_filter_changes() {
     let mut app = AppState::new_startup(Vec::new(), None);
 
@@ -5382,15 +5586,7 @@ fn slash_menu_resets_selection_when_filter_changes() {
     app.handle_key(key(KeyCode::Char('e')));
     app.handle_key(key(KeyCode::Char('p')));
 
-    assert_eq!(
-        app.slash_filtered,
-        vec![
-            "replay".to_string(),
-            "research-mission".to_string(),
-            "remove-ai-slops".to_string(),
-            "workflow-dossier".to_string(),
-        ]
-    );
+    assert_eq!(app.slash_filtered, vec!["replay".to_string()]);
     assert_eq!(app.slash_selected, 0);
 }
 
@@ -5454,7 +5650,7 @@ fn slash_alias_executes_matching_command_without_menu() {
 }
 
 #[test]
-fn slash_workflow_command_emits_typed_intent_without_shell_prompt() {
+fn dollar_workflow_command_emits_typed_intent_without_shell_prompt() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink = {
         let intents = Arc::clone(&intents);
@@ -5464,7 +5660,7 @@ fn slash_workflow_command_emits_typed_intent_without_shell_prompt() {
     };
 
     let mut app = AppState::new_live(None, false, Some(sink));
-    for ch in "/workflow deploy docs".chars() {
+    for ch in "$ralplan deploy docs".chars() {
         app.handle_key(key(KeyCode::Char(ch)));
     }
     app.handle_key(key(KeyCode::Enter));
@@ -5472,31 +5668,31 @@ fn slash_workflow_command_emits_typed_intent_without_shell_prompt() {
     assert_eq!(
         intents.lock().expect("lock intents").as_slice(),
         &[UiIntent::WorkflowIntent {
-            intent: WorkflowIntent::Run,
-            command: "/workflow run deploy docs".to_string(),
+            intent: WorkflowIntent::PlanConsensus,
+            command: "$ralplan deploy docs".to_string(),
         }]
     );
 }
 
 #[test]
-fn slash_extended_workflow_commands_emit_typed_intents() {
+fn dollar_extended_workflow_commands_emit_typed_intents() {
     let cases = [
         (
-            "/ralplan hard migration",
+            "$ralplan hard migration",
             WorkflowIntent::PlanConsensus,
-            "/plan-consensus hard migration",
+            "$ralplan hard migration",
         ),
         (
-            "/workflow-goal checkpoint",
+            "$ultragoal checkpoint",
             WorkflowIntent::GoalLedger,
-            "/goal-ledger checkpoint",
+            "$ultragoal checkpoint",
         ),
         (
-            "/workflow-mission validator",
+            "$autoresearch validator",
             WorkflowIntent::ResearchMission,
-            "/research-mission validator",
+            "$autoresearch validator",
         ),
-        ("/workflow-wiki query", WorkflowIntent::Wiki, "/wiki query"),
+        ("$wiki query", WorkflowIntent::Wiki, "$wiki query"),
     ];
 
     for (typed, expected_intent, expected_command) in cases {

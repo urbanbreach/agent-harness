@@ -76,7 +76,7 @@ fn transcript_turn_sections_render_open_rail_surfaces() {
         .unwrap_or_else(|| panic!("user body line\n{rendered}"));
     let assistant_body = find_line_containing_from(&lines, user_body + 1, "Grouped response")
         .unwrap_or_else(|| panic!("assistant body line\n{rendered}"));
-    let assistant_footer = find_line_containing_from(&lines, assistant_body + 1, "Assistant")
+    let assistant_footer = find_line_containing_from(&lines, assistant_body + 1, "gpt-5.4-mini")
         .unwrap_or_else(|| panic!("assistant footer\n{rendered}"));
 
     assert!(
@@ -147,7 +147,7 @@ fn transcript_turn_sections_render_open_rail_surfaces() {
     assert!(!assistant_footer_row.contains('┃'));
     assert_eq!(
         assistant_footer_fgs[first_alphanumeric_column(lines[assistant_footer])],
-        theme.text.primary
+        theme.text.secondary
     );
     assert!(user_body_bgs[user_body_column..user_body_column + 4]
         .iter()
@@ -258,7 +258,7 @@ fn transcript_turn_sections_keep_nested_tool_details() {
         .unwrap_or_else(|| panic!("tool row\n{rendered}"));
     let error_row = find_line_containing_from(&lines, tool_row + 1, "tool call failed")
         .unwrap_or_else(|| panic!("tool error row\n{rendered}"));
-    let assistant_footer = find_line_containing_from(&lines, error_row + 1, "Assistant")
+    let assistant_footer = find_line_containing_from(&lines, error_row + 1, "gpt-5.4-mini")
         .unwrap_or_else(|| panic!("assistant footer\n{rendered}"));
 
     assert!(reasoning_row < body_row);
@@ -490,9 +490,9 @@ delegate_test!(slash_shell_closes_review_surface => app::exact_test_slash_shell_
 delegate_test!(slash_follow_toggles_follow_mode => app::exact_test_slash_follow_toggles_follow_mode);
 delegate_test!(live_slash_compact_appears_when_supported => app::exact_test_live_slash_compact_appears_when_supported);
 delegate_test!(live_slash_compact_emits_ui_intent => app::exact_test_live_slash_compact_emits_ui_intent);
-delegate_test!(live_slash_continuation_commands_emit_ui_intents => app::exact_test_live_slash_continuation_commands_emit_ui_intents);
+delegate_test!(live_dollar_continuation_commands_emit_ui_intents => app::exact_test_live_dollar_continuation_commands_emit_ui_intents);
 delegate_test!(imported_slash_command_template_dispatches_prompt => app::exact_test_imported_slash_command_template_dispatches_prompt);
-delegate_test!(startup_template_slash_command_bootstraps_live_session => app::exact_test_startup_template_slash_command_bootstraps_live_session);
+delegate_test!(startup_dollar_command_reports_blocked_workflow => app::exact_test_startup_dollar_command_reports_blocked_workflow);
 delegate_test!(continuation_events_update_tui_state => app::exact_test_continuation_events_update_tui_state);
 delegate_test!(live_without_compact_support_hides_slash_compact => app::exact_test_live_without_compact_support_hides_slash_compact);
 delegate_test!(slash_menu_lists_lineage_commands => app::exact_test_slash_menu_lists_lineage_commands);
@@ -1085,7 +1085,7 @@ fn startup_home_screen_renders_compose_first_shell() {
     assert!(rendered.contains("╻ ╻  ┏━┓  ┏━┓  ┏┓╻"));
     assert!(!rendered.contains("Launch: deep · gpt-5.4"));
     assert!(!rendered.contains("Provider proxy"));
-    assert!(rendered.contains("Deep gpt-5.4 proxy · Demo"));
+    assert!(rendered.contains("gpt-5.4 proxy · Demo"));
     assert!(rendered.contains("ctrl+p commands"));
     assert!(!rendered.contains("Enter select"));
     assert!(rendered.contains("Ask anything... \"What is the tech stack of this project?\""));
@@ -1126,7 +1126,7 @@ fn startup_composer_keeps_inset_input_then_metadata_row_order() {
         .unwrap_or_else(|| panic!("startup composer input row at {width}x{height}\n{rendered}"));
         let composer_first_row = composer_input_row.saturating_sub(1);
         let metadata_gap_row = composer_input_row.saturating_add(1);
-        let metadata_row = find_line_containing(&lines, "Deep gpt-5.4 proxy · Demo")
+        let metadata_row = find_line_containing(&lines, "gpt-5.4 proxy · Demo")
             .unwrap_or_else(|| panic!("startup metadata row at {width}x{height}\n{rendered}"));
         let composer_last_row = metadata_row.saturating_add(1);
 
@@ -1304,16 +1304,13 @@ fn slash_overlay_uses_input_width_aligned_rows_and_accent_selection() {
     let events_description = lines[row]
         .find("Open the event log review")
         .expect("events description column");
-    let goal_row = find_line_containing_all(
-        &lines,
-        &["/goal-ledger", "Inspect or checkpoint workflow goals"],
-    )
-    .unwrap_or_else(|| panic!("slash /goal-ledger row\n{rendered}"));
-    let goal_description = lines[goal_row]
-        .find("Inspect or checkpoint workflow goals")
-        .expect("goal-ledger description column");
+    let status_row = find_line_containing_all(&lines, &["/status", "View status"])
+        .unwrap_or_else(|| panic!("slash /status row\n{rendered}"));
+    let status_description = lines[status_row]
+        .find("View status")
+        .expect("status description column");
 
-    assert_eq!(events_description, goal_description);
+    assert_eq!(events_description, status_description);
     assert!(!lines[row].contains('┃'));
     assert!(!rendered.contains('╭') && !rendered.contains('╰') && !rendered.contains('│'));
 
@@ -2102,10 +2099,7 @@ fn command_palette_state_filters_existing_commands() {
     assert!(app.palette_visible);
     assert_eq!(app.palette_input, "n");
     assert_eq!(app.palette_cursor, 1);
-    assert_eq!(
-        app.palette_filtered,
-        vec!["new_session".to_string(), "agent_cycle".to_string()]
-    );
+    assert_eq!(app.palette_filtered, vec!["new_session".to_string()]);
     assert!(app.palette_filtered.iter().all(|command| {
         Action::palette_commands()
             .iter()
@@ -2783,7 +2777,7 @@ fn legacy_three_row_composer_contract_removed() {
     );
 
     let quiet_shell = [
-        "Assistant · model-1",
+        "model-1",
         "┃",
         "┃",
         "┃  default · local/-",
@@ -3226,7 +3220,7 @@ fn workflow_projection_surfaces_footer_and_operator_sidebar_rows() {
     assert_eq!(rows[0].evidence_count, 1);
     assert_eq!(
         app.workflow_footer_summary().as_deref(),
-        Some("Workflow wf_docs active · 1 ev · 1 decision")
+        Some("Workflow wf_docs attention · 1 ev · 1 decision")
     );
 
     let sidebar = operator_sidebar_text(&app);
@@ -3239,9 +3233,153 @@ fn workflow_projection_surfaces_footer_and_operator_sidebar_rows() {
         sidebar.contains("evidence evidence.test · cargo test -p harness-tui"),
         "{sidebar}"
     );
+    assert!(
+        sidebar.contains("evidence ref acceptance.tests"),
+        "{sidebar}"
+    );
     assert!(sidebar.contains("decision signoff-approved"), "{sidebar}");
     assert!(
-        sidebar.contains("status /workflow-status · dossier /workflow-dossier"),
+        sidebar.contains("projection-only: status /workflow-status · dossier /workflow-dossier"),
+        "{sidebar}"
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn workflow_projection_surfaces_attention_questions_closeout_and_subordinate_teams() {
+    let events = vec![
+        envelope(
+            1,
+            None,
+            harness_core::event::EventV1::WorkflowStarted(
+                harness_core::event::WorkflowStartedEvent {
+                    workflow_id: "wf_attention".to_string(),
+                    mode: "workflow.plan_consensus".to_string(),
+                    owner: "operator".to_string(),
+                    lane: Some("control-center".to_string()),
+                    title: Some("Operator control center".to_string()),
+                    idempotency_key: None,
+                },
+            ),
+        ),
+        envelope(
+            2,
+            None,
+            harness_core::event::EventV1::WorkflowEvidenceRecorded(
+                harness_core::event::WorkflowEvidenceRecordedEvent {
+                    workflow_id: "wf_attention".to_string(),
+                    category: harness_core::workflow::WORKFLOW_QUESTION_EVIDENCE_CATEGORY
+                        .to_string(),
+                    summary: "Need operator answer".to_string(),
+                    artifact_path: Some("artifacts/questions/q-attention.json".to_string()),
+                    artifact_digest: Some("digest-question".to_string()),
+                    acceptance_ref: Some("question:q-attention".to_string()),
+                    metadata: std::collections::BTreeMap::from([
+                        (
+                            harness_core::workflow::WORKFLOW_QUESTION_METADATA_ID.to_string(),
+                            "q-attention".to_string(),
+                        ),
+                        (
+                            harness_core::workflow::WORKFLOW_QUESTION_METADATA_STATUS.to_string(),
+                            harness_core::workflow::WORKFLOW_QUESTION_STATUS_ASKED.to_string(),
+                        ),
+                    ]),
+                },
+            ),
+        ),
+        envelope(
+            3,
+            None,
+            harness_core::event::EventV1::TeamCreated(harness_core::event::TeamCreatedEvent {
+                team_run_id: "team_attention".to_string(),
+                spec: harness_core::event::TeamSpec {
+                    version: 1,
+                    name: "operator-owned team escalation".to_string(),
+                    description: Some("subordinate lane".to_string()),
+                    lead: None,
+                    members: Vec::new(),
+                    bounds: harness_core::event::TeamBounds::default(),
+                    metadata: std::collections::BTreeMap::from([(
+                        harness_core::workflow::WORKFLOW_TASK_METADATA_KEY.to_string(),
+                        "wf_attention".to_string(),
+                    )]),
+                },
+                workflow: Some(harness_core::event::WorkflowEventMetadata {
+                    workflow_id: Some("wf_attention".to_string()),
+                    lane: Some("team".to_string()),
+                    owner: Some("operator".to_string()),
+                    ..harness_core::event::WorkflowEventMetadata::default()
+                }),
+            }),
+        ),
+        envelope(
+            4,
+            None,
+            harness_core::event::EventV1::TeamTaskCreated(
+                harness_core::event::TeamTaskCreatedEvent {
+                    team_run_id: "team_attention".to_string(),
+                    task: harness_core::event::TeamTask {
+                        version: 1,
+                        task_id: "team-task-attention".to_string(),
+                        subject: "inspect".to_string(),
+                        description: "needs work".to_string(),
+                        status: harness_core::event::TeamTaskStatus::Pending,
+                        owner: Some("worker".to_string()),
+                        blocks: Vec::new(),
+                        blocked_by: Vec::new(),
+                        metadata: std::collections::BTreeMap::from([
+                            (
+                                harness_core::workflow::WORKFLOW_TASK_METADATA_KEY.to_string(),
+                                "wf_attention".to_string(),
+                            ),
+                            (
+                                "blocker_ref".to_string(),
+                                "artifacts/team/blocker.md".to_string(),
+                            ),
+                        ]),
+                    },
+                    workflow: Some(harness_core::event::WorkflowEventMetadata {
+                        workflow_id: Some("wf_attention".to_string()),
+                        lane: Some("team".to_string()),
+                        owner: Some("operator".to_string()),
+                        ..harness_core::event::WorkflowEventMetadata::default()
+                    }),
+                },
+            ),
+        ),
+    ];
+    let app = app::AppState::new_replay(std::path::PathBuf::from("/tmp/replay-attention"), events);
+
+    let rows = app.workflow_status_rows();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].pending_question_count, 1);
+    assert_eq!(rows[0].team_count, 1);
+    assert_eq!(rows[0].blocked_team_count, 1);
+    assert!(!rows[0].closeout_allowed);
+    assert!(rows[0]
+        .legal_next_actions
+        .contains(&"request_evidence".to_string()));
+    assert!(rows[0].needs_attention());
+    assert_eq!(
+        app.workflow_footer_summary().as_deref(),
+        Some("Workflow wf_attention attention · 1 ev · 1 question · 1 team")
+    );
+
+    let sidebar = operator_sidebar_text(&app);
+    assert!(
+        sidebar.contains("1 active · 1 attention · 0 done"),
+        "{sidebar}"
+    );
+    assert!(
+        sidebar.contains("questions 1 pending / 1 total"),
+        "{sidebar}"
+    );
+    assert!(
+        sidebar.contains("operator-owned team escalation 1 subordinate lane(s) · 1 attention"),
+        "{sidebar}"
+    );
+    assert!(
+        sidebar.contains("closeout attention · next request_evidence,waive,fail,abort,redirect"),
         "{sidebar}"
     );
 }
@@ -5506,10 +5644,13 @@ fn run_finished_keeps_transcript_and_ready_composer() {
         }),
     ));
 
+    let rendered = render_live_lines(&app, 80, 24)
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n");
     insta::with_settings!({ prepend_module_to_snapshot => false }, {
-        insta::with_settings!({ prepend_module_to_snapshot => false }, {
-        insta::assert_snapshot!("harness_tui__live_shell_finished_state", render_live_lines(&app, 80, 24));
-    });
+        insta::assert_snapshot!("harness_tui__live_shell_finished_state", rendered);
     });
 }
 
@@ -5937,7 +6078,7 @@ fn transcript_status_metadata_is_inline_not_chrome() {
     let rendered = render_live_lines(&app, 120, 30);
 
     assert!(!rendered.contains("req_rich_shell"));
-    assert!(rendered.contains("Assistant · model-1"));
+    assert!(rendered.contains("model-1"));
     assert!(rendered.contains("Read src/ui.rs [offset=1, limit=24]"));
     assert!(!rendered.contains("user ("));
     assert!(!rendered.contains("assistant ("));
@@ -6563,8 +6704,6 @@ fn command_palette_renders_and_filters() {
             "new_session".to_string(),
             "resume_session".to_string(),
             "replay_session".to_string(),
-            "agent_cycle".to_string(),
-            "agent_cycle_reverse".to_string(),
             "cycle_variant".to_string(),
             "toggles".to_string(),
             "open_event_log".to_string(),
@@ -6588,10 +6727,7 @@ fn command_palette_renders_and_filters() {
 
     assert_eq!(app.palette_input, "n");
     assert_eq!(app.palette_cursor, 1);
-    assert_eq!(
-        app.palette_filtered,
-        vec!["new_session".to_string(), "agent_cycle".to_string()]
-    );
+    assert_eq!(app.palette_filtered, vec!["new_session".to_string()]);
 
     let filtered_debug = render_live_screen(&app, 120, 36);
     assert!(filtered_debug.contains("Commands"));
@@ -7258,7 +7394,7 @@ fn startup_surface_renders_primary_actions() {
     assert!(rendered.contains("╻ ╻  ┏━┓  ┏━┓  ┏┓╻"));
     assert!(!rendered.contains("Launch: worker · model-1"));
     assert!(!rendered.contains("Provider mock"));
-    assert!(rendered.contains("Worker model-1 mock"));
+    assert!(rendered.contains("model-1 mock"));
     assert!(rendered.contains("ctrl+p commands"));
     assert!(!rendered.contains("Enter select"));
     assert!(rendered.contains("Ask anything... \"What is the tech stack of this project?\""));
@@ -8387,7 +8523,7 @@ fn startup_shell_shows_profile_provider_and_model_chrome() {
     assert!(rendered.contains("╻ ╻  ┏━┓  ┏━┓  ┏┓╻"));
     assert!(!rendered.contains("Launch: deep · gpt-5.4"));
     assert!(!rendered.contains("Provider proxy"));
-    assert!(rendered.contains("Deep gpt-5.4 proxy · Demo"));
+    assert!(rendered.contains("gpt-5.4 proxy · Demo"));
     assert!(rendered.contains("ctrl+p commands"));
     assert!(!rendered.contains("Enter select"));
     assert!(rendered.contains("Ask anything... \"What is the tech stack of this project?\""));
@@ -8693,13 +8829,13 @@ fn live_empty_state_uses_shared_home_surface_tokens() {
     assert_row_segment_background(
         &startup_buffer,
         100,
-        "Worker model-1 mock",
+        "model-1 mock",
         ratatui::style::Color::Rgb(0x1E, 0x1E, 0x1E),
     );
     assert_row_segment_background(
         &live_buffer,
         100,
-        "Worker model-1 mock",
+        "model-1 mock",
         ratatui::style::Color::Rgb(0x1E, 0x1E, 0x1E),
     );
 }
@@ -8815,7 +8951,7 @@ fn live_shell_enter_submits_and_echoes_prompt_snapshot() {
     assert!(!rendered.contains("user (pending turn)"));
     assert!(rendered.contains("ship it"));
     assert!(!rendered.contains("   Waiting for response…"));
-    assert!(rendered.contains("⠋ Assistant"));
+    assert!(rendered.contains("⠋ active"));
     assert!(!rendered.contains('╭'));
 }
 
@@ -9094,7 +9230,7 @@ fn narrow_transcript_wrapped_top_level_turns_keep_alignment() {
     let assistant_first =
         find_line_containing_from(&lines, user_continuation + 1, "assistant reply wraps")
             .expect("wrapped assistant first row");
-    let assistant_footer = find_line_containing_from(&lines, assistant_first + 1, "Assistant")
+    let assistant_footer = find_line_containing_from(&lines, assistant_first + 1, "model-1")
         .expect("assistant footer row");
     let assistant_continuation = lines
         .iter()
