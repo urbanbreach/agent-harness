@@ -295,7 +295,22 @@ fn status_dialog_workflow_rows(app: &AppState) -> Vec<StatusDialogRow> {
             if let Some(category) = row.latest_evidence_category.as_deref() {
                 suffix.push_str(&format!(" · latest {category}"));
             }
-            let tone = if row.is_blocked() {
+            if row.pending_question_count > 0 {
+                suffix.push_str(&format!(
+                    " · {} pending questions",
+                    row.pending_question_count
+                ));
+            }
+            if row.team_count > 0 {
+                suffix.push_str(&format!(" · {} subordinate team lanes", row.team_count));
+            }
+            if !row.closeout_allowed && !row.terminal {
+                suffix.push_str(" · closeout attention");
+                if !row.legal_next_actions.is_empty() {
+                    suffix.push_str(&format!(" · next {}", row.legal_next_actions.join(",")));
+                }
+            }
+            let tone = if row.needs_attention() {
                 StatusDialogTone::Error
             } else if row.terminal {
                 StatusDialogTone::Muted
@@ -834,6 +849,7 @@ fn render_slash_commands_list(frame: &mut Frame, app: &AppState, theme: &Theme, 
         .min(app.slash_filtered.len().saturating_sub(1));
     let scroll = selected.saturating_sub(visible_rows.saturating_sub(1));
     let command_column_width = app.slash_command_column_width();
+    let command_prefix = app.active_command_prefix().unwrap_or('/');
     for (row, command) in app
         .slash_filtered
         .iter()
@@ -854,6 +870,7 @@ fn render_slash_commands_list(frame: &mut Frame, app: &AppState, theme: &Theme, 
         frame.render_widget(
             Paragraph::new(slash_command_row(
                 command,
+                command_prefix,
                 app.slash_command_description(command),
                 is_selected,
                 theme,
@@ -867,6 +884,7 @@ fn render_slash_commands_list(frame: &mut Frame, app: &AppState, theme: &Theme, 
 
 fn slash_command_row(
     command: &str,
+    command_prefix: char,
     description: &str,
     is_selected: bool,
     theme: &Theme,
@@ -886,7 +904,7 @@ fn slash_command_row(
         row_style.fg(ui_chrome::command_palette_muted(theme))
     };
 
-    let label = slash_command_display(command);
+    let label = slash_command_display(command, command_prefix);
     let side_padding = usize::from(row_width > 0);
     let available_width = row_width.saturating_sub(side_padding.saturating_mul(2));
     let label_width = label.chars().count();
@@ -922,8 +940,8 @@ fn slash_command_row(
     Line::from(spans)
 }
 
-fn slash_command_display(command: &str) -> String {
-    format!("/{command}")
+fn slash_command_display(command: &str, command_prefix: char) -> String {
+    format!("{command_prefix}{command}")
 }
 
 fn render_command_palette_surface(frame: &mut Frame, theme: &Theme, overlay: Rect) -> Option<Rect> {

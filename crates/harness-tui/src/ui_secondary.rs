@@ -4182,8 +4182,8 @@ fn operator_sidebar_workflow_items(app: &AppState) -> Vec<OperatorRailItem> {
     let summary = app.workflow_status_summary();
     let mut items = Vec::new();
     items.push(OperatorRailItem::Plain(format!(
-        "{} active · {} blocked · {} done",
-        summary.active, summary.blocked, summary.terminal
+        "{} active · {} attention · {} done",
+        summary.active, summary.attention, summary.terminal
     )));
 
     for row in rows.iter().take(3) {
@@ -4197,7 +4197,11 @@ fn operator_sidebar_workflow_items(app: &AppState) -> Vec<OperatorRailItem> {
             .as_deref()
             .map(|lane| format!(" · {lane}"))
             .unwrap_or_default();
-        let blocked = if row.is_blocked() { " · blocked" } else { "" };
+        let blocked = if row.needs_attention() {
+            " · attention"
+        } else {
+            ""
+        };
         items.push(OperatorRailItem::Plain(sanitize_operator_sidebar_line(
             &format!("{title} · {} · {}{lane}{blocked}", row.mode, row.status),
         )));
@@ -4213,10 +4217,35 @@ fn operator_sidebar_workflow_items(app: &AppState) -> Vec<OperatorRailItem> {
             items.push(OperatorRailItem::Plain(format!(
                 "evidence {category}{summary}"
             )));
+            if let Some(reference) = row.latest_evidence_ref.as_deref() {
+                items.push(OperatorRailItem::Plain(format!(
+                    "evidence ref {}",
+                    sanitize_operator_sidebar_line(reference)
+                )));
+            }
         } else if !row.terminal {
             items.push(OperatorRailItem::Plain(
                 "evidence missing · /workflow-signoff".to_string(),
             ));
+        }
+
+        if row.question_count > 0 {
+            items.push(OperatorRailItem::Plain(format!(
+                "questions {} pending / {} total",
+                row.pending_question_count, row.question_count
+            )));
+        }
+
+        if row.team_count > 0 {
+            let blocked = if row.blocked_team_count > 0 {
+                format!(" · {} attention", row.blocked_team_count)
+            } else {
+                String::new()
+            };
+            items.push(OperatorRailItem::Plain(format!(
+                "operator-owned team escalation {} subordinate lane(s){blocked}",
+                row.team_count
+            )));
         }
 
         if let Some(decision) = row.latest_operator_decision.as_deref() {
@@ -4224,6 +4253,28 @@ fn operator_sidebar_workflow_items(app: &AppState) -> Vec<OperatorRailItem> {
                 "decision {}",
                 sanitize_operator_sidebar_line(decision)
             )));
+        }
+
+        if !row.terminal {
+            let action_summary = if row.legal_next_actions.is_empty() {
+                "no legal next action".to_string()
+            } else {
+                format!("next {}", row.legal_next_actions.join(","))
+            };
+            if row.closeout_allowed {
+                items.push(OperatorRailItem::Plain(format!(
+                    "closeout ready · {action_summary}"
+                )));
+            } else {
+                let dimensions = if row.blocked_closeout_dimensions.is_empty() {
+                    String::new()
+                } else {
+                    format!(" · blocked {}", row.blocked_closeout_dimensions.join(","))
+                };
+                items.push(OperatorRailItem::Plain(format!(
+                    "closeout attention · {action_summary}{dimensions}"
+                )));
+            }
         }
 
         if let Some(snapshot) = row.context_snapshot_slug.as_deref() {
@@ -4240,7 +4291,7 @@ fn operator_sidebar_workflow_items(app: &AppState) -> Vec<OperatorRailItem> {
     }
 
     items.push(OperatorRailItem::Plain(
-        "status /workflow-status · dossier /workflow-dossier".to_string(),
+        "projection-only: status /workflow-status · dossier /workflow-dossier".to_string(),
     ));
     items
 }
