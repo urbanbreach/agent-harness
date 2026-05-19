@@ -8,8 +8,8 @@ Deterministic drift gate: `cargo test -p harness --test workflow_inventory`
 
 ## Locked reference counts
 
-- 39 reference workflow skills are inventoried from `inspirations/oh-my-codex/skills/*/SKILL.md`; example: `omx-skill:ultragoal`. Removed reference commands (`ask*`, `build-fix`, and `omx-setup`) are intentionally absent from the Harness command catalog.
-- 30 slash-agent roles are inventoried from the approved command-parity consensus plan; example: `slash-agent:executor`.
+- 45 reference workflow skills are inventoried from `inspirations/oh-my-codex/skills/*/SKILL.md`; examples include `omx-skill:ultragoal`, `omx-skill:ask`, `omx-skill:best-practice-research`, and `omx-skill:omx-setup`. Deprecated shim skills are retained as registry-backed compatibility commands rather than removed.
+- 30 slash-agent roles are inventoried from the oh-my-codex catalog, and all 33 oh-my-codex prompt assets are copied byte-for-byte under `.agent-harness/omx-prompts/` so runtime `.agent-harness/agents/*.md` discovery remains reserved for Harness-native JSON-frontmatter profiles; example: `slash-agent:executor`.
 - Harness workflow registry commands such as `workflow-run`, `workflow-evidence`, `plan-consensus`, and `goal-ledger` must have inventory rows before they can be surfaced as present.
 
 ## Row expectations

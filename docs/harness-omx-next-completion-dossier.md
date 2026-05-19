@@ -18,5 +18,5 @@ This dossier is the public closeout map for the Harness-native OMX command-parit
 
 - **G008 final cleanup/review gate** — completed for this slice with cleanup evidence at `target/ultragoal/ai-slop-cleaner-report.md`, review evidence at `target/ultragoal/code-review-report.md`, and structured gate evidence at `target/ultragoal/final-quality-gate.json`.
 - **Applicable `$` command parity** — all applicable reference `$` commands must remain searchable, dispatchable, coordinator-owned, and tested through the command registry, TUI adapters, workflow evidence, continuations, or task-tool slash-agent shortcuts.
-- **Non-applicable worker protocol** — `worker` is the only non-present reference skill because it is an internal team-pane protocol, not a user-facing Harness `$` command.
+- **Non-applicable worker protocol** — `worker` is the only non-present reference skill because it is an internal team-pane protocol, not a user-facing Harness `$` command. Deprecated shim skills such as `ask-claude`, `ask-gemini`, and `build-fix` remain present as compatibility workflow commands.
 - **No placeholder dispatch** — applicable command families must never regress to prompt-only, shell-only, `BlockedWorkflow`, or “not executable yet” placeholders.

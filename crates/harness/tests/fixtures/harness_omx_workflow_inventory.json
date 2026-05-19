@@ -571,6 +571,633 @@
       ]
     },
     {
+      "canonical_id": "omx-agent-prompt:analyst",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/analyst.md",
+        "inspirations/oh-my-codex/prompts/analyst.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "analyst"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:api-reviewer",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/api-reviewer.md",
+        "inspirations/oh-my-codex/prompts/api-reviewer.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "api-reviewer"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:architect",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/architect.md",
+        "inspirations/oh-my-codex/prompts/architect.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "architect"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:build-fixer",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/build-fixer.md",
+        "inspirations/oh-my-codex/prompts/build-fixer.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "build-fixer"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:code-reviewer",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/code-reviewer.md",
+        "inspirations/oh-my-codex/prompts/code-reviewer.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "code-reviewer"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:code-simplifier",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/code-simplifier.md",
+        "inspirations/oh-my-codex/prompts/code-simplifier.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "code-simplifier"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:critic",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/critic.md",
+        "inspirations/oh-my-codex/prompts/critic.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "critic"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:debugger",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/debugger.md",
+        "inspirations/oh-my-codex/prompts/debugger.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "debugger"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:dependency-expert",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/dependency-expert.md",
+        "inspirations/oh-my-codex/prompts/dependency-expert.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "dependency-expert"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:designer",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/designer.md",
+        "inspirations/oh-my-codex/prompts/designer.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "designer"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:executor",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/executor.md",
+        "inspirations/oh-my-codex/prompts/executor.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "executor"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:explore",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/explore.md",
+        "inspirations/oh-my-codex/prompts/explore.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "explore"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:explore-harness",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/explore-harness.md",
+        "inspirations/oh-my-codex/prompts/explore-harness.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "explore-harness"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:git-master",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/git-master.md",
+        "inspirations/oh-my-codex/prompts/git-master.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "git-master"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:information-architect",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/information-architect.md",
+        "inspirations/oh-my-codex/prompts/information-architect.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "information-architect"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:performance-reviewer",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/performance-reviewer.md",
+        "inspirations/oh-my-codex/prompts/performance-reviewer.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "performance-reviewer"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:planner",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/planner.md",
+        "inspirations/oh-my-codex/prompts/planner.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "planner"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:product-analyst",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/product-analyst.md",
+        "inspirations/oh-my-codex/prompts/product-analyst.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "product-analyst"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:product-manager",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/product-manager.md",
+        "inspirations/oh-my-codex/prompts/product-manager.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "product-manager"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:qa-tester",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/qa-tester.md",
+        "inspirations/oh-my-codex/prompts/qa-tester.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "qa-tester"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:quality-reviewer",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/quality-reviewer.md",
+        "inspirations/oh-my-codex/prompts/quality-reviewer.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "quality-reviewer"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:quality-strategist",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/quality-strategist.md",
+        "inspirations/oh-my-codex/prompts/quality-strategist.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "quality-strategist"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:researcher",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/researcher.md",
+        "inspirations/oh-my-codex/prompts/researcher.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "researcher"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:security-reviewer",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/security-reviewer.md",
+        "inspirations/oh-my-codex/prompts/security-reviewer.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "security-reviewer"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:sisyphus-lite",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/sisyphus-lite.md",
+        "inspirations/oh-my-codex/prompts/sisyphus-lite.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "sisyphus-lite"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:style-reviewer",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/style-reviewer.md",
+        "inspirations/oh-my-codex/prompts/style-reviewer.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "style-reviewer"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:team-executor",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/team-executor.md",
+        "inspirations/oh-my-codex/prompts/team-executor.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "team-executor"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:team-orchestrator",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/team-orchestrator.md",
+        "inspirations/oh-my-codex/prompts/team-orchestrator.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "team-orchestrator"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:test-engineer",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/test-engineer.md",
+        "inspirations/oh-my-codex/prompts/test-engineer.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "test-engineer"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:ux-researcher",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/ux-researcher.md",
+        "inspirations/oh-my-codex/prompts/ux-researcher.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "ux-researcher"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:verifier",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/verifier.md",
+        "inspirations/oh-my-codex/prompts/verifier.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "verifier"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:vision",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/vision.md",
+        "inspirations/oh-my-codex/prompts/vision.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "vision"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "omx-agent-prompt:writer",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/omx-prompts/writer.md",
+        "inspirations/oh-my-codex/prompts/writer.md"
+      ],
+      "harness_mapping": {
+        "surface": "omx_prompt_asset_mirror",
+        "target": "writer"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
       "canonical_id": "omx-skill:ai-slop-cleaner",
       "aliases": [
         "ai-slop-cleaner"
@@ -629,6 +1256,90 @@
         "effect": "mutate_coordinator_state",
         "availability": "present"
       }
+    },
+    {
+      "canonical_id": "omx-skill:ask",
+      "aliases": [
+        "ask"
+      ],
+      "source_refs": [
+        "inspirations/oh-my-codex/skills/ask/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.ask_local_advisor"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      },
+      "description": "Ask a local external advisor CLI and capture a reusable artifact"
+    },
+    {
+      "canonical_id": "omx-skill:ask-claude",
+      "aliases": [
+        "ask-claude"
+      ],
+      "source_refs": [
+        "inspirations/oh-my-codex/skills/ask-claude/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.ask_local_advisor"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      },
+      "description": "Deprecated Claude advisor shim routed through the local advisor workflow"
+    },
+    {
+      "canonical_id": "omx-skill:ask-gemini",
+      "aliases": [
+        "ask-gemini"
+      ],
+      "source_refs": [
+        "inspirations/oh-my-codex/skills/ask-gemini/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.ask_local_advisor"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      },
+      "description": "Deprecated Gemini advisor shim routed through the local advisor workflow"
     },
     {
       "canonical_id": "omx-skill:autopilot",
@@ -720,6 +1431,62 @@
         "effect": "mutate_coordinator_state",
         "availability": "present"
       }
+    },
+    {
+      "canonical_id": "omx-skill:best-practice-research",
+      "aliases": [
+        "best-practice-research"
+      ],
+      "source_refs": [
+        "inspirations/oh-my-codex/skills/best-practice-research/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.best_practice_research"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      },
+      "description": "Run a bounded best-practice research wrapper using official and upstream evidence first"
+    },
+    {
+      "canonical_id": "omx-skill:build-fix",
+      "aliases": [
+        "build-fix"
+      ],
+      "source_refs": [
+        "inspirations/oh-my-codex/skills/build-fix/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.build_fix"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      },
+      "description": "Route build-failure repair through the build-fixer workflow contract"
     },
     {
       "canonical_id": "omx-skill:cancel",
@@ -1106,6 +1873,34 @@
         "effect": "mutate_coordinator_state",
         "availability": "present"
       }
+    },
+    {
+      "canonical_id": "omx-skill:omx-setup",
+      "aliases": [
+        "omx-setup"
+      ],
+      "source_refs": [
+        "inspirations/oh-my-codex/skills/omx-setup/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.setup"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      },
+      "description": "Set up or refresh compatible Harness assets and runtime configuration"
     },
     {
       "canonical_id": "omx-skill:performance-goal",

@@ -13,9 +13,14 @@ const INVENTORY_JSON: &str = include_str!("fixtures/harness_omx_workflow_invento
 const LOCKED_OMX_SKILL_IDS: &[&str] = &[
     "omx-skill:ai-slop-cleaner",
     "omx-skill:analyze",
+    "omx-skill:ask",
+    "omx-skill:ask-claude",
+    "omx-skill:ask-gemini",
     "omx-skill:autopilot",
     "omx-skill:autoresearch",
     "omx-skill:autoresearch-goal",
+    "omx-skill:best-practice-research",
+    "omx-skill:build-fix",
     "omx-skill:cancel",
     "omx-skill:code-review",
     "omx-skill:configure-notifications",
@@ -29,6 +34,7 @@ const LOCKED_OMX_SKILL_IDS: &[&str] = &[
     "omx-skill:help",
     "omx-skill:hud",
     "omx-skill:note",
+    "omx-skill:omx-setup",
     "omx-skill:performance-goal",
     "omx-skill:pipeline",
     "omx-skill:plan",
@@ -413,7 +419,21 @@ fn workflow_inventory_locks_omx_skill_and_slash_agent_rosters() {
         .collect::<BTreeSet<_>>();
     assert_eq!(
         omx_skill_ids, locked_omx_skill_ids,
-        "the command-parity fixture must keep the locked 39-entry command roster without reading untracked inspirations assets"
+        "the command-parity fixture must keep the locked oh-my-codex skill roster without reading untracked inspirations assets"
+    );
+    let locked_omx_skill_ids_owned = locked_omx_skill_ids
+        .iter()
+        .map(|id| (*id).to_string())
+        .collect::<BTreeSet<_>>();
+    let reference_omx_skill_ids = skill_ids(
+        &repo_root().join("inspirations/oh-my-codex/skills"),
+        "omx-skill",
+    )
+    .into_iter()
+    .collect::<BTreeSet<_>>();
+    assert_eq!(
+        locked_omx_skill_ids_owned, reference_omx_skill_ids,
+        "locked command roster must match inspirations/oh-my-codex/skills exactly"
     );
 
     let slash_agent_ids = slash_agent_roster_ids();
@@ -449,6 +469,30 @@ fn workflow_inventory_locks_omx_skill_and_slash_agent_rosters() {
         );
     }
 
+    let registry = CommandRegistry::builtins();
+    let registry_dollar_aliases = registry
+        .commands()
+        .iter()
+        .flat_map(|command| command.dollar_aliases.iter().copied())
+        .collect::<BTreeSet<_>>();
+    for skill_id in LOCKED_OMX_SKILL_IDS {
+        let entry = entries
+            .get(*skill_id)
+            .unwrap_or_else(|| panic!("missing inventory entry for {skill_id}"));
+        if entry["status"].as_str() == Some("non_applicable") {
+            assert_eq!(
+                *skill_id, "omx-skill:worker",
+                "only worker may be a non-applicable oh-my-codex skill"
+            );
+            continue;
+        }
+        let skill_name = skill_id.strip_prefix("omx-skill:").unwrap();
+        assert!(
+            registry_dollar_aliases.contains(skill_name),
+            "{skill_id} must be exposed as a registry-backed dollar command"
+        );
+    }
+
     for entry in inventory["entries"].as_array().unwrap() {
         assert!(
             !non_empty_string(entry, "canonical_id").contains("$$"),
@@ -458,6 +502,127 @@ fn workflow_inventory_locks_omx_skill_and_slash_agent_rosters() {
             assert!(
                 !alias.as_str().unwrap().contains("$$"),
                 "inventory aliases must normalize escaped dollar renderings"
+            );
+        }
+    }
+}
+
+#[test]
+fn workflow_inventory_tracks_oh_my_codex_prompt_parity() {
+    let root = repo_root();
+    let reference_prompt_dir = root.join("inspirations/oh-my-codex/prompts");
+    let harness_agent_dir = root.join(".agent-harness/omx-prompts");
+    let mut reference_prompts = Vec::new();
+
+    for entry in fs::read_dir(&reference_prompt_dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().and_then(|ext| ext.to_str()) == Some("md") {
+            reference_prompts.push(path);
+        }
+    }
+    reference_prompts.sort();
+    assert_eq!(
+        reference_prompts.len(),
+        33,
+        "oh-my-codex prompt parity lock should track every prompt asset"
+    );
+
+    for reference_path in reference_prompts {
+        let file_name = reference_path.file_name().unwrap();
+        let harness_path = harness_agent_dir.join(file_name);
+        assert!(
+            harness_path.exists(),
+            "missing Harness agent prompt copied from {}",
+            reference_path.display()
+        );
+        assert_eq!(
+            fs::read_to_string(&harness_path).unwrap(),
+            fs::read_to_string(&reference_path).unwrap(),
+            "{} must stay byte-for-byte aligned with oh-my-codex",
+            harness_path.display()
+        );
+    }
+}
+
+#[test]
+fn workflow_inventory_locks_slash_agent_definitions_to_reference_manifest() {
+    let root = repo_root();
+    let manifest: Value = serde_json::from_str(
+        &fs::read_to_string(root.join("inspirations/oh-my-codex/src/catalog/manifest.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    let reference_agents = manifest["agents"].as_array().unwrap();
+    let reference_names = reference_agents
+        .iter()
+        .map(|agent| agent["name"].as_str().unwrap())
+        .collect::<BTreeSet<_>>();
+    let harness_names = SLASH_AGENT_NAMES.iter().copied().collect::<BTreeSet<_>>();
+    assert_eq!(
+        harness_names, reference_names,
+        "slash-agent roster must match oh-my-codex catalog agents"
+    );
+
+    assert_eq!(
+        harness_core::agent_catalog::slash_agent_definitions().len(),
+        reference_agents.len(),
+        "Harness must keep one slash-agent definition for every oh-my-codex catalog agent"
+    );
+}
+
+#[test]
+fn workflow_inventory_tracks_native_agent_config_parity() {
+    let root = repo_root();
+    let native_agent_dir = root.join(".agent-harness/native-agents");
+    for definition in harness_core::agent_catalog::slash_agent_definitions() {
+        let toml_path = native_agent_dir.join(format!("{}.toml", definition.name));
+        let toml = fs::read_to_string(&toml_path)
+            .unwrap_or_else(|err| panic!("missing native agent config {toml_path:?}: {err}"));
+        assert!(
+            toml.contains(&format!("# oh-my-codex agent: {}", definition.name)),
+            "{} must be generated from the oh-my-codex native agent contract",
+            toml_path.display()
+        );
+        assert!(
+            toml.contains(&format!("name = \"{}\"", definition.name)),
+            "{} missing matching name",
+            definition.name
+        );
+        assert!(
+            toml.contains(&format!("description = \"{}\"", definition.description)),
+            "{} missing matching description",
+            definition.name
+        );
+        assert!(
+            toml.contains(&format!(
+                "model_reasoning_effort = \"{}\"",
+                definition.reasoning_effort
+            )),
+            "{} missing matching reasoning effort",
+            definition.name
+        );
+        let expected_model =
+            if definition.name == "executor" || definition.model_class == "frontier" {
+                "gpt-5.5"
+            } else {
+                "gpt-5.4-mini"
+            };
+        assert!(
+            toml.contains(&format!("model = \"{expected_model}\"")),
+            "{} missing expected model {expected_model}",
+            definition.name
+        );
+        for metadata_line in [
+            format!("- role: {}", definition.name),
+            format!("- posture: {}", definition.posture),
+            format!("- model_class: {}", definition.model_class),
+            format!("- routing_role: {}", definition.routing_role),
+            format!("- resolved_model: {expected_model}"),
+        ] {
+            assert!(
+                toml.contains(&metadata_line),
+                "{} missing metadata line {metadata_line}",
+                definition.name
             );
         }
     }

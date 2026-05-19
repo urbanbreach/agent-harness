@@ -16,7 +16,7 @@ This dossier records the G007 verification evidence for Harness-native OMX comma
 
 ## Inventory proof
 
-The checked inventory currently contains 158 rows: 157 `present` and 1 `non_applicable`. Present coverage includes all applicable reference `$` commands, 30 slash-agent commands, and registry-backed workflow rows. The lone non-applicable row is the `worker` team-internal protocol, which is intentionally not a user-facing dollar command.
+The checked inventory currently contains 189 rows: 188 `present` and 1 `non_applicable`. Present coverage includes all applicable reference `$` commands, 30 slash-agent commands, 33 copied oh-my-codex prompt assets, and registry-backed workflow rows. The lone non-applicable row is the `worker` team-internal protocol, which is intentionally not a user-facing dollar command.
 
 Every present row is expected to carry the five proof categories below:
 
