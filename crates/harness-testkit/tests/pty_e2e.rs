@@ -581,10 +581,10 @@ fn pty_e2e_session_shell_primary() {
     let live_screen = wait_for_screen_contains(
         &mut live.parser,
         &live.output_rx,
-        LIVE_READY_NEXT_TURN_MARKER,
+        LIVE_SUCCESS_COMPOSER_MARKER,
         STARTUP_TIMEOUT,
     )
-    .expect("wait for wide live session shell sidebar");
+    .expect("wait for completed primary live session shell footer");
     let live_visual = capture_manifest_backed_visual_checkpoint(
         "live_shell",
         "session_shell_primary_live",

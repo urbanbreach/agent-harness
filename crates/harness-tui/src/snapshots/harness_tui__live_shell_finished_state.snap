@@ -1,11 +1,12 @@
 ---
 source: crates/harness-tui/src/lib_tests.rs
+assertion_line: 5653
 expression: rendered
 ---
 
        transcript remains visible
 
-       ▪ gpt-5-codex · 2ms
+       ▪ Assistant · gpt-5-codex · 2ms
 
 
 

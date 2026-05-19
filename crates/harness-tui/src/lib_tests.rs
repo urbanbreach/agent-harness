@@ -147,6 +147,13 @@ fn transcript_turn_sections_render_open_rail_surfaces() {
     assert!(!assistant_footer_row.contains('┃'));
     assert_eq!(
         assistant_footer_fgs[first_alphanumeric_column(lines[assistant_footer])],
+        theme.agent_accent("build")
+    );
+    let assistant_model_column = lines[assistant_footer]
+        .find("gpt-5.4-mini")
+        .expect("assistant footer model metadata column");
+    assert_eq!(
+        assistant_footer_fgs[assistant_model_column],
         theme.text.secondary
     );
     assert!(user_body_bgs[user_body_column..user_body_column + 4]

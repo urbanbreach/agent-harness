@@ -8146,7 +8146,17 @@ fn build_assistant_footer_line(
         Style::default().fg(assistant_color),
     ));
     let mut has_metadata = false;
+    if matches!(turn.header.status, ActivityStatus::Done) {
+        spans.push(Span::styled(
+            assistant_footer_profile_label(&turn.header.profile_label),
+            Style::default().fg(assistant_color),
+        ));
+        has_metadata = true;
+    }
     if has_trimmed_content(&turn.header.model_id) {
+        if has_metadata {
+            spans.push(Span::styled(" · ", muted_meta_style(theme)));
+        }
         spans.push(Span::styled(
             turn.header.model_id.clone(),
             muted_meta_style(theme),
@@ -8185,6 +8195,13 @@ fn build_assistant_footer_line(
         spans.push(Span::styled(timestamp.to_string(), muted_meta_style(theme)));
     }
     Line::from(spans)
+}
+
+fn assistant_footer_profile_label(profile: &str) -> String {
+    match non_empty_trimmed(profile) {
+        Some(profile) if profile != "default" => subagent_profile_label(profile),
+        _ => "Assistant".to_string(),
+    }
 }
 
 fn transcript_streaming_spinner_frame(animation_phase: usize) -> &'static str {
@@ -12992,7 +13009,7 @@ mod tests {
         assert!(lines.iter().any(|line| line.contains("09:45")));
         assert!(lines
             .iter()
-            .any(|line| line == "   ▪ gpt-5.4-mini · 0ms · 09:45"));
+            .any(|line| line == "   ▪ Assistant · gpt-5.4-mini · 0ms · 09:45"));
         assert!(lines.iter().any(|line| line.contains("hello")));
         assert!(lines.iter().any(|line| line.contains("reply")));
     }
