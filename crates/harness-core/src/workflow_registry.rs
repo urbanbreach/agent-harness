@@ -445,6 +445,30 @@ pub const TRANSITION_POLICIES: &[TransitionPolicySpec] = &[
         id: "transition.active_continuation_incomplete",
         description: "Completion is denied while workflow-owned continuations are still active or queued.",
     },
+    TransitionPolicySpec {
+        id: "transition.workflow_mode_allow",
+        description: "Tracked workflow mode starts are allowed when no incompatible workflow mode is active.",
+    },
+    TransitionPolicySpec {
+        id: "transition.workflow_mode_overlap",
+        description: "Tracked workflow mode starts may overlap only for Ralph/team pairs and Ultrawork fan-out.",
+    },
+    TransitionPolicySpec {
+        id: "transition.workflow_mode_auto_complete",
+        description: "Tracked workflow mode starts auto-complete approved source modes such as deep-interview to ralplan.",
+    },
+    TransitionPolicySpec {
+        id: "transition.workflow_mode_denied",
+        description: "Tracked workflow mode starts are denied for unsupported overlaps and execution-to-planning rollback.",
+    },
+    TransitionPolicySpec {
+        id: "transition.autopilot_review_approved",
+        description: "A clean code-review verdict completes the active autopilot workflow.",
+    },
+    TransitionPolicySpec {
+        id: "transition.autopilot_review_return_to_ralplan",
+        description: "A non-clean code-review verdict returns the active autopilot workflow to the ralplan phase with evidence.",
+    },
 ];
 
 pub const WORKFLOW_DOCTOR_CHECKS: &[WorkflowDoctorCheckSpec] = &[
@@ -489,6 +513,24 @@ pub const WORKFLOW_DOCTOR_CHECKS: &[WorkflowDoctorCheckSpec] = &[
         description: "Validates canonical command and alias entries never invoke shell directly.",
     },
     WorkflowDoctorCheckSpec {
+        id: "dollar_alias_wiring",
+        description:
+            "Validates every dollar alias resolves to a native workflow, continuation, or agent action.",
+    },
+    WorkflowDoctorCheckSpec {
+        id: "shipped_skill_loadability",
+        description: "Validates every shipped .agent-harness SKILL.md file is discoverable and loadable.",
+    },
+    WorkflowDoctorCheckSpec {
+        id: "workflow_skill_protocol_present",
+        description:
+            "Validates workflow SKILL.md bodies retain protocol depth relative to the OMX reference assets.",
+    },
+    WorkflowDoctorCheckSpec {
+        id: "workflow_transition_policy_matrix",
+        description: "Validates native workflow transition allow/overlap/auto-complete/deny policy cases.",
+    },
+    WorkflowDoctorCheckSpec {
         id: "team_mode",
         description: "Validates team dependencies and declared team spec health.",
     },
@@ -506,8 +548,8 @@ pub const WORKFLOW_DOCS_ANCHORS: &[WorkflowDocsAnchorSpec] = &[
     },
     WorkflowDocsAnchorSpec {
         id: "workflow_slice_source",
-        path: "docs/omx-workflow-slice-spec.md",
-        heading: "# OMX-style workflow slice specification",
+        path: "docs/omx-parity-dossier.md",
+        heading: "# Harness ↔ oh-my-codex parity dossier",
     },
     WorkflowDocsAnchorSpec {
         id: "workflow_testing",
