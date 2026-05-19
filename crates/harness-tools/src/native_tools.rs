@@ -1457,7 +1457,8 @@ fn looks_like_shell_path_argument(token: &str) -> bool {
             || token.starts_with("./")
             || token.starts_with("../")
             || token == "."
-            || token == "..")
+            || token == ".."
+            || token.contains('/'))
 }
 
 #[cfg(test)]
@@ -1498,6 +1499,15 @@ mod tests {
         let err = validate_bash_command("ls /tmp", tempdir.path(), tempdir.path(), &allowlist)
             .expect_err("external path should be blocked");
         assert!(matches!(err, ToolError::PathEscapesWorkspace { .. }));
+
+        let err2 = validate_bash_command(
+            "ls foo/../../../etc/passwd",
+            tempdir.path(),
+            tempdir.path(),
+            &allowlist,
+        )
+        .expect_err("external relative path should be blocked");
+        assert!(matches!(err2, ToolError::PathEscapesWorkspace { .. }));
     }
 
     #[test]
