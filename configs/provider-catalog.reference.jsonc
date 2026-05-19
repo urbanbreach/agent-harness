@@ -31,7 +31,7 @@
           "variants": {
             "low": { "name": "Low", "metadata": { "reasoning_effort": "low", "text_verbosity": "low", "recommended_for": "quick implementation" } },
             "medium": { "name": "Medium", "metadata": { "reasoning_effort": "medium", "text_verbosity": "medium", "recommended_for": "balanced implementation" } },
-            "high": { "name": "High", "metadata": { "reasoning_effort": "high", "text_verbosity": "medium", "recommended_for": "default build" } },
+            "high": { "name": "High", "metadata": { "reasoning_effort": "high", "text_verbosity": "medium", "recommended_for": "default operator work" } },
             "xhigh": { "name": "XHigh", "metadata": { "reasoning_effort": "xhigh", "text_verbosity": "medium", "recommended_for": "hard reasoning" } }
           }
         },
@@ -81,12 +81,17 @@
   },
   "model": "default/gpt-5.4",
   "agent": {
+    "operator": {
+      "model": "default/gpt-5.4-mini",
+      "variant": "high"
+    },
     "build": {
+      "hidden": true,
       "model": "default/gpt-5.4-mini",
       "variant": "high"
     }
   },
-  "default_agent": "build",
+  "default_agent": "operator",
   "permission": "ask",
   "runtime": {
     "compaction": {
