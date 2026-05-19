@@ -1,8 +1,8 @@
 {
   "$schema": "./tui.json",
   "keybinds": {
-    "agent_cycle": "tab",
-    "agent_cycle_reverse": "shift-tab",
+    "focus_next": "tab",
+    "focus_prev": "shift-tab",
     "variant_cycle": "ctrl+t",
     "session_child_first": "ctrl+]",
     "session_child_cycle": "]",

@@ -212,7 +212,7 @@ fn build_and_review_permissions_follow_configured_policy() {
     let coordinator_config =
         bootstrap::build_interactive_coordinator_config(&config).expect("build config");
 
-    assert_eq!(bootstrap::interactive_profile_name(&config), "build");
+    assert_eq!(bootstrap::interactive_profile_name(&config), "operator");
     assert_eq!(
         coordinator_config
             .permission_policy

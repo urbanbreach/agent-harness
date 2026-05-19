@@ -43,16 +43,27 @@
   // Set enable:false (or enabled:false) to remove one from the runtime.
   // Add model, prompt, tools, or permission here only when overriding defaults.
   "agent": {
+    // Canonical single-operator entrypoint. Specialist/team/model lanes remain
+    // explicit escalations from this profile rather than alternate defaults.
+    "operator": {
+      "enable": true,
+      "model": "default/gpt-5.4-mini",
+      "variant": "high",
+    },
+    // Legacy compatibility profiles remain shipped for existing configs and
+    // internal routing, but they are hidden from the default operator path.
     "build": {
       "enable": true,
+      "hidden": true,
       "model": "default/gpt-5.4-mini",
       "variant": "high",
     },
     // Stable read-only planning lane: Plan may inspect the workspace and write
     // only .agent-harness/plans/<run>.md, then uses plan_exit to ask before
-    // continuing implementation in Build.
+    // returning to the operator path.
     "plan": {
       "enable": true,
+      "hidden": true,
       "model": "default/gpt-5.5",
       "variant": "xhigh",
     },
@@ -61,6 +72,7 @@
     // scheduler semantics.
     "discipline": {
       "enable": true,
+      "hidden": true,
       "model": "default/gpt-5.5",
       "variant": "high",
     },
@@ -74,7 +86,7 @@
       "model": "default/gpt-5.4-mini",
       "variant": "low",
     },
-    // OMO-style task category routes. These are subagents used by
+    // Explicit task category routes. These are subagents used by
     // task(category=...) and intentionally deny recursive task delegation by
     // default.
     "visual-engineering": {
@@ -131,7 +143,7 @@
     }
   },
 
-  "default_agent": "build",
+  "default_agent": "operator",
 
   // One scalar applies to all supported tool permissions; switch to an object
   // when a project needs per-tool rules.
