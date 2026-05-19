@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::future::Future;
 use std::io::Write;
@@ -24,7 +24,9 @@ use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle,
     ManualCompactionOutcome,
 };
-use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1, ToolCallStatus};
+use harness_core::event::{
+    ActorKind, EventActor, EventEnvelopeV1, EventV1, ToolCallStatus, WorkflowEventMetadata,
+};
 use harness_core::perm::PermissionDecision;
 use harness_core::proj::{inspect_resume_plan, RecordedRuntimeContext, SessionModeSource};
 use harness_core::redact::DefaultRedactor;
@@ -34,7 +36,11 @@ use harness_core::session_lineage::{
 };
 use harness_core::session_title::create_default_title;
 use harness_core::store::{EventStore, EventStoreError};
-use harness_core::workflow::{WorkflowEvidenceRequest, WorkflowStartRequest};
+use harness_core::workflow::{
+    project_workflows, WorkflowEvidenceRequest, WorkflowProjection, WorkflowStartRequest,
+    WorkflowStartResult,
+};
+use harness_core::workflow_transitions::normalize_workflow_mode;
 use harness_tools::coordinator_registry;
 use harness_tui::app::{
     set_pending_live_launch_metadata, set_pending_live_prompt_auto_submit, LaunchMetadata,
@@ -1379,6 +1385,7 @@ fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> InteractiveWorkfl
         | Some(UiIntent::ResolvePermission { .. })
         | Some(UiIntent::CompactSession)
         | Some(UiIntent::WorkflowIntent { .. })
+        | Some(UiIntent::WorkflowSkillDispatch { .. })
         | Some(UiIntent::SlashAgentTask { .. })
         | Some(UiIntent::StartContinuation { .. })
         | Some(UiIntent::StopContinuation { .. })
@@ -1755,6 +1762,7 @@ fn live_workflow_from_intent(intent: &UiIntent) -> Option<InteractiveWorkflow> {
         | UiIntent::SubmitPrompt { .. }
         | UiIntent::CompactSession
         | UiIntent::WorkflowIntent { .. }
+        | UiIntent::WorkflowSkillDispatch { .. }
         | UiIntent::SlashAgentTask { .. }
         | UiIntent::StartContinuation { .. }
         | UiIntent::StopContinuation { .. }
@@ -1771,6 +1779,7 @@ fn forward_intent_to_live_run(intent: &UiIntent) -> bool {
         UiIntent::ResolvePermission { .. }
             | UiIntent::SubmitPrompt { .. }
             | UiIntent::CompactSession
+            | UiIntent::WorkflowSkillDispatch { .. }
             | UiIntent::SlashAgentTask { .. }
             | UiIntent::StartContinuation { .. }
             | UiIntent::StopContinuation { .. }
@@ -2534,8 +2543,8 @@ async fn record_tui_workflow_intent(
     command: &str,
 ) -> Result<String, CoordinatorError> {
     let workflow_id = tui_workflow_intent_id(intent);
-    let mode = tui_workflow_intent_mode(intent);
-    coordinator
+    let mode = tui_workflow_intent_mode_for_command(intent, command);
+    let start_result = coordinator
         .start_workflow(
             actor.clone(),
             WorkflowStartRequest {
@@ -2548,6 +2557,14 @@ async fn record_tui_workflow_intent(
             },
         )
         .await?;
+    if let WorkflowStartResult::Denied {
+        reason, policy_id, ..
+    } = start_result
+    {
+        return Err(CoordinatorError::PolicyViolation(format!(
+            "workflow transition denied by {policy_id}: {reason}"
+        )));
+    }
     let mut metadata = BTreeMap::from([
         ("command".to_string(), command.to_string()),
         ("intent".to_string(), intent.as_str().to_string()),
@@ -2639,6 +2656,26 @@ fn tui_workflow_intent_mode(intent: WorkflowIntent) -> &'static str {
     }
 }
 
+fn tui_workflow_intent_mode_for_command(intent: WorkflowIntent, command: &str) -> &'static str {
+    if intent != WorkflowIntent::Run {
+        return tui_workflow_intent_mode(intent);
+    }
+
+    let Some(command_name) = command
+        .split_whitespace()
+        .next()
+        .and_then(|token| token.strip_prefix('$').or_else(|| token.strip_prefix('/')))
+    else {
+        return tui_workflow_intent_mode(intent);
+    };
+
+    match command_name {
+        "ralph" => "ralph",
+        "ultrawork" | "ulw" => "ultrawork",
+        _ => tui_workflow_intent_mode(intent),
+    }
+}
+
 fn tui_workflow_evidence_category(intent: WorkflowIntent) -> &'static str {
     match intent {
         WorkflowIntent::DeepInterview => "evidence.context_snapshot",
@@ -2701,6 +2738,272 @@ fn tui_workflow_status_key(intent: WorkflowIntent) -> Option<&'static str> {
     }
 }
 
+struct LivePromptSubmission {
+    text: String,
+    selected_file_tags: Vec<harness_core::file_tag::SelectedFileTag>,
+    selected_agent_tags: Vec<harness_core::file_tag::SelectedAgentTag>,
+    selected_resource_tags: Vec<harness_core::file_tag::SelectedResourceTag>,
+    launch_metadata: LaunchMetadata,
+}
+
+async fn submit_prompt_to_live_agent(
+    coordinator: &CoordinatorHandle,
+    live_agent_target: Option<&LiveAgentTargetState>,
+    user_actor: &EventActor,
+    prompt: LivePromptSubmission,
+) -> Result<(), String> {
+    let mut prompt = prompt;
+    match active_workflow_prompt_overlay(coordinator).await {
+        Ok(Some(overlay)) => {
+            prompt.text = format!("{overlay}\n\n{}", prompt.text);
+        }
+        Ok(None) => {}
+        Err(err) => {
+            tracing::warn!(
+                error = %err,
+                "failed to build active workflow prompt overlay; submitting original prompt"
+            );
+        }
+    }
+
+    let agent_id = live_agent_target.and_then(|target| {
+        target
+            .lock()
+            .ok()
+            .and_then(|target| target.agent_id.clone())
+    });
+
+    if let Some(agent_id) = agent_id {
+        let request_id = coordinator
+            .request_agent_turn_with_model_and_selected_tags(
+                user_actor.clone(),
+                agent_id,
+                prompt.text,
+                harness_core::file_tag::SelectedPromptTags {
+                    files: prompt.selected_file_tags,
+                    agents: prompt.selected_agent_tags,
+                    resources: prompt.selected_resource_tags,
+                },
+                launch_metadata_model_ref(&prompt.launch_metadata),
+                Some(launch_metadata_model_settings(&prompt.launch_metadata)),
+            )
+            .await
+            .map_err(|err| err.to_string())?;
+        if let Some(live_agent_target) = live_agent_target {
+            let mut target = live_agent_target
+                .lock()
+                .map_err(|_| "live agent target lock poisoned".to_string())?;
+            target.last_request_id = Some(request_id);
+        }
+    }
+    Ok(())
+}
+
+async fn active_workflow_prompt_overlay(
+    coordinator: &CoordinatorHandle,
+) -> Result<Option<String>, String> {
+    let store = coordinator
+        .event_store()
+        .await
+        .map_err(|err| err.to_string())?;
+    let mut stream = store.replay(1).map_err(|err| err.to_string())?;
+    let mut events = Vec::new();
+    while let Some(next) = std::future::poll_fn(|cx| stream.as_mut().poll_next(cx)).await {
+        events.push(next.map_err(|err| err.to_string())?);
+    }
+    let projection = project_workflows(events.iter().map(|event| &event.payload));
+    Ok(active_workflow_prompt_overlay_from_projection(&projection))
+}
+
+fn active_workflow_prompt_overlay_from_projection(
+    projection: &WorkflowProjection,
+) -> Option<String> {
+    let mut active_workflows = projection
+        .workflows
+        .values()
+        .filter(|workflow| !workflow.terminal)
+        .filter_map(|workflow| normalize_workflow_mode(&workflow.mode).map(|mode| (mode, workflow)))
+        .collect::<Vec<_>>();
+    if active_workflows.is_empty() {
+        return None;
+    }
+    active_workflows.sort_by(|(left_mode, left), (right_mode, right)| {
+        workflow_mode_priority(left_mode)
+            .cmp(&workflow_mode_priority(right_mode))
+            .then_with(|| left_mode.cmp(right_mode))
+            .then_with(|| left.workflow_id.cmp(&right.workflow_id))
+    });
+
+    let mut active_modes = BTreeSet::new();
+    let workflow_lines = active_workflows
+        .iter()
+        .map(|(mode, workflow)| {
+            active_modes.insert(*mode);
+            let phase = workflow.phase.as_deref().unwrap_or("active");
+            let continuation = projection
+                .continuations
+                .values()
+                .rfind(|continuation| {
+                    continuation.workflow_id == workflow.workflow_id
+                        && matches!(continuation.status.as_str(), "active" | "reminder_queued")
+                })
+                .map(|continuation| {
+                    format!(
+                        ", continuation={}/{} ({})",
+                        continuation.iteration.max(1),
+                        continuation.max_iterations,
+                        continuation.status
+                    )
+                })
+                .unwrap_or_default();
+            format!(
+                "{mode}(phase={phase}, status={}, owner={}{})",
+                workflow.status, workflow.owner, continuation
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let protocol_hints = active_modes
+        .iter()
+        .filter_map(|mode| workflow_protocol_hint(mode))
+        .collect::<Vec<_>>();
+    let protocol_hints = if protocol_hints.is_empty() {
+        "Follow the active workflow SKILL.md protocol for the current turn.".to_string()
+    } else {
+        protocol_hints.join(" ")
+    };
+
+    Some(format!(
+        "<system-reminder>\n\
+         Harness active workflow context: {}.\n\
+         Protocol reinforcement: {protocol_hints}\n\
+         Continue the active workflow branch, preserve settled requirements, record workflow evidence for material progress, and do not start or cancel workflows without explicit user intent. Harness workflow state is event-sourced; do not use external state files as workflow authority.\n\
+         </system-reminder>",
+        workflow_lines.join("; ")
+    ))
+}
+
+fn workflow_mode_priority(mode: &str) -> u8 {
+    match mode {
+        "deep-interview" => 0,
+        "ralplan" => 1,
+        "team" => 2,
+        "autopilot" => 3,
+        "ralph" => 4,
+        "ultrawork" => 5,
+        "ultraqa" => 6,
+        "ultragoal" => 7,
+        "autoresearch" => 8,
+        "ecomode" => 9,
+        "visual" | "visual-ralph" | "visual-verdict" => 10,
+        "web-clone" => 11,
+        "pipeline" => 12,
+        _ => 13,
+    }
+}
+
+fn workflow_protocol_hint(mode: &str) -> Option<&'static str> {
+    match mode {
+        "ultrawork" => Some(
+            "Ultrawork: ground the task before editing, define pass/fail acceptance criteria, keep shared-file work local, use parallel/background lanes only for independent evidence or implementation, and finish with lightweight verification.",
+        ),
+        "ralph" => Some(
+            "Ralph: keep working until the scoped objective is fully complete, verified with fresh evidence, cleaned up, and independently architect-reviewed; do not claim partial completion.",
+        ),
+        "ralplan" => Some(
+            "Ralplan: stay in planning/consensus mode, avoid production edits, converge planner/architect/critic concerns into a handoff with tests and risks.",
+        ),
+        "deep-interview" => Some(
+            "Deep-interview: ask one high-leverage question per round, reduce ambiguity with evidence, and hand off only when acceptance criteria and boundaries are clear.",
+        ),
+        "team" => Some(
+            "Team: keep leader-owned integration, bounded worker tasks, explicit ownership, mailbox/task evidence, and a verification gate before shutdown.",
+        ),
+        "autopilot" => Some(
+            "Autopilot: run the planned lifecycle through planning, execution, review, and fix loops; non-clean review evidence returns to planning instead of completing.",
+        ),
+        "ultraqa" => Some(
+            "UltraQA: generate adversarial scenarios, execute them safely, diagnose failures, fix regressions, and report scenario evidence.",
+        ),
+        "autoresearch" => Some(
+            "Autoresearch: keep research validator-gated, source-backed, and checkpointed before synthesis.",
+        ),
+        _ => None,
+    }
+}
+
+async fn start_tui_continuation_and_notify(
+    coordinator: &CoordinatorHandle,
+    user_actor: &EventActor,
+    live_agent_target: Option<&LiveAgentTargetState>,
+    live_update_tx: &std_mpsc::Sender<LiveUpdate>,
+    mode: String,
+    command: String,
+    workflow: Option<WorkflowEventMetadata>,
+) -> bool {
+    let start_result = if let Some(workflow) = workflow {
+        coordinator
+            .start_workflow_continuation(
+                user_actor.clone(),
+                mode.clone(),
+                command.clone(),
+                ContinuationBounds::default(),
+                workflow,
+            )
+            .await
+    } else {
+        coordinator
+            .start_continuation(
+                user_actor.clone(),
+                mode.clone(),
+                command.clone(),
+                ContinuationBounds::default(),
+            )
+            .await
+    };
+
+    match start_result {
+        Ok(continuation_id) => {
+            let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                message: format!("continuation started: {mode} via {command} ({continuation_id})"),
+                level: OperatorNoticeLevel::Info,
+            });
+            let target_agent_id = live_agent_target.and_then(|target| {
+                target
+                    .lock()
+                    .ok()
+                    .and_then(|target| target.agent_id.clone())
+            });
+            if let Some(agent_id) = target_agent_id {
+                match coordinator
+                    .trigger_continuation_reminder(
+                        supervisor_actor(),
+                        agent_id,
+                        format!("continuation_started:{continuation_id}"),
+                    )
+                    .await
+                {
+                    Ok(Some(_)) | Ok(None) => {}
+                    Err(err) => {
+                        let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                            message: format!("continuation reminder scheduling failed: {err}"),
+                            level: OperatorNoticeLevel::Error,
+                        });
+                    }
+                }
+            }
+            true
+        }
+        Err(err) => {
+            let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                message: format!("continuation start failed: {err}"),
+                level: OperatorNoticeLevel::Error,
+            });
+            false
+        }
+    }
+}
+
 async fn handle_ui_intents(
     coordinator: CoordinatorHandle,
     mut intent_rx: mpsc::UnboundedReceiver<UiIntent>,
@@ -2733,36 +3036,19 @@ async fn handle_ui_intents(
                 selected_resource_tags,
                 launch_metadata,
             } => {
-                let agent_id = live_agent_target.as_ref().and_then(|target| {
-                    target
-                        .lock()
-                        .ok()
-                        .and_then(|target| target.agent_id.clone())
-                });
-
-                if let Some(agent_id) = agent_id {
-                    let request_id = coordinator
-                        .request_agent_turn_with_model_and_selected_tags(
-                            user_actor.clone(),
-                            agent_id,
-                            text,
-                            harness_core::file_tag::SelectedPromptTags {
-                                files: selected_file_tags,
-                                agents: selected_agent_tags,
-                                resources: selected_resource_tags,
-                            },
-                            launch_metadata_model_ref(&launch_metadata),
-                            Some(launch_metadata_model_settings(&launch_metadata)),
-                        )
-                        .await
-                        .map_err(|err| err.to_string())?;
-                    if let Some(live_agent_target) = live_agent_target.as_ref() {
-                        let mut target = live_agent_target
-                            .lock()
-                            .map_err(|_| "live agent target lock poisoned".to_string())?;
-                        target.last_request_id = Some(request_id);
-                    }
-                }
+                submit_prompt_to_live_agent(
+                    &coordinator,
+                    live_agent_target.as_ref(),
+                    &user_actor,
+                    LivePromptSubmission {
+                        text,
+                        selected_file_tags,
+                        selected_agent_tags,
+                        selected_resource_tags,
+                        launch_metadata,
+                    },
+                )
+                .await?;
             }
             UiIntent::CompactSession => {
                 let Some(live_agent_target) = live_agent_target.as_ref() else {
@@ -2846,6 +3132,97 @@ async fn handle_ui_intents(
                 };
                 let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
             }
+            UiIntent::WorkflowSkillDispatch {
+                intent,
+                command,
+                continuation_mode,
+                text,
+                selected_file_tags,
+                selected_agent_tags,
+                selected_resource_tags,
+                launch_metadata,
+            } => {
+                let mut recorded_workflow_id = None;
+                if intent.effect() == CommandEffect::ReadProjection {
+                    let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                        message: format!(
+                            "workflow projection available: {} via {command} (read-only; no coordinator event recorded)",
+                            intent.as_str()
+                        ),
+                        level: OperatorNoticeLevel::Info,
+                    });
+                } else {
+                    match record_tui_workflow_intent(
+                        &coordinator,
+                        user_actor.clone(),
+                        intent,
+                        &command,
+                    )
+                    .await
+                    {
+                        Ok(workflow_id) => {
+                            recorded_workflow_id = Some(workflow_id.clone());
+                            let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                                message: format!(
+                                    "workflow intent recorded: {} via {command} ({workflow_id})",
+                                    intent.as_str()
+                                ),
+                                level: OperatorNoticeLevel::Info,
+                            });
+                        }
+                        Err(err) => {
+                            let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                                message: format!("workflow intent record failed: {err}"),
+                                level: OperatorNoticeLevel::Error,
+                            });
+                            continue;
+                        }
+                    }
+                }
+
+                if let Some(mode) = continuation_mode {
+                    let workflow =
+                        recorded_workflow_id
+                            .as_ref()
+                            .map(|workflow_id| WorkflowEventMetadata {
+                                workflow_id: Some(workflow_id.clone()),
+                                lane: Some("lane.operator_decision".to_string()),
+                                iteration: None,
+                                stop_reason: None,
+                                evidence_category: Some(
+                                    tui_workflow_evidence_category(intent).to_string(),
+                                ),
+                                owner: Some("tui-operator".to_string()),
+                            });
+                    if !start_tui_continuation_and_notify(
+                        &coordinator,
+                        &user_actor,
+                        live_agent_target.as_ref(),
+                        &live_update_tx,
+                        mode,
+                        command.clone(),
+                        workflow,
+                    )
+                    .await
+                    {
+                        continue;
+                    }
+                }
+
+                submit_prompt_to_live_agent(
+                    &coordinator,
+                    live_agent_target.as_ref(),
+                    &user_actor,
+                    LivePromptSubmission {
+                        text,
+                        selected_file_tags,
+                        selected_agent_tags,
+                        selected_resource_tags,
+                        launch_metadata,
+                    },
+                )
+                .await?;
+            }
             UiIntent::SlashAgentTask {
                 role,
                 task,
@@ -2873,56 +3250,16 @@ async fn handle_ui_intents(
                 let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
             }
             UiIntent::StartContinuation { mode, command } => {
-                match coordinator
-                    .start_continuation(
-                        user_actor.clone(),
-                        mode.clone(),
-                        command.clone(),
-                        ContinuationBounds::default(),
-                    )
-                    .await
-                {
-                    Ok(continuation_id) => {
-                        let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
-                            message: format!(
-                                "continuation started: {mode} via {command} ({continuation_id})"
-                            ),
-                            level: OperatorNoticeLevel::Info,
-                        });
-                        let target_agent_id = live_agent_target.as_ref().and_then(|target| {
-                            target
-                                .lock()
-                                .ok()
-                                .and_then(|target| target.agent_id.clone())
-                        });
-                        if let Some(agent_id) = target_agent_id {
-                            match coordinator
-                                .trigger_continuation_reminder(
-                                    supervisor_actor(),
-                                    agent_id,
-                                    format!("continuation_started:{continuation_id}"),
-                                )
-                                .await
-                            {
-                                Ok(Some(_)) | Ok(None) => {}
-                                Err(err) => {
-                                    let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
-                                        message: format!(
-                                            "continuation reminder scheduling failed: {err}"
-                                        ),
-                                        level: OperatorNoticeLevel::Error,
-                                    });
-                                }
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
-                            message: format!("continuation start failed: {err}"),
-                            level: OperatorNoticeLevel::Error,
-                        });
-                    }
-                }
+                start_tui_continuation_and_notify(
+                    &coordinator,
+                    &user_actor,
+                    live_agent_target.as_ref(),
+                    &live_update_tx,
+                    mode,
+                    command,
+                    None,
+                )
+                .await;
             }
             UiIntent::StopContinuation { reason } => {
                 match coordinator
@@ -3705,6 +4042,225 @@ mod tests {
         assert!(!events
             .iter()
             .any(|event| matches!(&event.payload, EventV1::WorkflowCompleted(_))));
+    }
+
+    #[tokio::test]
+    async fn continuation_workflow_intent_uses_tracked_mode_for_transition_policy() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());
+        config.deterministic_store = true;
+        config.agent_profiles = golden_path_profiles();
+
+        let coordinator = spawn_coordinator(
+            config,
+            Arc::new(FakeClock::new()),
+            Arc::new(DefaultRedactor::default()),
+        );
+        let run = coordinator
+            .start_run("tui_continuation_workflow_intent", temp_dir.path())
+            .await
+            .expect("start run");
+        let (intent_tx, intent_rx) = mpsc::unbounded_channel();
+        let (status_tx, status_rx) = std_mpsc::channel();
+
+        let handle = tokio::spawn(handle_ui_intents(
+            coordinator.clone(),
+            intent_rx,
+            user_actor(),
+            None,
+            status_tx,
+        ));
+
+        intent_tx
+            .send(UiIntent::WorkflowIntent {
+                intent: WorkflowIntent::Run,
+                command: "$ralph fix tests".to_string(),
+            })
+            .expect("send ralph workflow intent");
+        intent_tx
+            .send(UiIntent::WorkflowIntent {
+                intent: WorkflowIntent::PlanConsensus,
+                command: "$ralplan revise plan".to_string(),
+            })
+            .expect("send ralplan workflow intent");
+        drop(intent_tx);
+
+        handle
+            .await
+            .expect("ui intent task join")
+            .expect("ui intent task ok");
+        let notices = [
+            status_rx.recv().expect("ralph workflow notice"),
+            status_rx.recv().expect("ralplan denial notice"),
+        ];
+        assert!(notices.iter().any(|status| matches!(
+            status,
+            LiveUpdate::OperatorNotice {
+                message,
+                level: OperatorNoticeLevel::Info,
+            } if message.contains("workflow intent recorded: workflow.run")
+                && message.contains("$ralph fix tests")
+        )));
+        assert!(notices.iter().any(|status| matches!(
+            status,
+            LiveUpdate::OperatorNotice {
+                message,
+                level: OperatorNoticeLevel::Error,
+            } if message.contains("workflow intent record failed")
+                && message.contains("Execution-to-planning rollback")
+        )));
+
+        coordinator.stop_run().await.expect("stop run");
+        let events = load_events_from_run_dir(&run.run_dir).expect("load run events");
+        assert!(events.iter().any(|event| matches!(
+            &event.payload,
+            EventV1::WorkflowStarted(payload)
+                if payload.mode == "ralph"
+                    && payload.owner == "tui-operator"
+        )));
+        assert!(events.iter().any(|event| matches!(
+            &event.payload,
+            EventV1::WorkflowTransitionDenied(payload)
+                if payload.policy_id == "transition.workflow_mode_denied"
+                    && payload.reason.contains("Execution-to-planning rollback")
+        )));
+        assert!(!events.iter().any(|event| matches!(
+            &event.payload,
+            EventV1::WorkflowStarted(payload)
+                if payload.mode == "workflow.plan_consensus"
+        )));
+    }
+
+    #[tokio::test]
+    async fn denied_workflow_skill_dispatch_suppresses_continuation_and_prompt() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());
+        config.deterministic_store = true;
+        config.agent_profiles = golden_path_profiles();
+
+        let coordinator = spawn_coordinator(
+            config,
+            Arc::new(FakeClock::new()),
+            Arc::new(DefaultRedactor::default()),
+        );
+        let run = coordinator
+            .start_run("tui_gated_workflow_skill_dispatch", temp_dir.path())
+            .await
+            .expect("start run");
+        let agent_id = coordinator
+            .spawn_agent_idle(supervisor_actor(), "planner", None)
+            .await
+            .expect("spawn agent");
+        let live_agent_target = Arc::new(Mutex::new(LiveAgentTarget {
+            agent_id: Some(agent_id),
+            profile: "planner".to_string(),
+            last_request_id: None,
+        }));
+
+        let captured_intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+        let sink: UiIntentSink = {
+            let captured_intents = Arc::clone(&captured_intents);
+            Arc::new(move |intent| {
+                captured_intents
+                    .lock()
+                    .expect("captured intents lock")
+                    .push(intent);
+            })
+        };
+        let mut app = harness_tui::app::AppState::new_live(None, false, Some(sink));
+        app.execute_dollar_command("ralph", Some("fix tests".to_string()));
+        app.execute_dollar_command("ralplan", Some("revise plan".to_string()));
+        let captured_intents = captured_intents
+            .lock()
+            .expect("captured intents lock")
+            .clone();
+        assert_eq!(captured_intents.len(), 2);
+        assert!(matches!(
+            &captured_intents[0],
+            UiIntent::WorkflowSkillDispatch { command, continuation_mode, .. }
+                if command == "$ralph fix tests"
+                    && continuation_mode.as_deref() == Some("ralph")
+        ));
+        assert!(matches!(
+            &captured_intents[1],
+            UiIntent::WorkflowSkillDispatch { command, continuation_mode, .. }
+                if command == "$ralplan revise plan"
+                    && continuation_mode.is_none()
+        ));
+
+        let (intent_tx, intent_rx) = mpsc::unbounded_channel();
+        let (status_tx, status_rx) = std_mpsc::channel();
+        let handle = tokio::spawn(handle_ui_intents(
+            coordinator.clone(),
+            intent_rx,
+            user_actor(),
+            Some(live_agent_target),
+            status_tx,
+        ));
+
+        for intent in captured_intents {
+            intent_tx.send(intent).expect("send workflow skill intent");
+        }
+        drop(intent_tx);
+
+        handle
+            .await
+            .expect("ui intent task join")
+            .expect("ui intent task ok");
+        let notices = status_rx.try_iter().collect::<Vec<_>>();
+        assert!(notices.iter().any(|status| matches!(
+            status,
+            LiveUpdate::OperatorNotice {
+                message,
+                level: OperatorNoticeLevel::Error,
+            } if message.contains("workflow intent record failed")
+                && message.contains("Execution-to-planning rollback")
+        )));
+
+        coordinator.stop_run().await.expect("stop run");
+        let events = load_events_from_run_dir(&run.run_dir).expect("load run events");
+        assert!(events.iter().any(|event| matches!(
+            &event.payload,
+            EventV1::WorkflowStarted(payload) if payload.mode == "ralph"
+        )));
+        assert!(events.iter().any(|event| matches!(
+            &event.payload,
+            EventV1::ContinuationStarted(payload)
+                if payload.mode == "ralph"
+                    && payload.command == "$ralph fix tests"
+                    && payload
+                        .workflow
+                        .as_ref()
+                        .and_then(|workflow| workflow.workflow_id.as_deref())
+                        .is_some_and(|workflow_id| workflow_id.starts_with("wf_tui_workflow_run_"))
+        )));
+        assert!(events.iter().any(|event| matches!(
+            &event.payload,
+            EventV1::WorkflowTransitionDenied(payload)
+                if payload.reason.contains("Execution-to-planning rollback")
+        )));
+        assert!(events.iter().any(|event| matches!(
+            &event.payload,
+            EventV1::UserMessageSubmitted(payload)
+                if payload.text.contains("$ralph fix tests")
+                    && payload
+                        .text
+                        .contains("Harness active workflow context: ralph(")
+                    && payload.text.contains("Ralph: keep working until the scoped objective")
+                    && payload
+                        .text
+                        .contains("do not use external state files as workflow authority")
+        )));
+        assert!(!events.iter().any(|event| matches!(
+            &event.payload,
+            EventV1::ContinuationStarted(payload)
+                if payload.command == "$ralplan revise plan"
+        )));
+        assert!(!events.iter().any(|event| matches!(
+            &event.payload,
+            EventV1::UserMessageSubmitted(payload)
+                if payload.text.contains("$ralplan revise plan")
+        )));
     }
 
     #[tokio::test]
