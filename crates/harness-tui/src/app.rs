@@ -884,6 +884,7 @@ pub(crate) struct WorkflowStatusRow {
     pub mode: String,
     pub status: String,
     pub owner: String,
+    pub phase: Option<String>,
     pub lane: Option<String>,
     pub title: Option<String>,
     pub terminal: bool,
@@ -1121,6 +1122,16 @@ pub enum UiIntent {
     WorkflowIntent {
         intent: WorkflowIntent,
         command: String,
+    },
+    WorkflowSkillDispatch {
+        intent: WorkflowIntent,
+        command: String,
+        continuation_mode: Option<String>,
+        text: String,
+        selected_file_tags: Vec<harness_core::file_tag::SelectedFileTag>,
+        selected_agent_tags: Vec<harness_core::file_tag::SelectedAgentTag>,
+        selected_resource_tags: Vec<harness_core::file_tag::SelectedResourceTag>,
+        launch_metadata: LaunchMetadata,
     },
     SlashAgentTask {
         role: String,
@@ -1613,6 +1624,7 @@ impl AppState {
                     mode: workflow.mode.clone(),
                     status: workflow.status.clone(),
                     owner: workflow.owner.clone(),
+                    phase: workflow.phase.clone(),
                     lane: workflow.lane.clone(),
                     title: workflow.title.clone(),
                     terminal: workflow.terminal,
@@ -1697,6 +1709,9 @@ impl AppState {
             latest.status.as_str()
         };
         let mut summary = format!("Workflow {} {status}", latest.workflow_id);
+        if let Some(phase) = latest.phase.as_deref() {
+            summary.push_str(&format!(" · phase {phase}"));
+        }
         if latest.evidence_count > 0 {
             summary.push_str(&format!(" · {} ev", latest.evidence_count));
         }
@@ -4360,10 +4375,24 @@ impl AppState {
                 .typed_dollar_invocation()
                 .map(|(command, args)| (command.to_string(), args))
             {
-                self.execute_dollar_command(
-                    &command,
-                    args.or_else(|| self.slash_draft_snapshot.clone()),
-                );
+                match self.typed_dollar_workflow_invocation() {
+                    Ok(Some(invocation)) => {
+                        self.execute_dollar_workflow_invocation(invocation);
+                    }
+                    Ok(None) => {
+                        self.execute_dollar_command(
+                            &command,
+                            args.or_else(|| self.slash_draft_snapshot.clone()),
+                        );
+                    }
+                    Err(err) => {
+                        self.set_status_banner(Some(err.message));
+                    }
+                }
+                return;
+            }
+            if let Some(err) = self.typed_dollar_parse_error() {
+                self.set_status_banner(Some(err.message));
                 return;
             }
         }
@@ -4798,18 +4827,24 @@ pub(crate) fn exact_test_live_dollar_continuation_commands_emit_ui_intents() {
     );
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-    assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
-        &[
-            UiIntent::StartContinuation {
-                mode: "ralph".to_string(),
-                command: "$ralph fix tests".to_string(),
-            },
-            UiIntent::StopContinuation {
-                reason: "$cancel".to_string(),
-            },
-        ]
-    );
+    let intents = intents.lock().expect("lock intents");
+    assert!(matches!(
+        intents.first(),
+        Some(UiIntent::WorkflowSkillDispatch {
+            intent: WorkflowIntent::Run,
+            command,
+            continuation_mode,
+            text,
+            ..
+        }) if command == "$ralph fix tests"
+            && continuation_mode.as_deref() == Some("ralph")
+            && text.contains("## Active workflow: ralph")
+            && text.contains("$ralph fix tests")
+    ));
+    assert!(matches!(
+        intents.last(),
+        Some(UiIntent::StopContinuation { reason }) if reason == "$cancel"
+    ));
 }
 
 #[cfg(test)]
@@ -4905,13 +4940,20 @@ pub(crate) fn exact_test_startup_dollar_command_reports_blocked_workflow() {
     };
     let mut live = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(live_sink));
     live.execute_dollar_command("team", Some("coordinate this slice".to_string()));
-    assert_eq!(
-        live_intents.lock().expect("lock live intents").as_slice(),
-        &[UiIntent::WorkflowIntent {
-            intent: WorkflowIntent::Team,
-            command: "$team coordinate this slice".to_string(),
-        }],
-        "team dollar family command should dispatch as a native workflow intent"
+    let live_intents = live_intents.lock().expect("lock live intents");
+    assert!(
+        matches!(
+            live_intents.first(),
+            Some(UiIntent::WorkflowSkillDispatch {
+                intent: WorkflowIntent::Team,
+                command,
+                text,
+                ..
+            }) if command == "$team coordinate this slice"
+                && text.contains("## Active workflow: team")
+                && text.contains("$team coordinate this slice")
+        ),
+        "team dollar family command should dispatch as a native workflow intent: {live_intents:?}"
     );
 }
 

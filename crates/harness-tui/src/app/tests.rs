@@ -5460,13 +5460,18 @@ fn dollar_command_invocation_executes_workflow_command() {
     }
     app.handle_key(key(KeyCode::Enter));
 
-    assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
-        &[UiIntent::WorkflowIntent {
+    let intents = intents.lock().expect("lock intents");
+    assert!(matches!(
+        intents.first(),
+        Some(UiIntent::WorkflowSkillDispatch {
             intent: WorkflowIntent::PlanConsensus,
-            command: "$ralplan hard migration".to_string(),
-        }]
-    );
+            command,
+            text,
+            ..
+        }) if command == "$ralplan hard migration"
+            && text.contains("## Active workflow: plan")
+            && text.contains("$ralplan hard migration")
+    ));
 }
 
 #[test]
@@ -5641,31 +5646,43 @@ fn command_search_indexes_ultragoal_dollar_and_slash_aliases() {
 
 #[test]
 fn dollar_agent_shortcuts_dispatch_native_task_roles() {
-    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
-    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
-        let intents = Arc::clone(&intents);
-        Arc::new(move |intent| {
-            intents.lock().expect("lock intents").push(intent);
-        })
-    };
+    for (alias, expected_role, task) in [
+        ("analyze", "analyst", "investigate flaky tests"),
+        ("build-fix", "build-fixer", "repair cargo check"),
+        ("code-review", "code-reviewer", "review current diff"),
+        ("design", "designer", "shape the settings UI"),
+        ("git-master", "git-master", "prepare atomic commits"),
+        (
+            "security-review",
+            "security-reviewer",
+            "audit auth boundaries",
+        ),
+    ] {
+        let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+        let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+            let intents = Arc::clone(&intents);
+            Arc::new(move |intent| {
+                intents.lock().expect("lock intents").push(intent);
+            })
+        };
 
-    let mut app = AppState::new_live(None, false, Some(sink));
-    app.execute_dollar_command("git-master", Some("prepare atomic commits".to_string()));
+        let mut app = AppState::new_live(None, false, Some(sink));
+        app.execute_dollar_command(alias, Some(task.to_string()));
 
-    let intents = intents.lock().expect("lock intents");
-    assert!(matches!(
-        &intents[0],
-        UiIntent::SlashAgentTask { role, task, command, .. }
-            if role == "git-master"
-                && task == "prepare atomic commits"
-                && command == "$git-master prepare atomic commits"
-    ));
+        let intents = intents.lock().expect("lock intents");
+        assert!(matches!(
+            &intents[0],
+            UiIntent::SlashAgentTask { role, task: actual_task, command, .. }
+                if role == expected_role
+                    && actual_task == task
+                    && command == &format!("${alias} {task}")
+        ));
+    }
 }
 
 #[test]
 fn dollar_workflow_aliases_dispatch_as_workflow_intents() {
     for (alias, expected_intent) in [
-        ("analyze", WorkflowIntent::Analyze),
         ("team", WorkflowIntent::Team),
         ("ultragoal", WorkflowIntent::GoalLedger),
         ("visual-verdict", WorkflowIntent::Visual),
@@ -5682,13 +5699,16 @@ fn dollar_workflow_aliases_dispatch_as_workflow_intents() {
         app.execute_dollar_command(alias, Some("run the workflow".to_string()));
 
         let intents = intents.lock().expect("lock intents");
-        assert_eq!(
-            intents.as_slice(),
-            &[UiIntent::WorkflowIntent {
-                intent: expected_intent,
-                command: format!("${alias} run the workflow"),
-            }],
-            "${alias} should dispatch through a native workflow intent"
+        assert!(
+            intents.iter().any(|intent| matches!(
+                intent,
+                UiIntent::WorkflowSkillDispatch { intent, command, text, .. }
+                    if *intent == expected_intent
+                        && command == &format!("${alias} run the workflow")
+                        && text.contains("## Active workflow:")
+                        && text.contains(&format!("${alias} run the workflow"))
+            )),
+            "${alias} should dispatch through a gated workflow skill intent, got {intents:?}"
         );
     }
 }
@@ -5831,13 +5851,18 @@ fn dollar_workflow_command_emits_typed_intent_without_shell_prompt() {
     }
     app.handle_key(key(KeyCode::Enter));
 
-    assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
-        &[UiIntent::WorkflowIntent {
+    let intents = intents.lock().expect("lock intents");
+    assert!(matches!(
+        intents.first(),
+        Some(UiIntent::WorkflowSkillDispatch {
             intent: WorkflowIntent::PlanConsensus,
-            command: "$ralplan deploy docs".to_string(),
-        }]
-    );
+            command,
+            text,
+            ..
+        }) if command == "$ralplan deploy docs"
+            && text.contains("## Active workflow: plan")
+            && text.contains("$ralplan deploy docs")
+    ));
 }
 
 #[test]
@@ -5876,14 +5901,136 @@ fn dollar_extended_workflow_commands_emit_typed_intents() {
         }
         app.handle_key(key(KeyCode::Enter));
 
-        assert_eq!(
-            intents.lock().expect("lock intents").as_slice(),
-            &[UiIntent::WorkflowIntent {
-                intent: expected_intent,
-                command: expected_command.to_string(),
-            }],
-            "unexpected workflow intent for {typed}"
+        let intents = intents.lock().expect("lock intents");
+        assert!(
+            matches!(
+                intents.first(),
+                Some(UiIntent::WorkflowSkillDispatch { intent, command, text, .. })
+                    if *intent == expected_intent
+                        && command == expected_command
+                        && text.contains(expected_command)
+            ),
+            "unexpected gated workflow skill intent for {typed}: {intents:?}"
         );
+    }
+}
+
+#[test]
+fn dollar_multi_skill_chain_preserves_deferred_handoff_context() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(None, false, Some(sink));
+    for ch in "$ralplan $ralph finish dossier".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+
+    assert_eq!(
+        app.typed_dollar_invocation(),
+        Some(("ralplan", Some("finish dossier".to_string())))
+    );
+
+    app.handle_key(key(KeyCode::Enter));
+
+    let intents = intents.lock().expect("lock intents");
+    assert!(matches!(
+        intents.first(),
+        Some(UiIntent::WorkflowSkillDispatch { intent, command, text, .. })
+            if *intent == WorkflowIntent::PlanConsensus
+                && command == "$ralplan $ralph finish dossier"
+                && text.contains("workflow_chain=[ralplan,ralph]")
+                && text.contains("deferred_skills=[ralph]")
+                && text.contains("deferred_handoff=Record deferred workflow entries as handoff context/evidence only")
+                && text.contains("do not start deferred workflows")
+    ));
+}
+
+#[test]
+fn dollar_deep_interview_chain_records_ralplan_as_next_workflow() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(None, false, Some(sink));
+    for ch in "$deep-interview $ralplan clarify rollout".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
+
+    let intents = intents.lock().expect("lock intents");
+    assert!(matches!(
+        intents.first(),
+        Some(UiIntent::WorkflowSkillDispatch { intent, command, text, .. })
+            if *intent == WorkflowIntent::DeepInterview
+                && command == "$deep-interview $ralplan clarify rollout"
+                && text.contains("workflow_chain=[deep-interview,ralplan]")
+                && text.contains("deferred_skills=[plan]")
+    ));
+}
+
+#[test]
+fn dollar_team_staffing_tokens_are_native_team_context() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(None, false, Some(sink));
+    for ch in "$team 2:executor 1:verifier finish plan".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
+
+    let intents = intents.lock().expect("lock intents");
+    assert!(matches!(
+        intents.first(),
+        Some(UiIntent::WorkflowSkillDispatch { intent, command, text, .. })
+            if *intent == WorkflowIntent::Team
+                && command == "$team 2:executor 1:verifier finish plan"
+                && text.contains("team_staffing=[2:executor,1:verifier]")
+                && text.contains("Use native team_create/team_task_create/team_send_message/team_list tools")
+                && !text.contains("tmux")
+    ));
+}
+
+#[test]
+fn dollar_multi_skill_invalid_chain_fails_closed_with_draft_preserved() {
+    for typed in [
+        "$ralph $ralplan finish dossier",
+        "$ralplan $missing finish dossier",
+    ] {
+        let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+        let sink = {
+            let intents = Arc::clone(&intents);
+            Arc::new(move |intent| {
+                intents.lock().expect("lock intents").push(intent);
+            })
+        };
+
+        let mut app = AppState::new_live(None, false, Some(sink));
+        for ch in typed.chars() {
+            app.handle_key(key(KeyCode::Char(ch)));
+        }
+        app.handle_key(key(KeyCode::Enter));
+
+        assert_eq!(app.prompt_buffer, typed);
+        assert!(intents.lock().expect("lock intents").is_empty());
+        assert!(app
+            .status_banner
+            .as_deref()
+            .is_some_and(|banner| banner.contains("draft preserved")));
     }
 }
 

@@ -39,6 +39,46 @@ enum LineageSlashCommand {
     Clone,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::app) struct DollarWorkflowInvocation {
+    command: &'static str,
+    args: Option<String>,
+    deferred_commands: Vec<&'static str>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::app) struct DollarCommandParseError {
+    pub(in crate::app) message: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct WorkflowSkillPromptContext {
+    primary_alias: Option<String>,
+    deferred_skills: Vec<String>,
+    workflow_chain: Vec<String>,
+    team_staffing: Vec<String>,
+}
+
+struct WorkflowSkillExecution<'a> {
+    base_command: &'a str,
+    skill: &'a str,
+    intent: WorkflowIntent,
+    continuation_mode: Option<ContinuationMode>,
+    requires_user_task: bool,
+    preserved_draft: Option<String>,
+    context: WorkflowSkillPromptContext,
+}
+
+struct WorkflowSkillDispatch<'a> {
+    base_command: &'a str,
+    skill: &'a str,
+    intent: WorkflowIntent,
+    continuation_mode: Option<ContinuationMode>,
+    preserved_draft: Option<String>,
+    skill_body: &'a str,
+    context: WorkflowSkillPromptContext,
+}
+
 impl LineageSlashCommand {
     fn status_banner(self, blocked_reason: Option<&'static str>) -> &'static str {
         match (self, blocked_reason) {
@@ -54,6 +94,68 @@ impl LineageSlashCommand {
             (Self::Tree, _) => "session tree is prepared; browser is not available yet",
             (Self::Clone, _) => "Harness session clone blocked: no stable prefix is available",
         }
+    }
+}
+
+impl WorkflowSkillPromptContext {
+    fn from_dollar_invocation(invocation: &DollarWorkflowInvocation) -> Self {
+        let mut context = Self {
+            primary_alias: Some(invocation.command.to_string()),
+            workflow_chain: std::iter::once(invocation.command.to_string())
+                .chain(
+                    invocation
+                        .deferred_commands
+                        .iter()
+                        .map(|command| (*command).to_string()),
+                )
+                .collect(),
+            deferred_skills: invocation
+                .deferred_commands
+                .iter()
+                .filter_map(|command| workflow_skill_for_dollar_alias(command))
+                .map(str::to_string)
+                .collect(),
+            team_staffing: Vec::new(),
+        };
+
+        if matches!(invocation.command, "team" | "swarm") {
+            context.team_staffing =
+                parse_team_staffing_tokens(invocation.args.as_deref().unwrap_or_default());
+        }
+
+        context
+    }
+
+    fn active_skills_line(&self, skill: &str) -> String {
+        format!("[{skill}]")
+    }
+
+    fn deferred_skills_line(&self) -> String {
+        bracketed_csv(&self.deferred_skills)
+    }
+
+    fn workflow_chain_line(&self, fallback_skill: &str) -> String {
+        if self.workflow_chain.is_empty() {
+            format!("[{fallback_skill}]")
+        } else {
+            bracketed_csv(&self.workflow_chain)
+        }
+    }
+
+    fn team_staffing_line(&self) -> Option<String> {
+        (!self.team_staffing.is_empty()).then(|| bracketed_csv(&self.team_staffing))
+    }
+}
+
+impl DollarWorkflowInvocation {
+    fn base_command(&self) -> String {
+        let mut command = format!("${}", self.command);
+        for deferred in &self.deferred_commands {
+            command.push(' ');
+            command.push('$');
+            command.push_str(deferred);
+        }
+        command
     }
 }
 
@@ -1325,18 +1427,24 @@ impl AppState {
     }
 
     pub(in crate::app) fn typed_dollar_invocation(&self) -> Option<(&str, Option<String>)> {
+        self.typed_dollar_workflow_invocation()
+            .ok()
+            .flatten()
+            .map(|invocation| (invocation.command, invocation.args))
+    }
+
+    pub(in crate::app) fn typed_dollar_workflow_invocation(
+        &self,
+    ) -> Result<Option<DollarWorkflowInvocation>, DollarCommandParseError> {
         let command = self.prompt_buffer.trim();
-        let command = command.strip_prefix('$')?;
-        let (command, args) = command
-            .split_once(char::is_whitespace)
-            .map(|(command, args)| (command, Some(args.trim().to_string())))
-            .unwrap_or((command, None));
-        let command = command.trim();
-        if command.is_empty() {
-            return None;
-        }
-        let canonical = self.find_dollar_command(command)?;
-        Some((canonical, args.filter(|args| !args.is_empty())))
+        let Some(command) = command.strip_prefix('$') else {
+            return Ok(None);
+        };
+        parse_dollar_workflow_invocation(command, |candidate| self.find_dollar_command(candidate))
+    }
+
+    pub(in crate::app) fn typed_dollar_parse_error(&self) -> Option<DollarCommandParseError> {
+        self.typed_dollar_workflow_invocation().err()
     }
 
     pub(crate) fn slash_command_column_width(&self) -> usize {
@@ -1657,14 +1765,15 @@ impl AppState {
                 intent,
                 continuation_mode,
                 requires_user_task,
-            } => self.execute_workflow_skill_command(
-                &base_command,
+            } => self.execute_workflow_skill_command(WorkflowSkillExecution {
+                base_command: &base_command,
                 skill,
                 intent,
                 continuation_mode,
                 requires_user_task,
                 preserved_draft,
-            ),
+                context: WorkflowSkillPromptContext::default(),
+            }),
             CommandAction::WorkflowIntent { intent } => self.emit_workflow_intent(
                 preserved_draft,
                 intent,
@@ -1731,6 +1840,40 @@ impl AppState {
         }
     }
 
+    pub(in crate::app) fn execute_dollar_workflow_invocation(
+        &mut self,
+        invocation: DollarWorkflowInvocation,
+    ) {
+        self.clear_slash_menu();
+        if !self.dollar_command_available(invocation.command) {
+            self.restore_slash_draft(invocation.args);
+            self.set_status_banner(Some(format!(
+                "dollar command ${} is not available in this TUI state",
+                invocation.command
+            )));
+            return;
+        }
+
+        let Some(spec) = dollar_command_spec(invocation.command) else {
+            self.restore_slash_draft(invocation.args);
+            self.set_status_banner(Some(format!(
+                "dollar command ${} is not available",
+                invocation.command
+            )));
+            return;
+        };
+
+        let base_command = invocation.base_command();
+        let context = WorkflowSkillPromptContext::from_dollar_invocation(&invocation);
+        self.execute_registered_dollar_command_with_context(
+            &base_command,
+            invocation.command,
+            spec,
+            invocation.args,
+            context,
+        );
+    }
+
     fn execute_registered_dollar_command(
         &mut self,
         typed_command: &str,
@@ -1738,31 +1881,47 @@ impl AppState {
         preserved_draft: Option<String>,
     ) {
         let base_command = format!("${typed_command}");
+        self.execute_registered_dollar_command_with_context(
+            &base_command,
+            typed_command,
+            spec,
+            preserved_draft,
+            WorkflowSkillPromptContext::default(),
+        );
+    }
+
+    fn execute_registered_dollar_command_with_context(
+        &mut self,
+        base_command: &str,
+        typed_command: &str,
+        spec: CommandSpec,
+        preserved_draft: Option<String>,
+        context: WorkflowSkillPromptContext,
+    ) {
         match spec.action {
             CommandAction::WorkflowSkill {
                 skill,
                 intent,
                 continuation_mode,
                 requires_user_task,
-            } => self.execute_workflow_skill_command(
-                &base_command,
+            } => self.execute_workflow_skill_command(WorkflowSkillExecution {
+                base_command,
                 skill,
                 intent,
                 continuation_mode,
                 requires_user_task,
                 preserved_draft,
-            ),
+                context,
+            }),
             CommandAction::WorkflowIntent { intent } => self.emit_workflow_intent(
                 preserved_draft,
                 intent,
-                &base_command,
+                base_command,
                 &format!("{} intent queued", intent.as_str()),
             ),
             CommandAction::StartContinuation { mode } => {
-                let command = Self::continuation_command_with_draft(
-                    &base_command,
-                    preserved_draft.as_deref(),
-                );
+                let command =
+                    Self::continuation_command_with_draft(base_command, preserved_draft.as_deref());
                 self.restore_slash_draft(preserved_draft);
                 self.set_status_banner(Some(format!(
                     "starting bounded {} continuation",
@@ -1777,7 +1936,7 @@ impl AppState {
                 self.restore_slash_draft(preserved_draft);
                 self.set_status_banner(Some("stopping active continuation".to_string()));
                 self.emit_ui_intent(UiIntent::StopContinuation {
-                    reason: base_command,
+                    reason: base_command.to_string(),
                 });
             }
             CommandAction::BlockedWorkflow { reason, .. } => {
@@ -1803,15 +1962,17 @@ impl AppState {
         }
     }
 
-    fn execute_workflow_skill_command(
-        &mut self,
-        base_command: &str,
-        skill: &str,
-        intent: WorkflowIntent,
-        continuation_mode: Option<ContinuationMode>,
-        requires_user_task: bool,
-        preserved_draft: Option<String>,
-    ) {
+    fn execute_workflow_skill_command(&mut self, request: WorkflowSkillExecution<'_>) {
+        let WorkflowSkillExecution {
+            base_command,
+            skill,
+            intent,
+            continuation_mode,
+            requires_user_task,
+            preserved_draft,
+            context,
+        } = request;
+
         if requires_user_task
             && preserved_draft
                 .as_deref()
@@ -1834,16 +1995,18 @@ impl AppState {
             }
         };
 
-        self.dispatch_workflow_skill_command(
+        self.dispatch_workflow_skill_command_with_context(WorkflowSkillDispatch {
             base_command,
             skill,
             intent,
             continuation_mode,
             preserved_draft,
-            &skill_body,
-        );
+            skill_body: &skill_body,
+            context,
+        });
     }
 
+    #[cfg(test)]
     fn dispatch_workflow_skill_command(
         &mut self,
         base_command: &str,
@@ -1853,6 +2016,28 @@ impl AppState {
         preserved_draft: Option<String>,
         skill_body: &str,
     ) {
+        self.dispatch_workflow_skill_command_with_context(WorkflowSkillDispatch {
+            base_command,
+            skill,
+            intent,
+            continuation_mode,
+            preserved_draft,
+            skill_body,
+            context: WorkflowSkillPromptContext::default(),
+        });
+    }
+
+    fn dispatch_workflow_skill_command_with_context(&mut self, request: WorkflowSkillDispatch<'_>) {
+        let WorkflowSkillDispatch {
+            base_command,
+            skill,
+            intent,
+            continuation_mode,
+            preserved_draft,
+            skill_body,
+            context,
+        } = request;
+
         let command =
             Self::continuation_command_with_draft(base_command, preserved_draft.as_deref());
         let prompt_template = workflow_skill_prompt_template(
@@ -1861,20 +2046,17 @@ impl AppState {
             intent,
             continuation_mode,
             skill_body,
+            &context,
         );
 
         self.set_status_banner(Some(format!("workflow skill {skill} prompt queued")));
-        self.emit_ui_intent(UiIntent::WorkflowIntent {
+        self.dispatch_command_template_prompt_with_workflow_gate(
+            preserved_draft,
+            &prompt_template,
             intent,
-            command: command.clone(),
-        });
-        if let Some(mode) = continuation_mode {
-            self.emit_ui_intent(UiIntent::StartContinuation {
-                mode: mode.as_str().to_string(),
-                command,
-            });
-        }
-        self.dispatch_command_template_prompt(preserved_draft, &prompt_template);
+            command,
+            continuation_mode,
+        );
     }
 
     fn execute_dollar_slash_agent_command(
@@ -1920,16 +2102,7 @@ impl AppState {
         preserved_draft: Option<String>,
         template: &str,
     ) {
-        let draft = preserved_draft
-            .and_then(|draft| (!draft.trim().is_empty()).then_some(draft))
-            .unwrap_or_default();
-        let text = if template.contains("{{args}}") {
-            template.replace("{{args}}", draft.trim())
-        } else if draft.is_empty() {
-            template.to_string()
-        } else {
-            format!("{template}\n\nUser draft:\n{draft}")
-        };
+        let text = render_command_template_prompt(preserved_draft, template);
         if self.startup_mode {
             set_pending_live_launch_metadata(self.launch_metadata.clone());
             set_pending_live_prompt_auto_submit(Some(text.clone()));
@@ -1941,6 +2114,42 @@ impl AppState {
             return;
         }
         self.dispatch_submitted_prompt(text);
+    }
+
+    fn dispatch_command_template_prompt_with_workflow_gate(
+        &mut self,
+        preserved_draft: Option<String>,
+        template: &str,
+        intent: WorkflowIntent,
+        command: String,
+        continuation_mode: Option<ContinuationMode>,
+    ) {
+        let text = render_command_template_prompt(preserved_draft, template);
+        if self.startup_mode {
+            set_pending_live_launch_metadata(self.launch_metadata.clone());
+            set_pending_live_prompt_auto_submit(Some(text.clone()));
+            self.startup_mode = false;
+            self.focus = Focus::Prompt;
+            self.record_submitted_prompt_locally(text);
+            self.emit_ui_intent(UiIntent::NewSession);
+            self.should_quit = true;
+            return;
+        }
+
+        let selected_file_tags = self.selected_file_tags();
+        let selected_agent_tags = self.selected_agent_tags();
+        let selected_resource_tags = self.selected_resource_tags();
+        self.record_submitted_prompt_locally(text.clone());
+        self.emit_ui_intent(UiIntent::WorkflowSkillDispatch {
+            intent,
+            command,
+            continuation_mode: continuation_mode.map(|mode| mode.as_str().to_string()),
+            text,
+            selected_file_tags,
+            selected_agent_tags,
+            selected_resource_tags,
+            launch_metadata: self.launch_metadata.clone(),
+        });
     }
 
     fn block_staged_workflow_command(&mut self, preserved_draft: Option<String>, reason: &str) {
@@ -3918,16 +4127,233 @@ fn dollar_command_spec(command: &str) -> Option<CommandSpec> {
         .cloned()
 }
 
+fn parse_dollar_workflow_invocation(
+    command: &str,
+    mut resolve: impl FnMut(&str) -> Option<&'static str>,
+) -> Result<Option<DollarWorkflowInvocation>, DollarCommandParseError> {
+    let mut parts = command.split_whitespace().peekable();
+    let Some(primary_token) = parts.next() else {
+        return Ok(None);
+    };
+    let Some(primary) = resolve(primary_token) else {
+        return Ok(None);
+    };
+
+    let mut deferred_commands = Vec::new();
+    let mut args = Vec::new();
+    while let Some(token) = parts.next() {
+        if args.is_empty() {
+            if let Some(candidate) = token.strip_prefix('$') {
+                if candidate.is_empty() {
+                    return Err(DollarCommandParseError {
+                        message: "deferred dollar workflow token is empty".to_string(),
+                    });
+                }
+                let Some(deferred) = resolve(candidate) else {
+                    return Err(DollarCommandParseError {
+                        message: format!(
+                            "unknown deferred dollar workflow `${candidate}`; draft preserved"
+                        ),
+                    });
+                };
+                deferred_commands.push(deferred);
+                continue;
+            }
+        }
+
+        args.push(token.to_string());
+        args.extend(parts.map(str::to_string));
+        break;
+    }
+
+    validate_deferred_dollar_chain(primary, &deferred_commands)?;
+
+    let args = (!args.is_empty()).then(|| args.join(" "));
+    Ok(Some(DollarWorkflowInvocation {
+        command: primary,
+        args,
+        deferred_commands,
+    }))
+}
+
+fn workflow_skill_for_dollar_alias(alias: &str) -> Option<&'static str> {
+    let spec = dollar_command_spec(alias)?;
+    match spec.action {
+        CommandAction::WorkflowSkill { skill, .. } => Some(skill),
+        _ => None,
+    }
+}
+
+fn parse_team_staffing_tokens(args: &str) -> Vec<String> {
+    args.split_whitespace()
+        .take_while(|token| is_team_staffing_token(token))
+        .map(str::to_string)
+        .collect()
+}
+
+fn is_team_staffing_token(token: &str) -> bool {
+    let Some((count, role)) = token.split_once(':') else {
+        return false;
+    };
+    !count.is_empty()
+        && count.chars().all(|ch| ch.is_ascii_digit())
+        && count.parse::<usize>().is_ok_and(|count| count > 0)
+        && !role.is_empty()
+        && role
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_'))
+}
+
+fn bracketed_csv(values: &[String]) -> String {
+    if values.is_empty() {
+        "[]".to_string()
+    } else {
+        format!("[{}]", values.join(","))
+    }
+}
+
+fn validate_deferred_dollar_chain(
+    primary: &str,
+    deferred_commands: &[&str],
+) -> Result<(), DollarCommandParseError> {
+    if deferred_commands.is_empty() {
+        return Ok(());
+    }
+
+    let mut chain = Vec::with_capacity(deferred_commands.len() + 1);
+    chain.push(primary);
+    chain.extend(deferred_commands.iter().copied());
+
+    let mut previous_mode = None;
+    for alias in chain {
+        let Some(spec) = dollar_command_spec(alias) else {
+            return Err(DollarCommandParseError {
+                message: format!("unknown dollar workflow `${alias}`; draft preserved"),
+            });
+        };
+        let Some(mode) = workflow_mode_for_dollar_spec(alias, &spec) else {
+            return Err(DollarCommandParseError {
+                message: format!(
+                    "dollar command `${alias}` cannot be deferred in a workflow chain; use it directly"
+                ),
+            });
+        };
+        if let Some(previous) = previous_mode {
+            if !deferred_workflow_transition_allowed(previous, mode) {
+                return Err(DollarCommandParseError {
+                    message: format!(
+                        "incompatible deferred workflow chain `${previous}` -> `${mode}`; draft preserved"
+                    ),
+                });
+            }
+        }
+        previous_mode = Some(mode);
+    }
+
+    Ok(())
+}
+
+fn workflow_mode_for_dollar_spec(alias: &str, spec: &CommandSpec) -> Option<&'static str> {
+    match spec.action {
+        CommandAction::WorkflowSkill {
+            skill,
+            intent,
+            continuation_mode,
+            ..
+        } => {
+            if let Some(mode) = continuation_mode {
+                return Some(mode.as_str());
+            }
+            match intent {
+                WorkflowIntent::PlanConsensus => Some("ralplan"),
+                WorkflowIntent::DeepInterview => Some("deep-interview"),
+                WorkflowIntent::Team => Some("team"),
+                WorkflowIntent::Autopilot => Some("autopilot"),
+                WorkflowIntent::Qa => Some("ultraqa"),
+                WorkflowIntent::GoalLedger => Some("ultragoal"),
+                WorkflowIntent::ResearchMission => Some("autoresearch"),
+                WorkflowIntent::Ecomode => Some("ecomode"),
+                WorkflowIntent::Pipeline => Some("pipeline"),
+                WorkflowIntent::Visual if skill == "visual-ralph" => Some("visual-ralph"),
+                WorkflowIntent::Visual if skill == "visual-verdict" => Some("visual-verdict"),
+                WorkflowIntent::WebClone => Some("web-clone"),
+                WorkflowIntent::Run => match alias {
+                    "ralph" => Some("ralph"),
+                    "ultrawork" | "ulw" => Some("ultrawork"),
+                    _ => None,
+                },
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+fn deferred_workflow_transition_allowed(previous: &str, next: &str) -> bool {
+    matches!(
+        (previous, next),
+        ("deep-interview", "ralplan")
+            | ("deep-interview", "autoresearch")
+            | ("ralplan", "ralph")
+            | ("ralplan", "team")
+            | ("ralplan", "autopilot")
+            | ("ralplan", "autoresearch")
+            | ("ralplan", "ultrawork")
+            | ("ralplan", "ultraqa")
+            | ("team", "ralph")
+            | ("team", "ultrawork")
+            | ("ultrawork", "team")
+    )
+}
+
 fn load_workflow_skill_body(skill: &str) -> Result<String, String> {
     let Some(path) = workflow_skill_path(skill) else {
         return Err(format!("workflow skill {skill} has an invalid skill id"));
     };
-    fs::read_to_string(&path).map_err(|error| {
-        format!(
-            "workflow skill {skill} is unavailable at {}: {error}",
-            path.display()
+
+    let mut candidates = vec![path.clone()];
+    if !path.is_absolute() {
+        if let Ok(cwd) = std::env::current_dir() {
+            push_ancestor_skill_candidates(&mut candidates, &cwd, &path);
+        }
+        push_ancestor_skill_candidates(
+            &mut candidates,
+            Path::new(env!("CARGO_MANIFEST_DIR")),
+            &path,
+        );
+    }
+
+    let mut last_error = None;
+    for candidate in &candidates {
+        match fs::read_to_string(candidate) {
+            Ok(body) => return Ok(body),
+            Err(error) => last_error = Some((candidate.clone(), error)),
+        }
+    }
+
+    let (failed_path, error) = last_error.unwrap_or_else(|| {
+        (
+            path.clone(),
+            std::io::Error::new(std::io::ErrorKind::NotFound, "no skill path candidates"),
         )
-    })
+    });
+    Err(format!(
+        "workflow skill {skill} is unavailable at {}: {error}",
+        failed_path.display()
+    ))
+}
+
+fn push_ancestor_skill_candidates(
+    candidates: &mut Vec<PathBuf>,
+    start: &Path,
+    relative_path: &Path,
+) {
+    for ancestor in start.ancestors() {
+        let candidate = ancestor.join(relative_path);
+        if !candidates.contains(&candidate) {
+            candidates.push(candidate);
+        }
+    }
 }
 
 fn workflow_skill_path(skill: &str) -> Option<PathBuf> {
@@ -3952,11 +4378,24 @@ fn workflow_skill_prompt_template(
     intent: WorkflowIntent,
     continuation_mode: Option<ContinuationMode>,
     skill_body: &str,
+    context: &WorkflowSkillPromptContext,
 ) -> String {
     let skill_body = skill_body.replace("{{PROMPT}}", "{{args}}");
     let continuation = continuation_mode
         .map(|mode| mode.as_str().to_string())
         .unwrap_or_else(|| "none".to_string());
+    let primary_alias = context.primary_alias.as_deref().unwrap_or(skill);
+    let active_skills = context.active_skills_line(skill);
+    let deferred_skills = context.deferred_skills_line();
+    let workflow_chain = context.workflow_chain_line(primary_alias);
+    let team_staffing = context
+        .team_staffing_line()
+        .map(|staffing| {
+            format!(
+                "\nteam_staffing={staffing}\nteam_handoff=Use native team_create/team_task_create/team_send_message/team_list tools as the authoritative team substrate; staffing tokens are planning context, not shell launch instructions."
+            )
+        })
+        .unwrap_or_default();
 
     format!(
         "{base_command} {{{{args}}}}\n\n\
@@ -3965,10 +4404,26 @@ fn workflow_skill_prompt_template(
          ## Workflow context\n\
          workflow_intent={intent}\n\
          continuation_mode={continuation}\n\
-         active_skills=[{skill}]\n\
-         Follow the workflow skill above. Use native harness tools and coordinator-owned workflow evidence; do not write per-mode `.omx/state/*.json` files.",
+         active_skills={active_skills}\n\
+         deferred_skills={deferred_skills}\n\
+         workflow_chain={workflow_chain}\n\
+         deferred_handoff=Record deferred workflow entries as handoff context/evidence only; do not start deferred workflows until an explicit approval or follow-up command.{team_staffing}\n\
+         Follow the workflow skill above. Use native Harness tools and coordinator-owned workflow evidence; do not use external state files as workflow authority.",
         intent = intent.as_str(),
     )
+}
+
+fn render_command_template_prompt(preserved_draft: Option<String>, template: &str) -> String {
+    let draft = preserved_draft
+        .and_then(|draft| (!draft.trim().is_empty()).then_some(draft))
+        .unwrap_or_default();
+    if template.contains("{{args}}") {
+        template.replace("{{args}}", draft.trim())
+    } else if draft.is_empty() {
+        template.to_string()
+    } else {
+        format!("{template}\n\nUser draft:\n{draft}")
+    }
 }
 
 fn slash_command_spec(command: &str) -> Option<CommandSpec> {
@@ -4337,18 +4792,20 @@ mod tests {
         );
 
         let intents = intents.lock().expect("lock intents");
-        let [UiIntent::WorkflowIntent { intent, command }, UiIntent::StartContinuation {
-            mode,
-            command: continuation_command,
-        }, UiIntent::SubmitPrompt { text, .. }] = intents.as_slice()
+        let [UiIntent::WorkflowSkillDispatch {
+            intent,
+            command,
+            continuation_mode,
+            text,
+            ..
+        }] = intents.as_slice()
         else {
-            panic!("expected workflow, continuation, and prompt intents, got {intents:?}");
+            panic!("expected gated workflow skill dispatch intent, got {intents:?}");
         };
 
         assert_eq!(*intent, WorkflowIntent::Run);
         assert_eq!(command, "$ralph ship the slice");
-        assert_eq!(mode, "ralph");
-        assert_eq!(continuation_command, "$ralph ship the slice");
+        assert_eq!(continuation_mode.as_deref(), Some("ralph"));
         assert!(text.contains("$ralph ship the slice"));
         assert!(text.contains("## Active workflow: ralph"));
         assert!(text.contains("Ralph body for ship the slice"));
