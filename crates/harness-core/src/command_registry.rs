@@ -11,6 +11,7 @@ pub struct CommandSpec {
     pub description: &'static str,
     pub aliases: &'static [&'static str],
     pub dollar_aliases: &'static [&'static str],
+    pub dollar_alias_descriptions: &'static [(&'static str, &'static str)],
     pub surface: CommandSurface,
     pub effect: CommandEffect,
     pub action: CommandAction,
@@ -26,6 +27,7 @@ pub enum CommandSurface {
     PromptTemplate,
     ProfileSwitch,
     NativeTool,
+    AgentShortcut,
     TuiAction,
 }
 
@@ -38,6 +40,7 @@ impl CommandSurface {
             Self::PromptTemplate => "prompt_template",
             Self::ProfileSwitch => "profile_switch",
             Self::NativeTool => "native_tool",
+            Self::AgentShortcut => "agent_shortcut",
             Self::TuiAction => "tui_action",
         }
     }
@@ -52,6 +55,7 @@ pub enum CommandEffect {
     SubmitPrompt,
     SwitchProfile,
     InvokeNativeTool,
+    ScheduleAgentTask,
     UpdateTuiState,
 }
 
@@ -65,6 +69,7 @@ impl CommandEffect {
             Self::SubmitPrompt => "submit_prompt",
             Self::SwitchProfile => "switch_profile",
             Self::InvokeNativeTool => "invoke_native_tool",
+            Self::ScheduleAgentTask => "schedule_agent_task",
             Self::UpdateTuiState => "update_tui_state",
         }
     }
@@ -101,6 +106,9 @@ pub enum CommandAction {
     NativeTool {
         tool_id: &'static str,
     },
+    SlashAgent {
+        role: &'static str,
+    },
     WorkflowIntent {
         intent: WorkflowIntent,
     },
@@ -135,6 +143,33 @@ pub enum WorkflowIntent {
     GoalLedger,
     ResearchMission,
     Wiki,
+    DeepInterview,
+    Team,
+    Autopilot,
+    Analyze,
+    Review,
+    SecurityReview,
+    Doctor,
+    Help,
+    Hud,
+    Note,
+    Skill,
+    Trace,
+    ConfigureNotifications,
+    Design,
+    Cleanup,
+    Qa,
+    Performance,
+    Pipeline,
+    Tdd,
+    Visual,
+    WebClone,
+    Ecomode,
+    DeepSearch,
+    RalphInit,
+    StartWork,
+    Handoff,
+    Hyperplan,
 }
 
 impl WorkflowIntent {
@@ -150,6 +185,33 @@ impl WorkflowIntent {
             Self::GoalLedger => "workflow.goal_ledger",
             Self::ResearchMission => "workflow.research_mission",
             Self::Wiki => "workflow.wiki",
+            Self::DeepInterview => "workflow.deep_interview",
+            Self::Team => "workflow.team_escalation",
+            Self::Autopilot => "workflow.autopilot",
+            Self::Analyze => "workflow.analysis",
+            Self::Review => "workflow.review",
+            Self::SecurityReview => "workflow.security_review",
+            Self::Doctor => "workflow.doctor",
+            Self::Help => "workflow.help",
+            Self::Hud => "workflow.hud",
+            Self::Note => "workflow.note",
+            Self::Skill => "workflow.skill_management",
+            Self::Trace => "workflow.trace",
+            Self::ConfigureNotifications => "workflow.configure_notifications",
+            Self::Design => "workflow.design",
+            Self::Cleanup => "workflow.cleanup",
+            Self::Qa => "workflow.qa",
+            Self::Performance => "workflow.performance",
+            Self::Pipeline => "workflow.pipeline",
+            Self::Tdd => "workflow.tdd",
+            Self::Visual => "workflow.visual",
+            Self::WebClone => "workflow.web_clone",
+            Self::Ecomode => "workflow.ecomode",
+            Self::DeepSearch => "workflow.deepsearch",
+            Self::RalphInit => "workflow.ralph_init",
+            Self::StartWork => "workflow.start_work",
+            Self::Handoff => "workflow.handoff",
+            Self::Hyperplan => "workflow.hyperplan",
         }
     }
 
@@ -163,7 +225,34 @@ impl WorkflowIntent {
             | Self::PlanConsensus
             | Self::GoalLedger
             | Self::ResearchMission
-            | Self::Wiki => CommandEffect::MutateCoordinatorState,
+            | Self::Wiki
+            | Self::DeepInterview
+            | Self::Team
+            | Self::Autopilot
+            | Self::Analyze
+            | Self::Review
+            | Self::SecurityReview
+            | Self::Doctor
+            | Self::Help
+            | Self::Hud
+            | Self::Note
+            | Self::Skill
+            | Self::Trace
+            | Self::ConfigureNotifications
+            | Self::Design
+            | Self::Cleanup
+            | Self::Qa
+            | Self::Performance
+            | Self::Pipeline
+            | Self::Tdd
+            | Self::Visual
+            | Self::WebClone
+            | Self::Ecomode
+            | Self::DeepSearch
+            | Self::RalphInit
+            | Self::StartWork
+            | Self::Handoff
+            | Self::Hyperplan => CommandEffect::MutateCoordinatorState,
         }
     }
 }
@@ -246,7 +335,11 @@ impl CommandRegistry {
                     intent: WorkflowIntent::PlanConsensus,
                 },
             )
-            .with_dollar_aliases(&["plan", "ralplan"]),
+            .with_dollar_aliases(&["plan", "ralplan"])
+            .with_dollar_alias_descriptions(&[
+                ("plan", "Create a strategic plan with optional interview workflow"),
+                ("ralplan", "Create a reviewed consensus plan"),
+            ]),
             spec(
                 "goal-ledger",
                 "Inspect or checkpoint workflow goal ledger state",
@@ -255,7 +348,14 @@ impl CommandRegistry {
                     intent: WorkflowIntent::GoalLedger,
                 },
             )
-            .with_dollar_aliases(&["goal", "ultragoal"]),
+            .with_dollar_aliases(&["goal", "ultragoal"])
+            .with_dollar_alias_descriptions(&[
+                ("goal", "Inspect or checkpoint workflow goal ledger state"),
+                (
+                    "ultragoal",
+                    "Create and execute durable repo-native multi-goal plans over goal artifacts",
+                ),
+            ]),
             spec(
                 "research-mission",
                 "Create or inspect validator-gated research mission state",
@@ -279,19 +379,18 @@ impl CommandRegistry {
                 },
             )
             .with_dollar_aliases(&["wiki"]),
-            disabled_spec(
+            spec(
                 "init-deep",
-                "Blocked until deep interview writes coordinator-owned intake evidence",
+                "Run one-question-at-a-time intake with mathematical ambiguity gating before execution",
                 &["deep-interview"],
-                CommandAction::BlockedWorkflow {
-                    reason: "deep interview is staged until it records coordinator-owned context/interview evidence; use /workflow-snapshot for explicit intake evidence",
-                    inventory_ref: "init-deep",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::DeepInterview,
                 },
             )
             .with_dollar_aliases(&["deep-interview"]),
             spec(
                 "ralph-loop",
-                "Start bounded Ralph continuation",
+                "Run a self-referential completion loop with architect verification",
                 &["ralph"],
                 CommandAction::StartContinuation {
                     mode: ContinuationMode::Ralph,
@@ -300,7 +399,7 @@ impl CommandRegistry {
             .with_dollar_aliases(&["ralph"]),
             spec(
                 "ulw-loop",
-                "Start bounded ultrawork continuation",
+                "Run parallel execution for high-throughput task completion",
                 &["ultrawork", "ulw"],
                 CommandAction::StartContinuation {
                     mode: ContinuationMode::Ultrawork,
@@ -315,365 +414,302 @@ impl CommandRegistry {
             ),
             spec(
                 "stop-continuation",
-                "Stop active continuation",
+                "Cancel an active workflow or continuation mode",
                 &[],
                 CommandAction::StopContinuation,
             )
             .with_dollar_aliases(&["cancel"]),
-            disabled_spec(
+            spec(
                 "refactor",
-                "Blocked until cleanup guidance is workflow-evidence mapped",
+                "Run a refactor workflow with behavior locks and verification evidence",
                 &[],
-                CommandAction::BlockedWorkflow {
-                    reason: "refactor guidance is staged until it maps behavior locks and verification evidence through workflow state",
-                    inventory_ref: "refactor",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Cleanup,
                 },
             )
             .with_dollar_aliases(&["refactor"]),
-            disabled_spec(
+            spec(
                 "start-work",
-                "Blocked until work-start creates workflow-owned handoff evidence",
+                "Create workflow-owned work-start handoff evidence",
                 &[],
-                CommandAction::BlockedWorkflow {
-                    reason: "work-start is staged until it creates coordinator-owned workflow handoff evidence",
-                    inventory_ref: "start-work",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::StartWork,
                 },
             ),
-            disabled_spec(
+            spec(
                 "remove-ai-slops",
-                "Blocked until cleanup workflow maps verification evidence",
+                "Run an anti-slop cleanup, refactor, or deslop workflow",
                 &["deslop", "ai-slop-cleaner"],
-                CommandAction::BlockedWorkflow {
-                    reason: "AI-slop cleanup is staged until behavior locks and verification evidence are workflow-mapped",
-                    inventory_ref: "remove-ai-slops",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Cleanup,
                 },
             )
             .with_dollar_aliases(&["ai-slop-cleaner", "deslop"]),
-            disabled_spec(
+            spec(
                 "handoff",
-                "Blocked until handoff writes workflow-owned evidence",
+                "Write workflow-owned handoff evidence and closeout readiness notes",
                 &[],
-                CommandAction::BlockedWorkflow {
-                    reason: "handoff artifacts are staged until they are tied to workflow evidence and closeout readiness",
-                    inventory_ref: "handoff",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Handoff,
                 },
             ),
-            disabled_spec(
+            spec(
                 "hyperplan",
-                "Blocked until team planning handoff is workflow-evidence mapped",
+                "Create workflow-owned team and parallel handoff planning evidence",
                 &[],
-                CommandAction::BlockedWorkflow {
-                    reason: "hyperplan is staged until team/parallel handoff evidence is workflow-owned",
-                    inventory_ref: "hyperplan",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Hyperplan,
                 },
             ),
-            disabled_spec(
+            spec(
                 "omx-skill:team",
-                "Blocked until team orchestration writes coordinator-owned evidence",
+                "Coordinate multiple agents on a shared task list",
                 &["team"],
-                CommandAction::BlockedWorkflow {
-                    reason: "team workflow is staged until team task handoff, evidence, and closeout state are coordinator-owned",
-                    inventory_ref: "omx-skill:team",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Team,
                 },
             )
             .with_dollar_aliases(&["team"]),
-            disabled_spec(
+            spec(
                 "omx-skill:swarm",
-                "Blocked team-style compatibility workflow",
+                "Coordinate team-style parallel execution through the team workflow",
                 &["swarm"],
-                CommandAction::BlockedWorkflow {
-                    reason: "swarm compatibility is staged behind the team orchestration contract",
-                    inventory_ref: "omx-skill:swarm",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Team,
                 },
             )
             .with_dollar_aliases(&["swarm"]),
-            disabled_spec(
+            spec(
                 "omx-skill:ultraqa",
-                "Blocked until QA loops emit deterministic coordinator evidence",
+                "Run adversarial dynamic end-to-end QA: generate hostile scenarios, test, verify, fix, report, and clean up",
                 &["ultraqa"],
-                CommandAction::BlockedWorkflow {
-                    reason: "ultraqa is staged until scenario generation, repair loops, and verification evidence are coordinator-owned",
-                    inventory_ref: "omx-skill:ultraqa",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Qa,
                 },
             )
             .with_dollar_aliases(&["ultraqa"]),
-            disabled_spec(
+            spec(
                 "omx-skill:analyze",
-                "Blocked until analysis reports are workflow-evidence mapped",
+                "Run read-only deep repository analysis with ranked findings, explicit confidence, and file evidence",
                 &["analyze"],
-                CommandAction::BlockedWorkflow {
-                    reason: "analysis workflow is staged until read-only findings are recorded as coordinator-owned evidence",
-                    inventory_ref: "omx-skill:analyze",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Analyze,
                 },
             )
             .with_dollar_aliases(&["analyze"]),
-            disabled_spec(
+            spec(
                 "omx-skill:code-review",
-                "Blocked until review findings and signoff blockers are modeled",
+                "Run a comprehensive code review",
                 &["code-review"],
-                CommandAction::BlockedWorkflow {
-                    reason: "code review is staged until findings, blocker severity, and signoff readiness are coordinator-owned",
-                    inventory_ref: "omx-skill:code-review",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Review,
                 },
             )
             .with_dollar_aliases(&["code-review"]),
-            disabled_spec(
+            spec(
                 "omx-skill:review",
-                "Blocked generic review compatibility workflow",
+                "Run a review workflow and record findings as workflow evidence",
                 &["review"],
-                CommandAction::BlockedWorkflow {
-                    reason: "generic review compatibility is staged behind the code-review evidence contract",
-                    inventory_ref: "omx-skill:review",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Review,
                 },
             )
             .with_dollar_aliases(&["review"]),
-            disabled_spec(
+            spec(
                 "omx-skill:security-review",
-                "Blocked until security findings are workflow-evidence mapped",
+                "Run a security review for vulnerabilities, trust boundaries, authentication, and authorization",
                 &["security-review"],
-                CommandAction::BlockedWorkflow {
-                    reason: "security review is staged until findings and trust-boundary evidence are coordinator-owned",
-                    inventory_ref: "omx-skill:security-review",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::SecurityReview,
                 },
             )
             .with_dollar_aliases(&["security-review"]),
-            disabled_spec(
-                "omx-skill:ask",
-                "Blocked external advisor compatibility workflow",
-                &["ask"],
-                CommandAction::BlockedWorkflow {
-                    reason: "advisor workflow is staged until external process execution is permission-gated and artifact-backed",
-                    inventory_ref: "omx-skill:ask",
-                },
-            )
-            .with_dollar_aliases(&["ask"]),
-            disabled_spec(
-                "omx-skill:ask-claude",
-                "Blocked Claude advisor compatibility workflow",
-                &["ask-claude"],
-                CommandAction::BlockedWorkflow {
-                    reason: "Claude advisor workflow is staged until external CLI execution is permission-gated and artifact-backed",
-                    inventory_ref: "omx-skill:ask-claude",
-                },
-            )
-            .with_dollar_aliases(&["ask-claude"]),
-            disabled_spec(
-                "omx-skill:ask-gemini",
-                "Blocked Gemini advisor compatibility workflow",
-                &["ask-gemini"],
-                CommandAction::BlockedWorkflow {
-                    reason: "Gemini advisor workflow is staged until external CLI execution is permission-gated and artifact-backed",
-                    inventory_ref: "omx-skill:ask-gemini",
-                },
-            )
-            .with_dollar_aliases(&["ask-gemini"]),
-            disabled_spec(
+            spec(
                 "omx-skill:doctor",
-                "Blocked until doctor checks are workflow-evidence mapped",
+                "Diagnose and fix Harness installation and runtime issues",
                 &["doctor"],
-                CommandAction::BlockedWorkflow {
-                    reason: "doctor workflow is staged until config/runtime checks produce coordinator-owned evidence",
-                    inventory_ref: "omx-skill:doctor",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Doctor,
                 },
             )
             .with_dollar_aliases(&["doctor"]),
-            disabled_spec(
+            spec(
                 "omx-skill:help",
-                "Blocked until help derives from the command registry",
+                "Show Harness workflow and command help",
                 &["help"],
-                CommandAction::BlockedWorkflow {
-                    reason: "help workflow is staged until operator help output derives fully from registry and inventory state",
-                    inventory_ref: "omx-skill:help",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Help,
                 },
             )
             .with_dollar_aliases(&["help"]),
-            disabled_spec(
+            spec(
                 "omx-skill:hud",
-                "Blocked until HUD status is modeled as a harness projection",
+                "Show or configure the Harness HUD and status projection",
                 &["hud"],
-                CommandAction::BlockedWorkflow {
-                    reason: "HUD workflow is staged until statusline state is exposed through harness projections",
-                    inventory_ref: "omx-skill:hud",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Hud,
                 },
             )
             .with_dollar_aliases(&["hud"]),
-            disabled_spec(
+            spec(
                 "omx-skill:note",
-                "Blocked until note/memory writes are coordinator-owned",
+                "Capture a workflow note or project-memory evidence artifact",
                 &["note"],
-                CommandAction::BlockedWorkflow {
-                    reason: "note workflow is staged until notepad and memory writes are modeled as coordinator-owned artifacts",
-                    inventory_ref: "omx-skill:note",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Note,
                 },
             )
             .with_dollar_aliases(&["note"]),
-            disabled_spec(
+            spec(
                 "omx-skill:skill",
-                "Blocked until skill management is permission-gated",
+                "Manage local skills: list, add, remove, search, edit, and verify",
                 &["skill"],
-                CommandAction::BlockedWorkflow {
-                    reason: "skill management is staged until install/remove/edit operations are permission-gated and artifact-backed",
-                    inventory_ref: "omx-skill:skill",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Skill,
                 },
             )
             .with_dollar_aliases(&["skill"]),
-            disabled_spec(
+            spec(
                 "omx-skill:trace",
-                "Blocked until trace output is workflow-evidence mapped",
+                "Show agent flow trace timeline and summary",
                 &["trace"],
-                CommandAction::BlockedWorkflow {
-                    reason: "trace workflow is staged until event timelines are exported as replay-safe evidence",
-                    inventory_ref: "omx-skill:trace",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Trace,
                 },
             )
             .with_dollar_aliases(&["trace"]),
-            disabled_spec(
+            spec(
                 "omx-skill:configure-notifications",
-                "Blocked notification configuration compatibility workflow",
+                "Configure Harness notifications through an explicit workflow",
                 &["configure-notifications"],
-                CommandAction::BlockedWorkflow {
-                    reason: "notification configuration is staged because host side effects must be explicitly permission-gated",
-                    inventory_ref: "omx-skill:configure-notifications",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::ConfigureNotifications,
                 },
             )
             .with_dollar_aliases(&["configure-notifications"]),
-            disabled_spec(
-                "omx-skill:omx-setup",
-                "Blocked setup compatibility workflow",
-                &["omx-setup"],
-                CommandAction::BlockedWorkflow {
-                    reason: "setup workflow is staged because installation side effects must be explicitly permission-gated",
-                    inventory_ref: "omx-skill:omx-setup",
-                },
-            )
-            .with_dollar_aliases(&["omx-setup"]),
-            disabled_spec(
+            spec(
                 "omx-skill:design",
-                "Blocked until design source-of-truth artifacts are modeled",
+                "Maintain a canonical repo-local design source of truth for product, UI, UX, and frontend decisions",
                 &["design"],
-                CommandAction::BlockedWorkflow {
-                    reason: "design workflow is staged until design documents and review state are coordinator-owned",
-                    inventory_ref: "omx-skill:design",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Design,
                 },
             )
             .with_dollar_aliases(&["design"]),
-            disabled_spec(
+            spec(
                 "omx-skill:frontend-ui-ux",
-                "Deprecated frontend workflow compatibility command",
+                "Route frontend UI and UX work through design or visual workflow evidence",
                 &["frontend-ui-ux"],
-                CommandAction::BlockedWorkflow {
-                    reason: "frontend-ui-ux is deprecated; use design or visual workflow parity once implemented",
-                    inventory_ref: "omx-skill:frontend-ui-ux",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Design,
                 },
             )
             .with_dollar_aliases(&["frontend-ui-ux"]),
-            disabled_spec(
+            spec(
                 "omx-skill:autopilot",
-                "Blocked autonomous execution compatibility workflow",
+                "Run an autonomous loop over planning, completion, and code review gates",
                 &["autopilot"],
-                CommandAction::BlockedWorkflow {
-                    reason: "autopilot is staged until plan, execution, cleanup, and review gates are coordinator-owned",
-                    inventory_ref: "omx-skill:autopilot",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Autopilot,
                 },
             )
             .with_dollar_aliases(&["autopilot"]),
-            disabled_spec(
+            spec(
                 "omx-skill:autoresearch-goal",
-                "Blocked research-goal compatibility workflow",
+                "Run a durable professor-critic research workflow over goal artifacts",
                 &["autoresearch-goal"],
-                CommandAction::BlockedWorkflow {
-                    reason: "autoresearch-goal is staged behind the research mission validator contract",
-                    inventory_ref: "omx-skill:autoresearch-goal",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::ResearchMission,
                 },
             )
             .with_dollar_aliases(&["autoresearch-goal"]),
-            disabled_spec(
+            spec(
                 "omx-skill:deepsearch",
-                "Blocked deep search compatibility workflow",
+                "Run a deep search workflow with research and evidence capture",
                 &["deepsearch"],
-                CommandAction::BlockedWorkflow {
-                    reason: "deepsearch is staged behind the research mission and web/search permission contract",
-                    inventory_ref: "omx-skill:deepsearch",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::DeepSearch,
                 },
             )
             .with_dollar_aliases(&["deepsearch"]),
-            disabled_spec(
+            spec(
                 "omx-skill:performance-goal",
-                "Blocked performance-goal compatibility workflow",
+                "Run an evaluator-gated performance optimization workflow with durable artifacts and safe goal handoffs",
                 &["performance-goal"],
-                CommandAction::BlockedWorkflow {
-                    reason: "performance-goal is staged until benchmark/evaluator evidence is coordinator-owned",
-                    inventory_ref: "omx-skill:performance-goal",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Performance,
                 },
             )
             .with_dollar_aliases(&["performance-goal"]),
-            disabled_spec(
+            spec(
                 "omx-skill:pipeline",
-                "Blocked pipeline compatibility workflow",
+                "Run a configurable pipeline orchestrator for sequencing workflow stages",
                 &["pipeline"],
-                CommandAction::BlockedWorkflow {
-                    reason: "pipeline is staged until stage transitions and artifacts are coordinator-owned",
-                    inventory_ref: "omx-skill:pipeline",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Pipeline,
                 },
             )
             .with_dollar_aliases(&["pipeline"]),
-            disabled_spec(
+            spec(
                 "omx-skill:ecomode",
-                "Blocked ecomode runtime workflow",
+                "Apply token-efficient model-routing guidance through a Harness workflow",
                 &["ecomode"],
-                CommandAction::BlockedWorkflow {
-                    reason: "ecomode is staged because runtime mode changes are not modeled in Harness",
-                    inventory_ref: "omx-skill:ecomode",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Ecomode,
                 },
             )
             .with_dollar_aliases(&["ecomode"]),
-            disabled_spec(
+            spec(
                 "omx-skill:tdd",
-                "Blocked TDD compatibility workflow",
+                "Run a test-driven-development workflow with test-first state and verification evidence",
                 &["tdd"],
-                CommandAction::BlockedWorkflow {
-                    reason: "TDD workflow is staged until test-first state and verification evidence are coordinator-owned",
-                    inventory_ref: "omx-skill:tdd",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Tdd,
                 },
             )
             .with_dollar_aliases(&["tdd"]),
-            disabled_spec(
+            spec(
+                "omx-skill:git-master",
+                "Use a git expert for atomic commits, rebasing, and history hygiene",
+                &["git-master"],
+                CommandAction::SlashAgent {
+                    role: "git-master",
+                },
+            )
+            .with_dollar_aliases(&["git-master"]),
+            spec(
                 "omx-skill:visual-ralph",
-                "Blocked visual Ralph compatibility workflow",
+                "Run a measured visual-reference implementation loop with verdict and pixel-diff evidence",
                 &["visual-ralph"],
-                CommandAction::BlockedWorkflow {
-                    reason: "visual Ralph is staged until visual verdict evidence and screenshots are modeled",
-                    inventory_ref: "omx-skill:visual-ralph",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Visual,
                 },
             )
             .with_dollar_aliases(&["visual-ralph"]),
-            disabled_spec(
+            spec(
                 "omx-skill:visual-verdict",
-                "Blocked visual verdict compatibility workflow",
+                "Run structured visual QA verdicts for screenshot-to-reference comparisons",
                 &["visual-verdict"],
-                CommandAction::BlockedWorkflow {
-                    reason: "visual verdict is staged until screenshot comparison evidence is modeled",
-                    inventory_ref: "omx-skill:visual-verdict",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Visual,
                 },
             )
             .with_dollar_aliases(&["visual-verdict"]),
-            disabled_spec(
+            spec(
                 "omx-skill:web-clone",
-                "Blocked web clone compatibility workflow",
+                "Clone a website from a URL with visual and functional verification evidence",
                 &["web-clone"],
-                CommandAction::BlockedWorkflow {
-                    reason: "web clone is staged because browser/live side effects must be explicitly permission-gated",
-                    inventory_ref: "omx-skill:web-clone",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::WebClone,
                 },
             )
             .with_dollar_aliases(&["web-clone"]),
-            disabled_spec(
+            spec(
                 "omx-skill:ralph-init",
-                "Blocked legacy Ralph init compatibility workflow",
+                "Initialize a Ralph-style completion workflow through the bounded continuation contract",
                 &["ralph-init"],
-                CommandAction::BlockedWorkflow {
-                    reason: "ralph-init is staged behind the bounded Ralph continuation contract",
-                    inventory_ref: "omx-skill:ralph-init",
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::RalphInit,
                 },
             )
             .with_dollar_aliases(&["ralph-init"]),
@@ -711,6 +747,21 @@ impl CommandSpec {
         self.dollar_aliases = aliases;
         self
     }
+
+    fn with_dollar_alias_descriptions(
+        mut self,
+        descriptions: &'static [(&'static str, &'static str)],
+    ) -> Self {
+        self.dollar_alias_descriptions = descriptions;
+        self
+    }
+
+    pub fn dollar_alias_description(&self, alias: &str) -> &'static str {
+        self.dollar_alias_descriptions
+            .iter()
+            .find_map(|(name, description)| (*name == alias).then_some(*description))
+            .unwrap_or(self.description)
+    }
 }
 
 fn spec(
@@ -726,32 +777,12 @@ fn spec(
         description,
         aliases,
         dollar_aliases: &[],
+        dollar_alias_descriptions: &[],
         surface,
         effect,
         action,
         availability: WorkflowCommandAvailability::Present,
         enabled_by_default: true,
-    }
-}
-
-fn disabled_spec(
-    name: &'static str,
-    description: &'static str,
-    aliases: &'static [&'static str],
-    action: CommandAction,
-) -> CommandSpec {
-    let surface = action.surface(WorkflowCommandAvailability::Staged);
-    let effect = action.effect();
-    CommandSpec {
-        name,
-        description,
-        aliases,
-        dollar_aliases: &[],
-        surface,
-        effect,
-        action,
-        availability: WorkflowCommandAvailability::Staged,
-        enabled_by_default: false,
     }
 }
 
@@ -772,6 +803,7 @@ impl CommandAction {
             Self::LoadSkills { .. } => CommandSurface::PromptTemplate,
             Self::ProfileSwitch { .. } => CommandSurface::ProfileSwitch,
             Self::NativeTool { .. } => CommandSurface::NativeTool,
+            Self::SlashAgent { .. } => CommandSurface::AgentShortcut,
             Self::PlanArtifact { .. } | Self::HandoffArtifact { .. } => {
                 CommandSurface::StagedReferenceCommand
             }
@@ -791,6 +823,7 @@ impl CommandAction {
             Self::PromptTemplate { .. } | Self::LoadSkills { .. } => CommandEffect::SubmitPrompt,
             Self::ProfileSwitch { .. } => CommandEffect::SwitchProfile,
             Self::NativeTool { .. } => CommandEffect::InvokeNativeTool,
+            Self::SlashAgent { .. } => CommandEffect::ScheduleAgentTask,
             Self::TuiAction { .. } => CommandEffect::UpdateTuiState,
         }
     }
@@ -829,6 +862,34 @@ mod tests {
             "remove-ai-slops",
             "handoff",
             "hyperplan",
+            "omx-skill:team",
+            "omx-skill:swarm",
+            "omx-skill:ultraqa",
+            "omx-skill:analyze",
+            "omx-skill:code-review",
+            "omx-skill:review",
+            "omx-skill:security-review",
+            "omx-skill:doctor",
+            "omx-skill:help",
+            "omx-skill:hud",
+            "omx-skill:note",
+            "omx-skill:skill",
+            "omx-skill:trace",
+            "omx-skill:configure-notifications",
+            "omx-skill:design",
+            "omx-skill:frontend-ui-ux",
+            "omx-skill:autopilot",
+            "omx-skill:autoresearch-goal",
+            "omx-skill:deepsearch",
+            "omx-skill:performance-goal",
+            "omx-skill:pipeline",
+            "omx-skill:ecomode",
+            "omx-skill:tdd",
+            "omx-skill:git-master",
+            "omx-skill:visual-ralph",
+            "omx-skill:visual-verdict",
+            "omx-skill:web-clone",
+            "omx-skill:ralph-init",
         ] {
             assert!(registry.get(name).is_some(), "missing {name}");
         }
@@ -858,6 +919,45 @@ mod tests {
             ("goal-ledger", WorkflowIntent::GoalLedger),
             ("research-mission", WorkflowIntent::ResearchMission),
             ("wiki", WorkflowIntent::Wiki),
+            ("init-deep", WorkflowIntent::DeepInterview),
+            ("refactor", WorkflowIntent::Cleanup),
+            ("start-work", WorkflowIntent::StartWork),
+            ("remove-ai-slops", WorkflowIntent::Cleanup),
+            ("handoff", WorkflowIntent::Handoff),
+            ("hyperplan", WorkflowIntent::Hyperplan),
+            ("omx-skill:team", WorkflowIntent::Team),
+            ("omx-skill:swarm", WorkflowIntent::Team),
+            ("omx-skill:ultraqa", WorkflowIntent::Qa),
+            ("omx-skill:analyze", WorkflowIntent::Analyze),
+            ("omx-skill:code-review", WorkflowIntent::Review),
+            ("omx-skill:review", WorkflowIntent::Review),
+            ("omx-skill:security-review", WorkflowIntent::SecurityReview),
+            ("omx-skill:doctor", WorkflowIntent::Doctor),
+            ("omx-skill:help", WorkflowIntent::Help),
+            ("omx-skill:hud", WorkflowIntent::Hud),
+            ("omx-skill:note", WorkflowIntent::Note),
+            ("omx-skill:skill", WorkflowIntent::Skill),
+            ("omx-skill:trace", WorkflowIntent::Trace),
+            (
+                "omx-skill:configure-notifications",
+                WorkflowIntent::ConfigureNotifications,
+            ),
+            ("omx-skill:design", WorkflowIntent::Design),
+            ("omx-skill:frontend-ui-ux", WorkflowIntent::Design),
+            ("omx-skill:autopilot", WorkflowIntent::Autopilot),
+            (
+                "omx-skill:autoresearch-goal",
+                WorkflowIntent::ResearchMission,
+            ),
+            ("omx-skill:deepsearch", WorkflowIntent::DeepSearch),
+            ("omx-skill:performance-goal", WorkflowIntent::Performance),
+            ("omx-skill:pipeline", WorkflowIntent::Pipeline),
+            ("omx-skill:ecomode", WorkflowIntent::Ecomode),
+            ("omx-skill:tdd", WorkflowIntent::Tdd),
+            ("omx-skill:visual-ralph", WorkflowIntent::Visual),
+            ("omx-skill:visual-verdict", WorkflowIntent::Visual),
+            ("omx-skill:web-clone", WorkflowIntent::WebClone),
+            ("omx-skill:ralph-init", WorkflowIntent::RalphInit),
         ] {
             let command = registry
                 .get(name)
@@ -1030,7 +1130,10 @@ mod tests {
             has_present,
             "registry should classify implemented workflows"
         );
-        assert!(has_staged, "registry should classify staged workflows");
+        assert!(
+            !has_staged,
+            "applicable dollar workflow rows should be implemented, not staged"
+        );
     }
 
     #[test]
@@ -1067,9 +1170,6 @@ mod tests {
         for alias in [
             "ai-slop-cleaner",
             "analyze",
-            "ask",
-            "ask-claude",
-            "ask-gemini",
             "autopilot",
             "autoresearch",
             "autoresearch-goal",
@@ -1082,11 +1182,11 @@ mod tests {
             "doctor",
             "ecomode",
             "frontend-ui-ux",
+            "git-master",
             "goal",
             "help",
             "hud",
             "note",
-            "omx-setup",
             "performance-goal",
             "pipeline",
             "plan",
@@ -1130,6 +1230,10 @@ mod tests {
                     WorkflowCommandAvailability::Present,
                     "${alias} enabled command should be present"
                 );
+                assert!(
+                    !matches!(command.action, CommandAction::BlockedWorkflow { .. }),
+                    "${alias} must not resolve to a blocked workflow"
+                );
             } else {
                 assert!(
                     matches!(command.action, CommandAction::BlockedWorkflow { .. }),
@@ -1141,6 +1245,28 @@ mod tests {
                     "${alias} staged command must not mutate state"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn removed_omx_commands_are_not_registered() {
+        let registry = CommandRegistry::builtins();
+        for name in [
+            "omx-skill:ask",
+            "omx-skill:ask-claude",
+            "omx-skill:ask-gemini",
+            "omx-skill:build-fix",
+            "omx-skill:omx-setup",
+            "ask",
+            "ask-claude",
+            "ask-gemini",
+            "build-fix",
+            "omx-setup",
+        ] {
+            assert!(
+                registry.get(name).is_none(),
+                "{name} should not resolve after command removal"
+            );
         }
     }
 }
