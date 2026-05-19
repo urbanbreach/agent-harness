@@ -10,7 +10,7 @@ use crate::ui::{
 };
 use crate::view_model;
 use crossterm::event::{MouseButton, MouseEvent};
-use harness_core::command_registry::WorkflowIntent;
+use harness_core::command_registry::{CommandRegistry, WorkflowIntent};
 use harness_core::event::{
     ActorKind, AgentSpawnedEvent, EditAppliedEvent, EventActor, EventEnvelopeV1, EventV1,
     ExecutionTimingMetadata, PermissionRequestedEvent, PermissionResolvedEvent,
@@ -5533,6 +5533,172 @@ fn slash_agent_invocation_preserves_imported_template_collision_boundary() {
         intents.as_slice(),
         [UiIntent::SlashAgentTask { task, .. }] if task == "use native routing"
     ));
+}
+
+#[test]
+fn dollar_command_catalog_covers_applicable_reference_skills_with_sanitized_descriptions() {
+    let commands = registered_dollar_commands()
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
+
+    for alias in [
+        "ai-slop-cleaner",
+        "analyze",
+        "autopilot",
+        "autoresearch",
+        "autoresearch-goal",
+        "cancel",
+        "code-review",
+        "configure-notifications",
+        "deep-interview",
+        "deepsearch",
+        "design",
+        "deslop",
+        "doctor",
+        "ecomode",
+        "frontend-ui-ux",
+        "git-master",
+        "goal",
+        "help",
+        "hud",
+        "note",
+        "performance-goal",
+        "pipeline",
+        "plan",
+        "ralph",
+        "ralph-init",
+        "ralplan",
+        "refactor",
+        "review",
+        "security-review",
+        "skill",
+        "swarm",
+        "tdd",
+        "team",
+        "trace",
+        "ultragoal",
+        "ultraqa",
+        "ultrawork",
+        "visual-ralph",
+        "visual-verdict",
+        "web-clone",
+        "wiki",
+    ] {
+        let description = commands
+            .get(alias)
+            .copied()
+            .unwrap_or_else(|| panic!("missing dollar command ${alias}"));
+        assert!(
+            !description.trim().is_empty(),
+            "${alias} should have a visible description"
+        );
+        assert!(
+            !description.contains("[OMX]") && !description.contains("oh-my-codex"),
+            "${alias} description should be product-neutral: {description}"
+        );
+    }
+
+    assert!(
+        !commands.contains_key("worker"),
+        "$worker is a team-internal protocol, not a user-facing dollar command"
+    );
+    for removed in ["ask", "ask-claude", "ask-gemini", "build-fix", "omx-setup"] {
+        assert!(
+            !commands.contains_key(removed),
+            "${removed} should not be in the dollar command catalog"
+        );
+    }
+    assert_eq!(
+        commands["ultragoal"],
+        "Create and execute durable repo-native multi-goal plans over goal artifacts"
+    );
+}
+
+#[test]
+fn command_search_indexes_ultragoal_dollar_and_slash_aliases() {
+    let mut startup = AppState::new_startup(Vec::new(), None);
+    for ch in "$ultragoal".chars() {
+        startup.handle_key(key(KeyCode::Char(ch)));
+    }
+    assert!(startup.slash_overlay_should_render());
+    assert_eq!(
+        startup.slash_filtered.first().map(String::as_str),
+        Some("ultragoal")
+    );
+    assert_eq!(startup.typed_dollar_invocation(), Some(("ultragoal", None)));
+
+    let mut live = AppState::new_live(None, false, None);
+    for ch in "/ultragoal".chars() {
+        live.handle_key(key(KeyCode::Char(ch)));
+    }
+    assert!(live.slash_overlay_should_render());
+    assert_eq!(
+        live.slash_filtered.first().map(String::as_str),
+        Some("ultragoal")
+    );
+    assert_eq!(live.typed_slash_command(), Some("ultragoal"));
+}
+
+#[test]
+fn dollar_agent_shortcuts_dispatch_native_task_roles() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(None, false, Some(sink));
+    app.execute_dollar_command("git-master", Some("prepare atomic commits".to_string()));
+
+    let intents = intents.lock().expect("lock intents");
+    assert!(matches!(
+        &intents[0],
+        UiIntent::SlashAgentTask { role, task, command, .. }
+            if role == "git-master"
+                && task == "prepare atomic commits"
+                && command == "$git-master prepare atomic commits"
+    ));
+}
+
+#[test]
+fn dollar_workflow_aliases_dispatch_as_workflow_intents() {
+    for (alias, expected_intent) in [
+        ("analyze", WorkflowIntent::Analyze),
+        ("team", WorkflowIntent::Team),
+        ("ultragoal", WorkflowIntent::GoalLedger),
+        ("visual-verdict", WorkflowIntent::Visual),
+        ("web-clone", WorkflowIntent::WebClone),
+    ] {
+        let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+        let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+            let intents = Arc::clone(&intents);
+            Arc::new(move |intent| {
+                intents.lock().expect("lock intents").push(intent);
+            })
+        };
+        let mut app = AppState::new_live(None, false, Some(sink));
+        app.execute_dollar_command(alias, Some("run the workflow".to_string()));
+
+        let intents = intents.lock().expect("lock intents");
+        assert_eq!(
+            intents.as_slice(),
+            &[UiIntent::WorkflowIntent {
+                intent: expected_intent,
+                command: format!("${alias} run the workflow"),
+            }],
+            "${alias} should dispatch through a native workflow intent"
+        );
+    }
+}
+
+#[test]
+fn dollar_worker_remains_intentionally_non_user_facing() {
+    assert!(CommandRegistry::builtins()
+        .commands()
+        .iter()
+        .all(|command| !command.dollar_aliases.contains(&"worker")));
 }
 
 #[test]

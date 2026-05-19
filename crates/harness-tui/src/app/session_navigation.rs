@@ -1372,9 +1372,6 @@ impl AppState {
         }
 
         builtin_dollar_commands()
-            .into_iter()
-            .filter(|(command, _)| self.dollar_command_available(command))
-            .collect()
     }
 
     fn available_slash_commands(&self) -> Vec<(&str, &str)> {
@@ -1404,8 +1401,14 @@ impl AppState {
     }
 
     fn find_slash_command(&self, name_or_alias: &str) -> Option<&str> {
+        if let Some((name, _)) = builtin_slash_commands()
+            .into_iter()
+            .find(|(name, _)| *name == name_or_alias && self.slash_command_available(name))
+        {
+            return Some(name);
+        }
         if let Some((name, _)) = builtin_slash_commands().into_iter().find(|(name, _)| {
-            (*name == name_or_alias || slash_command_aliases(name).contains(&name_or_alias))
+            slash_command_aliases(name).contains(&name_or_alias)
                 && self.slash_command_available(name)
         }) {
             return Some(name);
@@ -1681,6 +1684,9 @@ impl AppState {
             CommandAction::PromptTemplate { prompt } => {
                 self.dispatch_command_template_prompt(preserved_draft, prompt);
             }
+            CommandAction::SlashAgent { role } => {
+                self.execute_slash_agent_command(role, preserved_draft);
+            }
             CommandAction::LoadSkills { .. }
             | CommandAction::ProfileSwitch { .. }
             | CommandAction::NativeTool { .. }
@@ -1752,6 +1758,9 @@ impl AppState {
             CommandAction::PromptTemplate { prompt } => {
                 self.dispatch_command_template_prompt(preserved_draft, prompt);
             }
+            CommandAction::SlashAgent { role } => {
+                self.execute_dollar_slash_agent_command(typed_command, role, preserved_draft);
+            }
             CommandAction::LoadSkills { .. }
             | CommandAction::ProfileSwitch { .. }
             | CommandAction::NativeTool { .. }
@@ -1764,6 +1773,44 @@ impl AppState {
                 )));
             }
         }
+    }
+
+    fn execute_dollar_slash_agent_command(
+        &mut self,
+        typed_command: &str,
+        role: &str,
+        preserved_draft: Option<String>,
+    ) {
+        if self.startup_mode || self.replay_mode {
+            self.restore_slash_draft(preserved_draft);
+            self.set_status_banner(Some(format!(
+                "dollar command ${typed_command} requires a live session"
+            )));
+            return;
+        }
+
+        let Some(task) = preserved_draft
+            .as_deref()
+            .map(str::trim)
+            .filter(|task| !task.is_empty())
+            .map(str::to_string)
+        else {
+            self.restore_slash_draft(preserved_draft);
+            self.set_status_banner(Some(format!(
+                "dollar command ${typed_command} requires a task, e.g. ${typed_command} inspect this failure"
+            )));
+            return;
+        };
+
+        let command = format!("${typed_command} {task}");
+        self.restore_slash_draft(None);
+        self.set_status_banner(Some(format!("slash-agent /{role} task queued")));
+        self.emit_ui_intent(UiIntent::SlashAgentTask {
+            role: role.to_string(),
+            task,
+            command,
+            launch_metadata: self.launch_metadata.clone(),
+        });
     }
 
     fn dispatch_command_template_prompt(
@@ -3720,8 +3767,11 @@ fn command_match_rank(
     let command = command.to_lowercase();
     let description = description.to_lowercase();
 
-    if command == query || display == query || aliases.contains(&query) {
+    if command == query || display == query {
         return Some((0, 0));
+    }
+    if aliases.contains(&query) {
+        return Some((0, 1));
     }
 
     if is_registered_workflow_slash && query.len() < 4 {

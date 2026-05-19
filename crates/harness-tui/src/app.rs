@@ -125,9 +125,16 @@ pub(crate) fn registered_slash_commands() -> Vec<(&'static str, &'static str)> {
                 CommandAction::WorkflowIntent { .. }
                     | CommandAction::StartContinuation { .. }
                     | CommandAction::StopContinuation
+                    | CommandAction::SlashAgent { .. }
             )
         })
-        .map(|command| (command.name, command.description))
+        .flat_map(|command| {
+            std::iter::once(command.name)
+                .chain(command.aliases.iter().copied())
+                .filter(|name| !name.starts_with("omx-skill:"))
+                .map(|name| (name, command.description))
+                .collect::<Vec<_>>()
+        })
         .collect()
 }
 
@@ -165,7 +172,7 @@ pub(crate) fn registered_dollar_commands() -> Vec<(&'static str, &'static str)> 
                 .dollar_aliases
                 .iter()
                 .copied()
-                .map(move |alias| (alias, command.description))
+                .map(move |alias| (alias, command.dollar_alias_description(alias)))
         })
         .collect()
 }
@@ -1796,7 +1803,7 @@ impl AppState {
                 if template.name.is_empty() || template.prompt.is_empty() || !template.enabled {
                     return None;
                 }
-                if SLASH_COMMANDS
+                if builtin_slash_commands()
                     .iter()
                     .any(|(builtin, _)| *builtin == template.name)
                 {
@@ -4815,24 +4822,24 @@ pub(crate) fn exact_test_imported_slash_command_template_dispatches_prompt() {
     };
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(sink));
     app.set_slash_command_templates(vec![SlashCommandTemplate {
-        name: "review".to_string(),
+        name: "draft-review".to_string(),
         description: Some("Review the current draft".to_string()),
         prompt: "Review {{args}} carefully.".to_string(),
         enabled: true,
     }]);
-    app.replace_prompt_input("/review".to_string());
+    app.replace_prompt_input("/draft-review".to_string());
     app.sync_slash_overlay();
     assert_eq!(
         app.slash_filtered.first().map(String::as_str),
-        Some("review")
+        Some("draft-review")
     );
-    assert_eq!(app.typed_slash_command(), Some("review"));
+    assert_eq!(app.typed_slash_command(), Some("draft-review"));
     assert_eq!(
-        app.slash_command_description("review"),
+        app.slash_command_description("draft-review"),
         "Review the current draft"
     );
 
-    app.execute_slash_command("review", Some("the current diff".to_string()));
+    app.execute_slash_command("draft-review", Some("the current diff".to_string()));
 
     let intents = intents.lock().expect("lock intents");
     let [UiIntent::SubmitPrompt { text, .. }] = intents.as_slice() else {
@@ -4865,8 +4872,8 @@ pub(crate) fn exact_test_startup_dollar_command_reports_blocked_workflow() {
     assert!(
         app.status_banner
             .as_deref()
-            .is_some_and(|banner| banner.contains("workflow command hidden")),
-        "staged built-in command should report a blocked workflow banner"
+            .is_some_and(|banner| banner.contains("not available")),
+        "startup workflow command should report live-session availability"
     );
     assert!(startup_intents
         .lock()
@@ -4888,13 +4895,22 @@ pub(crate) fn exact_test_startup_dollar_command_reports_blocked_workflow() {
         "hidden staged command must not auto-submit prompt-only placeholder text"
     );
 
-    let mut live = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
+    let live_intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let live_sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let live_intents = Arc::clone(&live_intents);
+        Arc::new(move |intent: UiIntent| {
+            live_intents.lock().expect("lock live intents").push(intent);
+        })
+    };
+    let mut live = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(live_sink));
     live.execute_dollar_command("team", Some("coordinate this slice".to_string()));
-    assert!(
-        live.status_banner
-            .as_deref()
-            .is_some_and(|banner| banner.contains("workflow command hidden")),
-        "staged dollar family command should fail closed through the registry"
+    assert_eq!(
+        live_intents.lock().expect("lock live intents").as_slice(),
+        &[UiIntent::WorkflowIntent {
+            intent: WorkflowIntent::Team,
+            command: "$team coordinate this slice".to_string(),
+        }],
+        "team dollar family command should dispatch as a native workflow intent"
     );
 }
 
