@@ -5,7 +5,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 use clap::Args;
-use harness_core::agent_catalog::resolve_agent_catalog;
+use harness_core::agent_catalog::{
+    resolve_agent_catalog, BUILTIN_SUBAGENTS, CATEGORY_ROUTES, LEGACY_PRIMARY_PROFILE_ALIASES,
+    PRIMARY_WORKFLOW_PROFILES,
+};
 use harness_core::command_registry::{CommandAction, CommandRegistry};
 use harness_core::config::{
     configured_model_catalog, load_resolved_config, resolve_model_selection, AgentMode,
@@ -34,30 +37,6 @@ const CONFIG_DOC_MD: &str = include_str!("../../../docs/config.md");
 const TESTING_DOC_MD: &str = include_str!("../../../docs/testing.md");
 const WORKFLOW_SLICE_SPEC_MD: &str = include_str!("../../../docs/omx-workflow-slice-spec.md");
 
-const REQUIRED_PRIMARY_AGENTS: [&str; 3] = ["build", "plan", "discipline"];
-const REQUIRED_SUBAGENTS: [&str; 2] = ["explore", "general"];
-const REQUIRED_OMO_SPECIALISTS: [&str; 10] = [
-    "oracle",
-    "librarian",
-    "metis",
-    "momus",
-    "multimodal-looker",
-    "sisyphus-junior",
-    "atlas",
-    "prometheus",
-    "sisyphus",
-    "hephaestus",
-];
-const REQUIRED_CATEGORY_ROUTES: [&str; 8] = [
-    "visual-engineering",
-    "artistry",
-    "ultrabrain",
-    "deep",
-    "quick",
-    "unspecified-low",
-    "unspecified-high",
-    "writing",
-];
 const BUILD_TOOLS: [&str; 5] = [
     "todowrite",
     "task",
@@ -617,10 +596,11 @@ fn check_model_capabilities(config: &HarnessConfig) -> DoctorCheck {
 
 fn check_shipped_profiles(config: &HarnessConfig) -> DoctorCheck {
     let mut missing = Vec::new();
-    for profile in REQUIRED_PRIMARY_AGENTS
-        .into_iter()
-        .chain(REQUIRED_SUBAGENTS)
-        .chain(REQUIRED_OMO_SPECIALISTS)
+    for profile in PRIMARY_WORKFLOW_PROFILES
+        .iter()
+        .copied()
+        .chain(LEGACY_PRIMARY_PROFILE_ALIASES.iter().copied())
+        .chain(BUILTIN_SUBAGENTS.iter().copied())
     {
         if !config.agents.contains_key(profile) {
             missing.push(profile);
@@ -636,8 +616,9 @@ fn check_shipped_profiles(config: &HarnessConfig) -> DoctorCheck {
         );
     }
 
-    let invalid_primary = REQUIRED_PRIMARY_AGENTS
-        .into_iter()
+    let invalid_primary = PRIMARY_WORKFLOW_PROFILES
+        .iter()
+        .copied()
         .filter_map(|profile| {
             let agent = config.agents.get(profile)?;
             (agent.hidden || agent.mode == AgentMode::Subagent).then_some(profile)
@@ -653,9 +634,27 @@ fn check_shipped_profiles(config: &HarnessConfig) -> DoctorCheck {
         );
     }
 
-    let invalid_subagents = REQUIRED_SUBAGENTS
-        .into_iter()
-        .chain(REQUIRED_OMO_SPECIALISTS)
+    let invalid_legacy = LEGACY_PRIMARY_PROFILE_ALIASES
+        .iter()
+        .copied()
+        .filter_map(|profile| {
+            let agent = config.agents.get(profile)?;
+            (!agent.hidden || agent.mode == AgentMode::Subagent).then_some(profile)
+        })
+        .collect::<Vec<_>>();
+    if !invalid_legacy.is_empty() {
+        return fail(
+            "workflow_profiles",
+            format!(
+                "legacy workflow profile alias(es) must be hidden compatibility lanes: {}",
+                invalid_legacy.join(", ")
+            ),
+        );
+    }
+
+    let invalid_subagents = BUILTIN_SUBAGENTS
+        .iter()
+        .copied()
         .filter_map(|profile| {
             let agent = config.agents.get(profile)?;
             (agent.hidden || agent.mode == AgentMode::Primary).then_some(profile)
@@ -673,26 +672,29 @@ fn check_shipped_profiles(config: &HarnessConfig) -> DoctorCheck {
 
     pass(
         "workflow_profiles",
-        "build, plan, discipline, explore, general, and OMO specialist profiles are available",
+        "operator is the visible workflow profile; build, plan, discipline are hidden compatibility lanes; subagent specialists are available",
     )
 }
 
 fn check_category_routes(config: &HarnessConfig) -> DoctorCheck {
-    let missing = REQUIRED_CATEGORY_ROUTES
-        .into_iter()
+    let missing = CATEGORY_ROUTES
+        .iter()
+        .copied()
         .filter(|profile| !config.agents.contains_key(*profile))
         .collect::<Vec<_>>();
 
-    let invalid_routes = REQUIRED_CATEGORY_ROUTES
-        .into_iter()
+    let invalid_routes = CATEGORY_ROUTES
+        .iter()
+        .copied()
         .filter_map(|profile| {
             let agent = config.agents.get(profile)?;
             (agent.hidden || agent.mode == AgentMode::Primary).then_some(profile)
         })
         .collect::<Vec<_>>();
 
-    let recursive_routes = REQUIRED_CATEGORY_ROUTES
-        .into_iter()
+    let recursive_routes = CATEGORY_ROUTES
+        .iter()
+        .copied()
         .filter_map(|profile| {
             let agent = config.agents.get(profile)?;
             let task_permission = agent

@@ -18,7 +18,7 @@ use harness_tools::{coordinator_registry_with_mcp_and_editing, EditingToolSurfac
 
 use crate::dynamic_prompt::{self, DynamicPromptContext};
 
-const DEFAULT_INTERACTIVE_PROFILE: &str = "build";
+const DEFAULT_INTERACTIVE_PROFILE: &str = harness_core::agent_catalog::OPERATOR_AGENT_NAME;
 
 const CONFIG_SEARCH_LOCATIONS: [&str; 4] = [
     "./harness.jsonc",
@@ -29,7 +29,7 @@ const CONFIG_SEARCH_LOCATIONS: [&str; 4] = [
 
 pub fn interactive_config_guidance() -> String {
     format!(
-        "interactive mode requires a config file; pass --config <path> or create {}. A starting point lives at configs/harness.example.jsonc and defaults to the build agent. If you want the demo/mock UI instead, re-run with --mock",
+        "interactive mode requires a config file; pass --config <path> or create {}. A starting point lives at configs/harness.example.jsonc and defaults to the operator agent. If you want the demo/mock UI instead, re-run with --mock",
         CONFIG_SEARCH_LOCATIONS.join(" or ")
     )
 }
@@ -216,7 +216,8 @@ fn compose_interactive_system_prompt(
     if profile_cfg.system_prompt.is_none()
         && !matches!(
             profile_name,
-            harness_core::plan::BUILD_AGENT_NAME
+            harness_core::agent_catalog::OPERATOR_AGENT_NAME
+                | harness_core::plan::BUILD_AGENT_NAME
                 | harness_core::plan::PLAN_AGENT_NAME
                 | "discipline"
         )
@@ -613,18 +614,36 @@ mod tests {
     }
 
     #[test]
-    fn shipped_example_config_seeds_build_plan_discipline_and_subagents() {
+    fn shipped_example_config_seeds_operator_compatibility_profiles_and_subagents() {
         let config_path = crate::cli_config::shipped_example_config_path();
         let cfg = load_config_from_file(&config_path).expect("shipped example config should parse");
 
+        assert!(cfg.agents.contains_key("operator"));
         assert!(cfg.agents.contains_key("build"));
         assert!(cfg.agents.contains_key("plan"));
         assert!(cfg.agents.contains_key("discipline"));
         assert!(cfg.agents.contains_key("explore"));
         assert!(cfg.agents.contains_key("general"));
-        assert_eq!(cfg.default_agent.as_deref(), Some("build"));
+        assert_eq!(cfg.default_agent.as_deref(), Some("operator"));
+        assert_eq!(cfg.ui.default_profile.as_deref(), Some("operator"));
+        assert!(!cfg.agents["operator"].hidden);
+        assert!(cfg.agents["build"].hidden);
+        assert!(cfg.agents["plan"].hidden);
+        assert!(cfg.agents["discipline"].hidden);
 
         let profiles = interactive_agent_profiles(&cfg).expect("interactive profiles");
+        assert!(profiles["operator"].toolset.contains(&"edit".to_string()));
+        assert!(profiles["operator"].toolset.contains(&"bash".to_string()));
+        assert!(profiles["operator"].toolset.contains(&"task".to_string()));
+        assert!(profiles["operator"]
+            .toolset
+            .contains(&"plan_enter".to_string()));
+        assert!(profiles["operator"]
+            .toolset
+            .contains(&"background_output".to_string()));
+        assert!(profiles["operator"]
+            .toolset
+            .contains(&"todowrite".to_string()));
         assert!(profiles["build"].toolset.contains(&"edit".to_string()));
         assert!(profiles["build"].toolset.contains(&"bash".to_string()));
         assert!(profiles["build"].toolset.contains(&"task".to_string()));
@@ -650,7 +669,7 @@ mod tests {
             .contains(&"todowrite".to_string()));
         assert!(profiles["discipline"]
             .system_prompt
-            .starts_with("You are the Disciplined workflow agent"));
+            .starts_with("You are the hidden Disciplined escalation profile"));
         assert!(profiles["explore"].toolset.contains(&"read".to_string()));
         assert!(profiles["explore"].toolset.contains(&"grep".to_string()));
         assert!(!profiles["explore"].toolset.contains(&"edit".to_string()));

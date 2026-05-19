@@ -164,6 +164,22 @@ fn config_docs_capture_harness_contract_and_migration_boundary() {
     assert!(doc.contains("harness.jsonc"));
     assert!(doc.contains("compatibility inputs"));
     assert!(doc.contains("Unsupported top-level areas"));
+    assert!(doc.contains("## Headless/server boundary"));
+    assert!(doc.contains("projection/API boundary"));
+    assert!(doc.contains("not\nas execution authority"));
+    assert!(doc.contains("rejects active"));
+    assert!(doc.contains(
+        "`server`, `command`, `plugin`, `share`,\n`autoshare`, `autoupdate`, and `enterprise` product features"
+    ));
+
+    let readme = std::fs::read_to_string(repo_root().join("README.md")).expect("read README.md");
+    assert!(readme.contains("Future server/API\nsurfaces are staged as projection/API readers"));
+    assert!(readme.contains("not as execution authority"));
+
+    let architecture = std::fs::read_to_string(repo_root().join("docs/architecture.md"))
+        .expect("read docs/architecture.md");
+    assert!(architecture.contains("## Headless and server/API boundary"));
+    assert!(architecture.contains("must not become independent execution authority"));
 }
 
 #[test]
@@ -175,14 +191,14 @@ fn config_docs_capture_plan_operator_workflow_and_guardrails() {
 
     for expected in [
         "### Plan operator workflow",
-        "stable public runtime surface",
+        "stable hidden escalation behind the\nsingle default operator",
         "experimental upstream-compatible flag",
-        "Build call `plan_enter`",
+        "operator/build compatibility tool surface exposes `plan_enter`",
         ".agent-harness/plans/<run>.md",
         "Plan calls `plan_exit`",
         "restricted to `explore`",
         "cannot launch\n   `general`, `build`, or user-defined writer subagents",
-        "Approving that prompt switches\n   back to Build",
+        "Approving that prompt returns\n   to the operator path",
         "declining leaves the session in Plan",
     ] {
         assert!(
@@ -195,7 +211,7 @@ fn config_docs_capture_plan_operator_workflow_and_guardrails() {
         "Stable read-only planning lane",
         ".agent-harness/plans/<run>.md",
         "plan_exit",
-        "continuing implementation in Build",
+        "returning to the operator path",
     ] {
         assert!(
             example.contains(expected),
@@ -228,8 +244,12 @@ fn config_docs_capture_workflow_contract_registry() {
         "evidence.simulated_tool_result",
         "evidence.plan_consensus",
         "evidence.goal_ledger",
+        "evidence.security_review",
+        "evidence.visual",
+        "evidence.status_hud",
         "prompt-to-artifact completion audit",
-        "harness workflow run/status/signoff/cancel/dossier/snapshot/plan-consensus/goal/mission/wiki/init",
+        "harness workflow run/status/signoff/cancel/dossier/snapshot/plan-consensus/goal/mission/wiki/evidence/init",
+        "harness workflow evidence record",
         "harness workflow goal create/status/checkpoint/list/read",
         "harness workflow mission init/run/status/read",
         "harness workflow wiki add/read/list/query/lint/refresh/delete",
@@ -241,6 +261,11 @@ fn config_docs_capture_workflow_contract_registry() {
         "init --check",
         "init --apply",
         "harness workflow snapshot write",
+        "### Operator workflow examples",
+        "Deep-interview intake to Ralplan",
+        "Review and security evidence",
+        "Closeout and dossier",
+        "hidden staged aliases, blocked reference workflows",
         "must not execute shell tools",
         "docs/omx-workflow-slice-spec.md",
     ] {
@@ -275,7 +300,8 @@ fn readme_lists_registered_workflow_slash_commands_and_aliases() {
     }
 
     for expected in [
-        "harness workflow run/status/signoff/cancel/dossier/snapshot/plan-consensus/goal/mission/wiki/init",
+        "harness workflow run/status/signoff/cancel/dossier/snapshot/plan-consensus/goal/mission/wiki/evidence/init",
+        "harness workflow evidence record",
         "Run Dossier",
         "typed UI intents",
         "rather than rerunning hooks or tools",
@@ -283,6 +309,33 @@ fn readme_lists_registered_workflow_slash_commands_and_aliases() {
         assert!(
             readme.contains(expected),
             "README.md missing workflow command docs anchor: {expected}"
+        );
+    }
+}
+
+#[test]
+fn completion_dossier_maps_operator_spine_acceptance_criteria() {
+    let root = repo_root();
+    let dossier = std::fs::read_to_string(root.join("docs/harness-omx-next-completion-dossier.md"))
+        .expect("read completion dossier");
+
+    for expected in [
+        "Ultragoal ledger",
+        "Workflow-first single-operator model",
+        "Projection-only CLI/TUI/replay",
+        "OMO cut/quarantine",
+        "Permission/question/signoff correctness",
+        "Team/subagent as escalation",
+        "Config/runtime split",
+        "Verification evidence",
+        "Completion dossier",
+        "G008 final cleanup/review gate",
+        "Missing/partial OMX reference skills",
+        "blocked_or_staged",
+    ] {
+        assert!(
+            dossier.contains(expected),
+            "completion dossier missing acceptance/blocker anchor: {expected}"
         );
     }
 }
@@ -373,5 +426,65 @@ fn workflow_slice_docs_capture_g001_ssot_and_drift_guard_contract() {
             doc.contains(expected),
             "docs/omx-workflow-slice-spec.md missing G001 SSOT/drift anchor: {expected}"
         );
+    }
+}
+
+#[test]
+fn omo_cut_list_is_quarantined_and_public_contract_stays_single_operator() {
+    let root = repo_root();
+    let readme = std::fs::read_to_string(root.join("README.md")).expect("read README.md");
+    let parity_spec =
+        std::fs::read_to_string(root.join("docs/omo-parity-spec.md")).expect("read parity spec");
+    let parity_ledger =
+        std::fs::read_to_string(root.join("docs/parity-ledger.json")).expect("read parity ledger");
+    let handoff = std::fs::read_to_string(root.join("docs/harness-omx-next-slice-handoff.md"))
+        .expect("read next-slice handoff");
+    let config_docs =
+        std::fs::read_to_string(root.join("docs/config.md")).expect("read config docs");
+    let architecture_docs =
+        std::fs::read_to_string(root.join("docs/architecture.md")).expect("read architecture docs");
+
+    for (label, doc) in [
+        ("README.md", readme.as_str()),
+        ("docs/omo-parity-spec.md", parity_spec.as_str()),
+        ("docs/parity-ledger.json", parity_ledger.as_str()),
+        ("docs/harness-omx-next-slice-handoff.md", handoff.as_str()),
+    ] {
+        let normalized_doc = doc.split_whitespace().collect::<Vec<_>>().join(" ");
+        for expected in ["background migration evidence", "not the product direction"] {
+            assert!(
+                normalized_doc.contains(expected),
+                "{label} must quarantine legacy OMO/parity artifacts with `{expected}`"
+            );
+        }
+    }
+
+    for expected in [
+        "single-operator workflow orchestration",
+        "operator-owned escalation",
+    ] {
+        let normalized_readme = readme.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            normalized_readme.contains(expected),
+            "README.md must keep the public contract centered on `{expected}`"
+        );
+    }
+
+    for forbidden in [
+        "default multiple-main-agent",
+        "multiple main agents by default",
+        "OMO parity is the product direction",
+        "full OMO parity is required",
+    ] {
+        for (label, doc) in [
+            ("README.md", readme.as_str()),
+            ("docs/config.md", config_docs.as_str()),
+            ("docs/architecture.md", architecture_docs.as_str()),
+        ] {
+            assert!(
+                !doc.contains(forbidden),
+                "{label} contains unqualified cut-list wording `{forbidden}`"
+            );
+        }
     }
 }
