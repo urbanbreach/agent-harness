@@ -196,6 +196,32 @@ fn workflow_inventory_tracks_command_registry_drift() {
 
         let target = entry["harness_mapping"]["target"].as_str().unwrap();
         match &command.action {
+            CommandAction::WorkflowSkill {
+                skill,
+                intent,
+                continuation_mode,
+                ..
+            } => {
+                assert!(
+                    target == intent.as_str() || target.contains(intent.as_str()),
+                    "{} target {target} should mention workflow intent {}",
+                    command.name,
+                    intent.as_str()
+                );
+                assert!(
+                    target.contains(skill) || command.name.contains(skill),
+                    "{} target {target} should mention workflow skill {skill}",
+                    command.name
+                );
+                if let Some(mode) = continuation_mode {
+                    assert!(
+                        target.contains(mode.as_str()),
+                        "{} target {target} should mention continuation mode {}",
+                        command.name,
+                        mode.as_str()
+                    );
+                }
+            }
             CommandAction::WorkflowIntent { intent } => assert_eq!(target, intent.as_str()),
             CommandAction::StartContinuation { mode } => {
                 assert!(

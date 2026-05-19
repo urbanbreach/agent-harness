@@ -109,6 +109,12 @@ pub enum CommandAction {
     SlashAgent {
         role: &'static str,
     },
+    WorkflowSkill {
+        skill: &'static str,
+        intent: WorkflowIntent,
+        continuation_mode: Option<ContinuationMode>,
+        requires_user_task: bool,
+    },
     WorkflowIntent {
         intent: WorkflowIntent,
     },
@@ -855,6 +861,7 @@ fn spec(
 impl CommandAction {
     pub fn surface(&self, availability: WorkflowCommandAvailability) -> CommandSurface {
         match self {
+            Self::WorkflowSkill { .. } => CommandSurface::WorkflowCommand,
             Self::WorkflowIntent { .. } => CommandSurface::WorkflowCommand,
             Self::StartContinuation { .. } | Self::StopContinuation => {
                 CommandSurface::ContinuationCommand
@@ -879,6 +886,15 @@ impl CommandAction {
 
     pub fn effect(&self) -> CommandEffect {
         match self {
+            Self::WorkflowSkill {
+                continuation_mode: Some(_),
+                ..
+            } => CommandEffect::ControlContinuation,
+            Self::WorkflowSkill {
+                continuation_mode: None,
+                intent,
+                ..
+            } => intent.effect(),
             Self::WorkflowIntent { intent } => intent.effect(),
             Self::StartContinuation { .. } | Self::StopContinuation => {
                 CommandEffect::ControlContinuation
@@ -900,8 +916,8 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::{
-        CommandAction, CommandEffect, CommandRegistry, CommandSurface, WorkflowCommandAvailability,
-        WorkflowIntent,
+        CommandAction, CommandEffect, CommandRegistry, CommandSurface, ContinuationMode,
+        WorkflowCommandAvailability, WorkflowIntent,
     };
 
     #[test]
@@ -975,6 +991,33 @@ mod tests {
         assert!(CommandRegistry::roots()
             .iter()
             .any(|root| root == &std::path::PathBuf::from(".opencode/command")));
+    }
+
+    #[test]
+    fn workflow_skill_action_preserves_skill_intent_and_continuation_metadata() {
+        let planning = CommandAction::WorkflowSkill {
+            skill: "ralplan",
+            intent: WorkflowIntent::PlanConsensus,
+            continuation_mode: None,
+            requires_user_task: false,
+        };
+        assert_eq!(
+            planning.surface(WorkflowCommandAvailability::Present),
+            CommandSurface::WorkflowCommand
+        );
+        assert_eq!(planning.effect(), WorkflowIntent::PlanConsensus.effect());
+
+        let continuation = CommandAction::WorkflowSkill {
+            skill: "ralph",
+            intent: WorkflowIntent::Run,
+            continuation_mode: Some(ContinuationMode::Ralph),
+            requires_user_task: true,
+        };
+        assert_eq!(
+            continuation.surface(WorkflowCommandAvailability::Present),
+            CommandSurface::WorkflowCommand
+        );
+        assert_eq!(continuation.effect(), CommandEffect::ControlContinuation);
     }
 
     #[test]

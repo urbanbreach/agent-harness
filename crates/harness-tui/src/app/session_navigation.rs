@@ -6,7 +6,9 @@ use std::path::{Component, Path, PathBuf};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_core::agent::AgentModelRef;
 use harness_core::agent_catalog::is_slash_agent_role;
-use harness_core::command_registry::{CommandAction, CommandRegistry, CommandSpec, WorkflowIntent};
+use harness_core::command_registry::{
+    CommandAction, CommandRegistry, CommandSpec, ContinuationMode, WorkflowIntent,
+};
 use harness_core::config::{registered_profile_model_metadata, ResolvedProfileModelMetadata};
 use harness_core::event::{first_lineage_parent_session_id, EventEnvelopeV1, EventV1};
 use harness_core::proj::{
@@ -1650,6 +1652,19 @@ impl AppState {
     ) {
         let base_command = format!("/{typed_command}");
         match spec.action {
+            CommandAction::WorkflowSkill {
+                skill,
+                intent,
+                continuation_mode,
+                requires_user_task,
+            } => self.execute_workflow_skill_command(
+                &base_command,
+                skill,
+                intent,
+                continuation_mode,
+                requires_user_task,
+                preserved_draft,
+            ),
             CommandAction::WorkflowIntent { intent } => self.emit_workflow_intent(
                 preserved_draft,
                 intent,
@@ -1724,6 +1739,19 @@ impl AppState {
     ) {
         let base_command = format!("${typed_command}");
         match spec.action {
+            CommandAction::WorkflowSkill {
+                skill,
+                intent,
+                continuation_mode,
+                requires_user_task,
+            } => self.execute_workflow_skill_command(
+                &base_command,
+                skill,
+                intent,
+                continuation_mode,
+                requires_user_task,
+                preserved_draft,
+            ),
             CommandAction::WorkflowIntent { intent } => self.emit_workflow_intent(
                 preserved_draft,
                 intent,
@@ -1773,6 +1801,80 @@ impl AppState {
                 )));
             }
         }
+    }
+
+    fn execute_workflow_skill_command(
+        &mut self,
+        base_command: &str,
+        skill: &str,
+        intent: WorkflowIntent,
+        continuation_mode: Option<ContinuationMode>,
+        requires_user_task: bool,
+        preserved_draft: Option<String>,
+    ) {
+        if requires_user_task
+            && preserved_draft
+                .as_deref()
+                .map(str::trim)
+                .is_none_or(str::is_empty)
+        {
+            self.restore_slash_draft(preserved_draft);
+            self.set_status_banner(Some(format!(
+                "workflow skill {skill} requires a task, e.g. {base_command} inspect this failure"
+            )));
+            return;
+        }
+
+        let skill_body = match load_workflow_skill_body(skill) {
+            Ok(skill_body) => skill_body,
+            Err(message) => {
+                self.restore_slash_draft(preserved_draft);
+                self.set_status_banner(Some(message));
+                return;
+            }
+        };
+
+        self.dispatch_workflow_skill_command(
+            base_command,
+            skill,
+            intent,
+            continuation_mode,
+            preserved_draft,
+            &skill_body,
+        );
+    }
+
+    fn dispatch_workflow_skill_command(
+        &mut self,
+        base_command: &str,
+        skill: &str,
+        intent: WorkflowIntent,
+        continuation_mode: Option<ContinuationMode>,
+        preserved_draft: Option<String>,
+        skill_body: &str,
+    ) {
+        let command =
+            Self::continuation_command_with_draft(base_command, preserved_draft.as_deref());
+        let prompt_template = workflow_skill_prompt_template(
+            base_command,
+            skill,
+            intent,
+            continuation_mode,
+            skill_body,
+        );
+
+        self.set_status_banner(Some(format!("workflow skill {skill} prompt queued")));
+        self.emit_ui_intent(UiIntent::WorkflowIntent {
+            intent,
+            command: command.clone(),
+        });
+        if let Some(mode) = continuation_mode {
+            self.emit_ui_intent(UiIntent::StartContinuation {
+                mode: mode.as_str().to_string(),
+                command,
+            });
+        }
+        self.dispatch_command_template_prompt(preserved_draft, &prompt_template);
     }
 
     fn execute_dollar_slash_agent_command(
@@ -3816,6 +3918,59 @@ fn dollar_command_spec(command: &str) -> Option<CommandSpec> {
         .cloned()
 }
 
+fn load_workflow_skill_body(skill: &str) -> Result<String, String> {
+    let Some(path) = workflow_skill_path(skill) else {
+        return Err(format!("workflow skill {skill} has an invalid skill id"));
+    };
+    fs::read_to_string(&path).map_err(|error| {
+        format!(
+            "workflow skill {skill} is unavailable at {}: {error}",
+            path.display()
+        )
+    })
+}
+
+fn workflow_skill_path(skill: &str) -> Option<PathBuf> {
+    if skill.is_empty()
+        || !skill
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+    {
+        return None;
+    }
+
+    Some(
+        Path::new(".agent-harness/skills")
+            .join(skill)
+            .join("SKILL.md"),
+    )
+}
+
+fn workflow_skill_prompt_template(
+    base_command: &str,
+    skill: &str,
+    intent: WorkflowIntent,
+    continuation_mode: Option<ContinuationMode>,
+    skill_body: &str,
+) -> String {
+    let skill_body = skill_body.replace("{{PROMPT}}", "{{args}}");
+    let continuation = continuation_mode
+        .map(|mode| mode.as_str().to_string())
+        .unwrap_or_else(|| "none".to_string());
+
+    format!(
+        "{base_command} {{{{args}}}}\n\n\
+         ## Active workflow: {skill}\n\n\
+         {skill_body}\n\n\
+         ## Workflow context\n\
+         workflow_intent={intent}\n\
+         continuation_mode={continuation}\n\
+         active_skills=[{skill}]\n\
+         Follow the workflow skill above. Use native harness tools and coordinator-owned workflow evidence; do not write per-mode `.omx/state/*.json` files.",
+        intent = intent.as_str(),
+    )
+}
+
 fn slash_command_spec(command: &str) -> Option<CommandSpec> {
     CommandRegistry::builtins()
         .get(command)
@@ -4131,6 +4286,7 @@ fn session_navigation_snapshot_from_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Mutex};
 
     fn actor(
         kind: harness_core::event::ActorKind,
@@ -4158,6 +4314,59 @@ mod tests {
             stream_key: None,
             payload,
         }
+    }
+
+    #[test]
+    fn workflow_skill_dispatch_records_workflow_continuation_and_submits_prompt() {
+        let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+        let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+            let intents = Arc::clone(&intents);
+            Arc::new(move |intent: UiIntent| {
+                intents.lock().expect("lock intents").push(intent);
+            })
+        };
+        let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(sink));
+
+        app.dispatch_workflow_skill_command(
+            "$ralph",
+            "ralph",
+            WorkflowIntent::Run,
+            Some(ContinuationMode::Ralph),
+            Some("ship the slice".to_string()),
+            "Ralph body for {{PROMPT}}",
+        );
+
+        let intents = intents.lock().expect("lock intents");
+        let [UiIntent::WorkflowIntent { intent, command }, UiIntent::StartContinuation {
+            mode,
+            command: continuation_command,
+        }, UiIntent::SubmitPrompt { text, .. }] = intents.as_slice()
+        else {
+            panic!("expected workflow, continuation, and prompt intents, got {intents:?}");
+        };
+
+        assert_eq!(*intent, WorkflowIntent::Run);
+        assert_eq!(command, "$ralph ship the slice");
+        assert_eq!(mode, "ralph");
+        assert_eq!(continuation_command, "$ralph ship the slice");
+        assert!(text.contains("$ralph ship the slice"));
+        assert!(text.contains("## Active workflow: ralph"));
+        assert!(text.contains("Ralph body for ship the slice"));
+        assert!(text.contains("workflow_intent=workflow.run"));
+        assert!(text.contains("continuation_mode=ralph"));
+        assert!(!text.contains("{{PROMPT}}"));
+    }
+
+    #[test]
+    fn workflow_skill_path_rejects_nested_skill_ids() {
+        assert!(workflow_skill_path("../ralph").is_none());
+        assert!(workflow_skill_path("ralph/nested").is_none());
+        assert_eq!(
+            workflow_skill_path("ai-slop-cleaner"),
+            Some(PathBuf::from(
+                ".agent-harness/skills/ai-slop-cleaner/SKILL.md"
+            ))
+        );
     }
 
     #[test]

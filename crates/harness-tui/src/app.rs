@@ -122,7 +122,8 @@ pub(crate) fn registered_slash_commands() -> Vec<(&'static str, &'static str)> {
         .filter(|command| {
             matches!(
                 command.action,
-                CommandAction::WorkflowIntent { .. }
+                CommandAction::WorkflowSkill { .. }
+                    | CommandAction::WorkflowIntent { .. }
                     | CommandAction::StartContinuation { .. }
                     | CommandAction::StopContinuation
                     | CommandAction::SlashAgent { .. }
