@@ -8145,38 +8145,43 @@ fn build_assistant_footer_line(
         format!("{} ", assistant_icon),
         Style::default().fg(assistant_color),
     ));
-    spans.push(Span::styled(
-        assistant_footer_label(&turn.header.profile_label),
-        Style::default().fg(assistant_primary_label_color(turn, theme)),
-    ));
+    let mut has_metadata = false;
     if has_trimmed_content(&turn.header.model_id) {
-        spans.push(Span::styled(" · ", muted_meta_style(theme)));
         spans.push(Span::styled(
             turn.header.model_id.clone(),
             muted_meta_style(theme),
         ));
+        has_metadata = true;
     }
     if matches!(
         turn.header.status,
         ActivityStatus::Done | ActivityStatus::Error
     ) {
         if let Some(duration_ms) = turn.header.duration_ms {
-            spans.push(Span::styled(" · ", muted_meta_style(theme)));
+            if has_metadata {
+                spans.push(Span::styled(" · ", muted_meta_style(theme)));
+            }
             spans.push(Span::styled(
                 format_duration_ms(duration_ms),
                 muted_meta_style(theme),
             ));
+            has_metadata = true;
         }
     }
     if turn.header.status != ActivityStatus::Done {
-        spans.push(Span::styled(" · ", muted_meta_style(theme)));
+        if has_metadata {
+            spans.push(Span::styled(" · ", muted_meta_style(theme)));
+        }
         spans.push(Span::styled(
             assistant_status.to_string(),
             Style::default().fg(assistant_color),
         ));
+        has_metadata = true;
     }
     if let Some(timestamp) = turn.footer_timestamp.as_deref() {
-        spans.push(Span::styled(" · ", muted_meta_style(theme)));
+        if has_metadata {
+            spans.push(Span::styled(" · ", muted_meta_style(theme)));
+        }
         spans.push(Span::styled(timestamp.to_string(), muted_meta_style(theme)));
     }
     Line::from(spans)
@@ -8184,33 +8189,6 @@ fn build_assistant_footer_line(
 
 fn transcript_streaming_spinner_frame(animation_phase: usize) -> &'static str {
     TRANSCRIPT_BRAILLE_SPINNER_FRAMES[animation_phase % TRANSCRIPT_BRAILLE_SPINNER_FRAMES.len()]
-}
-
-fn titlecase_label(value: &str) -> String {
-    let mut chars = value.chars();
-    let Some(first) = chars.next() else {
-        return String::new();
-    };
-    format!("{}{}", first.to_uppercase(), chars.as_str())
-}
-
-fn assistant_footer_label(value: &str) -> String {
-    if !has_trimmed_content(value)
-        || value.eq_ignore_ascii_case("unknown")
-        || value.eq_ignore_ascii_case("default")
-    {
-        return "Assistant".to_string();
-    }
-    titlecase_label(value)
-}
-
-fn assistant_primary_label_color(turn: &TranscriptTurnSection, theme: &Theme) -> Color {
-    match turn.header.status {
-        ActivityStatus::Queued => theme.text.secondary,
-        ActivityStatus::Streaming => theme.text.primary,
-        ActivityStatus::Done => theme.text.primary,
-        ActivityStatus::Error => theme.status.error,
-    }
 }
 
 fn selected_foreground_for_badge(background: Color, theme: &Theme) -> Color {
@@ -8681,7 +8659,7 @@ pub(crate) fn exact_test_latest_assistant_footer_stays_after_trailing_tool_rows(
         .expect("tool row");
     let footer_row = lines
         .iter()
-        .position(|line| line.contains("Assistant · gpt-5.4-mini"))
+        .position(|line| line.contains("gpt-5.4-mini"))
         .expect("assistant footer row");
 
     assert!(
@@ -12566,7 +12544,7 @@ mod tests {
         ));
         assert!(initial_lines
             .iter()
-            .any(|line| line.contains("⠋ Assistant · gpt-5.4-mini · active")));
+            .any(|line| line.contains("⠋ gpt-5.4-mini · active")));
 
         app.advance_transcript_animation_phase();
 
@@ -12577,7 +12555,7 @@ mod tests {
         ));
         assert!(updated_lines
             .iter()
-            .any(|line| line.contains("⠙ Assistant · gpt-5.4-mini · active")));
+            .any(|line| line.contains("⠙ gpt-5.4-mini · active")));
     }
 
     #[test]
@@ -12696,10 +12674,10 @@ mod tests {
 
         let footer_row = lines
             .iter()
-            .position(|line| line.contains("Assistant · gpt-5.4-mini · active"))
+            .position(|line| line.contains("gpt-5.4-mini · active"))
             .expect("streaming assistant footer row");
         assert_eq!(footer_row, 0);
-        assert_eq!(lines[footer_row], "   ⠋ Assistant · gpt-5.4-mini · active");
+        assert_eq!(lines[footer_row], "   ⠋ gpt-5.4-mini · active");
     }
 
     #[test]
@@ -12774,10 +12752,7 @@ mod tests {
         ));
 
         assert_eq!(
-            lines
-                .iter()
-                .filter(|line| line.contains("Assistant ·"))
-                .count(),
+            lines.iter().filter(|line| line.contains("gpt-new")).count(),
             1
         );
         assert!(lines.iter().all(|line| !line.contains("gpt-old")));
@@ -12830,7 +12805,7 @@ mod tests {
         ));
 
         assert!(lines.iter().any(|line| line.contains("Read src/ui.rs")));
-        assert!(lines.iter().any(|line| line.contains("Assistant ·")));
+        assert!(lines.iter().any(|line| line.contains("gpt-5.4-mini")));
     }
 
     #[test]
@@ -12866,7 +12841,7 @@ mod tests {
         ));
         assert!(streaming_lines
             .iter()
-            .any(|line| line.contains("Assistant · gpt-5.4-mini · active")));
+            .any(|line| line.contains("gpt-5.4-mini · active")));
 
         app.activities[0].status = ActivityStatus::Done;
         app.mark_transcript_dirty_for_test();
@@ -12879,11 +12854,11 @@ mod tests {
 
         assert!(completed_lines
             .iter()
-            .any(|line| line.contains("Assistant · gpt-5.4-mini")));
+            .any(|line| line.contains("gpt-5.4-mini")));
         assert!(completed_lines.iter().any(|line| line.contains("09:45")));
         assert!(completed_lines
             .iter()
-            .all(|line| !line.contains("Assistant · gpt-5.4-mini · active")));
+            .all(|line| !line.contains("gpt-5.4-mini · active")));
     }
 
     #[test]
@@ -12961,9 +12936,7 @@ mod tests {
         assert!(lines
             .iter()
             .any(|line| line.contains("assistant reply from ordered events")));
-        assert!(lines
-            .iter()
-            .any(|line| line.contains("Assistant · gpt-5.4-mini")));
+        assert!(lines.iter().any(|line| line.contains("gpt-5.4-mini")));
     }
 
     #[test]
@@ -13019,7 +12992,7 @@ mod tests {
         assert!(lines.iter().any(|line| line.contains("09:45")));
         assert!(lines
             .iter()
-            .any(|line| line == "   ▪ Assistant · gpt-5.4-mini · 0ms · 09:45"));
+            .any(|line| line == "   ▪ gpt-5.4-mini · 0ms · 09:45"));
         assert!(lines.iter().any(|line| line.contains("hello")));
         assert!(lines.iter().any(|line| line.contains("reply")));
     }
@@ -13221,8 +13194,8 @@ mod tests {
             80,
         ));
 
-        assert_eq!(first[0], "   ⠋ Assistant · gpt-5.4-mini · active");
-        assert_eq!(second[0], "   ⠙ Assistant · gpt-5.4-mini · active");
+        assert_eq!(first[0], "   ⠋ gpt-5.4-mini · active");
+        assert_eq!(second[0], "   ⠙ gpt-5.4-mini · active");
     }
 
     #[test]
@@ -13289,7 +13262,7 @@ mod tests {
         assert!(
             lines
                 .iter()
-                .all(|line| !line.contains("Assistant · gpt-5.4-mini · queued")),
+                .all(|line| !line.contains("gpt-5.4-mini · queued")),
             "runtime queued status alone should not render a queued assistant footer: {lines:#?}"
         );
     }
@@ -13334,7 +13307,7 @@ mod tests {
         assert!(
             lines
                 .iter()
-                .any(|line| line.contains("Assistant · gpt-5.4-mini · active")),
+                .any(|line| line.contains("gpt-5.4-mini · active")),
             "streaming follow-up should keep the active assistant footer: {lines:#?}"
         );
     }
@@ -13399,7 +13372,7 @@ mod tests {
         assert!(
             lines
                 .iter()
-                .any(|line| line.contains("Assistant · gpt-5.4-mini · active")),
+                .any(|line| line.contains("gpt-5.4-mini · active")),
             "active assistant footer should stay on the in-flight turn: {lines:#?}"
         );
         assert!(
@@ -13409,7 +13382,7 @@ mod tests {
         assert!(
             lines
                 .iter()
-                .all(|line| !line.contains("Assistant · gpt-5.4-mini · queued")),
+                .all(|line| !line.contains("gpt-5.4-mini · queued")),
             "queued follow-up should not steal the assistant footer: {lines:#?}"
         );
     }
