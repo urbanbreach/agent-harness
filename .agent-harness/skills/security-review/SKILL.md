@@ -1,22 +1,27 @@
 ---
-name: review-work
-description: Focused review protocol for finding correctness, safety, regression, and test coverage issues before closeout.
+name: security-review
+description: Security-focused code/config review of trust boundaries, secrets, injection, authn/authz, and supply-chain risk.
+tools: [read, grep, bash, task]
+permissions:
+  read: allow
+  grep: allow
+  bash: ask
+  task: ask
 ---
 
-# Review work
+# Security review
 
-Use this skill when auditing a patch, plan, or completed implementation.
+Use this skill for security audit requests or high-risk changes.
 
-## Review stance
-- Lead with concrete findings, ordered by severity.
-- Anchor findings to file paths, line numbers, commands, or artifacts.
-- Separate evidence from inference.
-- Check for missing tests around behavior changes, public contracts, replay semantics, permissions, and user-visible flows.
+## Scope
+- Secrets and credential handling.
+- Input validation, command execution, path traversal, SSRF, XSS/injection as applicable.
+- Authn/authz and permission boundaries.
+- Dependency/config exposure and unsafe defaults.
+- Event/replay/tool side-effect boundaries in this repository.
 
-## Closeout
-- If no issues are found, say that directly and name the residual risk.
-- Summaries are secondary to findings.
-- Do not claim completion from passing tests alone; map the evidence back to the requested behavior.
+## Output
+Lead with exploitable findings and concrete mitigation. If clean, state what was reviewed and remaining blind spots.
 
 ## Harness state contract
 
