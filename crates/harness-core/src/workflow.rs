@@ -16,6 +16,7 @@ use crate::goal_ledger::GoalLedgerProjection;
 use crate::persistent_task::PersistentTaskProjection;
 use crate::plan_consensus::PlanConsensusProjection;
 use crate::research_mission::ResearchMissionProjection;
+use crate::workflow_review::{code_review_verdict_from_evidence, CodeReviewVerdict};
 
 pub const SIMULATED_TOOL_EVIDENCE_CATEGORY: &str = "evidence.simulated_tool_result";
 pub const SIGNOFF_WAIVER_DECISION: &str = "waive-missing-evidence";
@@ -47,6 +48,12 @@ pub struct WorkflowRunProjection {
     pub owner: String,
     pub status: String,
     pub terminal: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_verdict: Option<CodeReviewVerdict>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub return_to_ralplan_reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lane: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -195,6 +202,9 @@ impl WorkflowProjection {
                     owner: payload.owner.clone(),
                     status: "active".to_string(),
                     terminal: false,
+                    phase: default_phase_for_mode(&payload.mode),
+                    review_verdict: None,
+                    return_to_ralplan_reason: None,
                     lane: payload.lane.clone(),
                     title: payload.title.clone(),
                     idempotency_key: payload.idempotency_key.clone(),
@@ -221,6 +231,7 @@ impl WorkflowProjection {
             return;
         }
         run.status = payload.to_status.clone();
+        run.phase = Some(phase_from_status(&payload.to_status));
         run.owner = payload.owner.clone();
     }
 
@@ -249,6 +260,25 @@ impl WorkflowProjection {
         }
         if let Some(run) = self.workflows.get_mut(&payload.workflow_id) {
             run.evidence_categories.insert(payload.category.clone());
+            if let Some(phase) = phase_from_evidence_metadata(&payload.metadata) {
+                run.phase = Some(phase);
+            }
+            if payload.category == crate::workflow_registry::REVIEW_EVIDENCE_CATEGORY {
+                if let Some(verdict) =
+                    code_review_verdict_from_evidence(&payload.summary, &payload.metadata)
+                {
+                    run.review_verdict = Some(verdict);
+                }
+                if let Some(reason) = payload
+                    .metadata
+                    .get(crate::workflow_review::RETURN_TO_RALPLAN_REASON_METADATA_KEY)
+                    .map(String::as_str)
+                    .map(str::trim)
+                    .filter(|reason| !reason.is_empty())
+                {
+                    run.return_to_ralplan_reason = Some(reason.to_string());
+                }
+            }
             if let Some(snapshot_ref) = snapshot_ref {
                 run.context_snapshot = Some(snapshot_ref);
             }
@@ -309,6 +339,7 @@ impl WorkflowProjection {
                 return;
             }
             run.status = payload.outcome.clone();
+            run.phase = Some(phase_from_status(&payload.outcome));
             run.owner = payload.owner.clone();
             run.terminal = true;
         }
@@ -554,6 +585,59 @@ fn workflow_id_from_metadata(metadata: Option<&WorkflowEventMetadata>) -> Option
         .map(|workflow_id| workflow_id.trim())
         .filter(|workflow_id| !workflow_id.is_empty())
         .map(str::to_string)
+}
+
+fn default_phase_for_mode(mode: &str) -> Option<String> {
+    let phase = match crate::workflow_transitions::normalize_workflow_mode(mode) {
+        Some("deep-interview") => "interviewing",
+        Some("ralplan") => "planning",
+        Some("autopilot") => "planning",
+        Some("autoresearch") => "researching",
+        Some("team") => "coordinating",
+        Some("ralph") => "executing",
+        Some("ultrawork") => "executing",
+        Some("ultraqa") => "testing",
+        _ if mode.trim().is_empty() => return None,
+        _ => "active",
+    };
+    Some(phase.to_string())
+}
+
+fn phase_from_status(status: &str) -> String {
+    let phase = status
+        .trim()
+        .strip_prefix("outcome.")
+        .unwrap_or(status.trim());
+    if phase.is_empty() {
+        "unknown".to_string()
+    } else {
+        phase.replace('_', "-")
+    }
+}
+
+fn phase_from_evidence_metadata(metadata: &BTreeMap<String, String>) -> Option<String> {
+    ["phase", "current_phase", "workflow_phase", "status"]
+        .iter()
+        .find_map(|key| non_empty_phase(metadata.get(*key)))
+        .or_else(|| {
+            metadata
+                .iter()
+                .filter(|(key, _)| {
+                    key.ends_with("_status")
+                        && key.as_str() != WORKFLOW_QUESTION_METADATA_STATUS
+                        && key.as_str() != "question_status"
+                })
+                .find_map(|(_, value)| non_empty_phase(Some(value)))
+        })
+}
+
+fn non_empty_phase(value: Option<&String>) -> Option<String> {
+    value
+        .map(String::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.strip_prefix("outcome.").unwrap_or(value))
+        .map(|value| value.replace('_', "-"))
 }
 
 fn merge_team_metadata(
@@ -1071,6 +1155,106 @@ mod tests {
         assert_eq!(run.status, "outcome.finished");
         assert!(run.terminal);
         assert_eq!(run.owner, "leader");
+    }
+
+    #[test]
+    fn workflow_projection_tracks_phase_from_mode_evidence_and_completion() {
+        let events = [
+            EventV1::WorkflowStarted(WorkflowStartedEvent {
+                workflow_id: "wf_phase".to_string(),
+                mode: "ralph".to_string(),
+                owner: "leader".to_string(),
+                lane: None,
+                title: None,
+                idempotency_key: None,
+            }),
+            EventV1::WorkflowEvidenceRecorded(WorkflowEvidenceRecordedEvent {
+                workflow_id: "wf_phase".to_string(),
+                category: "evidence.review".to_string(),
+                summary: "architect review running".to_string(),
+                artifact_path: None,
+                artifact_digest: None,
+                acceptance_ref: None,
+                metadata: std::collections::BTreeMap::from([(
+                    "current_phase".to_string(),
+                    "architect_verifying".to_string(),
+                )]),
+            }),
+        ];
+
+        let projection = project_workflows(events.iter());
+        let run = &projection.workflows["wf_phase"];
+        assert_eq!(run.phase.as_deref(), Some("architect-verifying"));
+
+        let completed = EventV1::WorkflowCompleted(WorkflowCompletedEvent {
+            workflow_id: "wf_phase".to_string(),
+            outcome: "outcome.finished".to_string(),
+            reason: "done".to_string(),
+            owner: "leader".to_string(),
+        });
+        let projection = project_workflows(events.iter().chain([completed].iter()));
+        let run = &projection.workflows["wf_phase"];
+        assert_eq!(run.phase.as_deref(), Some("finished"));
+    }
+
+    #[test]
+    fn workflow_projection_materializes_review_verdict_and_loopback_reason() {
+        let events = [
+            EventV1::WorkflowStarted(WorkflowStartedEvent {
+                workflow_id: "wf_autopilot".to_string(),
+                mode: "workflow.autopilot".to_string(),
+                owner: "leader".to_string(),
+                lane: None,
+                title: None,
+                idempotency_key: None,
+            }),
+            EventV1::WorkflowEvidenceRecorded(WorkflowEvidenceRecordedEvent {
+                workflow_id: "wf_autopilot".to_string(),
+                category: crate::workflow_registry::REVIEW_EVIDENCE_CATEGORY.to_string(),
+                summary: r#"{"recommendation":"REQUEST CHANGES","architectural_status":"WATCH","findings":["fix tests"]}"#.to_string(),
+                artifact_path: None,
+                artifact_digest: None,
+                acceptance_ref: Some("review".to_string()),
+                metadata: std::collections::BTreeMap::from([
+                    ("phase".to_string(), "ralplan".to_string()),
+                    (
+                        crate::workflow_review::RETURN_TO_RALPLAN_REASON_METADATA_KEY.to_string(),
+                        "tests failed".to_string(),
+                    ),
+                ]),
+            }),
+        ];
+
+        let projection = project_workflows(events.iter());
+        let run = &projection.workflows["wf_autopilot"];
+        let verdict = run.review_verdict.as_ref().expect("review verdict");
+        assert_eq!(verdict.recommendation, "REQUEST_CHANGES");
+        assert_eq!(verdict.architectural_status, "WATCH");
+        assert_eq!(run.phase.as_deref(), Some("ralplan"));
+        assert_eq!(
+            run.return_to_ralplan_reason.as_deref(),
+            Some("tests failed")
+        );
+    }
+
+    #[test]
+    fn workflow_projection_sets_default_phase_for_started_mode() {
+        let projection = project_workflows(
+            [EventV1::WorkflowStarted(WorkflowStartedEvent {
+                workflow_id: "wf_ralph".to_string(),
+                mode: "ralph".to_string(),
+                owner: "leader".to_string(),
+                lane: None,
+                title: None,
+                idempotency_key: None,
+            })]
+            .iter(),
+        );
+
+        assert_eq!(
+            projection.workflows["wf_ralph"].phase.as_deref(),
+            Some("executing")
+        );
     }
 
     #[test]
