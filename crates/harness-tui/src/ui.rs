@@ -1384,7 +1384,7 @@ mod tests {
         assert!(debug.contains("╻ ╻  ┏━┓  ┏━┓  ┏┓╻") || debug.contains("Harness"));
         assert!(!debug.contains("Launch: deep · gpt-5.4"));
         assert!(!debug.contains("Provider proxy"));
-        assert!(debug.contains("Deep gpt-5.4 proxy · Demo"));
+        assert!(debug.contains("gpt-5.4 proxy · Demo"));
         assert!(debug.contains("ctrl+p commands"));
         assert!(!debug.contains("Enter select"));
         assert!(debug.contains("Ask anything... \"What is the tech stack of this project?\""));

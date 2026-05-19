@@ -2109,7 +2109,6 @@ fn render_document_composer_content(
                 context.disclosure_visible,
                 usize::from(rows[3].width),
                 theme,
-                composer_agent_accent(theme, app),
                 composer_surface,
             ))
             .style(Style::default().bg(composer_surface)),
@@ -2121,7 +2120,6 @@ fn render_document_composer_content(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ComposerMetadataTone {
     Accent,
-    AgentAccent,
     Primary,
     Secondary,
     Tertiary,
@@ -2133,7 +2131,6 @@ fn composer_metadata_line(
     _disclosure_visible: bool,
     max_width: usize,
     theme: &Theme,
-    agent_accent: Color,
     surface: Color,
 ) -> Line<'static> {
     let candidates = composer_metadata_candidates(app, dock);
@@ -2155,7 +2152,7 @@ fn composer_metadata_line(
                 Span::styled(
                     text,
                     Style::default()
-                        .fg(composer_metadata_color(tone, theme, agent_accent))
+                        .fg(composer_metadata_color(tone, theme))
                         .bg(surface),
                 )
             })
@@ -2191,14 +2188,9 @@ fn control_dock_summary_tone_to_metadata_tone(
     }
 }
 
-fn composer_metadata_color(
-    tone: ComposerMetadataTone,
-    theme: &Theme,
-    agent_accent: Color,
-) -> Color {
+fn composer_metadata_color(tone: ComposerMetadataTone, theme: &Theme) -> Color {
     match tone {
         ComposerMetadataTone::Accent => composer_input_accent(theme),
-        ComposerMetadataTone::AgentAccent => agent_accent,
         ComposerMetadataTone::Primary => composer_input_text(theme),
         ComposerMetadataTone::Secondary => composer_input_muted(theme),
         ComposerMetadataTone::Tertiary => theme.text.tertiary,
@@ -2216,7 +2208,6 @@ fn composer_metadata_candidates(
     app: &AppState,
     dock: &crate::view_model::ControlDockViewModel,
 ) -> Vec<Vec<(String, ComposerMetadataTone)>> {
-    let profile = app.current_agent_label();
     let model = app.current_model_base_label().to_string();
     let source = app.current_source_label();
     let tail = app
@@ -2230,13 +2221,7 @@ fn composer_metadata_candidates(
         });
 
     let mut full = Vec::new();
-    if let Some(profile) = profile.clone() {
-        full.push((profile, ComposerMetadataTone::AgentAccent));
-    }
     if !model.is_empty() && model != "-" {
-        if !full.is_empty() {
-            full.push((" ".to_string(), ComposerMetadataTone::Secondary));
-        }
         full.push((model.clone(), ComposerMetadataTone::Primary));
     }
     if let Some(source) = source.clone() {
@@ -2253,13 +2238,7 @@ fn composer_metadata_candidates(
     }
 
     let mut compact = Vec::new();
-    if let Some(profile) = profile.as_ref() {
-        compact.push((profile.clone(), ComposerMetadataTone::AgentAccent));
-    }
     if !model.is_empty() && model != "-" {
-        if !compact.is_empty() {
-            compact.push((" ".to_string(), ComposerMetadataTone::Secondary));
-        }
         compact.push((model, ComposerMetadataTone::Primary));
     }
 
@@ -2268,11 +2247,6 @@ fn composer_metadata_candidates(
         compact,
         source
             .map(|source| vec![(source, ComposerMetadataTone::Secondary)])
-            .or_else(|| {
-                profile
-                    .as_ref()
-                    .map(|profile| vec![(profile.clone(), ComposerMetadataTone::AgentAccent)])
-            })
             .unwrap_or_default(),
         vec![(
             dock.primary_summary.clone(),
@@ -2326,14 +2300,9 @@ fn composer_metadata_text(
 
     best_fit_text(
         &[
-            Some(format!(
-                "{} {}",
-                app.active_profile(),
-                app.current_model_label()
-            )),
+            Some(app.current_model_label().to_string()),
             app.launch_mode_label().map(str::to_string),
             Some(dock.primary_summary.clone()),
-            Some(app.current_model_label().to_string()),
         ]
         .into_iter()
         .flatten()
@@ -3102,11 +3071,7 @@ fn disclosure_segment(
     Span::styled(
         text.into(),
         Style::default()
-            .fg(composer_metadata_color(
-                tone,
-                theme,
-                composer_input_accent(theme),
-            ))
+            .fg(composer_metadata_color(tone, theme))
             .bg(surface),
     )
 }
