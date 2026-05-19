@@ -40,6 +40,16 @@ pub const WORKFLOW_CLOSEOUT_DIMENSION_QUESTION: &str = "question";
 pub const WORKFLOW_CLOSEOUT_DIMENSION_HOOKS: &str = "hooks";
 pub const WORKFLOW_CLOSEOUT_DIMENSION_STATE: &str = "state";
 pub const WORKFLOW_CLOSEOUT_DIMENSION_TRACE: &str = "trace";
+pub const WORKFLOW_CLOSEOUT_DIMENSION_REVIEW: &str = "review";
+pub const WORKFLOW_CLOSEOUT_DIMENSION_SECURITY: &str = "security";
+pub const WORKFLOW_CLOSEOUT_DIMENSION_QA: &str = "qa";
+pub const WORKFLOW_CLOSEOUT_DIMENSION_PERFORMANCE: &str = "performance";
+pub const WORKFLOW_CLOSEOUT_DIMENSION_VISUAL: &str = "visual";
+pub const WORKFLOW_CLOSEOUT_DIMENSION_ADVISOR: &str = "advisor";
+pub const WORKFLOW_CLOSEOUT_DIMENSION_SETUP: &str = "setup";
+pub const WORKFLOW_CLOSEOUT_DIMENSION_SKILL: &str = "skill";
+pub const WORKFLOW_CLOSEOUT_DIMENSION_STATUS_HUD: &str = "status_hud";
+pub const WORKFLOW_CLOSEOUT_DIMENSION_NOTE_MEMORY: &str = "note_memory";
 
 pub const WORKFLOW_CLOSEOUT_DOSSIER_EVIDENCE_CATEGORY: &str = "evidence.dossier";
 pub const WORKFLOW_CLOSEOUT_HOOK_EVIDENCE_CATEGORY: &str = "evidence.hook_decision";
@@ -448,6 +458,76 @@ pub fn evaluate_closeout_readiness(
                 "Trace",
                 WORKFLOW_CLOSEOUT_TRACE_EVIDENCE_CATEGORY,
                 "trace_status",
+            ),
+            metadata_status_dimension(
+                evidence,
+                WORKFLOW_CLOSEOUT_DIMENSION_REVIEW,
+                "Review findings",
+                crate::workflow_registry::REVIEW_EVIDENCE_CATEGORY,
+                "review_status",
+            ),
+            metadata_status_dimension(
+                evidence,
+                WORKFLOW_CLOSEOUT_DIMENSION_SECURITY,
+                "Security review",
+                crate::workflow_registry::SECURITY_REVIEW_EVIDENCE_CATEGORY,
+                "security_status",
+            ),
+            metadata_status_dimension(
+                evidence,
+                WORKFLOW_CLOSEOUT_DIMENSION_QA,
+                "QA scenarios",
+                crate::workflow_registry::QA_EVIDENCE_CATEGORY,
+                "qa_status",
+            ),
+            metadata_status_dimension(
+                evidence,
+                WORKFLOW_CLOSEOUT_DIMENSION_PERFORMANCE,
+                "Performance evaluation",
+                crate::workflow_registry::PERFORMANCE_EVIDENCE_CATEGORY,
+                "performance_status",
+            ),
+            metadata_status_dimension(
+                evidence,
+                WORKFLOW_CLOSEOUT_DIMENSION_VISUAL,
+                "Visual verdict",
+                crate::workflow_registry::VISUAL_EVIDENCE_CATEGORY,
+                "visual_status",
+            ),
+            metadata_status_dimension(
+                evidence,
+                WORKFLOW_CLOSEOUT_DIMENSION_ADVISOR,
+                "Advisor evidence",
+                crate::workflow_registry::ADVISOR_EVIDENCE_CATEGORY,
+                "advisor_status",
+            ),
+            metadata_status_dimension(
+                evidence,
+                WORKFLOW_CLOSEOUT_DIMENSION_SETUP,
+                "Setup/doctor",
+                crate::workflow_registry::SETUP_DOCTOR_EVIDENCE_CATEGORY,
+                "setup_status",
+            ),
+            metadata_status_dimension(
+                evidence,
+                WORKFLOW_CLOSEOUT_DIMENSION_SKILL,
+                "Skill management",
+                crate::workflow_registry::SKILL_MANAGEMENT_EVIDENCE_CATEGORY,
+                "skill_status",
+            ),
+            metadata_status_dimension(
+                evidence,
+                WORKFLOW_CLOSEOUT_DIMENSION_STATUS_HUD,
+                "Status/HUD",
+                crate::workflow_registry::STATUS_HUD_EVIDENCE_CATEGORY,
+                "status_hud_status",
+            ),
+            metadata_status_dimension(
+                evidence,
+                WORKFLOW_CLOSEOUT_DIMENSION_NOTE_MEMORY,
+                "Note/memory",
+                crate::workflow_registry::NOTE_MEMORY_EVIDENCE_CATEGORY,
+                "note_memory_status",
             ),
         ],
         &waivers,
@@ -1103,12 +1183,17 @@ mod tests {
     use super::{
         builtin_policy_ids, WorkflowCloseoutPolicy, WorkflowCloseoutPolicyConfig,
         WorkflowSignoffDecision, WORKFLOW_CLOSEOUT_DEFAULT_POLICY_ID,
-        WORKFLOW_CLOSEOUT_DIMENSION_CONTINUATIONS, WORKFLOW_CLOSEOUT_DIMENSION_DOSSIER,
-        WORKFLOW_CLOSEOUT_DIMENSION_EVIDENCE, WORKFLOW_CLOSEOUT_DIMENSION_GOAL,
-        WORKFLOW_CLOSEOUT_DIMENSION_HOOKS, WORKFLOW_CLOSEOUT_DIMENSION_MISSION,
-        WORKFLOW_CLOSEOUT_DIMENSION_PLAN, WORKFLOW_CLOSEOUT_DIMENSION_QUESTION,
-        WORKFLOW_CLOSEOUT_DIMENSION_STATE, WORKFLOW_CLOSEOUT_DIMENSION_TASKS,
-        WORKFLOW_CLOSEOUT_DIMENSION_TEAM, WORKFLOW_CLOSEOUT_DIMENSION_TRACE,
+        WORKFLOW_CLOSEOUT_DIMENSION_ADVISOR, WORKFLOW_CLOSEOUT_DIMENSION_CONTINUATIONS,
+        WORKFLOW_CLOSEOUT_DIMENSION_DOSSIER, WORKFLOW_CLOSEOUT_DIMENSION_EVIDENCE,
+        WORKFLOW_CLOSEOUT_DIMENSION_GOAL, WORKFLOW_CLOSEOUT_DIMENSION_HOOKS,
+        WORKFLOW_CLOSEOUT_DIMENSION_MISSION, WORKFLOW_CLOSEOUT_DIMENSION_NOTE_MEMORY,
+        WORKFLOW_CLOSEOUT_DIMENSION_PERFORMANCE, WORKFLOW_CLOSEOUT_DIMENSION_PLAN,
+        WORKFLOW_CLOSEOUT_DIMENSION_QA, WORKFLOW_CLOSEOUT_DIMENSION_QUESTION,
+        WORKFLOW_CLOSEOUT_DIMENSION_REVIEW, WORKFLOW_CLOSEOUT_DIMENSION_SECURITY,
+        WORKFLOW_CLOSEOUT_DIMENSION_SETUP, WORKFLOW_CLOSEOUT_DIMENSION_SKILL,
+        WORKFLOW_CLOSEOUT_DIMENSION_STATE, WORKFLOW_CLOSEOUT_DIMENSION_STATUS_HUD,
+        WORKFLOW_CLOSEOUT_DIMENSION_TASKS, WORKFLOW_CLOSEOUT_DIMENSION_TEAM,
+        WORKFLOW_CLOSEOUT_DIMENSION_TRACE, WORKFLOW_CLOSEOUT_DIMENSION_VISUAL,
         WORKFLOW_CLOSEOUT_DIMENSION_WIKI, WORKFLOW_CLOSEOUT_HOOK_EVIDENCE_CATEGORY,
         WORKFLOW_CLOSEOUT_STATE_EVIDENCE_CATEGORY, WORKFLOW_CLOSEOUT_TRACE_EVIDENCE_CATEGORY,
     };
@@ -1136,6 +1221,12 @@ mod tests {
         WORKFLOW_QUESTION_STATUS_ASKED, WORKFLOW_QUESTION_STATUS_CLOSED,
         WORKFLOW_QUESTION_STATUS_ERROR, WORKFLOW_QUESTION_STATUS_TIMED_OUT,
         WORKFLOW_TASK_METADATA_KEY,
+    };
+    use crate::workflow_registry::{
+        ADVISOR_EVIDENCE_CATEGORY, NOTE_MEMORY_EVIDENCE_CATEGORY, PERFORMANCE_EVIDENCE_CATEGORY,
+        QA_EVIDENCE_CATEGORY, REVIEW_EVIDENCE_CATEGORY, SECURITY_REVIEW_EVIDENCE_CATEGORY,
+        SETUP_DOCTOR_EVIDENCE_CATEGORY, SKILL_MANAGEMENT_EVIDENCE_CATEGORY,
+        STATUS_HUD_EVIDENCE_CATEGORY, VISUAL_EVIDENCE_CATEGORY,
     };
 
     fn start_event() -> EventV1 {
@@ -1317,6 +1408,82 @@ mod tests {
         assert!(readiness.legal_next_actions.iter().any(|action| {
             action.action == WorkflowSignoffDecision::Waive && action.requires_scope
         }));
+    }
+
+    #[test]
+    fn workflow_family_evidence_statuses_block_closeout_until_resolved() {
+        let cases = [
+            (
+                REVIEW_EVIDENCE_CATEGORY,
+                WORKFLOW_CLOSEOUT_DIMENSION_REVIEW,
+                "review_status",
+            ),
+            (
+                SECURITY_REVIEW_EVIDENCE_CATEGORY,
+                WORKFLOW_CLOSEOUT_DIMENSION_SECURITY,
+                "security_status",
+            ),
+            (
+                QA_EVIDENCE_CATEGORY,
+                WORKFLOW_CLOSEOUT_DIMENSION_QA,
+                "qa_status",
+            ),
+            (
+                PERFORMANCE_EVIDENCE_CATEGORY,
+                WORKFLOW_CLOSEOUT_DIMENSION_PERFORMANCE,
+                "performance_status",
+            ),
+            (
+                VISUAL_EVIDENCE_CATEGORY,
+                WORKFLOW_CLOSEOUT_DIMENSION_VISUAL,
+                "visual_status",
+            ),
+            (
+                ADVISOR_EVIDENCE_CATEGORY,
+                WORKFLOW_CLOSEOUT_DIMENSION_ADVISOR,
+                "advisor_status",
+            ),
+            (
+                SETUP_DOCTOR_EVIDENCE_CATEGORY,
+                WORKFLOW_CLOSEOUT_DIMENSION_SETUP,
+                "setup_status",
+            ),
+            (
+                SKILL_MANAGEMENT_EVIDENCE_CATEGORY,
+                WORKFLOW_CLOSEOUT_DIMENSION_SKILL,
+                "skill_status",
+            ),
+            (
+                STATUS_HUD_EVIDENCE_CATEGORY,
+                WORKFLOW_CLOSEOUT_DIMENSION_STATUS_HUD,
+                "status_hud_status",
+            ),
+            (
+                NOTE_MEMORY_EVIDENCE_CATEGORY,
+                WORKFLOW_CLOSEOUT_DIMENSION_NOTE_MEMORY,
+                "note_memory_status",
+            ),
+        ];
+
+        for (category, dimension, status_key) in cases {
+            let readiness = readiness_for(vec![
+                start_event(),
+                evidence_event(
+                    category,
+                    &format!("{dimension}-blocked"),
+                    BTreeMap::from([(status_key.to_string(), "failed".to_string())]),
+                ),
+            ]);
+            let dimension = readiness.dimension(dimension).expect("family dimension");
+            assert!(
+                !dimension.allowed,
+                "{category} with failed status should block closeout"
+            );
+            assert!(dimension
+                .blocking_refs
+                .iter()
+                .any(|reference| reference.contains("blocked")));
+        }
     }
 
     #[test]
