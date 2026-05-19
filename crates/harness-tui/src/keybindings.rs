@@ -19,7 +19,7 @@ impl PaletteCommandSection {
         match self {
             Self::Suggested => "Suggested",
             Self::Session => "Sessions",
-            Self::Agent => "Agents",
+            Self::Agent => "Escalation",
             Self::System => "System",
         }
     }
@@ -124,22 +124,8 @@ impl Action {
             PaletteCommand {
                 id: "switch_model",
                 label: "Switch model",
-                description: "Browse available provider/model options",
+                description: "Explicitly choose a model or escalation lane",
                 shortcut: "model",
-                section: PaletteCommandSection::Agent,
-            },
-            PaletteCommand {
-                id: "agent_cycle",
-                label: "Next agent",
-                description: "Cycle to the next primary agent",
-                shortcut: "tab",
-                section: PaletteCommandSection::Agent,
-            },
-            PaletteCommand {
-                id: "agent_cycle_reverse",
-                label: "Previous agent",
-                description: "Cycle to the previous primary agent",
-                shortcut: "shift+tab",
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
@@ -152,7 +138,7 @@ impl Action {
             PaletteCommand {
                 id: "toggles",
                 label: "Toggles",
-                description: "Toggle profiles, tools, hooks, MCP, YOLO",
+                description: "Toggle advanced profiles, tools, hooks, MCP, YOLO",
                 shortcut: "toggles",
                 section: PaletteCommandSection::Agent,
             },
@@ -332,14 +318,18 @@ impl Action {
             ("new_session", "Start a fresh live session"),
             ("resume_session", "Continue a prior session when resumable"),
             ("replay_session", "Replay a previous session as read-only"),
-            ("switch_model", "Browse available provider/model options"),
-            ("agent_cycle", "Cycle to the next primary agent"),
-            ("agent_cycle_reverse", "Cycle to the previous primary agent"),
+            (
+                "switch_model",
+                "Explicitly choose a model or escalation lane",
+            ),
             (
                 "cycle_variant",
                 "Cycle the configured model variant/reasoning preset",
             ),
-            ("toggles", "Toggle profiles, tools, hooks, MCP, YOLO"),
+            (
+                "toggles",
+                "Toggle advanced profiles, tools, hooks, MCP, YOLO",
+            ),
             (
                 "close_review_surface",
                 "Return to the transcript-first session shell",
@@ -599,17 +589,18 @@ impl KeyMap {
             Action::MoveUp,
         );
 
-        // Agent cycling (upstream-compatible primary-agent switching)
+        // Focus traversal is the default Tab behavior. Agent/profile switching is
+        // an explicit model/escalation action, not the normal one-operator path.
         keymap.bind(
             KeyBinding::new(KeyCode::Tab, KeyModifiers::NONE),
-            Action::AgentCycle,
+            Action::FocusNext,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::BackTab, KeyModifiers::NONE),
-            Action::AgentCycleReverse,
+            Action::FocusPrev,
         );
 
-        // Focus cycling remains available on explicit control chords.
+        // Keep control chords as compatibility aliases for focus cycling.
         keymap.bind(
             KeyBinding::new(KeyCode::Tab, KeyModifiers::CONTROL),
             Action::FocusNext,
@@ -1038,22 +1029,21 @@ mod tests {
     }
 
     #[test]
-    fn keymap_binds_tab_to_agent_cycle_by_default() {
+    fn keymap_binds_tab_to_focus_by_default() {
         let keymap = KeyMap::with_defaults();
 
         assert_eq!(
             keymap.get_action(&KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
-            Some(Action::AgentCycle)
+            Some(Action::FocusNext)
         );
         assert_eq!(
             keymap.get_action(&KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE)),
-            Some(Action::AgentCycleReverse)
+            Some(Action::FocusPrev)
         );
-        assert_eq!(keymap.get_binding_str(Action::AgentCycle), "Tab");
-        assert_eq!(
-            keymap.get_binding_str(Action::AgentCycleReverse),
-            "Shift-Tab"
-        );
+        assert_eq!(keymap.get_binding_str(Action::FocusNext), "Tab");
+        assert_eq!(keymap.get_binding_str(Action::FocusPrev), "Shift-Tab");
+        assert_eq!(keymap.get_binding_str(Action::AgentCycle), "-");
+        assert_eq!(keymap.get_binding_str(Action::AgentCycleReverse), "-");
     }
 
     #[test]

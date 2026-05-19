@@ -433,7 +433,7 @@ pub(super) fn module_inline_diff_does_not_leave_large_gap_before_active_footer()
         .expect("inline diff row");
     let footer_row = lines
         .iter()
-        .position(|line| line.contains("Assistant") && line.contains("active"))
+        .position(|line| line.contains("model-1") && line.contains("active"))
         .expect("active assistant footer row");
 
     assert_eq!(

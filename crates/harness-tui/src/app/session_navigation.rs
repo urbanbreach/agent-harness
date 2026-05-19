@@ -5,7 +5,8 @@ use std::path::{Component, Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_core::agent::AgentModelRef;
-use harness_core::command_registry::WorkflowIntent;
+use harness_core::agent_catalog::is_slash_agent_role;
+use harness_core::command_registry::{CommandAction, CommandRegistry, CommandSpec, WorkflowIntent};
 use harness_core::config::{registered_profile_model_metadata, ResolvedProfileModelMetadata};
 use harness_core::event::{first_lineage_parent_session_id, EventEnvelopeV1, EventV1};
 use harness_core::proj::{
@@ -16,11 +17,12 @@ use harness_core::session_title::is_parent_default_title;
 use serde_json::Value;
 
 use super::{
-    json_string_field, set_pending_live_launch_metadata, set_pending_live_prompt_auto_submit,
+    builtin_dollar_commands, builtin_slash_commands, dollar_command_description, json_string_field,
+    set_pending_live_launch_metadata, set_pending_live_prompt_auto_submit,
     set_pending_live_prompt_draft, slash_command_description, task_child_request_id_from_output,
     task_child_session_id_from_output, ActivityEntry, AppState, Focus, PermissionConfirmSelection,
     PermissionModalSelection, PermissionModalStage, PostRunHandoffAction, ReviewSurface,
-    StartupLauncherAction, SubagentSessionInfo, Tab, ToolCallEntry, UiIntent, SLASH_COMMANDS,
+    StartupLauncherAction, SubagentSessionInfo, Tab, ToolCallEntry, UiIntent,
 };
 use crate::keybindings::Action;
 use crate::text::{has_trimmed_content, non_empty_trimmed};
@@ -1217,14 +1219,34 @@ impl AppState {
         self.slash_overlay_should_render() && self.handle_slash_key(key)
     }
 
-    fn active_slash_query(&self) -> Option<&str> {
+    pub(crate) fn active_command_prefix(&self) -> Option<char> {
+        if self.prompt_cursor == 0 || self.prompt_buffer.chars().any(char::is_whitespace) {
+            return None;
+        }
+
+        self.prompt_buffer
+            .chars()
+            .next()
+            .filter(|prefix| matches!(prefix, '/' | '$'))
+    }
+
+    pub(in crate::app) fn prompt_buffer_starts_with_command_prefix(&self) -> bool {
+        self.prompt_buffer
+            .chars()
+            .next()
+            .is_some_and(|prefix| matches!(prefix, '/' | '$'))
+    }
+
+    fn active_command_query(&self) -> Option<(char, &str)> {
         if self.prompt_cursor == 0 || self.prompt_buffer.chars().any(char::is_whitespace) {
             return None;
         }
 
         let cursor_byte = self.prompt_cursor_byte_index();
-        let query = self.prompt_buffer[..cursor_byte].strip_prefix('/')?;
-        (!query.chars().any(char::is_whitespace)).then_some(query)
+        let prefix = self.active_command_prefix()?;
+        let prefix_len = prefix.len_utf8();
+        let query = &self.prompt_buffer[prefix_len..cursor_byte];
+        (!query.chars().any(char::is_whitespace)).then_some((prefix, query))
     }
 
     pub(in crate::app) fn clear_slash_menu(&mut self) {
@@ -1238,30 +1260,31 @@ impl AppState {
     }
 
     pub(in crate::app) fn sync_slash_overlay(&mut self) {
+        let active_command_query = self.active_command_query();
         if self.focus != Focus::Prompt
             || self.composer_disabled()
-            || self.active_slash_query().is_none()
+            || active_command_query.is_none()
             || self.palette_visible
             || self.session_history_visible
             || self.model_switcher_visible
             || self.toggles_menu_visible
             || self.active_permission().is_some()
         {
-            if !self.prompt_buffer.starts_with('/') {
+            if !self.prompt_buffer_starts_with_command_prefix() {
                 self.slash_draft_snapshot = None;
             }
             self.clear_slash_menu();
             return;
         }
 
-        let slash_query = self.active_slash_query().unwrap_or_default().to_lowercase();
+        let (command_prefix, command_query) = active_command_query.unwrap_or(('/', ""));
+        let slash_query = command_query.to_lowercase();
+        let available_commands = self.available_command_entries(command_prefix);
 
-        self.slash_visible = true;
-        let mut filtered = self
-            .available_slash_commands()
+        let mut filtered = available_commands
             .into_iter()
             .filter_map(|(command, description)| {
-                slash_command_match_rank(command, description, &slash_query)
+                command_match_rank(command, description, &slash_query, command_prefix)
                     .map(|rank| (rank, command.to_string()))
             })
             .collect::<Vec<_>>();
@@ -1269,6 +1292,7 @@ impl AppState {
             filtered.retain(|(rank, _)| *rank == (0, 0));
         }
         filtered.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+        self.slash_visible = true;
         self.slash_filtered = filtered
             .into_iter()
             .take(SLASH_COMMAND_RESULT_LIMIT)
@@ -1284,7 +1308,8 @@ impl AppState {
     }
 
     pub(in crate::app) fn typed_slash_invocation(&self) -> Option<(&str, Option<String>)> {
-        let command = self.prompt_buffer.trim().strip_prefix('/')?;
+        let command = self.prompt_buffer.trim();
+        let command = command.strip_prefix('/')?;
         let (command, args) = command
             .split_once(char::is_whitespace)
             .map(|(command, args)| (command, Some(args.trim().to_string())))
@@ -1297,16 +1322,36 @@ impl AppState {
         Some((canonical, args.filter(|args| !args.is_empty())))
     }
 
+    pub(in crate::app) fn typed_dollar_invocation(&self) -> Option<(&str, Option<String>)> {
+        let command = self.prompt_buffer.trim();
+        let command = command.strip_prefix('$')?;
+        let (command, args) = command
+            .split_once(char::is_whitespace)
+            .map(|(command, args)| (command, Some(args.trim().to_string())))
+            .unwrap_or((command, None));
+        let command = command.trim();
+        if command.is_empty() {
+            return None;
+        }
+        let canonical = self.find_dollar_command(command)?;
+        Some((canonical, args.filter(|args| !args.is_empty())))
+    }
+
     pub(crate) fn slash_command_column_width(&self) -> usize {
-        self.available_slash_commands()
-            .into_iter()
-            .map(|(command, _)| slash_command_display_width(command))
+        self.slash_filtered
+            .iter()
+            .map(String::as_str)
+            .map(slash_command_display_width)
             .max()
             .unwrap_or(0)
             .saturating_add(2)
     }
 
     pub(crate) fn slash_command_description(&self, command: &str) -> &str {
+        if self.active_command_prefix() == Some('$') {
+            return dollar_command_description(command);
+        }
+
         self.slash_command_templates
             .get(command)
             .and_then(|template| template.description.as_deref())
@@ -1314,11 +1359,28 @@ impl AppState {
             .unwrap_or_else(|| slash_command_description(command))
     }
 
+    fn available_command_entries(&self, prefix: char) -> Vec<(&str, &str)> {
+        match prefix {
+            '$' => self.available_dollar_commands(),
+            _ => self.available_slash_commands(),
+        }
+    }
+
+    fn available_dollar_commands(&self) -> Vec<(&str, &str)> {
+        if self.replay_mode {
+            return Vec::new();
+        }
+
+        builtin_dollar_commands()
+            .into_iter()
+            .filter(|(command, _)| self.dollar_command_available(command))
+            .collect()
+    }
+
     fn available_slash_commands(&self) -> Vec<(&str, &str)> {
-        let mut commands = SLASH_COMMANDS
-            .iter()
+        let mut commands = builtin_slash_commands()
+            .into_iter()
             .filter(|(command, _)| self.slash_command_available(command))
-            .map(|(command, description)| (*command, *description))
             .collect::<Vec<_>>();
         commands.extend(
             self.slash_command_templates
@@ -1342,11 +1404,11 @@ impl AppState {
     }
 
     fn find_slash_command(&self, name_or_alias: &str) -> Option<&str> {
-        if let Some((name, _)) = SLASH_COMMANDS.iter().find(|(name, _)| {
+        if let Some((name, _)) = builtin_slash_commands().into_iter().find(|(name, _)| {
             (*name == name_or_alias || slash_command_aliases(name).contains(&name_or_alias))
                 && self.slash_command_available(name)
         }) {
-            return Some(*name);
+            return Some(name);
         }
         self.slash_command_templates
             .get_key_value(name_or_alias)
@@ -1354,9 +1416,15 @@ impl AppState {
             .map(|(name, _)| name.as_str())
     }
 
+    fn find_dollar_command(&self, name_or_alias: &str) -> Option<&'static str> {
+        builtin_dollar_commands()
+            .into_iter()
+            .find_map(|(name, _)| (name == name_or_alias).then_some(name))
+    }
+
     fn slash_command_available(&self, command: &str) -> bool {
         match command {
-            "new" | "status" | "toggles" | "exit" => true,
+            "new" | "sessions" | "status" | "toggles" | "exit" => true,
             "resume" | "replay" => !self.replay_mode,
             "fork" => !self.startup_mode && !self.replay_mode,
             "clone" => !self.startup_mode && self.lineage_write_blocked_reason().is_none(),
@@ -1366,15 +1434,29 @@ impl AppState {
             "shell" => self.active_review_surface.is_some(),
             "follow" => !self.replay_mode && !self.startup_mode,
             "compact" => self.compact_session_supported,
-            "workflow-run" | "workflow-status" | "workflow-signoff" | "workflow-cancel"
-            | "workflow-dossier" | "workflow-snapshot" | "plan-consensus" | "goal-ledger"
-            | "research-mission" | "wiki" => !self.replay_mode,
-            "init-deep" | "refactor" | "start-work" | "remove-ai-slops" | "handoff"
-            | "hyperplan" => !self.replay_mode,
-            "ralph-loop" | "ulw-loop" => !self.replay_mode && !self.startup_mode,
-            "cancel-ralph" | "stop-continuation" => !self.replay_mode && !self.startup_mode,
-            _ => self.slash_command_templates.contains_key(command) && !self.replay_mode,
+            _ if is_slash_agent_role(command) => !self.replay_mode && !self.startup_mode,
+            _ => {
+                !self.replay_mode
+                    && (!self.startup_mode && slash_command_spec(command).is_some()
+                        || self.slash_command_templates.contains_key(command))
+            }
         }
+    }
+
+    fn dollar_command_available(&self, command: &str) -> bool {
+        if self.replay_mode {
+            return false;
+        }
+
+        let Some(spec) = dollar_command_spec(command) else {
+            return false;
+        };
+
+        if self.startup_mode {
+            return matches!(spec.action, CommandAction::BlockedWorkflow { .. });
+        }
+
+        true
     }
 
     fn model_switcher_supported(&self) -> bool {
@@ -1501,117 +1583,6 @@ impl AppState {
                 self.restore_slash_draft(preserved_draft);
                 self.emit_ui_intent(UiIntent::CompactSession);
             }
-            "workflow-run" => self.emit_workflow_intent(
-                preserved_draft,
-                WorkflowIntent::Run,
-                "/workflow run",
-                "workflow run intent queued",
-            ),
-            "workflow-status" => self.emit_workflow_intent(
-                preserved_draft,
-                WorkflowIntent::Status,
-                "/workflow status",
-                "workflow status intent queued",
-            ),
-            "workflow-signoff" => self.emit_workflow_intent(
-                preserved_draft,
-                WorkflowIntent::Signoff,
-                "/workflow signoff",
-                "workflow signoff intent queued",
-            ),
-            "workflow-cancel" => self.emit_workflow_intent(
-                preserved_draft,
-                WorkflowIntent::Cancel,
-                "/workflow cancel",
-                "workflow cancel intent queued",
-            ),
-            "workflow-dossier" => self.emit_workflow_intent(
-                preserved_draft,
-                WorkflowIntent::DossierExport,
-                "/workflow dossier",
-                "workflow dossier intent queued",
-            ),
-            "workflow-snapshot" => self.emit_workflow_intent(
-                preserved_draft,
-                WorkflowIntent::Snapshot,
-                "/workflow snapshot",
-                "workflow snapshot intent queued",
-            ),
-            "plan-consensus" => self.emit_workflow_intent(
-                preserved_draft,
-                WorkflowIntent::PlanConsensus,
-                "/plan-consensus",
-                "workflow plan consensus intent queued",
-            ),
-            "goal-ledger" => self.emit_workflow_intent(
-                preserved_draft,
-                WorkflowIntent::GoalLedger,
-                "/goal-ledger",
-                "workflow goal ledger intent queued",
-            ),
-            "research-mission" => self.emit_workflow_intent(
-                preserved_draft,
-                WorkflowIntent::ResearchMission,
-                "/research-mission",
-                "workflow research mission intent queued",
-            ),
-            "wiki" => self.emit_workflow_intent(
-                preserved_draft,
-                WorkflowIntent::Wiki,
-                "/wiki",
-                "workflow wiki intent queued",
-            ),
-            "ralph-loop" => {
-                let command = Self::continuation_command_with_draft("/ralph-loop", preserved_draft.as_deref());
-                self.restore_slash_draft(preserved_draft);
-                self.set_status_banner(Some("starting bounded Ralph continuation".to_string()));
-                self.emit_ui_intent(UiIntent::StartContinuation {
-                    mode: "ralph".to_string(),
-                    command,
-                });
-            }
-            "ulw-loop" => {
-                let command = Self::continuation_command_with_draft("/ulw-loop", preserved_draft.as_deref());
-                self.restore_slash_draft(preserved_draft);
-                self.set_status_banner(Some(
-                    "starting bounded ultrawork continuation".to_string(),
-                ));
-                self.emit_ui_intent(UiIntent::StartContinuation {
-                    mode: "ultrawork".to_string(),
-                    command,
-                });
-            }
-            "cancel-ralph" | "stop-continuation" => {
-                self.restore_slash_draft(preserved_draft);
-                self.set_status_banner(Some("stopping active continuation".to_string()));
-                self.emit_ui_intent(UiIntent::StopContinuation {
-                    reason: format!("/{command}"),
-                });
-            }
-            "init-deep" => self.dispatch_command_template_prompt(
-                preserved_draft,
-                "Deep interview this request before implementation. Identify constraints, success criteria, risks, and the smallest safe next step.",
-            ),
-            "refactor" => self.dispatch_command_template_prompt(
-                preserved_draft,
-                "Refactor safely: preserve behavior, prefer deletion and existing utilities, add or run regression tests first, then verify.",
-            ),
-            "start-work" => self.dispatch_command_template_prompt(
-                preserved_draft,
-                "Start work from the current plan. State objective, constraints, first task, and verification path before editing.",
-            ),
-            "remove-ai-slops" => self.dispatch_command_template_prompt(
-                preserved_draft,
-                "Remove AI slop from the touched files: simplify, delete redundant layers, preserve behavior, and verify.",
-            ),
-            "handoff" => self.dispatch_command_template_prompt(
-                preserved_draft,
-                "Create a concise handoff artifact with goal, current state, changed files, verification, risks, and next steps.",
-            ),
-            "hyperplan" => self.dispatch_command_template_prompt(
-                preserved_draft,
-                "Create a parallelizable implementation plan with independent lanes, ownership, verification, and handoff criteria.",
-            ),
             "fork" => self
                 .execute_passive_lineage_slash_command(preserved_draft, LineageSlashCommand::Fork),
             "tree" => self
@@ -1620,13 +1591,177 @@ impl AppState {
                 .execute_passive_lineage_slash_command(preserved_draft, LineageSlashCommand::Clone),
             "exit" => self.execute_action(Action::Quit),
             _ => {
-                if let Some(template) = self
+                if is_slash_agent_role(command) {
+                    self.execute_slash_agent_command(command, preserved_draft);
+                } else if let Some(spec) = slash_command_spec(command) {
+                    self.execute_registered_slash_command(command, spec, preserved_draft);
+                } else if let Some(template) = self
                     .slash_command_templates
                     .get(command)
                     .map(|template| template.prompt.clone())
                 {
                     self.dispatch_command_template_prompt(preserved_draft, &template);
                 }
+            }
+        }
+    }
+
+    fn execute_slash_agent_command(&mut self, role: &str, preserved_draft: Option<String>) {
+        if self.startup_mode || self.replay_mode {
+            self.restore_slash_draft(preserved_draft);
+            self.set_status_banner(Some(format!(
+                "slash-agent /{role} is only available in live sessions"
+            )));
+            return;
+        }
+
+        let Some(task) = preserved_draft
+            .as_deref()
+            .map(str::trim)
+            .filter(|task| !task.is_empty())
+            .map(str::to_string)
+        else {
+            self.restore_slash_draft(preserved_draft);
+            self.set_status_banner(Some(format!(
+                "slash-agent /{role} requires a task, e.g. /{role} inspect this failure"
+            )));
+            return;
+        };
+
+        let command = format!("/{role} {task}");
+        self.restore_slash_draft(None);
+        self.set_status_banner(Some(format!("slash-agent /{role} task queued")));
+        self.emit_ui_intent(UiIntent::SlashAgentTask {
+            role: role.to_string(),
+            task,
+            command,
+            launch_metadata: self.launch_metadata.clone(),
+        });
+    }
+
+    fn execute_registered_slash_command(
+        &mut self,
+        typed_command: &str,
+        spec: CommandSpec,
+        preserved_draft: Option<String>,
+    ) {
+        let base_command = format!("/{typed_command}");
+        match spec.action {
+            CommandAction::WorkflowIntent { intent } => self.emit_workflow_intent(
+                preserved_draft,
+                intent,
+                &base_command,
+                &format!("{} intent queued", intent.as_str()),
+            ),
+            CommandAction::StartContinuation { mode } => {
+                let command = Self::continuation_command_with_draft(
+                    &base_command,
+                    preserved_draft.as_deref(),
+                );
+                self.restore_slash_draft(preserved_draft);
+                self.set_status_banner(Some(format!(
+                    "starting bounded {} continuation",
+                    mode.as_str()
+                )));
+                self.emit_ui_intent(UiIntent::StartContinuation {
+                    mode: mode.as_str().to_string(),
+                    command,
+                });
+            }
+            CommandAction::StopContinuation => {
+                self.restore_slash_draft(preserved_draft);
+                self.set_status_banner(Some("stopping active continuation".to_string()));
+                self.emit_ui_intent(UiIntent::StopContinuation {
+                    reason: base_command,
+                });
+            }
+            CommandAction::BlockedWorkflow { reason, .. } => {
+                self.block_staged_workflow_command(preserved_draft, reason);
+            }
+            CommandAction::PromptTemplate { prompt } => {
+                self.dispatch_command_template_prompt(preserved_draft, prompt);
+            }
+            CommandAction::LoadSkills { .. }
+            | CommandAction::ProfileSwitch { .. }
+            | CommandAction::NativeTool { .. }
+            | CommandAction::PlanArtifact { .. }
+            | CommandAction::HandoffArtifact { .. }
+            | CommandAction::TuiAction { .. } => {
+                self.restore_slash_draft(preserved_draft);
+                self.set_status_banner(Some(format!(
+                    "slash command /{typed_command} is not executable in the TUI yet"
+                )));
+            }
+        }
+    }
+
+    pub fn execute_dollar_command(&mut self, command: &str, preserved_draft: Option<String>) {
+        self.clear_slash_menu();
+        if !self.dollar_command_available(command) {
+            self.restore_slash_draft(preserved_draft);
+            self.set_status_banner(Some(format!(
+                "dollar command ${command} is not available in this TUI state"
+            )));
+            return;
+        }
+
+        if let Some(spec) = dollar_command_spec(command) {
+            self.execute_registered_dollar_command(command, spec, preserved_draft);
+        }
+    }
+
+    fn execute_registered_dollar_command(
+        &mut self,
+        typed_command: &str,
+        spec: CommandSpec,
+        preserved_draft: Option<String>,
+    ) {
+        let base_command = format!("${typed_command}");
+        match spec.action {
+            CommandAction::WorkflowIntent { intent } => self.emit_workflow_intent(
+                preserved_draft,
+                intent,
+                &base_command,
+                &format!("{} intent queued", intent.as_str()),
+            ),
+            CommandAction::StartContinuation { mode } => {
+                let command = Self::continuation_command_with_draft(
+                    &base_command,
+                    preserved_draft.as_deref(),
+                );
+                self.restore_slash_draft(preserved_draft);
+                self.set_status_banner(Some(format!(
+                    "starting bounded {} continuation",
+                    mode.as_str()
+                )));
+                self.emit_ui_intent(UiIntent::StartContinuation {
+                    mode: mode.as_str().to_string(),
+                    command,
+                });
+            }
+            CommandAction::StopContinuation => {
+                self.restore_slash_draft(preserved_draft);
+                self.set_status_banner(Some("stopping active continuation".to_string()));
+                self.emit_ui_intent(UiIntent::StopContinuation {
+                    reason: base_command,
+                });
+            }
+            CommandAction::BlockedWorkflow { reason, .. } => {
+                self.block_staged_workflow_command(preserved_draft, reason);
+            }
+            CommandAction::PromptTemplate { prompt } => {
+                self.dispatch_command_template_prompt(preserved_draft, prompt);
+            }
+            CommandAction::LoadSkills { .. }
+            | CommandAction::ProfileSwitch { .. }
+            | CommandAction::NativeTool { .. }
+            | CommandAction::PlanArtifact { .. }
+            | CommandAction::HandoffArtifact { .. }
+            | CommandAction::TuiAction { .. } => {
+                self.restore_slash_draft(preserved_draft);
+                self.set_status_banner(Some(format!(
+                    "dollar command ${typed_command} is not executable in the TUI yet"
+                )));
             }
         }
     }
@@ -1657,6 +1792,11 @@ impl AppState {
             return;
         }
         self.dispatch_submitted_prompt(text);
+    }
+
+    fn block_staged_workflow_command(&mut self, preserved_draft: Option<String>, reason: &str) {
+        self.restore_slash_draft(preserved_draft);
+        self.set_status_banner(Some(format!("workflow command hidden: {reason}")));
     }
 
     fn emit_workflow_intent(
@@ -1766,7 +1906,11 @@ impl AppState {
         let Some(command) = self.slash_filtered.get(self.slash_selected).cloned() else {
             return;
         };
-        self.execute_slash_command(&command, self.slash_draft_snapshot.clone());
+        if self.active_command_prefix() == Some('$') {
+            self.execute_dollar_command(&command, self.slash_draft_snapshot.clone());
+        } else {
+            self.execute_slash_command(&command, self.slash_draft_snapshot.clone());
+        }
     }
 
     pub(in crate::app) fn handle_model_key(&mut self, key: &KeyEvent) -> bool {
@@ -2699,20 +2843,6 @@ impl AppState {
             .collect::<Vec<_>>();
 
         if profiles.is_empty() {
-            for candidate in ["build", "plan"] {
-                if self
-                    .launch_metadata
-                    .available_models()
-                    .iter()
-                    .any(|option| option.profile == candidate)
-                    && self.primary_agent_enabled(candidate)
-                {
-                    profiles.push(candidate.to_string());
-                }
-            }
-        }
-
-        if profiles.is_empty() {
             profiles.push(self.active_profile().to_string());
         }
 
@@ -3564,23 +3694,38 @@ impl AppState {
 }
 
 fn imported_slash_command_collides_with_builtin(command: &str) -> bool {
-    SLASH_COMMANDS.iter().any(|(builtin, _)| {
-        *builtin == command || slash_command_aliases(builtin).contains(&command)
-    })
+    builtin_slash_commands()
+        .into_iter()
+        .any(|(builtin, _)| builtin == command || slash_command_aliases(builtin).contains(&command))
 }
 
-fn slash_command_match_rank(command: &str, description: &str, query: &str) -> Option<(u8, usize)> {
+fn command_match_rank(
+    command: &str,
+    description: &str,
+    query: &str,
+    prefix: char,
+) -> Option<(u8, usize)> {
+    let display = format!("{prefix}{command}");
+    let aliases = match prefix {
+        '/' => slash_command_aliases(command),
+        _ => &[],
+    };
+    let is_registered_workflow_slash = prefix == '/' && slash_command_spec(command).is_some();
+    let is_slash_agent = prefix == '/' && is_slash_agent_role(command);
+
     if query.is_empty() {
-        return Some((0, 0));
+        return (!is_registered_workflow_slash && !is_slash_agent).then_some((0, 0));
     }
 
-    let display = format!("/{command}");
     let command = command.to_lowercase();
     let description = description.to_lowercase();
-    let aliases = slash_command_aliases(command.as_str());
 
     if command == query || display == query || aliases.contains(&query) {
         return Some((0, 0));
+    }
+
+    if is_registered_workflow_slash && query.len() < 4 {
+        return None;
     }
 
     if command.starts_with(query)
@@ -3613,7 +3758,29 @@ fn slash_command_match_rank(command: &str, description: &str, query: &str) -> Op
     description.find(query).map(|index| (3, index))
 }
 
+fn dollar_command_spec(command: &str) -> Option<CommandSpec> {
+    CommandRegistry::builtins()
+        .commands()
+        .iter()
+        .find(|spec| spec.dollar_aliases.contains(&command))
+        .cloned()
+}
+
+fn slash_command_spec(command: &str) -> Option<CommandSpec> {
+    CommandRegistry::builtins()
+        .get(command)
+        .filter(|spec| spec.enabled_by_default)
+        .cloned()
+}
+
 fn slash_command_aliases(command: &str) -> &'static [&'static str] {
+    if let Some(spec) = CommandRegistry::builtins()
+        .get(command)
+        .filter(|spec| spec.enabled_by_default)
+    {
+        return spec.aliases;
+    }
+
     match command {
         "new" => &["new-session", "session"],
         "resume" => &["continue"],
@@ -3622,24 +3789,6 @@ fn slash_command_aliases(command: &str) -> &'static [&'static str] {
         "events" => &["event-log"],
         "shell" => &["session-shell"],
         "compact" => &["summarize", "summary"],
-        "workflow-run" => &["workflow"],
-        "workflow-status" => &["status-workflow"],
-        "workflow-signoff" => &["signoff"],
-        "workflow-cancel" => &["cancel-workflow"],
-        "workflow-dossier" => &["dossier"],
-        "workflow-snapshot" => &["snapshot"],
-        "plan-consensus" => &["ralplan", "consensus-plan", "workflow-plan-consensus"],
-        "goal-ledger" => &["goal", "ultragoal", "workflow-goal"],
-        "research-mission" => &[
-            "mission",
-            "research-loop",
-            "autoresearch",
-            "workflow-mission",
-        ],
-        "wiki" => &["workflow-wiki"],
-        "ulw-loop" => &["ultrawork", "ulw"],
-        "cancel-ralph" => &["stop-ralph"],
-        "remove-ai-slops" => &["deslop", "ai-slop-cleaner"],
         "exit" => &["quit", "q"],
         _ => &[],
     }
