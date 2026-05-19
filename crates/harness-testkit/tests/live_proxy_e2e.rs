@@ -1301,7 +1301,7 @@ fn example_config_keeps_minimal_surface_and_live_helper_prepares_runtime_profile
 
     assert_eq!(
         config.get("default_agent").and_then(Value::as_str),
-        Some("build")
+        Some("operator")
     );
 
     let shipped_agents = config
@@ -1309,8 +1309,17 @@ fn example_config_keeps_minimal_surface_and_live_helper_prepares_runtime_profile
         .and_then(Value::as_object)
         .expect("the shipped public example should expose discoverable built-in agents");
     assert!(
-        shipped_agents.contains_key("build"),
-        "the shipped public example should list the default build agent for operator toggles"
+        shipped_agents.contains_key("operator"),
+        "the shipped public example should list the default operator agent"
+    );
+    assert!(
+        shipped_agents
+            .get("build")
+            .and_then(Value::as_object)
+            .and_then(|agent| agent.get("hidden"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        "the shipped public example should keep build as a hidden compatibility lane"
     );
 
     let build_prompt = shipped_agent_prompt_body("build");
