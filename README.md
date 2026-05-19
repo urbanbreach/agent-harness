@@ -191,7 +191,9 @@ The shipped `default` provider points at the local CLIProxy-compatible bridge (`
 
 The TUI exposes slash commands for `/model`, `/status`, `/toggles`, `/resume`, `/new`,
 `/tree`, `/fork`, `/clone`, `/compact`, `/ralph-loop`, `/ulw-loop`,
-`/stop-continuation`, and `/cancel-ralph`. `/model` switches the agent/model used for subsequent turns,
+`/stop-continuation`, `/cancel-ralph`, and registry-derived workflow/agent
+commands such as `/ultragoal`, `/analyze`, `/team`, and `/git-master`.
+`/model` switches the agent/model used for subsequent turns,
 `/status` opens the system status dialog, `/toggles` opens the session-local Toggles menu for
 configured agents, prompts, hooks, MCP servers, tools, skills, and YOLO menu state, `/resume`
 opens the saved-session picker, and `/new` starts a clean live run. `/tree` shows the Harness
@@ -206,10 +208,13 @@ Workflow intent slash commands are typed UI intents, not shell snippets. The CLI
 status, dossier, snapshot, goal, mission, and wiki read/list/query surfaces derive from recorded
 events or explicit wiki roots rather than rerunning hooks or tools. `harness workflow evidence record`
 records generic review/security/QA/performance/visual/utility family evidence with status metadata
-and artifact refs so closeout can block on failed findings without live side effects. Staged helper aliases such as
-`/init-deep`, `/refactor`, `/start-work`, `/remove-ai-slops`, `/handoff`, and `/hyperplan` remain
-registered compatibility entries, but they are hidden from the default TUI menu until they write
-workflow-owned evidence instead of prompt-only placeholder text.
+and artifact refs so closeout can block on failed findings without live side effects.
+Compatibility helper aliases such as `/init-deep`, `/refactor`, `/start-work`,
+`/remove-ai-slops`, `/handoff`, and `/hyperplan` are registered workflow
+commands that write coordinator-owned workflow intent/evidence instead of
+prompt-only placeholder text. The `$` overlay derives the same aliases from the
+registry; `$worker` is intentionally absent because it is a team-internal worker
+protocol, not a user-facing command.
 
 | Workflow intent | TUI slash commands | CLI surface |
 | --- | --- | --- |
@@ -223,8 +228,19 @@ workflow-owned evidence instead of prompt-only placeholder text.
 | Goal ledger | `/goal-ledger` (`/goal`, `/ultragoal`, `/workflow-goal`) | `harness workflow goal` |
 | Research mission | `/research-mission` (`/mission`, `/research-loop`, `/autoresearch`, `/workflow-mission`) | `harness workflow mission` |
 | Wiki | `/wiki` (`/workflow-wiki`) | `harness workflow wiki` |
+| Deep interview | `/init-deep` (`/deep-interview`) | `harness workflow snapshot write` |
+| Cleanup/refactor | `/refactor`, `/remove-ai-slops` (`/deslop`, `/ai-slop-cleaner`) | `harness workflow evidence record` |
+| Work start/handoff | `/start-work`, `/handoff`, `/hyperplan` | `harness workflow evidence record` |
+| Team escalation | `/team`, `/swarm` | typed workflow intent + team/task events |
+| Continuation | `/ralph`, `/ultrawork`, `/ralph-loop`, `/ulw-loop` | continuation events |
+| Analysis, review, and QA | `/analyze`, `/code-review`, `/review`, `/security-review`, `/ultraqa` | `harness workflow evidence record` |
+| Utilities | `/doctor`, `/help`, `/hud`, `/note`, `/skill`, `/trace`, `/configure-notifications` | `harness workflow evidence record` |
+| Planning modifiers | `/autopilot`, `/pipeline`, `/tdd`, `/ecomode`, `/ralph-init` | typed workflow intent + continuation/evidence events |
+| Research/performance | `/autoresearch-goal`, `/deepsearch`, `/performance-goal` | `harness workflow mission` or `harness workflow evidence record` |
+| Design and visual | `/design`, `/frontend-ui-ux`, `/visual-ralph`, `/visual-verdict`, `/web-clone` | `harness workflow evidence record` |
+| Agent shortcuts | `/git-master` | native `task` tool with the `git-master` subagent profile |
 
-Operator workflow examples, staged blocker rules, and the acceptance-evidence
+Operator workflow examples, non-applicable command classification, and the acceptance-evidence
 dossier live in [`docs/config.md`](docs/config.md#operator-workflow-examples)
 and [`docs/harness-omx-next-completion-dossier.md`](docs/harness-omx-next-completion-dossier.md).
 

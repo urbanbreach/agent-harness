@@ -310,8 +310,8 @@ plan verdicts, goal story status, checkpoint refs, and final quality-gate readin
 launching workers or reading artifact contents. Research mission projections require validator or
 review artifact refs before completion, while wiki write/delete events record page digests and
 wiki read/list/query surfaces remain explicit live-read operations over the configured wiki root.
-The generic `workflow evidence record` path covers staged review/security/QA/performance/visual,
-advisor, setup/doctor, skill, status/HUD, note/memory, and continuation families by appending
+The generic `workflow evidence record` path covers review/security/QA/performance/visual,
+setup/doctor, skill, status/HUD, note/memory, continuation, and compatibility families by appending
 registered evidence categories (for example `evidence.review`, `evidence.security_review`,
 `evidence.qa`, `evidence.performance`, `evidence.visual`, and `evidence.status_hud`) with
 artifact refs plus status metadata; closeout treats failed/blocked/denied statuses as replayed

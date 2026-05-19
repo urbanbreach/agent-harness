@@ -265,7 +265,7 @@ fn config_docs_capture_workflow_contract_registry() {
         "Deep-interview intake to Ralplan",
         "Review and security evidence",
         "Closeout and dossier",
-        "hidden staged aliases, blocked reference workflows",
+        "only non-present reference skill",
         "must not execute shell tools",
         "docs/omx-workflow-slice-spec.md",
     ] {
@@ -285,11 +285,13 @@ fn readme_lists_registered_workflow_slash_commands_and_aliases() {
         if !matches!(command.action, CommandAction::WorkflowIntent { .. }) {
             continue;
         }
-        let slash_command = format!("/{}", command.name);
-        assert!(
-            readme.contains(&slash_command),
-            "README.md missing workflow slash command {slash_command}"
-        );
+        if !command.name.starts_with("omx-skill:") {
+            let slash_command = format!("/{}", command.name);
+            assert!(
+                readme.contains(&slash_command),
+                "README.md missing workflow slash command {slash_command}"
+            );
+        }
         for alias in command.aliases {
             let slash_alias = format!("/{alias}");
             assert!(
@@ -330,8 +332,9 @@ fn completion_dossier_maps_operator_spine_acceptance_criteria() {
         "Verification evidence",
         "Completion dossier",
         "G008 final cleanup/review gate",
-        "Missing/partial OMX reference skills",
-        "blocked_or_staged",
+        "Applicable `$` command parity",
+        "Non-applicable worker protocol",
+        "No placeholder dispatch",
     ] {
         assert!(
             dossier.contains(expected),

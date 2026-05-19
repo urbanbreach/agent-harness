@@ -327,9 +327,8 @@ split by crate responsibility:
 - Workflow-family evidence categories cover the G004 native workflow surface:
   `evidence.continuation`, `evidence.review`, `evidence.security_review`,
   `evidence.qa`, `evidence.performance`, `evidence.visual`,
-  `evidence.advisor`, `evidence.setup_doctor`,
-  `evidence.skill_management`, `evidence.status_hud`, and
-  `evidence.note_memory`. Their status metadata is replay-derived closeout
+  `evidence.setup_doctor`, `evidence.skill_management`,
+  `evidence.status_hud`, and `evidence.note_memory`. Their status metadata is replay-derived closeout
   input; blocking statuses such as `failed`, `blocked`, or `denied` prevent
   signoff until resolved or explicitly waived.
 - `harness doctor --json` includes the `workflow_contract_registry` check so docs
@@ -362,8 +361,8 @@ split by crate responsibility:
   validator-gated research surface, and
   `harness workflow wiki add/read/list/query/lint/refresh/delete` is the
   markdown wiki surface. `harness workflow evidence record` is the generic
-  family-evidence surface for staged review/security/QA/performance/visual,
-  advisor, setup/doctor, skill, status/HUD, note/memory, and continuation
+  family-evidence surface for review/security/QA/performance/visual,
+  setup/doctor, skill, status/HUD, note/memory, continuation, and compatibility
   workflows; it appends coordinator-owned evidence with artifact refs and status
   metadata instead of executing live side effects. `init --check` reports planned files without writing and
   `init --apply` is the explicit write path for safe generated files under
@@ -392,7 +391,7 @@ workers.
 | Flow | Example | Authority and blocker rule |
 | --- | --- | --- |
 | Direct operator work | `harness prompt "Summarize the workspace constraints"` | Starts from the visible `operator` profile. Provider/tool behavior still goes through coordinator events and permission policy. |
-| Deep-interview intake to Ralplan | `harness workflow snapshot write --workflow-id wf-demo --source-command /interview --task "Clarify the risky change" --desired-outcome "approved plan" --unknown "migration boundary" --ambiguity-score 0.45 --handoff-ready --json` then `harness workflow plan-consensus --workflow-id wf-demo --task "Implement the approved change" --option A="operator-spine patch" --chosen-option A --adr "Use operator spine; keep replay pure" --acceptance "evidence mapped" --evidence-ref snapshot:<id> --json` | The snapshot is coordinator-backed `evidence.context_snapshot`; Ralplan is `evidence.plan_consensus`. Hidden `/init-deep` stays blocked until its interview rounds produce equivalent workflow evidence. |
+| Deep-interview intake to Ralplan | `harness workflow snapshot write --workflow-id wf-demo --source-command /interview --task "Clarify the risky change" --desired-outcome "approved plan" --unknown "migration boundary" --ambiguity-score 0.45 --handoff-ready --json` then `harness workflow plan-consensus --workflow-id wf-demo --task "Implement the approved change" --option A="operator-spine patch" --chosen-option A --adr "Use operator spine; keep replay pure" --acceptance "evidence mapped" --evidence-ref snapshot:<id> --json` | The snapshot is coordinator-backed `evidence.context_snapshot`; Ralplan is `evidence.plan_consensus`. `/init-deep` and `$deep-interview` now record coordinator-owned workflow intent/evidence and should be followed by `snapshot write` when interview rounds produce a durable context artifact. |
 | Team escalation | Use the operator's `team_*` native tools only after an explicit escalation decision; inspect with `team_list`/team status projections before shutdown. | Team state is event-sourced. Team specs, worktree paths, and tmux panes are metadata/diagnostics, not replay side effects or a default work path. |
 | Goal and mission | `harness workflow goal create --goal-id g-demo --objective "deliver slice" --story s1="patch docs" --acceptance "tests pass" --json`; `harness workflow mission init --mission-id m-demo --objective "answer risk" --question "what blocks release?" --validator-mode prompt-architect-artifact --json` | Goal and mission status/read/list are projection-only. Mission validator shell execution is permission-gated before process or artifact side effects. |
 | Review and security evidence | `harness workflow evidence record --workflow-id wf-demo --category evidence.review --status passed --summary "review approved" --artifact-path artifacts/review.md --acceptance-ref AC6`; use `evidence.security_review` the same way for security findings. | Generic family evidence is explicit. `failed`, `blocked`, or `denied` status metadata blocks closeout until resolved or waived. |
@@ -400,11 +399,7 @@ workers.
 | Closeout and dossier | `harness workflow status --run-dir <run> --workflow-id wf-demo --json`; `harness workflow dossier export --run-dir <run> --workflow-id wf-demo --format markdown --output dossier.md --json` | Closeout and dossier are replay-derived. Do not edit an exported dossier as authority; regenerate it from `events.jsonl` and referenced artifacts. |
 
 The inventory at `docs/harness-omx-workflow-inventory.md` is the honest blocker
-ledger for broader OMX parity. Rows marked `partial` or `missing` are acceptable
-only when they are hidden staged aliases, blocked reference workflows,
-non-default explicit escalations, specialist helpers, team internals,
-non-applicable entries, or coordinator-owned decisions/denials; they must not
-appear as visible prompt-only workflow completions.
+ledger for broader OMX parity. Rows marked `partial` or `missing` are no longer acceptable for applicable `$` command parity. The only non-present reference skill should be an explicitly non-user-facing internal protocol such as `worker`; applicable compatibility aliases must point to native workflow intent/evidence, continuation, or task-tool dispatch rather than prompt-only completions.
 
 ### Plan operator workflow
 
@@ -702,17 +697,16 @@ lifecycle event onto a typed middleware phase before recording metadata:
 
 ## Slash command and continuation surface
 
-Harness keeps the command registry separate from TUI-only actions. Built-in OMO-compatible
+Harness keeps the command registry separate from TUI-only actions. Built-in compatible
 commands include default-visible workflow and continuation entries such as
-`/ralph-loop`, `/ulw-loop`, `/cancel-ralph`, and `/stop-continuation`. Staged
-helper commands such as `/init-deep`, `/refactor`, `/start-work`,
-`/remove-ai-slops`, `/handoff`, and `/hyperplan` remain registered compatibility
-aliases, but they are disabled in the default TUI menu and resolve to explicit
-blocked workflow actions until they produce coordinator-owned evidence instead
-of prompt-only placeholder text. Workflow commands expose typed TUI intents for
-`/workflow-*`, `/plan-consensus`, `/goal-ledger`, `/research-mission`, and
-`/wiki` surfaces, with compatibility aliases such as `/ralplan`, `/ultragoal`,
-`/autoresearch`, and `/workflow-wiki`. Imported command templates are prompt-only
+`/ralph-loop`, `/ulw-loop`, `/cancel-ralph`, and `/stop-continuation`.
+Compatibility helper commands such as `/init-deep`, `/refactor`, `/start-work`,
+`/remove-ai-slops`, `/handoff`, and `/hyperplan` are registered workflow
+commands that record typed TUI intents/evidence instead of prompt-only placeholder
+text. Workflow commands expose typed TUI intents for `/workflow-*`,
+`/plan-consensus`, `/goal-ledger`, `/research-mission`, `/wiki`, and the
+applicable `$`-command aliases such as `/ralplan`, `/ultragoal`, `/autoresearch`,
+`/analyze`, `/team`, `/visual-ralph`, and `/workflow-wiki`. Imported command templates are prompt-only
 slash commands; they submit the template text (with `{{args}}` expanded from the
 preserved draft when present) back through the normal coordinator path. They do
 not execute shell code directly; shell execution still requires the normal native
