@@ -8,7 +8,7 @@ Deterministic drift gate: `cargo test -p harness --test workflow_inventory`
 
 ## Locked reference counts
 
-- 44 reference OMX workflow skills are inventoried from `inspirations/oh-my-codex/skills/*/SKILL.md`; example: `omx-skill:ultragoal`.
+- 39 reference workflow skills are inventoried from `inspirations/oh-my-codex/skills/*/SKILL.md`; example: `omx-skill:ultragoal`. Removed reference commands (`ask*`, `build-fix`, and `omx-setup`) are intentionally absent from the Harness command catalog.
 - 30 slash-agent roles are inventoried from the approved command-parity consensus plan; example: `slash-agent:executor`.
 - Harness workflow registry commands such as `workflow-run`, `workflow-evidence`, `plan-consensus`, and `goal-ledger` must have inventory rows before they can be surfaced as present.
 
@@ -27,7 +27,7 @@ Every row records:
 - `tests`
 - optional `runtime_semantics` for registry-backed rows (`surface`, `effect`, `availability`)
 
-Rows marked `present` must point to native dispatch, projection, docs, and verification evidence. Rows marked `partial`, `missing`, or `clashing` must describe the blocker/stage and must not appear as enabled placeholder commands. Registry-backed dollar workflow entries also record `CommandSpec::dollar_aliases`; the TUI `$` overlay and dispatch path derive those names from the registry rather than keeping a separate dollar-to-slash mapping table. Escaped `$$` renderings are normalized to `$` in inventory ids and aliases so dollar workflow skills and slash-agent prompts keep their canonical prefixes.
+Rows marked `present` must point to native dispatch, projection, docs, and verification evidence. Applicable `$` command rows must be `present`; rows marked `partial`, `missing`, or `clashing` are treated as regressions unless the row is explicitly outside the user-facing Harness surface. Registry-backed dollar workflow entries also record `CommandSpec::dollar_aliases`; the TUI `$` overlay and dispatch path derive those names from the registry rather than keeping a separate dollar-to-slash mapping table. Escaped `$$` renderings are normalized to `$` in inventory ids and aliases so dollar workflow skills and slash-agent prompts keep their canonical prefixes. The OMX `worker` skill is intentionally non-applicable because it is a team-internal worker protocol, not a user-facing dollar command.
 
 ## Authority boundary
 

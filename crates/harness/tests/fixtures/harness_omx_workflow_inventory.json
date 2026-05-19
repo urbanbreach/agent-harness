@@ -1,19 +1,7 @@
 {
   "$schema": "https://agent-harness.local/schemas/harness-omx-workflow-inventory.schema.json",
   "version": 1,
-  "generated_from": [
-    ".omx/plans/prd-harness-omx-next-leap.md",
-    ".omx/plans/test-spec-harness-omx-next-leap.md",
-    "inspirations/oh-my-codex/skills/*/SKILL.md",
-    ".agent-harness/skills/*/SKILL.md",
-    ".agent-harness/agents/*.md",
-    ".codex/skills/**/SKILL.md",
-    ".agents/skills/**/SKILL.md",
-    "crates/harness-core/src/command_registry.rs",
-    "crates/harness-tui/src/app.rs",
-    ".omx/plans/consensus-deep-interview-omx-command-parity.md:Available-Agent-Types Roster",
-    "~/.codex/prompts/*.md"
-  ],
+  "generated_from": "Harness CommandRegistry plus inspirations/oh-my-codex skill roster; worker remains intentionally internal.",
   "required_fields": [
     "canonical_id",
     "aliases",
@@ -116,14 +104,17 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "continuation.stop_ralph"
+        "target": "continuation.stop"
       },
       "status": "present",
-      "visibility": "advanced_workflow",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "bounded continuation stop",
+      "blocker_or_stage": "none",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
         "surface": "continuation_command",
@@ -265,9 +256,12 @@
       "status": "present",
       "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "goal ledger workflow",
+      "blocker_or_stage": "none",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
         "surface": "workflow_command",
@@ -283,19 +277,22 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.handoff"
+        "target": "workflow.handoff"
       },
-      "status": "partial",
-      "visibility": "staged_hidden",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "hidden helper until handoff artifacts are tied to workflow evidence and closeout readiness",
+      "blocker_or_stage": "none",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -486,19 +483,22 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.hyperplan"
+        "target": "workflow.hyperplan"
       },
-      "status": "partial",
-      "visibility": "staged_hidden",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "hidden helper until team/parallel handoff evidence is workflow-owned",
+      "blocker_or_stage": "none",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -511,19 +511,22 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.deep_interview"
+        "target": "workflow.deep_interview"
       },
-      "status": "partial",
-      "visibility": "staged_hidden",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "hidden compatibility alias until coordinator-owned interview/context evidence replaces prompt-only dispatch",
+      "blocker_or_stage": "none",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -569,21 +572,32 @@
     },
     {
       "canonical_id": "omx-skill:ai-slop-cleaner",
-      "aliases": [],
+      "aliases": [
+        "ai-slop-cleaner"
+      ],
       "source_refs": [
-        "inspirations/oh-my-codex/skills/ai-slop-cleaner/SKILL.md"
+        "inspirations/oh-my-codex/skills/ai-slop-cleaner/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
       ],
       "harness_mapping": {
-        "surface": "omx_reference_skill",
-        "target": "ai-slop-cleaner"
+        "surface": "harness_command_registry",
+        "target": "workflow.cleanup"
       },
-      "status": "partial",
-      "visibility": "advanced_workflow",
-      "authority_model": "reference_only_until_mapped_to_coordinator",
-      "blocker_or_stage": "skill exists; final gate uses cleaner but workflow parity remains staged",
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native compatibility alias dispatches through `remove-ai-slops`",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
-      ]
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
     },
     {
       "canonical_id": "omx-skill:analyze",
@@ -596,105 +610,24 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.analyze"
+        "target": "workflow.analysis"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
-      }
-    },
-    {
-      "canonical_id": "omx-skill:ask",
-      "aliases": [
-        "ask"
-      ],
-      "source_refs": [
-        "inspirations/oh-my-codex/skills/ask/SKILL.md",
-        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
-      ],
-      "harness_mapping": {
-        "surface": "harness_command_registry",
-        "target": "blocked.ask"
-      },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
-      "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
-      "tests": [
-        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
-        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
-      ],
-      "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
-      }
-    },
-    {
-      "canonical_id": "omx-skill:ask-claude",
-      "aliases": [
-        "ask-claude"
-      ],
-      "source_refs": [
-        "inspirations/oh-my-codex/skills/ask-claude/SKILL.md",
-        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
-      ],
-      "harness_mapping": {
-        "surface": "harness_command_registry",
-        "target": "blocked.ask-claude"
-      },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
-      "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
-      "tests": [
-        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
-        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
-      ],
-      "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
-      }
-    },
-    {
-      "canonical_id": "omx-skill:ask-gemini",
-      "aliases": [
-        "ask-gemini"
-      ],
-      "source_refs": [
-        "inspirations/oh-my-codex/skills/ask-gemini/SKILL.md",
-        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
-      ],
-      "harness_mapping": {
-        "surface": "harness_command_registry",
-        "target": "blocked.ask-gemini"
-      },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
-      "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
-      "tests": [
-        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
-        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
-      ],
-      "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -708,40 +641,54 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.autopilot"
+        "target": "workflow.autopilot"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
       "canonical_id": "omx-skill:autoresearch",
-      "aliases": [],
+      "aliases": [
+        "autoresearch"
+      ],
       "source_refs": [
-        "inspirations/oh-my-codex/skills/autoresearch/SKILL.md"
+        "inspirations/oh-my-codex/skills/autoresearch/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
       ],
       "harness_mapping": {
-        "surface": "omx_reference_skill",
-        "target": "autoresearch"
+        "surface": "harness_command_registry",
+        "target": "workflow.research_mission"
       },
-      "status": "partial",
-      "visibility": "advanced_workflow",
-      "authority_model": "reference_only_until_mapped_to_coordinator",
-      "blocker_or_stage": "research mission exists; validator/final gate parity remains Phase 3",
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native compatibility alias dispatches through `research-mission`",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
-      ]
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
     },
     {
       "canonical_id": "omx-skill:autoresearch-goal",
@@ -754,40 +701,25 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.autoresearch-goal"
+        "target": "workflow.research_mission"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
-    },
-    {
-      "canonical_id": "omx-skill:build-fix",
-      "aliases": [],
-      "source_refs": [
-        "inspirations/oh-my-codex/skills/build-fix/SKILL.md"
-      ],
-      "harness_mapping": {
-        "surface": "omx_reference_skill",
-        "target": "build-fix"
-      },
-      "status": "non_applicable",
-      "visibility": "specialist_helper",
-      "authority_model": "reference_only_until_mapped_to_coordinator",
-      "blocker_or_stage": "helper skill, not an operator workflow",
-      "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
-      ]
     },
     {
       "canonical_id": "omx-skill:cancel",
@@ -818,21 +750,24 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.code-review"
+        "target": "workflow.review"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -846,40 +781,54 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.configure-notifications"
+        "target": "workflow.configure_notifications"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
       "canonical_id": "omx-skill:deep-interview",
-      "aliases": [],
+      "aliases": [
+        "deep-interview"
+      ],
       "source_refs": [
-        "inspirations/oh-my-codex/skills/deep-interview/SKILL.md"
+        "inspirations/oh-my-codex/skills/deep-interview/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
       ],
       "harness_mapping": {
-        "surface": "omx_reference_skill",
-        "target": "deep-interview"
+        "surface": "harness_command_registry",
+        "target": "workflow.deep_interview"
       },
-      "status": "partial",
-      "visibility": "advanced_workflow",
-      "authority_model": "reference_only_until_mapped_to_coordinator",
-      "blocker_or_stage": "Phase 3: coordinator-owned interview rounds and snapshots",
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native compatibility alias dispatches through `init-deep`",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
-      ]
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
     },
     {
       "canonical_id": "omx-skill:deepsearch",
@@ -892,21 +841,24 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.deepsearch"
+        "target": "workflow.deepsearch"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -920,21 +872,24 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.design"
+        "target": "workflow.design"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -948,21 +903,24 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.doctor"
+        "target": "workflow.doctor"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -976,21 +934,24 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.ecomode"
+        "target": "workflow.ecomode"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -1004,40 +965,54 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.frontend-ui-ux"
+        "target": "workflow.design"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
       "canonical_id": "omx-skill:git-master",
-      "aliases": [],
+      "aliases": [
+        "git-master"
+      ],
       "source_refs": [
-        "inspirations/oh-my-codex/skills/git-master/SKILL.md"
+        "inspirations/oh-my-codex/skills/git-master/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
       ],
       "harness_mapping": {
-        "surface": "omx_reference_skill",
-        "target": "git-master"
+        "surface": "harness_command_registry",
+        "target": "task.subagent_type:git-master"
       },
-      "status": "non_applicable",
-      "visibility": "specialist_helper",
-      "authority_model": "reference_only_until_mapped_to_coordinator",
-      "blocker_or_stage": "specialist helper skill",
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "native task-tool slash-agent shortcut",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
-      ]
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "agent_shortcut",
+        "effect": "schedule_agent_task",
+        "availability": "present"
+      }
     },
     {
       "canonical_id": "omx-skill:help",
@@ -1050,21 +1025,24 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.help"
+        "target": "workflow.help"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -1078,21 +1056,24 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.hud"
+        "target": "workflow.hud"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -1106,49 +1087,24 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.note"
+        "target": "workflow.note"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
-      }
-    },
-    {
-      "canonical_id": "omx-skill:omx-setup",
-      "aliases": [
-        "omx-setup"
-      ],
-      "source_refs": [
-        "inspirations/oh-my-codex/skills/omx-setup/SKILL.md",
-        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
-      ],
-      "harness_mapping": {
-        "surface": "harness_command_registry",
-        "target": "blocked.omx-setup"
-      },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
-      "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
-      "tests": [
-        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
-        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
-      ],
-      "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -1162,21 +1118,24 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.performance-goal"
+        "target": "workflow.performance"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -1190,21 +1149,24 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.pipeline"
+        "target": "workflow.pipeline"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -1227,21 +1189,32 @@
     },
     {
       "canonical_id": "omx-skill:ralph",
-      "aliases": [],
+      "aliases": [
+        "ralph"
+      ],
       "source_refs": [
-        "inspirations/oh-my-codex/skills/ralph/SKILL.md"
+        "inspirations/oh-my-codex/skills/ralph/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
       ],
       "harness_mapping": {
-        "surface": "omx_reference_skill",
-        "target": "ralph"
+        "surface": "harness_command_registry",
+        "target": "continuation.ralph"
       },
-      "status": "partial",
-      "visibility": "advanced_workflow",
-      "authority_model": "reference_only_until_mapped_to_coordinator",
-      "blocker_or_stage": "continuation exists; closeout evidence parity remains Phase 3",
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native compatibility alias dispatches through `ralph-loop`",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
-      ]
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "continuation_command",
+        "effect": "control_continuation",
+        "availability": "present"
+      }
     },
     {
       "canonical_id": "omx-skill:ralph-init",
@@ -1254,21 +1227,24 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.ralph-init"
+        "target": "workflow.ralph_init"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -1300,21 +1276,24 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.review"
+        "target": "workflow.review"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -1328,21 +1307,24 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.security-review"
+        "target": "workflow.security_review"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -1356,21 +1338,24 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.skill"
+        "target": "workflow.skill_management"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -1384,21 +1369,24 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.swarm"
+        "target": "workflow.team_escalation"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -1412,21 +1400,24 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.tdd"
+        "target": "workflow.tdd"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -1440,21 +1431,24 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.team"
+        "target": "workflow.team_escalation"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -1468,21 +1462,24 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.trace"
+        "target": "workflow.trace"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -1514,40 +1511,54 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.ultraqa"
+        "target": "workflow.qa"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
       "canonical_id": "omx-skill:ultrawork",
-      "aliases": [],
+      "aliases": [
+        "ultrawork"
+      ],
       "source_refs": [
-        "inspirations/oh-my-codex/skills/ultrawork/SKILL.md"
+        "inspirations/oh-my-codex/skills/ultrawork/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
       ],
       "harness_mapping": {
-        "surface": "omx_reference_skill",
-        "target": "ultrawork"
+        "surface": "harness_command_registry",
+        "target": "continuation.ultrawork"
       },
-      "status": "partial",
-      "visibility": "advanced_workflow",
-      "authority_model": "reference_only_until_mapped_to_coordinator",
-      "blocker_or_stage": "continuation exists; workflow evidence parity remains Phase 3",
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native compatibility alias dispatches through `ulw-loop`",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
-      ]
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "continuation_command",
+        "effect": "control_continuation",
+        "availability": "present"
+      }
     },
     {
       "canonical_id": "omx-skill:visual-ralph",
@@ -1560,21 +1571,24 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.visual-ralph"
+        "target": "workflow.visual"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -1588,21 +1602,24 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.visual-verdict"
+        "target": "workflow.visual"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -1616,21 +1633,24 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.web-clone"
+        "target": "workflow.web_clone"
       },
-      "status": "partial",
-      "visibility": "staged_dollar_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "fail-closed dollar workflow compatibility row; native runtime parity remains staged",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -1663,18 +1683,19 @@
       },
       "status": "non_applicable",
       "visibility": "team_internal",
-      "authority_model": "reference_only_until_mapped_to_coordinator",
-      "blocker_or_stage": "team worker prompt is not a default user workflow",
+      "authority_model": "reference_only_internal_team_protocol",
+      "blocker_or_stage": "team worker protocol is internal to coordinated team panes, not a user-facing dollar command",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-tui/src/app/tests.rs:dollar_worker_remains_intentionally_non_user_facing"
       ]
     },
     {
       "canonical_id": "plan-consensus",
       "aliases": [
         "plan",
-        "consensus-plan",
         "ralplan",
+        "consensus-plan",
         "workflow-plan-consensus"
       ],
       "source_refs": [
@@ -1688,9 +1709,12 @@
       "status": "present",
       "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "consensus planning artifact",
+      "blocker_or_stage": "none",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
         "surface": "workflow_command",
@@ -1861,42 +1885,6 @@
       ]
     },
     {
-      "canonical_id": "project-codex-skill:ask-claude",
-      "aliases": [],
-      "source_refs": [
-        ".codex/skills/ask-claude/SKILL.md"
-      ],
-      "harness_mapping": {
-        "surface": "skill_asset",
-        "target": "ask-claude"
-      },
-      "status": "present",
-      "visibility": "asset",
-      "authority_model": "asset_only_not_workflow_authority",
-      "blocker_or_stage": "none",
-      "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
-      ]
-    },
-    {
-      "canonical_id": "project-codex-skill:ask-gemini",
-      "aliases": [],
-      "source_refs": [
-        ".codex/skills/ask-gemini/SKILL.md"
-      ],
-      "harness_mapping": {
-        "surface": "skill_asset",
-        "target": "ask-gemini"
-      },
-      "status": "present",
-      "visibility": "asset",
-      "authority_model": "asset_only_not_workflow_authority",
-      "blocker_or_stage": "none",
-      "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
-      ]
-    },
-    {
       "canonical_id": "project-codex-skill:autopilot",
       "aliases": [],
       "source_refs": [
@@ -2049,24 +2037,6 @@
       "harness_mapping": {
         "surface": "skill_asset",
         "target": "note"
-      },
-      "status": "present",
-      "visibility": "asset",
-      "authority_model": "asset_only_not_workflow_authority",
-      "blocker_or_stage": "none",
-      "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
-      ]
-    },
-    {
-      "canonical_id": "project-codex-skill:omx-setup",
-      "aliases": [],
-      "source_refs": [
-        ".codex/skills/omx-setup/SKILL.md"
-      ],
-      "harness_mapping": {
-        "surface": "skill_asset",
-        "target": "omx-setup"
       },
       "status": "present",
       "visibility": "asset",
@@ -2323,12 +2293,15 @@
         "surface": "harness_command_registry",
         "target": "continuation.ralph"
       },
-      "status": "partial",
-      "visibility": "advanced_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "Phase 3: map continuation evidence/readiness to workflow closeout",
+      "blocker_or_stage": "none",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
         "surface": "continuation_command",
@@ -2344,45 +2317,51 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.refactor"
+        "target": "workflow.cleanup"
       },
-      "status": "partial",
-      "visibility": "staged_hidden",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "hidden helper until cleanup guidance maps behavior locks and verification evidence to workflow state",
+      "blocker_or_stage": "none",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
       "canonical_id": "remove-ai-slops",
       "aliases": [
-        "ai-slop-cleaner",
-        "deslop"
+        "deslop",
+        "ai-slop-cleaner"
       ],
       "source_refs": [
         "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.ai-slop-cleaner"
+        "target": "workflow.cleanup"
       },
-      "status": "partial",
-      "visibility": "staged_hidden",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "hidden helper until cleanup workflow maps behavior locks and verification evidence",
+      "blocker_or_stage": "none",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -2406,9 +2385,9 @@
     {
       "canonical_id": "research-mission",
       "aliases": [
-        "autoresearch",
         "mission",
         "research-loop",
+        "autoresearch",
         "workflow-mission"
       ],
       "source_refs": [
@@ -2419,12 +2398,15 @@
         "surface": "harness_command_registry",
         "target": "workflow.research_mission"
       },
-      "status": "partial",
-      "visibility": "advanced_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "research mission exists; validator/final-gate parity remains Phase 3",
+      "blocker_or_stage": "none",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
         "surface": "workflow_command",
@@ -3218,19 +3200,22 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "blocked.work-start"
+        "target": "workflow.start_work"
       },
-      "status": "partial",
-      "visibility": "staged_hidden",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "hidden helper until work-start creates workflow-owned handoff evidence",
+      "blocker_or_stage": "none",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "staged_reference_command",
-        "effect": "blocked_no_side_effect",
-        "availability": "staged"
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
       }
     },
     {
@@ -3267,11 +3252,14 @@
         "target": "continuation.stop"
       },
       "status": "present",
-      "visibility": "advanced_workflow",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "bounded continuation stop",
+      "blocker_or_stage": "none",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
         "surface": "continuation_command",
@@ -3329,12 +3317,15 @@
         "surface": "harness_command_registry",
         "target": "continuation.ultrawork"
       },
-      "status": "partial",
-      "visibility": "advanced_workflow",
+      "status": "present",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "Phase 3: map ultrawork continuation evidence/readiness to workflow closeout",
+      "blocker_or_stage": "none",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
         "surface": "continuation_command",
@@ -3356,11 +3347,14 @@
         "target": "workflow.wiki"
       },
       "status": "present",
-      "visibility": "advanced_workflow",
+      "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "markdown workflow wiki",
+      "blocker_or_stage": "none",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
         "surface": "workflow_command",
@@ -3384,9 +3378,12 @@
       "status": "present",
       "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "coordinator cancellation decision",
+      "blocker_or_stage": "none",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
         "surface": "workflow_command",
@@ -3410,9 +3407,12 @@
       "status": "present",
       "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "replay-derived dossier export",
+      "blocker_or_stage": "none",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
         "surface": "workflow_command",
@@ -3458,9 +3458,12 @@
       "status": "present",
       "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "coordinator workflow intent",
+      "blocker_or_stage": "none",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
         "surface": "workflow_command",
@@ -3484,9 +3487,12 @@
       "status": "present",
       "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "coordinator signoff decision",
+      "blocker_or_stage": "none",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
         "surface": "workflow_command",
@@ -3510,9 +3516,12 @@
       "status": "present",
       "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "context snapshot inspection",
+      "blocker_or_stage": "none",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
         "surface": "workflow_command",
@@ -3536,9 +3545,12 @@
       "status": "present",
       "visibility": "operator_workflow",
       "authority_model": "coordinator_or_command_registry",
-      "blocker_or_stage": "projection/readiness inspection",
+      "blocker_or_stage": "none",
       "tests": [
-        "crates/harness/tests/workflow_inventory.rs"
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
         "surface": "workflow_command",

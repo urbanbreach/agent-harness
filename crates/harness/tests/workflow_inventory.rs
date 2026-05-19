@@ -13,13 +13,9 @@ const INVENTORY_JSON: &str = include_str!("fixtures/harness_omx_workflow_invento
 const LOCKED_OMX_SKILL_IDS: &[&str] = &[
     "omx-skill:ai-slop-cleaner",
     "omx-skill:analyze",
-    "omx-skill:ask",
-    "omx-skill:ask-claude",
-    "omx-skill:ask-gemini",
     "omx-skill:autopilot",
     "omx-skill:autoresearch",
     "omx-skill:autoresearch-goal",
-    "omx-skill:build-fix",
     "omx-skill:cancel",
     "omx-skill:code-review",
     "omx-skill:configure-notifications",
@@ -33,7 +29,6 @@ const LOCKED_OMX_SKILL_IDS: &[&str] = &[
     "omx-skill:help",
     "omx-skill:hud",
     "omx-skill:note",
-    "omx-skill:omx-setup",
     "omx-skill:performance-goal",
     "omx-skill:pipeline",
     "omx-skill:plan",
@@ -240,6 +235,13 @@ fn workflow_inventory_tracks_command_registry_drift() {
                     );
                 }
             }
+            CommandAction::SlashAgent { role } => {
+                assert!(
+                    target.contains(role),
+                    "{} target {target} should mention slash-agent role {role}",
+                    command.name
+                );
+            }
             CommandAction::PlanArtifact { artifact }
             | CommandAction::HandoffArtifact { artifact } => {
                 assert!(
@@ -411,7 +413,7 @@ fn workflow_inventory_locks_omx_skill_and_slash_agent_rosters() {
         .collect::<BTreeSet<_>>();
     assert_eq!(
         omx_skill_ids, locked_omx_skill_ids,
-        "the command-parity fixture must keep the locked 44-entry OMX skill roster without reading untracked inspirations assets"
+        "the command-parity fixture must keep the locked 39-entry command roster without reading untracked inspirations assets"
     );
 
     let slash_agent_ids = slash_agent_roster_ids();
