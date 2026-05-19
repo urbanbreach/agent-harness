@@ -16,6 +16,7 @@ This dossier is the public closeout map for the Harness-native OMX command-parit
 
 ## Final gate and blockers
 
-- **G008 final cleanup/review gate** — the final ultragoal story must run targeted verification, cleanup/no-op cleaner evidence, rerun verification, and receive a clean code-review result before completing the aggregate Codex goal.
-- **Missing/partial OMX reference skills** — staged or deprecated reference skill rows remain visible in the inventory as fail-closed compatibility rows until their native harness behavior is implemented and verified.
-- **blocked_or_staged** — any incomplete command family must resolve to hidden/staged `BlockedWorkflow` semantics, never prompt-only, shell-only, or “not executable yet” placeholders.
+- **G008 final cleanup/review gate** — completed for this slice with cleanup evidence at `target/ultragoal/ai-slop-cleaner-report.md`, review evidence at `target/ultragoal/code-review-report.md`, and structured gate evidence at `target/ultragoal/final-quality-gate.json`.
+- **Applicable `$` command parity** — all applicable reference `$` commands must remain searchable, dispatchable, coordinator-owned, and tested through the command registry, TUI adapters, workflow evidence, continuations, or task-tool slash-agent shortcuts.
+- **Non-applicable worker protocol** — `worker` is the only non-present reference skill because it is an internal team-pane protocol, not a user-facing Harness `$` command.
+- **No placeholder dispatch** — applicable command families must never regress to prompt-only, shell-only, `BlockedWorkflow`, or “not executable yet” placeholders.

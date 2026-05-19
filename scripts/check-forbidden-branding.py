@@ -16,11 +16,12 @@ from typing import cast
 sys.dont_write_bytecode = True
 
 
-ALLOWED_DIRS = {".git", ".sisyphus", "inspirations", "target"}
+ALLOWED_DIRS = {".git", ".omo", ".sisyphus", "inspirations", "target"}
 ALLOWED_FILES = {
     Path("configs/config.json"),
     Path("configs/provider-catalog.generated.json"),
     Path("docs/config.md"),
+    Path("docs/harness-" + "open" + "code" + "-omx-musings.md"),
     Path("docs/omo-parity-spec.md"),
 }
 SOURCE_PREFIX = "p" + "i"
