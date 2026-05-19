@@ -689,6 +689,10 @@ fn doctor_cli_reports_shipped_orchestration_health() {
     assert!(stdout.contains("workflow_runtime_config"));
     assert!(stdout.contains("workflow_closeout_policy"));
     assert!(stdout.contains("workflow_closeout_readiness"));
+    assert!(stdout.contains("dollar_alias_wiring"));
+    assert!(stdout.contains("shipped_skill_loadability"));
+    assert!(stdout.contains("workflow_skill_protocol_native"));
+    assert!(stdout.contains("workflow_transition_policy_matrix"));
     assert!(stdout.contains("category_routes"));
     assert!(stdout.contains("discipline"));
     assert!(stdout.contains("visual-engineering"));
@@ -734,6 +738,76 @@ fn doctor_cli_emits_json_report() {
         .expect("checks array")
         .iter()
         .any(|check| { check["name"] == "category_routes" && check["status"] == "pass" }));
+    for check_id in [
+        "dollar_alias_wiring",
+        "shipped_skill_loadability",
+        "workflow_skill_protocol_native",
+        "workflow_transition_policy_matrix",
+    ] {
+        assert!(
+            report["checks"]
+                .as_array()
+                .expect("checks array")
+                .iter()
+                .any(|check| check["id"] == check_id && check["status"] == "pass"),
+            "missing passing doctor check {check_id}"
+        );
+    }
+    let dollar_alias_wiring = report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .find(|check| check["id"] == "dollar_alias_wiring")
+        .expect("dollar alias wiring check");
+    assert!(
+        dollar_alias_wiring["details"]["alias_count"]
+            .as_u64()
+            .expect("alias count")
+            >= 40
+    );
+    let shipped_skill_loadability = report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .find(|check| check["id"] == "shipped_skill_loadability")
+        .expect("shipped skill loadability check");
+    assert!(
+        shipped_skill_loadability["details"]["shipped_skill_count"]
+            .as_u64()
+            .expect("shipped skill count")
+            >= 40
+    );
+    let transition_policy_matrix = report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .find(|check| check["id"] == "workflow_transition_policy_matrix")
+        .expect("transition policy matrix check");
+    assert_eq!(
+        transition_policy_matrix["details"]["tracked_modes"]
+            .as_array()
+            .expect("tracked modes")
+            .len(),
+        8
+    );
+    let workflow_skill_protocol = report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .find(|check| check["id"] == "workflow_skill_protocol_native")
+        .expect("workflow skill protocol check");
+    assert!(
+        workflow_skill_protocol["details"]["checked"]
+            .as_array()
+            .expect("checked protocol skills")
+            .len()
+            >= 20
+    );
+    assert!(workflow_skill_protocol["details"]["forbidden_token_scan"]
+        .as_array()
+        .expect("forbidden token scan")
+        .iter()
+        .any(|entry| entry["reason_code"] == "forbidden_tmux_authority"));
     let agent_catalog = report["checks"]
         .as_array()
         .expect("checks array")
@@ -781,7 +855,10 @@ fn doctor_cli_emits_json_report() {
         .as_array()
         .expect("checks array")
         .iter()
-        .any(|check| { check["id"] == "parity_ledger" && check["status"] == "pass" }));
+        .any(|check| {
+            check["id"] == "parity_ledger"
+                && matches!(check["status"].as_str(), Some("pass" | "warn"))
+        }));
     assert!(report["checks"]
         .as_array()
         .expect("checks array")

@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -24,7 +24,11 @@ use harness_core::workflow_closeout::{
     builtin_policy_ids, is_builtin_policy_id, WORKFLOW_CLOSEOUT_DOSSIER_EVIDENCE_CATEGORY,
 };
 use harness_core::workflow_registry::{
-    stable_id_groups, WORKFLOW_DOCS_ANCHORS, WORKFLOW_DOCTOR_CHECKS,
+    stable_id_groups, TRANSITION_POLICIES, WORKFLOW_DOCS_ANCHORS, WORKFLOW_DOCTOR_CHECKS,
+};
+use harness_core::workflow_transitions::{
+    WorkflowTransitionAllowlist, WorkflowTransitionAllowlistDecision, POLICY_ALLOW,
+    POLICY_AUTO_COMPLETE, POLICY_DENIED, POLICY_OVERLAP, TRACKED_WORKFLOW_MODES,
 };
 use harness_tools::{coordinator_registry_with_mcp_and_editing, EditingToolSurfaceConfig};
 use serde::Serialize;
@@ -32,10 +36,9 @@ use serde_json::Value;
 
 use crate::cli_io::{load_events_from_run_dir, EVENTS_FILE_NAME};
 
-const PARITY_LEDGER_JSON: &str = include_str!("../../../docs/parity-ledger.json");
 const CONFIG_DOC_MD: &str = include_str!("../../../docs/config.md");
 const TESTING_DOC_MD: &str = include_str!("../../../docs/testing.md");
-const WORKFLOW_SLICE_SPEC_MD: &str = include_str!("../../../docs/omx-workflow-slice-spec.md");
+const OMX_PARITY_DOSSIER_MD: &str = include_str!("../../../docs/omx-parity-dossier.md");
 
 const BUILD_TOOLS: [&str; 5] = [
     "todowrite",
@@ -197,6 +200,10 @@ fn build_report(config_display: String, config: &HarnessConfig) -> DoctorReport 
         check_profile_tools(config),
         check_first_slice_omo_tool_surface(config),
         check_command_registry(),
+        check_dollar_alias_wiring(),
+        check_shipped_skill_loadability(),
+        check_workflow_skill_protocol_native(),
+        check_workflow_transition_policy_matrix(),
         check_workflow_contract_registry(),
         check_workflow_context_snapshot_contract(),
         check_workflow_runtime_config(config),
@@ -301,6 +308,656 @@ fn check_command_registry() -> DoctorCheck {
     )
 }
 
+fn check_dollar_alias_wiring() -> DoctorCheck {
+    let registry = CommandRegistry::builtins();
+    let mut alias_owners = BTreeMap::<&str, Vec<&str>>::new();
+    let mut invalid = Vec::new();
+    let mut workflow_skill_aliases = 0_usize;
+    let mut slash_agent_aliases = 0_usize;
+    let mut continuation_aliases = 0_usize;
+
+    for command in registry.commands() {
+        for alias in command.dollar_aliases {
+            alias_owners.entry(alias).or_default().push(command.name);
+            match &command.action {
+                CommandAction::WorkflowSkill { skill, .. } => {
+                    workflow_skill_aliases += 1;
+                    if skill.trim().is_empty() {
+                        invalid.push(format!("${alias} has an empty workflow skill id"));
+                    }
+                }
+                CommandAction::SlashAgent { role } => {
+                    slash_agent_aliases += 1;
+                    if role.trim().is_empty() {
+                        invalid.push(format!("${alias} has an empty slash-agent role"));
+                    }
+                }
+                CommandAction::StopContinuation => {
+                    continuation_aliases += 1;
+                }
+                CommandAction::WorkflowIntent { intent } => {
+                    if intent.as_str().trim().is_empty() {
+                        invalid.push(format!("${alias} has an empty workflow intent"));
+                    }
+                }
+                CommandAction::BlockedWorkflow { .. } if !command.enabled_by_default => {}
+                CommandAction::PromptTemplate { .. }
+                | CommandAction::LoadSkills { .. }
+                | CommandAction::PlanArtifact { .. }
+                | CommandAction::HandoffArtifact { .. } => invalid.push(format!(
+                    "${alias} resolves to prompt/artifact placeholder `{}`",
+                    command.name
+                )),
+                other => invalid.push(format!(
+                    "${alias} resolves to unsupported dollar action `{other:?}` on `{}`",
+                    command.name
+                )),
+            }
+
+            if command.enabled_by_default
+                && command.availability
+                    != harness_core::command_registry::WorkflowCommandAvailability::Present
+            {
+                invalid.push(format!(
+                    "${alias} is enabled but `{}` is not present",
+                    command.name
+                ));
+            }
+        }
+    }
+
+    let duplicate_aliases = alias_owners
+        .iter()
+        .filter(|(_, owners)| owners.len() > 1)
+        .map(|(alias, owners)| format!("${alias}: {}", owners.join(", ")))
+        .collect::<Vec<_>>();
+    invalid.extend(duplicate_aliases);
+
+    if !invalid.is_empty() {
+        return fail(
+            "dollar_alias_wiring",
+            format!(
+                "{} dollar alias wiring issue(s): {}",
+                invalid.len(),
+                invalid.join("; ")
+            ),
+        );
+    }
+
+    pass_with_details(
+        "dollar_alias_wiring",
+        format!(
+            "{} dollar alias(es) resolve to native workflow, continuation, or slash-agent actions",
+            alias_owners.len()
+        ),
+        Some(serde_json::json!({
+            "alias_count": alias_owners.len(),
+            "workflow_skill_aliases": workflow_skill_aliases,
+            "slash_agent_aliases": slash_agent_aliases,
+            "continuation_aliases": continuation_aliases,
+            "aliases": alias_owners.keys().copied().collect::<Vec<_>>(),
+        })),
+    )
+}
+
+fn check_shipped_skill_loadability() -> DoctorCheck {
+    let workspace_root = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let shipped_skills = match shipped_skill_names(&workspace_root) {
+        Ok(skills) => skills,
+        Err(err) => return fail("shipped_skill_loadability", err),
+    };
+    if shipped_skills.is_empty() {
+        return pass_with_details(
+            "shipped_skill_loadability",
+            "no shipped .agent-harness/skills/*/SKILL.md files were found",
+            Some(serde_json::json!({
+                "shipped_skill_count": 0,
+                "shipped_skills": [],
+            })),
+        );
+    }
+
+    let report = match harness_tools::workflow_catalog_health_report(&workspace_root) {
+        Ok(report) => report,
+        Err(err) => {
+            return fail(
+                "shipped_skill_loadability",
+                format!("could not inspect shipped skill catalog: {err}"),
+            );
+        }
+    };
+    let visible = skill_names_from_prefixed(&report.visible);
+    let missing = skill_names_from_prefixed(&report.missing);
+    let disabled = skill_names_from_prefixed(&report.disabled);
+    let unavailable = shipped_skills
+        .iter()
+        .filter(|skill| !visible.contains(skill.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    let invalid_shipped = shipped_skills
+        .iter()
+        .filter(|skill| missing.contains(skill.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    let disabled_shipped = shipped_skills
+        .iter()
+        .filter(|skill| disabled.contains(skill.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    if !unavailable.is_empty() || !invalid_shipped.is_empty() || !disabled_shipped.is_empty() {
+        return fail(
+            "shipped_skill_loadability",
+            format!(
+                "shipped skill loadability failed; unavailable=[{}], invalid=[{}], disabled=[{}]",
+                unavailable.join(", "),
+                invalid_shipped.join(", "),
+                disabled_shipped.join(", ")
+            ),
+        );
+    }
+
+    pass_with_details(
+        "shipped_skill_loadability",
+        format!(
+            "{} shipped SKILL.md file(s) are discoverable and loadable",
+            shipped_skills.len()
+        ),
+        Some(serde_json::json!({
+            "shipped_skill_count": shipped_skills.len(),
+            "shipped_skills": shipped_skills,
+            "resolution_roots": report.resolution_roots,
+        })),
+    )
+}
+
+fn check_workflow_skill_protocol_native() -> DoctorCheck {
+    let workspace_root = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let mut workflow_skills = CommandRegistry::builtins()
+        .commands()
+        .iter()
+        .filter_map(|spec| match &spec.action {
+            CommandAction::WorkflowSkill { skill, .. } => Some(*skill),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    let mut checked = Vec::new();
+    let mut findings = Vec::new();
+
+    for skill in std::mem::take(&mut workflow_skills) {
+        let skill_path = workspace_root
+            .join(".agent-harness/skills")
+            .join(skill)
+            .join("SKILL.md");
+        let body = match fs::read_to_string(&skill_path) {
+            Ok(body) => body,
+            Err(err) => {
+                findings.push(WorkflowSkillProtocolFinding {
+                    skill: skill.to_string(),
+                    path: skill_path.display().to_string(),
+                    reason_code: "missing_harness_state_contract",
+                    severity: "fail",
+                    token: None,
+                    remediation: format!("make the shipped workflow SKILL.md readable: {err}"),
+                });
+                continue;
+            }
+        };
+
+        let skill_findings = evaluate_workflow_skill_protocol_body(skill, &skill_path, &body);
+        if skill_findings.is_empty() {
+            checked.push(serde_json::json!({
+                "skill": skill,
+                "path": skill_path,
+                "lines": body.lines().count(),
+            }));
+        } else {
+            findings.extend(skill_findings);
+        }
+    }
+
+    if !findings.is_empty() {
+        let message = format!(
+            "{} native workflow skill protocol issue(s): {}",
+            findings.len(),
+            findings
+                .iter()
+                .map(|finding| format!(
+                    "{}:{}{}",
+                    finding.skill,
+                    finding.reason_code,
+                    finding
+                        .token
+                        .as_deref()
+                        .map(|token| format!("({token})"))
+                        .unwrap_or_default()
+                ))
+                .collect::<Vec<_>>()
+                .join("; ")
+        );
+        return DoctorCheck {
+            id: "workflow_skill_protocol_native".to_string(),
+            name: "workflow_skill_protocol_native".to_string(),
+            status: CheckStatus::Fail,
+            message,
+            details: Some(serde_json::json!({
+                "findings": findings,
+                "required_sections": REQUIRED_NATIVE_SKILL_SECTIONS,
+                "forbidden_token_scan": FORBIDDEN_WORKFLOW_SKILL_TOKENS.iter().map(|rule| {
+                    serde_json::json!({
+                        "token": rule.token,
+                        "reason_code": rule.reason_code,
+                        "severity": rule.severity,
+                        "remediation": rule.remediation,
+                    })
+                }).collect::<Vec<_>>(),
+            })),
+        };
+    }
+
+    pass_with_details(
+        "workflow_skill_protocol_native",
+        format!(
+            "{} workflow SKILL.md protocol body/bodies satisfy the native Harness contract",
+            checked.len()
+        ),
+        Some(serde_json::json!({
+            "checked": checked,
+            "required_sections": REQUIRED_NATIVE_SKILL_SECTIONS,
+            "forbidden_token_scan": FORBIDDEN_WORKFLOW_SKILL_TOKENS.iter().map(|rule| {
+                serde_json::json!({
+                    "token": rule.token,
+                    "reason_code": rule.reason_code,
+                    "severity": rule.severity,
+                    "remediation": rule.remediation,
+                })
+            }).collect::<Vec<_>>(),
+            "canonical_alias_policy": {
+                "team": "user-facing",
+                "worker": "internal",
+                "team-mode": "hidden/internal compatibility only",
+                "ai-slop-cleaner": "canonical cleanup workflow",
+            },
+        })),
+    )
+}
+
+const REQUIRED_NATIVE_SKILL_SECTIONS: [&str; 7] = [
+    "Purpose",
+    "Use when",
+    "Harness state contract",
+    "Execution protocol",
+    "Evidence and closeout contract",
+    "Stop/escalation conditions",
+    "Verification checklist",
+];
+
+const FORBIDDEN_WORKFLOW_SKILL_TOKENS: [ForbiddenWorkflowSkillToken; 10] = [
+    ForbiddenWorkflowSkillToken {
+        token: ".omx/state",
+        reason_code: "forbidden_state_file_authority",
+        severity: "fail",
+        remediation: "Use Harness coordinator-owned workflow events, projections, and evidence artifacts instead of external state files.",
+    },
+    ForbiddenWorkflowSkillToken {
+        token: "omx state",
+        reason_code: "forbidden_omx_cli_authority",
+        severity: "fail",
+        remediation: "Translate upstream CLI state operations into Harness workflow evidence/projection operations.",
+    },
+    ForbiddenWorkflowSkillToken {
+        token: "omx team",
+        reason_code: "forbidden_omx_cli_authority",
+        severity: "fail",
+        remediation: "Use native team_create/team_task_create/team_send_message/team_list tools as the team substrate.",
+    },
+    ForbiddenWorkflowSkillToken {
+        token: "omx question",
+        reason_code: "forbidden_omx_cli_authority",
+        severity: "fail",
+        remediation: "Use the native question tool and workflow question evidence lifecycle.",
+    },
+    ForbiddenWorkflowSkillToken {
+        token: "OMX_TEAM_",
+        reason_code: "forbidden_tmux_authority",
+        severity: "fail",
+        remediation: "Remove team runtime environment-variable authority from shipped Harness skills.",
+    },
+    ForbiddenWorkflowSkillToken {
+        token: "OMX_QUESTION_",
+        reason_code: "forbidden_tmux_authority",
+        severity: "fail",
+        remediation: "Remove pane-routing question environment-variable authority from shipped Harness skills.",
+    },
+    ForbiddenWorkflowSkillToken {
+        token: "tmux pane",
+        reason_code: "forbidden_tmux_authority",
+        severity: "fail",
+        remediation: "Treat terminal multiplexing as optional diagnostics, not lifecycle proof.",
+    },
+    ForbiddenWorkflowSkillToken {
+        token: "tmux send-keys",
+        reason_code: "forbidden_tmux_authority",
+        severity: "fail",
+        remediation: "Use coordinator messages/tasks instead of terminal keystroke routing.",
+    },
+    ForbiddenWorkflowSkillToken {
+        token: "Codex goal mode",
+        reason_code: "forbidden_goal_mode_authority",
+        severity: "fail",
+        remediation: "Use Harness workflow goal ledgers/evidence as authority; external goal snapshots are optional context.",
+    },
+    ForbiddenWorkflowSkillToken {
+        token: "goal mode is the authority",
+        reason_code: "forbidden_goal_mode_authority",
+        severity: "fail",
+        remediation: "Do not make external goal mode the Harness source of truth.",
+    },
+];
+
+#[derive(Debug, Clone, Copy)]
+struct ForbiddenWorkflowSkillToken {
+    token: &'static str,
+    reason_code: &'static str,
+    severity: &'static str,
+    remediation: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct WorkflowSkillProtocolFinding {
+    skill: String,
+    path: String,
+    reason_code: &'static str,
+    severity: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    token: Option<String>,
+    remediation: String,
+}
+
+fn evaluate_workflow_skill_protocol_body(
+    skill: &str,
+    path: &Path,
+    body: &str,
+) -> Vec<WorkflowSkillProtocolFinding> {
+    let mut findings = Vec::new();
+    let lower = body.to_lowercase();
+    let path = path.display().to_string();
+
+    for section in REQUIRED_NATIVE_SKILL_SECTIONS {
+        let section_lower = section.to_lowercase();
+        let section_present = lower.contains(&format!("## {section_lower}"))
+            || lower.contains(&format!("<{}>", section_lower.replace(' ', "_")))
+            || lower.contains(&section_lower);
+        if !section_present {
+            let reason_code = match section {
+                "Harness state contract" => "missing_harness_state_contract",
+                "Evidence and closeout contract" | "Verification checklist" => {
+                    "missing_evidence_closeout_contract"
+                }
+                _ => "missing_harness_state_contract",
+            };
+            findings.push(WorkflowSkillProtocolFinding {
+                skill: skill.to_string(),
+                path: path.clone(),
+                reason_code,
+                severity: "fail",
+                token: None,
+                remediation: format!(
+                    "Add a native Harness `{section}` section to the shipped workflow skill."
+                ),
+            });
+        }
+    }
+
+    if !lower.contains("harness")
+        || !(lower.contains("workflow evidence")
+            || lower.contains("workflow projection")
+            || lower.contains("coordinator-owned"))
+    {
+        findings.push(WorkflowSkillProtocolFinding {
+            skill: skill.to_string(),
+            path: path.clone(),
+            reason_code: "missing_harness_state_contract",
+            severity: "fail",
+            token: None,
+            remediation: "State the Harness event/projection/evidence contract explicitly."
+                .to_string(),
+        });
+    }
+
+    for rule in FORBIDDEN_WORKFLOW_SKILL_TOKENS {
+        if lower.contains(&rule.token.to_lowercase()) {
+            findings.push(WorkflowSkillProtocolFinding {
+                skill: skill.to_string(),
+                path: path.clone(),
+                reason_code: rule.reason_code,
+                severity: rule.severity,
+                token: Some(rule.token.to_string()),
+                remediation: rule.remediation.to_string(),
+            });
+        }
+    }
+
+    findings
+}
+
+fn check_workflow_transition_policy_matrix() -> DoctorCheck {
+    const EXPECTED_TRACKED_MODES: &[&str] = &[
+        "autopilot",
+        "autoresearch",
+        "team",
+        "ralph",
+        "ultrawork",
+        "ultraqa",
+        "ralplan",
+        "deep-interview",
+    ];
+    const MATRIX_CASES: &[TransitionMatrixCase] = &[
+        TransitionMatrixCase {
+            name: "empty_to_autopilot_allows",
+            current: &[],
+            requested: "autopilot",
+            expected_policy: POLICY_ALLOW,
+            expected_auto_completes: &[],
+        },
+        TransitionMatrixCase {
+            name: "deep_interview_to_ralplan_auto_completes",
+            current: &["deep-interview"],
+            requested: "ralplan",
+            expected_policy: POLICY_AUTO_COMPLETE,
+            expected_auto_completes: &["deep-interview"],
+        },
+        TransitionMatrixCase {
+            name: "ralplan_to_team_auto_completes",
+            current: &["ralplan"],
+            requested: "team",
+            expected_policy: POLICY_AUTO_COMPLETE,
+            expected_auto_completes: &["ralplan"],
+        },
+        TransitionMatrixCase {
+            name: "ralplan_to_autopilot_auto_completes",
+            current: &["ralplan"],
+            requested: "autopilot",
+            expected_policy: POLICY_AUTO_COMPLETE,
+            expected_auto_completes: &["ralplan"],
+        },
+        TransitionMatrixCase {
+            name: "ralph_team_overlap",
+            current: &["ralph"],
+            requested: "team",
+            expected_policy: POLICY_OVERLAP,
+            expected_auto_completes: &[],
+        },
+        TransitionMatrixCase {
+            name: "ultrawork_fanout_overlap",
+            current: &["ultrawork"],
+            requested: "autopilot",
+            expected_policy: POLICY_OVERLAP,
+            expected_auto_completes: &[],
+        },
+        TransitionMatrixCase {
+            name: "ralph_to_ralplan_denied",
+            current: &["ralph"],
+            requested: "ralplan",
+            expected_policy: POLICY_DENIED,
+            expected_auto_completes: &[],
+        },
+        TransitionMatrixCase {
+            name: "autopilot_to_ralplan_denied",
+            current: &["autopilot"],
+            requested: "ralplan",
+            expected_policy: POLICY_DENIED,
+            expected_auto_completes: &[],
+        },
+        TransitionMatrixCase {
+            name: "team_to_autopilot_denied",
+            current: &["team"],
+            requested: "autopilot",
+            expected_policy: POLICY_DENIED,
+            expected_auto_completes: &[],
+        },
+    ];
+
+    let mut failures = Vec::new();
+    if TRACKED_WORKFLOW_MODES != EXPECTED_TRACKED_MODES {
+        failures.push(format!(
+            "tracked modes drifted: expected {:?}, got {:?}",
+            EXPECTED_TRACKED_MODES, TRACKED_WORKFLOW_MODES
+        ));
+    }
+
+    let registered_policies = TRANSITION_POLICIES
+        .iter()
+        .map(|spec| spec.id)
+        .collect::<BTreeSet<_>>();
+    for policy in [
+        POLICY_ALLOW,
+        POLICY_OVERLAP,
+        POLICY_AUTO_COMPLETE,
+        POLICY_DENIED,
+    ] {
+        if !registered_policies.contains(policy) {
+            failures.push(format!("transition policy `{policy}` is not registered"));
+        }
+    }
+
+    for case in MATRIX_CASES {
+        let decision =
+            WorkflowTransitionAllowlist::evaluate(case.current.iter().copied(), case.requested);
+        let actual_policy = transition_decision_policy_id(&decision);
+        if actual_policy != case.expected_policy {
+            failures.push(format!(
+                "{} expected policy {}, got {} ({decision:?})",
+                case.name, case.expected_policy, actual_policy
+            ));
+            continue;
+        }
+        if let WorkflowTransitionAllowlistDecision::Allowed {
+            source_auto_completes,
+            ..
+        } = &decision
+        {
+            let expected = case
+                .expected_auto_completes
+                .iter()
+                .map(|mode| (*mode).to_string())
+                .collect::<Vec<_>>();
+            if source_auto_completes != &expected {
+                failures.push(format!(
+                    "{} expected auto-complete {:?}, got {:?}",
+                    case.name, expected, source_auto_completes
+                ));
+            }
+        } else if !case.expected_auto_completes.is_empty() {
+            failures.push(format!(
+                "{} expected auto-complete {:?}, got {decision:?}",
+                case.name, case.expected_auto_completes
+            ));
+        }
+    }
+
+    if !failures.is_empty() {
+        return fail(
+            "workflow_transition_policy_matrix",
+            format!(
+                "{} workflow transition policy issue(s): {}",
+                failures.len(),
+                failures.join("; ")
+            ),
+        );
+    }
+
+    pass_with_details(
+        "workflow_transition_policy_matrix",
+        format!(
+            "{} tracked mode(s), {} matrix case(s), and {} registry policy id(s) match the native OMX transition contract",
+            TRACKED_WORKFLOW_MODES.len(),
+            MATRIX_CASES.len(),
+            registered_policies.len()
+        ),
+        Some(serde_json::json!({
+            "tracked_modes": TRACKED_WORKFLOW_MODES,
+            "matrix_cases": MATRIX_CASES.iter().map(|case| case.name).collect::<Vec<_>>(),
+            "policy_ids": [POLICY_ALLOW, POLICY_OVERLAP, POLICY_AUTO_COMPLETE, POLICY_DENIED],
+        })),
+    )
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TransitionMatrixCase {
+    name: &'static str,
+    current: &'static [&'static str],
+    requested: &'static str,
+    expected_policy: &'static str,
+    expected_auto_completes: &'static [&'static str],
+}
+
+fn transition_decision_policy_id(decision: &WorkflowTransitionAllowlistDecision) -> &'static str {
+    match decision {
+        WorkflowTransitionAllowlistDecision::Allowed { policy_id, .. }
+        | WorkflowTransitionAllowlistDecision::Overlap { policy_id }
+        | WorkflowTransitionAllowlistDecision::Denied { policy_id, .. } => policy_id,
+    }
+}
+
+fn shipped_skill_names(workspace_root: &Path) -> Result<Vec<String>, String> {
+    let skill_root = workspace_root.join(".agent-harness/skills");
+    if !skill_root.exists() {
+        return Ok(Vec::new());
+    }
+    let entries = fs::read_dir(&skill_root)
+        .map_err(|err| format!("could not read {}: {err}", skill_root.display()))?;
+    let mut skills = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|err| {
+            format!(
+                "could not inspect entry under {}: {err}",
+                skill_root.display()
+            )
+        })?;
+        let file_type = entry.file_type().map_err(|err| {
+            format!(
+                "could not inspect skill entry {}: {err}",
+                entry.path().display()
+            )
+        })?;
+        if !file_type.is_dir() || !entry.path().join("SKILL.md").is_file() {
+            continue;
+        }
+        skills.push(entry.file_name().to_string_lossy().to_string());
+    }
+    skills.sort();
+    skills.dedup();
+    Ok(skills)
+}
+
+fn skill_names_from_prefixed(entries: &[String]) -> BTreeSet<&str> {
+    entries
+        .iter()
+        .filter_map(|entry| entry.strip_prefix("skill:"))
+        .collect()
+}
+
 fn check_workflow_contract_registry() -> DoctorCheck {
     let mut duplicate_groups = Vec::new();
     let mut group_counts = serde_json::Map::new();
@@ -326,7 +983,7 @@ fn check_workflow_contract_registry() -> DoctorCheck {
         .filter(|anchor| match anchor.path {
             "docs/config.md" => !CONFIG_DOC_MD.contains(anchor.heading),
             "docs/testing.md" => !TESTING_DOC_MD.contains(anchor.heading),
-            "docs/omx-workflow-slice-spec.md" => !WORKFLOW_SLICE_SPEC_MD.contains(anchor.heading),
+            "docs/omx-parity-dossier.md" => !OMX_PARITY_DOSSIER_MD.contains(anchor.heading),
             _ => true,
         })
         .map(|anchor| format!("{}:{}", anchor.path, anchor.heading))
@@ -1540,9 +2197,14 @@ fn check_workflow_closeout_readiness(config: &HarnessConfig) -> DoctorCheck {
 }
 
 fn check_parity_ledger() -> DoctorCheck {
-    let ledger = match parse_parity_ledger() {
+    let Some(ledger) = (match parse_parity_ledger() {
         Ok(ledger) => ledger,
         Err(err) => return fail("parity_ledger", err),
+    }) else {
+        return warn(
+            "parity_ledger",
+            "docs/parity-ledger.json is not present; use docs/omx-parity-dossier.md as the current parity source",
+        );
     };
     let Some(items) = ledger.get("items").and_then(Value::as_array) else {
         return fail(
@@ -1582,9 +2244,14 @@ fn check_parity_ledger() -> DoctorCheck {
 }
 
 fn check_omo_parity_gaps() -> DoctorCheck {
-    let ledger = match parse_parity_ledger() {
+    let Some(ledger) = (match parse_parity_ledger() {
         Ok(ledger) => ledger,
         Err(err) => return fail("omo_parity_gaps", err),
+    }) else {
+        return warn(
+            "omo_parity_gaps",
+            "docs/parity-ledger.json is not present; use docs/omx-parity-dossier.md for the current parity gap list",
+        );
     };
     let Some(items) = ledger.get("items").and_then(Value::as_array) else {
         return fail(
@@ -1620,9 +2287,16 @@ fn check_omo_parity_gaps() -> DoctorCheck {
     )
 }
 
-fn parse_parity_ledger() -> Result<Value, String> {
-    serde_json::from_str(PARITY_LEDGER_JSON)
-        .map_err(|err| format!("failed to parse docs/parity-ledger.json: {err}"))
+fn parse_parity_ledger() -> Result<Option<Value>, String> {
+    let path = Path::new("docs/parity-ledger.json");
+    let body = match fs::read_to_string(path) {
+        Ok(body) => body,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(format!("failed to read {}: {err}", path.display())),
+    };
+    serde_json::from_str(&body)
+        .map(Some)
+        .map_err(|err| format!("failed to parse {}: {err}", path.display()))
 }
 
 fn has_non_empty_string(value: &Value, key: &str) -> bool {
@@ -1700,5 +2374,42 @@ fn fail(name: impl Into<String>, message: impl Into<String>) -> DoctorCheck {
         status: CheckStatus::Fail,
         message: message.into(),
         details: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::evaluate_workflow_skill_protocol_body;
+    use std::path::Path;
+
+    #[test]
+    fn native_workflow_protocol_detects_forbidden_substrate_fixture() {
+        let body = r#"
+---
+name: bad
+description: bad
+---
+
+## Purpose
+Bad fixture.
+## Use when
+Testing.
+## Harness state contract
+Harness workflow evidence exists.
+## Execution protocol
+Run omx state and route through a tmux pane.
+## Evidence and closeout contract
+Close with workflow evidence.
+## Verification checklist
+Verify.
+"#;
+        let findings =
+            evaluate_workflow_skill_protocol_body("bad", Path::new("bad/SKILL.md"), body);
+        let reason_codes = findings
+            .iter()
+            .map(|finding| finding.reason_code)
+            .collect::<Vec<_>>();
+        assert!(reason_codes.contains(&"forbidden_omx_cli_authority"));
+        assert!(reason_codes.contains(&"forbidden_tmux_authority"));
     }
 }
