@@ -421,6 +421,8 @@ pub fn evaluate_closeout_readiness(
     let evidence_categories = run
         .map(|run| run.evidence_categories.clone())
         .unwrap_or_default();
+    let required_family_evidence =
+        required_family_evidence_categories(run.map(|run| run.mode.as_str()));
     let terminal = run.is_some_and(|run| run.terminal);
     let waivers = collect_waivers(policy, run);
 
@@ -443,6 +445,7 @@ pub fn evaluate_closeout_readiness(
                 "Hook decisions",
                 WORKFLOW_CLOSEOUT_HOOK_EVIDENCE_CATEGORY,
                 "hook_status",
+                false,
             ),
             metadata_status_dimension(
                 evidence,
@@ -450,6 +453,7 @@ pub fn evaluate_closeout_readiness(
                 "State/memory",
                 WORKFLOW_CLOSEOUT_STATE_EVIDENCE_CATEGORY,
                 "state_status",
+                false,
             ),
             metadata_status_dimension(
                 evidence,
@@ -457,6 +461,7 @@ pub fn evaluate_closeout_readiness(
                 "Trace",
                 WORKFLOW_CLOSEOUT_TRACE_EVIDENCE_CATEGORY,
                 "trace_status",
+                required_family_evidence.contains(WORKFLOW_CLOSEOUT_TRACE_EVIDENCE_CATEGORY),
             ),
             metadata_status_dimension(
                 evidence,
@@ -464,6 +469,8 @@ pub fn evaluate_closeout_readiness(
                 "Review findings",
                 crate::workflow_registry::REVIEW_EVIDENCE_CATEGORY,
                 "review_status",
+                required_family_evidence
+                    .contains(crate::workflow_registry::REVIEW_EVIDENCE_CATEGORY),
             ),
             metadata_status_dimension(
                 evidence,
@@ -471,6 +478,8 @@ pub fn evaluate_closeout_readiness(
                 "Security review",
                 crate::workflow_registry::SECURITY_REVIEW_EVIDENCE_CATEGORY,
                 "security_status",
+                required_family_evidence
+                    .contains(crate::workflow_registry::SECURITY_REVIEW_EVIDENCE_CATEGORY),
             ),
             metadata_status_dimension(
                 evidence,
@@ -478,6 +487,7 @@ pub fn evaluate_closeout_readiness(
                 "QA scenarios",
                 crate::workflow_registry::QA_EVIDENCE_CATEGORY,
                 "qa_status",
+                required_family_evidence.contains(crate::workflow_registry::QA_EVIDENCE_CATEGORY),
             ),
             metadata_status_dimension(
                 evidence,
@@ -485,6 +495,8 @@ pub fn evaluate_closeout_readiness(
                 "Performance evaluation",
                 crate::workflow_registry::PERFORMANCE_EVIDENCE_CATEGORY,
                 "performance_status",
+                required_family_evidence
+                    .contains(crate::workflow_registry::PERFORMANCE_EVIDENCE_CATEGORY),
             ),
             metadata_status_dimension(
                 evidence,
@@ -492,6 +504,8 @@ pub fn evaluate_closeout_readiness(
                 "Visual verdict",
                 crate::workflow_registry::VISUAL_EVIDENCE_CATEGORY,
                 "visual_status",
+                required_family_evidence
+                    .contains(crate::workflow_registry::VISUAL_EVIDENCE_CATEGORY),
             ),
             metadata_status_dimension(
                 evidence,
@@ -499,6 +513,8 @@ pub fn evaluate_closeout_readiness(
                 "Setup/doctor",
                 crate::workflow_registry::SETUP_DOCTOR_EVIDENCE_CATEGORY,
                 "setup_status",
+                required_family_evidence
+                    .contains(crate::workflow_registry::SETUP_DOCTOR_EVIDENCE_CATEGORY),
             ),
             metadata_status_dimension(
                 evidence,
@@ -506,6 +522,8 @@ pub fn evaluate_closeout_readiness(
                 "Skill management",
                 crate::workflow_registry::SKILL_MANAGEMENT_EVIDENCE_CATEGORY,
                 "skill_status",
+                required_family_evidence
+                    .contains(crate::workflow_registry::SKILL_MANAGEMENT_EVIDENCE_CATEGORY),
             ),
             metadata_status_dimension(
                 evidence,
@@ -513,6 +531,8 @@ pub fn evaluate_closeout_readiness(
                 "Status/HUD",
                 crate::workflow_registry::STATUS_HUD_EVIDENCE_CATEGORY,
                 "status_hud_status",
+                required_family_evidence
+                    .contains(crate::workflow_registry::STATUS_HUD_EVIDENCE_CATEGORY),
             ),
             metadata_status_dimension(
                 evidence,
@@ -520,6 +540,8 @@ pub fn evaluate_closeout_readiness(
                 "Note/memory",
                 crate::workflow_registry::NOTE_MEMORY_EVIDENCE_CATEGORY,
                 "note_memory_status",
+                required_family_evidence
+                    .contains(crate::workflow_registry::NOTE_MEMORY_EVIDENCE_CATEGORY),
             ),
         ],
         &waivers,
@@ -919,6 +941,7 @@ fn wiki_dimension(
         "Wiki/project memory",
         crate::wiki::WIKI_EVIDENCE_CATEGORY,
         "wiki_lint_status",
+        false,
     )
 }
 
@@ -996,32 +1019,44 @@ fn metadata_status_dimension(
     label: &str,
     category: &str,
     status_key: &str,
+    required: bool,
 ) -> WorkflowCloseoutDimension {
     let mut blocking_refs = Vec::new();
     let mut missing_categories = Vec::new();
     let mut domain_reasons = Vec::new();
+    let mut matching_event_count = 0;
     for event in evidence
         .into_iter()
         .flatten()
         .filter(|event| event.category == category)
     {
+        matching_event_count += 1;
+        let reference = event
+            .acceptance_ref
+            .clone()
+            .unwrap_or_else(|| event.summary.clone());
         let status = event
             .metadata
             .get(status_key)
             .or_else(|| event.metadata.get("status"))
             .map(String::as_str)
             .unwrap_or("passed");
-        if is_blocking_status(status) {
-            let reference = event
-                .acceptance_ref
-                .clone()
-                .unwrap_or_else(|| event.summary.clone());
+        let review_reason =
+            review_verdict_blocking_reason(category, label, &reference, event, required);
+        if is_blocking_status(status) || review_reason.is_some() {
             blocking_refs.push(format!("{dimension_id}:{reference}"));
             missing_categories.push(format!("{dimension_id}_ready"));
-            domain_reasons.push(format!(
-                "{label} evidence `{reference}` has status `{status}`"
-            ));
+            domain_reasons.push(review_reason.unwrap_or_else(|| {
+                format!("{label} evidence `{reference}` has status `{status}`")
+            }));
         }
+    }
+    if required && matching_event_count == 0 {
+        blocking_refs.push(format!("{dimension_id}:{category}"));
+        missing_categories.push(category.to_string());
+        domain_reasons.push(format!(
+            "{label} evidence category `{category}` is required for this workflow"
+        ));
     }
     WorkflowCloseoutDimension::blocked(
         dimension_id,
@@ -1034,6 +1069,77 @@ fn metadata_status_dimension(
             "record passing {label} evidence or resolve blockers"
         )],
     )
+}
+
+fn required_family_evidence_categories(mode: Option<&str>) -> BTreeSet<&'static str> {
+    let Some(mode) = mode.map(str::trim) else {
+        return BTreeSet::new();
+    };
+    let mut categories = BTreeSet::new();
+    match mode {
+        "autopilot" | "workflow.autopilot" | "workflow.review" | "ralph" | "workflow.ralph" => {
+            categories.insert(crate::workflow_registry::REVIEW_EVIDENCE_CATEGORY);
+        }
+        "security-review" | "workflow.security_review" => {
+            categories.insert(crate::workflow_registry::SECURITY_REVIEW_EVIDENCE_CATEGORY);
+        }
+        "ultraqa" | "workflow.qa" => {
+            categories.insert(crate::workflow_registry::QA_EVIDENCE_CATEGORY);
+        }
+        "workflow.performance" => {
+            categories.insert(crate::workflow_registry::PERFORMANCE_EVIDENCE_CATEGORY);
+        }
+        "visual-ralph" | "visual-verdict" | "workflow.visual" => {
+            categories.insert(crate::workflow_registry::VISUAL_EVIDENCE_CATEGORY);
+        }
+        "doctor"
+        | "configure-notifications"
+        | "omx-setup"
+        | "workflow.doctor"
+        | "workflow.configure_notifications"
+        | "workflow.setup" => {
+            categories.insert(crate::workflow_registry::SETUP_DOCTOR_EVIDENCE_CATEGORY);
+        }
+        "skill" | "workflow.skill_management" => {
+            categories.insert(crate::workflow_registry::SKILL_MANAGEMENT_EVIDENCE_CATEGORY);
+        }
+        "help" | "hud" | "workflow.help" | "workflow.hud" => {
+            categories.insert(crate::workflow_registry::STATUS_HUD_EVIDENCE_CATEGORY);
+        }
+        "trace" | "workflow.trace" => {
+            categories.insert(WORKFLOW_CLOSEOUT_TRACE_EVIDENCE_CATEGORY);
+        }
+        "note" | "workflow.note" => {
+            categories.insert(crate::workflow_registry::NOTE_MEMORY_EVIDENCE_CATEGORY);
+        }
+        _ => {}
+    }
+    categories
+}
+
+fn review_verdict_blocking_reason(
+    category: &str,
+    label: &str,
+    reference: &str,
+    event: &crate::event::WorkflowEvidenceRecordedEvent,
+    require_clean_verdict: bool,
+) -> Option<String> {
+    if category != crate::workflow_registry::REVIEW_EVIDENCE_CATEGORY {
+        return None;
+    }
+    match crate::workflow_review::code_review_verdict_from_evidence(&event.summary, &event.metadata)
+    {
+        Some(verdict) if verdict.is_clean() => None,
+        Some(verdict) => Some(format!(
+            "{label} evidence `{reference}` has non-clean verdict recommendation={} architectural_status={}",
+            verdict.normalized_recommendation(),
+            verdict.normalized_architectural_status()
+        )),
+        None if require_clean_verdict => Some(format!(
+            "{label} evidence `{reference}` must include a parseable clean verdict recommendation=APPROVE architectural_status=CLEAR"
+        )),
+        None => None,
+    }
 }
 
 fn is_blocking_status(status: &str) -> bool {
@@ -1222,9 +1328,13 @@ mod tests {
     };
 
     fn start_event() -> EventV1 {
+        start_event_for_mode("workflow.run")
+    }
+
+    fn start_event_for_mode(mode: &str) -> EventV1 {
         EventV1::WorkflowStarted(WorkflowStartedEvent {
             workflow_id: "wf_closeout".to_string(),
-            mode: "workflow.run".to_string(),
+            mode: mode.to_string(),
             owner: "leader".to_string(),
             lane: Some("lane.leader".to_string()),
             title: Some("closeout".to_string()),
@@ -1282,6 +1392,21 @@ mod tests {
             acceptance_ref: Some(acceptance_ref.to_string()),
             metadata,
         })
+    }
+
+    fn clean_review_metadata() -> BTreeMap<String, String> {
+        BTreeMap::from([
+            ("recommendation".to_string(), "APPROVE".to_string()),
+            ("architectural_status".to_string(), "CLEAR".to_string()),
+        ])
+    }
+
+    fn passing_family_evidence_metadata(category: &str) -> BTreeMap<String, String> {
+        if category == REVIEW_EVIDENCE_CATEGORY {
+            clean_review_metadata()
+        } else {
+            BTreeMap::new()
+        }
     }
 
     fn readiness_for(events: Vec<EventV1>) -> super::WorkflowCloseoutReadiness {
@@ -1471,6 +1596,184 @@ mod tests {
                 .iter()
                 .any(|reference| reference.contains("blocked")));
         }
+    }
+
+    #[test]
+    fn workflow_modes_require_their_family_closeout_evidence() {
+        let cases = [
+            (
+                "workflow.autopilot",
+                REVIEW_EVIDENCE_CATEGORY,
+                WORKFLOW_CLOSEOUT_DIMENSION_REVIEW,
+            ),
+            (
+                "workflow.review",
+                REVIEW_EVIDENCE_CATEGORY,
+                WORKFLOW_CLOSEOUT_DIMENSION_REVIEW,
+            ),
+            (
+                "ralph",
+                REVIEW_EVIDENCE_CATEGORY,
+                WORKFLOW_CLOSEOUT_DIMENSION_REVIEW,
+            ),
+            (
+                "workflow.security_review",
+                SECURITY_REVIEW_EVIDENCE_CATEGORY,
+                WORKFLOW_CLOSEOUT_DIMENSION_SECURITY,
+            ),
+            (
+                "workflow.qa",
+                QA_EVIDENCE_CATEGORY,
+                WORKFLOW_CLOSEOUT_DIMENSION_QA,
+            ),
+            (
+                "workflow.performance",
+                PERFORMANCE_EVIDENCE_CATEGORY,
+                WORKFLOW_CLOSEOUT_DIMENSION_PERFORMANCE,
+            ),
+            (
+                "workflow.visual",
+                VISUAL_EVIDENCE_CATEGORY,
+                WORKFLOW_CLOSEOUT_DIMENSION_VISUAL,
+            ),
+            (
+                "workflow.doctor",
+                SETUP_DOCTOR_EVIDENCE_CATEGORY,
+                WORKFLOW_CLOSEOUT_DIMENSION_SETUP,
+            ),
+            (
+                "workflow.configure_notifications",
+                SETUP_DOCTOR_EVIDENCE_CATEGORY,
+                WORKFLOW_CLOSEOUT_DIMENSION_SETUP,
+            ),
+            (
+                "workflow.skill_management",
+                SKILL_MANAGEMENT_EVIDENCE_CATEGORY,
+                WORKFLOW_CLOSEOUT_DIMENSION_SKILL,
+            ),
+            (
+                "workflow.hud",
+                STATUS_HUD_EVIDENCE_CATEGORY,
+                WORKFLOW_CLOSEOUT_DIMENSION_STATUS_HUD,
+            ),
+            (
+                "workflow.trace",
+                WORKFLOW_CLOSEOUT_TRACE_EVIDENCE_CATEGORY,
+                WORKFLOW_CLOSEOUT_DIMENSION_TRACE,
+            ),
+            (
+                "workflow.note",
+                NOTE_MEMORY_EVIDENCE_CATEGORY,
+                WORKFLOW_CLOSEOUT_DIMENSION_NOTE_MEMORY,
+            ),
+        ];
+
+        for (mode, category, dimension_id) in cases {
+            let missing = readiness_for(vec![start_event_for_mode(mode)]);
+            let dimension = missing.dimension(dimension_id).expect("family dimension");
+            assert!(
+                !dimension.allowed,
+                "{mode} should require {category} before closeout"
+            );
+            assert!(
+                dimension.missing_categories.contains(&category.to_string()),
+                "{mode} missing categories: {:?}",
+                dimension.missing_categories
+            );
+
+            let passing = readiness_for(vec![
+                start_event_for_mode(mode),
+                evidence_event(
+                    category,
+                    "family-passed",
+                    passing_family_evidence_metadata(category),
+                ),
+            ]);
+            assert!(
+                passing
+                    .dimension(dimension_id)
+                    .expect("family dimension")
+                    .allowed,
+                "{mode} should allow closeout after {category}"
+            );
+        }
+    }
+
+    #[test]
+    fn non_clean_review_verdict_blocks_review_closeout() {
+        let blocked = readiness_for(vec![
+            start_event_for_mode("workflow.review"),
+            EventV1::WorkflowEvidenceRecorded(WorkflowEvidenceRecordedEvent {
+                workflow_id: "wf_closeout".to_string(),
+                category: REVIEW_EVIDENCE_CATEGORY.to_string(),
+                summary: r#"{"recommendation":"REQUEST CHANGES","architectural_status":"WATCH","findings":["missing regression"]}"#.to_string(),
+                artifact_path: Some("artifacts/review.json".to_string()),
+                artifact_digest: Some("digest".to_string()),
+                acceptance_ref: Some("review-non-clean".to_string()),
+                metadata: BTreeMap::new(),
+            }),
+        ]);
+        let review = blocked
+            .dimension(WORKFLOW_CLOSEOUT_DIMENSION_REVIEW)
+            .expect("review dimension");
+        assert!(!review.allowed);
+        assert!(review
+            .domain_reasons
+            .iter()
+            .any(|reason| reason.contains("non-clean verdict")));
+
+        let clean = readiness_for(vec![
+            start_event_for_mode("workflow.review"),
+            EventV1::WorkflowEvidenceRecorded(WorkflowEvidenceRecordedEvent {
+                workflow_id: "wf_closeout".to_string(),
+                category: REVIEW_EVIDENCE_CATEGORY.to_string(),
+                summary:
+                    r#"{"recommendation":"APPROVE","architectural_status":"CLEAR","findings":[]}"#
+                        .to_string(),
+                artifact_path: Some("artifacts/review.json".to_string()),
+                artifact_digest: Some("digest".to_string()),
+                acceptance_ref: Some("review-clean".to_string()),
+                metadata: BTreeMap::new(),
+            }),
+        ]);
+        assert!(
+            clean
+                .dimension(WORKFLOW_CLOSEOUT_DIMENSION_REVIEW)
+                .expect("review dimension")
+                .allowed
+        );
+    }
+
+    #[test]
+    fn ralph_closeout_requires_parseable_clean_review_verdict() {
+        let generic_review = readiness_for(vec![
+            start_event_for_mode("ralph"),
+            evidence_event(REVIEW_EVIDENCE_CATEGORY, "generic-review", BTreeMap::new()),
+        ]);
+        let review = generic_review
+            .dimension(WORKFLOW_CLOSEOUT_DIMENSION_REVIEW)
+            .expect("review dimension");
+        assert!(!review.allowed);
+        assert!(review.domain_reasons.iter().any(|reason| {
+            reason.contains("parseable clean verdict")
+                && reason.contains("recommendation=APPROVE")
+                && reason.contains("architectural_status=CLEAR")
+        }));
+
+        let clean_review = readiness_for(vec![
+            start_event_for_mode("ralph"),
+            evidence_event(
+                REVIEW_EVIDENCE_CATEGORY,
+                "architect-approve-clear",
+                clean_review_metadata(),
+            ),
+        ]);
+        assert!(
+            clean_review
+                .dimension(WORKFLOW_CLOSEOUT_DIMENSION_REVIEW)
+                .expect("review dimension")
+                .allowed
+        );
     }
 
     #[test]
