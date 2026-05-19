@@ -1,10 +1,11 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
+assertion_line: 546
 expression: "checkpoint_visual_snapshot(&screen, &[STARTUP_HOME_DENSE_VALUE_PROP_MARKER],\n&visual)"
 ---
 Ask anything...: true
 focus_marker: Ask anything...
-focus_render_state_blake3: 7b27bbfc8e0912b9ae44eb5ca898f50aeae4b4a934defebd5103fe48e225012f
+focus_render_state_blake3: 6bdc5af4bd7f731a23cef5e1ed3f8780954fa6377d5124cbaf3464f2dbd87728
 focus_region_cells: row=12, col=4, height=6, width=32
 image: pty_startup_home_dense.png
 manifest_json: pty-manifests/startup_shell/manifest.json

@@ -1,11 +1,12 @@
 ---
 source: crates/harness-testkit/tests/pty_e2e.rs
+assertion_line: 488
 expression: "checkpoint_visual_snapshot(&screen,\n&[STARTUP_HOME_SHORTCUT_MARKER, STARTUP_HOME_COMPOSER_HINT_MARKER,], &visual,)"
 ---
 Ctrl+p open: true
 Ask anything...: true
 focus_marker: Ask anything...
-focus_render_state_blake3: c4a386f69b1004a8a7b0b71341d23aac092b013d1c393e8f978e344037e1c9fe
+focus_render_state_blake3: e3896e67885518b0f04d251e5f3405facb9142997eb73f96c143fe177f65efbf
 focus_region_cells: row=24, col=45, height=8, width=48
 image: pty_startup_home_primary.png
 manifest_json: pty-manifests/startup_shell/manifest.json

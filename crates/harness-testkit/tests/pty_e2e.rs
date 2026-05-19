@@ -480,7 +480,7 @@ fn pty_e2e_startup_home_primary() {
 
     assert!(screen.contains(STARTUP_HOME_SHORTCUT_MARKER));
     assert!(screen.contains(STARTUP_HOME_COMPOSER_HINT_MARKER));
-    assert!(screen.contains("Worker model-1 mock · Demo"));
+    assert!(screen.contains("model-1 mock · Demo"));
     assert!(!screen.contains("New session"));
     assert!(!screen.contains("Continue session"));
     assert!(!screen.contains("Replay session"));
@@ -537,7 +537,7 @@ fn pty_e2e_startup_home_dense() {
     .expect("capture startup home dense image");
 
     assert!(screen.contains(STARTUP_HOME_COMPOSER_HINT_MARKER));
-    assert!(screen.contains("Worker model-1 mock · Demo"));
+    assert!(screen.contains("model-1 mock · Demo"));
     assert!(screen.contains(STARTUP_HOME_DENSE_VALUE_PROP_MARKER));
     assert!(!screen.contains("New session"));
     assert!(!screen.contains("Continue session"));
