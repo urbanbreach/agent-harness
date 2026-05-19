@@ -1,5 +1,6 @@
 ---
 source: crates/harness-tui/src/lib_tests.rs
+assertion_line: 7822
 expression: "fallback_render.lines().map(str::trim_end).collect::<Vec<_>>().join(\"\\n\")"
 ---
 
@@ -25,4 +26,4 @@ expression: "fallback_render.lines().map(str::trim_end).collect::<Vec<_>>().join
             ┃
             ┃
             ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-            ready for first turn           Ctrl+Tab focus  ·  Ctrl+p commands  ·  q quit
+            ready for first turn                Tab focus  ·  Ctrl+p commands  ·  q quit

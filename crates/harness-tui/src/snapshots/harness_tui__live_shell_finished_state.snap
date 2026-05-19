@@ -1,28 +1,28 @@
 ---
 source: crates/harness-tui/src/lib_tests.rs
-expression: "render_live_lines(&app, 80, 24)"
+expression: rendered
 ---
-                                                                                
-       transcript remains visible                                               
-                                                                                
-       ▪ Assistant · gpt-5-codex · 2ms                                          
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-  ┃                                                                             
-  ┃                                                                             
-  ┃                                                                             
-  ┃  gpt-5-codex openai                                                         
-  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  
-  turn 1 · ready for next turn   Ctrl+Tab focus  ·  Ctrl+p commands  ·  q quit
+
+       transcript remains visible
+
+       ▪ gpt-5-codex · 2ms
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ┃
+  ┃
+  ┃
+  ┃  gpt-5-codex openai
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+  turn 1 · ready for next turn        Tab focus  ·  Ctrl+p commands  ·  q quit
