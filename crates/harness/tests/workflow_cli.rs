@@ -1,5 +1,6 @@
 use std::env;
 use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde_json::Value;
@@ -18,6 +19,87 @@ fn harness_command() -> Command {
         .env("HOME", "/nonexistent")
         .env("XDG_CONFIG_HOME", "/nonexistent");
     command
+}
+
+fn deny_edit_config_content() -> &'static str {
+    r#"{
+      provider: {
+        default: {
+          type: "openai_compatible",
+          options: {
+            baseURL: "http://127.0.0.1:8317/v1",
+            apiKey: "test-key",
+          },
+          models: {
+            "gpt-4o-mini": { name: "GPT-4o mini" },
+          },
+        },
+      },
+      model: "default/gpt-4o-mini",
+      agent: {
+        operator: { system_prompt: "Operate workflows" },
+      },
+      default_agent: "operator",
+      permission: { edit: "deny" },
+    }"#
+}
+
+fn latest_run_dir(session_dir: &Path) -> PathBuf {
+    let mut runs = fs::read_dir(session_dir)
+        .expect("read session dir")
+        .map(|entry| entry.expect("session entry").path())
+        .filter(|path| path.join("events.jsonl").is_file())
+        .collect::<Vec<_>>();
+    runs.sort();
+    runs.pop().expect("latest run dir")
+}
+
+fn assert_permission_denial_projection(
+    run_dir: &Path,
+    workflow_id: &str,
+    decision: &str,
+    selector: &str,
+) {
+    let status_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "workflow",
+            "status",
+            "--run-dir",
+            run_dir.to_str().expect("run dir utf-8"),
+            "--workflow-id",
+            workflow_id,
+            "--json",
+        ])
+        .output()
+        .expect("run workflow status for permission denial");
+    assert!(
+        status_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&status_output.stdout),
+        String::from_utf8_lossy(&status_output.stderr)
+    );
+    let status: Value =
+        serde_json::from_slice(&status_output.stdout).expect("permission denial status JSON");
+    let workflow = &status["projection"]["workflows"][workflow_id];
+    assert_eq!(workflow["terminal"], false);
+    assert!(workflow["operator_decisions"]
+        .as_array()
+        .expect("operator decisions")
+        .iter()
+        .any(|value| value.as_str() == Some(decision)));
+    assert!(workflow["evidence_categories"]
+        .as_array()
+        .expect("evidence categories")
+        .iter()
+        .any(|value| value.as_str() == Some("evidence.permission_decision")));
+    let evidence = &status["projection"]["evidence"][workflow_id][0];
+    assert_eq!(evidence["metadata"]["status"], "denied");
+    assert_eq!(evidence["metadata"]["selector"], selector);
+    assert_eq!(
+        status["closeout"][workflow_id]["closeout"]["overall_allowed"],
+        false
+    );
 }
 
 #[test]
@@ -1287,6 +1369,172 @@ fn workflow_mission_cli_executes_permissioned_validator_command() {
 }
 
 #[test]
+fn workflow_mission_validator_permission_denial_has_no_process_or_artifact_side_effect() {
+    let temp = tempdir().expect("tempdir");
+    let session_dir = temp.path().join("sessions");
+    let marker = temp.path().join("validator-ran.txt");
+    let command = format!("printf denied > {}", marker.display());
+
+    let output = harness_command()
+        .current_dir(repo_root())
+        .env(
+            "HARNESS_CONFIG_CONTENT",
+            r#"{ permission: { bash: { "*": "deny" } } }"#,
+        )
+        .args([
+            "--session-dir",
+            session_dir.to_str().expect("session dir utf-8"),
+            "workflow",
+            "mission",
+            "run",
+            "--workflow-id",
+            "wf_mission_validator_denied",
+            "--mission-id",
+            "mission_validator_denied",
+            "--iteration",
+            "1",
+            "--status",
+            "complete",
+            "--summary",
+            "Validator command must not run without permission.",
+            "--candidate-ref",
+            "candidate.json",
+            "--validator-mode",
+            "mission-validator-script",
+            "--validator-command",
+            &command,
+            "--evidence-ref",
+            "candidate.json",
+            "--json",
+        ])
+        .output()
+        .expect("run denied workflow mission validator command");
+
+    assert!(
+        !output.status.success(),
+        "permission denial should fail stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("requires `bash` permission"),
+        "stderr should explain bash permission denial:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !marker.exists(),
+        "denied validator command must not spawn a process or create marker file"
+    );
+
+    let run_dir = latest_run_dir(&session_dir);
+    let events = fs::read_to_string(run_dir.join("events.jsonl")).expect("read denial events");
+    assert!(events.contains("evidence.permission_decision"));
+    assert!(events.contains("permission-denied:bash"));
+    assert!(!events.contains("tool_call_started"));
+    assert!(!events.contains("tool_call_finished"));
+    assert!(!run_dir.join("artifacts/workflows/research").exists());
+    assert_permission_denial_projection(
+        &run_dir,
+        "wf_mission_validator_denied",
+        "permission-denied:bash",
+        &command,
+    );
+}
+
+#[test]
+fn workflow_evidence_record_cli_projects_family_closeout_blockers() {
+    let temp = tempdir().expect("tempdir");
+    let session_dir = temp.path().join("sessions");
+
+    let output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "--session-dir",
+            session_dir.to_str().expect("session dir utf-8"),
+            "workflow",
+            "evidence",
+            "record",
+            "--workflow-id",
+            "wf_review_family",
+            "--mode",
+            "workflow.review",
+            "--category",
+            "evidence.review",
+            "--summary",
+            "code review found unresolved blockers",
+            "--acceptance-ref",
+            "review-blockers",
+            "--artifact-path",
+            "artifacts/workflows/review/review-blockers.json",
+            "--artifact-digest",
+            "0123456789abcdef",
+            "--status-key",
+            "review_status",
+            "--status",
+            "failed",
+            "--metadata",
+            "severity=high",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow evidence record");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).expect("evidence json");
+    let run_dir = report["run_dir"].as_str().expect("run dir");
+    assert_eq!(report["category"], "evidence.review");
+    assert_eq!(report["metadata"]["review_status"], "failed");
+    assert_eq!(report["metadata"]["severity"], "high");
+
+    let status_output = harness_command()
+        .current_dir(repo_root())
+        .args([
+            "workflow",
+            "status",
+            "--run-dir",
+            run_dir,
+            "--workflow-id",
+            "wf_review_family",
+            "--json",
+        ])
+        .output()
+        .expect("run workflow status");
+    assert!(
+        status_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&status_output.stdout),
+        String::from_utf8_lossy(&status_output.stderr)
+    );
+    let status: Value = serde_json::from_slice(&status_output.stdout).expect("status json");
+    let workflow = &status["projection"]["workflows"]["wf_review_family"];
+    assert_eq!(workflow["mode"], "workflow.review");
+    assert!(workflow["evidence_categories"]
+        .as_array()
+        .expect("evidence categories")
+        .iter()
+        .any(|category| category.as_str() == Some("evidence.review")));
+    let review = status["closeout"]["wf_review_family"]["closeout"]["dimensions"]
+        .as_array()
+        .expect("dimensions")
+        .iter()
+        .find(|dimension| dimension["id"] == "review")
+        .expect("review dimension");
+    assert_eq!(review["allowed"], false);
+    assert!(review["blocking_refs"]
+        .as_array()
+        .expect("review blockers")
+        .iter()
+        .any(|reference| reference
+            .as_str()
+            .is_some_and(|value| value.contains("review-blockers"))));
+}
+
+#[test]
 fn workflow_wiki_cli_writes_digested_markdown_and_reads_without_events() {
     let temp = tempdir().expect("tempdir");
     let session_dir = temp.path().join("sessions");
@@ -1331,6 +1579,16 @@ fn workflow_wiki_cli_writes_digested_markdown_and_reads_without_events() {
     let page_body = fs::read_to_string(&page_path).expect("read wiki page");
     assert!(page_body.contains("Workflow Evidence"));
     let events = fs::read_to_string(events_path).expect("read wiki events");
+    let intent_index = events
+        .find("wiki-add-intent")
+        .expect("wiki add should record coordinator-owned intent before mutation evidence");
+    let evidence_index = events
+        .find("evidence.wiki")
+        .expect("wiki add should record evidence after mutation");
+    assert!(
+        intent_index < evidence_index,
+        "wiki mutation intent must be recorded before project-visible mutation evidence"
+    );
     assert!(events.contains("evidence.wiki"));
     assert!(events.contains(digest));
 
@@ -1440,6 +1698,69 @@ fn workflow_wiki_cli_writes_digested_markdown_and_reads_without_events() {
 }
 
 #[test]
+fn workflow_wiki_permission_denial_has_no_project_file_side_effect() {
+    let temp = tempdir().expect("tempdir");
+    let session_dir = temp.path().join("sessions");
+    let page_path = temp.path().join(".agent-harness/wiki/permission-denied.md");
+
+    let output = harness_command()
+        .current_dir(temp.path())
+        .env("HARNESS_CONFIG_CONTENT", deny_edit_config_content())
+        .args([
+            "--session-dir",
+            session_dir.to_str().expect("session dir utf-8"),
+            "workflow",
+            "wiki",
+            "add",
+            "--workflow-id",
+            "wf_wiki_permission_denied",
+            "--slug",
+            "permission-denied",
+            "--title",
+            "Permission Denied",
+            "--category",
+            "security",
+            "--body",
+            "This page must not be written when edit permission is denied.",
+            "--json",
+        ])
+        .output()
+        .expect("run denied workflow wiki add");
+
+    assert!(
+        !output.status.success(),
+        "permission denial should fail stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("requires `edit` permission"),
+        "stderr should explain edit permission denial:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !page_path.exists(),
+        "denied wiki add must not write a project-visible wiki page"
+    );
+    assert!(
+        !temp.path().join(".agent-harness/wiki").exists(),
+        "denied wiki add must not create the wiki directory"
+    );
+
+    let run_dir = latest_run_dir(&session_dir);
+    let events = fs::read_to_string(run_dir.join("events.jsonl")).expect("read denial events");
+    assert!(events.contains("evidence.permission_decision"));
+    assert!(events.contains("permission-denied:edit"));
+    assert!(!events.contains("evidence.wiki"));
+    assert_permission_denial_projection(
+        &run_dir,
+        "wf_wiki_permission_denied",
+        "permission-denied:edit",
+        ".agent-harness/wiki/permission-denied.md",
+    );
+}
+
+#[test]
 fn workflow_init_check_writes_nothing_and_apply_is_explicit() {
     let temp = tempdir().expect("tempdir");
     let workflow_dir = temp.path().join(".agent-harness").join("workflows");
@@ -1483,4 +1804,53 @@ fn workflow_init_check_writes_nothing_and_apply_is_explicit() {
     let apply_report: Value = serde_json::from_slice(&apply_output.stdout).expect("apply json");
     assert_eq!(apply_report["mode"], "apply");
     assert_eq!(apply_report["files"][0]["action"], "created");
+}
+
+#[test]
+fn workflow_init_apply_permission_denial_writes_no_project_files() {
+    let temp = tempdir().expect("tempdir");
+    let session_dir = temp.path().join("sessions");
+    let workflow_dir = temp.path().join(".agent-harness").join("workflows");
+
+    let output = harness_command()
+        .current_dir(temp.path())
+        .env("HARNESS_CONFIG_CONTENT", deny_edit_config_content())
+        .args([
+            "--session-dir",
+            session_dir.to_str().expect("session dir utf-8"),
+            "workflow",
+            "init",
+            "--apply",
+            "--json",
+        ])
+        .output()
+        .expect("run denied workflow init --apply");
+
+    assert!(
+        !output.status.success(),
+        "permission denial should fail stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("requires `edit` permission"),
+        "stderr should explain edit permission denial:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !workflow_dir.exists(),
+        "denied workflow init --apply must not create workflow bootstrap files"
+    );
+
+    let run_dir = latest_run_dir(&session_dir);
+    let events = fs::read_to_string(run_dir.join("events.jsonl")).expect("read denial events");
+    assert!(events.contains("evidence.permission_decision"));
+    assert!(events.contains("permission-denied:edit"));
+    assert!(!events.contains("created"));
+    assert_permission_denial_projection(
+        &run_dir,
+        "wf_workflow_init",
+        "permission-denied:edit",
+        ".agent-harness/workflows/README.md",
+    );
 }

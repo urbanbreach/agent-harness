@@ -12,7 +12,7 @@ use harness_core::context_snapshot::{
     ContextSnapshotAmbiguity, ContextSnapshotInput, ContextSnapshotOptions,
     ContextSnapshotWriteResult,
 };
-use harness_core::coord::{spawn_coordinator, CoordinatorConfig, RunInfo};
+use harness_core::coord::{spawn_coordinator, CoordinatorConfig, CoordinatorHandle, RunInfo};
 use harness_core::event::{ActorKind, EventActor};
 use harness_core::goal_ledger::{
     goal_checkpoint_artifact_name, goal_checkpoint_metadata, goal_ledger_artifact_name,
@@ -21,7 +21,7 @@ use harness_core::goal_ledger::{
     GoalLedgerProjection, GoalQualityGate, GoalStoryArtifact, GOAL_LEDGER_EVIDENCE_CATEGORY,
     GOAL_LEDGER_MODE, GOAL_LEDGER_SCHEMA_VERSION,
 };
-use harness_core::perm::PermissionPolicy;
+use harness_core::perm::{PermissionKind, PermissionPolicy, PermissionRuleRequest, PolicyDecision};
 use harness_core::persistent_task::{project_persistent_tasks, PersistentTaskProjection};
 use harness_core::plan_consensus::{
     plan_consensus_artifact_name, plan_consensus_metadata, resolve_plan_consensus_lanes,
@@ -54,11 +54,15 @@ use harness_core::workflow_closeout::{
     WorkflowCloseoutPolicy, WorkflowCloseoutReadiness, WorkflowSignoffDecision,
     WorkflowSignoffReport, WorkflowStatusCloseoutReport,
 };
+use harness_core::workflow_registry::{evidence_category_ids, is_evidence_category};
 use serde::Serialize;
 use serde_json::json;
 
 use crate::cli_io::{load_events_from_run_dir, EVENTS_FILE_NAME};
 use crate::defaults::DEFAULT_SESSION_DIR;
+
+const PERMISSION_DECISION_EVIDENCE_CATEGORY: &str = "evidence.permission_decision";
+const PERMISSION_DENIED_STATUS: &str = "denied";
 
 #[derive(Debug, Args, Clone)]
 pub struct WorkflowCommand {
@@ -91,6 +95,8 @@ enum WorkflowCommands {
     Mission(Box<WorkflowMissionCommand>),
     /// Read, query, or update the markdown workflow wiki.
     Wiki(Box<WorkflowWikiCommand>),
+    /// Record generic workflow-family evidence with status metadata.
+    Evidence(Box<WorkflowEvidenceCommand>),
     /// Check or apply local workflow bootstrap files.
     Init(WorkflowInitCommand),
 }
@@ -857,6 +863,76 @@ struct WorkflowWikiDeleteCommand {
 }
 
 #[derive(Debug, Args, Clone)]
+struct WorkflowEvidenceCommand {
+    #[command(subcommand)]
+    command: WorkflowEvidenceCommands,
+}
+
+#[derive(Debug, Subcommand, Clone)]
+enum WorkflowEvidenceCommands {
+    Record(WorkflowEvidenceRecordCommand),
+}
+
+#[derive(Debug, Args, Clone)]
+struct WorkflowEvidenceRecordCommand {
+    /// Stable workflow id receiving the evidence.
+    #[arg(long)]
+    workflow_id: String,
+
+    /// Workflow mode to start for this evidence run.
+    #[arg(long, default_value = "workflow.operator_utility")]
+    mode: String,
+
+    /// Evidence category registered in harness-core::workflow_registry.
+    #[arg(long)]
+    category: String,
+
+    /// Human-readable evidence summary.
+    #[arg(long)]
+    summary: String,
+
+    /// Optional acceptance criterion or artifact id this evidence satisfies.
+    #[arg(long)]
+    acceptance_ref: Option<String>,
+
+    /// Optional redacted artifact path under the run/artifact contract.
+    #[arg(long)]
+    artifact_path: Option<String>,
+
+    /// Optional digest for the artifact path.
+    #[arg(long)]
+    artifact_digest: Option<String>,
+
+    /// Metadata as key=value; may be repeated.
+    #[arg(long = "metadata")]
+    metadata: Vec<String>,
+
+    /// Status metadata shorthand. Blocking statuses (failed/blocked/etc.) block closeout.
+    #[arg(long)]
+    status: Option<String>,
+
+    /// Metadata key to receive --status. Defaults to status.
+    #[arg(long, default_value = "status")]
+    status_key: String,
+
+    /// Human-readable workflow title.
+    #[arg(long)]
+    title: Option<String>,
+
+    /// Workflow owner recorded on lifecycle events.
+    #[arg(long, default_value = "workflow-cli")]
+    owner: String,
+
+    /// Workflow lane. Defaults to runtime.workflow.run.default_lane.
+    #[arg(long)]
+    lane: Option<String>,
+
+    /// Emit machine-readable JSON.
+    #[arg(long, default_value_t = false)]
+    json: bool,
+}
+
+#[derive(Debug, Args, Clone)]
 #[command(group(
     ArgGroup::new("mode")
         .required(true)
@@ -918,6 +994,21 @@ struct WorkflowMutationReport {
     audit_only: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     signoff: Option<WorkflowSignoffReport>,
+}
+
+#[derive(Debug, Serialize)]
+struct WorkflowEvidenceRecordReport {
+    run_id: String,
+    run_dir: String,
+    events_path: String,
+    workflow_id: String,
+    mode: String,
+    category: String,
+    summary: String,
+    artifact_path: Option<String>,
+    artifact_digest: Option<String>,
+    acceptance_ref: Option<String>,
+    metadata: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -990,6 +1081,14 @@ struct WikiMutationReport {
     run_id: String,
     run_dir: String,
     events_path: String,
+    workflow_id: String,
+    action: String,
+    page: WikiPageSummary,
+}
+
+struct WikiMutationAudit {
+    coordinator: CoordinatorHandle,
+    run: RunInfo,
     workflow_id: String,
     action: String,
     page: WikiPageSummary,
@@ -1145,7 +1244,17 @@ pub fn execute(
                 }
             }
         }
-        WorkflowCommands::Init(init) => execute_init(init),
+        WorkflowCommands::Evidence(evidence) => {
+            let evidence = *evidence;
+            match evidence.command {
+                WorkflowEvidenceCommands::Record(record) => runtime.block_on(
+                    execute_evidence_record(record, config_path, global_session_dir),
+                ),
+            }
+        }
+        WorkflowCommands::Init(init) => {
+            runtime.block_on(execute_init(init, config_path, global_session_dir))
+        }
     };
 
     match result {
@@ -1227,6 +1336,116 @@ async fn execute_run(
         println!(
             "workflow run started: {} run={} events={}",
             report.workflow_id, report.run_id, report.events_path
+        );
+    }
+    Ok(())
+}
+
+async fn execute_evidence_record(
+    cmd: WorkflowEvidenceRecordCommand,
+    config_path: Option<PathBuf>,
+    global_session_dir: Option<PathBuf>,
+) -> Result<(), String> {
+    if !is_evidence_category(&cmd.category) {
+        return Err(format!(
+            "unknown workflow evidence category `{}`; known categories: {}",
+            cmd.category,
+            evidence_category_ids().join(", ")
+        ));
+    }
+
+    let context = resolve_workflow_context(config_path, global_session_dir)?;
+    fs::create_dir_all(&context.session_dir).map_err(|err| {
+        format!(
+            "failed to create session dir {}: {err}",
+            context.session_dir.display()
+        )
+    })?;
+
+    let mut metadata = parse_metadata_pairs(&cmd.metadata)?;
+    if let Some(status) = cmd.status.as_ref() {
+        let key = cmd.status_key.trim();
+        if key.is_empty() {
+            return Err("--status-key cannot be empty".to_string());
+        }
+        metadata.insert(key.to_string(), status.trim().to_string());
+    }
+
+    let coordinator_config = coordinator_config_for_workflow(&context);
+    let clock: Arc<dyn Clock + Send + Sync> = Arc::new(RealClock::new());
+    let coordinator = spawn_coordinator(
+        coordinator_config,
+        Arc::clone(&clock),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let workspace = std::env::current_dir()
+        .map_err(|err| format!("failed to resolve current working directory: {err}"))?;
+    let run = coordinator
+        .start_run(
+            cmd.title
+                .clone()
+                .unwrap_or_else(|| "workflow evidence record".to_string()),
+            workspace,
+        )
+        .await
+        .map_err(|err| err.to_string())?;
+    let lane = cmd
+        .lane
+        .clone()
+        .or_else(|| Some(context.workflow.run.default_lane.clone()));
+    coordinator
+        .start_workflow(
+            supervisor_actor(),
+            WorkflowStartRequest {
+                workflow_id: cmd.workflow_id.clone(),
+                mode: cmd.mode.clone(),
+                owner: cmd.owner.clone(),
+                lane,
+                title: cmd.title.clone(),
+                idempotency_key: None,
+            },
+        )
+        .await
+        .map_err(|err| err.to_string())?;
+    coordinator
+        .record_workflow_evidence(
+            supervisor_actor(),
+            WorkflowEvidenceRequest {
+                workflow_id: cmd.workflow_id.clone(),
+                category: cmd.category.clone(),
+                summary: cmd.summary.clone(),
+                artifact_path: cmd.artifact_path.clone(),
+                artifact_digest: cmd.artifact_digest.clone(),
+                acceptance_ref: cmd.acceptance_ref.clone(),
+                metadata: metadata.clone(),
+            },
+        )
+        .await
+        .map_err(|err| err.to_string())?;
+    coordinator
+        .stop_run()
+        .await
+        .map_err(|err| err.to_string())?;
+
+    let report = WorkflowEvidenceRecordReport {
+        run_id: run.run_id,
+        run_dir: run.run_dir.display().to_string(),
+        events_path: run.events_path.display().to_string(),
+        workflow_id: cmd.workflow_id,
+        mode: cmd.mode,
+        category: cmd.category,
+        summary: cmd.summary,
+        artifact_path: cmd.artifact_path,
+        artifact_digest: cmd.artifact_digest,
+        acceptance_ref: cmd.acceptance_ref,
+        metadata,
+    };
+    if cmd.json {
+        print_json(&report, "workflow evidence record JSON")?;
+    } else {
+        println!(
+            "workflow evidence recorded: {} category={} run={}",
+            report.workflow_id, report.category, report.run_dir
         );
     }
     Ok(())
@@ -2367,6 +2586,43 @@ async fn execute_mission_run(
     global_session_dir: Option<PathBuf>,
 ) -> Result<(), String> {
     let context = resolve_workflow_context(config_path, global_session_dir)?;
+    if let Some(command) = cmd.validator_command.as_ref() {
+        if cmd.validator_mode.to_core() != ResearchValidatorMode::MissionValidatorScript {
+            return Err(
+                "--validator-command requires --validator-mode mission-validator-script"
+                    .to_string(),
+            );
+        }
+        if cmd.validator_result_ref.is_some() {
+            return Err(
+                "pass either --validator-command or --validator-result-ref, not both".to_string(),
+            );
+        }
+        if let Err(denial) = ensure_workflow_permission_allowed(
+            &context,
+            PermissionKind::Shell,
+            PermissionRuleRequest::ShellCommand(command.clone()),
+            command.clone(),
+            "workflow mission validator command",
+        ) {
+            let workflow_id = cmd
+                .workflow_id
+                .clone()
+                .unwrap_or_else(|| format!("wf_research_{}", cmd.mission_id));
+            let audit_run_dir = record_workflow_permission_denial(
+                &context,
+                workflow_id,
+                RESEARCH_MISSION_MODE,
+                &cmd.owner,
+                cmd.lane.clone(),
+                format!("research mission validator denied: {}", cmd.mission_id),
+                &denial,
+            )
+            .await
+            .ok();
+            return Err(permission_denial_error(&denial, audit_run_dir));
+        }
+    }
     fs::create_dir_all(&context.session_dir).map_err(|err| {
         format!(
             "failed to create session dir {}: {err}",
@@ -2602,24 +2858,54 @@ async fn execute_wiki_add(
     let context = resolve_workflow_context(config_path, global_session_dir)?;
     let root = resolve_wiki_root(&context.workflow)?;
     let page_path = wiki_page_path(&root, &cmd.slug)?;
-    if let Some(parent) = page_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|err| format!("failed to create wiki root {}: {err}", parent.display()))?;
+    let policy_path = workflow_policy_path(&page_path)?;
+    if let Err(denial) = ensure_workflow_permission_allowed(
+        &context,
+        PermissionKind::EditFs,
+        PermissionRuleRequest::WorkspacePath(policy_path.clone()),
+        policy_path,
+        "workflow wiki add",
+    ) {
+        let workflow_id = cmd
+            .workflow_id
+            .clone()
+            .unwrap_or_else(|| format!("wf_wiki_{}", cmd.slug));
+        let audit_run_dir = record_workflow_permission_denial(
+            &context,
+            workflow_id,
+            WIKI_MODE,
+            &cmd.owner,
+            cmd.lane.clone(),
+            format!("wiki add denied: {}", cmd.slug),
+            &denial,
+        )
+        .await
+        .ok();
+        return Err(permission_denial_error(&denial, audit_run_dir));
     }
     let body = read_wiki_body(cmd.body.as_ref(), cmd.body_file.as_ref())?;
     let contents = render_wiki_page(&cmd.title, &cmd.category, &cmd.tags, &body);
-    fs::write(&page_path, &contents)
-        .map_err(|err| format!("failed to write wiki page {}: {err}", page_path.display()))?;
     let summary = wiki_summary(&cmd.slug, &page_path, &contents);
-    let report = record_wiki_write(
-        context,
-        cmd.workflow_id,
-        cmd.owner,
-        cmd.lane,
-        "add",
-        summary,
-    )
-    .await?;
+    let workflow_id = cmd
+        .workflow_id
+        .clone()
+        .unwrap_or_else(|| format!("wf_wiki_{}", cmd.slug));
+    let audit =
+        start_wiki_mutation_audit(&context, workflow_id, cmd.owner, cmd.lane, "add", summary)
+            .await?;
+    if let Some(parent) = page_path.parent() {
+        if let Err(err) = fs::create_dir_all(parent) {
+            let message = format!("failed to create wiki root {}: {err}", parent.display());
+            let _ = abort_wiki_mutation_audit(audit, message.clone()).await;
+            return Err(message);
+        }
+    }
+    if let Err(err) = fs::write(&page_path, &contents) {
+        let message = format!("failed to write wiki page {}: {err}", page_path.display());
+        let _ = abort_wiki_mutation_audit(audit, message.clone()).await;
+        return Err(message);
+    }
+    let report = finish_wiki_mutation_audit(audit).await?;
     if cmd.json {
         print_json(&report, "workflow wiki add JSON")?;
     } else {
@@ -2639,21 +2925,54 @@ async fn execute_wiki_delete(
     let context = resolve_workflow_context(config_path, global_session_dir)?;
     let root = resolve_wiki_root(&context.workflow)?;
     let page_path = wiki_page_path(&root, &cmd.slug)?;
+    let policy_path = workflow_policy_path(&page_path)?;
+    if let Err(denial) = ensure_workflow_permission_allowed(
+        &context,
+        PermissionKind::EditFs,
+        PermissionRuleRequest::WorkspacePath(policy_path.clone()),
+        policy_path,
+        "workflow wiki delete",
+    ) {
+        let workflow_id = cmd
+            .workflow_id
+            .clone()
+            .unwrap_or_else(|| format!("wf_wiki_{}", cmd.slug));
+        let audit_run_dir = record_workflow_permission_denial(
+            &context,
+            workflow_id,
+            WIKI_MODE,
+            &cmd.owner,
+            cmd.lane.clone(),
+            format!("wiki delete denied: {}", cmd.slug),
+            &denial,
+        )
+        .await
+        .ok();
+        return Err(permission_denial_error(&denial, audit_run_dir));
+    }
     let contents = fs::read_to_string(&page_path)
         .map_err(|err| format!("failed to read wiki page {}: {err}", page_path.display()))?;
     let mut summary = wiki_summary(&cmd.slug, &page_path, &contents);
     summary.digest = wiki_digest(&contents);
-    fs::remove_file(&page_path)
-        .map_err(|err| format!("failed to delete wiki page {}: {err}", page_path.display()))?;
-    let report = record_wiki_write(
-        context,
-        cmd.workflow_id,
+    let workflow_id = cmd
+        .workflow_id
+        .clone()
+        .unwrap_or_else(|| format!("wf_wiki_{}", cmd.slug));
+    let audit = start_wiki_mutation_audit(
+        &context,
+        workflow_id,
         cmd.owner,
         cmd.lane,
         "delete",
         summary,
     )
     .await?;
+    if let Err(err) = fs::remove_file(&page_path) {
+        let message = format!("failed to delete wiki page {}: {err}", page_path.display());
+        let _ = abort_wiki_mutation_audit(audit, message.clone()).await;
+        return Err(message);
+    }
+    let report = finish_wiki_mutation_audit(audit).await?;
     if cmd.json {
         print_json(&report, "workflow wiki delete JSON")?;
     } else {
@@ -2772,10 +3091,47 @@ fn execute_wiki_lint(
     Ok(())
 }
 
-fn execute_init(cmd: WorkflowInitCommand) -> Result<(), String> {
+async fn execute_init(
+    cmd: WorkflowInitCommand,
+    config_path: Option<PathBuf>,
+    global_session_dir: Option<PathBuf>,
+) -> Result<(), String> {
     let project_root = std::env::current_dir()
         .map_err(|err| format!("failed to resolve current working directory: {err}"))?;
     let files = workflow_init_files(&project_root);
+    let context = if cmd.apply {
+        Some(resolve_workflow_context(config_path, global_session_dir)?)
+    } else {
+        None
+    };
+    if let Some(context) = context.as_ref() {
+        for (path, _) in &files {
+            if path.exists() {
+                continue;
+            }
+            let policy_path = workflow_policy_path(path)?;
+            if let Err(denial) = ensure_workflow_permission_allowed(
+                context,
+                PermissionKind::EditFs,
+                PermissionRuleRequest::WorkspacePath(policy_path.clone()),
+                policy_path,
+                "workflow init apply",
+            ) {
+                let audit_run_dir = record_workflow_permission_denial(
+                    context,
+                    "wf_workflow_init".to_string(),
+                    "workflow.operator_utility",
+                    "workflow-cli",
+                    Some(context.workflow.run.default_lane.clone()),
+                    "workflow init apply denied".to_string(),
+                    &denial,
+                )
+                .await
+                .ok();
+                return Err(permission_denial_error(&denial, audit_run_dir));
+            }
+        }
+    }
     let mut report_files = Vec::new();
     for (path, body) in files {
         let exists = path.exists();
@@ -3017,6 +3373,15 @@ fn split_key_value(raw: &str, label: &str) -> Result<(String, String), String> {
     Ok((key.to_string(), value.to_string()))
 }
 
+fn parse_metadata_pairs(raw_metadata: &[String]) -> Result<BTreeMap<String, String>, String> {
+    let mut metadata = BTreeMap::new();
+    for raw in raw_metadata {
+        let (key, value) = split_key_value(raw, "workflow evidence metadata")?;
+        metadata.insert(key, value);
+    }
+    Ok(metadata)
+}
+
 fn build_quality_gate(cmd: &WorkflowGoalCheckpointCommand) -> Option<GoalQualityGate> {
     if !cmd.final_goal
         && cmd.verification_refs.is_empty()
@@ -3098,35 +3463,27 @@ fn load_wiki_pages(root: &Path) -> Result<Vec<(PathBuf, WikiPageSummary, WikiPag
     Ok(pages)
 }
 
-async fn record_wiki_write(
-    context: WorkflowRuntimeContext,
-    workflow_id: Option<String>,
+async fn start_wiki_mutation_audit(
+    context: &WorkflowRuntimeContext,
+    workflow_id: String,
     owner: String,
     lane: Option<String>,
     action: &str,
     page: WikiPageSummary,
-) -> Result<WikiMutationReport, String> {
+) -> Result<WikiMutationAudit, String> {
     fs::create_dir_all(&context.session_dir).map_err(|err| {
         format!(
             "failed to create session dir {}: {err}",
             context.session_dir.display()
         )
     })?;
-    let mut coordinator_config = CoordinatorConfig::new(context.session_dir);
-    coordinator_config.session_mode_source = Some(SessionModeSource::Prompt);
-    let clock: Arc<dyn Clock + Send + Sync> = Arc::new(RealClock::new());
-    let coordinator = spawn_coordinator(
-        coordinator_config,
-        Arc::clone(&clock),
-        Arc::new(DefaultRedactor::default()),
-    );
+    let coordinator = workflow_mutation_coordinator(context, context.session_dir.clone());
     let workspace = std::env::current_dir()
         .map_err(|err| format!("failed to resolve current working directory: {err}"))?;
     let run = coordinator
         .start_run(format!("workflow wiki {action}"), workspace)
         .await
         .map_err(|err| err.to_string())?;
-    let workflow_id = workflow_id.unwrap_or_else(|| format!("wf_wiki_{}", run.run_id));
     let lane = lane.or_else(|| Some(context.workflow.run.default_lane.clone()));
     coordinator
         .start_workflow(
@@ -3143,16 +3500,49 @@ async fn record_wiki_write(
         .await
         .map_err(|err| err.to_string())?;
     coordinator
+        .record_workflow_operator_decision(
+            supervisor_actor(),
+            workflow_id.clone(),
+            format!("wiki-{action}-intent"),
+            owner,
+            Some(format!(
+                "wiki {action} intent recorded before project-visible mutation for {}",
+                page.slug
+            )),
+            None,
+        )
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(WikiMutationAudit {
+        coordinator,
+        run,
+        workflow_id,
+        action: action.to_string(),
+        page,
+    })
+}
+
+async fn finish_wiki_mutation_audit(
+    audit: WikiMutationAudit,
+) -> Result<WikiMutationReport, String> {
+    let WikiMutationAudit {
+        coordinator,
+        run,
+        workflow_id,
+        action,
+        page,
+    } = audit;
+    coordinator
         .record_workflow_evidence(
             supervisor_actor(),
             WorkflowEvidenceRequest {
                 workflow_id: workflow_id.clone(),
                 category: WIKI_EVIDENCE_CATEGORY.to_string(),
-                summary: format!("wiki {action}: {} digest={}", page.slug, page.digest),
+                summary: format!("wiki {}: {} digest={}", action, page.slug, page.digest),
                 artifact_path: None,
                 artifact_digest: Some(page.digest.clone()),
                 acceptance_ref: Some(page.slug.clone()),
-                metadata: wiki_evidence_metadata(action, &page),
+                metadata: wiki_evidence_metadata(&action, &page),
             },
         )
         .await
@@ -3166,9 +3556,34 @@ async fn record_wiki_write(
         run_dir: run.run_dir.display().to_string(),
         events_path: run.events_path.display().to_string(),
         workflow_id,
-        action: action.to_string(),
+        action,
         page,
     })
+}
+
+async fn abort_wiki_mutation_audit(audit: WikiMutationAudit, reason: String) -> Result<(), String> {
+    let WikiMutationAudit {
+        coordinator,
+        workflow_id,
+        action,
+        page,
+        ..
+    } = audit;
+    coordinator
+        .record_workflow_operator_decision(
+            supervisor_actor(),
+            workflow_id,
+            format!("wiki-{action}-failed"),
+            "workflow-cli".to_string(),
+            Some(format!(
+                "wiki {action} failed before durable evidence for {}: {reason}",
+                page.slug
+            )),
+            None,
+        )
+        .await
+        .map_err(|err| err.to_string())?;
+    coordinator.stop_run().await.map_err(|err| err.to_string())
 }
 
 fn snapshot_input_from_command(cmd: &WorkflowSnapshotWriteCommand) -> ContextSnapshotInput {
@@ -3224,6 +3639,16 @@ struct WorkflowRuntimeContext {
     shell_allowlist: ShellAllowlist,
 }
 
+#[derive(Debug, Clone)]
+struct WorkflowPermissionDenial {
+    kind: PermissionKind,
+    public_kind: &'static str,
+    selector: String,
+    action: String,
+    decision: &'static str,
+    reason: String,
+}
+
 fn resolve_workflow_context(
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
@@ -3275,6 +3700,165 @@ fn workflow_mutation_coordinator(
         Arc::clone(&clock),
         Arc::new(DefaultRedactor::default()),
     )
+}
+
+fn ensure_workflow_permission_allowed(
+    context: &WorkflowRuntimeContext,
+    kind: PermissionKind,
+    selector: PermissionRuleRequest,
+    selector_label: String,
+    action: &str,
+) -> Result<(), WorkflowPermissionDenial> {
+    let decision = context
+        .permission_policy
+        .evaluate_request(None, kind, Some(&selector));
+    if matches!(decision, PolicyDecision::Allow) {
+        return Ok(());
+    }
+
+    let decision_label = policy_decision_label(decision);
+    let public_kind = public_permission_kind(kind);
+    let reason = format!(
+        "{action} requires `{public_kind}` permission for `{selector_label}`, but policy resolved to {decision_label}"
+    );
+    Err(WorkflowPermissionDenial {
+        kind,
+        public_kind,
+        selector: selector_label,
+        action: action.to_string(),
+        decision: decision_label,
+        reason,
+    })
+}
+
+fn public_permission_kind(kind: PermissionKind) -> &'static str {
+    match kind {
+        PermissionKind::EditFs => "edit",
+        PermissionKind::Shell => "bash",
+        PermissionKind::Network => "network",
+        PermissionKind::Question => "question",
+        PermissionKind::Task => "task",
+        PermissionKind::WebFetch => "webfetch",
+        PermissionKind::WebSearch => "websearch",
+        PermissionKind::CodeSearch => "codesearch",
+        PermissionKind::Lsp => "lsp",
+    }
+}
+
+fn policy_decision_label(decision: PolicyDecision) -> &'static str {
+    match decision {
+        PolicyDecision::Allow => "allow",
+        PolicyDecision::Deny => "deny",
+        PolicyDecision::Ask { .. } => "ask(default=deny)",
+    }
+}
+
+fn workflow_policy_path(path: &Path) -> Result<String, String> {
+    let cwd = std::env::current_dir()
+        .map_err(|err| format!("failed to resolve current working directory: {err}"))?;
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        cwd.join(path)
+    };
+    let scoped = absolute.strip_prefix(&cwd).unwrap_or(absolute.as_path());
+    Ok(scoped.to_string_lossy().replace('\\', "/"))
+}
+
+async fn record_workflow_permission_denial(
+    context: &WorkflowRuntimeContext,
+    workflow_id: String,
+    mode: &str,
+    owner: &str,
+    lane: Option<String>,
+    title: String,
+    denial: &WorkflowPermissionDenial,
+) -> Result<String, String> {
+    fs::create_dir_all(&context.session_dir).map_err(|err| {
+        format!(
+            "failed to create session dir {} for permission denial audit: {err}",
+            context.session_dir.display()
+        )
+    })?;
+    let coordinator = workflow_mutation_coordinator(context, context.session_dir.clone());
+    let workspace = std::env::current_dir()
+        .map_err(|err| format!("failed to resolve current working directory: {err}"))?;
+    let run = coordinator
+        .start_run("workflow permission denial".to_string(), workspace)
+        .await
+        .map_err(|err| err.to_string())?;
+    let effective_lane = lane.or_else(|| Some(context.workflow.run.default_lane.clone()));
+    coordinator
+        .start_workflow(
+            supervisor_actor(),
+            WorkflowStartRequest {
+                workflow_id: workflow_id.clone(),
+                mode: mode.to_string(),
+                owner: owner.to_string(),
+                lane: effective_lane,
+                title: Some(title),
+                idempotency_key: Some(format!(
+                    "permission-denial:{}:{}:{}",
+                    denial.public_kind, workflow_id, run.run_id
+                )),
+            },
+        )
+        .await
+        .map_err(|err| err.to_string())?;
+    coordinator
+        .record_workflow_operator_decision(
+            supervisor_actor(),
+            workflow_id.clone(),
+            format!("permission-denied:{}", denial.public_kind),
+            owner.to_string(),
+            Some(denial.reason.clone()),
+            None,
+        )
+        .await
+        .map_err(|err| err.to_string())?;
+    coordinator
+        .record_workflow_evidence(
+            supervisor_actor(),
+            WorkflowEvidenceRequest {
+                workflow_id,
+                category: PERMISSION_DECISION_EVIDENCE_CATEGORY.to_string(),
+                summary: denial.reason.clone(),
+                artifact_path: None,
+                artifact_digest: None,
+                acceptance_ref: Some(denial.selector.clone()),
+                metadata: BTreeMap::from([
+                    ("action".to_string(), denial.action.clone()),
+                    ("decision".to_string(), denial.decision.to_string()),
+                    (
+                        "permission_kind".to_string(),
+                        denial.public_kind.to_string(),
+                    ),
+                    (
+                        "permission_kind_internal".to_string(),
+                        denial.kind.as_str().to_string(),
+                    ),
+                    ("selector".to_string(), denial.selector.clone()),
+                    ("status".to_string(), PERMISSION_DENIED_STATUS.to_string()),
+                ]),
+            },
+        )
+        .await
+        .map_err(|err| err.to_string())?;
+    coordinator
+        .stop_run()
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(run.run_dir.display().to_string())
+}
+
+fn permission_denial_error(
+    denial: &WorkflowPermissionDenial,
+    audit_run_dir: Option<String>,
+) -> String {
+    match audit_run_dir {
+        Some(run_dir) => format!("{}; denial recorded in {}", denial.reason, run_dir),
+        None => denial.reason.clone(),
+    }
 }
 
 fn session_dir_and_run_id_from_run_dir(run_dir: &Path) -> Result<(PathBuf, String), String> {
