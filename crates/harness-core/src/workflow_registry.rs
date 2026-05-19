@@ -7,7 +7,21 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkflowModeSpec {
     pub id: &'static str,
+    pub availability: WorkflowAvailability,
     pub description: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkflowAvailability {
+    Present,
+    Staged,
+    Rejected,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkflowRejectedSurfaceSpec {
+    pub id: &'static str,
+    pub reason: &'static str,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,26 +63,108 @@ pub struct WorkflowDocsAnchorSpec {
     pub heading: &'static str,
 }
 
+pub const CONTINUATION_EVIDENCE_CATEGORY: &str = "evidence.continuation";
+pub const REVIEW_EVIDENCE_CATEGORY: &str = "evidence.review";
+pub const SECURITY_REVIEW_EVIDENCE_CATEGORY: &str = "evidence.security_review";
+pub const QA_EVIDENCE_CATEGORY: &str = "evidence.qa";
+pub const PERFORMANCE_EVIDENCE_CATEGORY: &str = "evidence.performance";
+pub const VISUAL_EVIDENCE_CATEGORY: &str = "evidence.visual";
+pub const ADVISOR_EVIDENCE_CATEGORY: &str = "evidence.advisor";
+pub const SETUP_DOCTOR_EVIDENCE_CATEGORY: &str = "evidence.setup_doctor";
+pub const SKILL_MANAGEMENT_EVIDENCE_CATEGORY: &str = "evidence.skill_management";
+pub const STATUS_HUD_EVIDENCE_CATEGORY: &str = "evidence.status_hud";
+pub const NOTE_MEMORY_EVIDENCE_CATEGORY: &str = "evidence.note_memory";
+
 pub const WORKFLOW_MODES: &[WorkflowModeSpec] = &[
     WorkflowModeSpec {
         id: "workflow.run",
+        availability: WorkflowAvailability::Present,
         description: "Coordinator-owned workflow execution spine.",
     },
     WorkflowModeSpec {
+        id: "workflow.deep_interview",
+        availability: WorkflowAvailability::Staged,
+        description: "One-question-at-a-time intake and context snapshot workflow.",
+    },
+    WorkflowModeSpec {
         id: "workflow.plan_consensus",
+        availability: WorkflowAvailability::Present,
         description: "Planner/architect/critic consensus planning workflow.",
     },
     WorkflowModeSpec {
+        id: "workflow.continuation",
+        availability: WorkflowAvailability::Present,
+        description: "Bounded Ralph/ultrawork continuation workflow.",
+    },
+    WorkflowModeSpec {
         id: "workflow.goal_ledger",
+        availability: WorkflowAvailability::Present,
         description: "Durable goal/story checkpoint workflow.",
     },
     WorkflowModeSpec {
         id: "workflow.research_mission",
+        availability: WorkflowAvailability::Present,
         description: "Validator-gated research mission workflow.",
     },
     WorkflowModeSpec {
+        id: "workflow.team_escalation",
+        availability: WorkflowAvailability::Present,
+        description: "Explicit operator-owned team escalation workflow.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.review",
+        availability: WorkflowAvailability::Staged,
+        description: "Code-review findings workflow with closeout blockers.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.security_review",
+        availability: WorkflowAvailability::Staged,
+        description: "Security-review findings workflow with closeout blockers.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.qa",
+        availability: WorkflowAvailability::Staged,
+        description: "Deterministic QA scenario workflow.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.performance",
+        availability: WorkflowAvailability::Staged,
+        description: "Evaluator-gated performance workflow.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.visual",
+        availability: WorkflowAvailability::Staged,
+        description: "Visual verdict/evidence workflow with env-gated live capture.",
+    },
+    WorkflowModeSpec {
+        id: "workflow.operator_utility",
+        availability: WorkflowAvailability::Present,
+        description:
+            "Status, HUD, note, trace, doctor, setup, skill, and advisor utility workflow.",
+    },
+    WorkflowModeSpec {
         id: "workflow.wiki",
+        availability: WorkflowAvailability::Present,
         description: "Markdown-first project wiki write workflow.",
+    },
+];
+
+pub const WORKFLOW_REJECTED_SURFACES: &[WorkflowRejectedSurfaceSpec] = &[
+    WorkflowRejectedSurfaceSpec {
+        id: "rejected.pixel_clone",
+        reason: "Exact external UI clone is not a Harness product goal.",
+    },
+    WorkflowRejectedSurfaceSpec {
+        id: "rejected.multiple_main_agents",
+        reason: "Multiple main-agent defaults conflict with single-operator orchestration.",
+    },
+    WorkflowRejectedSurfaceSpec {
+        id: "rejected.permissive_permissions",
+        reason: "External permissive defaults must not weaken coordinator permission gates.",
+    },
+    WorkflowRejectedSurfaceSpec {
+        id: "rejected.replay_active_server",
+        reason: "Server/headless surfaces must not bypass replay purity or coordinator authority.",
     },
 ];
 
@@ -174,6 +270,51 @@ pub const EVIDENCE_CATEGORIES: &[EvidenceCategorySpec] = &[
         id: "evidence.research_mission",
         description:
             "Research mission, sandbox, candidate result, and validator/review artifact refs.",
+    },
+    EvidenceCategorySpec {
+        id: CONTINUATION_EVIDENCE_CATEGORY,
+        description:
+            "Bounded Ralph/ultrawork continuation evidence, blockers, and verification refs.",
+    },
+    EvidenceCategorySpec {
+        id: REVIEW_EVIDENCE_CATEGORY,
+        description: "Code-review findings, verdicts, severities, and resolution status refs.",
+    },
+    EvidenceCategorySpec {
+        id: SECURITY_REVIEW_EVIDENCE_CATEGORY,
+        description: "Security-review findings, trust-boundary notes, and resolution status refs.",
+    },
+    EvidenceCategorySpec {
+        id: QA_EVIDENCE_CATEGORY,
+        description: "QA scenarios, failures, fixes, and verification status refs.",
+    },
+    EvidenceCategorySpec {
+        id: PERFORMANCE_EVIDENCE_CATEGORY,
+        description: "Performance baselines, evaluator output, and regression status refs.",
+    },
+    EvidenceCategorySpec {
+        id: VISUAL_EVIDENCE_CATEGORY,
+        description: "Visual verdicts, screenshot refs, pixel-diff refs, and live-gate status.",
+    },
+    EvidenceCategorySpec {
+        id: ADVISOR_EVIDENCE_CATEGORY,
+        description: "External advisor transcript or artifact refs after permission approval.",
+    },
+    EvidenceCategorySpec {
+        id: SETUP_DOCTOR_EVIDENCE_CATEGORY,
+        description: "Setup/doctor check results and explicit no-side-effect status refs.",
+    },
+    EvidenceCategorySpec {
+        id: SKILL_MANAGEMENT_EVIDENCE_CATEGORY,
+        description: "Skill inventory, install/update decisions, and verification status refs.",
+    },
+    EvidenceCategorySpec {
+        id: STATUS_HUD_EVIDENCE_CATEGORY,
+        description: "Status, HUD, trace, and operator utility projection evidence refs.",
+    },
+    EvidenceCategorySpec {
+        id: NOTE_MEMORY_EVIDENCE_CATEGORY,
+        description: "Note, notepad, and project-memory evidence refs with digest metadata.",
     },
     EvidenceCategorySpec {
         id: "evidence.wiki",
@@ -304,11 +445,26 @@ pub fn stable_id_groups() -> [(&'static str, Vec<&'static str>); 6] {
     ]
 }
 
+pub fn evidence_category_ids() -> Vec<&'static str> {
+    EVIDENCE_CATEGORIES.iter().map(|spec| spec.id).collect()
+}
+
+pub fn is_evidence_category(category: &str) -> bool {
+    EVIDENCE_CATEGORIES.iter().any(|spec| spec.id == category)
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
 
-    use super::{stable_id_groups, EVIDENCE_CATEGORIES, WORKFLOW_DOCS_ANCHORS};
+    use super::{
+        evidence_category_ids, is_evidence_category, stable_id_groups, WorkflowAvailability,
+        ADVISOR_EVIDENCE_CATEGORY, EVIDENCE_CATEGORIES, NOTE_MEMORY_EVIDENCE_CATEGORY,
+        PERFORMANCE_EVIDENCE_CATEGORY, QA_EVIDENCE_CATEGORY, REVIEW_EVIDENCE_CATEGORY,
+        SECURITY_REVIEW_EVIDENCE_CATEGORY, SETUP_DOCTOR_EVIDENCE_CATEGORY,
+        SKILL_MANAGEMENT_EVIDENCE_CATEGORY, STATUS_HUD_EVIDENCE_CATEGORY, VISUAL_EVIDENCE_CATEGORY,
+        WORKFLOW_DOCS_ANCHORS, WORKFLOW_MODES, WORKFLOW_REJECTED_SURFACES,
+    };
 
     #[test]
     fn workflow_contract_ids_are_unique_by_group() {
@@ -342,5 +498,110 @@ mod tests {
         assert!(WORKFLOW_DOCS_ANCHORS
             .iter()
             .any(|spec| spec.path == "docs/config.md"));
+    }
+
+    #[test]
+    fn workflow_modes_cover_native_g004_families() {
+        let modes = WORKFLOW_MODES
+            .iter()
+            .map(|spec| spec.id)
+            .collect::<BTreeSet<_>>();
+        for expected in [
+            "workflow.deep_interview",
+            "workflow.plan_consensus",
+            "workflow.continuation",
+            "workflow.goal_ledger",
+            "workflow.research_mission",
+            "workflow.team_escalation",
+            "workflow.review",
+            "workflow.security_review",
+            "workflow.qa",
+            "workflow.performance",
+            "workflow.visual",
+            "workflow.operator_utility",
+            "workflow.wiki",
+        ] {
+            assert!(modes.contains(expected), "missing workflow mode {expected}");
+        }
+    }
+
+    #[test]
+    fn workflow_modes_have_truthful_availability_and_operator_purpose() {
+        let modes = WORKFLOW_MODES
+            .iter()
+            .map(|spec| (spec.id, spec))
+            .collect::<std::collections::BTreeMap<_, _>>();
+
+        for spec in WORKFLOW_MODES {
+            assert!(
+                !spec.description.trim().is_empty(),
+                "{} should have an operator-facing purpose",
+                spec.id
+            );
+            assert!(
+                !spec.description.to_ascii_lowercase().contains("parity"),
+                "{} should not claim parity from registry metadata alone",
+                spec.id
+            );
+        }
+
+        for present in [
+            "workflow.run",
+            "workflow.plan_consensus",
+            "workflow.continuation",
+            "workflow.goal_ledger",
+            "workflow.research_mission",
+            "workflow.team_escalation",
+            "workflow.operator_utility",
+            "workflow.wiki",
+        ] {
+            assert_eq!(
+                modes[present].availability,
+                WorkflowAvailability::Present,
+                "{present} should be classified as present"
+            );
+        }
+
+        for staged in [
+            "workflow.deep_interview",
+            "workflow.review",
+            "workflow.security_review",
+            "workflow.qa",
+            "workflow.performance",
+            "workflow.visual",
+        ] {
+            assert_eq!(
+                modes[staged].availability,
+                WorkflowAvailability::Staged,
+                "{staged} should be classified as staged until its top-level surface is fully proven"
+            );
+        }
+
+        assert!(WORKFLOW_REJECTED_SURFACES
+            .iter()
+            .any(|spec| spec.id == "rejected.multiple_main_agents"));
+        assert!(WORKFLOW_REJECTED_SURFACES
+            .iter()
+            .all(|spec| !spec.reason.trim().is_empty()));
+    }
+
+    #[test]
+    fn workflow_family_evidence_categories_are_registered() {
+        let categories = evidence_category_ids().into_iter().collect::<BTreeSet<_>>();
+        for expected in [
+            REVIEW_EVIDENCE_CATEGORY,
+            SECURITY_REVIEW_EVIDENCE_CATEGORY,
+            QA_EVIDENCE_CATEGORY,
+            PERFORMANCE_EVIDENCE_CATEGORY,
+            VISUAL_EVIDENCE_CATEGORY,
+            ADVISOR_EVIDENCE_CATEGORY,
+            SETUP_DOCTOR_EVIDENCE_CATEGORY,
+            SKILL_MANAGEMENT_EVIDENCE_CATEGORY,
+            STATUS_HUD_EVIDENCE_CATEGORY,
+            NOTE_MEMORY_EVIDENCE_CATEGORY,
+        ] {
+            assert!(categories.contains(expected), "missing evidence {expected}");
+            assert!(is_evidence_category(expected));
+        }
     }
 }
