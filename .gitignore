@@ -1,4 +1,5 @@
 target/
+docs/
 sessions/
 artifacts/
 .agent-harness/*
