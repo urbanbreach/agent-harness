@@ -224,7 +224,7 @@ Persistent tasks are separate from scheduler tasks and team checklist tasks. The
 `task_create`, `task_list`, `task_get`, and `task_update` compatibility tools append or
 read `PersistentTaskCreated` / `PersistentTaskUpdated` events through the coordinator.
 State is projected from the current run event log, so task state survives restart/resume
-and session replay does not execute tools. Task payloads keep OMO/Claude-compatible
+and session replay does not execute tools. Task payloads keep external-compatible
 fields (`subject`, `description`, `status`, `active_form`, `blocked_by`, projected
 `blocks`, `owner`, `metadata`, and `run_id` / `thread_id`). Callers provide `blocked_by`;
 replay recomputes `blocks` deterministically. Coordinator validation rejects duplicate

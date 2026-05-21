@@ -30,7 +30,7 @@
   "legacy_aliases": [
     "autoresearch"
   ],
-  "native_behavior_contract": "workflow.research_mission must mutate or read Harness coordinator-owned workflow state without shelling out to OMX runtime",
+  "native_behavior_contract": "workflow.research_mission must mutate or read Harness coordinator-owned workflow state without shelling out to external runtime",
   "negative_path_contract": "validator failure or missing research artifact",
   "operator_visible_success": "status/dossier/HUD show replay-derived workflow state, evidence, blockers, and legal next actions",
   "parity_dimensions": [
@@ -52,7 +52,7 @@
   "truth_gates": {
     "dossier_reads_append_events": false,
     "native_only": true,
-    "omx_runtime_authority": false,
+    "external_runtime_authority": false,
     "permission_checks_before_side_effects": true,
     "replay_derived": true,
     "status_reads_append_events": false

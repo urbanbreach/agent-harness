@@ -839,7 +839,7 @@ mod tests {
 
             let metadata = profile
                 .options
-                .get("omx_slash_agent")
+                .get("slash_agent")
                 .unwrap_or_else(|| panic!("{} has slash-agent metadata", definition.name));
             assert_eq!(metadata["name"], definition.name);
             assert_eq!(metadata["description"], definition.description);

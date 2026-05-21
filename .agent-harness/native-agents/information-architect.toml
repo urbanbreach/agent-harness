@@ -1,4 +1,4 @@
-# oh-my-codex agent: information-architect
+# Harness agent: information-architect
 name = "information-architect"
 description = "Taxonomy, navigation, findability"
 model = "gpt-5.4-mini"
@@ -257,7 +257,7 @@ This role is executing under the exact gpt-5.4-mini model.
 
 </exact_model_guidance>
 
-## OMX Agent Metadata
+## Harness Agent Metadata
 - role: information-architect
 - posture: frontier-orchestrator
 - model_class: standard

@@ -5572,7 +5572,7 @@ fn dollar_command_catalog_covers_applicable_reference_skills_with_sanitized_desc
         "help",
         "hud",
         "note",
-        "omx-setup",
+        "setup",
         "performance-goal",
         "pipeline",
         "plan",
@@ -5604,7 +5604,7 @@ fn dollar_command_catalog_covers_applicable_reference_skills_with_sanitized_desc
             "${alias} should have a visible description"
         );
         assert!(
-            !description.contains("[OMX]") && !description.contains("oh-my-codex"),
+            !description.contains("[legacy runtime]") && !description.contains("reference source"),
             "${alias} description should be product-neutral: {description}"
         );
     }

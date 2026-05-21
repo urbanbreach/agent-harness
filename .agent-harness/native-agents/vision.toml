@@ -1,4 +1,4 @@
-# oh-my-codex agent: vision
+# Harness agent: vision
 name = "vision"
 description = "Image/screenshot/diagram analysis"
 model = "gpt-5.5"
@@ -118,7 +118,7 @@ This role is tuned for frontier-class models.
 
 </model_class_guidance>
 
-## OMX Agent Metadata
+## Harness Agent Metadata
 - role: vision
 - posture: fast-lane
 - model_class: frontier

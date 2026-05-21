@@ -1094,7 +1094,7 @@ fn required_family_evidence_categories(mode: Option<&str>) -> BTreeSet<&'static 
         }
         "doctor"
         | "configure-notifications"
-        | "omx-setup"
+        | "setup"
         | "workflow.doctor"
         | "workflow.configure_notifications"
         | "workflow.setup" => {

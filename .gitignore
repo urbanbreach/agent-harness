@@ -11,8 +11,6 @@ artifacts/
 !.agent-harness/agents/**
 !.agent-harness/native-agents/
 !.agent-harness/native-agents/**
-!.agent-harness/omx-prompts/
-!.agent-harness/omx-prompts/**
 !.agent-harness/skills/
 !.agent-harness/skills/**
 *.snap.new
@@ -20,7 +18,7 @@ artifacts/
 
 # Local scratch / research material
 #inspiration/
-.omx/
+.harness/
 .codex/*
 !.codex/agents/
 !.codex/agents/**

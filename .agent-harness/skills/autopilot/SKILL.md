@@ -75,7 +75,7 @@ Before Phase `ralplan` starts or resumes:
 </Execution_Policy>
 
 <State_Management>
-Use the CLI-first state surface (`harness workflow evidence ... --json`) for Autopilot lifecycle state. State must be session-aware when a session id exists. If the explicit MCP compatibility surface is already available, equivalent `omx_state` tool calls remain acceptable but are not required.
+Use the CLI-first state surface (`harness workflow evidence ... --json`) for Autopilot lifecycle state. State must be session-aware when a session id exists. If the explicit MCP compatibility surface is already available, equivalent `workflow_state` tool calls remain acceptable but are not required.
 
 Required fields:
 

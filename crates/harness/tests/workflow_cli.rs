@@ -394,12 +394,12 @@ fn workflow_dossier_json_reports_signoff_gate_without_appending_events() {
 }
 
 #[test]
-fn workflow_omx_closeout_oracle_drives_plan_dossier_signoff_and_replay() {
+fn workflow_harness_closeout_oracle_drives_plan_dossier_signoff_and_replay() {
     let temp = tempdir().expect("tempdir");
     let session_dir = temp.path().join("sessions");
     let session_dir_arg = session_dir.to_str().expect("session dir utf-8");
-    let workflow_id = "wf_omx_closeout_oracle";
-    let plan_id = "plan_omx_closeout_oracle";
+    let workflow_id = "wf_harness_closeout_oracle";
+    let plan_id = "plan_harness_closeout_oracle";
 
     let plan_report = run_json_command(
         &repo_root(),
@@ -413,7 +413,7 @@ fn workflow_omx_closeout_oracle_drives_plan_dossier_signoff_and_replay() {
             "--plan-id",
             plan_id,
             "--task",
-            "Close out an OMX-style workflow with replay-derived evidence",
+            "Close out an legacy-runtime-style workflow with replay-derived evidence",
             "--option",
             "ship=Ship the deterministic closeout oracle",
             "--chosen-option",
@@ -425,7 +425,7 @@ fn workflow_omx_closeout_oracle_drives_plan_dossier_signoff_and_replay() {
             "--risk",
             "Closeout projections can drift from persisted events",
             "--test-plan",
-            "cargo test -p harness --test workflow_cli workflow_omx_closeout_oracle_drives_plan_dossier_signoff_and_replay",
+            "cargo test -p harness --test workflow_cli workflow_harness_closeout_oracle_drives_plan_dossier_signoff_and_replay",
             "--manual-qa",
             "Run workflow status, dossier export, signoff, and replay through the CLI",
             "--staffing",
@@ -506,7 +506,7 @@ fn workflow_omx_closeout_oracle_drives_plan_dossier_signoff_and_replay() {
     let plan_dimension = closeout_dimension(closeout_before, "plan");
     assert_eq!(plan_dimension["allowed"], true);
 
-    let dossier_output = temp.path().join("omx-closeout-dossier.json");
+    let dossier_output = temp.path().join("harness-closeout-dossier.json");
     let dossier_output_arg = dossier_output.to_str().expect("dossier path utf-8");
     let dossier_before = run_json_command(
         &repo_root(),

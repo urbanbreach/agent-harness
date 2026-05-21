@@ -21,8 +21,7 @@ ALLOWED_FILES = {
     Path("configs/config.json"),
     Path("configs/provider-catalog.generated.json"),
     Path("docs/config.md"),
-    Path("docs/harness-" + "open" + "code" + "-omx-musings.md"),
-    Path("docs/omo-parity-spec.md"),
+    Path("docs/harness-" + "open" + "code" + "-harness-musings.md"),
 }
 SOURCE_PREFIX = "p" + "i"
 FORBIDDEN_PATTERNS = [

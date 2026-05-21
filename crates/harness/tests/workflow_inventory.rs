@@ -9,7 +9,7 @@ use harness_core::agent_catalog::SLASH_AGENT_NAMES;
 use harness_core::command_registry::{CommandAction, CommandRegistry};
 use serde_json::Value;
 
-const INVENTORY_JSON: &str = include_str!("fixtures/harness_omx_workflow_inventory.json");
+const INVENTORY_JSON: &str = include_str!("fixtures/harness_workflow_inventory.json");
 const WORKFLOW_PARITY_MATRIX_JSON: &str = include_str!("../../../docs/workflow-parity-matrix.json");
 #[test]
 fn workflow_inventory_fixture_has_required_schema() {
@@ -45,7 +45,7 @@ fn workflow_inventory_fixture_has_required_schema() {
     let entries = inventory["entries"].as_array().unwrap();
     assert!(
         entries.len() >= 100,
-        "inventory should cover Harness, project skills, and OMX reference surfaces"
+        "inventory should cover Harness, project skills, and legacy reference surfaces"
     );
 
     let mut ids = BTreeSet::new();
@@ -469,7 +469,7 @@ fn workflow_inventory_tracks_skill_and_agent_asset_drift() {
 }
 
 #[test]
-fn workflow_inventory_locks_omx_skill_and_slash_agent_rosters() {
+fn workflow_inventory_locks_harness_skill_and_slash_agent_rosters() {
     let inventory = inventory();
     let entries = entries_by_id(&inventory);
 
@@ -561,34 +561,30 @@ fn workflow_inventory_locks_omx_skill_and_slash_agent_rosters() {
 }
 
 #[test]
-fn workflow_inventory_tracks_migrated_prompt_assets_without_old_runtime_authority() {
+fn workflow_inventory_tracks_prompt_assets_without_old_runtime_authority() {
     let root = repo_root();
-    let reference_prompt_dir = root.join("inspirations/oh-my-codex/prompts");
-    let harness_agent_dir = root.join(".agent-harness/omx-prompts");
-    let mut reference_prompts = Vec::new();
+    let harness_agent_dir = root.join(".agent-harness/agents");
+    let mut prompt_assets = Vec::new();
 
-    for entry in fs::read_dir(&reference_prompt_dir).unwrap() {
+    for entry in fs::read_dir(&harness_agent_dir).unwrap() {
         let path = entry.unwrap().path();
-        if path.extension().and_then(|ext| ext.to_str()) == Some("md") {
-            reference_prompts.push(path);
+        if path.extension().and_then(|ext| ext.to_str()) != Some("md") {
+            continue;
+        }
+        let body = fs::read_to_string(&path).unwrap();
+        if body.contains("\"prompt_asset\": true") {
+            prompt_assets.push(path);
         }
     }
-    reference_prompts.sort();
+    prompt_assets.sort();
     assert_eq!(
-        reference_prompts.len(),
+        prompt_assets.len(),
         33,
-        "oh-my-codex prompt parity lock should track every prompt asset"
+        "Harness prompt asset inventory should track every shipped prompt asset"
     );
 
-    for reference_path in reference_prompts {
-        let file_name = reference_path.file_name().unwrap();
-        let harness_path = harness_agent_dir.join(file_name);
-        assert!(
-            harness_path.exists(),
-            "missing Harness agent prompt copied from {}",
-            reference_path.display()
-        );
-        assert_no_active_old_runtime_authority(&harness_path);
+    for prompt_path in prompt_assets {
+        assert_no_active_old_runtime_authority(&prompt_path);
     }
 }
 
@@ -603,16 +599,16 @@ fn assert_no_active_old_runtime_authority(path: &Path) {
             continue;
         }
         for token in [
-            "omx ultragoal",
-            "omx wiki",
-            "omx explore",
-            "omx sparkshell",
-            "omx setup",
-            "omx doctor",
-            "omx hud",
-            "omx team",
-            "omx question",
-            "omx state",
+            "legacy goal command",
+            "legacy wiki command",
+            "legacy explore command",
+            "legacy shell command",
+            "legacy setup command",
+            "legacy doctor command",
+            "legacy hud command",
+            "legacy team command",
+            "legacy question command",
+            "legacy state command",
             "native team tools api",
             "tmux send-keys",
             "tmux pane",
@@ -630,28 +626,20 @@ fn assert_no_active_old_runtime_authority(path: &Path) {
 }
 
 #[test]
-fn workflow_inventory_locks_slash_agent_definitions_to_reference_manifest() {
-    let root = repo_root();
-    let manifest: Value = serde_json::from_str(
-        &fs::read_to_string(root.join("inspirations/oh-my-codex/src/catalog/manifest.json"))
-            .unwrap(),
-    )
-    .unwrap();
-    let reference_agents = manifest["agents"].as_array().unwrap();
-    let reference_names = reference_agents
-        .iter()
-        .map(|agent| agent["name"].as_str().unwrap())
-        .collect::<BTreeSet<_>>();
+fn workflow_inventory_locks_slash_agent_definitions_to_harness_roster() {
     let harness_names = SLASH_AGENT_NAMES.iter().copied().collect::<BTreeSet<_>>();
+    let definition_names = harness_core::agent_catalog::slash_agent_definitions()
+        .iter()
+        .map(|definition| definition.name)
+        .collect::<BTreeSet<_>>();
     assert_eq!(
-        harness_names, reference_names,
-        "slash-agent roster must match oh-my-codex catalog agents"
+        harness_names, definition_names,
+        "slash-agent roster must match Harness builtin definitions"
     );
-
     assert_eq!(
-        harness_core::agent_catalog::slash_agent_definitions().len(),
-        reference_agents.len(),
-        "Harness must keep one slash-agent definition for every oh-my-codex catalog agent"
+        definition_names.len(),
+        30,
+        "Harness slash-agent roster size should stay explicit"
     );
 }
 
@@ -664,8 +652,8 @@ fn workflow_inventory_tracks_native_agent_config_parity() {
         let toml = fs::read_to_string(&toml_path)
             .unwrap_or_else(|err| panic!("missing native agent config {toml_path:?}: {err}"));
         assert!(
-            toml.contains(&format!("# oh-my-codex agent: {}", definition.name)),
-            "{} must be generated from the oh-my-codex native agent contract",
+            toml.contains(&format!("# Harness agent: {}", definition.name)),
+            "{} must declare the Harness native agent contract",
             toml_path.display()
         );
         assert!(
@@ -873,6 +861,10 @@ fn agent_ids(root: &Path) -> Vec<String> {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().and_then(|ext| ext.to_str()) == Some("md") {
+                let body = fs::read_to_string(&path).unwrap_or_default();
+                if body.contains("prompt_asset") {
+                    continue;
+                }
                 let stem = path.file_stem().and_then(|stem| stem.to_str()).unwrap();
                 ids.push(format!("agent:{stem}"));
             }

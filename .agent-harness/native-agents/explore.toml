@@ -1,4 +1,4 @@
-# oh-my-codex agent: explore
+# Harness agent: explore
 name = "explore"
 description = "Fast codebase search and file/symbol mapping"
 model = "gpt-5.4-mini"
@@ -115,7 +115,7 @@ This role is executing under the exact gpt-5.4-mini model.
 
 </exact_model_guidance>
 
-## OMX Agent Metadata
+## Harness Agent Metadata
 - role: explore
 - posture: fast-lane
 - model_class: fast

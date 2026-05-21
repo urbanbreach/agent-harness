@@ -1,4 +1,4 @@
-# oh-my-codex agent: test-engineer
+# Harness agent: test-engineer
 name = "test-engineer"
 description = "Test strategy, coverage, flaky-test hardening"
 model = "gpt-5.5"
@@ -150,7 +150,7 @@ This role is tuned for frontier-class models.
 
 </model_class_guidance>
 
-## OMX Agent Metadata
+## Harness Agent Metadata
 - role: test-engineer
 - posture: deep-worker
 - model_class: frontier

@@ -463,7 +463,7 @@ Preserve `$ralph` for persistent single-owner execution/verification and `$team`
 ## Suggested Config (optional)
 
 ```toml
-[omx.deepInterview]
+[harness.deepInterview]
 defaultProfile = "standard"
 quickThreshold = 0.30
 standardThreshold = 0.20

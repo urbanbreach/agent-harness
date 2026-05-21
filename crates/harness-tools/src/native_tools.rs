@@ -1045,7 +1045,7 @@ impl Tool for BackgroundCancelTool {
     }
 
     fn description(&self) -> &str {
-        "Requests coordinator-owned cancellation for a non-terminal background child task. This is an OMO-compatible wrapper over background_output(cancel=true); provide request_id when possible, or task_id/session_id for the latest matching child request."
+        "Requests coordinator-owned cancellation for a non-terminal background child task. This compatibility wrapper routes through background_output(cancel=true); provide request_id when possible, or task_id/session_id for the latest matching child request."
     }
 
     fn parameters_json_schema(&self) -> Value {

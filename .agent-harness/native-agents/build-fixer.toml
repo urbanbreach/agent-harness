@@ -1,4 +1,4 @@
-# oh-my-codex agent: build-fixer
+# Harness agent: build-fixer
 name = "build-fixer"
 description = "Build/toolchain/type failures resolution"
 model = "gpt-5.4-mini"
@@ -145,7 +145,7 @@ This role is executing under the exact gpt-5.4-mini model.
 
 </exact_model_guidance>
 
-## OMX Agent Metadata
+## Harness Agent Metadata
 - role: build-fixer
 - posture: deep-worker
 - model_class: standard

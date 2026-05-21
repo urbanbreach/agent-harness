@@ -9,7 +9,7 @@ Routes to the git-master agent for git operations.
 
 ## Purpose
 
-Provide the OMX git-master routing contract while recording Harness workflow state and evidence through coordinator-owned events.
+Provide the legacy runtime git-master routing contract while recording Harness workflow state and evidence through coordinator-owned events.
 
 ## Use when
 

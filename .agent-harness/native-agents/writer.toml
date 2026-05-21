@@ -1,4 +1,4 @@
-# oh-my-codex agent: writer
+# Harness agent: writer
 name = "writer"
 description = "Documentation, migration notes, user guidance"
 model = "gpt-5.4-mini"
@@ -139,7 +139,7 @@ This role is executing under the exact gpt-5.4-mini model.
 
 </exact_model_guidance>
 
-## OMX Agent Metadata
+## Harness Agent Metadata
 - role: writer
 - posture: fast-lane
 - model_class: standard

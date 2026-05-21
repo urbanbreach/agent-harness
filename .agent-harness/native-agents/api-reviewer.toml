@@ -1,4 +1,4 @@
-# oh-my-codex agent: api-reviewer
+# Harness agent: api-reviewer
 name = "api-reviewer"
 description = "API contracts, versioning, backward compatibility"
 model = "gpt-5.4-mini"
@@ -144,7 +144,7 @@ This role is executing under the exact gpt-5.4-mini model.
 
 </exact_model_guidance>
 
-## OMX Agent Metadata
+## Harness Agent Metadata
 - role: api-reviewer
 - posture: frontier-orchestrator
 - model_class: standard

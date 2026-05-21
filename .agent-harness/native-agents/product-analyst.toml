@@ -1,4 +1,4 @@
-# oh-my-codex agent: product-analyst
+# Harness agent: product-analyst
 name = "product-analyst"
 description = "Product metrics, funnel analysis, experiments"
 model = "gpt-5.4-mini"
@@ -335,7 +335,7 @@ This role is executing under the exact gpt-5.4-mini model.
 
 </exact_model_guidance>
 
-## OMX Agent Metadata
+## Harness Agent Metadata
 - role: product-analyst
 - posture: frontier-orchestrator
 - model_class: standard

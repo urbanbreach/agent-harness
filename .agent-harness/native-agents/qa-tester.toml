@@ -1,4 +1,4 @@
-# oh-my-codex agent: qa-tester
+# Harness agent: qa-tester
 name = "qa-tester"
 description = "Interactive CLI/service runtime validation"
 model = "gpt-5.4-mini"
@@ -154,7 +154,7 @@ This role is executing under the exact gpt-5.4-mini model.
 
 </exact_model_guidance>
 
-## OMX Agent Metadata
+## Harness Agent Metadata
 - role: qa-tester
 - posture: deep-worker
 - model_class: standard

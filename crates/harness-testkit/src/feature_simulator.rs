@@ -1385,7 +1385,7 @@ fn validate_selected_dossier(row: &Value, matrix_root: &Path) -> Vec<String> {
     for (field, expected) in [
         ("replay_derived", true),
         ("native_only", true),
-        ("omx_runtime_authority", false),
+        ("external_runtime_authority", false),
         ("status_reads_append_events", false),
         ("dossier_reads_append_events", false),
         ("permission_checks_before_side_effects", true),

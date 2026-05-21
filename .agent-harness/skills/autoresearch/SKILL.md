@@ -5,7 +5,7 @@ description: Stateful validator-gated research loop with native-hook persistence
 
 # Autoresearch
 
-Autoresearch is the skill-first replacement for the deprecated `omx autoresearch` command.
+Autoresearch is the skill-first replacement for the deprecated `harness autoresearch` command.
 It keeps the useful measured-research loop, but it now runs as a native-hook stateful workflow instead of a direct CLI or native terminal UI launch surface.
 
 ## Use when
@@ -14,7 +14,7 @@ It keeps the useful measured-research loop, but it now runs as a native-hook sta
 - You want init-time choice between script validation and prompt+architect validation
 
 ## Do not use when
-- You want the old `omx autoresearch` command surface (hard-deprecated)
+- You want the old `harness autoresearch` command surface (hard-deprecated)
 - You want detached native terminal UI or split-pane launch parity
 - You have not decided the validation regime yet
 
@@ -62,7 +62,7 @@ The completion artifact must include both an architect approval verdict and an o
 5. Finish only after the validator artifact is complete.
 
 ## Migration note
-- `omx autoresearch` is hard-deprecated.
+- `harness autoresearch` is hard-deprecated.
 - No direct CLI launch.
 - No native terminal UI split-pane launch.
 - No noop-count completion gate.

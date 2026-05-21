@@ -50,7 +50,7 @@
   "truth_gates": {
     "dossier_reads_append_events": false,
     "native_only": true,
-    "omx_runtime_authority": false,
+    "external_runtime_authority": false,
     "permission_checks_before_side_effects": true,
     "projection_reads_preserve_event_digest": true,
     "replay_derived": true,

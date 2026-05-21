@@ -1,4 +1,4 @@
-# oh-my-codex agent: product-manager
+# Harness agent: product-manager
 name = "product-manager"
 description = "Problem framing, personas/JTBD, PRDs"
 model = "gpt-5.4-mini"
@@ -276,7 +276,7 @@ This role is executing under the exact gpt-5.4-mini model.
 
 </exact_model_guidance>
 
-## OMX Agent Metadata
+## Harness Agent Metadata
 - role: product-manager
 - posture: frontier-orchestrator
 - model_class: standard

@@ -1,4 +1,4 @@
-# oh-my-codex agent: code-simplifier
+# Harness agent: code-simplifier
 name = "code-simplifier"
 description = "Simplifies recently modified code for clarity and consistency without changing behavior"
 model = "gpt-5.5"
@@ -152,7 +152,7 @@ This role is tuned for frontier-class models.
 
 </model_class_guidance>
 
-## OMX Agent Metadata
+## Harness Agent Metadata
 - role: code-simplifier
 - posture: deep-worker
 - model_class: frontier

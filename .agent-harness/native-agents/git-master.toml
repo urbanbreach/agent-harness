@@ -1,4 +1,4 @@
-# oh-my-codex agent: git-master
+# Harness agent: git-master
 name = "git-master"
 description = "Commit strategy, history hygiene, rebasing"
 model = "gpt-5.4-mini"
@@ -144,7 +144,7 @@ This role is executing under the exact gpt-5.4-mini model.
 
 </exact_model_guidance>
 
-## OMX Agent Metadata
+## Harness Agent Metadata
 - role: git-master
 - posture: deep-worker
 - model_class: standard

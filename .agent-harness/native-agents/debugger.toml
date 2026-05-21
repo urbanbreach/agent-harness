@@ -1,4 +1,4 @@
-# oh-my-codex agent: debugger
+# Harness agent: debugger
 name = "debugger"
 description = "Root-cause analysis, regression isolation, failure diagnosis"
 model = "gpt-5.4-mini"
@@ -147,7 +147,7 @@ This role is executing under the exact gpt-5.4-mini model.
 
 </exact_model_guidance>
 
-## OMX Agent Metadata
+## Harness Agent Metadata
 - role: debugger
 - posture: deep-worker
 - model_class: standard

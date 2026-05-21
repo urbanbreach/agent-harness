@@ -58,7 +58,7 @@ const DISCIPLINE_TOOLS: [&str; 6] = [
     "skill",
     "edit",
 ];
-const FIRST_SLICE_OMO_TOOLS: [&str; 24] = [
+const FIRST_SLICE_COMPATIBILITY_TOOLS: [&str; 24] = [
     "background_cancel",
     "ast_grep_search",
     "ast_grep_replace",
@@ -208,7 +208,7 @@ fn build_report(
         check_category_routes(config),
         check_agent_catalog(config),
         check_profile_tools(config),
-        check_first_slice_omo_tool_surface(config),
+        check_first_slice_compatibility_tool_surface(config),
         check_command_registry(),
         check_dollar_alias_wiring(),
         check_shipped_skill_loadability(),
@@ -229,7 +229,7 @@ fn build_report(
         check_team_mode(),
         check_terminal_browser_media(),
         check_parity_ledger(),
-        check_omo_parity_gaps(),
+        check_compatibility_parity_gaps(),
     ];
     if strict_parity {
         checks.push(check_strict_parity_matrix());
@@ -517,35 +517,7 @@ fn check_workflow_skill_protocol_native() -> DoctorCheck {
             }
         };
 
-        let reference_path = workspace_root
-            .join("inspirations/oh-my-codex/skills")
-            .join(skill)
-            .join("SKILL.md");
-        let reference_body = match fs::read_to_string(&reference_path) {
-            Ok(body) => body,
-            Err(err) => {
-                findings.push(WorkflowSkillProtocolFinding {
-                    skill: skill.to_string(),
-                    path: reference_path.display().to_string(),
-                    reason_code: "missing_omx_reference_asset",
-                    severity: "fail",
-                    token: None,
-                    remediation: format!(
-                        "restore the OMX reference workflow skill used for parity comparison: {err}"
-                    ),
-                });
-                continue;
-            }
-        };
-
-        let reference_deprecated = reference_skill_is_hard_deprecated(&reference_body);
-        let skill_findings = evaluate_workflow_skill_protocol_body(
-            skill,
-            &skill_path,
-            &body,
-            &reference_path,
-            &reference_body,
-        );
+        let skill_findings = evaluate_workflow_skill_protocol_body(skill, &skill_path, &body);
         let skill_failed = skill_findings
             .iter()
             .any(|finding| finding.severity == "fail");
@@ -553,11 +525,8 @@ fn check_workflow_skill_protocol_native() -> DoctorCheck {
             checked.push(serde_json::json!({
                 "skill": skill,
                 "path": skill_path,
-                "reference_path": reference_path,
-                "reference_deprecated": reference_deprecated,
                 "lines": body.lines().count(),
-                "reference_lines": reference_body.lines().count(),
-                "reference_warnings": skill_findings.len(),
+                "warnings": skill_findings.len(),
             }));
         }
         findings.extend(skill_findings);
@@ -594,7 +563,6 @@ fn check_workflow_skill_protocol_native() -> DoctorCheck {
             details: Some(serde_json::json!({
                 "findings": findings,
                 "required_sections": REQUIRED_NATIVE_SKILL_SECTIONS,
-                "reference_root": "inspirations/oh-my-codex/skills",
                 "hard_deprecated_policy": HARD_DEPRECATED_SKILL_PHRASE,
                 "forbidden_token_scan": FORBIDDEN_WORKFLOW_SKILL_TOKENS.iter().map(|rule| {
                     serde_json::json!({
@@ -618,7 +586,6 @@ fn check_workflow_skill_protocol_native() -> DoctorCheck {
             "checked": checked,
             "findings": findings,
             "required_sections": REQUIRED_NATIVE_SKILL_SECTIONS,
-            "reference_root": "inspirations/oh-my-codex/skills",
             "hard_deprecated_policy": HARD_DEPRECATED_SKILL_PHRASE,
             "forbidden_token_scan": FORBIDDEN_WORKFLOW_SKILL_TOKENS.iter().map(|rule| {
                 serde_json::json!({
@@ -652,55 +619,55 @@ const HARD_DEPRECATED_SKILL_PHRASE: &str = "Hard-deprecated. Do not invoke or ro
 
 const FORBIDDEN_WORKFLOW_SKILL_TOKENS: [ForbiddenWorkflowSkillToken; 13] = [
     ForbiddenWorkflowSkillToken {
-        token: ".omx/",
+        token: "legacy runtime state dir",
         reason_code: "forbidden_state_file_authority",
         severity: "fail",
-        remediation: "Use Harness coordinator-owned workflow events, projections, and evidence artifacts instead of old OMX state directories.",
+        remediation: "Use Harness coordinator-owned workflow events, projections, and evidence artifacts instead of old legacy state directories.",
     },
     ForbiddenWorkflowSkillToken {
-        token: ".omx/state",
+        token: "legacy runtime state file",
         reason_code: "forbidden_state_file_authority",
         severity: "fail",
         remediation: "Use Harness coordinator-owned workflow events, projections, and evidence artifacts instead of external state files.",
     },
     ForbiddenWorkflowSkillToken {
-        token: "omx state",
-        reason_code: "forbidden_omx_cli_authority",
+        token: "legacy state command",
+        reason_code: "forbidden_legacy_cli_authority",
         severity: "fail",
         remediation: "Translate upstream CLI state operations into Harness workflow evidence/projection operations.",
     },
     ForbiddenWorkflowSkillToken {
-        token: "omx ask",
-        reason_code: "forbidden_omx_cli_authority",
+        token: "legacy ask command",
+        reason_code: "forbidden_legacy_cli_authority",
         severity: "fail",
         remediation: "Use the native `$ask` workflow and record advisor output as Harness evidence.",
     },
     ForbiddenWorkflowSkillToken {
-        token: "omx performance-goal",
-        reason_code: "forbidden_omx_cli_authority",
+        token: "legacy performance-goal command",
+        reason_code: "forbidden_legacy_cli_authority",
         severity: "fail",
         remediation: "Use the native `$performance-goal` workflow and Harness goal/evidence projections.",
     },
     ForbiddenWorkflowSkillToken {
-        token: "omx team",
-        reason_code: "forbidden_omx_cli_authority",
+        token: "legacy team command",
+        reason_code: "forbidden_legacy_cli_authority",
         severity: "fail",
         remediation: "Use native team_create/team_task_create/team_send_message/team_list tools as the team substrate.",
     },
     ForbiddenWorkflowSkillToken {
-        token: "omx question",
-        reason_code: "forbidden_omx_cli_authority",
+        token: "legacy question command",
+        reason_code: "forbidden_legacy_cli_authority",
         severity: "fail",
         remediation: "Use the native question tool and workflow question evidence lifecycle.",
     },
     ForbiddenWorkflowSkillToken {
-        token: "OMX_TEAM_",
+        token: "LEGACY_TEAM_ENV_",
         reason_code: "forbidden_tmux_authority",
         severity: "fail",
         remediation: "Remove team runtime environment-variable authority from shipped Harness skills.",
     },
     ForbiddenWorkflowSkillToken {
-        token: "OMX_QUESTION_",
+        token: "LEGACY_QUESTION_ENV_",
         reason_code: "forbidden_tmux_authority",
         severity: "fail",
         remediation: "Remove pane-routing question environment-variable authority from shipped Harness skills.",
@@ -754,24 +721,25 @@ fn evaluate_workflow_skill_protocol_body(
     skill: &str,
     path: &Path,
     body: &str,
-    reference_path: &Path,
-    reference_body: &str,
 ) -> Vec<WorkflowSkillProtocolFinding> {
     let mut findings = Vec::new();
     let lower = body.to_lowercase();
     let path = path.display().to_string();
-    let reference_deprecated = reference_skill_is_hard_deprecated(reference_body);
 
-    findings.extend(evaluate_reference_skill_parity(
-        skill,
-        &path,
-        body,
-        reference_path,
-        reference_body,
-        reference_deprecated,
-    ));
-
-    if reference_deprecated {
+    if skill_body_is_hard_deprecated(body) {
+        for required in ["Hard-deprecated", "Do not invoke or route this skill"] {
+            if !lower.contains(&required.to_lowercase()) {
+                findings.push(WorkflowSkillProtocolFinding {
+                    skill: skill.to_string(),
+                    path: path.clone(),
+                    reason_code: "missing_harness_deprecation_contract",
+                    severity: "fail",
+                    token: Some(required.to_string()),
+                    remediation: "Preserve the hard-deprecated compatibility shim contract."
+                        .to_string(),
+                });
+            }
+        }
         return findings;
     }
 
@@ -833,181 +801,9 @@ fn evaluate_workflow_skill_protocol_body(
     findings
 }
 
-fn reference_skill_is_hard_deprecated(reference_body: &str) -> bool {
-    reference_body
-        .to_lowercase()
+fn skill_body_is_hard_deprecated(body: &str) -> bool {
+    body.to_lowercase()
         .contains(&HARD_DEPRECATED_SKILL_PHRASE.to_lowercase())
-}
-
-fn evaluate_reference_skill_parity(
-    skill: &str,
-    path: &str,
-    body: &str,
-    reference_path: &Path,
-    reference_body: &str,
-    reference_deprecated: bool,
-) -> Vec<WorkflowSkillProtocolFinding> {
-    let mut findings = Vec::new();
-    let lower = body.to_lowercase();
-
-    if reference_deprecated {
-        for required in ["Hard-deprecated", "Do not invoke or route this skill"] {
-            if !lower.contains(&required.to_lowercase()) {
-                findings.push(WorkflowSkillProtocolFinding {
-                    skill: skill.to_string(),
-                    path: path.to_string(),
-                    reason_code: "missing_omx_deprecation_contract",
-                    severity: "fail",
-                    token: Some(required.to_string()),
-                    remediation: format!(
-                        "Preserve the hard-deprecated OMX shim contract from {}.",
-                        reference_path.display()
-                    ),
-                });
-            }
-        }
-        return findings;
-    }
-
-    let body_lower = body.to_lowercase();
-    for anchor in reference_protocol_anchors(reference_body) {
-        let normalized_anchor = normalize_reference_anchor(&anchor);
-        if !body_lower.contains(&anchor.to_lowercase())
-            && !body_lower.contains(&normalized_anchor.to_lowercase())
-        {
-            findings.push(WorkflowSkillProtocolFinding {
-                skill: skill.to_string(),
-                path: path.to_string(),
-                reason_code: "missing_omx_reference_anchor",
-                severity: "fail",
-                token: Some(anchor),
-                remediation: format!(
-                    "Retain active workflow protocol anchors from {} before applying Harness substrate overrides.",
-                    reference_path.display()
-                ),
-            });
-        }
-    }
-
-    let body_fingerprint = normalize_reference_text(body);
-    let reference_lines = reference_behavior_lines(reference_body);
-    let missing_behavior_lines: Vec<String> = reference_lines
-        .iter()
-        .into_iter()
-        .filter(|line| !body_fingerprint.contains(line.as_str()))
-        .cloned()
-        .collect();
-    let retained_lines = reference_lines
-        .len()
-        .saturating_sub(missing_behavior_lines.len());
-    if !reference_lines.is_empty() && retained_lines * 4 < reference_lines.len() * 3 {
-        findings.push(WorkflowSkillProtocolFinding {
-            skill: skill.to_string(),
-            path: path.to_string(),
-            reason_code: "missing_omx_reference_behavior",
-            severity: "warn",
-            token: Some(
-                missing_behavior_lines
-                    .iter()
-                    .take(5)
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(" | "),
-            ),
-            remediation: format!(
-                "Retain substantive behavior lines from {} and add Harness substrate overrides separately.",
-                reference_path.display()
-            ),
-        });
-    }
-
-    findings
-}
-
-fn reference_protocol_anchors(reference_body: &str) -> Vec<String> {
-    let mut anchors = Vec::new();
-    let mut in_code_fence = false;
-    for line in reference_body.lines().map(str::trim) {
-        if line.starts_with("```") {
-            in_code_fence = !in_code_fence;
-            continue;
-        }
-        if in_code_fence {
-            continue;
-        }
-        if line.starts_with("# ") || line.starts_with("## ") {
-            anchors.push(line.to_string());
-        }
-    }
-    anchors
-}
-
-fn normalize_reference_anchor(anchor: &str) -> String {
-    anchor
-        .replace("OMX", "Harness")
-        .replace("oh-my-codex", "Agent Harness")
-}
-
-fn reference_behavior_lines(reference_body: &str) -> Vec<String> {
-    let mut lines = Vec::new();
-    let mut in_frontmatter = false;
-    let mut frontmatter_done = false;
-    let mut in_code_fence = false;
-
-    for raw_line in reference_body.lines() {
-        let line = raw_line.trim();
-        if !frontmatter_done && line == "---" {
-            in_frontmatter = !in_frontmatter;
-            if !in_frontmatter {
-                frontmatter_done = true;
-            }
-            continue;
-        }
-        if in_frontmatter {
-            continue;
-        }
-        if line.starts_with("```") {
-            in_code_fence = !in_code_fence;
-            continue;
-        }
-        if in_code_fence
-            || line.is_empty()
-            || line.starts_with('#')
-            || line.starts_with("Task: {{ARGUMENTS}}")
-        {
-            continue;
-        }
-
-        let normalized = normalize_reference_line(line);
-        if normalized.len() >= 24 {
-            lines.push(normalized);
-        }
-    }
-
-    lines.sort();
-    lines.dedup();
-    lines
-}
-
-fn normalize_reference_text(body: &str) -> String {
-    body.lines()
-        .map(normalize_reference_line)
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn normalize_reference_line(line: &str) -> String {
-    let mut normalized = line.to_lowercase();
-    for (from, to) in [
-        ("oh-my-codex", "harness"),
-        ("agent harness", "harness"),
-        ("omx", "harness"),
-        ("codex", "harness"),
-    ] {
-        normalized = normalized.replace(from, to);
-    }
-    normalized.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn check_workflow_transition_policy_matrix() -> DoctorCheck {
@@ -1159,7 +955,7 @@ fn check_workflow_transition_policy_matrix() -> DoctorCheck {
     pass_with_details(
         "workflow_transition_policy_matrix",
         format!(
-            "{} tracked mode(s), {} matrix case(s), and {} registry policy id(s) match the native OMX transition contract",
+            "{} tracked mode(s), {} matrix case(s), and {} registry policy id(s) match the native legacy transition contract",
             TRACKED_WORKFLOW_MODES.len(),
             MATRIX_CASES.len(),
             registered_policies.len()
@@ -1393,9 +1189,9 @@ fn check_strict_parity_matrix() -> DoctorCheck {
             .and_then(Value::as_str)
             .unwrap_or_default();
         for forbidden in [
-            "omx state",
-            "omx team",
-            "omx question",
+            "legacy state command",
+            "legacy team command",
+            "legacy question command",
             "native team tools api",
         ] {
             if native_contract.contains(forbidden) {
@@ -1441,7 +1237,7 @@ fn check_strict_parity_matrix() -> DoctorCheck {
         return pass_with_details(
             "strict_parity_matrix",
             format!(
-                "{selected_count} active workflow parity row(s) have complete proof evidence; retired OMX shims are excluded from native_complete credit"
+                "{selected_count} active workflow parity row(s) have complete proof evidence; retired legacy runtime shims are excluded from native_complete credit"
             ),
             Some(serde_json::json!({
                 "selected_rows": selected_count,
@@ -1500,19 +1296,19 @@ fn validate_retired_parity_row(row_label: &str, row: &Value, blockers: &mut Vec<
     }
     if status != "compat_only" {
         blockers.push(format!(
-            "{row_label}: retired OMX shim status is {status:?}, expected compat_only"
+            "{row_label}: retired legacy runtime shim status is {status:?}, expected compat_only"
         ));
     }
     if minimum_scope != "retired_compatibility_shim" {
         blockers.push(format!(
-            "{row_label}: retired OMX shim minimum_1_to_1_scope is {minimum_scope:?}, expected retired_compatibility_shim"
+            "{row_label}: retired legacy runtime shim minimum_1_to_1_scope is {minimum_scope:?}, expected retired_compatibility_shim"
         ));
     }
     if !(native_contract.contains("hard-deprecated")
         || native_contract.contains("compatibility shim"))
     {
         blockers.push(format!(
-            "{row_label}: retired OMX shim contract must explicitly describe compatibility/deprecation behavior"
+            "{row_label}: retired legacy runtime shim contract must explicitly describe compatibility/deprecation behavior"
         ));
     }
 }
@@ -1644,7 +1440,7 @@ fn validate_selected_parity_dossier_with_root(
     for (field, expected) in [
         ("replay_derived", true),
         ("native_only", true),
-        ("omx_runtime_authority", false),
+        ("external_runtime_authority", false),
         ("status_reads_append_events", false),
         ("dossier_reads_append_events", false),
         ("permission_checks_before_side_effects", true),
@@ -2120,7 +1916,7 @@ fn validate_registry_native_credit(row_label: &str, row: &Value, blockers: &mut 
 fn validate_no_old_runtime_tokens(row_label: &str, proof: &Value, blockers: &mut Vec<String>) {
     let text = proof.to_string().to_lowercase();
     for forbidden in [
-        "omx ",
+        "legacy runtime command",
         "native team tools api",
         "tmux send-keys",
         "tmux pane",
@@ -2194,24 +1990,24 @@ fn validate_active_runtime_assets_no_old_authority(blockers: &mut Vec<String>) {
         return;
     }
     let forbidden = [
-        ".omx/",
-        "omx ask",
-        "omx performance-goal",
-        "omx ultragoal",
-        "omx wiki",
-        "omx explore",
-        "omx sparkshell",
-        "omx setup",
-        "omx doctor",
-        "omx hud",
-        "omx team",
-        "omx question",
-        "omx state",
+        "legacy runtime state dir",
+        "legacy ask command",
+        "legacy performance-goal command",
+        "legacy goal command",
+        "legacy wiki command",
+        "legacy explore command",
+        "legacy shell command",
+        "legacy setup command",
+        "legacy doctor command",
+        "legacy hud command",
+        "legacy team command",
+        "legacy question command",
+        "legacy state command",
         "native team tools api",
         "tmux send-keys",
         "tmux pane",
-        "OMX_TEAM_",
-        "OMX_QUESTION_",
+        "LEGACY_TEAM_ENV_",
+        "LEGACY_QUESTION_ENV_",
         "CODEX_HOME",
         "~/.codex",
         "Codex goal mode",
@@ -2253,7 +2049,7 @@ fn collect_old_runtime_asset_findings(path: &Path, forbidden: &[&str], findings:
     let Ok(body) = fs::read_to_string(path) else {
         return;
     };
-    if reference_skill_is_hard_deprecated(&body) {
+    if skill_body_is_hard_deprecated(&body) {
         return;
     }
     for (index, line) in body.lines().enumerate() {
@@ -2792,7 +2588,7 @@ fn check_profile_tools(config: &HarnessConfig) -> DoctorCheck {
     pass("tool_surface", "configured profile tools are registered")
 }
 
-fn check_first_slice_omo_tool_surface(config: &HarnessConfig) -> DoctorCheck {
+fn check_first_slice_compatibility_tool_surface(config: &HarnessConfig) -> DoctorCheck {
     let native_tools = coordinator_registry_with_mcp_and_editing(
         config.permissions.shell_allowlist.clone(),
         Default::default(),
@@ -2804,23 +2600,23 @@ fn check_first_slice_omo_tool_surface(config: &HarnessConfig) -> DoctorCheck {
     .into_iter()
     .collect::<BTreeSet<_>>();
 
-    let missing = FIRST_SLICE_OMO_TOOLS
+    let missing = FIRST_SLICE_COMPATIBILITY_TOOLS
         .into_iter()
         .filter(|tool| !native_tools.contains(*tool))
         .collect::<Vec<_>>();
     if !missing.is_empty() {
         return warn(
-            "omo_tool_surface",
+            "compatibility_tool_surface",
             format!(
-                "missing first-slice OMO tool surface id(s): {}; see docs/parity-ledger.json",
+                "missing first-slice compatibility tool surface id(s): {}; see docs/parity-ledger.json",
                 missing.join(", ")
             ),
         );
     }
 
     pass(
-        "omo_tool_surface",
-        "first-slice OMO tool ids are registered; unsupported tools return explicit diagnostics",
+        "compatibility_tool_surface",
+        "first-slice compatibility tool ids are registered; unsupported tools return explicit diagnostics",
     )
 }
 
@@ -3534,19 +3330,19 @@ fn check_parity_ledger() -> DoctorCheck {
     )
 }
 
-fn check_omo_parity_gaps() -> DoctorCheck {
+fn check_compatibility_parity_gaps() -> DoctorCheck {
     let Some(ledger) = (match parse_parity_ledger() {
         Ok(ledger) => ledger,
-        Err(err) => return fail("omo_parity_gaps", err),
+        Err(err) => return fail("compatibility_parity_gaps", err),
     }) else {
         return warn(
-            "omo_parity_gaps",
+            "compatibility_parity_gaps",
             "docs/parity-ledger.json is not present; use the Harness workflow parity matrix for the current parity gap list",
         );
     };
     let Some(items) = ledger.get("items").and_then(Value::as_array) else {
         return fail(
-            "omo_parity_gaps",
+            "compatibility_parity_gaps",
             "docs/parity-ledger.json is missing an items array",
         );
     };
@@ -3560,7 +3356,10 @@ fn check_omo_parity_gaps() -> DoctorCheck {
         })
         .collect::<Vec<_>>();
     if open_items.is_empty() {
-        return pass("omo_parity_gaps", "OMO parity ledger has no open gaps");
+        return pass(
+            "compatibility_parity_gaps",
+            "compatibility parity ledger has no open gaps",
+        );
     }
 
     let preview = open_items
@@ -3570,9 +3369,9 @@ fn check_omo_parity_gaps() -> DoctorCheck {
         .collect::<Vec<_>>()
         .join(", ");
     warn(
-        "omo_parity_gaps",
+        "compatibility_parity_gaps",
         format!(
-            "{} open OMO parity ledger item(s); next gaps include: {preview}; see docs/parity-ledger.json",
+            "{} open compatibility parity ledger item(s); next gaps include: {preview}; see docs/parity-ledger.json",
             open_items.len()
         ),
     )
@@ -3708,35 +3507,19 @@ Testing.
 ## Harness state contract
 Harness workflow evidence exists.
 ## Execution protocol
-Run omx state and route through a tmux pane.
+Run legacy state command and route through a tmux pane.
 ## Evidence and closeout contract
 Close with workflow evidence.
 ## Verification checklist
 Verify.
 "#;
-        let reference_body = r#"
----
-name: bad
-description: bad
----
-
-# Bad fixture
-
-## Purpose
-Bad fixture.
-"#;
-        let findings = evaluate_workflow_skill_protocol_body(
-            "bad",
-            Path::new("bad/SKILL.md"),
-            body,
-            Path::new("reference/bad/SKILL.md"),
-            reference_body,
-        );
+        let findings =
+            evaluate_workflow_skill_protocol_body("bad", Path::new("bad/SKILL.md"), body);
         let reason_codes = findings
             .iter()
             .map(|finding| finding.reason_code)
             .collect::<Vec<_>>();
-        assert!(reason_codes.contains(&"forbidden_omx_cli_authority"));
+        assert!(reason_codes.contains(&"forbidden_legacy_cli_authority"));
         assert!(reason_codes.contains(&"forbidden_tmux_authority"));
     }
 
@@ -3768,7 +3551,7 @@ Bad fixture.
                 "truth_gates": {
                     "replay_derived": true,
                     "native_only": true,
-                    "omx_runtime_authority": false,
+                    "external_runtime_authority": false,
                     "status_reads_append_events": false,
                     "dossier_reads_append_events": false,
                     "permission_checks_before_side_effects": true

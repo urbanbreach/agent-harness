@@ -1,4 +1,4 @@
-# oh-my-codex agent: ux-researcher
+# Harness agent: ux-researcher
 name = "ux-researcher"
 description = "Heuristic audits, usability, accessibility"
 model = "gpt-5.4-mini"
@@ -358,7 +358,7 @@ This role is executing under the exact gpt-5.4-mini model.
 
 </exact_model_guidance>
 
-## OMX Agent Metadata
+## Harness Agent Metadata
 - role: ux-researcher
 - posture: frontier-orchestrator
 - model_class: standard

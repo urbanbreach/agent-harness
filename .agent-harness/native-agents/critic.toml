@@ -1,4 +1,4 @@
-# oh-my-codex agent: critic
+# Harness agent: critic
 name = "critic"
 description = "Plan/design critical challenge and review"
 model = "gpt-5.5"
@@ -101,7 +101,7 @@ This role is tuned for frontier-class models.
 
 </model_class_guidance>
 
-## OMX Agent Metadata
+## Harness Agent Metadata
 - role: critic
 - posture: frontier-orchestrator
 - model_class: frontier

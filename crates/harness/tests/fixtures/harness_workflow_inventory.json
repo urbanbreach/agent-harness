@@ -1,0 +1,5141 @@
+{
+  "$schema": "https://agent-harness.local/schemas/harness-workflow-inventory.schema.json",
+  "version": 1,
+  "generated_from": "Harness CommandRegistry plus shipped Harness skill and prompt assets; worker remains intentionally internal.",
+  "required_fields": [
+    "canonical_id",
+    "aliases",
+    "source_refs",
+    "harness_mapping",
+    "status",
+    "visibility",
+    "authority_model",
+    "blocker_or_stage",
+    "tests"
+  ],
+  "status_values": [
+    "present",
+    "partial",
+    "missing",
+    "clashing",
+    "non_applicable"
+  ],
+  "entries": [
+    {
+      "canonical_id": "agent:build",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/build.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_profile_asset",
+        "target": "build"
+      },
+      "status": "present",
+      "visibility": "hidden_compatibility_escalation",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "hidden compatibility/escalation profile; operator is the only visible default primary",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent:discipline",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/discipline.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_profile_asset",
+        "target": "discipline"
+      },
+      "status": "present",
+      "visibility": "hidden_compatibility_escalation",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "hidden compatibility/escalation profile; operator is the only visible default primary",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent:operator",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/operator.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_profile_asset",
+        "target": "operator"
+      },
+      "status": "present",
+      "visibility": "operator_default",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent:plan",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/plan.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_profile_asset",
+        "target": "plan"
+      },
+      "status": "present",
+      "visibility": "hidden_compatibility_escalation",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "hidden compatibility/escalation profile; operator is the only visible default primary",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "cancel-ralph",
+      "aliases": [
+        "stop-ralph"
+      ],
+      "source_refs": [
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins",
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "continuation.stop"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "continuation_command",
+        "effect": "control_continuation",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "clone",
+      "aliases": [],
+      "source_refs": [
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_tui_slash_command",
+        "target": "tui.clone"
+      },
+      "status": "present",
+      "visibility": "tui_navigation",
+      "authority_model": "tui_projection_or_navigation",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "compact",
+      "aliases": [
+        "summarize",
+        "summary"
+      ],
+      "source_refs": [
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_tui_slash_command",
+        "target": "tui.compact"
+      },
+      "status": "present",
+      "visibility": "tui_navigation",
+      "authority_model": "tui_projection_or_navigation",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "events",
+      "aliases": [
+        "event-log"
+      ],
+      "source_refs": [
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_tui_slash_command",
+        "target": "tui.events"
+      },
+      "status": "present",
+      "visibility": "tui_navigation",
+      "authority_model": "tui_projection_or_navigation",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "exit",
+      "aliases": [
+        "q",
+        "quit"
+      ],
+      "source_refs": [
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_tui_slash_command",
+        "target": "tui.exit"
+      },
+      "status": "present",
+      "visibility": "tui_navigation",
+      "authority_model": "tui_projection_or_navigation",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "follow",
+      "aliases": [],
+      "source_refs": [
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_tui_slash_command",
+        "target": "tui.follow"
+      },
+      "status": "present",
+      "visibility": "tui_navigation",
+      "authority_model": "tui_projection_or_navigation",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "fork",
+      "aliases": [],
+      "source_refs": [
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_tui_slash_command",
+        "target": "tui.fork"
+      },
+      "status": "present",
+      "visibility": "tui_navigation",
+      "authority_model": "tui_projection_or_navigation",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "goal-ledger",
+      "aliases": [
+        "goal",
+        "ultragoal",
+        "workflow-goal"
+      ],
+      "source_refs": [
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins",
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.goal_ledger via skill:ultragoal"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "handoff",
+      "aliases": [],
+      "source_refs": [
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.handoff"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-skill:agent-browser",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/agent-browser/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "agent-browser"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:ai-slop-cleaner",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/ai-slop-cleaner/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "ai-slop-cleaner"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:ai-slop-remover",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/ai-slop-remover/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "ai-slop-remover"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:analyze",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/analyze/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "analyze"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:ask",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/ask/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "ask"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:ask-claude",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/ask-claude/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "ask-claude"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:ask-gemini",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/ask-gemini/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "ask-gemini"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:autopilot",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/autopilot/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "autopilot"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:autoresearch",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/autoresearch/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "autoresearch"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:autoresearch-goal",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/autoresearch-goal/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "autoresearch-goal"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:best-practice-research",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/best-practice-research/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "best-practice-research"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:build-fix",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/build-fix/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "build-fix"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:cancel",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/cancel/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "cancel"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:code-review",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/code-review/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "code-review"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:configure-notifications",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/configure-notifications/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "configure-notifications"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:deep-interview",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/deep-interview/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "deep-interview"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:deepsearch",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/deepsearch/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "deepsearch"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:design",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/design/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "design"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:dev-browser",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/dev-browser/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "dev-browser"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:doctor",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/doctor/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "doctor"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:ecomode",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/ecomode/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "ecomode"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:frontend-ui-ux",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/frontend-ui-ux/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "frontend-ui-ux"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:git-master",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/git-master/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "git-master"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:help",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/help/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "help"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:hud",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/hud/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "hud"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:issue-delivery",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/issue-delivery/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "issue-delivery"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:note",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/note/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "note"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:setup",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/setup/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "setup"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:performance-goal",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/performance-goal/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "performance-goal"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:pipeline",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/pipeline/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "pipeline"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:plan",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/plan/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "plan"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:playwright",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/playwright/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "playwright"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:ralph",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/ralph/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "ralph"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:ralph-init",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/ralph-init/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "ralph-init"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:ralplan",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/ralplan/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "ralplan"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:review",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/review/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "review"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:review-work",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/review-work/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "review-work"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:rust-best-practices",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/rust-best-practices/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "rust-best-practices"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:security-review",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/security-review/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "security-review"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:skill",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/skill/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "skill"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:swarm",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/swarm/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "swarm"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:tdd",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/tdd/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "tdd"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:team",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/team/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "team"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:team-mode",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/team-mode/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "team-mode"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:trace",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/trace/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "trace"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:ultragoal",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/ultragoal/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "ultragoal"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:ultraqa",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/ultraqa/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "ultraqa"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:ultrawork",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/ultrawork/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "ultrawork"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:visual-ralph",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/visual-ralph/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "visual-ralph"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:visual-verdict",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/visual-verdict/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "visual-verdict"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:web-clone",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/web-clone/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "web-clone"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:wiki",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/wiki/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "wiki"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-skill:worker",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/worker/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "worker"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "hyperplan",
+      "aliases": [],
+      "source_refs": [
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.hyperplan"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "init-deep",
+      "aliases": [
+        "deep-interview"
+      ],
+      "source_refs": [
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.deep_interview via skill:deep-interview"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "model",
+      "aliases": [
+        "models"
+      ],
+      "source_refs": [
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_tui_slash_command",
+        "target": "tui.model_switch"
+      },
+      "status": "present",
+      "visibility": "tui_navigation",
+      "authority_model": "tui_projection_or_navigation",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "new",
+      "aliases": [
+        "new-session",
+        "session"
+      ],
+      "source_refs": [
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_tui_slash_command",
+        "target": "tui.new_session"
+      },
+      "status": "present",
+      "visibility": "tui_navigation",
+      "authority_model": "tui_projection_or_navigation",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:analyst",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/analyst.md",
+        ".agent-harness/agents/analyst.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "analyst"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:api-reviewer",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/api-reviewer.md",
+        ".agent-harness/agents/api-reviewer.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "api-reviewer"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:architect",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/architect.md",
+        ".agent-harness/agents/architect.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "architect"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:build-fixer",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/build-fixer.md",
+        ".agent-harness/agents/build-fixer.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "build-fixer"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:code-reviewer",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/code-reviewer.md",
+        ".agent-harness/agents/code-reviewer.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "code-reviewer"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:code-simplifier",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/code-simplifier.md",
+        ".agent-harness/agents/code-simplifier.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "code-simplifier"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:critic",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/critic.md",
+        ".agent-harness/agents/critic.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "critic"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:debugger",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/debugger.md",
+        ".agent-harness/agents/debugger.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "debugger"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:dependency-expert",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/dependency-expert.md",
+        ".agent-harness/agents/dependency-expert.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "dependency-expert"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:designer",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/designer.md",
+        ".agent-harness/agents/designer.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "designer"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:executor",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/executor.md",
+        ".agent-harness/agents/executor.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "executor"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:explore",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/explore.md",
+        ".agent-harness/agents/explore.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "explore"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:explore-harness",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/explore-harness.md",
+        ".agent-harness/agents/explore-harness.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "explore-harness"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:git-master",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/git-master.md",
+        ".agent-harness/agents/git-master.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "git-master"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:information-architect",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/information-architect.md",
+        ".agent-harness/agents/information-architect.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "information-architect"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:performance-reviewer",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/performance-reviewer.md",
+        ".agent-harness/agents/performance-reviewer.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "performance-reviewer"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:planner",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/planner.md",
+        ".agent-harness/agents/planner.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "planner"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:product-analyst",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/product-analyst.md",
+        ".agent-harness/agents/product-analyst.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "product-analyst"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:product-manager",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/product-manager.md",
+        ".agent-harness/agents/product-manager.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "product-manager"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:qa-tester",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/qa-tester.md",
+        ".agent-harness/agents/qa-tester.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "qa-tester"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:quality-reviewer",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/quality-reviewer.md",
+        ".agent-harness/agents/quality-reviewer.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "quality-reviewer"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:quality-strategist",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/quality-strategist.md",
+        ".agent-harness/agents/quality-strategist.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "quality-strategist"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:researcher",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/researcher.md",
+        ".agent-harness/agents/researcher.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "researcher"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:security-reviewer",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/security-reviewer.md",
+        ".agent-harness/agents/security-reviewer.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "security-reviewer"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:sisyphus-lite",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/sisyphus-lite.md",
+        ".agent-harness/agents/sisyphus-lite.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "sisyphus-lite"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:style-reviewer",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/style-reviewer.md",
+        ".agent-harness/agents/style-reviewer.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "style-reviewer"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:team-executor",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/team-executor.md",
+        ".agent-harness/agents/team-executor.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "team-executor"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:team-orchestrator",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/team-orchestrator.md",
+        ".agent-harness/agents/team-orchestrator.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "team-orchestrator"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:test-engineer",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/test-engineer.md",
+        ".agent-harness/agents/test-engineer.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "test-engineer"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:ux-researcher",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/ux-researcher.md",
+        ".agent-harness/agents/ux-researcher.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "ux-researcher"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:verifier",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/verifier.md",
+        ".agent-harness/agents/verifier.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "verifier"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:vision",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/vision.md",
+        ".agent-harness/agents/vision.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "vision"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "agent-prompt:writer",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/agents/writer.md",
+        ".agent-harness/agents/writer.md"
+      ],
+      "harness_mapping": {
+        "surface": "agent_prompt_asset",
+        "target": "writer"
+      },
+      "status": "present",
+      "visibility": "slash_agent_prompt_asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-workflow:ai-slop-cleaner",
+      "aliases": [
+        "ai-slop-cleaner"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/ai-slop-cleaner/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.cleanup"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native compatibility alias dispatches through `remove-ai-slops`",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:analyze",
+      "aliases": [
+        "analyze"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/analyze/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.analysis via skill:analyze"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow skill dispatch",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness-core/src/command_registry.rs:specialist_dollar_aliases_resolve_to_expected_workflow_skill_dispatch",
+        "crates/harness-tui/src/app/tests.rs:dollar_specialist_aliases_dispatch_as_workflow_skills"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:ask",
+      "aliases": [
+        "ask"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/ask/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.ask_local_advisor via skill:ask"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      },
+      "description": "Ask a local external advisor CLI and capture a reusable artifact"
+    },
+    {
+      "canonical_id": "harness-workflow:ask-claude",
+      "aliases": [
+        "ask-claude"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/ask-claude/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.ask_local_advisor via skill:ask"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      },
+      "description": "Deprecated Claude advisor shim routed through the local advisor workflow"
+    },
+    {
+      "canonical_id": "harness-workflow:ask-gemini",
+      "aliases": [
+        "ask-gemini"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/ask-gemini/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.ask_local_advisor via skill:ask"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      },
+      "description": "Deprecated Gemini advisor shim routed through the local advisor workflow"
+    },
+    {
+      "canonical_id": "harness-workflow:autopilot",
+      "aliases": [
+        "autopilot"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/autopilot/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.autopilot via skill:autopilot"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:autoresearch",
+      "aliases": [
+        "autoresearch"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/autoresearch/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.research_mission"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native compatibility alias dispatches through `research-mission`",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:autoresearch-goal",
+      "aliases": [
+        "autoresearch-goal"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/autoresearch-goal/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.research_mission via skill:autoresearch-goal"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:best-practice-research",
+      "aliases": [
+        "best-practice-research"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/best-practice-research/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.best_practice_research via skill:best-practice-research"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      },
+      "description": "Run a bounded best-practice research wrapper using official and upstream evidence first"
+    },
+    {
+      "canonical_id": "harness-workflow:build-fix",
+      "aliases": [
+        "build-fix"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/build-fix/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.build_fix via skill:build-fix"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow skill dispatch of an legacy hard-deprecated shim",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-core/src/command_registry.rs:specialist_dollar_aliases_resolve_to_expected_workflow_skill_dispatch",
+        "crates/harness-tui/src/app/tests.rs:dollar_specialist_aliases_dispatch_as_workflow_skills"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      },
+      "description": "Route build-failure repair through the build-fixer workflow contract"
+    },
+    {
+      "canonical_id": "reference-skill:cancel",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/cancel/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "reference_skill",
+        "target": "cancel"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "reference_only_until_mapped_to_coordinator",
+      "blocker_or_stage": "covered by workflow-cancel/continuation stop surfaces",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-workflow:code-review",
+      "aliases": [
+        "code-review"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/code-review/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "workflow_skill",
+        "target": "workflow.review"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow skill dispatch of an legacy hard-deprecated shim",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app/tests.rs:dollar_workflow_aliases_dispatch_as_workflow_intents"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:configure-notifications",
+      "aliases": [
+        "configure-notifications"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/configure-notifications/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.configure_notifications via skill:configure-notifications"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:deep-interview",
+      "aliases": [
+        "deep-interview"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/deep-interview/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.deep_interview"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native compatibility alias dispatches through `init-deep`",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:deepsearch",
+      "aliases": [
+        "deepsearch"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/deepsearch/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.deepsearch via skill:deepsearch"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:design",
+      "aliases": [
+        "design"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/design/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.design via skill:design"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow skill dispatch",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness-core/src/command_registry.rs:specialist_dollar_aliases_resolve_to_expected_workflow_skill_dispatch",
+        "crates/harness-tui/src/app/tests.rs:dollar_specialist_aliases_dispatch_as_workflow_skills"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:doctor",
+      "aliases": [
+        "doctor"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/doctor/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.doctor via skill:doctor"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:ecomode",
+      "aliases": [
+        "ecomode"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/ecomode/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.ecomode via skill:ecomode"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:frontend-ui-ux",
+      "aliases": [
+        "frontend-ui-ux"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/frontend-ui-ux/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.design via skill:frontend-ui-ux"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:git-master",
+      "aliases": [
+        "git-master"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/git-master/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.git_master via skill:git-master"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow skill dispatch with git-master agent routing guidance",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:help",
+      "aliases": [
+        "help"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/help/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.help"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "read_projection",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:hud",
+      "aliases": [
+        "hud"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/hud/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.hud"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "read_projection",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:note",
+      "aliases": [
+        "note"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/note/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.note via skill:note"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:setup",
+      "aliases": [
+        "setup"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/setup/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.setup via skill:setup"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      },
+      "description": "Set up or refresh compatible Harness assets and runtime configuration"
+    },
+    {
+      "canonical_id": "harness-workflow:performance-goal",
+      "aliases": [
+        "performance-goal"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/performance-goal/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.performance via skill:performance-goal"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:pipeline",
+      "aliases": [
+        "pipeline"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/pipeline/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.pipeline via skill:pipeline"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "reference-skill:plan",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/plan/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "reference_skill",
+        "target": "plan"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "reference_only_until_mapped_to_coordinator",
+      "blocker_or_stage": "covered by plan-consensus / ralplan path",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-workflow:ralph",
+      "aliases": [
+        "ralph"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/ralph/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "continuation.ralph"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native compatibility alias dispatches through `ralph-loop`",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "continuation_command",
+        "effect": "control_continuation",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:ralph-init",
+      "aliases": [
+        "ralph-init"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/ralph-init/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.ralph_init via skill:ralph-init"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "reference-skill:ralplan",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/ralplan/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "reference_skill",
+        "target": "ralplan"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "reference_only_until_mapped_to_coordinator",
+      "blocker_or_stage": "covered by plan-consensus path",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-workflow:review",
+      "aliases": [
+        "review"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/review/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.review via skill:review"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:security-review",
+      "aliases": [
+        "security-review"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/security-review/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "workflow_skill",
+        "target": "workflow.security_review"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow skill dispatch of an legacy hard-deprecated shim",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness-core/src/command_registry.rs:specialist_dollar_aliases_resolve_to_expected_workflow_skill_dispatch",
+        "crates/harness-tui/src/app/tests.rs:dollar_specialist_aliases_dispatch_as_workflow_skills"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:skill",
+      "aliases": [
+        "skill"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/skill/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.skill_management via skill:skill"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:swarm",
+      "aliases": [
+        "swarm"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/swarm/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.team_escalation via skill:swarm"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:tdd",
+      "aliases": [
+        "tdd"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/tdd/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.tdd via skill:tdd"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:team",
+      "aliases": [
+        "team"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/team/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.team_escalation via skill:team"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:trace",
+      "aliases": [
+        "trace"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/trace/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.trace"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "read_projection",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "reference-skill:ultragoal",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/ultragoal/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "reference_skill",
+        "target": "ultragoal"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "reference_only_until_mapped_to_coordinator",
+      "blocker_or_stage": "covered by goal-ledger workflow",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "harness-workflow:ultraqa",
+      "aliases": [
+        "ultraqa"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/ultraqa/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.qa via skill:ultraqa"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:ultrawork",
+      "aliases": [
+        "ultrawork"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/ultrawork/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "continuation.ultrawork"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native compatibility alias dispatches through `ulw-loop`",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "continuation_command",
+        "effect": "control_continuation",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:visual-ralph",
+      "aliases": [
+        "visual-ralph"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/visual-ralph/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.visual via skill:visual-ralph"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:visual-verdict",
+      "aliases": [
+        "visual-verdict"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/visual-verdict/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.visual via skill:visual-verdict"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "harness-workflow:web-clone",
+      "aliases": [
+        "web-clone"
+      ],
+      "source_refs": [
+        ".agent-harness/skills/web-clone/SKILL.md",
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.web_clone via skill:web-clone"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow intent/evidence dispatch",
+      "tests": [
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "reference-skill:wiki",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/wiki/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "reference_skill",
+        "target": "wiki"
+      },
+      "status": "present",
+      "visibility": "advanced_workflow",
+      "authority_model": "reference_only_until_mapped_to_coordinator",
+      "blocker_or_stage": "covered by workflow wiki mode",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "reference-skill:worker",
+      "aliases": [],
+      "source_refs": [
+        ".agent-harness/skills/worker/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "reference_skill",
+        "target": "worker"
+      },
+      "status": "non_applicable",
+      "visibility": "team_internal",
+      "authority_model": "reference_only_internal_team_protocol",
+      "blocker_or_stage": "team worker protocol is internal to coordinated team panes, not a user-facing dollar command",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-tui/src/app/tests.rs:dollar_worker_remains_intentionally_non_user_facing"
+      ]
+    },
+    {
+      "canonical_id": "plan-consensus",
+      "aliases": [
+        "plan",
+        "ralplan",
+        "consensus-plan",
+        "workflow-plan-consensus"
+      ],
+      "source_refs": [
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins",
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.plan_consensus via skill:plan"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "project-agent-skill:issue-delivery",
+      "aliases": [],
+      "source_refs": [
+        ".agents/skills/issue-delivery/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "issue-delivery"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-agent-skill:rust-best-practices",
+      "aliases": [],
+      "source_refs": [
+        ".agents/skills/rust-best-practices/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "rust-best-practices"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:.system/imagegen",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/.system/imagegen/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": ".system/imagegen"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:.system/openai-docs",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/.system/openai-docs/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": ".system/openai-docs"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:.system/plugin-creator",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/.system/plugin-creator/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": ".system/plugin-creator"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:.system/skill-creator",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/.system/skill-creator/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": ".system/skill-creator"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:.system/skill-installer",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/.system/skill-installer/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": ".system/skill-installer"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:ai-slop-cleaner",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/ai-slop-cleaner/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "ai-slop-cleaner"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:analyze",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/analyze/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "analyze"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:autopilot",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/autopilot/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "autopilot"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:cancel",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/cancel/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "cancel"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:code-review",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/code-review/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "code-review"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:configure-notifications",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/configure-notifications/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "configure-notifications"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:deep-interview",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/deep-interview/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "deep-interview"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:doctor",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/doctor/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "doctor"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:help",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/help/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "help"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:hud",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/hud/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "hud"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:note",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/note/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "note"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:plan",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/plan/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "plan"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:ralph",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/ralph/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "ralph"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:ralplan",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/ralplan/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "ralplan"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:security-review",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/security-review/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "security-review"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:skill",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/skill/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "skill"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:team",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/team/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "team"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:trace",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/trace/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "trace"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:ultraqa",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/ultraqa/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "ultraqa"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:ultrawork",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/ultrawork/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "ultrawork"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:visual-verdict",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/visual-verdict/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "visual-verdict"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:web-clone",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/web-clone/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "web-clone"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:wiki",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/wiki/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "wiki"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "project-codex-skill:worker",
+      "aliases": [],
+      "source_refs": [
+        ".codex/skills/worker/SKILL.md"
+      ],
+      "harness_mapping": {
+        "surface": "skill_asset",
+        "target": "worker"
+      },
+      "status": "present",
+      "visibility": "asset",
+      "authority_model": "asset_only_not_workflow_authority",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "ralph-loop",
+      "aliases": [
+        "ralph"
+      ],
+      "source_refs": [
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins",
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.run via skill:ralph continuation.ralph"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "control_continuation",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "refactor",
+      "aliases": [],
+      "source_refs": [
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.cleanup via skill:ai-slop-cleaner"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "remove-ai-slops",
+      "aliases": [
+        "deslop",
+        "ai-slop-cleaner"
+      ],
+      "source_refs": [
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.cleanup via skill:ai-slop-cleaner"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "replay",
+      "aliases": [],
+      "source_refs": [
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_tui_slash_command",
+        "target": "tui.replay"
+      },
+      "status": "present",
+      "visibility": "tui_navigation",
+      "authority_model": "tui_projection_or_navigation",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "research-mission",
+      "aliases": [
+        "mission",
+        "research-loop",
+        "autoresearch",
+        "workflow-mission"
+      ],
+      "source_refs": [
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins",
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.research_mission via skill:autoresearch"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "resume",
+      "aliases": [
+        "continue"
+      ],
+      "source_refs": [
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_tui_slash_command",
+        "target": "tui.resume"
+      },
+      "status": "present",
+      "visibility": "tui_navigation",
+      "authority_model": "tui_projection_or_navigation",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "sessions",
+      "aliases": [],
+      "source_refs": [
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_tui_slash_command",
+        "target": "tui.sessions"
+      },
+      "status": "present",
+      "visibility": "tui_navigation",
+      "authority_model": "tui_projection_or_navigation",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "shell",
+      "aliases": [
+        "session-shell"
+      ],
+      "source_refs": [
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_tui_slash_command",
+        "target": "tui.shell"
+      },
+      "status": "present",
+      "visibility": "tui_navigation",
+      "authority_model": "tui_projection_or_navigation",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:analyst",
+      "aliases": [
+        "/analyst"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/analyst.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:analyst"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:api-reviewer",
+      "aliases": [
+        "/api-reviewer"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/api-reviewer.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:api-reviewer"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:architect",
+      "aliases": [
+        "/architect"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/architect.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:architect"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:build-fixer",
+      "aliases": [
+        "/build-fixer"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/build-fixer.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:build-fixer"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:code-reviewer",
+      "aliases": [
+        "/code-reviewer"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/code-reviewer.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:code-reviewer"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:code-simplifier",
+      "aliases": [
+        "/code-simplifier"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/code-simplifier.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:code-simplifier"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:critic",
+      "aliases": [
+        "/critic"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/critic.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:critic"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:debugger",
+      "aliases": [
+        "/debugger"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/debugger.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:debugger"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:dependency-expert",
+      "aliases": [
+        "/dependency-expert"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/dependency-expert.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:dependency-expert"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:designer",
+      "aliases": [
+        "/designer"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/designer.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:designer"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:executor",
+      "aliases": [
+        "/executor"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/executor.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:executor"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:explore",
+      "aliases": [
+        "/explore"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/explore.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:explore"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:git-master",
+      "aliases": [
+        "/git-master"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/git-master.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:git-master"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:information-architect",
+      "aliases": [
+        "/information-architect"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/information-architect.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:information-architect"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:performance-reviewer",
+      "aliases": [
+        "/performance-reviewer"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/performance-reviewer.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:performance-reviewer"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:planner",
+      "aliases": [
+        "/planner"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/planner.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:planner"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:product-analyst",
+      "aliases": [
+        "/product-analyst"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/product-analyst.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:product-analyst"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:product-manager",
+      "aliases": [
+        "/product-manager"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/product-manager.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:product-manager"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:qa-tester",
+      "aliases": [
+        "/qa-tester"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/qa-tester.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:qa-tester"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:quality-reviewer",
+      "aliases": [
+        "/quality-reviewer"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/quality-reviewer.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:quality-reviewer"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:quality-strategist",
+      "aliases": [
+        "/quality-strategist"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/quality-strategist.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:quality-strategist"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:researcher",
+      "aliases": [
+        "/researcher"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/researcher.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:researcher"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:security-reviewer",
+      "aliases": [
+        "/security-reviewer"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/security-reviewer.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:security-reviewer"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:style-reviewer",
+      "aliases": [
+        "/style-reviewer"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/style-reviewer.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:style-reviewer"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:team-executor",
+      "aliases": [
+        "/team-executor"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/team-executor.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:team-executor"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:test-engineer",
+      "aliases": [
+        "/test-engineer"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/test-engineer.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:test-engineer"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:ux-researcher",
+      "aliases": [
+        "/ux-researcher"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/ux-researcher.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:ux-researcher"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:verifier",
+      "aliases": [
+        "/verifier"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/verifier.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:verifier"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:vision",
+      "aliases": [
+        "/vision"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/vision.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:vision"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "slash-agent:writer",
+      "aliases": [
+        "/writer"
+      ],
+      "source_refs": [
+        ".harness/plans/consensus-deep-interview-harness-command-parity.md:Available-Agent-Types Roster",
+        "~/.codex/prompts/writer.md"
+      ],
+      "harness_mapping": {
+        "surface": "slash_agent_command",
+        "target": "task.subagent_type:writer"
+      },
+      "status": "present",
+      "visibility": "slash_agent",
+      "authority_model": "coordinator_task_tool_with_profile_permissions",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness-core/src/agent_catalog.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "start-work",
+      "aliases": [],
+      "source_refs": [
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.start_work"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "status",
+      "aliases": [
+        "system-status"
+      ],
+      "source_refs": [
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_tui_slash_command",
+        "target": "tui.status"
+      },
+      "status": "present",
+      "visibility": "tui_navigation",
+      "authority_model": "tui_projection_or_navigation",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "stop-continuation",
+      "aliases": [
+        "cancel"
+      ],
+      "source_refs": [
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins",
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "continuation.stop"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "continuation_command",
+        "effect": "control_continuation",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "toggles",
+      "aliases": [],
+      "source_refs": [
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_tui_slash_command",
+        "target": "tui.toggles"
+      },
+      "status": "present",
+      "visibility": "tui_navigation",
+      "authority_model": "tui_projection_or_navigation",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "tree",
+      "aliases": [],
+      "source_refs": [
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_tui_slash_command",
+        "target": "tui.session_tree"
+      },
+      "status": "present",
+      "visibility": "tui_navigation",
+      "authority_model": "tui_projection_or_navigation",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs"
+      ]
+    },
+    {
+      "canonical_id": "ulw-loop",
+      "aliases": [
+        "ultrawork",
+        "ulw"
+      ],
+      "source_refs": [
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins",
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.run via skill:ultrawork continuation.ultrawork"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "control_continuation",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "wiki",
+      "aliases": [
+        "workflow-wiki"
+      ],
+      "source_refs": [
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins",
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.wiki via skill:wiki"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "workflow-cancel",
+      "aliases": [
+        "cancel-workflow"
+      ],
+      "source_refs": [
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins",
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.cancel"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "workflow-dossier",
+      "aliases": [
+        "dossier"
+      ],
+      "source_refs": [
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins",
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.dossier_export"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "read_projection",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "workflow-evidence",
+      "aliases": [],
+      "source_refs": [
+        "crates/harness/src/workflow_cli.rs:WorkflowCommands::Evidence",
+        "crates/harness-core/src/workflow_registry.rs:EVIDENCE_CATEGORIES",
+        "crates/harness-core/src/workflow_closeout.rs:evaluate_closeout_readiness"
+      ],
+      "harness_mapping": {
+        "surface": "harness_workflow_cli",
+        "target": "workflow.evidence_record"
+      },
+      "status": "present",
+      "visibility": "advanced_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "generic family evidence/status/closeout mapping",
+      "tests": [
+        "crates/harness/tests/workflow_cli.rs:workflow_evidence_record_cli_projects_family_closeout_blockers",
+        "crates/harness-core/src/workflow_closeout.rs:workflow_family_evidence_statuses_block_closeout_until_resolved",
+        "crates/harness-core/src/workflow_registry.rs:workflow_family_evidence_categories_are_registered"
+      ]
+    },
+    {
+      "canonical_id": "workflow-run",
+      "aliases": [
+        "workflow"
+      ],
+      "source_refs": [
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins",
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.run"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "workflow-signoff",
+      "aliases": [
+        "signoff"
+      ],
+      "source_refs": [
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins",
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.signoff"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "workflow-snapshot",
+      "aliases": [
+        "snapshot"
+      ],
+      "source_refs": [
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins",
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.snapshot"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
+        "availability": "present"
+      }
+    },
+    {
+      "canonical_id": "workflow-status",
+      "aliases": [
+        "status-workflow"
+      ],
+      "source_refs": [
+        "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins",
+        "crates/harness-tui/src/app.rs:SLASH_COMMANDS"
+      ],
+      "harness_mapping": {
+        "surface": "harness_command_registry",
+        "target": "workflow.status"
+      },
+      "status": "present",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "none",
+      "tests": [
+        "crates/harness/tests/workflow_inventory.rs",
+        "crates/harness-core/src/command_registry.rs",
+        "crates/harness-tui/src/app/tests.rs",
+        "crates/harness/src/tui.rs"
+      ],
+      "runtime_semantics": {
+        "surface": "workflow_command",
+        "effect": "read_projection",
+        "availability": "present"
+      }
+    }
+  ]
+}

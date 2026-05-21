@@ -23,8 +23,8 @@
 ## Configuration
 
 The current public integration surface is documented in [`docs/config.md`](docs/config.md).
-Legacy OMX/OMO material is compatibility lineage and inspiration only, not the
-runtime authority. Native Harness coordinator events, replay projections,
+Legacy runtime material is compatibility lineage only, not the runtime
+authority. Native Harness coordinator events, replay projections,
 permission gates, and proof artifacts are the product authority. The default
 product model is single-operator workflow orchestration, with specialist, team,
 and compatibility lanes exposed only as explicit operator-owned escalation.
@@ -65,7 +65,7 @@ lanes are hidden or explicit escalation routes instead of alternate defaults:
 - specialist subagents — `oracle`, `librarian`, `metis`, `momus`, `multimodal-looker`, `sisyphus-junior`, `atlas`, `prometheus`, `sisyphus`, and `hephaestus` are shipped profile contracts so `task(subagent_type: "...")` resolves without local bootstrap code
 - category subagents — `visual-engineering`, `artistry`, `ultrabrain`, `deep`, `quick`, `unspecified-low`, `unspecified-high`, and `writing` route explicit `task(category: "...")` calls through ordinary toggleable profiles
 
-The first OMO parity slices also register compatibility tool ids for
+The compatibility surface also registers tool ids for
 `background_cancel`, `team_list`, `ast_grep_*`, `session_*`, general
 `task_create/list/get/update`, `interactive_bash`/`terminal_*`, and `look_at`. Safe wrappers such as
 `background_cancel`, `team_list`, replay-only `session_*`, and persistent

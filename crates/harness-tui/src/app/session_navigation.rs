@@ -2364,7 +2364,25 @@ impl AppState {
                 self.restore_slash_draft(self.slash_draft_snapshot.clone());
                 true
             }
-            (KeyCode::Enter, _) | (KeyCode::Tab, _) => {
+            (KeyCode::Enter, _) => {
+                let exact_command = self
+                    .typed_slash_invocation()
+                    .is_some_and(|(command, args)| {
+                        args.is_none()
+                            && self
+                                .slash_filtered
+                                .get(self.slash_selected)
+                                .is_some_and(|selected| selected == command)
+                    });
+                if exact_command {
+                    self.clear_slash_menu();
+                    self.submit_prompt();
+                } else {
+                    self.apply_selected_slash_completion();
+                }
+                true
+            }
+            (KeyCode::Tab, _) => {
                 self.apply_selected_slash_completion();
                 true
             }

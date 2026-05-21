@@ -1,4 +1,4 @@
-# oh-my-codex agent: researcher
+# Harness agent: researcher
 name = "researcher"
 description = "External documentation and reference research"
 model = "gpt-5.4-mini"
@@ -133,7 +133,7 @@ This role is executing under the exact gpt-5.4-mini model.
 
 </exact_model_guidance>
 
-## OMX Agent Metadata
+## Harness Agent Metadata
 - role: researcher
 - posture: fast-lane
 - model_class: standard

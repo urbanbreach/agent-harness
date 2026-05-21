@@ -93,7 +93,7 @@ Long-running commands (install, build, test) run in background. Maximum 20 concu
 
 Ecomode can be completely disabled via config. When disabled, all ecomode keywords are ignored.
 
-Set in `configured Harness home/.omx-config.json`:
+Set in `configured Harness home/harness.jsonc`:
 ```json
 {
   "ecomode": {
@@ -104,7 +104,7 @@ Set in `configured Harness home/.omx-config.json`:
 
 ## State Management
 
-Use the CLI-first state surface (`harness workflow evidence ... --json`) for ecomode lifecycle state. If explicit MCP compatibility tools are already available, equivalent `omx_state` calls are optional compatibility, not the default.
+Use the CLI-first state surface (`harness workflow evidence ... --json`) for ecomode lifecycle state. If explicit MCP compatibility tools are already available, equivalent `workflow_state` calls are optional compatibility, not the default.
 
 - **On activation**:
   `harness workflow evidence write --input '{"mode":"ecomode","active":true}' --json`

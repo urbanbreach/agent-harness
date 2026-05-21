@@ -34,7 +34,7 @@ Unified and only entry point for notification setup.
 ## Step 1: Inspect Current State
 
 ```bash
-CONFIG_FILE="$HOME/.codex/.omx-config.json"
+CONFIG_FILE="$HOME/.codex/harness.jsonc"
 
 if [ -f "$CONFIG_FILE" ]; then
   jq -r '
@@ -163,7 +163,7 @@ Example (targeting `#omc-dev` with production-tested settings):
 
 ```bash
 jq \
-  --arg command "(clawdbot agent --session-id omx-hooks --message {{instruction}} --thinking minimal --deliver --reply-channel discord --reply-to 'channel:1468539002985644084' --timeout 120 --json >>/tmp/omx-openclaw-agent.jsonl 2>&1 || true)" \
+  --arg command "(clawdbot agent --session-id harness-hooks --message {{instruction}} --thinking minimal --deliver --reply-channel discord --reply-to 'channel:1468539002985644084' --timeout 120 --json >>/tmp/harness-openclaw-agent.jsonl 2>&1 || true)" \
   '.notifications = (.notifications // {enabled: true}) |
    .notifications.enabled = true |
    .notifications.verbosity = "verbose" |
@@ -212,7 +212,7 @@ jq \
 Verification for this mode:
 
 ```bash
-clawdbot agent --session-id omx-hooks --message "Harness hook test via clawdbot agent path" \
+clawdbot agent --session-id harness-hooks --message "Harness hook test via clawdbot agent path" \
   --thinking minimal --deliver --reply-channel discord --reply-to 'channel:1468539002985644084' --timeout 120 --json
 ```
 
@@ -220,16 +220,16 @@ Dev runbook (Korean + native terminal UI follow-up):
 
 ```bash
 # 1) identify active Harness native terminal UI sessions
-native terminal UI list-sessions -F '#{session_name}' | rg '^omx-' || true
+native terminal UI list-sessions -F '#{session_name}' | rg '^harness-' || true
 
 # 2) confirm hook templates include session/native terminal UI context
 jq '.notifications.openclaw.hooks' "$CONFIG_FILE"
 
 # 3) inspect agent JSONL logs when delivery looks broken
-tail -n 120 /tmp/omx-openclaw-agent.jsonl | jq -s '.[] | {timestamp: (.timestamp // .time), status: (.status // .error // "ok")}'
+tail -n 120 /tmp/harness-openclaw-agent.jsonl | jq -s '.[] | {timestamp: (.timestamp // .time), status: (.status // .error // "ok")}'
 
 # 4) check for recent errors in logs
-rg '"error"|"failed"|"timeout"' /tmp/omx-openclaw-agent.jsonl | tail -20
+rg '"error"|"failed"|"timeout"' /tmp/harness-openclaw-agent.jsonl | tail -20
 ```
 
 ### 4c) Compatibility + precedence contract
@@ -284,7 +284,7 @@ Show:
 - Generic aliases enabled (`custom_webhook_command`, `custom_cli_command`)
 - Whether explicit `notifications.openclaw` exists (and therefore overrides aliases)
 - Verbosity + idle cooldown + reply listener state
-- Config path (`configured Harness home/.omx-config.json`)
+- Config path (`configured Harness home/harness.jsonc`)
 
 ## Harness substrate override
 

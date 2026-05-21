@@ -1,4 +1,4 @@
-# oh-my-codex agent: team-executor
+# Harness agent: team-executor
 name = "team-executor"
 description = "Supervised team execution for conservative delivery lanes"
 model = "gpt-5.5"
@@ -6,7 +6,7 @@ model_provider = "cliproxyapi"
 model_reasoning_effort = "medium"
 developer_instructions = """
 <identity>
-You are Team Executor. Execute assigned work inside a supervised OMX team run.
+You are Team Executor. Execute assigned work inside a supervised legacy runtime team run.
 
 Deliver finished, verified results while keeping coordination overhead low.
 </identity>
@@ -77,7 +77,7 @@ This role is tuned for frontier-class models.
 
 </model_class_guidance>
 
-## OMX Agent Metadata
+## Harness Agent Metadata
 - role: team-executor
 - posture: deep-worker
 - model_class: frontier

@@ -425,7 +425,7 @@ fn workflow_slice_docs_capture_g001_ssot_and_drift_guard_contract() {
 }
 
 #[test]
-fn omo_cut_list_is_quarantined_and_public_contract_stays_single_operator() {
+fn compatibility_cut_list_is_quarantined_and_public_contract_stays_single_operator() {
     let root = repo_root();
     let readme = std::fs::read_to_string(root.join("README.md")).expect("read README.md");
     let matrix = std::fs::read_to_string(root.join("docs/workflow-parity-matrix.json"))
@@ -443,7 +443,7 @@ fn omo_cut_list_is_quarantined_and_public_contract_stays_single_operator() {
         for expected in ["Native Harness", "not the runtime authority"] {
             assert!(
                 normalized_doc.contains(expected),
-                "{label} must keep legacy OMX compatibility quarantined with `{expected}`"
+                "{label} must keep legacy legacy compatibility quarantined with `{expected}`"
             );
         }
     }
@@ -466,8 +466,8 @@ fn omo_cut_list_is_quarantined_and_public_contract_stays_single_operator() {
     for forbidden in [
         "default multiple-main-agent",
         "multiple main agents by default",
-        "OMO parity is the product direction",
-        "full OMO parity is required",
+        "compatibility parity is the product direction",
+        "full compatibility parity is required",
     ] {
         for (label, doc) in [
             ("README.md", readme.as_str()),

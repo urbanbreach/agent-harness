@@ -697,7 +697,7 @@ fn doctor_cli_reports_shipped_orchestration_health() {
     assert!(stdout.contains("discipline"));
     assert!(stdout.contains("visual-engineering"));
     assert!(stdout.contains("parity_ledger"));
-    assert!(stdout.contains("omo_parity_gaps"));
+    assert!(stdout.contains("compatibility_parity_gaps"));
     assert!(stdout.contains("team_mode"));
 }
 
@@ -900,7 +900,7 @@ fn doctor_cli_emits_json_report() {
         .as_array()
         .expect("checks array")
         .iter()
-        .any(|check| { check["id"] == "omo_parity_gaps" && check["status"] == "warn" }));
+        .any(|check| { check["id"] == "compatibility_parity_gaps" && check["status"] == "warn" }));
 }
 
 #[test]

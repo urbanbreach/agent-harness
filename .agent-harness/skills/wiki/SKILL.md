@@ -1,6 +1,6 @@
 ---
 name: wiki
-description: Persistent markdown project wiki stored under repository omx_wiki with keyword search and lifecycle capture
+description: Persistent markdown project wiki stored under repository harness_wiki with keyword search and lifecycle capture
 triggers: ["wiki add", "wiki lint", "wiki query", "wiki read", "wiki delete"]
 ---
 
@@ -42,19 +42,19 @@ harness workflow wiki wiki_refresh --json
 `architecture`, `decision`, `pattern`, `debugging`, `environment`, `session-log`, `reference`, `convention`
 
 ## Storage
-- Pages: `omx_wiki/*.md`
-- Index: `omx_wiki/index.md`
-- Log: `omx_wiki/log.md`
+- Pages: `harness_wiki/*.md`
+- Index: `harness_wiki/index.md`
+- Log: `harness_wiki/log.md`
 
 ## Cross-References
 Use `[[page-name]]` wiki-link syntax to create cross-references between pages.
 
 ## Auto-Capture
-At session end, discoveries can be captured as `session-log-*` pages. Configure via `wiki.autoCapture` in `.omx-config.json`.
+At session end, discoveries can be captured as `session-log-*` pages. Configure via `wiki.autoCapture` in `harness.jsonc`.
 
 ## Hard Constraints
 - No vector embeddings — query uses keyword + tag matching only
-- Wiki files are repository project knowledge under `omx_wiki/`; legacy `omx_wiki/` is read-only compatibility input when no canonical wiki exists
+- Wiki files are repository project knowledge under `harness_wiki/`; legacy `harness_wiki/` is read-only compatibility input when no canonical wiki exists
 
 ## Harness substrate override
 

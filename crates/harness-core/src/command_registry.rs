@@ -707,12 +707,12 @@ impl CommandRegistry {
             )
             .with_dollar_aliases(&["ralph-init"]),
             spec(
-                "harness-workflow:omx-setup",
+                "harness-workflow:setup",
                 "Set up or refresh compatible Harness assets and runtime configuration",
-                &["omx-setup"],
-                workflow_skill("omx-setup", WorkflowIntent::Setup),
+                &["setup"],
+                workflow_skill("setup", WorkflowIntent::Setup),
             )
-            .with_dollar_aliases(&["omx-setup"]),
+            .with_dollar_aliases(&["setup"]),
         ])
     }
 
@@ -927,7 +927,7 @@ mod tests {
             "harness-workflow:visual-verdict",
             "harness-workflow:web-clone",
             "harness-workflow:ralph-init",
-            "harness-workflow:omx-setup",
+            "harness-workflow:setup",
         ] {
             assert!(registry.get(name).is_some(), "missing {name}");
         }
@@ -1033,7 +1033,7 @@ mod tests {
             ("harness-workflow:visual-verdict", WorkflowIntent::Visual),
             ("harness-workflow:web-clone", WorkflowIntent::WebClone),
             ("harness-workflow:ralph-init", WorkflowIntent::RalphInit),
-            ("harness-workflow:omx-setup", WorkflowIntent::Setup),
+            ("harness-workflow:setup", WorkflowIntent::Setup),
         ] {
             let command = registry
                 .get(name)
@@ -1254,7 +1254,7 @@ mod tests {
     }
 
     #[test]
-    fn omx_compatibility_aliases_resolve_without_prompt_only_dispatch() {
+    fn harness_compatibility_aliases_resolve_without_prompt_only_dispatch() {
         let registry = CommandRegistry::builtins();
         for (alias, expected_name) in [
             ("deep-interview", "init-deep"),
@@ -1340,7 +1340,7 @@ mod tests {
             ("goal", "ultragoal", WorkflowIntent::GoalLedger, None),
             ("git-master", "git-master", WorkflowIntent::GitMaster, None),
             ("note", "note", WorkflowIntent::Note, None),
-            ("omx-setup", "omx-setup", WorkflowIntent::Setup, None),
+            ("setup", "setup", WorkflowIntent::Setup, None),
             (
                 "performance-goal",
                 "performance-goal",
@@ -1412,7 +1412,7 @@ mod tests {
             "help",
             "hud",
             "note",
-            "omx-setup",
+            "setup",
             "performance-goal",
             "pipeline",
             "plan",
@@ -1504,19 +1504,19 @@ mod tests {
     }
 
     #[test]
-    fn formerly_removed_omx_commands_now_resolve_to_parity_actions() {
+    fn formerly_removed_harness_commands_now_resolve_to_parity_actions() {
         let registry = CommandRegistry::builtins();
         for (name, intent) in [
             ("harness-workflow:ask", WorkflowIntent::Ask),
             ("harness-workflow:ask-claude", WorkflowIntent::Ask),
             ("harness-workflow:ask-gemini", WorkflowIntent::Ask),
             ("harness-workflow:build-fix", WorkflowIntent::BuildFix),
-            ("harness-workflow:omx-setup", WorkflowIntent::Setup),
+            ("harness-workflow:setup", WorkflowIntent::Setup),
             ("ask", WorkflowIntent::Ask),
             ("ask-claude", WorkflowIntent::Ask),
             ("ask-gemini", WorkflowIntent::Ask),
             ("build-fix", WorkflowIntent::BuildFix),
-            ("omx-setup", WorkflowIntent::Setup),
+            ("setup", WorkflowIntent::Setup),
         ] {
             let command = registry
                 .get(name)

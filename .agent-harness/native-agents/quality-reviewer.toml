@@ -1,4 +1,4 @@
-# oh-my-codex agent: quality-reviewer
+# Harness agent: quality-reviewer
 name = "quality-reviewer"
 description = "Logic defects, maintainability, anti-patterns"
 model = "gpt-5.4-mini"
@@ -154,7 +154,7 @@ This role is executing under the exact gpt-5.4-mini model.
 
 </exact_model_guidance>
 
-## OMX Agent Metadata
+## Harness Agent Metadata
 - role: quality-reviewer
 - posture: frontier-orchestrator
 - model_class: standard

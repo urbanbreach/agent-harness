@@ -149,7 +149,7 @@ updaters.
 | `autoupdate` | OpenCode-compatible update flag; inactive `false` is accepted, active updates are rejected. |
 | `command` | OpenCode command configuration; accepted only when empty because the harness does not execute configured commands. |
 | `compaction` | OpenCode-compatible compaction settings accepted as inert compatibility input; harness compaction knobs live under `runtime.compaction`. |
-| `compatibility` | Safe migration controls and import diagnostics for Claude/OpenCode/OMO-compatible agents, skills, commands, MCP files, hooks, and extension manifests. |
+| `compatibility` | Safe migration controls and import diagnostics for external-compatible agents, skills, commands, MCP files, hooks, and extension manifests. |
 | `default_agent` | Default interactive agent selected at startup; the shipped example uses the single visible `operator` profile. Legacy `build`, `plan`, and `discipline` names are compatibility profiles, not the default-visible primary set. |
 | `disabled_agents` | Top-level compatibility shortcut merged into `compatibility.disabled_agents`. |
 | `disabled_commands` | Top-level compatibility shortcut merged into `compatibility.disabled_commands`. |
@@ -382,10 +382,10 @@ split by crate responsibility:
 
 The Native Harness parity baseline is tracked by the machine-readable
 `docs/workflow-parity-matrix.json` matrix plus replay-derived workflow evidence,
-not by removed migration dossiers. Compatibility with familiar OMX-style `$`
+not by removed migration dossiers. Compatibility with familiar legacy-runtime-style `$`
 aliases remains a product requirement, but native Harness coordinator events,
 projections, artifacts, and permissions are the implementation authority, not
-the runtime authority of an external OMX CLI or plugin.
+the runtime authority of an external legacy CLI or plugin.
 
 ### Operator workflow examples
 
@@ -407,7 +407,7 @@ workers.
 | Note/wiki memory | `harness workflow wiki add --workflow-id wf-demo --slug release-note --title "Release note" --category handoff --body "operator handoff" --json`; use `harness workflow evidence record --category evidence.note_memory ...` for note/project-memory evidence. | Wiki add/delete require edit permission before project-visible writes. Wiki read/list/query are explicit live reads over the configured wiki root; workflow-significant wiki writes are event-digested. |
 | Closeout and dossier | `harness workflow status --run-dir <run> --workflow-id wf-demo --json`; `harness workflow dossier export --run-dir <run> --workflow-id wf-demo --format markdown --output dossier.md --json` | Closeout and dossier are replay-derived. Do not edit an exported dossier as authority; regenerate it from `events.jsonl` and referenced artifacts. |
 
-The machine-readable `docs/workflow-parity-matrix.json` file is the current workflow parity ledger, and `docs/workflow-parity-proofs/selected-workflows/` stores the checked-in proof dossiers for active OMX workflow rows. Active rows must stay `selected_for_this_goal` and `native_complete`, point at semantic proof dossiers, and pass `harness doctor --json --strict-parity` after the simulator lane writes generated execution bundles. OMX hard-deprecated aliases remain tracked as `retired_with_reason` / `compat_only` compatibility shims instead of receiving native workflow completion credit. The only non-present reference skill should be an explicitly non-user-facing internal protocol such as `worker`; applicable compatibility aliases must point to native workflow intent/evidence, continuation, or task-tool dispatch rather than prompt-only completions.
+The machine-readable `docs/workflow-parity-matrix.json` file is the current workflow parity ledger, and `docs/workflow-parity-proofs/selected-workflows/` stores the checked-in proof dossiers for active legacy workflow rows. Active rows must stay `selected_for_this_goal` and `native_complete`, point at semantic proof dossiers, and pass `harness doctor --json --strict-parity` after the simulator lane writes generated execution bundles. legacy hard-deprecated aliases remain tracked as `retired_with_reason` / `compat_only` compatibility shims instead of receiving native workflow completion credit. The only non-present reference skill should be an explicitly non-user-facing internal protocol such as `worker`; applicable compatibility aliases must point to native workflow intent/evidence, continuation, or task-tool dispatch rather than prompt-only completions.
 
 ### Plan operator workflow
 
@@ -512,7 +512,7 @@ without changing root order.
 ## Compatibility imports
 
 Harness migration compatibility is adapter-only. It translates selected
-Claude/OpenCode/OMO-compatible files into first-class Harness configuration and
+external-compatible files into first-class Harness configuration and
 records the outcome under `compatibility.imports`; it does not execute plugin
 code, load arbitrary extension runtimes, or enable rejected product areas. Active
 `server`, `command`, `plugin`, `share`, `autoshare`, `autoupdate`, and

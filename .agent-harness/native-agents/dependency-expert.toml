@@ -1,4 +1,4 @@
-# oh-my-codex agent: dependency-expert
+# Harness agent: dependency-expert
 name = "dependency-expert"
 description = "External SDK/API/package evaluation"
 model = "gpt-5.4-mini"
@@ -160,7 +160,7 @@ This role is executing under the exact gpt-5.4-mini model.
 
 </exact_model_guidance>
 
-## OMX Agent Metadata
+## Harness Agent Metadata
 - role: dependency-expert
 - posture: frontier-orchestrator
 - model_class: standard

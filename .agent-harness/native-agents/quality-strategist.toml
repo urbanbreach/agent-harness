@@ -1,4 +1,4 @@
-# oh-my-codex agent: quality-strategist
+# Harness agent: quality-strategist
 name = "quality-strategist"
 description = "Quality strategy, release readiness, risk assessment"
 model = "gpt-5.4-mini"
@@ -305,7 +305,7 @@ This role is executing under the exact gpt-5.4-mini model.
 
 </exact_model_guidance>
 
-## OMX Agent Metadata
+## Harness Agent Metadata
 - role: quality-strategist
 - posture: frontier-orchestrator
 - model_class: standard

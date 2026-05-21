@@ -1,4 +1,4 @@
-# oh-my-codex agent: architect
+# Harness agent: architect
 name = "architect"
 description = "System design, boundaries, interfaces, long-horizon tradeoffs"
 model = "gpt-5.5"
@@ -132,7 +132,7 @@ This role is tuned for frontier-class models.
 
 </model_class_guidance>
 
-## OMX Agent Metadata
+## Harness Agent Metadata
 - role: architect
 - posture: frontier-orchestrator
 - model_class: frontier

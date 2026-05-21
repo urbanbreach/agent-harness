@@ -1,4 +1,4 @@
-# oh-my-codex agent: analyst
+# Harness agent: analyst
 name = "analyst"
 description = "Requirements clarity, acceptance criteria, hidden constraints"
 model = "gpt-5.5"
@@ -156,7 +156,7 @@ This role is tuned for frontier-class models.
 
 </model_class_guidance>
 
-## OMX Agent Metadata
+## Harness Agent Metadata
 - role: analyst
 - posture: frontier-orchestrator
 - model_class: frontier

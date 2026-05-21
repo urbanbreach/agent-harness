@@ -270,6 +270,14 @@ fn discover_markdown_agents(
                         return Err(error);
                     }
                 };
+            if frontmatter
+                .options
+                .get("prompt_asset")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+            {
+                continue;
+            }
             if compat_dir && frontmatter.description.is_none() {
                 imports.push(CompatibilityImportStatus::skipped(
                     CompatibilityImportKind::Agent,

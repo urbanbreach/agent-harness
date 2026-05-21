@@ -244,7 +244,7 @@ fn task_scheduling_calls_remain_in_coordinator_source() {
 #[test]
 fn delegated_agent_prompts_do_not_expose_supervisor_task_controls() {
     let prompt_sources = first_party_files(
-        &[".agent-harness/native-agents", ".agent-harness/omx-prompts"],
+        &[".agent-harness/native-agents", ".agent-harness/agents"],
         &["toml", "md"],
     )
     .into_iter()

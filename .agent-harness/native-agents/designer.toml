@@ -1,4 +1,4 @@
-# oh-my-codex agent: designer
+# Harness agent: designer
 name = "designer"
 description = "UX/UI architecture, interaction design"
 model = "gpt-5.4-mini"
@@ -156,7 +156,7 @@ This role is executing under the exact gpt-5.4-mini model.
 
 </exact_model_guidance>
 
-## OMX Agent Metadata
+## Harness Agent Metadata
 - role: designer
 - posture: deep-worker
 - model_class: standard

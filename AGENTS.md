@@ -2,7 +2,7 @@
 YOU ARE AN AUTONOMOUS CODING AGENT. EXECUTE TASKS TO COMPLETION WITHOUT ASKING FOR PERMISSION.
 DO NOT STOP TO ASK "SHOULD I PROCEED?" — PROCEED. DO NOT WAIT FOR CONFIRMATION ON OBVIOUS NEXT STEPS.
 IF BLOCKED, TRY AN ALTERNATIVE APPROACH. ONLY ASK WHEN TRULY AMBIGUOUS OR DESTRUCTIVE.
-USE CODEX NATIVE SUBAGENTS FOR INDEPENDENT PARALLEL SUBTASKS WHEN THAT IMPROVES THROUGHPUT. THIS IS COMPLEMENTARY TO OMX TEAM MODE.
+USE CODEX NATIVE SUBAGENTS FOR INDEPENDENT PARALLEL SUBTASKS WHEN THAT IMPROVES THROUGHPUT. THIS IS COMPLEMENTARY TO legacy runtime TEAM MODE.
 <!-- END AUTONOMY DIRECTIVE -->
 
 # PROJECT KNOWLEDGE BASE
@@ -27,8 +27,7 @@ agent-harness/
 ├── docs/                    # architecture/config/testing contracts + workflow dossiers
 ├── scripts/                 # canonical lane runner, stress harness, branding scan
 ├── .agent-harness/          # shipped runtime agents/skills/prompts discovered by harness
-├── .agents/                 # maintainer skills used by coding agents
-└── inspirations/            # reference/vendor material; not first-party source
+└── .agents/                 # maintainer skills used by coding agents
 ```
 
 ## WHERE TO LOOK
@@ -44,7 +43,7 @@ agent-harness/
 | Public config contract | `docs/AGENTS.md`, `configs/AGENTS.md` | Generated schemas are source of truth; docs must stay aligned. |
 | Architecture docs | `docs/architecture.md` | Event schema, replay, hooks, permissions, and crate-boundary reference. |
 | Test map and scripts | `docs/testing.md`, `scripts/AGENTS.md` | Canonical lane runner, artifacts, env gates, stress lanes. |
-| Runtime assets | `.agent-harness/AGENTS.md` | Shipped agents, category profiles, skills, native-agent prompts, OMX prompts. |
+| Runtime assets | `.agent-harness/AGENTS.md` | Shipped agents, category profiles, skills, native-agent prompts, and runtime prompt templates. |
 
 ## CODE MAP
 | Crate / module | Role | Local guidance |
@@ -61,8 +60,7 @@ agent-harness/
 
 ## FIRST-PARTY SEARCH SCOPE
 - Include: `crates/`, `configs/`, `docs/`, `scripts/`, `.agent-harness/`, `.agents/`, root manifests.
-- Exclude by default: `target/`, `.git/`, `.omx/`, `.codex/.tmp/`, `.omo/`, `.sisyphus/`, `.gnhf/`, `sessions/`, `artifacts/`, `.agent-harness/sessions/`, `inspirations/`.
-- Search `inspirations/` only when explicitly comparing reference implementations.
+- Exclude by default: `target/`, `.git/`, `.harness/`, `.codex/.tmp/`, `.omo/`, `.sisyphus/`, `.gnhf/`, `sessions/`, `artifacts/`, `.agent-harness/sessions/`.
 
 ## COMMANDS
 Use `scripts/test-lanes.sh` as the canonical runner; it records command/status/env evidence under the artifact root.
@@ -120,7 +118,7 @@ RUST_TEST_THREADS=1 cargo test -p harness-testkit pty_e2e
 - Do not use `bash` for file reads/search/edits when native tools cover the operation.
 - Do not hardcode paths outside config discovery and workspace-relative resolution helpers.
 - Do not treat PTY/native/live visual artifacts as interchangeable; each lane has its own provenance contract.
-- Do not treat `.omo/**`, parity ledgers, or `inspirations/` as product direction unless the task is explicit migration/comparison work.
+- Do not treat `.omo/**`, parity ledgers, or external migration material as product direction unless the task is explicit migration/comparison work.
 
 ## COMMIT MESSAGES
 Use the Lore protocol when committing: first line explains why, body captures context, and trailers record useful constraints.

@@ -91,7 +91,7 @@ Steps under the hood:
 1. `state_list_active` enumerates `Harness workflow projection/sessions/{sessionId}/…` to find every known session.
 2. `state_clear` runs once per session to drop that session’s files.
 3. A global `state_clear` without `session_id` removes legacy files under `Harness workflow projection/*.json`, `Harness workflow projection/swarm*.db`, and compatibility artifacts (see list).
-4. Team artifacts (`Harness workflow projection/team/*/`, native terminal UI sessions matching `omx-team-*`) are best-effort cleared as part of the legacy fallback.
+4. Team artifacts (`Harness workflow projection/team/*/`, native terminal UI sessions matching `harness-team-*`) are best-effort cleared as part of the legacy fallback.
 
 Every `state_clear` command honors the `session_id` argument, so even force mode still uses the session-aware paths first before deleting legacy files.
 
@@ -179,7 +179,7 @@ After graceful pass:
      a. Send C-c via coordinator message routing
      b. Wait 2 seconds
      c. Kill the native team view if still alive
-  2. Destroy the native terminal UI session: native terminal UI kill-session -t omx-team-{name}
+  2. Destroy the native terminal UI session: native terminal UI kill-session -t harness-team-{name}
 ```
 
 **Cleanup:**
@@ -205,7 +205,7 @@ Team "{team_name}" cancelled:
 2. For each worker in config.workers, write shutdown inbox and send trigger
 3. Wait briefly for workers to exit (15s timeout)
 4. Force kill remaining workers via native terminal UI
-5. Destroy native terminal UI session: `native terminal UI kill-session -t omx-team-{name}`
+5. Destroy native terminal UI session: `native terminal UI kill-session -t harness-team-{name}`
 6. Strip AGENTS.md overlay
 7. Remove state: `rm -rf Harness workflow projection/team/{name}/`
 8. `state_clear(mode="team")`
@@ -337,7 +337,7 @@ The cancel skill runs as follows:
 2. Use `state_list_active` to enumerate known session ids and `state_get_status` to learn the active mode (`autopilot`, `ralph`, `ultrawork`, etc.) for each session.
 3. When operating in default mode, call `state_clear` with that session_id to remove only the session’s files, then run mode-specific cleanup (autopilot → ralph → …) based on the state tool signals.
 4. In force mode, iterate every active session, call `state_clear` per session, then run a global `state_clear` without `session_id` to drop legacy files (`Harness workflow projection/*.json`, compatibility artifacts) and report success. Swarm remains a shared SQLite/marker mode outside session scoping.
-5. Team artifacts (`Harness workflow projection/team/*/`, native terminal UI sessions matching `omx-team-*`) remain best-effort cleanup items invoked during the legacy/global pass.
+5. Team artifacts (`Harness workflow projection/team/*/`, native terminal UI sessions matching `harness-team-*`) remain best-effort cleanup items invoked during the legacy/global pass.
 
 State tools always honor the `session_id` argument, so even force mode still clears the session-scoped paths before deleting compatibility-only legacy state.
 
@@ -385,7 +385,7 @@ Mode-specific subsections below describe what extra cleanup each handler perform
 
 When cancelling team mode, the cancel skill should:
 
-1. **Kill all team native terminal UI sessions**: `native terminal UI list-sessions -F '#{session_name}' 2>/dev/null | grep '^omx-team-'` and kill each
+1. **Kill all team native terminal UI sessions**: `native terminal UI list-sessions -F '#{session_name}' 2>/dev/null | grep '^harness-team-'` and kill each
 2. **Remove team state directories**: `rm -rf Harness workflow projection/team/*/`
 3. **Strip AGENTS.md overlay**: Remove content between `<!-- Harness:TEAM:WORKER:START -->` and `<!-- Harness:TEAM:WORKER:END -->`
 
@@ -394,8 +394,8 @@ When cancelling team mode, the cancel skill should:
 When `--force` is used, also clean up:
 ```bash
 rm -rf Harness workflow projection/team/                  # All team state
-# Kill all omx-team-* native terminal UI sessions
-native terminal UI list-sessions -F '#{session_name}' 2>/dev/null | grep '^omx-team-' | while read s; do native terminal UI kill-session -t "$s" 2>/dev/null; done
+# Kill all harness-team-* native terminal UI sessions
+native terminal UI list-sessions -F '#{session_name}' 2>/dev/null | grep '^harness-team-' | while read s; do native terminal UI kill-session -t "$s" 2>/dev/null; done
 ```
 
 ## Harness substrate override

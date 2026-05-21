@@ -193,7 +193,7 @@ Output progress each cycle:
 
 ## State Tracking
 
-Use the CLI-first state surface (`harness workflow evidence ... --json`) for UltraQA lifecycle state. If explicit MCP compatibility tools are already available, equivalent `omx_state` calls are optional compatibility, not the default.
+Use the CLI-first state surface (`harness workflow evidence ... --json`) for UltraQA lifecycle state. If explicit MCP compatibility tools are already available, equivalent `workflow_state` calls are optional compatibility, not the default.
 
 - **On start**:
   `harness workflow evidence write --input '{"mode":"ultraqa","active":true,"current_phase":"planning","iteration":1,"started_at":"<now>","scenario_matrix":[]}' --json`

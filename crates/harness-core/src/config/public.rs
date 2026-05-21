@@ -1479,7 +1479,7 @@ fn default_shipped_agents(
         ),
         specialist_profile(
             "sisyphus-junior",
-            "Focused category execution worker used by OMO-style category routing.",
+            "Focused category execution worker used by Harness category routing.",
             "You are Sisyphus-Junior, a focused worker for category-routed tasks. Complete the delegated scope directly, avoid redelegation, and report concise verification evidence.",
             model_ref,
             SpecialistProfileKind::Worker,
@@ -1685,7 +1685,7 @@ fn apply_slash_agent_metadata(
 ) {
     profile.description = definition.description.to_string();
     profile.options.insert(
-        "omx_slash_agent".to_string(),
+        "slash_agent".to_string(),
         serde_json::json!({
             "name": definition.name,
             "description": definition.description,
@@ -1696,7 +1696,7 @@ fn apply_slash_agent_metadata(
             "tools": definition.tools,
             "category": definition.category,
             "command": format!("/{}", definition.name),
-            "source": "inspirations/oh-my-codex/src/agents/definitions.ts",
+            "source": "harness_builtin_slash_agent_definitions",
         }),
     );
 }

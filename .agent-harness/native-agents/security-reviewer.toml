@@ -1,4 +1,4 @@
-# oh-my-codex agent: security-reviewer
+# Harness agent: security-reviewer
 name = "security-reviewer"
 description = "Vulnerabilities, trust boundaries, authn/authz"
 model = "gpt-5.5"
@@ -164,7 +164,7 @@ This role is tuned for frontier-class models.
 
 </model_class_guidance>
 
-## OMX Agent Metadata
+## Harness Agent Metadata
 - role: security-reviewer
 - posture: frontier-orchestrator
 - model_class: frontier

@@ -524,7 +524,7 @@ pub const WORKFLOW_DOCTOR_CHECKS: &[WorkflowDoctorCheckSpec] = &[
     WorkflowDoctorCheckSpec {
         id: "workflow_skill_protocol_native",
         description:
-            "Validates workflow SKILL.md bodies retain protocol depth relative to the OMX reference assets.",
+            "Validates workflow SKILL.md bodies satisfy the Harness-native protocol contract.",
     },
     WorkflowDoctorCheckSpec {
         id: "strict_parity_matrix",
