@@ -1,29 +1,24 @@
 use regex::Regex;
 use serde_json::{Map, Value};
+use std::sync::LazyLock;
 
 pub trait Redactor {
     fn redact_text(&self, s: &str) -> String;
 }
 
-#[derive(Debug)]
-pub struct DefaultRedactor {
-    api_key_re: Regex,
-    bearer_re: Regex,
-}
+static API_KEY_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"sk-[A-Za-z0-9]{10,}").expect("valid api key regex"));
 
-impl Default for DefaultRedactor {
-    fn default() -> Self {
-        Self {
-            api_key_re: Regex::new(r"sk-[A-Za-z0-9]{10,}").expect("valid api key regex"),
-            bearer_re: Regex::new(r"Bearer\s+[A-Za-z0-9._\-]+").expect("valid bearer regex"),
-        }
-    }
-}
+static BEARER_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"Bearer\s+[A-Za-z0-9._\-]+").expect("valid bearer regex"));
+
+#[derive(Debug, Default)]
+pub struct DefaultRedactor;
 
 impl Redactor for DefaultRedactor {
     fn redact_text(&self, s: &str) -> String {
-        let without_keys = self.api_key_re.replace_all(s, "[REDACTED_API_KEY]");
-        self.bearer_re
+        let without_keys = API_KEY_RE.replace_all(s, "[REDACTED_API_KEY]");
+        BEARER_RE
             .replace_all(without_keys.as_ref(), "Bearer [REDACTED]")
             .into_owned()
     }
