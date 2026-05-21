@@ -4597,7 +4597,6 @@ async fn cancelling_turn_waiting_for_permission_emits_turn_end_without_tool_star
         )
         .await
         .expect("late resolve should be accepted without starting tool");
-    tokio::time::sleep(Duration::from_millis(150)).await;
     coordinator.stop_run().await.expect("stop run");
 
     let events = load_events(&run.events_path);

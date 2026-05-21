@@ -1134,6 +1134,23 @@ impl CoordinatorHandle {
         .await
     }
 
+    pub async fn reach_continuation_limit(
+        &self,
+        actor: EventActor,
+        continuation_id: impl Into<String>,
+        limit: impl Into<String>,
+        iteration: u32,
+    ) -> Result<(), CoordinatorError> {
+        self.request(|respond_to| Command::ReachContinuationLimit {
+            actor,
+            continuation_id: continuation_id.into(),
+            limit: limit.into(),
+            iteration,
+            respond_to,
+        })
+        .await
+    }
+
     pub async fn trigger_continuation_reminder(
         &self,
         actor: EventActor,

@@ -1785,8 +1785,6 @@ fn slash_agent_tools(read_only: bool, analysis_only: bool) -> Vec<String> {
         vec![
             "question",
             "skill",
-            "background_output",
-            "background_cancel",
             "session_list",
             "session_read",
             "session_search",
@@ -1933,8 +1931,6 @@ fn specialist_profile(
         vec![
             "question",
             "skill",
-            "background_output",
-            "background_cancel",
             "session_list",
             "session_read",
             "session_search",

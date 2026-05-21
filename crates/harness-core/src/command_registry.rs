@@ -168,6 +168,7 @@ pub enum WorkflowIntent {
     Ask,
     BestPracticeResearch,
     BuildFix,
+    GitMaster,
     Setup,
     Performance,
     Pipeline,
@@ -214,6 +215,7 @@ impl WorkflowIntent {
             Self::Ask => "workflow.ask_local_advisor",
             Self::BestPracticeResearch => "workflow.best_practice_research",
             Self::BuildFix => "workflow.build_fix",
+            Self::GitMaster => "workflow.git_master",
             Self::Setup => "workflow.setup",
             Self::Performance => "workflow.performance",
             Self::Pipeline => "workflow.pipeline",
@@ -231,7 +233,9 @@ impl WorkflowIntent {
 
     pub fn effect(self) -> CommandEffect {
         match self {
-            Self::Status | Self::DossierExport => CommandEffect::ReadProjection,
+            Self::Status | Self::DossierExport | Self::Help | Self::Hud | Self::Trace => {
+                CommandEffect::ReadProjection
+            }
             Self::Run
             | Self::Signoff
             | Self::Cancel
@@ -247,11 +251,8 @@ impl WorkflowIntent {
             | Self::Review
             | Self::SecurityReview
             | Self::Doctor
-            | Self::Help
-            | Self::Hud
             | Self::Note
             | Self::Skill
-            | Self::Trace
             | Self::ConfigureNotifications
             | Self::Design
             | Self::Cleanup
@@ -259,6 +260,7 @@ impl WorkflowIntent {
             | Self::Ask
             | Self::BestPracticeResearch
             | Self::BuildFix
+            | Self::GitMaster
             | Self::Setup
             | Self::Performance
             | Self::Pipeline
@@ -462,125 +464,125 @@ impl CommandRegistry {
                 },
             ),
             spec(
-                "omx-skill:team",
+                "harness-workflow:team",
                 "Coordinate multiple agents on a shared task list",
                 &["team"],
                 workflow_skill("team", WorkflowIntent::Team),
             )
             .with_dollar_aliases(&["team"]),
             spec(
-                "omx-skill:swarm",
+                "harness-workflow:swarm",
                 "Coordinate team-style parallel execution through the team workflow",
                 &["swarm"],
                 workflow_skill("swarm", WorkflowIntent::Team),
             )
             .with_dollar_aliases(&["swarm"]),
             spec(
-                "omx-skill:ultraqa",
+                "harness-workflow:ultraqa",
                 "Run adversarial dynamic end-to-end QA: generate hostile scenarios, test, verify, fix, report, and clean up",
                 &["ultraqa"],
                 workflow_skill("ultraqa", WorkflowIntent::Qa),
             )
             .with_dollar_aliases(&["ultraqa"]),
             spec(
-                "omx-skill:ask",
+                "harness-workflow:ask",
                 "Ask a local external advisor CLI and capture a reusable artifact",
                 &["ask"],
                 workflow_skill("ask", WorkflowIntent::Ask),
             )
             .with_dollar_aliases(&["ask"]),
             spec(
-                "omx-skill:ask-claude",
+                "harness-workflow:ask-claude",
                 "Deprecated Claude advisor shim routed through the local advisor workflow",
                 &["ask-claude"],
                 workflow_skill("ask", WorkflowIntent::Ask),
             )
             .with_dollar_aliases(&["ask-claude"]),
             spec(
-                "omx-skill:ask-gemini",
+                "harness-workflow:ask-gemini",
                 "Deprecated Gemini advisor shim routed through the local advisor workflow",
                 &["ask-gemini"],
                 workflow_skill("ask", WorkflowIntent::Ask),
             )
             .with_dollar_aliases(&["ask-gemini"]),
             spec(
-                "omx-skill:analyze",
+                "harness-workflow:analyze",
                 "Run read-only deep repository analysis with ranked findings, explicit confidence, and file evidence",
                 &["analyze"],
-                CommandAction::SlashAgent {
-                    role: "analyst",
-                },
+                workflow_skill("analyze", WorkflowIntent::Analyze),
             )
             .with_dollar_aliases(&["analyze"]),
             spec(
-                "omx-skill:code-review",
-                "Run a comprehensive code review",
+                "harness-workflow:code-review",
+                "Run a comprehensive code-review workflow and record findings as workflow evidence",
                 &["code-review"],
-                CommandAction::SlashAgent {
-                    role: "code-reviewer",
-                },
+                workflow_skill("code-review", WorkflowIntent::Review),
             )
             .with_dollar_aliases(&["code-review"]),
             spec(
-                "omx-skill:review",
+                "harness-workflow:review",
                 "Run a review workflow and record findings as workflow evidence",
                 &["review"],
                 workflow_skill("review", WorkflowIntent::Review),
             )
             .with_dollar_aliases(&["review"]),
             spec(
-                "omx-skill:security-review",
-                "Run a security review for vulnerabilities, trust boundaries, authentication, and authorization",
+                "harness-workflow:security-review",
+                "Run a security-review workflow for vulnerabilities, trust boundaries, authentication, and authorization",
                 &["security-review"],
-                CommandAction::SlashAgent {
-                    role: "security-reviewer",
-                },
+                workflow_skill("security-review", WorkflowIntent::SecurityReview),
             )
             .with_dollar_aliases(&["security-review"]),
             spec(
-                "omx-skill:doctor",
+                "harness-workflow:doctor",
                 "Diagnose and fix Harness installation and runtime issues",
                 &["doctor"],
                 workflow_skill("doctor", WorkflowIntent::Doctor),
             )
             .with_dollar_aliases(&["doctor"]),
             spec(
-                "omx-skill:help",
+                "harness-workflow:help",
                 "Show Harness workflow and command help",
                 &["help"],
-                workflow_skill("help", WorkflowIntent::Help),
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Help,
+                },
             )
             .with_dollar_aliases(&["help"]),
             spec(
-                "omx-skill:hud",
+                "harness-workflow:hud",
                 "Show or configure the Harness HUD and status projection",
                 &["hud"],
-                workflow_skill("hud", WorkflowIntent::Hud),
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Hud,
+                },
             )
             .with_dollar_aliases(&["hud"]),
             spec(
-                "omx-skill:note",
+                "harness-workflow:note",
                 "Capture a workflow note or project-memory evidence artifact",
                 &["note"],
                 workflow_skill("note", WorkflowIntent::Note),
             )
             .with_dollar_aliases(&["note"]),
             spec(
-                "omx-skill:skill",
+                "harness-workflow:skill",
                 "Manage local skills: list, add, remove, search, edit, and verify",
                 &["skill"],
                 workflow_skill("skill", WorkflowIntent::Skill),
             )
             .with_dollar_aliases(&["skill"]),
             spec(
-                "omx-skill:trace",
+                "harness-workflow:trace",
                 "Show agent flow trace timeline and summary",
                 &["trace"],
-                workflow_skill("trace", WorkflowIntent::Trace),
+                CommandAction::WorkflowIntent {
+                    intent: WorkflowIntent::Trace,
+                },
             )
             .with_dollar_aliases(&["trace"]),
             spec(
-                "omx-skill:configure-notifications",
+                "harness-workflow:configure-notifications",
                 "Configure Harness notifications through an explicit workflow",
                 &["configure-notifications"],
                 workflow_skill(
@@ -590,30 +592,28 @@ impl CommandRegistry {
             )
             .with_dollar_aliases(&["configure-notifications"]),
             spec(
-                "omx-skill:design",
+                "harness-workflow:design",
                 "Maintain a canonical repo-local design source of truth for product, UI, UX, and frontend decisions",
                 &["design"],
-                CommandAction::SlashAgent {
-                    role: "designer",
-                },
+                workflow_skill("design", WorkflowIntent::Design),
             )
             .with_dollar_aliases(&["design"]),
             spec(
-                "omx-skill:frontend-ui-ux",
+                "harness-workflow:frontend-ui-ux",
                 "Route frontend UI and UX work through design or visual workflow evidence",
                 &["frontend-ui-ux"],
                 workflow_skill("frontend-ui-ux", WorkflowIntent::Design),
             )
             .with_dollar_aliases(&["frontend-ui-ux"]),
             spec(
-                "omx-skill:autopilot",
+                "harness-workflow:autopilot",
                 "Run an autonomous loop over planning, completion, and code review gates",
                 &["autopilot"],
                 workflow_skill("autopilot", WorkflowIntent::Autopilot),
             )
             .with_dollar_aliases(&["autopilot"]),
             spec(
-                "omx-skill:best-practice-research",
+                "harness-workflow:best-practice-research",
                 "Run a bounded best-practice research wrapper using official and upstream evidence first",
                 &["best-practice-research"],
                 workflow_skill(
@@ -623,95 +623,91 @@ impl CommandRegistry {
             )
             .with_dollar_aliases(&["best-practice-research"]),
             spec(
-                "omx-skill:autoresearch-goal",
+                "harness-workflow:autoresearch-goal",
                 "Run a durable professor-critic research workflow over goal artifacts",
                 &["autoresearch-goal"],
                 workflow_skill("autoresearch-goal", WorkflowIntent::ResearchMission),
             )
             .with_dollar_aliases(&["autoresearch-goal"]),
             spec(
-                "omx-skill:deepsearch",
+                "harness-workflow:deepsearch",
                 "Run a deep search workflow with research and evidence capture",
                 &["deepsearch"],
                 workflow_skill("deepsearch", WorkflowIntent::DeepSearch),
             )
             .with_dollar_aliases(&["deepsearch"]),
             spec(
-                "omx-skill:performance-goal",
+                "harness-workflow:performance-goal",
                 "Run an evaluator-gated performance optimization workflow with durable artifacts and safe goal handoffs",
                 &["performance-goal"],
                 workflow_skill("performance-goal", WorkflowIntent::Performance),
             )
             .with_dollar_aliases(&["performance-goal"]),
             spec(
-                "omx-skill:pipeline",
+                "harness-workflow:pipeline",
                 "Run a configurable pipeline orchestrator for sequencing workflow stages",
                 &["pipeline"],
                 workflow_skill("pipeline", WorkflowIntent::Pipeline),
             )
             .with_dollar_aliases(&["pipeline"]),
             spec(
-                "omx-skill:ecomode",
+                "harness-workflow:ecomode",
                 "Apply token-efficient model-routing guidance through a Harness workflow",
                 &["ecomode"],
                 workflow_skill("ecomode", WorkflowIntent::Ecomode),
             )
             .with_dollar_aliases(&["ecomode"]),
             spec(
-                "omx-skill:tdd",
+                "harness-workflow:tdd",
                 "Run a test-driven-development workflow with test-first state and verification evidence",
                 &["tdd"],
                 workflow_skill("tdd", WorkflowIntent::Tdd),
             )
             .with_dollar_aliases(&["tdd"]),
             spec(
-                "omx-skill:build-fix",
+                "harness-workflow:build-fix",
                 "Route build-failure repair through the build-fixer workflow contract",
                 &["build-fix"],
-                CommandAction::SlashAgent {
-                    role: "build-fixer",
-                },
+                workflow_skill("build-fix", WorkflowIntent::BuildFix),
             )
             .with_dollar_aliases(&["build-fix"]),
             spec(
-                "omx-skill:git-master",
+                "harness-workflow:git-master",
                 "Use a git expert for atomic commits, rebasing, and history hygiene",
                 &["git-master"],
-                CommandAction::SlashAgent {
-                    role: "git-master",
-                },
+                workflow_skill("git-master", WorkflowIntent::GitMaster),
             )
             .with_dollar_aliases(&["git-master"]),
             spec(
-                "omx-skill:visual-ralph",
+                "harness-workflow:visual-ralph",
                 "Run a measured visual-reference implementation loop with verdict and pixel-diff evidence",
                 &["visual-ralph"],
                 workflow_skill("visual-ralph", WorkflowIntent::Visual),
             )
             .with_dollar_aliases(&["visual-ralph"]),
             spec(
-                "omx-skill:visual-verdict",
+                "harness-workflow:visual-verdict",
                 "Run structured visual QA verdicts for screenshot-to-reference comparisons",
                 &["visual-verdict"],
                 workflow_skill("visual-verdict", WorkflowIntent::Visual),
             )
             .with_dollar_aliases(&["visual-verdict"]),
             spec(
-                "omx-skill:web-clone",
+                "harness-workflow:web-clone",
                 "Clone a website from a URL with visual and functional verification evidence",
                 &["web-clone"],
                 workflow_skill("web-clone", WorkflowIntent::WebClone),
             )
             .with_dollar_aliases(&["web-clone"]),
             spec(
-                "omx-skill:ralph-init",
+                "harness-workflow:ralph-init",
                 "Initialize a Ralph-style completion workflow through the bounded continuation contract",
                 &["ralph-init"],
                 workflow_skill("ralph-init", WorkflowIntent::RalphInit),
             )
             .with_dollar_aliases(&["ralph-init"]),
             spec(
-                "omx-skill:omx-setup",
+                "harness-workflow:omx-setup",
                 "Set up or refresh compatible Harness assets and runtime configuration",
                 &["omx-setup"],
                 workflow_skill("omx-setup", WorkflowIntent::Setup),
@@ -898,40 +894,40 @@ mod tests {
             "remove-ai-slops",
             "handoff",
             "hyperplan",
-            "omx-skill:team",
-            "omx-skill:swarm",
-            "omx-skill:ultraqa",
-            "omx-skill:ask",
-            "omx-skill:ask-claude",
-            "omx-skill:ask-gemini",
-            "omx-skill:analyze",
-            "omx-skill:code-review",
-            "omx-skill:review",
-            "omx-skill:security-review",
-            "omx-skill:doctor",
-            "omx-skill:help",
-            "omx-skill:hud",
-            "omx-skill:note",
-            "omx-skill:skill",
-            "omx-skill:trace",
-            "omx-skill:configure-notifications",
-            "omx-skill:design",
-            "omx-skill:frontend-ui-ux",
-            "omx-skill:autopilot",
-            "omx-skill:best-practice-research",
-            "omx-skill:autoresearch-goal",
-            "omx-skill:deepsearch",
-            "omx-skill:performance-goal",
-            "omx-skill:pipeline",
-            "omx-skill:ecomode",
-            "omx-skill:tdd",
-            "omx-skill:build-fix",
-            "omx-skill:git-master",
-            "omx-skill:visual-ralph",
-            "omx-skill:visual-verdict",
-            "omx-skill:web-clone",
-            "omx-skill:ralph-init",
-            "omx-skill:omx-setup",
+            "harness-workflow:team",
+            "harness-workflow:swarm",
+            "harness-workflow:ultraqa",
+            "harness-workflow:ask",
+            "harness-workflow:ask-claude",
+            "harness-workflow:ask-gemini",
+            "harness-workflow:analyze",
+            "harness-workflow:code-review",
+            "harness-workflow:review",
+            "harness-workflow:security-review",
+            "harness-workflow:doctor",
+            "harness-workflow:help",
+            "harness-workflow:hud",
+            "harness-workflow:note",
+            "harness-workflow:skill",
+            "harness-workflow:trace",
+            "harness-workflow:configure-notifications",
+            "harness-workflow:design",
+            "harness-workflow:frontend-ui-ux",
+            "harness-workflow:autopilot",
+            "harness-workflow:best-practice-research",
+            "harness-workflow:autoresearch-goal",
+            "harness-workflow:deepsearch",
+            "harness-workflow:performance-goal",
+            "harness-workflow:pipeline",
+            "harness-workflow:ecomode",
+            "harness-workflow:tdd",
+            "harness-workflow:build-fix",
+            "harness-workflow:git-master",
+            "harness-workflow:visual-ralph",
+            "harness-workflow:visual-verdict",
+            "harness-workflow:web-clone",
+            "harness-workflow:ralph-init",
+            "harness-workflow:omx-setup",
         ] {
             assert!(registry.get(name).is_some(), "missing {name}");
         }
@@ -994,43 +990,50 @@ mod tests {
             ("remove-ai-slops", WorkflowIntent::Cleanup),
             ("handoff", WorkflowIntent::Handoff),
             ("hyperplan", WorkflowIntent::Hyperplan),
-            ("omx-skill:team", WorkflowIntent::Team),
-            ("omx-skill:swarm", WorkflowIntent::Team),
-            ("omx-skill:ultraqa", WorkflowIntent::Qa),
-            ("omx-skill:ask", WorkflowIntent::Ask),
-            ("omx-skill:ask-claude", WorkflowIntent::Ask),
-            ("omx-skill:ask-gemini", WorkflowIntent::Ask),
-            ("omx-skill:review", WorkflowIntent::Review),
-            ("omx-skill:doctor", WorkflowIntent::Doctor),
-            ("omx-skill:help", WorkflowIntent::Help),
-            ("omx-skill:hud", WorkflowIntent::Hud),
-            ("omx-skill:note", WorkflowIntent::Note),
-            ("omx-skill:skill", WorkflowIntent::Skill),
-            ("omx-skill:trace", WorkflowIntent::Trace),
+            ("harness-workflow:team", WorkflowIntent::Team),
+            ("harness-workflow:swarm", WorkflowIntent::Team),
+            ("harness-workflow:ultraqa", WorkflowIntent::Qa),
+            ("harness-workflow:ask", WorkflowIntent::Ask),
+            ("harness-workflow:ask-claude", WorkflowIntent::Ask),
+            ("harness-workflow:ask-gemini", WorkflowIntent::Ask),
+            ("harness-workflow:analyze", WorkflowIntent::Analyze),
+            ("harness-workflow:review", WorkflowIntent::Review),
+            ("harness-workflow:doctor", WorkflowIntent::Doctor),
+            ("harness-workflow:help", WorkflowIntent::Help),
+            ("harness-workflow:hud", WorkflowIntent::Hud),
+            ("harness-workflow:note", WorkflowIntent::Note),
+            ("harness-workflow:skill", WorkflowIntent::Skill),
+            ("harness-workflow:trace", WorkflowIntent::Trace),
             (
-                "omx-skill:configure-notifications",
+                "harness-workflow:configure-notifications",
                 WorkflowIntent::ConfigureNotifications,
             ),
-            ("omx-skill:frontend-ui-ux", WorkflowIntent::Design),
-            ("omx-skill:autopilot", WorkflowIntent::Autopilot),
+            ("harness-workflow:design", WorkflowIntent::Design),
+            ("harness-workflow:frontend-ui-ux", WorkflowIntent::Design),
+            ("harness-workflow:autopilot", WorkflowIntent::Autopilot),
             (
-                "omx-skill:best-practice-research",
+                "harness-workflow:best-practice-research",
                 WorkflowIntent::BestPracticeResearch,
             ),
             (
-                "omx-skill:autoresearch-goal",
+                "harness-workflow:autoresearch-goal",
                 WorkflowIntent::ResearchMission,
             ),
-            ("omx-skill:deepsearch", WorkflowIntent::DeepSearch),
-            ("omx-skill:performance-goal", WorkflowIntent::Performance),
-            ("omx-skill:pipeline", WorkflowIntent::Pipeline),
-            ("omx-skill:ecomode", WorkflowIntent::Ecomode),
-            ("omx-skill:tdd", WorkflowIntent::Tdd),
-            ("omx-skill:visual-ralph", WorkflowIntent::Visual),
-            ("omx-skill:visual-verdict", WorkflowIntent::Visual),
-            ("omx-skill:web-clone", WorkflowIntent::WebClone),
-            ("omx-skill:ralph-init", WorkflowIntent::RalphInit),
-            ("omx-skill:omx-setup", WorkflowIntent::Setup),
+            ("harness-workflow:deepsearch", WorkflowIntent::DeepSearch),
+            (
+                "harness-workflow:performance-goal",
+                WorkflowIntent::Performance,
+            ),
+            ("harness-workflow:pipeline", WorkflowIntent::Pipeline),
+            ("harness-workflow:ecomode", WorkflowIntent::Ecomode),
+            ("harness-workflow:tdd", WorkflowIntent::Tdd),
+            ("harness-workflow:build-fix", WorkflowIntent::BuildFix),
+            ("harness-workflow:git-master", WorkflowIntent::GitMaster),
+            ("harness-workflow:visual-ralph", WorkflowIntent::Visual),
+            ("harness-workflow:visual-verdict", WorkflowIntent::Visual),
+            ("harness-workflow:web-clone", WorkflowIntent::WebClone),
+            ("harness-workflow:ralph-init", WorkflowIntent::RalphInit),
+            ("harness-workflow:omx-setup", WorkflowIntent::Setup),
         ] {
             let command = registry
                 .get(name)
@@ -1075,28 +1078,37 @@ mod tests {
     }
 
     #[test]
-    fn specialist_dollar_aliases_resolve_to_slash_agent_shortcuts() {
+    fn specialist_dollar_aliases_resolve_to_expected_workflow_skill_dispatch() {
         let registry = CommandRegistry::builtins();
-        for (alias, role) in [
-            ("analyze", "analyst"),
-            ("build-fix", "build-fixer"),
-            ("code-review", "code-reviewer"),
-            ("design", "designer"),
-            ("git-master", "git-master"),
-            ("security-review", "security-reviewer"),
+        for (alias, skill, intent) in [
+            ("analyze", "analyze", WorkflowIntent::Analyze),
+            ("build-fix", "build-fix", WorkflowIntent::BuildFix),
+            ("code-review", "code-review", WorkflowIntent::Review),
+            ("design", "design", WorkflowIntent::Design),
+            ("git-master", "git-master", WorkflowIntent::GitMaster),
+            (
+                "security-review",
+                "security-review",
+                WorkflowIntent::SecurityReview,
+            ),
         ] {
             let command = registry
                 .commands()
                 .iter()
                 .find(|command| command.dollar_aliases.contains(&alias))
-                .unwrap_or_else(|| panic!("missing specialist dollar alias ${alias}"));
+                .unwrap_or_else(|| panic!("missing workflow dollar alias ${alias}"));
             assert_eq!(
                 command.action,
-                CommandAction::SlashAgent { role },
-                "${alias} must dispatch through a slash-agent shortcut"
+                CommandAction::WorkflowSkill {
+                    skill,
+                    intent,
+                    continuation_mode: None,
+                    requires_user_task: false,
+                },
+                "${alias} must dispatch through native workflow evidence"
             );
-            assert_eq!(command.surface, CommandSurface::AgentShortcut);
-            assert_eq!(command.effect, CommandEffect::ScheduleAgentTask);
+            assert_eq!(command.surface, CommandSurface::WorkflowCommand);
+            assert_eq!(command.effect, CommandEffect::MutateCoordinatorState);
         }
     }
 
@@ -1281,6 +1293,7 @@ mod tests {
             ("ask", "ask", WorkflowIntent::Ask, None),
             ("ask-claude", "ask", WorkflowIntent::Ask, None),
             ("ask-gemini", "ask", WorkflowIntent::Ask, None),
+            ("analyze", "analyze", WorkflowIntent::Analyze, None),
             ("autopilot", "autopilot", WorkflowIntent::Autopilot, None),
             (
                 "autoresearch",
@@ -1300,6 +1313,7 @@ mod tests {
                 WorkflowIntent::BestPracticeResearch,
                 None,
             ),
+            ("build-fix", "build-fix", WorkflowIntent::BuildFix, None),
             (
                 "configure-notifications",
                 "configure-notifications",
@@ -1313,6 +1327,7 @@ mod tests {
                 None,
             ),
             ("deepsearch", "deepsearch", WorkflowIntent::DeepSearch, None),
+            ("design", "design", WorkflowIntent::Design, None),
             ("deslop", "ai-slop-cleaner", WorkflowIntent::Cleanup, None),
             ("doctor", "doctor", WorkflowIntent::Doctor, None),
             ("ecomode", "ecomode", WorkflowIntent::Ecomode, None),
@@ -1323,8 +1338,7 @@ mod tests {
                 None,
             ),
             ("goal", "ultragoal", WorkflowIntent::GoalLedger, None),
-            ("help", "help", WorkflowIntent::Help, None),
-            ("hud", "hud", WorkflowIntent::Hud, None),
+            ("git-master", "git-master", WorkflowIntent::GitMaster, None),
             ("note", "note", WorkflowIntent::Note, None),
             ("omx-setup", "omx-setup", WorkflowIntent::Setup, None),
             (
@@ -1349,7 +1363,6 @@ mod tests {
             ("swarm", "swarm", WorkflowIntent::Team, None),
             ("tdd", "tdd", WorkflowIntent::Tdd, None),
             ("team", "team", WorkflowIntent::Team, None),
-            ("trace", "trace", WorkflowIntent::Trace, None),
             ("ultragoal", "ultragoal", WorkflowIntent::GoalLedger, None),
             ("ultraqa", "ultraqa", WorkflowIntent::Qa, None),
             (
@@ -1367,6 +1380,11 @@ mod tests {
             ),
             ("web-clone", "web-clone", WorkflowIntent::WebClone, None),
             ("wiki", "wiki", WorkflowIntent::Wiki, None),
+        ];
+        let read_projection_aliases = [
+            ("help", WorkflowIntent::Help),
+            ("hud", WorkflowIntent::Hud),
+            ("trace", WorkflowIntent::Trace),
         ];
 
         for alias in [
@@ -1469,6 +1487,19 @@ mod tests {
                     "${alias} must dispatch through WorkflowSkill instead of raw intent/continuation"
                 );
             }
+            if let Some((_, expected_intent)) = read_projection_aliases
+                .iter()
+                .find(|(expected_alias, ..)| expected_alias == &alias)
+            {
+                assert_eq!(
+                    command.action,
+                    CommandAction::WorkflowIntent {
+                        intent: *expected_intent,
+                    },
+                    "${alias} must dispatch as read-only WorkflowIntent"
+                );
+                assert_eq!(command.effect, CommandEffect::ReadProjection);
+            }
         }
     }
 
@@ -1476,13 +1507,15 @@ mod tests {
     fn formerly_removed_omx_commands_now_resolve_to_parity_actions() {
         let registry = CommandRegistry::builtins();
         for (name, intent) in [
-            ("omx-skill:ask", WorkflowIntent::Ask),
-            ("omx-skill:ask-claude", WorkflowIntent::Ask),
-            ("omx-skill:ask-gemini", WorkflowIntent::Ask),
-            ("omx-skill:omx-setup", WorkflowIntent::Setup),
+            ("harness-workflow:ask", WorkflowIntent::Ask),
+            ("harness-workflow:ask-claude", WorkflowIntent::Ask),
+            ("harness-workflow:ask-gemini", WorkflowIntent::Ask),
+            ("harness-workflow:build-fix", WorkflowIntent::BuildFix),
+            ("harness-workflow:omx-setup", WorkflowIntent::Setup),
             ("ask", WorkflowIntent::Ask),
             ("ask-claude", WorkflowIntent::Ask),
             ("ask-gemini", WorkflowIntent::Ask),
+            ("build-fix", WorkflowIntent::BuildFix),
             ("omx-setup", WorkflowIntent::Setup),
         ] {
             let command = registry
@@ -1495,16 +1528,6 @@ mod tests {
                 }
                 other => panic!("{name} drifted from workflow action: {other:?}"),
             }
-            assert_eq!(command.availability, WorkflowCommandAvailability::Present);
-        }
-        for (name, role) in [
-            ("omx-skill:build-fix", "build-fixer"),
-            ("build-fix", "build-fixer"),
-        ] {
-            let command = registry
-                .get(name)
-                .unwrap_or_else(|| panic!("missing restored parity command {name}"));
-            assert_eq!(command.action, CommandAction::SlashAgent { role });
             assert_eq!(command.availability, WorkflowCommandAvailability::Present);
         }
     }

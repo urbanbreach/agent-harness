@@ -522,9 +522,14 @@ pub const WORKFLOW_DOCTOR_CHECKS: &[WorkflowDoctorCheckSpec] = &[
         description: "Validates every shipped .agent-harness SKILL.md file is discoverable and loadable.",
     },
     WorkflowDoctorCheckSpec {
-        id: "workflow_skill_protocol_present",
+        id: "workflow_skill_protocol_native",
         description:
             "Validates workflow SKILL.md bodies retain protocol depth relative to the OMX reference assets.",
+    },
+    WorkflowDoctorCheckSpec {
+        id: "strict_parity_matrix",
+        description:
+            "Validates selected workflow parity rows against checked-in native proof dossiers.",
     },
     WorkflowDoctorCheckSpec {
         id: "workflow_transition_policy_matrix",
@@ -548,8 +553,8 @@ pub const WORKFLOW_DOCS_ANCHORS: &[WorkflowDocsAnchorSpec] = &[
     },
     WorkflowDocsAnchorSpec {
         id: "workflow_slice_source",
-        path: "docs/omx-parity-dossier.md",
-        heading: "# Harness ↔ oh-my-codex parity dossier",
+        path: "docs/config.md",
+        heading: "### Native workflow parity baseline",
     },
     WorkflowDocsAnchorSpec {
         id: "workflow_testing",
