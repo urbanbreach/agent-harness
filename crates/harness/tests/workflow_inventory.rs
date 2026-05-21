@@ -10,54 +10,7 @@ use harness_core::command_registry::{CommandAction, CommandRegistry};
 use serde_json::Value;
 
 const INVENTORY_JSON: &str = include_str!("fixtures/harness_omx_workflow_inventory.json");
-const LOCKED_OMX_SKILL_IDS: &[&str] = &[
-    "omx-skill:ai-slop-cleaner",
-    "omx-skill:analyze",
-    "omx-skill:ask",
-    "omx-skill:ask-claude",
-    "omx-skill:ask-gemini",
-    "omx-skill:autopilot",
-    "omx-skill:autoresearch",
-    "omx-skill:autoresearch-goal",
-    "omx-skill:best-practice-research",
-    "omx-skill:build-fix",
-    "omx-skill:cancel",
-    "omx-skill:code-review",
-    "omx-skill:configure-notifications",
-    "omx-skill:deep-interview",
-    "omx-skill:deepsearch",
-    "omx-skill:design",
-    "omx-skill:doctor",
-    "omx-skill:ecomode",
-    "omx-skill:frontend-ui-ux",
-    "omx-skill:git-master",
-    "omx-skill:help",
-    "omx-skill:hud",
-    "omx-skill:note",
-    "omx-skill:omx-setup",
-    "omx-skill:performance-goal",
-    "omx-skill:pipeline",
-    "omx-skill:plan",
-    "omx-skill:ralph",
-    "omx-skill:ralph-init",
-    "omx-skill:ralplan",
-    "omx-skill:review",
-    "omx-skill:security-review",
-    "omx-skill:skill",
-    "omx-skill:swarm",
-    "omx-skill:tdd",
-    "omx-skill:team",
-    "omx-skill:trace",
-    "omx-skill:ultragoal",
-    "omx-skill:ultraqa",
-    "omx-skill:ultrawork",
-    "omx-skill:visual-ralph",
-    "omx-skill:visual-verdict",
-    "omx-skill:web-clone",
-    "omx-skill:wiki",
-    "omx-skill:worker",
-];
-
+const WORKFLOW_PARITY_MATRIX_JSON: &str = include_str!("../../../docs/workflow-parity-matrix.json");
 #[test]
 fn workflow_inventory_fixture_has_required_schema() {
     let inventory = inventory();
@@ -291,6 +244,92 @@ fn workflow_inventory_tracks_command_registry_drift() {
 }
 
 #[test]
+fn workflow_parity_matrix_covers_all_dollar_aliases() {
+    let matrix: Value = serde_json::from_str(WORKFLOW_PARITY_MATRIX_JSON)
+        .expect("docs/workflow-parity-matrix.json parses");
+    let required_fields = string_set(matrix["required_row_fields"].as_array().unwrap());
+    let rows = matrix["rows"]
+        .as_array()
+        .expect("workflow parity matrix rows array");
+    assert!(
+        !rows.is_empty(),
+        "workflow parity matrix must freeze at least one row"
+    );
+
+    let allowed_scopes = BTreeSet::from([
+        "selected_for_this_goal",
+        "not_selected_with_reason",
+        "retired_with_reason",
+        "deferred_non_workflow",
+    ]);
+    let allowed_statuses = BTreeSet::from([
+        "native_complete",
+        "native_partial",
+        "compat_only",
+        "planned",
+        "temporary_bootstrap_only",
+    ]);
+    let mut aliases = BTreeSet::new();
+    for row in rows {
+        for field in &required_fields {
+            assert!(
+                row.get(*field).is_some(),
+                "matrix row {row:?} missing required field {field}"
+            );
+        }
+
+        let scope = non_empty_string(row, "selected_scope");
+        assert!(
+            allowed_scopes.contains(scope),
+            "matrix row has invalid selected_scope {scope}"
+        );
+        assert!(
+            row.get("selected_scope_reason")
+                .and_then(Value::as_str)
+                .is_some_and(|reason| !reason.trim().is_empty()),
+            "matrix row {row:?} must explain selected_scope"
+        );
+
+        let status = non_empty_string(row, "status");
+        assert!(
+            allowed_statuses.contains(status),
+            "matrix row has invalid status {status}"
+        );
+
+        let state_authority = non_empty_string(row, "state_authority");
+        assert_eq!(
+            state_authority, "harness_events_and_replay_projections",
+            "matrix row must use native Harness authority"
+        );
+
+        let row_aliases = row["legacy_aliases"]
+            .as_array()
+            .expect("legacy_aliases array");
+        assert!(
+            !row_aliases.is_empty(),
+            "matrix row must list at least one legacy alias"
+        );
+        for alias in row_aliases {
+            let alias = alias.as_str().expect("legacy alias string");
+            assert!(
+                aliases.insert(alias.to_string()),
+                "duplicate matrix legacy alias {alias}"
+            );
+        }
+    }
+
+    for command in CommandRegistry::builtins().commands() {
+        for alias in command.dollar_aliases {
+            assert!(
+                aliases.contains(*alias),
+                "workflow parity matrix missing dollar alias ${alias} from command {}",
+                command.name
+            );
+        }
+    }
+}
+
+#[test]
 fn workflow_inventory_hides_staged_placeholder_commands_from_default_tui() {
     let inventory = inventory();
     let entries = entries_by_id(&inventory);
@@ -434,32 +473,20 @@ fn workflow_inventory_locks_omx_skill_and_slash_agent_rosters() {
     let inventory = inventory();
     let entries = entries_by_id(&inventory);
 
-    let omx_skill_ids = entries
+    let harness_workflow_ids = entries
         .keys()
         .copied()
-        .filter(|id| id.starts_with("omx-skill:"))
+        .filter(|id| id.starts_with("harness-workflow:"))
         .collect::<BTreeSet<_>>();
-    let locked_omx_skill_ids = LOCKED_OMX_SKILL_IDS
+    let registry_harness_workflow_ids = CommandRegistry::builtins()
+        .commands()
         .iter()
-        .copied()
+        .map(|command| command.name)
+        .filter(|id| id.starts_with("harness-workflow:"))
         .collect::<BTreeSet<_>>();
-    assert_eq!(
-        omx_skill_ids, locked_omx_skill_ids,
-        "the command-parity fixture must keep the locked oh-my-codex skill roster without reading untracked inspirations assets"
-    );
-    let locked_omx_skill_ids_owned = locked_omx_skill_ids
-        .iter()
-        .map(|id| (*id).to_string())
-        .collect::<BTreeSet<_>>();
-    let reference_omx_skill_ids = skill_ids(
-        &repo_root().join("inspirations/oh-my-codex/skills"),
-        "omx-skill",
-    )
-    .into_iter()
-    .collect::<BTreeSet<_>>();
-    assert_eq!(
-        locked_omx_skill_ids_owned, reference_omx_skill_ids,
-        "locked command roster must match inspirations/oh-my-codex/skills exactly"
+    assert!(
+        registry_harness_workflow_ids.is_subset(&harness_workflow_ids),
+        "the command-parity fixture must include Harness workflow command ids from the runtime registry"
     );
 
     let slash_agent_ids = slash_agent_roster_ids();
@@ -501,18 +528,18 @@ fn workflow_inventory_locks_omx_skill_and_slash_agent_rosters() {
         .iter()
         .flat_map(|command| command.dollar_aliases.iter().copied())
         .collect::<BTreeSet<_>>();
-    for skill_id in LOCKED_OMX_SKILL_IDS {
+    for skill_id in registry_harness_workflow_ids {
         let entry = entries
-            .get(*skill_id)
+            .get(skill_id)
             .unwrap_or_else(|| panic!("missing inventory entry for {skill_id}"));
         if entry["status"].as_str() == Some("non_applicable") {
             assert_eq!(
-                *skill_id, "omx-skill:worker",
-                "only worker may be a non-applicable oh-my-codex skill"
+                skill_id, "harness-workflow:worker",
+                "only worker may be a non-applicable Harness workflow compatibility entry"
             );
             continue;
         }
-        let skill_name = skill_id.strip_prefix("omx-skill:").unwrap();
+        let skill_name = skill_id.strip_prefix("harness-workflow:").unwrap();
         assert!(
             registry_dollar_aliases.contains(skill_name),
             "{skill_id} must be exposed as a registry-backed dollar command"
@@ -534,7 +561,7 @@ fn workflow_inventory_locks_omx_skill_and_slash_agent_rosters() {
 }
 
 #[test]
-fn workflow_inventory_tracks_oh_my_codex_prompt_parity() {
+fn workflow_inventory_tracks_migrated_prompt_assets_without_old_runtime_authority() {
     let root = repo_root();
     let reference_prompt_dir = root.join("inspirations/oh-my-codex/prompts");
     let harness_agent_dir = root.join(".agent-harness/omx-prompts");
@@ -561,12 +588,44 @@ fn workflow_inventory_tracks_oh_my_codex_prompt_parity() {
             "missing Harness agent prompt copied from {}",
             reference_path.display()
         );
-        assert_eq!(
-            fs::read_to_string(&harness_path).unwrap(),
-            fs::read_to_string(&reference_path).unwrap(),
-            "{} must stay byte-for-byte aligned with oh-my-codex",
-            harness_path.display()
-        );
+        assert_no_active_old_runtime_authority(&harness_path);
+    }
+}
+
+fn assert_no_active_old_runtime_authority(path: &Path) {
+    let body = fs::read_to_string(path).unwrap();
+    for (line_index, line) in body.lines().enumerate() {
+        let lower = line.to_lowercase();
+        if lower.contains("deprecated")
+            || lower.contains("migration lineage")
+            || lower.contains("compatibility alias")
+        {
+            continue;
+        }
+        for token in [
+            "omx ultragoal",
+            "omx wiki",
+            "omx explore",
+            "omx sparkshell",
+            "omx setup",
+            "omx doctor",
+            "omx hud",
+            "omx team",
+            "omx question",
+            "omx state",
+            "native team tools api",
+            "tmux send-keys",
+            "tmux pane",
+            "CODEX_HOME",
+            "~/.codex",
+        ] {
+            assert!(
+                !line.contains(token),
+                "{}:{} contains active old-runtime authority token `{token}`",
+                path.display(),
+                line_index + 1
+            );
+        }
     }
 }
 
@@ -656,14 +715,11 @@ fn workflow_inventory_tracks_native_agent_config_parity() {
 
 #[test]
 fn workflow_inventory_markdown_points_at_fixture_and_gate() {
-    let markdown =
-        fs::read_to_string(repo_root().join("docs/harness-omx-workflow-inventory.md")).unwrap();
-    assert!(markdown.contains("crates/harness/tests/fixtures/harness_omx_workflow_inventory.json"));
-    assert!(markdown.contains("Deterministic drift gate"));
-    assert!(markdown.contains("`workflow-run`"));
-    assert!(markdown.contains("`workflow-evidence`"));
-    assert!(markdown.contains("`omx-skill:ultragoal`"));
-    assert!(markdown.contains("`slash-agent:executor`"));
+    let matrix = fs::read_to_string(repo_root().join("docs/workflow-parity-matrix.json")).unwrap();
+    assert!(matrix.contains("\"registry_command\""));
+    assert!(matrix.contains("\"strict_parity_matrix\""));
+    assert!(matrix.contains("\"$ultragoal\""));
+    assert!(matrix.contains("\"selected_for_this_goal\""));
 }
 
 fn inventory() -> Value {

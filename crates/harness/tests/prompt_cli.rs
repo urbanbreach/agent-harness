@@ -2,16 +2,23 @@ use std::fs;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+use harness_core::edit::hashline::compute_line_hash;
 use harness_core::event::{
     ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1,
     ProviderRequestFinishedEvent, ProviderRequestStartedEvent, RunFinishedEvent, RunStartedEvent,
-    TaskTerminalScope, UserMessageSubmittedEvent, SCHEMA_VERSION,
+    TaskTerminalScope, ToolCallFinishedEvent, ToolCallStatus, UserMessageSubmittedEvent,
+    SCHEMA_VERSION,
 };
 use tempfile::tempdir;
 use wiremock::matchers::{body_string_contains, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-fn prompt_cli_config(base_url: &str, session_dir: &std::path::Path, tools: &[&str]) -> String {
+fn prompt_cli_config<const N: usize>(
+    base_url: &str,
+    session_dir: &std::path::Path,
+    tools: &[&str; N],
+) -> String {
+    let tools = tools.as_slice();
     serde_json::json!({
         "providers": {
             "default": {
@@ -1404,6 +1411,679 @@ async fn prompt_cli_executes_tool_call_and_completes_turn() {
 }
 
 #[tokio::test]
+async fn prompt_cli_black_box_agent_turn_oracle_records_artifact_and_replays() {
+    let server = MockServer::start().await;
+    let prompt_text = "Run the deterministic artifact oracle and report the final marker.";
+
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .and(body_string_contains("\"type\":\"function_call_output\""))
+        .and(body_string_contains("call_oracle_bash"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    tool_followup_text_sse_transcript("ORACLE_DONE artifact captured."),
+                    "text/event-stream",
+                ),
+        )
+        .with_priority(1)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .and(body_string_contains(prompt_text))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    bash_artifact_call_responses_sse_transcript(),
+                    "text/event-stream",
+                ),
+        )
+        .with_priority(2)
+        .mount(&server)
+        .await;
+
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.agent-turn-oracle.jsonc");
+    let session_dir = temp.path().join("sessions");
+    let out_path = temp.path().join("events.jsonl");
+
+    let config = prompt_cli_config(&format!("{}/v1", server.uri()), &session_dir, &["bash"]);
+    fs::write(&config_path, config).expect("write config");
+
+    let config_arg = config_path.clone();
+    let out_arg = out_path.clone();
+    let temp_path = temp.path().to_path_buf();
+    let output = tokio::task::spawn_blocking(move || {
+        Command::new(env!("CARGO_BIN_EXE_harness"))
+            .current_dir(temp_path)
+            .args([
+                "--config",
+                config_arg.to_str().expect("config path utf-8"),
+                "prompt",
+                "--text",
+                prompt_text,
+                "--out",
+                out_arg.to_str().expect("out path utf-8"),
+                "--print-run-dir",
+            ])
+            .output()
+            .expect("run harness prompt")
+    })
+    .await
+    .expect("join blocking command");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("ORACLE_DONE artifact captured."),
+        "prompt should stream final assistant text to stdout: {stdout}"
+    );
+    let run_dir_line = stdout
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| line.starts_with('/'))
+        .expect("--print-run-dir should print an absolute run directory");
+    let run_dir = std::path::PathBuf::from(run_dir_line);
+    assert!(run_dir.join("events.jsonl").is_file());
+
+    let events_body = fs::read_to_string(&out_path).expect("read copied prompt events");
+    let persisted_events_body =
+        fs::read_to_string(run_dir.join("events.jsonl")).expect("read persisted prompt events");
+    assert_eq!(
+        events_body, persisted_events_body,
+        "--out must be an exact copy of the persisted event log"
+    );
+
+    let events = parse_prompt_events(&events_body);
+    assert!(!events.is_empty());
+    for (idx, event) in events.iter().enumerate() {
+        assert_eq!(event.schema_version, SCHEMA_VERSION);
+        assert_eq!(
+            event.seq,
+            idx as u64 + 1,
+            "event sequence must be contiguous"
+        );
+        assert_eq!(event.run_id, events[0].run_id);
+    }
+    assert_eq!(run_dir, session_dir.join(&events[0].run_id));
+
+    assert_eq!(
+        events.iter().find_map(|event| match &event.payload {
+            EventV1::UserMessageSubmitted(payload) => Some(payload.text.as_str()),
+            _ => None,
+        }),
+        Some(prompt_text)
+    );
+    assert_eq!(
+        events.iter().find_map(|event| match &event.payload {
+            EventV1::AgentSpawned(payload) => Some(payload.profile.as_str()),
+            _ => None,
+        }),
+        Some("deep")
+    );
+
+    let provider_started_positions = event_positions(&events, |event| {
+        matches!(event.payload, EventV1::ProviderRequestStarted(_))
+    });
+    let provider_finished_positions = event_positions(&events, |event| {
+        matches!(event.payload, EventV1::ProviderRequestFinished(_))
+    });
+    assert_eq!(provider_started_positions.len(), 2);
+    assert_eq!(provider_finished_positions.len(), 2);
+
+    let tool_ready_pos = first_event_position(
+        &events,
+        |event| matches!(&event.payload, EventV1::AssistantMessageFinished(payload) if payload.tool_call_count == 1),
+        "assistant message with tool call",
+    );
+    let tool_requested_pos = first_event_position(
+        &events,
+        |event| matches!(&event.payload, EventV1::ToolCallRequested(payload) if payload.tool_id == "bash"),
+        "bash tool request",
+    );
+    let requested_tool = match &events[tool_requested_pos].payload {
+        EventV1::ToolCallRequested(payload) => payload,
+        _ => unreachable!("tool_requested_pos must point at tool_call_requested"),
+    };
+    assert_eq!(requested_tool.tool_id, "bash");
+    assert!(requested_tool.args_summary.contains("printf"));
+    let tool_call_id = requested_tool.tool_call_id.clone();
+
+    let tool_started_pos = first_event_position(
+        &events,
+        |event| matches!(&event.payload, EventV1::ToolCallStarted(payload) if payload.tool_call_id == tool_call_id),
+        "bash tool start",
+    );
+    let tool_finished_pos = first_event_position(
+        &events,
+        |event| matches!(&event.payload, EventV1::ToolCallFinished(payload) if payload.tool_call_id == tool_call_id),
+        "bash tool finish",
+    );
+    let tool_task_completed_pos = first_event_position(
+        &events,
+        |event| {
+            matches!(&event.payload, EventV1::TaskCompleted(payload)
+                if payload.metadata.as_ref().and_then(|metadata| metadata.task_scope)
+                    .is_some_and(|scope| matches!(scope, TaskTerminalScope::ToolCall)))
+        },
+        "tool task completion",
+    );
+    let agent_turn_completed_pos = first_event_position(
+        &events,
+        |event| {
+            matches!(&event.payload, EventV1::TaskCompleted(payload)
+                if payload.metadata.as_ref().and_then(|metadata| metadata.task_scope)
+                    .is_some_and(|scope| matches!(scope, TaskTerminalScope::AgentTurn)))
+        },
+        "agent turn completion",
+    );
+    let run_finished_pos = first_event_position(
+        &events,
+        |event| matches!(event.payload, EventV1::RunFinished(_)),
+        "run finished",
+    );
+
+    assert!(provider_started_positions[0] < provider_finished_positions[0]);
+    assert!(provider_finished_positions[0] < tool_ready_pos);
+    assert!(tool_ready_pos < tool_requested_pos);
+    assert!(tool_requested_pos < tool_started_pos);
+    assert!(tool_started_pos < tool_finished_pos);
+    assert!(tool_started_pos < tool_task_completed_pos);
+    assert!(tool_finished_pos < provider_started_positions[1]);
+    assert!(tool_task_completed_pos < provider_started_positions[1]);
+    assert!(provider_started_positions[1] < provider_finished_positions[1]);
+    assert!(provider_finished_positions[1] < agent_turn_completed_pos);
+    assert!(agent_turn_completed_pos < run_finished_pos);
+
+    let finished_tool = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::ToolCallFinished(payload) if payload.tool_call_id == tool_call_id => {
+                Some(payload)
+            }
+            _ => None,
+        })
+        .expect("bash tool finished event");
+    assert_eq!(finished_tool.status, ToolCallStatus::Succeeded);
+    let output_json = finished_tool
+        .output_json
+        .as_ref()
+        .expect("bash tool should persist structured output metadata");
+    assert_eq!(output_json.get("truncated"), Some(&serde_json::json!(true)));
+    assert_eq!(
+        output_json.get("total_output_bytes"),
+        Some(&serde_json::json!(66_000))
+    );
+    let output_artifact = output_json
+        .get("output_artifact")
+        .and_then(serde_json::Value::as_object)
+        .expect("truncated bash output should reference an artifact");
+    let artifact_path = output_artifact
+        .get("path")
+        .and_then(serde_json::Value::as_str)
+        .expect("output artifact path");
+    let artifact_digest = output_artifact
+        .get("digest")
+        .and_then(serde_json::Value::as_str)
+        .expect("output artifact digest");
+    assert!(artifact_path.starts_with("artifacts/toolcalls/"));
+    assert!(artifact_path.contains(&tool_call_id));
+
+    let artifact_event = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::ArtifactWritten(payload) if payload.path == artifact_path => Some(payload),
+            _ => None,
+        })
+        .expect("artifact_written event for spilled bash output");
+    assert_eq!(
+        artifact_event.tool_call_id.as_deref(),
+        Some(tool_call_id.as_str())
+    );
+    assert_eq!(artifact_event.digest, artifact_digest);
+    assert_eq!(artifact_event.bytes, 66_000);
+
+    let artifact_body = fs::read_to_string(run_dir.join(artifact_path)).expect("read artifact");
+    assert_eq!(artifact_body.len() as u64, artifact_event.bytes);
+    assert!(artifact_body.starts_with("oracleoracleoracle"));
+
+    let requests = server
+        .received_requests()
+        .await
+        .expect("request recording must be enabled");
+    assert_eq!(
+        requests.len(),
+        2,
+        "oracle should require exactly two provider turns"
+    );
+    let first_body = String::from_utf8_lossy(&requests[0].body);
+    assert!(first_body.contains(prompt_text));
+    assert!(first_body.contains("\"name\":\"bash\""));
+    assert!(!first_body.contains("function_call_output"));
+
+    let second_body = String::from_utf8_lossy(&requests[1].body);
+    assert!(second_body.contains("\"type\":\"function_call\""));
+    assert!(second_body.contains("\"type\":\"function_call_output\""));
+    assert!(second_body.contains("call_oracle_bash"));
+    assert!(second_body.contains(artifact_path));
+    assert!(second_body.contains("[truncated:"));
+
+    let replay_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "replay",
+            "--session",
+            run_dir.to_str().expect("run dir utf-8"),
+            "--json",
+        ])
+        .output()
+        .expect("run harness replay json");
+    assert!(
+        replay_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&replay_output.stdout),
+        String::from_utf8_lossy(&replay_output.stderr)
+    );
+    let replay: serde_json::Value =
+        serde_json::from_slice(&replay_output.stdout).expect("replay json output should parse");
+    assert_eq!(replay["run_id"], serde_json::json!(events[0].run_id));
+    assert_eq!(replay["status"], serde_json::json!("finished"));
+    assert_eq!(replay["artifact_count"], serde_json::json!(1));
+    assert_eq!(
+        replay["counts_by_type"]["artifact_written"],
+        serde_json::json!(1)
+    );
+    let replay_artifacts = replay["artifacts"]
+        .as_array()
+        .expect("replay artifacts array");
+    assert!(replay_artifacts.iter().any(|artifact| {
+        artifact.get("path") == Some(&serde_json::json!(artifact_path))
+            && artifact.get("tool_call_id") == Some(&serde_json::json!(tool_call_id))
+            && artifact.get("present_on_disk") == Some(&serde_json::json!(true))
+    }));
+}
+
+#[tokio::test]
+async fn prompt_cli_black_box_workspace_mutation_oracle_recovers_and_replays() {
+    let server = MockServer::start().await;
+    let prompt_text = "Read src/status.txt, change status to done, verify, try the bad shell read, recover, and report.";
+
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .and(body_string_contains("call_workspace_bad_bash"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    tool_followup_text_sse_transcript(
+                        "WORKSPACE_ORACLE_DONE status updated and failed shell read recovered.",
+                    ),
+                    "text/event-stream",
+                ),
+        )
+        .with_priority(1)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .and(body_string_contains("call_workspace_bash"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    tool_call_sse_transcript(
+                        "item_workspace_bad_bash",
+                        "call_workspace_bad_bash",
+                        "bash",
+                        serde_json::json!({
+                            "command": "cat src/status.txt",
+                            "workdir": ".",
+                            "description": "bad shell read should be blocked",
+                            "timeout": 120000,
+                        }),
+                    ),
+                    "text/event-stream",
+                ),
+        )
+        .with_priority(2)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .and(body_string_contains("call_workspace_edit"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    tool_call_sse_transcript(
+                        "item_workspace_bash",
+                        "call_workspace_bash",
+                        "bash",
+                        serde_json::json!({
+                            "command": "test -f src/status.txt && printf verified",
+                            "workdir": ".",
+                            "description": "verify edited status file exists",
+                            "timeout": 120000,
+                        }),
+                    ),
+                    "text/event-stream",
+                ),
+        )
+        .with_priority(3)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .and(body_string_contains("call_workspace_read"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    tool_call_sse_transcript(
+                        "item_workspace_edit",
+                        "call_workspace_edit",
+                        "edit",
+                        serde_json::json!({
+                            "filePath": "src/status.txt",
+                            "editId": "workspace-status-done",
+                            "edits": [
+                                {
+                                    "op": "replace",
+                                    "pos": format!("2#{}", compute_line_hash("status = \"pending\"")),
+                                    "lines": ["status = \"done\""],
+                                }
+                            ],
+                        }),
+                    ),
+                    "text/event-stream",
+                ),
+        )
+        .with_priority(4)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .and(body_string_contains(prompt_text))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    tool_call_sse_transcript(
+                        "item_workspace_read",
+                        "call_workspace_read",
+                        "read",
+                        serde_json::json!({
+                            "path": "src/status.txt",
+                            "offset": 1,
+                            "limit": 10,
+                        }),
+                    ),
+                    "text/event-stream",
+                ),
+        )
+        .with_priority(5)
+        .mount(&server)
+        .await;
+
+    let temp = tempdir().expect("tempdir");
+    fs::create_dir_all(temp.path().join("src")).expect("create src dir");
+    let status_path = temp.path().join("src/status.txt");
+    fs::write(
+        &status_path,
+        "title = \"harness\"\nstatus = \"pending\"\nchecks = [\"read\"]\n",
+    )
+    .expect("seed status file");
+
+    let config_path = temp.path().join("harness.workspace-oracle.jsonc");
+    let session_dir = temp.path().join("sessions");
+    let out_path = temp.path().join("events.jsonl");
+    let config = prompt_cli_config(
+        &format!("{}/v1", server.uri()),
+        &session_dir,
+        &["read", "edit", "bash"],
+    );
+    fs::write(&config_path, config).expect("write config");
+
+    let config_arg = config_path.clone();
+    let out_arg = out_path.clone();
+    let temp_path = temp.path().to_path_buf();
+    let output = tokio::task::spawn_blocking(move || {
+        Command::new(env!("CARGO_BIN_EXE_harness"))
+            .current_dir(temp_path)
+            .args([
+                "--config",
+                config_arg.to_str().expect("config path utf-8"),
+                "prompt",
+                "--text",
+                prompt_text,
+                "--out",
+                out_arg.to_str().expect("out path utf-8"),
+                "--print-run-dir",
+            ])
+            .output()
+            .expect("run harness prompt")
+    })
+    .await
+    .expect("join blocking command");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("WORKSPACE_ORACLE_DONE status updated and failed shell read recovered."),
+        "prompt should stream final recovery text: {stdout}"
+    );
+
+    assert_eq!(
+        fs::read_to_string(&status_path).expect("read mutated status file"),
+        "title = \"harness\"\nstatus = \"done\"\nchecks = [\"read\"]\n"
+    );
+
+    let run_dir_line = stdout
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| line.starts_with('/'))
+        .expect("--print-run-dir should print an absolute run directory");
+    let run_dir = std::path::PathBuf::from(run_dir_line);
+    assert!(run_dir.join("events.jsonl").is_file());
+
+    let events_body = fs::read_to_string(&out_path).expect("read copied prompt events");
+    assert_eq!(
+        events_body,
+        fs::read_to_string(run_dir.join("events.jsonl")).expect("read persisted prompt events"),
+        "--out must match the persisted event log"
+    );
+    let events = parse_prompt_events(&events_body);
+    assert!(!events.is_empty());
+    for (idx, event) in events.iter().enumerate() {
+        assert_eq!(event.schema_version, SCHEMA_VERSION);
+        assert_eq!(event.seq, idx as u64 + 1);
+        assert_eq!(event.run_id, events[0].run_id);
+    }
+
+    let read_request_pos = tool_request_position(&events, "read", "src/status.txt");
+    let edit_request_pos = tool_request_position(&events, "edit", "workspace-status-done");
+    let verify_bash_request_pos = tool_request_position(&events, "bash", "printf verified");
+    let blocked_bash_request_pos = tool_request_position(&events, "bash", "cat src/status.txt");
+    assert!(read_request_pos < edit_request_pos);
+    assert!(edit_request_pos < verify_bash_request_pos);
+    assert!(verify_bash_request_pos < blocked_bash_request_pos);
+
+    let read_tool_call_id = requested_tool_call_id(&events[read_request_pos]);
+    let edit_tool_call_id = requested_tool_call_id(&events[edit_request_pos]);
+    let verify_bash_tool_call_id = requested_tool_call_id(&events[verify_bash_request_pos]);
+    let blocked_bash_tool_call_id = requested_tool_call_id(&events[blocked_bash_request_pos]);
+    assert_tool_finished(&events, &read_tool_call_id, ToolCallStatus::Succeeded);
+    assert_tool_finished(&events, &edit_tool_call_id, ToolCallStatus::Succeeded);
+    assert_tool_finished(
+        &events,
+        &verify_bash_tool_call_id,
+        ToolCallStatus::Succeeded,
+    );
+    let blocked_bash_finish =
+        assert_tool_finished(&events, &blocked_bash_tool_call_id, ToolCallStatus::Failed);
+    assert!(
+        blocked_bash_finish
+            .output_summary
+            .as_deref()
+            .is_some_and(|summary| summary.contains("text-processing shell commands are blocked")),
+        "blocked bash failure should guide recovery: {blocked_bash_finish:?}"
+    );
+
+    let edit_applied = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::EditApplied(payload) if payload.edit_id == "workspace-status-done" => {
+                Some(payload)
+            }
+            _ => None,
+        })
+        .expect("edit_applied event for workspace mutation");
+    assert_eq!(edit_applied.path, "src/status.txt");
+    let edit_diff_rel_path = edit_applied
+        .diff_rel_path
+        .as_deref()
+        .expect("edit should write a replayable diff artifact");
+    assert!(run_dir.join(edit_diff_rel_path).is_file());
+    assert!(events.iter().any(|event| {
+        matches!(&event.payload, EventV1::ArtifactWritten(payload)
+            if payload.path == edit_diff_rel_path
+                && payload.tool_call_id.as_deref() == Some(edit_tool_call_id.as_str()))
+    }));
+    assert!(events.iter().any(|event| {
+        matches!(&event.payload, EventV1::EditProposed(payload)
+            if payload.edit_id == "workspace-status-done" && payload.path == "src/status.txt")
+    }));
+    assert!(!events.iter().any(|event| {
+        matches!(&event.payload, EventV1::EditRejected(payload)
+            if payload.edit_id == "workspace-status-done")
+    }));
+
+    let final_answer_pos = events
+        .iter()
+        .enumerate()
+        .skip(blocked_bash_request_pos)
+        .find_map(|(idx, event)| match &event.payload {
+            EventV1::AssistantMessageFinished(payload) if payload.tool_call_count == 0 => Some(idx),
+            _ => None,
+        })
+        .expect("final assistant recovery answer");
+    let agent_turn_completed_pos = first_event_position(
+        &events,
+        |event| {
+            matches!(&event.payload, EventV1::TaskCompleted(payload)
+                if payload.metadata.as_ref().and_then(|metadata| metadata.task_scope)
+                    .is_some_and(|scope| matches!(scope, TaskTerminalScope::AgentTurn)))
+        },
+        "agent turn completion",
+    );
+    assert!(blocked_bash_request_pos < final_answer_pos);
+    assert!(final_answer_pos < agent_turn_completed_pos);
+
+    let requests = server
+        .received_requests()
+        .await
+        .expect("request recording must be enabled");
+    assert_eq!(
+        requests.len(),
+        5,
+        "workspace oracle should require four tool turns plus final answer"
+    );
+    let first_body = String::from_utf8_lossy(&requests[0].body);
+    assert!(first_body.contains(prompt_text));
+    assert!(first_body.contains("\"name\":\"read\""));
+    assert!(first_body.contains("\"name\":\"edit\""));
+    assert!(first_body.contains("\"name\":\"bash\""));
+    for (idx, call_id) in [
+        "call_workspace_read",
+        "call_workspace_edit",
+        "call_workspace_bash",
+        "call_workspace_bad_bash",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let body = String::from_utf8_lossy(&requests[idx + 1].body);
+        assert!(
+            body.contains(call_id),
+            "follow-up request {} should contain provider call id {call_id}: {body}",
+            idx + 1
+        );
+        assert_request_has_function_call_output(&requests[idx + 1].body, call_id);
+    }
+    assert!(String::from_utf8_lossy(&requests[4].body)
+        .contains("text-processing shell commands are blocked"));
+
+    let events_before_replay =
+        fs::read_to_string(run_dir.join("events.jsonl")).expect("read event log before replay");
+    let replay_output = Command::new(env!("CARGO_BIN_EXE_harness"))
+        .args([
+            "replay",
+            "--session",
+            run_dir.to_str().expect("run dir utf-8"),
+            "--json",
+        ])
+        .output()
+        .expect("run harness replay json");
+    assert!(
+        replay_output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&replay_output.stdout),
+        String::from_utf8_lossy(&replay_output.stderr)
+    );
+    assert_eq!(
+        events_before_replay,
+        fs::read_to_string(run_dir.join("events.jsonl")).expect("read event log after replay"),
+        "replay must not mutate the event log"
+    );
+    assert_eq!(
+        fs::read_to_string(&status_path).expect("read status file after replay"),
+        "title = \"harness\"\nstatus = \"done\"\nchecks = [\"read\"]\n",
+        "replay must not rerun tools or mutate the workspace"
+    );
+    let replay: serde_json::Value =
+        serde_json::from_slice(&replay_output.stdout).expect("replay json output should parse");
+    assert_eq!(replay["run_id"], serde_json::json!(events[0].run_id));
+    assert_eq!(replay["status"], serde_json::json!("finished"));
+    assert_eq!(
+        replay["counts_by_type"]["edit_applied"],
+        serde_json::json!(1)
+    );
+    assert_eq!(
+        replay["counts_by_type"]["tool_call_finished"],
+        serde_json::json!(4)
+    );
+    assert_eq!(replay["tasks_in_flight"], serde_json::json!([]));
+    let replay_artifacts = replay["artifacts"]
+        .as_array()
+        .expect("replay artifacts array");
+    assert!(replay_artifacts.iter().any(|artifact| {
+        artifact.get("path") == Some(&serde_json::json!(edit_diff_rel_path))
+            && artifact.get("tool_call_id") == Some(&serde_json::json!(edit_tool_call_id))
+            && artifact.get("present_on_disk") == Some(&serde_json::json!(true))
+    }));
+}
+
+#[tokio::test]
 async fn prompt_cli_exits_nonzero_on_provider_error_finish() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -1772,10 +2452,10 @@ async fn prompt_cli_reads_absolute_workspace_path_and_completes_turn() {
     assert!(events_body.contains("alpha"));
 }
 
-async fn run_prompt_with_single_tool(
+async fn run_prompt_with_single_tool<const N: usize>(
     workspace_root: &std::path::Path,
     server: &MockServer,
-    tools: &[&str],
+    tools: &[&str; N],
     prompt_text: &str,
 ) -> std::process::Output {
     let config_path = workspace_root.join("harness.tool.jsonc");
@@ -1827,6 +2507,87 @@ fn assert_successful_tool_roundtrip(
     assert!(
         events_body.contains(tool_id),
         "expected events to mention {tool_id}: {events_body}"
+    );
+}
+
+fn parse_prompt_events(events_body: &str) -> Vec<EventEnvelopeV1> {
+    events_body
+        .lines()
+        .map(|line| serde_json::from_str::<EventEnvelopeV1>(line).expect("parse prompt event"))
+        .collect()
+}
+
+fn event_positions(
+    events: &[EventEnvelopeV1],
+    mut matches_event: impl FnMut(&EventEnvelopeV1) -> bool,
+) -> Vec<usize> {
+    events
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, event)| matches_event(event).then_some(idx))
+        .collect()
+}
+
+fn first_event_position(
+    events: &[EventEnvelopeV1],
+    mut matches_event: impl FnMut(&EventEnvelopeV1) -> bool,
+    description: &str,
+) -> usize {
+    events
+        .iter()
+        .position(|event| matches_event(event))
+        .unwrap_or_else(|| panic!("missing {description} event"))
+}
+
+fn tool_request_position(events: &[EventEnvelopeV1], tool_id: &str, args_marker: &str) -> usize {
+    first_event_position(
+        events,
+        |event| {
+            matches!(&event.payload, EventV1::ToolCallRequested(payload)
+                if payload.tool_id == tool_id && payload.args_summary.contains(args_marker))
+        },
+        &format!("{tool_id} tool request containing {args_marker}"),
+    )
+}
+
+fn requested_tool_call_id(event: &EventEnvelopeV1) -> String {
+    match &event.payload {
+        EventV1::ToolCallRequested(payload) => payload.tool_call_id.clone(),
+        _ => panic!("expected tool_call_requested event"),
+    }
+}
+
+fn assert_tool_finished<'a>(
+    events: &'a [EventEnvelopeV1],
+    tool_call_id: &str,
+    status: ToolCallStatus,
+) -> &'a ToolCallFinishedEvent {
+    events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::ToolCallFinished(payload)
+                if payload.tool_call_id == tool_call_id && payload.status == status =>
+            {
+                Some(payload)
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("missing {status:?} finish for tool call {tool_call_id}"))
+}
+
+fn assert_request_has_function_call_output(request_body: &[u8], call_id: &str) {
+    let body: serde_json::Value =
+        serde_json::from_slice(request_body).expect("responses request body should parse as JSON");
+    let input = body
+        .get("input")
+        .and_then(serde_json::Value::as_array)
+        .expect("responses request should contain input array");
+    assert!(
+        input.iter().any(|item| {
+            item.get("type") == Some(&serde_json::json!("function_call_output"))
+                && item.get("call_id") == Some(&serde_json::json!(call_id))
+        }),
+        "responses request should include function_call_output for {call_id}: {body}"
     );
 }
 
@@ -1917,6 +2678,86 @@ fn tool_call_responses_sse_transcript() -> String {
         "event: response.completed\n",
         "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":12,\"output_tokens\":3,\"total_tokens\":15}}}\n\n",
         "data: [DONE]\n\n",
+    ]
+    .concat()
+}
+
+fn tool_call_sse_transcript(
+    item_id: &str,
+    call_id: &str,
+    tool_name: &str,
+    arguments: serde_json::Value,
+) -> String {
+    let arguments = arguments.to_string();
+    let item = serde_json::json!({
+        "type": "function_call",
+        "id": item_id,
+        "call_id": call_id,
+        "name": tool_name,
+        "arguments": arguments,
+    });
+    let added = serde_json::json!({
+        "type": "response.output_item.added",
+        "item": item,
+    })
+    .to_string();
+    let done = serde_json::json!({
+        "type": "response.output_item.done",
+        "item": item,
+    })
+    .to_string();
+
+    [
+        "event: response.output_item.added\n".to_string(),
+        format!("data: {added}\n\n"),
+        "event: response.output_item.done\n".to_string(),
+        format!("data: {done}\n\n"),
+        "event: response.completed\n".to_string(),
+        "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":16,\"output_tokens\":4,\"total_tokens\":20}}}\n\n".to_string(),
+        "data: [DONE]\n\n".to_string(),
+    ]
+    .concat()
+}
+
+fn bash_artifact_call_responses_sse_transcript() -> String {
+    let arguments = serde_json::json!({
+        "command": "printf 'oracle%.0s' {1..11000}",
+        "workdir": ".",
+        "description": "emit deterministic oracle artifact",
+        "timeout": 120000,
+    })
+    .to_string();
+    let added = serde_json::json!({
+        "type": "response.output_item.added",
+        "item": {
+            "type": "function_call",
+            "id": "item_oracle_bash",
+            "call_id": "call_oracle_bash",
+            "name": "bash",
+            "arguments": arguments,
+        }
+    })
+    .to_string();
+    let done = serde_json::json!({
+        "type": "response.output_item.done",
+        "item": {
+            "type": "function_call",
+            "id": "item_oracle_bash",
+            "call_id": "call_oracle_bash",
+            "name": "bash",
+            "arguments": arguments,
+        }
+    })
+    .to_string();
+
+    [
+        "event: response.output_item.added\n".to_string(),
+        format!("data: {added}\n\n"),
+        "event: response.output_item.done\n".to_string(),
+        format!("data: {done}\n\n"),
+        "event: response.completed\n".to_string(),
+        "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":16,\"output_tokens\":4,\"total_tokens\":20}}}\n\n".to_string(),
+        "data: [DONE]\n\n".to_string(),
     ]
     .concat()
 }

@@ -267,7 +267,7 @@ fn config_docs_capture_workflow_contract_registry() {
         "Closeout and dossier",
         "only non-present reference skill",
         "must not execute shell tools",
-        "docs/omx-workflow-slice-spec.md",
+        "docs/workflow-parity-matrix.json",
     ] {
         assert!(
             doc.contains(expected),
@@ -285,7 +285,7 @@ fn readme_lists_registered_workflow_slash_commands_and_aliases() {
         if !matches!(command.action, CommandAction::WorkflowIntent { .. }) {
             continue;
         }
-        if !command.name.starts_with("omx-skill:") {
+        if !command.name.starts_with("harness-workflow:") {
             let slash_command = format!("/{}", command.name);
             assert!(
                 readme.contains(&slash_command),
@@ -318,27 +318,22 @@ fn readme_lists_registered_workflow_slash_commands_and_aliases() {
 #[test]
 fn completion_dossier_maps_operator_spine_acceptance_criteria() {
     let root = repo_root();
-    let dossier = std::fs::read_to_string(root.join("docs/harness-omx-next-completion-dossier.md"))
-        .expect("read completion dossier");
+    let matrix = std::fs::read_to_string(root.join("docs/workflow-parity-matrix.json"))
+        .expect("read workflow parity matrix");
 
     for expected in [
-        "Ultragoal ledger",
-        "Workflow-first single-operator model",
-        "Projection-only CLI/TUI/replay",
-        "OMO cut/quarantine",
-        "Permission/question/signoff correctness",
-        "Team/subagent as escalation",
-        "Config/runtime split",
-        "Verification evidence",
-        "Completion dossier",
-        "G008 final cleanup/review gate",
-        "Applicable `$` command parity",
-        "Non-applicable worker protocol",
-        "No placeholder dispatch",
+        "selected_for_this_goal",
+        "harness_events_and_replay_projections",
+        "strict_parity_matrix",
+        "negative_path_contract",
+        "evidence_dossier_path",
+        "minimum_1_to_1_scope",
+        "$ultragoal",
+        "$deep-interview",
     ] {
         assert!(
-            dossier.contains(expected),
-            "completion dossier missing acceptance/blocker anchor: {expected}"
+            matrix.contains(expected),
+            "workflow parity matrix missing acceptance/blocker anchor: {expected}"
         );
     }
 }
@@ -413,21 +408,18 @@ fn testing_docs_and_readme_track_test_lane_runner_modes_and_stage_commands() {
 #[test]
 fn workflow_slice_docs_capture_g001_ssot_and_drift_guard_contract() {
     let root = repo_root();
-    let doc = std::fs::read_to_string(root.join("docs/omx-workflow-slice-spec.md"))
-        .expect("read docs/omx-workflow-slice-spec.md");
+    let doc = std::fs::read_to_string(root.join("docs/config.md")).expect("read docs/config.md");
 
     for expected in [
-        "## Workstream J: Setup, doctor, and SSOT verification",
-        "Treat first-party workflow commands, aliases, prompts, evidence categories, doctor checks, and docs links as a small single source of truth early in the slice.",
-        "Manifest/registry verification tests for first-party commands, aliases, evidence categories, prompts, and doctor/docs links.",
-        "workflow commands registered",
-        "aliases present or explicitly disabled",
-        "First-party command/alias/evidence/doctor/docs SSOT drift guard.",
-        "Exit criteria: implementer can state what is reused, what is wrapped with workflow metadata, what is hardened later, and what is deferred.",
+        "### Workflow contract registry",
+        "### Native workflow parity baseline",
+        "workflow_contract_registry",
+        "workflow_skill_protocol_native",
+        "harness workflow run/status/signoff/cancel/dossier/snapshot/plan-consensus/goal/mission/wiki/evidence/init",
     ] {
         assert!(
             doc.contains(expected),
-            "docs/omx-workflow-slice-spec.md missing G001 SSOT/drift anchor: {expected}"
+            "docs/config.md missing workflow SSOT/drift anchor: {expected}"
         );
     }
 }
@@ -436,12 +428,8 @@ fn workflow_slice_docs_capture_g001_ssot_and_drift_guard_contract() {
 fn omo_cut_list_is_quarantined_and_public_contract_stays_single_operator() {
     let root = repo_root();
     let readme = std::fs::read_to_string(root.join("README.md")).expect("read README.md");
-    let parity_spec =
-        std::fs::read_to_string(root.join("docs/omo-parity-spec.md")).expect("read parity spec");
-    let parity_ledger =
-        std::fs::read_to_string(root.join("docs/parity-ledger.json")).expect("read parity ledger");
-    let handoff = std::fs::read_to_string(root.join("docs/harness-omx-next-slice-handoff.md"))
-        .expect("read next-slice handoff");
+    let matrix = std::fs::read_to_string(root.join("docs/workflow-parity-matrix.json"))
+        .expect("read workflow parity matrix");
     let config_docs =
         std::fs::read_to_string(root.join("docs/config.md")).expect("read config docs");
     let architecture_docs =
@@ -449,18 +437,20 @@ fn omo_cut_list_is_quarantined_and_public_contract_stays_single_operator() {
 
     for (label, doc) in [
         ("README.md", readme.as_str()),
-        ("docs/omo-parity-spec.md", parity_spec.as_str()),
-        ("docs/parity-ledger.json", parity_ledger.as_str()),
-        ("docs/harness-omx-next-slice-handoff.md", handoff.as_str()),
+        ("docs/config.md", config_docs.as_str()),
     ] {
         let normalized_doc = doc.split_whitespace().collect::<Vec<_>>().join(" ");
-        for expected in ["background migration evidence", "not the product direction"] {
+        for expected in ["Native Harness", "not the runtime authority"] {
             assert!(
                 normalized_doc.contains(expected),
-                "{label} must quarantine legacy OMO/parity artifacts with `{expected}`"
+                "{label} must keep legacy OMX compatibility quarantined with `{expected}`"
             );
         }
     }
+    assert!(
+        matrix.contains("harness_events_and_replay_projections"),
+        "workflow parity matrix must use native Harness state authority"
+    );
 
     for expected in [
         "single-operator workflow orchestration",

@@ -2636,6 +2636,7 @@ fn tui_workflow_intent_mode(intent: WorkflowIntent) -> &'static str {
         WorkflowIntent::Ask => "workflow.ask_local_advisor",
         WorkflowIntent::BestPracticeResearch => "workflow.best_practice_research",
         WorkflowIntent::BuildFix => "workflow.build_fix",
+        WorkflowIntent::GitMaster => "workflow.git_master",
         WorkflowIntent::Setup => "workflow.setup",
         WorkflowIntent::Performance => "workflow.performance",
         WorkflowIntent::Pipeline => "workflow.pipeline",
@@ -2707,6 +2708,7 @@ fn tui_workflow_evidence_category(intent: WorkflowIntent) -> &'static str {
         | WorkflowIntent::Design
         | WorkflowIntent::Cleanup
         | WorkflowIntent::BuildFix
+        | WorkflowIntent::GitMaster
         | WorkflowIntent::Pipeline
         | WorkflowIntent::Tdd
         | WorkflowIntent::Ecomode
@@ -2734,6 +2736,7 @@ fn tui_workflow_status_key(intent: WorkflowIntent) -> Option<&'static str> {
         }
         WorkflowIntent::Skill => Some("skill_status"),
         WorkflowIntent::Note => Some("note_memory_status"),
+        WorkflowIntent::GitMaster => Some("git_status"),
         _ => None,
     }
 }
@@ -3142,7 +3145,6 @@ async fn handle_ui_intents(
                 selected_resource_tags,
                 launch_metadata,
             } => {
-                let mut recorded_workflow_id = None;
                 if intent.effect() == CommandEffect::ReadProjection {
                     let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
                         message: format!(
@@ -3151,49 +3153,45 @@ async fn handle_ui_intents(
                         ),
                         level: OperatorNoticeLevel::Info,
                     });
-                } else {
-                    match record_tui_workflow_intent(
-                        &coordinator,
-                        user_actor.clone(),
-                        intent,
-                        &command,
-                    )
-                    .await
-                    {
-                        Ok(workflow_id) => {
-                            recorded_workflow_id = Some(workflow_id.clone());
-                            let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
-                                message: format!(
-                                    "workflow intent recorded: {} via {command} ({workflow_id})",
-                                    intent.as_str()
-                                ),
-                                level: OperatorNoticeLevel::Info,
-                            });
-                        }
-                        Err(err) => {
-                            let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
-                                message: format!("workflow intent record failed: {err}"),
-                                level: OperatorNoticeLevel::Error,
-                            });
-                            continue;
-                        }
-                    }
+                    continue;
                 }
 
+                let recorded_workflow_id = match record_tui_workflow_intent(
+                    &coordinator,
+                    user_actor.clone(),
+                    intent,
+                    &command,
+                )
+                .await
+                {
+                    Ok(workflow_id) => {
+                        let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                            message: format!(
+                                "workflow intent recorded: {} via {command} ({workflow_id})",
+                                intent.as_str()
+                            ),
+                            level: OperatorNoticeLevel::Info,
+                        });
+                        workflow_id
+                    }
+                    Err(err) => {
+                        let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                            message: format!("workflow intent record failed: {err}"),
+                            level: OperatorNoticeLevel::Error,
+                        });
+                        continue;
+                    }
+                };
+
                 if let Some(mode) = continuation_mode {
-                    let workflow =
-                        recorded_workflow_id
-                            .as_ref()
-                            .map(|workflow_id| WorkflowEventMetadata {
-                                workflow_id: Some(workflow_id.clone()),
-                                lane: Some("lane.operator_decision".to_string()),
-                                iteration: None,
-                                stop_reason: None,
-                                evidence_category: Some(
-                                    tui_workflow_evidence_category(intent).to_string(),
-                                ),
-                                owner: Some("tui-operator".to_string()),
-                            });
+                    let workflow = Some(WorkflowEventMetadata {
+                        workflow_id: Some(recorded_workflow_id.clone()),
+                        lane: Some("lane.operator_decision".to_string()),
+                        iteration: None,
+                        stop_reason: None,
+                        evidence_category: Some(tui_workflow_evidence_category(intent).to_string()),
+                        owner: Some("tui-operator".to_string()),
+                    });
                     if !start_tui_continuation_and_notify(
                         &coordinator,
                         &user_actor,

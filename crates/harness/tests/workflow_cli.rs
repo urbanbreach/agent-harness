@@ -21,6 +21,62 @@ fn harness_command() -> Command {
     command
 }
 
+fn run_json_command<const N: usize>(current_dir: &Path, args: &[&str; N], context: &str) -> Value {
+    let output = harness_command()
+        .current_dir(current_dir)
+        .args(args)
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run {context}: {err}"));
+    assert!(
+        output.status.success(),
+        "{context} failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).unwrap_or_else(|err| {
+        panic!(
+            "{context} stdout should be JSON: {err}\nstdout:\n{}",
+            String::from_utf8_lossy(&output.stdout)
+        )
+    })
+}
+
+fn run_command_expect_failure<const N: usize>(
+    current_dir: &Path,
+    args: &[&str; N],
+    context: &str,
+) -> std::process::Output {
+    let output = harness_command()
+        .current_dir(current_dir)
+        .args(args)
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run {context}: {err}"));
+    assert!(
+        !output.status.success(),
+        "{context} should fail\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output
+}
+
+fn closeout_dimension<'a>(closeout: &'a Value, dimension_id: &str) -> &'a Value {
+    closeout["dimensions"]
+        .as_array()
+        .expect("closeout dimensions")
+        .iter()
+        .find(|dimension| dimension["id"] == dimension_id)
+        .unwrap_or_else(|| panic!("missing closeout dimension `{dimension_id}`"))
+}
+
+fn json_array_contains_str(value: &Value, expected: &str) -> bool {
+    value
+        .as_array()
+        .expect("JSON array")
+        .iter()
+        .any(|item| item.as_str() == Some(expected))
+}
+
 fn deny_edit_config_content() -> &'static str {
     r#"{
       provider: {
@@ -335,6 +391,313 @@ fn workflow_dossier_json_reports_signoff_gate_without_appending_events() {
         .expect("missing evidence array")
         .iter()
         .any(|category| category.as_str() == Some("evidence.simulated_tool_result")));
+}
+
+#[test]
+fn workflow_omx_closeout_oracle_drives_plan_dossier_signoff_and_replay() {
+    let temp = tempdir().expect("tempdir");
+    let session_dir = temp.path().join("sessions");
+    let session_dir_arg = session_dir.to_str().expect("session dir utf-8");
+    let workflow_id = "wf_omx_closeout_oracle";
+    let plan_id = "plan_omx_closeout_oracle";
+
+    let plan_report = run_json_command(
+        &repo_root(),
+        &[
+            "--session-dir",
+            session_dir_arg,
+            "workflow",
+            "plan-consensus",
+            "--workflow-id",
+            workflow_id,
+            "--plan-id",
+            plan_id,
+            "--task",
+            "Close out an OMX-style workflow with replay-derived evidence",
+            "--option",
+            "ship=Ship the deterministic closeout oracle",
+            "--chosen-option",
+            "ship",
+            "--adr",
+            "Use replay-derived workflow status and dossier as the closeout authority.",
+            "--work",
+            "Add a black-box workflow closeout oracle",
+            "--risk",
+            "Closeout projections can drift from persisted events",
+            "--test-plan",
+            "cargo test -p harness --test workflow_cli workflow_omx_closeout_oracle_drives_plan_dossier_signoff_and_replay",
+            "--manual-qa",
+            "Run workflow status, dossier export, signoff, and replay through the CLI",
+            "--staffing",
+            "planner/executor/reviewer",
+            "--handoff",
+            "workflow signoff with explicit closeout waiver and approval",
+            "--acceptance",
+            "status, dossier, signoff, and replay agree on terminal closeout",
+            "--evidence-ref",
+            "context:intake-snapshot",
+            "--json",
+        ],
+        "workflow plan-consensus closeout oracle",
+    );
+    let run_dir = plan_report["run_dir"].as_str().expect("run dir");
+    let events_path = plan_report["events_path"].as_str().expect("events path");
+    let plan_artifact_path = plan_report["artifact_path"]
+        .as_str()
+        .expect("artifact path");
+    assert!(plan_artifact_path.starts_with("artifacts/workflows/plan_consensus/"));
+    let plan_artifact_body = fs::read_to_string(Path::new(run_dir).join(plan_artifact_path))
+        .expect("read plan consensus artifact");
+    assert!(plan_artifact_body.contains("deterministic closeout oracle"));
+    assert!(plan_artifact_body.contains("replay-derived workflow status"));
+
+    let initial_events = fs::read_to_string(events_path).expect("read initial workflow events");
+    assert!(initial_events.contains("workflow_started"));
+    assert!(initial_events.contains("evidence.plan_consensus"));
+    assert!(initial_events.contains(plan_artifact_path));
+
+    let status_before = run_json_command(
+        &repo_root(),
+        &[
+            "workflow",
+            "status",
+            "--run-dir",
+            run_dir,
+            "--workflow-id",
+            workflow_id,
+            "--json",
+        ],
+        "workflow status before closeout",
+    );
+    assert_eq!(
+        fs::read_to_string(events_path).expect("read events after status"),
+        initial_events,
+        "workflow status must be projection-only"
+    );
+    let workflow_before = &status_before["projection"]["workflows"][workflow_id];
+    assert_eq!(workflow_before["mode"], "workflow.plan_consensus");
+    assert_eq!(workflow_before["status"], "active");
+    assert_eq!(workflow_before["terminal"], false);
+    assert!(json_array_contains_str(
+        &workflow_before["evidence_categories"],
+        "evidence.plan_consensus"
+    ));
+    assert_eq!(
+        status_before["projection"]["plan_consensus"][plan_id]["status"],
+        "approved"
+    );
+    let closeout_before = &status_before["closeout"][workflow_id]["closeout"];
+    assert_eq!(closeout_before["overall_allowed"], false);
+    assert!(closeout_before["legal_next_actions"]
+        .as_array()
+        .expect("legal next actions")
+        .iter()
+        .any(|action| action["action"] == "request_evidence"));
+    let evidence_before = closeout_dimension(closeout_before, "evidence");
+    assert_eq!(evidence_before["allowed"], false);
+    assert!(json_array_contains_str(
+        &evidence_before["missing_categories"],
+        "evidence.context_snapshot"
+    ));
+    assert!(json_array_contains_str(
+        &evidence_before["missing_categories"],
+        "evidence.simulated_tool_result"
+    ));
+    let plan_dimension = closeout_dimension(closeout_before, "plan");
+    assert_eq!(plan_dimension["allowed"], true);
+
+    let dossier_output = temp.path().join("omx-closeout-dossier.json");
+    let dossier_output_arg = dossier_output.to_str().expect("dossier path utf-8");
+    let dossier_before = run_json_command(
+        &repo_root(),
+        &[
+            "workflow",
+            "dossier",
+            "export",
+            "--run-dir",
+            run_dir,
+            "--workflow-id",
+            workflow_id,
+            "--format",
+            "json",
+            "--output",
+            dossier_output_arg,
+        ],
+        "workflow dossier export before closeout",
+    );
+    assert_eq!(
+        fs::read_to_string(events_path).expect("read events after dossier"),
+        initial_events,
+        "workflow dossier export must be projection-only"
+    );
+    assert!(
+        dossier_output.is_file(),
+        "dossier export should write the requested file"
+    );
+    let exported_dossier: Value =
+        serde_json::from_str(&fs::read_to_string(&dossier_output).expect("read exported dossier"))
+            .expect("exported dossier JSON");
+    assert_eq!(dossier_before, exported_dossier);
+    let dossier_workflow = &dossier_before["workflows"][0];
+    assert_eq!(dossier_workflow["workflow_id"], workflow_id);
+    assert_eq!(dossier_workflow["signoff"]["allowed"], false);
+    assert_eq!(dossier_workflow["closeout"]["overall_allowed"], false);
+    assert!(dossier_workflow["evidence"]
+        .as_array()
+        .expect("dossier evidence")
+        .iter()
+        .any(|evidence| evidence["category"] == "evidence.plan_consensus"
+            && evidence["artifact_path"] == plan_artifact_path));
+
+    let premature = run_command_expect_failure(
+        &repo_root(),
+        &[
+            "workflow",
+            "signoff",
+            "--run-dir",
+            run_dir,
+            "--workflow-id",
+            workflow_id,
+            "--approve",
+            "--json",
+        ],
+        "premature workflow closeout approval",
+    );
+    assert!(String::from_utf8_lossy(&premature.stderr).contains("closeout"));
+    let after_premature = fs::read_to_string(events_path).expect("read events after denial");
+    assert!(after_premature.contains("workflow_transition_denied"));
+
+    let waiver = run_json_command(
+        &repo_root(),
+        &[
+            "workflow",
+            "signoff",
+            "--run-dir",
+            run_dir,
+            "--workflow-id",
+            workflow_id,
+            "--waive",
+            "--scope",
+            "dimension:evidence",
+            "--reason",
+            "operator accepts deterministic oracle evidence for this closeout slice",
+            "--json",
+        ],
+        "workflow closeout evidence waiver",
+    );
+    assert_eq!(waiver["run_dir"], run_dir);
+    assert_eq!(waiver["decision"], "waive:dimension:evidence");
+    assert_eq!(waiver["terminal_outcome"], Value::Null);
+    assert_eq!(waiver["signoff"]["closeout"]["overall_allowed"], true);
+
+    let status_after_waiver = run_json_command(
+        &repo_root(),
+        &[
+            "workflow",
+            "status",
+            "--run-dir",
+            run_dir,
+            "--workflow-id",
+            workflow_id,
+            "--json",
+        ],
+        "workflow status after evidence waiver",
+    );
+    let closeout_after_waiver = &status_after_waiver["closeout"][workflow_id]["closeout"];
+    assert_eq!(closeout_after_waiver["overall_allowed"], true);
+    let waived_evidence = closeout_dimension(closeout_after_waiver, "evidence");
+    assert_eq!(waived_evidence["allowed"], true);
+    assert_eq!(waived_evidence["waived"], true);
+    assert!(closeout_after_waiver["legal_next_actions"]
+        .as_array()
+        .expect("legal next actions after waiver")
+        .iter()
+        .any(|action| action["action"] == "approve"));
+
+    let approval = run_json_command(
+        &repo_root(),
+        &[
+            "workflow",
+            "signoff",
+            "--run-dir",
+            run_dir,
+            "--workflow-id",
+            workflow_id,
+            "--approve",
+            "--json",
+        ],
+        "workflow closeout approval after waiver",
+    );
+    assert_eq!(approval["run_dir"], run_dir);
+    assert_eq!(approval["decision"], "signoff-approved");
+    assert_eq!(approval["terminal_outcome"], "outcome.finished");
+    assert_eq!(approval["signoff"]["closeout"]["overall_allowed"], true);
+
+    let final_status = run_json_command(
+        &repo_root(),
+        &[
+            "workflow",
+            "status",
+            "--run-dir",
+            run_dir,
+            "--workflow-id",
+            workflow_id,
+            "--json",
+        ],
+        "workflow final status after approval",
+    );
+    assert_eq!(final_status["active_count"], 0);
+    let final_workflow = &final_status["projection"]["workflows"][workflow_id];
+    assert_eq!(final_workflow["status"], "outcome.finished");
+    assert_eq!(final_workflow["terminal"], true);
+    assert!(json_array_contains_str(
+        &final_workflow["operator_decisions"],
+        "waive:dimension:evidence"
+    ));
+    assert!(json_array_contains_str(
+        &final_workflow["operator_decisions"],
+        "signoff-approved"
+    ));
+    assert_eq!(
+        final_status["closeout"][workflow_id]["closeout"]["overall_allowed"],
+        true
+    );
+
+    let before_replay = fs::read_to_string(events_path).expect("read events before replay");
+    let replay = run_json_command(
+        &repo_root(),
+        &["replay", "--session", run_dir, "--json"],
+        "workflow closeout replay JSON",
+    );
+    assert_eq!(
+        fs::read_to_string(events_path).expect("read events after replay"),
+        before_replay,
+        "workflow replay must not append closeout/status/dossier events"
+    );
+    assert_eq!(
+        replay["workflow_projection"]["workflows"][workflow_id]["status"],
+        "outcome.finished"
+    );
+    assert_eq!(
+        replay["workflow_projection"]["workflows"][workflow_id]["terminal"],
+        true
+    );
+    assert_eq!(
+        replay["workflow_projection"]["plan_consensus"][plan_id]["status"],
+        "approved"
+    );
+    assert_eq!(
+        replay["workflow_projection"]["evidence"][workflow_id][0]["artifact_path"],
+        plan_artifact_path
+    );
+    assert_eq!(
+        replay["workflow_closeout"][workflow_id]["overall_allowed"],
+        true
+    );
+    assert_eq!(
+        closeout_dimension(&replay["workflow_closeout"][workflow_id], "evidence")["waived"],
+        true
+    );
 }
 
 #[test]

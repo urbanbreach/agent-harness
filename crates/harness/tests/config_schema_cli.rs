@@ -904,6 +904,98 @@ fn doctor_cli_emits_json_report() {
 }
 
 #[test]
+fn doctor_cli_strict_parity_fails_without_generated_execution_proof_bundle() {
+    let repo_root = repo_root();
+    let config_path = repo_root.join("configs").join("harness.example.jsonc");
+    let temp = tempdir().expect("tempdir");
+
+    let output = harness_command()
+        .current_dir(&repo_root)
+        .env(
+            "HARNESS_STRICT_PARITY_PROOF_ROOT",
+            temp.path().join("missing"),
+        )
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "doctor",
+            "--json",
+            "--strict-parity",
+        ])
+        .output()
+        .expect("run harness doctor --json --strict-parity without generated proof");
+
+    assert!(
+        !output.status.success(),
+        "strict parity should fail when selected rows have no generated execution proof; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).expect("doctor json report");
+    let strict = report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .find(|check| check["id"] == "strict_parity_matrix")
+        .expect("strict parity check");
+    assert_eq!(strict["status"], "fail");
+    assert!(strict["message"]
+        .as_str()
+        .expect("strict message")
+        .contains("strict parity blocker"));
+    assert_eq!(strict["details"]["selected_rows"], 28);
+    assert!(strict["details"]["blockers"]
+        .as_array()
+        .expect("blockers")
+        .iter()
+        .any(|blocker| blocker
+            .as_str()
+            .is_some_and(|text| text.contains("missing generated execution proof bundle"))));
+}
+
+#[test]
+fn doctor_cli_strict_parity_missing_proofs_is_stable_outside_repo_cwd() {
+    let repo_root = repo_root();
+    let config_path = repo_root.join("configs").join("harness.example.jsonc");
+    let temp = tempdir().expect("tempdir");
+    let proof_root = temp.path().join("missing-proofs");
+
+    let output = harness_command()
+        .current_dir(temp.path())
+        .env("HARNESS_STRICT_PARITY_PROOF_ROOT", &proof_root)
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "--session-dir",
+            repo_root
+                .join(".agent-harness/sessions")
+                .to_str()
+                .expect("session path utf-8"),
+            "doctor",
+            "--json",
+            "--strict-parity",
+        ])
+        .output()
+        .expect("run harness doctor --json --strict-parity outside repo cwd");
+
+    assert!(
+        !output.status.success(),
+        "doctor should fail closed outside repo cwd when generated proofs are absent; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).expect("doctor json report");
+    let strict = report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .find(|check| check["id"] == "strict_parity_matrix")
+        .expect("strict parity check");
+    assert_eq!(strict["status"], "fail");
+    assert_eq!(strict["details"]["selected_rows"], 28);
+}
+
+#[test]
 fn doctor_cli_reports_malformed_team_spec_json() {
     let temp = tempdir().expect("tempdir");
     fs::create_dir_all(temp.path().join(".agent-harness/teams")).expect("create team specs");

@@ -1972,7 +1972,7 @@
       ]
     },
     {
-      "canonical_id": "omx-skill:ai-slop-cleaner",
+      "canonical_id": "harness-workflow:ai-slop-cleaner",
       "aliases": [
         "ai-slop-cleaner"
       ],
@@ -2001,7 +2001,7 @@
       }
     },
     {
-      "canonical_id": "omx-skill:analyze",
+      "canonical_id": "harness-workflow:analyze",
       "aliases": [
         "analyze"
       ],
@@ -2011,12 +2011,12 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "task.subagent_type:analyst"
+        "target": "workflow.analysis via skill:analyze"
       },
       "status": "present",
-      "visibility": "slash_agent",
-      "authority_model": "coordinator_task_tool_with_profile_permissions",
-      "blocker_or_stage": "native task-tool slash-agent shortcut",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow skill dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
@@ -2024,17 +2024,17 @@
         "crates/harness-core/src/command_registry.rs",
         "crates/harness-tui/src/app/tests.rs",
         "crates/harness/src/tui.rs",
-        "crates/harness-core/src/command_registry.rs:specialist_dollar_aliases_resolve_to_slash_agent_shortcuts",
-        "crates/harness-tui/src/app/tests.rs:dollar_agent_shortcuts_dispatch_native_task_roles"
+        "crates/harness-core/src/command_registry.rs:specialist_dollar_aliases_resolve_to_expected_workflow_skill_dispatch",
+        "crates/harness-tui/src/app/tests.rs:dollar_specialist_aliases_dispatch_as_workflow_skills"
       ],
       "runtime_semantics": {
-        "surface": "agent_shortcut",
-        "effect": "schedule_agent_task",
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
         "availability": "present"
       }
     },
     {
-      "canonical_id": "omx-skill:ask",
+      "canonical_id": "harness-workflow:ask",
       "aliases": [
         "ask"
       ],
@@ -2062,7 +2062,7 @@
       "description": "Ask a local external advisor CLI and capture a reusable artifact"
     },
     {
-      "canonical_id": "omx-skill:ask-claude",
+      "canonical_id": "harness-workflow:ask-claude",
       "aliases": [
         "ask-claude"
       ],
@@ -2090,7 +2090,7 @@
       "description": "Deprecated Claude advisor shim routed through the local advisor workflow"
     },
     {
-      "canonical_id": "omx-skill:ask-gemini",
+      "canonical_id": "harness-workflow:ask-gemini",
       "aliases": [
         "ask-gemini"
       ],
@@ -2118,7 +2118,7 @@
       "description": "Deprecated Gemini advisor shim routed through the local advisor workflow"
     },
     {
-      "canonical_id": "omx-skill:autopilot",
+      "canonical_id": "harness-workflow:autopilot",
       "aliases": [
         "autopilot"
       ],
@@ -2149,7 +2149,7 @@
       }
     },
     {
-      "canonical_id": "omx-skill:autoresearch",
+      "canonical_id": "harness-workflow:autoresearch",
       "aliases": [
         "autoresearch"
       ],
@@ -2178,7 +2178,7 @@
       }
     },
     {
-      "canonical_id": "omx-skill:autoresearch-goal",
+      "canonical_id": "harness-workflow:autoresearch-goal",
       "aliases": [
         "autoresearch-goal"
       ],
@@ -2209,7 +2209,7 @@
       }
     },
     {
-      "canonical_id": "omx-skill:best-practice-research",
+      "canonical_id": "harness-workflow:best-practice-research",
       "aliases": [
         "best-practice-research"
       ],
@@ -2237,7 +2237,7 @@
       "description": "Run a bounded best-practice research wrapper using official and upstream evidence first"
     },
     {
-      "canonical_id": "omx-skill:build-fix",
+      "canonical_id": "harness-workflow:build-fix",
       "aliases": [
         "build-fix"
       ],
@@ -2247,27 +2247,27 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "task.subagent_type:build-fixer"
+        "target": "workflow.build_fix via skill:build-fix"
       },
       "status": "present",
-      "visibility": "slash_agent",
-      "authority_model": "coordinator_task_tool_with_profile_permissions",
-      "blocker_or_stage": "native task-tool slash-agent shortcut",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow skill dispatch of an OMX hard-deprecated shim",
       "tests": [
         "crates/harness/tests/workflow_inventory.rs",
         "crates/harness-core/src/command_registry.rs",
-        "crates/harness-core/src/command_registry.rs:specialist_dollar_aliases_resolve_to_slash_agent_shortcuts",
-        "crates/harness-tui/src/app/tests.rs:dollar_agent_shortcuts_dispatch_native_task_roles"
+        "crates/harness-core/src/command_registry.rs:specialist_dollar_aliases_resolve_to_expected_workflow_skill_dispatch",
+        "crates/harness-tui/src/app/tests.rs:dollar_specialist_aliases_dispatch_as_workflow_skills"
       ],
       "runtime_semantics": {
-        "surface": "agent_shortcut",
-        "effect": "schedule_agent_task",
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
         "availability": "present"
       },
       "description": "Route build-failure repair through the build-fixer workflow contract"
     },
     {
-      "canonical_id": "omx-skill:cancel",
+      "canonical_id": "reference-skill:cancel",
       "aliases": [],
       "source_refs": [
         "inspirations/oh-my-codex/skills/cancel/SKILL.md"
@@ -2285,7 +2285,7 @@
       ]
     },
     {
-      "canonical_id": "omx-skill:code-review",
+      "canonical_id": "harness-workflow:code-review",
       "aliases": [
         "code-review"
       ],
@@ -2294,13 +2294,13 @@
         "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
       ],
       "harness_mapping": {
-        "surface": "harness_command_registry",
-        "target": "task.subagent_type:code-reviewer"
+        "surface": "workflow_skill",
+        "target": "workflow.review"
       },
       "status": "present",
-      "visibility": "slash_agent",
-      "authority_model": "coordinator_task_tool_with_profile_permissions",
-      "blocker_or_stage": "native task-tool slash-agent shortcut",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow skill dispatch of an OMX hard-deprecated shim",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
@@ -2308,17 +2308,17 @@
         "crates/harness-core/src/command_registry.rs",
         "crates/harness-tui/src/app/tests.rs",
         "crates/harness/src/tui.rs",
-        "crates/harness-core/src/command_registry.rs:specialist_dollar_aliases_resolve_to_slash_agent_shortcuts",
-        "crates/harness-tui/src/app/tests.rs:dollar_agent_shortcuts_dispatch_native_task_roles"
+        "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
+        "crates/harness-tui/src/app/tests.rs:dollar_workflow_aliases_dispatch_as_workflow_intents"
       ],
       "runtime_semantics": {
-        "surface": "agent_shortcut",
-        "effect": "schedule_agent_task",
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
         "availability": "present"
       }
     },
     {
-      "canonical_id": "omx-skill:configure-notifications",
+      "canonical_id": "harness-workflow:configure-notifications",
       "aliases": [
         "configure-notifications"
       ],
@@ -2349,7 +2349,7 @@
       }
     },
     {
-      "canonical_id": "omx-skill:deep-interview",
+      "canonical_id": "harness-workflow:deep-interview",
       "aliases": [
         "deep-interview"
       ],
@@ -2378,7 +2378,7 @@
       }
     },
     {
-      "canonical_id": "omx-skill:deepsearch",
+      "canonical_id": "harness-workflow:deepsearch",
       "aliases": [
         "deepsearch"
       ],
@@ -2409,7 +2409,7 @@
       }
     },
     {
-      "canonical_id": "omx-skill:design",
+      "canonical_id": "harness-workflow:design",
       "aliases": [
         "design"
       ],
@@ -2419,12 +2419,12 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "task.subagent_type:designer"
+        "target": "workflow.design via skill:design"
       },
       "status": "present",
-      "visibility": "slash_agent",
-      "authority_model": "coordinator_task_tool_with_profile_permissions",
-      "blocker_or_stage": "native task-tool slash-agent shortcut",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow skill dispatch",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
@@ -2432,17 +2432,17 @@
         "crates/harness-core/src/command_registry.rs",
         "crates/harness-tui/src/app/tests.rs",
         "crates/harness/src/tui.rs",
-        "crates/harness-core/src/command_registry.rs:specialist_dollar_aliases_resolve_to_slash_agent_shortcuts",
-        "crates/harness-tui/src/app/tests.rs:dollar_agent_shortcuts_dispatch_native_task_roles"
+        "crates/harness-core/src/command_registry.rs:specialist_dollar_aliases_resolve_to_expected_workflow_skill_dispatch",
+        "crates/harness-tui/src/app/tests.rs:dollar_specialist_aliases_dispatch_as_workflow_skills"
       ],
       "runtime_semantics": {
-        "surface": "agent_shortcut",
-        "effect": "schedule_agent_task",
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
         "availability": "present"
       }
     },
     {
-      "canonical_id": "omx-skill:doctor",
+      "canonical_id": "harness-workflow:doctor",
       "aliases": [
         "doctor"
       ],
@@ -2473,7 +2473,7 @@
       }
     },
     {
-      "canonical_id": "omx-skill:ecomode",
+      "canonical_id": "harness-workflow:ecomode",
       "aliases": [
         "ecomode"
       ],
@@ -2504,7 +2504,7 @@
       }
     },
     {
-      "canonical_id": "omx-skill:frontend-ui-ux",
+      "canonical_id": "harness-workflow:frontend-ui-ux",
       "aliases": [
         "frontend-ui-ux"
       ],
@@ -2535,7 +2535,7 @@
       }
     },
     {
-      "canonical_id": "omx-skill:git-master",
+      "canonical_id": "harness-workflow:git-master",
       "aliases": [
         "git-master"
       ],
@@ -2545,12 +2545,12 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "task.subagent_type:git-master"
+        "target": "workflow.git_master via skill:git-master"
       },
       "status": "present",
-      "visibility": "slash_agent",
-      "authority_model": "coordinator_task_tool_with_profile_permissions",
-      "blocker_or_stage": "native task-tool slash-agent shortcut",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow skill dispatch with git-master agent routing guidance",
       "tests": [
         "crates/harness/tests/workflow_inventory.rs",
         "crates/harness-core/src/command_registry.rs",
@@ -2558,13 +2558,13 @@
         "crates/harness/src/tui.rs"
       ],
       "runtime_semantics": {
-        "surface": "agent_shortcut",
-        "effect": "schedule_agent_task",
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
         "availability": "present"
       }
     },
     {
-      "canonical_id": "omx-skill:help",
+      "canonical_id": "harness-workflow:help",
       "aliases": [
         "help"
       ],
@@ -2574,7 +2574,7 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "workflow.help via skill:help"
+        "target": "workflow.help"
       },
       "status": "present",
       "visibility": "operator_workflow",
@@ -2590,12 +2590,12 @@
       ],
       "runtime_semantics": {
         "surface": "workflow_command",
-        "effect": "mutate_coordinator_state",
+        "effect": "read_projection",
         "availability": "present"
       }
     },
     {
-      "canonical_id": "omx-skill:hud",
+      "canonical_id": "harness-workflow:hud",
       "aliases": [
         "hud"
       ],
@@ -2605,7 +2605,7 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "workflow.hud via skill:hud"
+        "target": "workflow.hud"
       },
       "status": "present",
       "visibility": "operator_workflow",
@@ -2621,12 +2621,12 @@
       ],
       "runtime_semantics": {
         "surface": "workflow_command",
-        "effect": "mutate_coordinator_state",
+        "effect": "read_projection",
         "availability": "present"
       }
     },
     {
-      "canonical_id": "omx-skill:note",
+      "canonical_id": "harness-workflow:note",
       "aliases": [
         "note"
       ],
@@ -2657,7 +2657,7 @@
       }
     },
     {
-      "canonical_id": "omx-skill:omx-setup",
+      "canonical_id": "harness-workflow:omx-setup",
       "aliases": [
         "omx-setup"
       ],
@@ -2685,7 +2685,7 @@
       "description": "Set up or refresh compatible Harness assets and runtime configuration"
     },
     {
-      "canonical_id": "omx-skill:performance-goal",
+      "canonical_id": "harness-workflow:performance-goal",
       "aliases": [
         "performance-goal"
       ],
@@ -2716,7 +2716,7 @@
       }
     },
     {
-      "canonical_id": "omx-skill:pipeline",
+      "canonical_id": "harness-workflow:pipeline",
       "aliases": [
         "pipeline"
       ],
@@ -2747,7 +2747,7 @@
       }
     },
     {
-      "canonical_id": "omx-skill:plan",
+      "canonical_id": "reference-skill:plan",
       "aliases": [],
       "source_refs": [
         "inspirations/oh-my-codex/skills/plan/SKILL.md"
@@ -2765,7 +2765,7 @@
       ]
     },
     {
-      "canonical_id": "omx-skill:ralph",
+      "canonical_id": "harness-workflow:ralph",
       "aliases": [
         "ralph"
       ],
@@ -2794,7 +2794,7 @@
       }
     },
     {
-      "canonical_id": "omx-skill:ralph-init",
+      "canonical_id": "harness-workflow:ralph-init",
       "aliases": [
         "ralph-init"
       ],
@@ -2825,7 +2825,7 @@
       }
     },
     {
-      "canonical_id": "omx-skill:ralplan",
+      "canonical_id": "reference-skill:ralplan",
       "aliases": [],
       "source_refs": [
         "inspirations/oh-my-codex/skills/ralplan/SKILL.md"
@@ -2843,7 +2843,7 @@
       ]
     },
     {
-      "canonical_id": "omx-skill:review",
+      "canonical_id": "harness-workflow:review",
       "aliases": [
         "review"
       ],
@@ -2874,7 +2874,7 @@
       }
     },
     {
-      "canonical_id": "omx-skill:security-review",
+      "canonical_id": "harness-workflow:security-review",
       "aliases": [
         "security-review"
       ],
@@ -2883,13 +2883,13 @@
         "crates/harness-core/src/command_registry.rs:CommandRegistry::builtins"
       ],
       "harness_mapping": {
-        "surface": "harness_command_registry",
-        "target": "task.subagent_type:security-reviewer"
+        "surface": "workflow_skill",
+        "target": "workflow.security_review"
       },
       "status": "present",
-      "visibility": "slash_agent",
-      "authority_model": "coordinator_task_tool_with_profile_permissions",
-      "blocker_or_stage": "native task-tool slash-agent shortcut",
+      "visibility": "operator_workflow",
+      "authority_model": "coordinator_or_command_registry",
+      "blocker_or_stage": "native workflow skill dispatch of an OMX hard-deprecated shim",
       "tests": [
         "crates/harness-core/src/command_registry.rs:dollar_workflow_family_aliases_resolve_to_native_or_fail_closed_actions",
         "crates/harness-tui/src/app.rs:exact_test_startup_dollar_command_reports_blocked_workflow",
@@ -2897,17 +2897,17 @@
         "crates/harness-core/src/command_registry.rs",
         "crates/harness-tui/src/app/tests.rs",
         "crates/harness/src/tui.rs",
-        "crates/harness-core/src/command_registry.rs:specialist_dollar_aliases_resolve_to_slash_agent_shortcuts",
-        "crates/harness-tui/src/app/tests.rs:dollar_agent_shortcuts_dispatch_native_task_roles"
+        "crates/harness-core/src/command_registry.rs:specialist_dollar_aliases_resolve_to_expected_workflow_skill_dispatch",
+        "crates/harness-tui/src/app/tests.rs:dollar_specialist_aliases_dispatch_as_workflow_skills"
       ],
       "runtime_semantics": {
-        "surface": "agent_shortcut",
-        "effect": "schedule_agent_task",
+        "surface": "workflow_command",
+        "effect": "mutate_coordinator_state",
         "availability": "present"
       }
     },
     {
-      "canonical_id": "omx-skill:skill",
+      "canonical_id": "harness-workflow:skill",
       "aliases": [
         "skill"
       ],
@@ -2938,7 +2938,7 @@
       }
     },
     {
-      "canonical_id": "omx-skill:swarm",
+      "canonical_id": "harness-workflow:swarm",
       "aliases": [
         "swarm"
       ],
@@ -2969,7 +2969,7 @@
       }
     },
     {
-      "canonical_id": "omx-skill:tdd",
+      "canonical_id": "harness-workflow:tdd",
       "aliases": [
         "tdd"
       ],
@@ -3000,7 +3000,7 @@
       }
     },
     {
-      "canonical_id": "omx-skill:team",
+      "canonical_id": "harness-workflow:team",
       "aliases": [
         "team"
       ],
@@ -3031,7 +3031,7 @@
       }
     },
     {
-      "canonical_id": "omx-skill:trace",
+      "canonical_id": "harness-workflow:trace",
       "aliases": [
         "trace"
       ],
@@ -3041,7 +3041,7 @@
       ],
       "harness_mapping": {
         "surface": "harness_command_registry",
-        "target": "workflow.trace via skill:trace"
+        "target": "workflow.trace"
       },
       "status": "present",
       "visibility": "operator_workflow",
@@ -3057,12 +3057,12 @@
       ],
       "runtime_semantics": {
         "surface": "workflow_command",
-        "effect": "mutate_coordinator_state",
+        "effect": "read_projection",
         "availability": "present"
       }
     },
     {
-      "canonical_id": "omx-skill:ultragoal",
+      "canonical_id": "reference-skill:ultragoal",
       "aliases": [],
       "source_refs": [
         "inspirations/oh-my-codex/skills/ultragoal/SKILL.md"
@@ -3080,7 +3080,7 @@
       ]
     },
     {
-      "canonical_id": "omx-skill:ultraqa",
+      "canonical_id": "harness-workflow:ultraqa",
       "aliases": [
         "ultraqa"
       ],
@@ -3111,7 +3111,7 @@
       }
     },
     {
-      "canonical_id": "omx-skill:ultrawork",
+      "canonical_id": "harness-workflow:ultrawork",
       "aliases": [
         "ultrawork"
       ],
@@ -3140,7 +3140,7 @@
       }
     },
     {
-      "canonical_id": "omx-skill:visual-ralph",
+      "canonical_id": "harness-workflow:visual-ralph",
       "aliases": [
         "visual-ralph"
       ],
@@ -3171,7 +3171,7 @@
       }
     },
     {
-      "canonical_id": "omx-skill:visual-verdict",
+      "canonical_id": "harness-workflow:visual-verdict",
       "aliases": [
         "visual-verdict"
       ],
@@ -3202,7 +3202,7 @@
       }
     },
     {
-      "canonical_id": "omx-skill:web-clone",
+      "canonical_id": "harness-workflow:web-clone",
       "aliases": [
         "web-clone"
       ],
@@ -3233,7 +3233,7 @@
       }
     },
     {
-      "canonical_id": "omx-skill:wiki",
+      "canonical_id": "reference-skill:wiki",
       "aliases": [],
       "source_refs": [
         "inspirations/oh-my-codex/skills/wiki/SKILL.md"
@@ -3251,7 +3251,7 @@
       ]
     },
     {
-      "canonical_id": "omx-skill:worker",
+      "canonical_id": "reference-skill:worker",
       "aliases": [],
       "source_refs": [
         "inspirations/oh-my-codex/skills/worker/SKILL.md"

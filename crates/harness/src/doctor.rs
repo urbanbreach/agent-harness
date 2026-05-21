@@ -38,7 +38,9 @@ use crate::cli_io::{load_events_from_run_dir, EVENTS_FILE_NAME};
 
 const CONFIG_DOC_MD: &str = include_str!("../../../docs/config.md");
 const TESTING_DOC_MD: &str = include_str!("../../../docs/testing.md");
-const OMX_PARITY_DOSSIER_MD: &str = include_str!("../../../docs/omx-parity-dossier.md");
+const WORKFLOW_PARITY_MATRIX_JSON: &str = include_str!("../../../docs/workflow-parity-matrix.json");
+const STRICT_PARITY_PROOF_ROOT_ENV: &str = "HARNESS_STRICT_PARITY_PROOF_ROOT";
+const STRICT_PARITY_DEFAULT_PROOF_ROOT: &str = "target/harness-parity/latest/selected-workflows";
 
 const BUILD_TOOLS: [&str; 5] = [
     "todowrite",
@@ -88,6 +90,10 @@ pub(crate) struct DoctorCommand {
     /// Emit machine-readable JSON instead of text.
     #[arg(long, default_value_t = false)]
     json: bool,
+
+    /// Enforce selected workflow parity matrix rows as a hard release gate.
+    #[arg(long, default_value_t = false)]
+    strict_parity: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -168,7 +174,7 @@ pub(crate) fn execute(
     let mut config = loaded.config;
     config.apply_session_dir_override(session_dir);
 
-    let report = build_report(config_display, &config);
+    let report = build_report(config_display, &config, command.strict_parity);
     if command.json {
         match serde_json::to_string_pretty(&report) {
             Ok(json) => println!("{json}"),
@@ -188,8 +194,12 @@ pub(crate) fn execute(
     }
 }
 
-fn build_report(config_display: String, config: &HarnessConfig) -> DoctorReport {
-    let checks = vec![
+fn build_report(
+    config_display: String,
+    config: &HarnessConfig,
+    strict_parity: bool,
+) -> DoctorReport {
+    let mut checks = vec![
         check_provider_catalog(config),
         check_provider_credentials(config),
         check_model_references(config),
@@ -221,6 +231,9 @@ fn build_report(config_display: String, config: &HarnessConfig) -> DoctorReport 
         check_parity_ledger(),
         check_omo_parity_gaps(),
     ];
+    if strict_parity {
+        checks.push(check_strict_parity_matrix());
+    }
 
     DoctorReport {
         config: config_display,
@@ -472,7 +485,7 @@ fn check_shipped_skill_loadability() -> DoctorCheck {
 }
 
 fn check_workflow_skill_protocol_native() -> DoctorCheck {
-    let workspace_root = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let workspace_root = repo_root_path();
     let mut workflow_skills = CommandRegistry::builtins()
         .commands()
         .iter()
@@ -504,23 +517,61 @@ fn check_workflow_skill_protocol_native() -> DoctorCheck {
             }
         };
 
-        let skill_findings = evaluate_workflow_skill_protocol_body(skill, &skill_path, &body);
-        if skill_findings.is_empty() {
+        let reference_path = workspace_root
+            .join("inspirations/oh-my-codex/skills")
+            .join(skill)
+            .join("SKILL.md");
+        let reference_body = match fs::read_to_string(&reference_path) {
+            Ok(body) => body,
+            Err(err) => {
+                findings.push(WorkflowSkillProtocolFinding {
+                    skill: skill.to_string(),
+                    path: reference_path.display().to_string(),
+                    reason_code: "missing_omx_reference_asset",
+                    severity: "fail",
+                    token: None,
+                    remediation: format!(
+                        "restore the OMX reference workflow skill used for parity comparison: {err}"
+                    ),
+                });
+                continue;
+            }
+        };
+
+        let reference_deprecated = reference_skill_is_hard_deprecated(&reference_body);
+        let skill_findings = evaluate_workflow_skill_protocol_body(
+            skill,
+            &skill_path,
+            &body,
+            &reference_path,
+            &reference_body,
+        );
+        let skill_failed = skill_findings
+            .iter()
+            .any(|finding| finding.severity == "fail");
+        if !skill_failed {
             checked.push(serde_json::json!({
                 "skill": skill,
                 "path": skill_path,
+                "reference_path": reference_path,
+                "reference_deprecated": reference_deprecated,
                 "lines": body.lines().count(),
+                "reference_lines": reference_body.lines().count(),
+                "reference_warnings": skill_findings.len(),
             }));
-        } else {
-            findings.extend(skill_findings);
         }
+        findings.extend(skill_findings);
     }
 
-    if !findings.is_empty() {
+    if findings.iter().any(|finding| finding.severity == "fail") {
+        let fatal_findings = findings
+            .iter()
+            .filter(|finding| finding.severity == "fail")
+            .collect::<Vec<_>>();
         let message = format!(
             "{} native workflow skill protocol issue(s): {}",
-            findings.len(),
-            findings
+            fatal_findings.len(),
+            fatal_findings
                 .iter()
                 .map(|finding| format!(
                     "{}:{}{}",
@@ -543,6 +594,8 @@ fn check_workflow_skill_protocol_native() -> DoctorCheck {
             details: Some(serde_json::json!({
                 "findings": findings,
                 "required_sections": REQUIRED_NATIVE_SKILL_SECTIONS,
+                "reference_root": "inspirations/oh-my-codex/skills",
+                "hard_deprecated_policy": HARD_DEPRECATED_SKILL_PHRASE,
                 "forbidden_token_scan": FORBIDDEN_WORKFLOW_SKILL_TOKENS.iter().map(|rule| {
                     serde_json::json!({
                         "token": rule.token,
@@ -563,7 +616,10 @@ fn check_workflow_skill_protocol_native() -> DoctorCheck {
         ),
         Some(serde_json::json!({
             "checked": checked,
+            "findings": findings,
             "required_sections": REQUIRED_NATIVE_SKILL_SECTIONS,
+            "reference_root": "inspirations/oh-my-codex/skills",
+            "hard_deprecated_policy": HARD_DEPRECATED_SKILL_PHRASE,
             "forbidden_token_scan": FORBIDDEN_WORKFLOW_SKILL_TOKENS.iter().map(|rule| {
                 serde_json::json!({
                     "token": rule.token,
@@ -592,7 +648,15 @@ const REQUIRED_NATIVE_SKILL_SECTIONS: [&str; 7] = [
     "Verification checklist",
 ];
 
-const FORBIDDEN_WORKFLOW_SKILL_TOKENS: [ForbiddenWorkflowSkillToken; 10] = [
+const HARD_DEPRECATED_SKILL_PHRASE: &str = "Hard-deprecated. Do not invoke or route this skill";
+
+const FORBIDDEN_WORKFLOW_SKILL_TOKENS: [ForbiddenWorkflowSkillToken; 13] = [
+    ForbiddenWorkflowSkillToken {
+        token: ".omx/",
+        reason_code: "forbidden_state_file_authority",
+        severity: "fail",
+        remediation: "Use Harness coordinator-owned workflow events, projections, and evidence artifacts instead of old OMX state directories.",
+    },
     ForbiddenWorkflowSkillToken {
         token: ".omx/state",
         reason_code: "forbidden_state_file_authority",
@@ -604,6 +668,18 @@ const FORBIDDEN_WORKFLOW_SKILL_TOKENS: [ForbiddenWorkflowSkillToken; 10] = [
         reason_code: "forbidden_omx_cli_authority",
         severity: "fail",
         remediation: "Translate upstream CLI state operations into Harness workflow evidence/projection operations.",
+    },
+    ForbiddenWorkflowSkillToken {
+        token: "omx ask",
+        reason_code: "forbidden_omx_cli_authority",
+        severity: "fail",
+        remediation: "Use the native `$ask` workflow and record advisor output as Harness evidence.",
+    },
+    ForbiddenWorkflowSkillToken {
+        token: "omx performance-goal",
+        reason_code: "forbidden_omx_cli_authority",
+        severity: "fail",
+        remediation: "Use the native `$performance-goal` workflow and Harness goal/evidence projections.",
     },
     ForbiddenWorkflowSkillToken {
         token: "omx team",
@@ -678,10 +754,26 @@ fn evaluate_workflow_skill_protocol_body(
     skill: &str,
     path: &Path,
     body: &str,
+    reference_path: &Path,
+    reference_body: &str,
 ) -> Vec<WorkflowSkillProtocolFinding> {
     let mut findings = Vec::new();
     let lower = body.to_lowercase();
     let path = path.display().to_string();
+    let reference_deprecated = reference_skill_is_hard_deprecated(reference_body);
+
+    findings.extend(evaluate_reference_skill_parity(
+        skill,
+        &path,
+        body,
+        reference_path,
+        reference_body,
+        reference_deprecated,
+    ));
+
+    if reference_deprecated {
+        return findings;
+    }
 
     for section in REQUIRED_NATIVE_SKILL_SECTIONS {
         let section_lower = section.to_lowercase();
@@ -739,6 +831,183 @@ fn evaluate_workflow_skill_protocol_body(
     }
 
     findings
+}
+
+fn reference_skill_is_hard_deprecated(reference_body: &str) -> bool {
+    reference_body
+        .to_lowercase()
+        .contains(&HARD_DEPRECATED_SKILL_PHRASE.to_lowercase())
+}
+
+fn evaluate_reference_skill_parity(
+    skill: &str,
+    path: &str,
+    body: &str,
+    reference_path: &Path,
+    reference_body: &str,
+    reference_deprecated: bool,
+) -> Vec<WorkflowSkillProtocolFinding> {
+    let mut findings = Vec::new();
+    let lower = body.to_lowercase();
+
+    if reference_deprecated {
+        for required in ["Hard-deprecated", "Do not invoke or route this skill"] {
+            if !lower.contains(&required.to_lowercase()) {
+                findings.push(WorkflowSkillProtocolFinding {
+                    skill: skill.to_string(),
+                    path: path.to_string(),
+                    reason_code: "missing_omx_deprecation_contract",
+                    severity: "fail",
+                    token: Some(required.to_string()),
+                    remediation: format!(
+                        "Preserve the hard-deprecated OMX shim contract from {}.",
+                        reference_path.display()
+                    ),
+                });
+            }
+        }
+        return findings;
+    }
+
+    let body_lower = body.to_lowercase();
+    for anchor in reference_protocol_anchors(reference_body) {
+        let normalized_anchor = normalize_reference_anchor(&anchor);
+        if !body_lower.contains(&anchor.to_lowercase())
+            && !body_lower.contains(&normalized_anchor.to_lowercase())
+        {
+            findings.push(WorkflowSkillProtocolFinding {
+                skill: skill.to_string(),
+                path: path.to_string(),
+                reason_code: "missing_omx_reference_anchor",
+                severity: "fail",
+                token: Some(anchor),
+                remediation: format!(
+                    "Retain active workflow protocol anchors from {} before applying Harness substrate overrides.",
+                    reference_path.display()
+                ),
+            });
+        }
+    }
+
+    let body_fingerprint = normalize_reference_text(body);
+    let reference_lines = reference_behavior_lines(reference_body);
+    let missing_behavior_lines: Vec<String> = reference_lines
+        .iter()
+        .into_iter()
+        .filter(|line| !body_fingerprint.contains(line.as_str()))
+        .cloned()
+        .collect();
+    let retained_lines = reference_lines
+        .len()
+        .saturating_sub(missing_behavior_lines.len());
+    if !reference_lines.is_empty() && retained_lines * 4 < reference_lines.len() * 3 {
+        findings.push(WorkflowSkillProtocolFinding {
+            skill: skill.to_string(),
+            path: path.to_string(),
+            reason_code: "missing_omx_reference_behavior",
+            severity: "warn",
+            token: Some(
+                missing_behavior_lines
+                    .iter()
+                    .take(5)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(" | "),
+            ),
+            remediation: format!(
+                "Retain substantive behavior lines from {} and add Harness substrate overrides separately.",
+                reference_path.display()
+            ),
+        });
+    }
+
+    findings
+}
+
+fn reference_protocol_anchors(reference_body: &str) -> Vec<String> {
+    let mut anchors = Vec::new();
+    let mut in_code_fence = false;
+    for line in reference_body.lines().map(str::trim) {
+        if line.starts_with("```") {
+            in_code_fence = !in_code_fence;
+            continue;
+        }
+        if in_code_fence {
+            continue;
+        }
+        if line.starts_with("# ") || line.starts_with("## ") {
+            anchors.push(line.to_string());
+        }
+    }
+    anchors
+}
+
+fn normalize_reference_anchor(anchor: &str) -> String {
+    anchor
+        .replace("OMX", "Harness")
+        .replace("oh-my-codex", "Agent Harness")
+}
+
+fn reference_behavior_lines(reference_body: &str) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut in_frontmatter = false;
+    let mut frontmatter_done = false;
+    let mut in_code_fence = false;
+
+    for raw_line in reference_body.lines() {
+        let line = raw_line.trim();
+        if !frontmatter_done && line == "---" {
+            in_frontmatter = !in_frontmatter;
+            if !in_frontmatter {
+                frontmatter_done = true;
+            }
+            continue;
+        }
+        if in_frontmatter {
+            continue;
+        }
+        if line.starts_with("```") {
+            in_code_fence = !in_code_fence;
+            continue;
+        }
+        if in_code_fence
+            || line.is_empty()
+            || line.starts_with('#')
+            || line.starts_with("Task: {{ARGUMENTS}}")
+        {
+            continue;
+        }
+
+        let normalized = normalize_reference_line(line);
+        if normalized.len() >= 24 {
+            lines.push(normalized);
+        }
+    }
+
+    lines.sort();
+    lines.dedup();
+    lines
+}
+
+fn normalize_reference_text(body: &str) -> String {
+    body.lines()
+        .map(normalize_reference_line)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn normalize_reference_line(line: &str) -> String {
+    let mut normalized = line.to_lowercase();
+    for (from, to) in [
+        ("oh-my-codex", "harness"),
+        ("agent harness", "harness"),
+        ("omx", "harness"),
+        ("codex", "harness"),
+    ] {
+        normalized = normalized.replace(from, to);
+    }
+    normalized.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn check_workflow_transition_policy_matrix() -> DoctorCheck {
@@ -983,7 +1252,6 @@ fn check_workflow_contract_registry() -> DoctorCheck {
         .filter(|anchor| match anchor.path {
             "docs/config.md" => !CONFIG_DOC_MD.contains(anchor.heading),
             "docs/testing.md" => !TESTING_DOC_MD.contains(anchor.heading),
-            "docs/omx-parity-dossier.md" => !OMX_PARITY_DOSSIER_MD.contains(anchor.heading),
             _ => true,
         })
         .map(|anchor| format!("{}:{}", anchor.path, anchor.heading))
@@ -1016,6 +1284,1026 @@ fn check_workflow_contract_registry() -> DoctorCheck {
             }).collect::<Vec<_>>(),
         })),
     )
+}
+
+fn check_strict_parity_matrix() -> DoctorCheck {
+    let matrix: Value = match serde_json::from_str(WORKFLOW_PARITY_MATRIX_JSON) {
+        Ok(matrix) => matrix,
+        Err(err) => {
+            return fail(
+                "strict_parity_matrix",
+                format!("docs/workflow-parity-matrix.json is not valid JSON: {err}"),
+            )
+        }
+    };
+    let Some(required_fields) = matrix.get("required_row_fields").and_then(Value::as_array) else {
+        return fail(
+            "strict_parity_matrix",
+            "docs/workflow-parity-matrix.json is missing required_row_fields",
+        );
+    };
+    let required_fields = required_fields
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>();
+    if required_fields.is_empty() {
+        return fail(
+            "strict_parity_matrix",
+            "docs/workflow-parity-matrix.json required_row_fields must not be empty",
+        );
+    }
+    let Some(rows) = matrix.get("rows").and_then(Value::as_array) else {
+        return fail(
+            "strict_parity_matrix",
+            "docs/workflow-parity-matrix.json is missing rows",
+        );
+    };
+
+    let mut blockers = Vec::new();
+    let mut selected_count = 0usize;
+    for row in rows {
+        let row_label = row
+            .get("canonical_harness_id")
+            .and_then(Value::as_str)
+            .or_else(|| row.get("registry_command").and_then(Value::as_str))
+            .unwrap_or("<unknown>");
+        for field in &required_fields {
+            if matrix_field_is_empty(row, field) {
+                blockers.push(format!("{row_label}: missing required field {field}"));
+            }
+        }
+
+        if row.get("state_authority").and_then(Value::as_str)
+            != Some("harness_events_and_replay_projections")
+        {
+            blockers.push(format!(
+                "{row_label}: state_authority is not Harness-native"
+            ));
+        }
+
+        let selected_scope = row
+            .get("selected_scope")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let status = row
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+
+        if matches!(status, "native_partial" | "planned" | "staged") {
+            blockers.push(format!(
+                "{row_label}: strict parity cannot leave workflow row in incomplete status {status:?}"
+            ));
+        }
+
+        if selected_scope == "retired_with_reason" || status == "compat_only" {
+            validate_retired_parity_row(row_label, row, &mut blockers);
+            continue;
+        }
+
+        if selected_scope != "selected_for_this_goal" {
+            blockers.push(format!(
+                "{row_label}: active workflow row has selected_scope {selected_scope:?}, expected selected_for_this_goal or retired_with_reason"
+            ));
+            continue;
+        }
+        selected_count += 1;
+
+        if status != "native_complete" {
+            blockers.push(format!(
+                "{row_label}: selected row status is {status:?}, expected native_complete"
+            ));
+        }
+
+        let minimum_scope = row
+            .get("minimum_1_to_1_scope")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if minimum_scope != "native_workflow" {
+            blockers.push(format!(
+                "{row_label}: selected row minimum_1_to_1_scope is {minimum_scope:?}, expected native_workflow"
+            ));
+        }
+
+        validate_selected_parity_dossier(row_label, row, &mut blockers);
+        validate_selected_execution_proof(row_label, row, &mut blockers);
+
+        let native_contract = row
+            .get("native_behavior_contract")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        for forbidden in [
+            "omx state",
+            "omx team",
+            "omx question",
+            "native team tools api",
+        ] {
+            if native_contract.contains(forbidden) {
+                blockers.push(format!(
+                    "{row_label}: native_behavior_contract contains forbidden runtime authority token {forbidden:?}"
+                ));
+            }
+        }
+
+        let parity_dimensions = row
+            .get("parity_dimensions")
+            .and_then(Value::as_array)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .collect::<BTreeSet<_>>()
+            })
+            .unwrap_or_default();
+        for dimension in [
+            "invocation",
+            "state",
+            "artifacts",
+            "permissions",
+            "replay",
+            "tui",
+            "negative_path",
+        ] {
+            if !parity_dimensions.contains(dimension) {
+                blockers.push(format!(
+                    "{row_label}: missing selected parity dimension {dimension}"
+                ));
+            }
+        }
+    }
+
+    if selected_count == 0 {
+        blockers.push("matrix has no selected_for_this_goal rows".to_string());
+    }
+    validate_active_runtime_assets_no_old_authority(&mut blockers);
+
+    if blockers.is_empty() {
+        return pass_with_details(
+            "strict_parity_matrix",
+            format!(
+                "{selected_count} active workflow parity row(s) have complete proof evidence; retired OMX shims are excluded from native_complete credit"
+            ),
+            Some(serde_json::json!({
+                "selected_rows": selected_count,
+                "matrix": "docs/workflow-parity-matrix.json",
+            })),
+        );
+    }
+
+    fail_with_details(
+        "strict_parity_matrix",
+        format!(
+            "{} strict parity blocker(s) across {selected_count} selected row(s)",
+            blockers.len()
+        ),
+        Some(serde_json::json!({
+            "selected_rows": selected_count,
+            "blockers": blockers,
+            "matrix": "docs/workflow-parity-matrix.json",
+        })),
+    )
+}
+
+fn matrix_field_is_empty(row: &Value, field: &str) -> bool {
+    match row.get(field) {
+        Some(Value::String(value)) => value.trim().is_empty(),
+        Some(Value::Array(values)) => values.is_empty(),
+        Some(Value::Object(values)) => values.is_empty(),
+        Some(Value::Null) | None => true,
+        Some(Value::Bool(_)) | Some(Value::Number(_)) => false,
+    }
+}
+
+fn validate_retired_parity_row(row_label: &str, row: &Value, blockers: &mut Vec<String>) {
+    let selected_scope = row
+        .get("selected_scope")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let status = row
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let minimum_scope = row
+        .get("minimum_1_to_1_scope")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let native_contract = row
+        .get("native_behavior_contract")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_lowercase();
+
+    if selected_scope != "retired_with_reason" {
+        blockers.push(format!(
+            "{row_label}: compatibility-only row must use selected_scope retired_with_reason"
+        ));
+    }
+    if status != "compat_only" {
+        blockers.push(format!(
+            "{row_label}: retired OMX shim status is {status:?}, expected compat_only"
+        ));
+    }
+    if minimum_scope != "retired_compatibility_shim" {
+        blockers.push(format!(
+            "{row_label}: retired OMX shim minimum_1_to_1_scope is {minimum_scope:?}, expected retired_compatibility_shim"
+        ));
+    }
+    if !(native_contract.contains("hard-deprecated")
+        || native_contract.contains("compatibility shim"))
+    {
+        blockers.push(format!(
+            "{row_label}: retired OMX shim contract must explicitly describe compatibility/deprecation behavior"
+        ));
+    }
+}
+
+fn validate_selected_parity_dossier(row_label: &str, row: &Value, blockers: &mut Vec<String>) {
+    validate_selected_parity_dossier_with_root(row_label, row, &repo_root_path(), blockers);
+}
+
+fn validate_selected_parity_dossier_with_root(
+    row_label: &str,
+    row: &Value,
+    repo_root: &Path,
+    blockers: &mut Vec<String>,
+) {
+    let dossier_path = row
+        .get("evidence_dossier_path")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if dossier_path.contains("${") {
+        blockers.push(format!(
+            "{row_label}: evidence_dossier_path still contains an unresolved template: {dossier_path}"
+        ));
+        return;
+    }
+    let path = resolve_repo_relative_path(repo_root, dossier_path);
+    let body = match fs::read_to_string(&path) {
+        Ok(body) => body,
+        Err(err) => {
+            blockers.push(format!(
+                "{row_label}: evidence_dossier_path does not point at a captured proof file: {dossier_path} ({err})"
+            ));
+            return;
+        }
+    };
+    let dossier = match serde_json::from_str::<Value>(&body) {
+        Ok(dossier) => dossier,
+        Err(err) => {
+            blockers.push(format!(
+                "{row_label}: evidence dossier is not valid JSON at {dossier_path}: {err}"
+            ));
+            return;
+        }
+    };
+
+    for field in [
+        "canonical_harness_id",
+        "registry_command",
+        "state_authority",
+        "status",
+        "workflow_phase",
+        "native_behavior_contract",
+        "operator_visible_success",
+        "negative_path_contract",
+    ] {
+        if row.get(field).and_then(Value::as_str) != dossier.get(field).and_then(Value::as_str) {
+            blockers.push(format!(
+                "{row_label}: evidence dossier field {field} does not match matrix row"
+            ));
+        }
+    }
+    if row.get("e2e_scenario").and_then(Value::as_str)
+        != dossier.get("scenario").and_then(Value::as_str)
+    {
+        blockers.push(format!(
+            "{row_label}: evidence dossier scenario does not match matrix e2e_scenario"
+        ));
+    }
+
+    if dossier.get("proof_kind").and_then(Value::as_str) != Some("selected_workflow_e2e_parity") {
+        blockers.push(format!(
+            "{row_label}: evidence dossier proof_kind is not selected_workflow_e2e_parity"
+        ));
+    }
+    if dossier.get("strict_doctor_check").and_then(Value::as_str) != Some("strict_parity_matrix") {
+        blockers.push(format!(
+            "{row_label}: evidence dossier strict_doctor_check is not strict_parity_matrix"
+        ));
+    }
+
+    let row_entrypoints = string_set(row, "harness_entrypoint");
+    let dossier_entrypoints = string_set(&dossier, "harness_entrypoint");
+    if row_entrypoints.is_empty() || row_entrypoints != dossier_entrypoints {
+        blockers.push(format!(
+            "{row_label}: evidence dossier harness_entrypoint does not match matrix row"
+        ));
+    }
+    let row_aliases = string_set(row, "legacy_aliases");
+    let dossier_aliases = string_set(&dossier, "legacy_aliases");
+    if row_aliases != dossier_aliases {
+        blockers.push(format!(
+            "{row_label}: evidence dossier legacy_aliases do not match matrix row"
+        ));
+    }
+
+    let row_dimensions = string_set(row, "parity_dimensions");
+    let dossier_dimensions = string_set(&dossier, "parity_dimensions");
+    if row_dimensions.is_empty() || !dossier_dimensions.is_superset(&row_dimensions) {
+        blockers.push(format!(
+            "{row_label}: evidence dossier parity_dimensions do not cover matrix row"
+        ));
+    }
+
+    let evidence_categories = string_set(&dossier, "evidence_categories");
+    for required in ["strict_parity_doctor", "negative_path_contract"] {
+        if !evidence_categories.contains(required) {
+            blockers.push(format!(
+                "{row_label}: evidence dossier is missing evidence category {required}"
+            ));
+        }
+    }
+    let commands = string_set(&dossier, "commands");
+    if !commands
+        .iter()
+        .any(|command| command.contains("doctor --json --strict-parity"))
+    {
+        blockers.push(format!(
+            "{row_label}: evidence dossier commands do not include strict parity doctor"
+        ));
+    }
+
+    let artifacts = dossier.get("artifacts").unwrap_or(&Value::Null);
+    if artifacts.get("docs_dossier").and_then(Value::as_str) != Some(dossier_path) {
+        blockers.push(format!(
+            "{row_label}: evidence dossier artifacts.docs_dossier does not point back to the matrix path"
+        ));
+    }
+
+    let truth_gates = dossier.get("truth_gates").unwrap_or(&Value::Null);
+    for (field, expected) in [
+        ("replay_derived", true),
+        ("native_only", true),
+        ("omx_runtime_authority", false),
+        ("status_reads_append_events", false),
+        ("dossier_reads_append_events", false),
+        ("permission_checks_before_side_effects", true),
+    ] {
+        if truth_gates.get(field).and_then(Value::as_bool) != Some(expected) {
+            blockers.push(format!(
+                "{row_label}: evidence dossier truth_gates.{field} is not {expected}"
+            ));
+        }
+    }
+}
+
+fn validate_selected_execution_proof(row_label: &str, row: &Value, blockers: &mut Vec<String>) {
+    validate_selected_execution_proof_with_root(row_label, row, &repo_root_path(), blockers);
+}
+
+fn validate_selected_execution_proof_with_root(
+    row_label: &str,
+    row: &Value,
+    repo_root: &Path,
+    blockers: &mut Vec<String>,
+) {
+    let scenario = row
+        .get("e2e_scenario")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let proof_root = env::var(STRICT_PARITY_PROOF_ROOT_ENV)
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| repo_root.join(STRICT_PARITY_DEFAULT_PROOF_ROOT));
+    let proof_path = proof_root
+        .join(strict_parity_scenario_slug(scenario))
+        .join("proof-bundle.json");
+    let proof_dir = proof_path.parent().unwrap_or(proof_root.as_path());
+    let body = match fs::read_to_string(&proof_path) {
+        Ok(body) => body,
+        Err(err) => {
+            blockers.push(format!(
+                "{row_label}: missing generated execution proof bundle {} ({err}); run the selected workflow simulator lane first",
+                proof_path.display()
+            ));
+            return;
+        }
+    };
+    let proof = match serde_json::from_str::<Value>(&body) {
+        Ok(proof) => proof,
+        Err(err) => {
+            blockers.push(format!(
+                "{row_label}: execution proof bundle is not valid JSON at {}: {err}",
+                proof_path.display()
+            ));
+            return;
+        }
+    };
+
+    for (field, row_field) in [
+        ("scenario", "e2e_scenario"),
+        ("canonical_harness_id", "canonical_harness_id"),
+        ("registry_command", "registry_command"),
+        ("implementation_status", "status"),
+        ("workflow_phase", "workflow_phase"),
+    ] {
+        if proof.get(field).and_then(Value::as_str) != row.get(row_field).and_then(Value::as_str) {
+            blockers.push(format!(
+                "{row_label}: execution proof field {field} does not match matrix {row_field}"
+            ));
+        }
+    }
+    if proof.get("proof_kind").and_then(Value::as_str) != Some("selected_workflow_execution_proof")
+    {
+        blockers.push(format!(
+            "{row_label}: execution proof_kind is not selected_workflow_execution_proof"
+        ));
+    }
+    if proof.get("old_runtime_free").and_then(Value::as_bool) != Some(true) {
+        blockers.push(format!(
+            "{row_label}: execution proof does not assert old_runtime_free=true"
+        ));
+    }
+    if proof.get("implementation_status").and_then(Value::as_str) != Some("native_complete") {
+        blockers.push(format!(
+            "{row_label}: execution proof implementation_status is not native_complete"
+        ));
+    }
+    validate_registry_native_credit(row_label, row, blockers);
+    validate_no_old_runtime_tokens(row_label, &proof, blockers);
+
+    let commands = proof.get("commands").and_then(Value::as_array);
+    match commands {
+        Some(commands) if !commands.is_empty() => {
+            let read_projection_row = row_is_read_projection(row);
+            let mut has_projection_read = false;
+            let mut has_selected_surface = false;
+            let expected_fragment = expected_selected_command_fragment(row);
+            for (index, command) in commands.iter().enumerate() {
+                if command.get("exit_code").and_then(Value::as_i64) != Some(0) {
+                    blockers.push(format!(
+                        "{row_label}: execution proof command did not exit 0"
+                    ));
+                }
+                for field in ["stdout_path", "stderr_path", "status_path"] {
+                    validate_proof_relative_file(row_label, proof_dir, command, field, blockers);
+                }
+                validate_command_status_file(row_label, proof_dir, command, blockers);
+                let command_text = command
+                    .get("command")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                if !command_text.contains("cargo run -p harness --")
+                    || !command_text.contains(" workflow ")
+                {
+                    blockers.push(format!(
+                        "{row_label}: execution proof command was not captured from the Harness CLI surface"
+                    ));
+                }
+                if command_text.contains(" workflow dispatch ")
+                    || command_text.contains("--deterministic-scenario")
+                {
+                    blockers.push(format!(
+                        "{row_label}: execution proof uses synthetic workflow dispatch rather than the selected workflow surface"
+                    ));
+                }
+                if read_projection_row
+                    && (command_text.contains(" workflow evidence record ")
+                        || command_text.contains(" workflow signoff "))
+                {
+                    blockers.push(format!(
+                        "{row_label}: read-only projection proof used mutating workflow command"
+                    ));
+                }
+                if index == 0 && !command_text.contains(expected_fragment) {
+                    blockers.push(format!(
+                        "{row_label}: first execution proof command does not exercise selected surface fragment `{expected_fragment}`"
+                    ));
+                }
+                has_selected_surface |= command_text.contains(expected_fragment);
+                has_projection_read |= command_text.contains(" workflow status ")
+                    || command_text.contains(" workflow dossier export ");
+            }
+            if !has_selected_surface {
+                blockers.push(format!(
+                    "{row_label}: execution proof has no command for the selected workflow surface"
+                ));
+            }
+            if !has_projection_read {
+                blockers.push(format!(
+                    "{row_label}: execution proof has no replay projection read command"
+                ));
+            }
+        }
+        _ => blockers.push(format!(
+            "{row_label}: execution proof has no captured commands"
+        )),
+    }
+
+    let event_log = proof.get("event_log").unwrap_or(&Value::Null);
+    validate_proof_relative_file(row_label, proof_dir, event_log, "path", blockers);
+    if event_log.get("workflow_id").and_then(Value::as_str)
+        != row.get("canonical_harness_id").and_then(Value::as_str)
+    {
+        blockers.push(format!(
+            "{row_label}: execution proof event_log.workflow_id does not match matrix canonical_harness_id"
+        ));
+    }
+    let mut event_types = string_set(event_log, "event_types");
+    if let Some(path) = event_log.get("path").and_then(Value::as_str) {
+        let resolved = resolve_relative_to(proof_dir, path);
+        match event_types_from_jsonl(&resolved) {
+            Ok(computed) => {
+                if !event_types.is_empty() && event_types != computed {
+                    blockers.push(format!(
+                        "{row_label}: execution proof event_types do not match events.jsonl"
+                    ));
+                }
+                event_types = computed;
+            }
+            Err(err) => blockers.push(format!(
+                "{row_label}: failed to read execution proof events.jsonl: {err}"
+            )),
+        }
+    }
+    let read_projection_row = row_is_read_projection(row);
+    let required_events: &[&str] = match row.get("registry_command").and_then(Value::as_str) {
+        _ if read_projection_row => &[],
+        Some("init-deep") => &["WorkflowEvidenceRecorded"],
+        Some("ralph-loop" | "ulw-loop" | "stop-continuation") => {
+            &["WorkflowStarted", "WorkflowCompleted"]
+        }
+        Some("plan-consensus" | "goal-ledger" | "research-mission" | "wiki") => &[
+            "WorkflowStarted",
+            "WorkflowEvidenceRecorded",
+            "WorkflowCompleted",
+        ],
+        _ => &["WorkflowStarted", "WorkflowCompleted"],
+    };
+    for expected in required_events {
+        if !event_types.contains(*expected) {
+            blockers.push(format!(
+                "{row_label}: execution proof event log missing event type {expected}"
+            ));
+        }
+    }
+    if read_projection_row && !event_types.is_empty() {
+        blockers.push(format!(
+            "{row_label}: read-only projection proof appended workflow events"
+        ));
+    }
+    if row.get("registry_command").and_then(Value::as_str) == Some("research-mission")
+        && !event_types.contains("ToolCallFinished")
+    {
+        blockers.push(format!(
+            "{row_label}: research mission execution proof event log missing event type ToolCallFinished"
+        ));
+    }
+    if event_log
+        .get("event_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+        == 0
+        && !read_projection_row
+    {
+        blockers.push(format!("{row_label}: execution proof event_count is zero"));
+    }
+    if read_projection_row {
+        let digest = event_log.get("digest").and_then(Value::as_str);
+        let before = event_log.get("before_digest").and_then(Value::as_str);
+        let after = event_log.get("after_digest").and_then(Value::as_str);
+        if digest.is_none() || before != digest || after != digest {
+            blockers.push(format!(
+                "{row_label}: read-only projection proof does not prove stable event-log digest"
+            ));
+        }
+    }
+
+    let projections = proof.get("projections").unwrap_or(&Value::Null);
+    for field in [
+        "workflow_status_path",
+        "workflow_dossier_path",
+        "replay_status_path",
+    ] {
+        validate_proof_relative_file(row_label, proof_dir, projections, field, blockers);
+    }
+
+    let artifacts = proof.get("artifacts").and_then(Value::as_array);
+    match artifacts {
+        Some(artifacts) if !artifacts.is_empty() => {
+            for artifact in artifacts {
+                validate_proof_relative_file(row_label, proof_dir, artifact, "path", blockers);
+                if artifact
+                    .get("digest")
+                    .and_then(Value::as_str)
+                    .filter(|digest| !digest.trim().is_empty())
+                    .is_none()
+                {
+                    blockers.push(format!(
+                        "{row_label}: execution proof artifact is missing digest"
+                    ));
+                }
+            }
+        }
+        _ => blockers.push(format!("{row_label}: execution proof has no artifacts")),
+    }
+
+    let negative = proof.get("negative_path").unwrap_or(&Value::Null);
+    if negative.get("denied").and_then(Value::as_bool) != Some(true) {
+        blockers.push(format!(
+            "{row_label}: execution proof negative path did not record denial"
+        ));
+    }
+    if negative
+        .get("exit_code")
+        .and_then(Value::as_i64)
+        .unwrap_or(0)
+        == 0
+    {
+        blockers.push(format!(
+            "{row_label}: execution proof negative path did not exit nonzero"
+        ));
+    }
+    let negative_command = negative
+        .get("command")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if negative_command.contains(" workflow dispatch ")
+        || negative_command.contains("--deterministic-scenario")
+    {
+        blockers.push(format!(
+            "{row_label}: execution proof negative path uses synthetic workflow dispatch"
+        ));
+    }
+    if negative
+        .get("no_success_artifacts")
+        .and_then(Value::as_bool)
+        != Some(true)
+    {
+        blockers.push(format!(
+            "{row_label}: execution proof negative path allows success artifacts"
+        ));
+    }
+    for field in ["stdout_path", "stderr_path", "status_path"] {
+        validate_proof_relative_file(row_label, proof_dir, negative, field, blockers);
+    }
+
+    let truth_gates = proof.get("truth_gates").unwrap_or(&Value::Null);
+    for field in [
+        "replay_derived",
+        "native_only",
+        "old_runtime_free",
+        "permission_checks_before_side_effects",
+    ] {
+        if truth_gates.get(field).and_then(Value::as_bool) != Some(true) {
+            blockers.push(format!(
+                "{row_label}: execution proof truth_gates.{field} is not true"
+            ));
+        }
+    }
+    for field in ["status_reads_append_events", "dossier_reads_append_events"] {
+        if truth_gates.get(field).and_then(Value::as_bool) != Some(false) {
+            blockers.push(format!(
+                "{row_label}: execution proof truth_gates.{field} is not false"
+            ));
+        }
+    }
+    if read_projection_row
+        && truth_gates
+            .get("projection_reads_preserve_event_digest")
+            .and_then(Value::as_bool)
+            != Some(true)
+    {
+        blockers.push(format!(
+            "{row_label}: read-only projection proof does not assert stable event-log digest"
+        ));
+    }
+}
+
+fn validate_command_status_file(
+    row_label: &str,
+    proof_dir: &Path,
+    command: &Value,
+    blockers: &mut Vec<String>,
+) {
+    let Some(path) = command.get("status_path").and_then(Value::as_str) else {
+        return;
+    };
+    let resolved = resolve_relative_to(proof_dir, path);
+    let body = match fs::read_to_string(&resolved) {
+        Ok(body) => body,
+        Err(_) => return,
+    };
+    let status = match serde_json::from_str::<Value>(&body) {
+        Ok(status) => status,
+        Err(err) => {
+            blockers.push(format!(
+                "{row_label}: execution proof command status file is not valid JSON: {err}"
+            ));
+            return;
+        }
+    };
+    if status.get("exit_code").and_then(Value::as_i64)
+        != command.get("exit_code").and_then(Value::as_i64)
+    {
+        blockers.push(format!(
+            "{row_label}: execution proof command status exit_code does not match proof bundle"
+        ));
+    }
+    if status.get("success").and_then(Value::as_bool) != Some(true) {
+        blockers.push(format!(
+            "{row_label}: execution proof command status did not record success=true"
+        ));
+    }
+    if status.get("command").and_then(Value::as_str)
+        != command.get("command").and_then(Value::as_str)
+    {
+        blockers.push(format!(
+            "{row_label}: execution proof command status command does not match proof bundle"
+        ));
+    }
+}
+
+fn expected_selected_command_fragment(row: &Value) -> &'static str {
+    if row_is_read_projection(row) {
+        return " workflow status ";
+    }
+    match row.get("registry_command").and_then(Value::as_str) {
+        Some("plan-consensus") => " workflow plan-consensus ",
+        Some("goal-ledger") => " workflow goal ",
+        Some("research-mission") => " workflow mission ",
+        Some("wiki") => " workflow wiki ",
+        Some("init-deep") => " workflow snapshot write ",
+        Some("stop-continuation") => " workflow cancel ",
+        Some("ralph-loop" | "ulw-loop") => " workflow run ",
+        _ => " workflow run ",
+    }
+}
+
+fn row_is_read_projection(row: &Value) -> bool {
+    let Some(registry_command) = row.get("registry_command").and_then(Value::as_str) else {
+        return false;
+    };
+    CommandRegistry::builtins()
+        .get(registry_command)
+        .is_some_and(|command| {
+            matches!(
+                command.effect,
+                harness_core::command_registry::CommandEffect::ReadProjection
+            )
+        })
+}
+
+fn event_types_from_jsonl(path: &Path) -> Result<BTreeSet<String>, String> {
+    let body = fs::read_to_string(path).map_err(|err| format!("{} ({err})", path.display()))?;
+    let mut event_types = BTreeSet::new();
+    for line in body.lines().filter(|line| !line.trim().is_empty()) {
+        let value = serde_json::from_str::<Value>(line)
+            .map_err(|err| format!("{} contains invalid JSONL event ({err})", path.display()))?;
+        if let Some(raw) = value
+            .get("payload")
+            .and_then(Value::as_object)
+            .and_then(|payload| payload.get("event_type").and_then(Value::as_str))
+        {
+            event_types.insert(event_type_label(raw));
+        }
+    }
+    Ok(event_types)
+}
+
+fn event_type_label(raw: &str) -> String {
+    raw.split('_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect()
+}
+
+fn validate_registry_native_credit(row_label: &str, row: &Value, blockers: &mut Vec<String>) {
+    let Some(registry_command) = row.get("registry_command").and_then(Value::as_str) else {
+        return;
+    };
+    let registry = CommandRegistry::builtins();
+    let Some(command) = registry.get(registry_command) else {
+        blockers.push(format!(
+            "{row_label}: registry_command {registry_command} is not registered"
+        ));
+        return;
+    };
+    let native_credit = match &command.action {
+        CommandAction::WorkflowSkill { .. }
+        | CommandAction::WorkflowIntent { .. }
+        | CommandAction::StopContinuation => {
+            command.enabled_by_default
+                && command.availability
+                    == harness_core::command_registry::WorkflowCommandAvailability::Present
+                && matches!(
+                    command.effect,
+                    harness_core::command_registry::CommandEffect::MutateCoordinatorState
+                        | harness_core::command_registry::CommandEffect::ReadProjection
+                        | harness_core::command_registry::CommandEffect::ControlContinuation
+                )
+        }
+        _ => false,
+    };
+    if !native_credit {
+        blockers.push(format!(
+            "{row_label}: registry command {registry_command} is not classified as native workflow behavior"
+        ));
+    }
+}
+
+fn validate_no_old_runtime_tokens(row_label: &str, proof: &Value, blockers: &mut Vec<String>) {
+    let text = proof.to_string().to_lowercase();
+    for forbidden in [
+        "omx ",
+        "native team tools api",
+        "tmux send-keys",
+        "tmux pane",
+        "${codex_home",
+        "~/.codex",
+    ] {
+        if text.contains(forbidden) {
+            blockers.push(format!(
+                "{row_label}: execution proof contains forbidden old-runtime token {forbidden:?}"
+            ));
+        }
+    }
+}
+
+fn validate_proof_relative_file(
+    row_label: &str,
+    proof_dir: &Path,
+    value: &Value,
+    field: &str,
+    blockers: &mut Vec<String>,
+) {
+    let Some(path) = value.get(field).and_then(Value::as_str) else {
+        blockers.push(format!(
+            "{row_label}: execution proof is missing path field {field}"
+        ));
+        return;
+    };
+    if path.contains("${") {
+        blockers.push(format!(
+            "{row_label}: execution proof path field {field} contains unresolved template"
+        ));
+        return;
+    }
+    let resolved = resolve_relative_to(proof_dir, path);
+    if !resolved.is_file() {
+        blockers.push(format!(
+            "{row_label}: execution proof path field {field} does not exist: {}",
+            resolved.display()
+        ));
+    }
+}
+
+fn resolve_relative_to(base: &Path, path: &str) -> PathBuf {
+    let path = Path::new(path);
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        base.join(path)
+    }
+}
+
+fn strict_parity_scenario_slug(case_id: &str) -> String {
+    case_id
+        .rsplit("::")
+        .next()
+        .unwrap_or(case_id)
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn validate_active_runtime_assets_no_old_authority(blockers: &mut Vec<String>) {
+    let root = repo_root_path().join(".agent-harness");
+    if !root.exists() {
+        return;
+    }
+    let forbidden = [
+        ".omx/",
+        "omx ask",
+        "omx performance-goal",
+        "omx ultragoal",
+        "omx wiki",
+        "omx explore",
+        "omx sparkshell",
+        "omx setup",
+        "omx doctor",
+        "omx hud",
+        "omx team",
+        "omx question",
+        "omx state",
+        "native team tools api",
+        "tmux send-keys",
+        "tmux pane",
+        "OMX_TEAM_",
+        "OMX_QUESTION_",
+        "CODEX_HOME",
+        "~/.codex",
+        "Codex goal mode",
+        "goal mode is the authority",
+    ];
+    let mut findings = Vec::new();
+    collect_old_runtime_asset_findings(&root, &forbidden, &mut findings);
+    findings.sort();
+    blockers.extend(findings.into_iter().map(|finding| {
+        format!("active runtime asset contains old workflow authority token: {finding}")
+    }));
+}
+
+fn collect_old_runtime_asset_findings(path: &Path, forbidden: &[&str], findings: &mut Vec<String>) {
+    let Ok(metadata) = fs::metadata(path) else {
+        return;
+    };
+    if metadata.is_dir() {
+        if path.file_name().and_then(|name| name.to_str()) == Some("sessions") {
+            return;
+        }
+        let Ok(entries) = fs::read_dir(path) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            collect_old_runtime_asset_findings(&entry.path(), forbidden, findings);
+        }
+        return;
+    }
+    if !metadata.is_file() {
+        return;
+    }
+    let Some(extension) = path.extension().and_then(|value| value.to_str()) else {
+        return;
+    };
+    if !matches!(extension, "md" | "toml" | "json" | "txt") {
+        return;
+    }
+    let Ok(body) = fs::read_to_string(path) else {
+        return;
+    };
+    if reference_skill_is_hard_deprecated(&body) {
+        return;
+    }
+    for (index, line) in body.lines().enumerate() {
+        let lower = line.to_lowercase();
+        let lineage_only = lower.contains("deprecated")
+            || lower.contains("migration lineage")
+            || lower.contains("compatibility alias");
+        if lineage_only {
+            continue;
+        }
+        for token in forbidden {
+            if line.contains(token) {
+                findings.push(format!(
+                    "{}:{}:{token}",
+                    path.display(),
+                    index.saturating_add(1)
+                ));
+            }
+        }
+    }
+}
+
+fn repo_root_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf()
+}
+
+fn resolve_repo_relative_path(repo_root: &Path, path: &str) -> PathBuf {
+    let path = Path::new(path);
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+    repo_root.join(path)
+}
+
+fn string_set(value: &Value, field: &str) -> BTreeSet<String> {
+    value
+        .get(field)
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(ToOwned::to_owned)
+                .collect::<BTreeSet<_>>()
+        })
+        .unwrap_or_default()
 }
 
 fn check_workflow_context_snapshot_contract() -> DoctorCheck {
@@ -2150,10 +3438,13 @@ fn check_workflow_closeout_readiness(config: &HarnessConfig) -> DoctorCheck {
     };
     let blockers = projection
         .workflows
-        .keys()
-        .filter_map(|workflow_id| {
+        .values()
+        .filter_map(|workflow| {
+            if workflow.terminal && workflow.status != "outcome.finished" {
+                return None;
+            }
             let readiness = projection.closeout_readiness(
-                workflow_id.clone(),
+                workflow.workflow_id.clone(),
                 &persistent_tasks,
                 &signoff_policy,
                 &closeout_policy,
@@ -2166,7 +3457,7 @@ fn check_workflow_closeout_readiness(config: &HarnessConfig) -> DoctorCheck {
                     .map(|dimension| dimension.id.clone())
                     .collect::<Vec<_>>();
                 serde_json::json!({
-                    "workflow_id": workflow_id,
+                    "workflow_id": workflow.workflow_id,
                     "blocking_dimensions": blocking_dimensions,
                     "legal_next_actions": readiness.legal_next_actions,
                     "stale_export": readiness.stale_export,
@@ -2203,7 +3494,7 @@ fn check_parity_ledger() -> DoctorCheck {
     }) else {
         return warn(
             "parity_ledger",
-            "docs/parity-ledger.json is not present; use docs/omx-parity-dossier.md as the current parity source",
+            "docs/parity-ledger.json is not present; use the Harness workflow parity matrix as the current parity source",
         );
     };
     let Some(items) = ledger.get("items").and_then(Value::as_array) else {
@@ -2250,7 +3541,7 @@ fn check_omo_parity_gaps() -> DoctorCheck {
     }) else {
         return warn(
             "omo_parity_gaps",
-            "docs/parity-ledger.json is not present; use docs/omx-parity-dossier.md for the current parity gap list",
+            "docs/parity-ledger.json is not present; use the Harness workflow parity matrix for the current parity gap list",
         );
     };
     let Some(items) = ledger.get("items").and_then(Value::as_array) else {
@@ -2377,10 +3668,30 @@ fn fail(name: impl Into<String>, message: impl Into<String>) -> DoctorCheck {
     }
 }
 
+fn fail_with_details(
+    name: impl Into<String>,
+    message: impl Into<String>,
+    details: Option<Value>,
+) -> DoctorCheck {
+    let name = name.into();
+    DoctorCheck {
+        id: name.clone(),
+        name,
+        status: CheckStatus::Fail,
+        message: message.into(),
+        details,
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::evaluate_workflow_skill_protocol_body;
+    use super::{
+        evaluate_workflow_skill_protocol_body, validate_selected_parity_dossier_with_root,
+    };
+    use serde_json::json;
+    use std::fs;
     use std::path::Path;
+    use tempfile::tempdir;
 
     #[test]
     fn native_workflow_protocol_detects_forbidden_substrate_fixture() {
@@ -2403,13 +3714,98 @@ Close with workflow evidence.
 ## Verification checklist
 Verify.
 "#;
-        let findings =
-            evaluate_workflow_skill_protocol_body("bad", Path::new("bad/SKILL.md"), body);
+        let reference_body = r#"
+---
+name: bad
+description: bad
+---
+
+# Bad fixture
+
+## Purpose
+Bad fixture.
+"#;
+        let findings = evaluate_workflow_skill_protocol_body(
+            "bad",
+            Path::new("bad/SKILL.md"),
+            body,
+            Path::new("reference/bad/SKILL.md"),
+            reference_body,
+        );
         let reason_codes = findings
             .iter()
             .map(|finding| finding.reason_code)
             .collect::<Vec<_>>();
         assert!(reason_codes.contains(&"forbidden_omx_cli_authority"));
         assert!(reason_codes.contains(&"forbidden_tmux_authority"));
+    }
+
+    #[test]
+    fn strict_parity_dossier_validation_rejects_mirrored_field_drift() {
+        let temp = tempdir().expect("tempdir");
+        let dossier_path = temp.path().join("proofs/plan/dossier.json");
+        fs::create_dir_all(dossier_path.parent().expect("proof parent")).expect("proof dir");
+        fs::write(
+            &dossier_path,
+            serde_json::to_vec_pretty(&json!({
+                "canonical_harness_id": "harness.workflow.plan_consensus",
+                "registry_command": "wrong-command",
+                "state_authority": "harness_events_and_replay_projections",
+                "status": "native_complete",
+                "scenario": "simulator::plan_happy_path",
+                "workflow_phase": "planning",
+                "native_behavior_contract": "native contract",
+                "operator_visible_success": "operator success",
+                "negative_path_contract": "negative contract",
+                "proof_kind": "selected_workflow_e2e_parity",
+                "strict_doctor_check": "strict_parity_matrix",
+                "harness_entrypoint": ["$plan"],
+                "legacy_aliases": ["plan"],
+                "parity_dimensions": ["invocation", "state", "artifacts", "permissions", "replay", "tui", "negative_path"],
+                "evidence_categories": ["strict_parity_doctor", "negative_path_contract"],
+                "commands": ["cargo run -p harness -- --config configs/harness.example.jsonc doctor --json --strict-parity"],
+                "artifacts": { "docs_dossier": "proofs/plan/dossier.json" },
+                "truth_gates": {
+                    "replay_derived": true,
+                    "native_only": true,
+                    "omx_runtime_authority": false,
+                    "status_reads_append_events": false,
+                    "dossier_reads_append_events": false,
+                    "permission_checks_before_side_effects": true
+                }
+            }))
+            .expect("serialize dossier"),
+        )
+        .expect("write dossier");
+
+        let row = json!({
+            "canonical_harness_id": "harness.workflow.plan_consensus",
+            "registry_command": "plan-consensus",
+            "state_authority": "harness_events_and_replay_projections",
+            "status": "native_complete",
+            "e2e_scenario": "simulator::plan_happy_path",
+            "workflow_phase": "planning",
+            "native_behavior_contract": "native contract",
+            "operator_visible_success": "operator success",
+            "negative_path_contract": "negative contract",
+            "evidence_dossier_path": "proofs/plan/dossier.json",
+            "harness_entrypoint": ["$plan"],
+            "legacy_aliases": ["plan"],
+            "parity_dimensions": ["invocation", "state", "artifacts", "permissions", "replay", "tui", "negative_path"]
+        });
+        let mut blockers = Vec::new();
+        validate_selected_parity_dossier_with_root(
+            "harness.workflow.plan_consensus",
+            &row,
+            temp.path(),
+            &mut blockers,
+        );
+
+        assert!(
+            blockers
+                .iter()
+                .any(|blocker| blocker.contains("registry_command")),
+            "{blockers:#?}"
+        );
     }
 }
