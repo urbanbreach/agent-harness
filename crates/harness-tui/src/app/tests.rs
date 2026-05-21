@@ -5645,17 +5645,19 @@ fn command_search_indexes_ultragoal_dollar_and_slash_aliases() {
 }
 
 #[test]
-fn dollar_agent_shortcuts_dispatch_native_task_roles() {
-    for (alias, expected_role, task) in [
-        ("analyze", "analyst", "investigate flaky tests"),
-        ("build-fix", "build-fixer", "repair cargo check"),
-        ("code-review", "code-reviewer", "review current diff"),
-        ("design", "designer", "shape the settings UI"),
-        ("git-master", "git-master", "prepare atomic commits"),
+fn dollar_specialist_aliases_dispatch_as_workflow_skills() {
+    for (alias, expected_intent, task) in [
         (
-            "security-review",
-            "security-reviewer",
-            "audit auth boundaries",
+            "analyze",
+            WorkflowIntent::Analyze,
+            "investigate flaky tests",
+        ),
+        ("build-fix", WorkflowIntent::BuildFix, "repair cargo check"),
+        ("design", WorkflowIntent::Design, "shape the settings UI"),
+        (
+            "git-master",
+            WorkflowIntent::GitMaster,
+            "prepare atomic commits",
         ),
     ] {
         let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
@@ -5672,10 +5674,11 @@ fn dollar_agent_shortcuts_dispatch_native_task_roles() {
         let intents = intents.lock().expect("lock intents");
         assert!(matches!(
             &intents[0],
-            UiIntent::SlashAgentTask { role, task: actual_task, command, .. }
-                if role == expected_role
-                    && actual_task == task
+            UiIntent::WorkflowSkillDispatch { intent, command, text, .. }
+                if *intent == expected_intent
                     && command == &format!("${alias} {task}")
+                    && text.contains(&format!("## Active workflow: {alias}"))
+                    && text.contains(&format!("${alias} {task}"))
         ));
     }
 }
@@ -5683,6 +5686,8 @@ fn dollar_agent_shortcuts_dispatch_native_task_roles() {
 #[test]
 fn dollar_workflow_aliases_dispatch_as_workflow_intents() {
     for (alias, expected_intent) in [
+        ("code-review", WorkflowIntent::Review),
+        ("security-review", WorkflowIntent::SecurityReview),
         ("team", WorkflowIntent::Team),
         ("ultragoal", WorkflowIntent::GoalLedger),
         ("visual-verdict", WorkflowIntent::Visual),
@@ -5709,6 +5714,39 @@ fn dollar_workflow_aliases_dispatch_as_workflow_intents() {
                         && text.contains(&format!("${alias} run the workflow"))
             )),
             "${alias} should dispatch through a gated workflow skill intent, got {intents:?}"
+        );
+    }
+}
+
+#[test]
+fn dollar_read_projection_aliases_dispatch_without_skill_prompt() {
+    for (alias, expected_intent) in [
+        ("help", WorkflowIntent::Help),
+        ("hud", WorkflowIntent::Hud),
+        ("trace", WorkflowIntent::Trace),
+    ] {
+        let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+        let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+            let intents = Arc::clone(&intents);
+            Arc::new(move |intent| {
+                intents.lock().expect("lock intents").push(intent);
+            })
+        };
+        let mut app = AppState::new_live(None, false, Some(sink));
+        app.execute_dollar_command(alias, Some("show projection".to_string()));
+
+        let intents = intents.lock().expect("lock intents");
+        assert!(matches!(
+            intents.first(),
+            Some(UiIntent::WorkflowIntent { intent, command })
+                if *intent == expected_intent
+                    && command == &format!("${alias} show projection")
+        ));
+        assert!(
+            !intents
+                .iter()
+                .any(|intent| matches!(intent, UiIntent::WorkflowSkillDispatch { .. })),
+            "${alias} must not queue workflow skill prompts: {intents:?}"
         );
     }
 }
@@ -5833,6 +5871,47 @@ fn slash_alias_executes_matching_command_without_menu() {
         intents.lock().expect("lock intents").as_slice(),
         &[UiIntent::QuitRequested]
     );
+}
+
+#[test]
+fn slash_menu_selection_inserts_command_into_prompt() {
+    let mut app = AppState::new_startup(Vec::new(), None);
+    for ch in "/re".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    assert!(app.slash_overlay_should_render());
+    app.slash_selected = app
+        .slash_filtered
+        .iter()
+        .position(|command| command == "resume")
+        .expect("resume slash command visible");
+
+    app.handle_key(key(KeyCode::Enter));
+
+    assert_eq!(app.prompt_buffer, "/resume ");
+    assert_eq!(app.prompt_cursor, "/resume ".chars().count());
+    assert!(!app.slash_overlay_should_render());
+    assert!(!app.session_history_visible);
+}
+
+#[test]
+fn dollar_menu_selection_inserts_command_into_prompt() {
+    let mut app = AppState::new_startup(Vec::new(), None);
+    for ch in "$deep".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    assert!(app.slash_overlay_should_render());
+    app.slash_selected = app
+        .slash_filtered
+        .iter()
+        .position(|command| command == "deep-interview")
+        .expect("deep-interview dollar command visible");
+
+    app.handle_key(key(KeyCode::Tab));
+
+    assert_eq!(app.prompt_buffer, "$deep-interview ");
+    assert_eq!(app.prompt_cursor, "$deep-interview ".chars().count());
+    assert!(!app.slash_overlay_should_render());
 }
 
 #[test]
@@ -6128,11 +6207,9 @@ fn slash_menu_supports_mouse_selection() {
         None,
     );
 
-    assert!(app.startup_shell_visible());
-    assert_eq!(
-        app.startup_launcher_action,
-        StartupLauncherAction::NewSession
-    );
+    assert_eq!(app.prompt_buffer, "/new ");
+    assert_eq!(app.prompt_cursor, "/new ".chars().count());
+    assert!(!app.slash_overlay_should_render());
 }
 
 #[test]

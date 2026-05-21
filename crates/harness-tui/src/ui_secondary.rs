@@ -4185,6 +4185,17 @@ fn operator_sidebar_workflow_items(app: &AppState) -> Vec<OperatorRailItem> {
         "{} active · {} attention · {} done",
         summary.active, summary.attention, summary.terminal
     )));
+    if let Some(parity) = app.workflow_parity_summary() {
+        let doctor = parity
+            .doctor_check
+            .as_deref()
+            .map(|check| format!(" · doctor {check}"))
+            .unwrap_or_default();
+        items.push(OperatorRailItem::Plain(format!(
+            "matrix baseline {}/{} native_complete · {} proof blocker(s){doctor}",
+            parity.native_complete_rows, parity.selected_rows, parity.strict_blocker_rows
+        )));
+    }
 
     for row in rows.iter().take(3) {
         let title = row
@@ -4213,6 +4224,22 @@ fn operator_sidebar_workflow_items(app: &AppState) -> Vec<OperatorRailItem> {
                 row.mode, row.status
             ),
         )));
+        if let Some(parity_status) = row.parity_status.as_deref() {
+            let parity_phase = row
+                .parity_phase
+                .as_deref()
+                .map(|phase| format!(" · phase {phase}"))
+                .unwrap_or_default();
+            let doctor = row
+                .parity_doctor_check
+                .as_deref()
+                .map(|check| format!(" · matrix-check {check}"))
+                .unwrap_or_default();
+            items.push(OperatorRailItem::Plain(format!(
+                "maturity {parity_status}{parity_phase} · {} parity dims{doctor}",
+                row.parity_dimension_count
+            )));
+        }
 
         if let Some(category) = row.latest_evidence_category.as_deref() {
             let summary = row

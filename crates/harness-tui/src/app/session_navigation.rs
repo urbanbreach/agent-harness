@@ -2264,11 +2264,8 @@ impl AppState {
         let Some(command) = self.slash_filtered.get(self.slash_selected).cloned() else {
             return;
         };
-        if self.active_command_prefix() == Some('$') {
-            self.execute_dollar_command(&command, self.slash_draft_snapshot.clone());
-        } else {
-            self.execute_slash_command(&command, self.slash_draft_snapshot.clone());
-        }
+        let prefix = self.active_command_prefix().unwrap_or('/');
+        self.replace_prompt_input(format!("{prefix}{command} "));
     }
 
     pub(in crate::app) fn handle_model_key(&mut self, key: &KeyEvent) -> bool {

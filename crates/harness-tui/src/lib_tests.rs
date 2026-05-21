@@ -3230,11 +3230,19 @@ fn workflow_projection_surfaces_footer_and_operator_sidebar_rows() {
     assert_eq!(rows[0].evidence_count, 1);
     assert_eq!(
         app.workflow_footer_summary().as_deref(),
-        Some("Workflow wf_docs attention · phase verifying · 1 ev · 1 decision")
+        Some(
+            "Workflow wf_docs attention · phase verifying · 1 ev · 1 decision · matrix baseline 16/16"
+        )
     );
 
     let sidebar = operator_sidebar_text(&app);
     assert!(sidebar.contains("▼ Workflow"), "{sidebar}");
+    assert!(
+        sidebar.contains(
+            "matrix baseline 16/16 native_complete · 0 proof blocker(s) · doctor strict_parity_matrix"
+        ),
+        "{sidebar}"
+    );
     assert!(
         sidebar.contains("Docs release · workflow_run · active · phase verifying · simulated"),
         "{sidebar}"
@@ -3372,7 +3380,9 @@ fn workflow_projection_surfaces_attention_questions_closeout_and_subordinate_tea
     assert!(rows[0].needs_attention());
     assert_eq!(
         app.workflow_footer_summary().as_deref(),
-        Some("Workflow wf_attention attention · phase planning · 1 ev · 1 question · 1 team")
+        Some(
+            "Workflow wf_attention attention · phase planning · 1 ev · 1 question · 1 team · matrix baseline 16/16"
+        )
     );
 
     let sidebar = operator_sidebar_text(&app);
@@ -3383,6 +3393,12 @@ fn workflow_projection_surfaces_attention_questions_closeout_and_subordinate_tea
     assert!(
         sidebar.contains(
             "Operator control center · workflow.plan_consensus · active · phase planning"
+        ),
+        "{sidebar}"
+    );
+    assert!(
+        sidebar.contains(
+            "maturity native_complete · phase planning · 7 parity dims · matrix-check strict_parity_matrix"
         ),
         "{sidebar}"
     );

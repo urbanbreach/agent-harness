@@ -78,6 +78,8 @@ use pending_live::{
     take_pending_live_launch_metadata, take_pending_live_prompt, PendingLivePrompt,
 };
 use permissions::permission_display_summary;
+
+const WORKFLOW_PARITY_MATRIX_JSON: &str = include_str!("../../../docs/workflow-parity-matrix.json");
 pub use permissions::{
     ActivePermissionView, PermissionEntry, QuestionOptionView, QuestionPromptView,
 };
@@ -132,7 +134,7 @@ pub(crate) fn registered_slash_commands() -> Vec<(&'static str, &'static str)> {
         .flat_map(|command| {
             std::iter::once(command.name)
                 .chain(command.aliases.iter().copied())
-                .filter(|name| !name.starts_with("omx-skill:"))
+                .filter(|name| !name.starts_with("harness-workflow:"))
                 .map(|name| (name, command.description))
                 .collect::<Vec<_>>()
         })
@@ -904,6 +906,10 @@ pub(crate) struct WorkflowStatusRow {
     pub closeout_allowed: bool,
     pub legal_next_actions: Vec<String>,
     pub blocked_closeout_dimensions: Vec<String>,
+    pub parity_status: Option<String>,
+    pub parity_phase: Option<String>,
+    pub parity_doctor_check: Option<String>,
+    pub parity_dimension_count: usize,
 }
 
 impl WorkflowStatusRow {
@@ -931,6 +937,112 @@ fn workflow_signoff_action_label(action: &WorkflowSignoffDecision) -> &'static s
         WorkflowSignoffDecision::Redirect => "redirect",
         WorkflowSignoffDecision::ApproveLive => "approve_live",
     }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct WorkflowParitySummary {
+    pub selected_rows: usize,
+    pub native_complete_rows: usize,
+    pub strict_blocker_rows: usize,
+    pub doctor_check: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WorkflowParityMatrixRow {
+    canonical_harness_id: String,
+    registry_command: String,
+    selected_scope: String,
+    status: String,
+    workflow_phase: Option<String>,
+    doctor_check: Option<String>,
+    parity_dimension_count: usize,
+}
+
+fn workflow_parity_matrix_rows() -> Vec<WorkflowParityMatrixRow> {
+    let Ok(matrix) = serde_json::from_str::<serde_json::Value>(WORKFLOW_PARITY_MATRIX_JSON) else {
+        return Vec::new();
+    };
+    let Some(rows) = matrix.get("rows").and_then(serde_json::Value::as_array) else {
+        return Vec::new();
+    };
+    rows.iter()
+        .filter_map(|row| {
+            Some(WorkflowParityMatrixRow {
+                canonical_harness_id: row
+                    .get("canonical_harness_id")
+                    .and_then(serde_json::Value::as_str)?
+                    .to_string(),
+                registry_command: row
+                    .get("registry_command")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                selected_scope: row
+                    .get("selected_scope")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                status: row
+                    .get("status")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                workflow_phase: row
+                    .get("workflow_phase")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string),
+                doctor_check: row
+                    .get("doctor_check")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string),
+                parity_dimension_count: row
+                    .get("parity_dimensions")
+                    .and_then(serde_json::Value::as_array)
+                    .map_or(0, Vec::len),
+            })
+        })
+        .collect()
+}
+
+fn workflow_parity_summary_from_rows(rows: &[WorkflowParityMatrixRow]) -> WorkflowParitySummary {
+    let selected_rows = rows
+        .iter()
+        .filter(|row| row.selected_scope == "selected_for_this_goal")
+        .count();
+    let native_complete_rows = rows
+        .iter()
+        .filter(|row| {
+            row.selected_scope == "selected_for_this_goal" && row.status == "native_complete"
+        })
+        .count();
+    let doctor_check = rows
+        .iter()
+        .find(|row| row.selected_scope == "selected_for_this_goal")
+        .and_then(|row| row.doctor_check.clone());
+    WorkflowParitySummary {
+        selected_rows,
+        native_complete_rows,
+        strict_blocker_rows: selected_rows.saturating_sub(native_complete_rows),
+        doctor_check,
+    }
+}
+
+fn workflow_parity_row_for<'a>(
+    rows: &'a [WorkflowParityMatrixRow],
+    workflow_id: &str,
+    mode: &str,
+) -> Option<&'a WorkflowParityMatrixRow> {
+    let mut candidates = BTreeSet::from([workflow_id.to_string(), mode.to_string()]);
+    if let Some(suffix) = mode.strip_prefix("workflow.") {
+        candidates.insert(format!("harness.workflow.{suffix}"));
+        candidates.insert(suffix.replace('_', "-"));
+    }
+
+    rows.iter().find(|row| {
+        candidates.contains(&row.canonical_harness_id)
+            || candidates.contains(&row.registry_command)
+            || candidates.contains(&row.registry_command.replace('-', "_"))
+    })
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -1574,6 +1686,7 @@ impl AppState {
         let persistent_tasks = project_persistent_tasks(&self.events);
         let signoff_policy = WorkflowSignoffPolicy::simulator_default();
         let closeout_policy = WorkflowCloseoutPolicy::default_policy();
+        let parity_rows = workflow_parity_matrix_rows();
         let mut rows = projection
             .workflows
             .values()
@@ -1619,6 +1732,8 @@ impl AppState {
                     &signoff_policy,
                     &closeout_policy,
                 );
+                let parity_row =
+                    workflow_parity_row_for(&parity_rows, &workflow.workflow_id, &workflow.mode);
                 WorkflowStatusRow {
                     workflow_id: workflow.workflow_id.clone(),
                     mode: workflow.mode.clone(),
@@ -1664,6 +1779,10 @@ impl AppState {
                         .filter(|dimension| !dimension.allowed)
                         .map(|dimension| dimension.id.clone())
                         .collect(),
+                    parity_status: parity_row.map(|row| row.status.clone()),
+                    parity_phase: parity_row.and_then(|row| row.workflow_phase.clone()),
+                    parity_doctor_check: parity_row.and_then(|row| row.doctor_check.clone()),
+                    parity_dimension_count: parity_row.map_or(0, |row| row.parity_dimension_count),
                 }
             })
             .collect::<Vec<_>>();
@@ -1680,6 +1799,12 @@ impl AppState {
                 ))
         });
         rows
+    }
+
+    pub(crate) fn workflow_parity_summary(&self) -> Option<WorkflowParitySummary> {
+        let rows = workflow_parity_matrix_rows();
+        let summary = workflow_parity_summary_from_rows(&rows);
+        (summary.selected_rows > 0).then_some(summary)
     }
 
     pub(crate) fn workflow_status_summary(&self) -> WorkflowStatusSummary {
@@ -1732,6 +1857,12 @@ impl AppState {
             if latest.operator_decision_count != 1 {
                 summary.push('s');
             }
+        }
+        if let Some(parity) = self.workflow_parity_summary() {
+            summary.push_str(&format!(
+                " · matrix baseline {}/{}",
+                parity.native_complete_rows, parity.selected_rows
+            ));
         }
         Some(summary)
     }
