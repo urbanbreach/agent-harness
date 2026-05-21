@@ -42,6 +42,29 @@ use tokio_stream::StreamExt;
 pub const SIMULATOR_WORKFLOW_ID: &str = "wf_deterministic_goal_loop";
 const SIMULATOR_RUN_ID: &str = "run_workflow_simulator";
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkflowSimulatorScenario {
+    pub run_id: String,
+    pub workflow_id: String,
+    pub mode: String,
+    pub title: String,
+    pub idempotency_key: String,
+    pub evidence_category: String,
+}
+
+impl WorkflowSimulatorScenario {
+    pub fn default_goal_loop() -> Self {
+        Self {
+            run_id: SIMULATOR_RUN_ID.to_string(),
+            workflow_id: SIMULATOR_WORKFLOW_ID.to_string(),
+            mode: "workflow.run".to_string(),
+            title: "Deterministic goal-loop demonstrator".to_string(),
+            idempotency_key: "simulator-goal-loop".to_string(),
+            evidence_category: "evidence.verification".to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorkflowSimulationReport {
     pub run_id: String,
@@ -65,6 +88,13 @@ pub struct WorkflowSimulationReport {
 pub async fn run_deterministic_workflow_simulator(
     root: impl AsRef<Path>,
 ) -> Result<WorkflowSimulationReport, String> {
+    run_deterministic_workflow_scenario(root, WorkflowSimulatorScenario::default_goal_loop()).await
+}
+
+pub async fn run_deterministic_workflow_scenario(
+    root: impl AsRef<Path>,
+    scenario: WorkflowSimulatorScenario,
+) -> Result<WorkflowSimulationReport, String> {
     let root = root.as_ref();
     let session_dir = root.join("sessions");
     let workspace = root.join("workspace");
@@ -76,19 +106,21 @@ pub async fn run_deterministic_workflow_simulator(
     })?;
 
     let provider_output = scripted_provider_output().await?;
-    let (coordinator, run) = start_simulator_run(&session_dir, &workspace).await?;
+    let (coordinator, run) =
+        start_simulator_run(&session_dir, &workspace, &scenario.run_id).await?;
     let actor = supervisor_actor();
+    let workflow_id = scenario.workflow_id.as_str();
 
     coordinator
         .start_workflow(
             actor.clone(),
             WorkflowStartRequest {
-                workflow_id: SIMULATOR_WORKFLOW_ID.to_string(),
-                mode: "workflow.run".to_string(),
+                workflow_id: workflow_id.to_string(),
+                mode: scenario.mode.clone(),
                 owner: "simulator".to_string(),
                 lane: Some("simulated".to_string()),
-                title: Some("Deterministic goal-loop demonstrator".to_string()),
-                idempotency_key: Some("simulator-goal-loop".to_string()),
+                title: Some(scenario.title.clone()),
+                idempotency_key: Some(scenario.idempotency_key.clone()),
             },
         )
         .await
@@ -98,8 +130,8 @@ pub async fn run_deterministic_workflow_simulator(
         .start_workflow(
             actor.clone(),
             WorkflowStartRequest {
-                workflow_id: SIMULATOR_WORKFLOW_ID.to_string(),
-                mode: "workflow.run".to_string(),
+                workflow_id: workflow_id.to_string(),
+                mode: scenario.mode.clone(),
                 owner: "competing-owner".to_string(),
                 lane: Some("simulated".to_string()),
                 title: None,
@@ -121,14 +153,14 @@ pub async fn run_deterministic_workflow_simulator(
     coordinator
         .write_context_snapshot(
             actor.clone(),
-            Some(SIMULATOR_WORKFLOW_ID.to_string()),
+            Some(workflow_id.to_string()),
             snapshot_input,
             ContextSnapshotOptions::default(),
         )
         .await
         .map_err(|err| err.to_string())?;
 
-    coordinator
+    let continuation_id = coordinator
         .start_workflow_continuation(
             actor.clone(),
             "workflow.work_loop",
@@ -140,11 +172,11 @@ pub async fn run_deterministic_workflow_simulator(
                 max_tool_calls: 4,
             },
             WorkflowEventMetadata {
-                workflow_id: Some(SIMULATOR_WORKFLOW_ID.to_string()),
+                workflow_id: Some(workflow_id.to_string()),
                 lane: Some("lane.delivery".to_string()),
                 iteration: Some(0),
                 stop_reason: None,
-                evidence_category: Some("evidence.verification".to_string()),
+                evidence_category: Some(scenario.evidence_category.clone()),
                 owner: Some("simulator".to_string()),
             },
         )
@@ -153,7 +185,7 @@ pub async fn run_deterministic_workflow_simulator(
     let active_continuation_blocked_completion = coordinator
         .complete_workflow_with_closeout_policy(
             actor.clone(),
-            SIMULATOR_WORKFLOW_ID,
+            workflow_id,
             "outcome.finished",
             "attempted closeout while continuation was still active",
             "simulator",
@@ -163,16 +195,18 @@ pub async fn run_deterministic_workflow_simulator(
         .await
         .is_err();
     coordinator
-        .stop_continuation(
+        .reach_continuation_limit(
             actor.clone(),
+            continuation_id,
             "simulated work loop reached acceptance evidence",
+            1,
         )
         .await
         .map_err(|err| err.to_string())?;
 
     let missing_readiness = !project_current_workflows(&run)?
         .signoff_readiness(
-            SIMULATOR_WORKFLOW_ID,
+            workflow_id,
             WorkflowSignoffPolicy::simulator_default().required_evidence_categories(),
         )
         .allowed;
@@ -180,7 +214,7 @@ pub async fn run_deterministic_workflow_simulator(
         coordinator
             .record_workflow_operator_decision(
                 actor.clone(),
-                SIMULATOR_WORKFLOW_ID,
+                workflow_id,
                 "request-evidence",
                 "simulator",
                 Some("simulated tool evidence is missing".to_string()),
@@ -192,7 +226,7 @@ pub async fn run_deterministic_workflow_simulator(
     let missing_evidence_blocked_completion = coordinator
         .complete_workflow_with_signoff_policy(
             actor.clone(),
-            SIMULATOR_WORKFLOW_ID,
+            workflow_id,
             "outcome.finished",
             "attempted signoff before mapped simulator evidence",
             "simulator",
@@ -210,7 +244,7 @@ pub async fn run_deterministic_workflow_simulator(
         .record_workflow_evidence(
             actor.clone(),
             WorkflowEvidenceRequest {
-                workflow_id: SIMULATOR_WORKFLOW_ID.to_string(),
+                workflow_id: workflow_id.to_string(),
                 category: SIMULATED_TOOL_EVIDENCE_CATEGORY.to_string(),
                 summary: format!("deterministic no-op tool completed: {}", tool_result.trim()),
                 artifact_path: None,
@@ -225,11 +259,38 @@ pub async fn run_deterministic_workflow_simulator(
         .await
         .map_err(|err| err.to_string())?;
 
+    if scenario.evidence_category != SIMULATED_TOOL_EVIDENCE_CATEGORY {
+        let mut metadata = BTreeMap::from([
+            ("scenario_run_id".to_string(), scenario.run_id.clone()),
+            ("workflow_mode".to_string(), scenario.mode.clone()),
+        ]);
+        enrich_scenario_evidence_metadata(&scenario.evidence_category, &mut metadata);
+
+        coordinator
+            .record_workflow_evidence(
+                actor.clone(),
+                WorkflowEvidenceRequest {
+                    workflow_id: workflow_id.to_string(),
+                    category: scenario.evidence_category.clone(),
+                    summary: format!("scenario-specific evidence recorded for {}", scenario.mode),
+                    artifact_path: Some(format!(
+                        "artifacts/selected-workflows/{}/scenario-evidence.json",
+                        scenario.run_id
+                    )),
+                    artifact_digest: Some(format!("scenario-evidence:{}", scenario.run_id)),
+                    acceptance_ref: Some(format!("acceptance.{}", scenario.run_id)),
+                    metadata,
+                },
+            )
+            .await
+            .map_err(|err| err.to_string())?;
+    }
+
     coordinator
         .record_workflow_evidence(
             actor.clone(),
             WorkflowEvidenceRequest {
-                workflow_id: SIMULATOR_WORKFLOW_ID.to_string(),
+                workflow_id: workflow_id.to_string(),
                 category: WORKFLOW_QUESTION_EVIDENCE_CATEGORY.to_string(),
                 summary: "operator clarification is pending".to_string(),
                 artifact_path: None,
@@ -252,7 +313,7 @@ pub async fn run_deterministic_workflow_simulator(
     let question_blocked_completion = coordinator
         .complete_workflow_with_closeout_policy(
             actor.clone(),
-            SIMULATOR_WORKFLOW_ID,
+            workflow_id,
             "outcome.finished",
             "attempted closeout with an unanswered operator question",
             "simulator",
@@ -265,7 +326,7 @@ pub async fn run_deterministic_workflow_simulator(
         .record_workflow_evidence(
             actor.clone(),
             WorkflowEvidenceRequest {
-                workflow_id: SIMULATOR_WORKFLOW_ID.to_string(),
+                workflow_id: workflow_id.to_string(),
                 category: WORKFLOW_QUESTION_EVIDENCE_CATEGORY.to_string(),
                 summary: "operator clarification was answered".to_string(),
                 artifact_path: None,
@@ -291,7 +352,7 @@ pub async fn run_deterministic_workflow_simulator(
         .map_err(|err| err.to_string())?;
 
     let ready = project_current_workflows(&run)?.signoff_readiness(
-        SIMULATOR_WORKFLOW_ID,
+        workflow_id,
         WorkflowSignoffPolicy::simulator_default().required_evidence_categories(),
     );
     if !ready.allowed {
@@ -318,7 +379,7 @@ pub async fn run_deterministic_workflow_simulator(
                 blocked_by: Vec::new(),
                 metadata: BTreeMap::from([(
                     WORKFLOW_TASK_METADATA_KEY.to_string(),
-                    SIMULATOR_WORKFLOW_ID.to_string(),
+                    workflow_id.to_string(),
                 )]),
             },
         )
@@ -327,7 +388,7 @@ pub async fn run_deterministic_workflow_simulator(
     let pending_task_blocked_completion = coordinator
         .complete_workflow_with_signoff_policy(
             actor.clone(),
-            SIMULATOR_WORKFLOW_ID,
+            workflow_id,
             "outcome.finished",
             "attempted signoff with a pending workflow-owned task",
             "simulator",
@@ -359,7 +420,7 @@ pub async fn run_deterministic_workflow_simulator(
     let missing_dossier_blocked_completion = coordinator
         .complete_workflow_with_closeout_policy(
             actor.clone(),
-            SIMULATOR_WORKFLOW_ID,
+            workflow_id,
             "outcome.finished",
             "attempted closeout before dossier export evidence",
             "simulator",
@@ -372,7 +433,7 @@ pub async fn run_deterministic_workflow_simulator(
         .record_workflow_evidence(
             actor.clone(),
             WorkflowEvidenceRequest {
-                workflow_id: SIMULATOR_WORKFLOW_ID.to_string(),
+                workflow_id: workflow_id.to_string(),
                 category: WORKFLOW_CLOSEOUT_DOSSIER_EVIDENCE_CATEGORY.to_string(),
                 summary: "replay-derived dossier export recorded".to_string(),
                 artifact_path: Some("artifacts/workflow_dossiers/simulator.json".to_string()),
@@ -387,7 +448,7 @@ pub async fn run_deterministic_workflow_simulator(
     coordinator
         .record_workflow_operator_decision(
             actor.clone(),
-            SIMULATOR_WORKFLOW_ID,
+            workflow_id,
             "signoff-approved",
             "simulator",
             Some("all simulator evidence mapped".to_string()),
@@ -398,7 +459,7 @@ pub async fn run_deterministic_workflow_simulator(
     coordinator
         .complete_workflow_with_closeout_policy(
             actor.clone(),
-            SIMULATOR_WORKFLOW_ID,
+            workflow_id,
             "outcome.finished",
             "deterministic simulator completed with mapped evidence",
             "simulator",
@@ -410,7 +471,7 @@ pub async fn run_deterministic_workflow_simulator(
     coordinator
         .complete_workflow(
             actor,
-            SIMULATOR_WORKFLOW_ID,
+            workflow_id,
             "outcome.failed",
             "late completion after terminal outcome must not mutate replay projection",
             "late-worker",
@@ -436,7 +497,7 @@ pub async fn run_deterministic_workflow_simulator(
     let closeout_replay_equivalent = replay_projection == projection;
     let workflow = projection
         .workflows
-        .get(SIMULATOR_WORKFLOW_ID)
+        .get(workflow_id)
         .ok_or_else(|| "simulator workflow missing from replay projection".to_string())?;
     if workflow.status != "outcome.finished" || !workflow.terminal {
         return Err(format!(
@@ -449,7 +510,7 @@ pub async fn run_deterministic_workflow_simulator(
     Ok(WorkflowSimulationReport {
         run_id: run.run_id,
         run_dir: run.run_dir,
-        workflow_id: SIMULATOR_WORKFLOW_ID.to_string(),
+        workflow_id: workflow_id.to_string(),
         provider_output,
         missing_evidence_blocked_completion,
         active_continuation_blocked_completion,
@@ -489,12 +550,56 @@ fn closeout_policy_requiring_dossier_artifact() -> WorkflowCloseoutPolicy {
     .expect("test closeout policy")
 }
 
+fn enrich_scenario_evidence_metadata(category: &str, metadata: &mut BTreeMap<String, String>) {
+    match category {
+        "evidence.goal_ledger" => {
+            metadata.insert(
+                "artifact_kind".to_string(),
+                "workflow_goal_ledger".to_string(),
+            );
+            metadata.insert("goal_id".to_string(), "goal-1".to_string());
+            metadata.insert("goal_status".to_string(), "active".to_string());
+            metadata.insert("story_count".to_string(), "1".to_string());
+            metadata.insert("story.0.id".to_string(), "story-1".to_string());
+            metadata.insert("story.0.status".to_string(), "complete".to_string());
+            metadata.insert("quality_gate_status".to_string(), "passed".to_string());
+            metadata.insert(
+                "quality_gate_verification_refs".to_string(),
+                r#"["acceptance.noop-tool"]"#.to_string(),
+            );
+            metadata.insert(
+                "quality_gate_review_refs".to_string(),
+                r#"["acceptance.review"]"#.to_string(),
+            );
+        }
+        "evidence.review" => {
+            metadata.insert("review_status".to_string(), "passed".to_string());
+            metadata.insert("recommendation".to_string(), "APPROVE".to_string());
+            metadata.insert("architectural_status".to_string(), "CLEAR".to_string());
+        }
+        "evidence.security_review" => {
+            metadata.insert("security_status".to_string(), "passed".to_string());
+        }
+        "evidence.qa" => {
+            metadata.insert("qa_status".to_string(), "passed".to_string());
+        }
+        "evidence.setup_doctor" => {
+            metadata.insert("setup_status".to_string(), "passed".to_string());
+        }
+        "evidence.status_hud" => {
+            metadata.insert("status_hud_status".to_string(), "passed".to_string());
+        }
+        _ => {}
+    }
+}
+
 async fn start_simulator_run(
     session_dir: &Path,
     workspace: &Path,
+    run_id: &str,
 ) -> Result<(CoordinatorHandle, RunInfo), String> {
     let mut config = CoordinatorConfig::new(session_dir.to_path_buf());
-    config.run_id_override = Some(SIMULATOR_RUN_ID.to_string());
+    config.run_id_override = Some(run_id.to_string());
     config.deterministic_store = true;
     config.session_mode_source = Some(SessionModeSource::ScenarioFixture);
     config.permission_policy = PermissionPolicy::new(
@@ -672,12 +777,12 @@ pub fn simulator_replay_evidence(report: &WorkflowSimulationReport) -> bool {
     let has_denied_permission = report
         .projection
         .workflows
-        .contains_key(SIMULATOR_WORKFLOW_ID)
-        && report
-            .dossier
-            .workflows
-            .iter()
-            .any(|workflow| workflow.signoff.allowed && workflow.status == "outcome.finished");
+        .contains_key(report.workflow_id.as_str())
+        && report.dossier.workflows.iter().any(|workflow| {
+            workflow.workflow_id == report.workflow_id
+                && workflow.signoff.allowed
+                && workflow.status == "outcome.finished"
+        });
     has_denied_permission && report.replay_event_count > 0
 }
 
@@ -744,7 +849,7 @@ mod tests {
             .expect("simulator workflow dossier entry");
         assert!(dossier_workflow.quality_gate.passed);
         assert_eq!(dossier_workflow.continuations.len(), 1);
-        assert_eq!(dossier_workflow.continuations[0].status, "stopped");
+        assert_eq!(dossier_workflow.continuations[0].status, "limit_reached");
         assert!(workflow
             .evidence_categories
             .contains(super::SIMULATED_TOOL_EVIDENCE_CATEGORY));

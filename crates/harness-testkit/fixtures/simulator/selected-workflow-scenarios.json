@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "sourceMatrix": "docs/workflow-parity-matrix.json",
+  "description": "Registry-driven deterministic feature simulator scenario contract for selected workflow parity rows.",
+  "requiredFields": [
+    "case_id",
+    "workflow_or_command_id",
+    "proof_dossier_path",
+    "public_surfaces",
+    "registry_source",
+    "authority",
+    "mutability",
+    "provider_fixture",
+    "expected_event_types",
+    "expected_projection",
+    "required_evidence_categories",
+    "permissions_required",
+    "tool_ids",
+    "artifact_expectations",
+    "negative_fixture",
+    "required_signoff_lanes",
+    "registry_command",
+    "implementation_status",
+    "workflow_phase",
+    "proof_bundle_path",
+    "validation_errors"
+  ],
+  "negativeFixtures": [
+    "missing workflow evidence",
+    "active continuation blocking closeout",
+    "pending workflow task",
+    "unanswered operator question",
+    "owner conflict",
+    "permission denial or missing decision",
+    "missing dossier artifact",
+    "late completion ignored",
+    "artifact truncation/redaction behavior"
+  ]
+}
