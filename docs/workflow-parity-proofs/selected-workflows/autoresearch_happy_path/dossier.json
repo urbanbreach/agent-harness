@@ -1,0 +1,61 @@
+{
+  "artifacts": {
+    "docs_dossier": "docs/workflow-parity-proofs/selected-workflows/autoresearch_happy_path/dossier.json",
+    "feature_simulator_coverage_summary": "target/harness-parity/selected-workflows/feature-simulator/coverage-summary.json",
+    "feature_simulator_matrix_report": "target/harness-parity/selected-workflows/feature-simulator/matrix-report.json",
+    "target_bundle": "target/harness-parity/selected-workflows/bundle-summary.json",
+    "target_dossier": "target/harness-parity/selected-workflows/autoresearch_happy_path/dossier.json"
+  },
+  "canonical_harness_id": "harness.workflow.research_mission",
+  "commands": [
+    "cargo test -p harness-testkit --test simulator_e2e -- --nocapture",
+    "cargo test -p harness-tui workflow_projection_surfaces -- --nocapture",
+    "cargo test -p harness --test workflow_inventory -- --nocapture",
+    "cargo test -p harness --test config_schema_cli doctor_cli_strict_parity_passes_with_selected_proof_bundle -- --nocapture",
+    "cargo run -p harness -- --config configs/harness.example.jsonc doctor --json --strict-parity"
+  ],
+  "evidence_categories": [
+    "registry_drift_test",
+    "deterministic_feature_simulator",
+    "tui_projection_surface",
+    "workflow_status_projection",
+    "workflow_dossier_projection",
+    "negative_path_contract",
+    "strict_parity_doctor"
+  ],
+  "generated_at": "2026-05-20T00:00:00Z",
+  "harness_entrypoint": [
+    "$autoresearch"
+  ],
+  "legacy_aliases": [
+    "autoresearch"
+  ],
+  "native_behavior_contract": "workflow.research_mission must mutate or read Harness coordinator-owned workflow state without shelling out to OMX runtime",
+  "negative_path_contract": "validator failure or missing research artifact",
+  "operator_visible_success": "status/dossier/HUD show replay-derived workflow state, evidence, blockers, and legal next actions",
+  "parity_dimensions": [
+    "invocation",
+    "state",
+    "artifacts",
+    "permissions",
+    "replay",
+    "tui",
+    "negative_path"
+  ],
+  "proof_kind": "selected_workflow_e2e_parity",
+  "registry_command": "research-mission",
+  "scenario": "simulator::autoresearch_happy_path",
+  "schema_version": 1,
+  "state_authority": "harness_events_and_replay_projections",
+  "status": "native_complete",
+  "strict_doctor_check": "strict_parity_matrix",
+  "truth_gates": {
+    "dossier_reads_append_events": false,
+    "native_only": true,
+    "omx_runtime_authority": false,
+    "permission_checks_before_side_effects": true,
+    "replay_derived": true,
+    "status_reads_append_events": false
+  },
+  "workflow_phase": "research"
+}
