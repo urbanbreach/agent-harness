@@ -30,12 +30,12 @@ Execution quality is usually bottlenecked by intent clarity, not just missing im
 - **Quick (`--quick`)**: fast pre-PRD pass; target threshold `<= 0.30`; max rounds 5
 - **Standard (`--standard`, default)**: full requirement interview; target threshold `<= 0.20`; max rounds 12
 - **Deep (`--deep`)**: high-rigor exploration; target threshold `<= 0.15`; max rounds 20
-- **Autoresearch (`--autoresearch`)**: same interview rigor as Standard, but specialized for `$autoresearch` mission readiness and `.omx/specs/` artifact handoff
+- **Autoresearch (`--autoresearch`)**: same interview rigor as Standard, but specialized for `$autoresearch` mission readiness and `target/harness-artifacts/specs/` artifact handoff
 
 If no flag is provided, use **Standard**.
 
 <Mode_Flags>
-- **`--autoresearch`**: switch the interview into autoresearch-intake mode for `$autoresearch` handoff. In this mode, the interview should converge on a validator-ready research mission, write canonical artifacts under `.omx/specs/`, and preserve the explicit `refine further` vs `launch` boundary for downstream skill intake.
+- **`--autoresearch`**: switch the interview into autoresearch-intake mode for `$autoresearch` handoff. In this mode, the interview should converge on a validator-ready research mission, write canonical artifacts under `target/harness-artifacts/specs/`, and preserve the explicit `refine further` vs `launch` boundary for downstream skill intake.
 </Mode_Flags>
 </Depth_Profiles>
 
@@ -47,7 +47,7 @@ If no flag is provided, use **Standard**.
 - Do not rotate to a new clarity dimension just for coverage when the current answer is still vague; stay on the same thread until one layer deeper, one assumption clearer, or one boundary tighter
 - Before crystallizing, complete at least one explicit pressure pass that revisits an earlier answer with a deeper, assumption-focused, or tradeoff-focused follow-up
 - Gather codebase facts via `explore` before asking user about internals
-- When session guidance enables `USE_Harness_EXPLORE_CMD`, prefer `omx explore` for simple read-only brownfield fact gathering; keep prompts narrow and concrete, and keep ambiguous or non-shell-only investigation on the richer normal path and fall back normally if `omx explore` is unavailable.
+- When session guidance enables `USE_Harness_EXPLORE_CMD`, prefer `harness codesearch/explore` for simple read-only brownfield fact gathering; keep prompts narrow and concrete, and keep ambiguous or non-shell-only investigation on the richer normal path and fall back normally if `harness codesearch/explore` is unavailable.
 - Always run a preflight context intake before the first interview question
 - If initial context is oversized or would exceed the prompt budget, do not paste or forward the raw payload into interview prompts; request and record a prompt-safe initial-context summary first
 - The oversized initial-context summary gate is blocking: wait for the concise summary before ambiguity scoring, crystallizing artifacts, or any downstream execution handoff
@@ -81,7 +81,7 @@ If no flag is provided, use **Standard**.
 ## Phase 0: Preflight Context Intake
 
 1. Parse `{{ARGUMENTS}}` and derive a short task slug.
-2. Attempt to load the latest relevant context snapshot from `.omx/context/{slug}-*.md`.
+2. Attempt to load the latest relevant context snapshot from `target/harness-artifacts/context/{slug}-*.md`.
 3. Check whether the provided initial context or loaded snapshot is too large for safe prompt use. If it is oversized, the first interview round must ask for a concise prompt-safe summary instead of scoring ambiguity or continuing to downstream handoff.
 4. If no snapshot exists, create a minimum context snapshot with:
    - Task statement
@@ -94,7 +94,7 @@ If no flag is provided, use **Standard**.
    - Decision-boundary unknowns
    - Likely codebase touchpoints
    - Prompt-safe initial-context summary status (`not_needed`, `needed`, or `recorded`)
-5. Save snapshot to `.omx/context/{slug}-{timestamp}.md` (UTC `YYYYMMDDTHHMMSSZ`) and reference it in mode state.
+5. Save snapshot to `target/harness-artifacts/context/{slug}-{timestamp}.md` (UTC `YYYYMMDDTHHMMSSZ`) and reference it in mode state.
 
 ## Phase 1: Initialize
 
@@ -121,7 +121,7 @@ If no flag is provided, use **Standard**.
     "codebase_context": null,
     "current_stage": "intent-first",
     "current_focus": "intent",
-    "context_snapshot_path": ".omx/context/<slug>-<timestamp>.md"
+    "context_snapshot_path": "target/harness-artifacts/context/<slug>-<timestamp>.md"
   }
 }
 ```
@@ -311,10 +311,10 @@ Track used modes in state to prevent repetition.
 When threshold is met (or user exits with warning / hard cap):
 
 1. Write interview transcript summary to:
-   - `.omx/interviews/{slug}-{timestamp}.md`  
+   - `target/harness-artifacts/interviews/{slug}-{timestamp}.md`  
      (kept for ralph PRD compatibility)
 2. Write execution-ready spec to:
-   - `.omx/specs/deep-interview-{slug}.md`
+   - `target/harness-artifacts/specs/deep-interview-{slug}.md`
 
 Spec should include:
 - Metadata (profile, rounds, final ambiguity, threshold, context type)
@@ -340,16 +340,16 @@ When the clarified task is specifically about `$autoresearch`, or the skill is i
 
 - **Accepted seed inputs:** `topic`, `evaluator`, `keep-policy`, `slug`, existing mission draft text, and prior evaluator examples/templates
 - **Required interview focus:** mission clarity, evaluator readiness, keep policy, slug/session naming, and whether the draft is ready to launch now or should refine further
-- **Canonical artifact path:** `.omx/specs/deep-interview-autoresearch-{slug}.md`
-- **Launch artifact bundle:** `.omx/specs/autoresearch-{slug}/mission.md`, `.omx/specs/autoresearch-{slug}/sandbox.md`, and `.omx/specs/autoresearch-{slug}/result.json`
-- **Launch artifact directory:** `.omx/specs/autoresearch-{slug}/`
+- **Canonical artifact path:** `target/harness-artifacts/specs/deep-interview-autoresearch-{slug}.md`
+- **Launch artifact bundle:** `target/harness-artifacts/specs/autoresearch-{slug}/mission.md`, `target/harness-artifacts/specs/autoresearch-{slug}/sandbox.md`, and `target/harness-artifacts/specs/autoresearch-{slug}/result.json`
+- **Launch artifact directory:** `target/harness-artifacts/specs/autoresearch-{slug}/`
 - **Required artifact sections:**
   - `Mission Draft`
   - `Evaluator Draft`
   - `Launch Readiness`
   - `Seed Inputs`
   - `Confirmation Bridge`
-- **Required launch artifacts under `.omx/specs/autoresearch-{slug}/`:**
+- **Required launch artifacts under `target/harness-artifacts/specs/autoresearch-{slug}/`:**
   - `mission.md`
   - `sandbox.md`
   - `result.json`
@@ -373,16 +373,16 @@ Include these product-facing suggestions when they fit the clarified spec, witho
 Preserve `$ralph` for persistent single-owner execution/verification and `$team` for coordinated parallel implementation. Present goal-mode options as context-sensitive next steps, not as generic replacements for implementation lanes.
 
 ### 1. **`$ralplan` (Recommended)**
-- **Input Artifact:** `.omx/specs/deep-interview-{slug}.md` (optionally accompanied by the transcript/context snapshot for traceability)
+- **Input Artifact:** `target/harness-artifacts/specs/deep-interview-{slug}.md` (optionally accompanied by the transcript/context snapshot for traceability)
 - **Invocation:** `$plan --consensus --direct <spec-path>`
 - **Consumer Behavior:** Treat the deep-interview spec as the requirements source of truth. Do not repeat the interview by default; refine architecture/feasibility around the clarified intent and boundaries instead.
 - **Skipped / Already-Satisfied Stages:** Requirements discovery, ambiguity clarification, and early intent-boundary elicitation
-- **Expected Output:** Canonical planning artifacts under `.omx/plans/`, especially `prd-*.md` and `test-spec-*.md`
+- **Expected Output:** Canonical planning artifacts under `target/harness-artifacts/plans/`, especially `prd-*.md` and `test-spec-*.md`
 - **Best When:** Requirements are clear enough to stop interviewing, but architectural validation / consensus planning is still desirable
 - **Next Recommended Step:** Use the approved planning artifacts with `$autopilot`, `$ralph`, `$team`, or `$ultragoal` as the default goal-mode follow-up; choose `$autoresearch-goal` for research validation or `$performance-goal` for measurable optimization
 
 ### 2. **`$autopilot`**
-- **Input Artifact:** `.omx/specs/deep-interview-{slug}.md`
+- **Input Artifact:** `target/harness-artifacts/specs/deep-interview-{slug}.md`
 - **Invocation:** `$autopilot <spec-path>`
 - **Consumer Behavior:** Use the deep-interview spec as the clarified execution brief. Preserve intent, non-goals, decision boundaries, and acceptance criteria as binding context for planning/execution.
 - **Skipped / Already-Satisfied Stages:** Initial requirement discovery and ambiguity reduction
@@ -391,7 +391,7 @@ Preserve `$ralph` for persistent single-owner execution/verification and `$team`
 - **Next Recommended Step:** Continue through autopilot's execution/QA/validation flow; if coordination-heavy execution emerges, prefer a follow-up `$team` or `$ralph` lane as appropriate
 
 ### 3. **`$ralph`**
-- **Input Artifact:** `.omx/specs/deep-interview-{slug}.md`
+- **Input Artifact:** `target/harness-artifacts/specs/deep-interview-{slug}.md`
 - **Invocation:** `$ralph <spec-path>`
 - **Consumer Behavior:** Use the spec's acceptance criteria and boundary constraints as the persistence target. Do not reopen requirements discovery unless the user explicitly asks to refine further.
 - **Skipped / Already-Satisfied Stages:** Requirement interview, ambiguity clarification, and initial scope-definition work
@@ -400,7 +400,7 @@ Preserve `$ralph` for persistent single-owner execution/verification and `$team`
 - **Next Recommended Step:** Continue Ralph's persistence loop; if work expands into coordination-heavy lanes, hand off to `$team` and keep Ralph for verification continuity
 
 ### 4. **`$team`**
-- **Input Artifact:** `.omx/specs/deep-interview-{slug}.md`
+- **Input Artifact:** `target/harness-artifacts/specs/deep-interview-{slug}.md`
 - **Invocation:** `$team <spec-path>`
 - **Consumer Behavior:** Treat the spec as shared execution context for coordinated parallel work. Preserve the clarified intent, non-goals, decision boundaries, and acceptance criteria as common lane constraints.
 - **Skipped / Already-Satisfied Stages:** Requirement clarification and early ambiguity reduction
@@ -431,9 +431,9 @@ Preserve `$ralph` for persistent single-owner execution/verification and `$team`
 - After `native question tool` returns JSON, prefer `answers[0].answer` / `answers[]`; use legacy `answer` only as a fallback for older records
 - Use `harness workflow evidence write/read --input '<json>' --json` for resumable mode state; `state_write` / `state_read` are explicit MCP compatibility fallbacks only
 - If the interview cannot ask a required `native question tool` round, persist the blocker as terminal state with `active: false` and `current_phase: "blocked"`; do not write a terminal blocked phase with `active: true`
-- Read/write context snapshots under `.omx/context/`
+- Read/write context snapshots under `target/harness-artifacts/context/`
 - Record whether the oversized-context summary gate is not needed, pending, or satisfied before any scoring or handoff step
-- Save transcript/spec artifacts under `.omx/interviews/` and `.omx/specs/`
+- Save transcript/spec artifacts under `target/harness-artifacts/interviews/` and `target/harness-artifacts/specs/`
 </Tool_Usage>
 
 <Escalation_And_Stop_Conditions>
@@ -444,7 +444,7 @@ Preserve `$ralph` for persistent single-owner execution/verification and `$team`
 </Escalation_And_Stop_Conditions>
 
 <Final_Checklist>
-- [ ] Preflight context snapshot exists under `.omx/context/{slug}-{timestamp}.md`
+- [ ] Preflight context snapshot exists under `target/harness-artifacts/context/{slug}-{timestamp}.md`
 - [ ] Oversized initial context, if present, has a prompt-safe summary recorded before ambiguity scoring or downstream handoff
 - [ ] Ambiguity score shown each round
 - [ ] Intent-first stage priority used before implementation detail
@@ -452,8 +452,8 @@ Preserve `$ralph` for persistent single-owner execution/verification and `$team`
 - [ ] At least one explicit assumption probe happened before crystallization
 - [ ] At least one persistent follow-up / pressure pass deepened a prior answer
 - [ ] Challenge modes triggered at thresholds (when applicable)
-- [ ] Transcript written to `.omx/interviews/{slug}-{timestamp}.md`
-- [ ] Spec written to `.omx/specs/deep-interview-{slug}.md`
+- [ ] Transcript written to `target/harness-artifacts/interviews/{slug}-{timestamp}.md`
+- [ ] Spec written to `target/harness-artifacts/specs/deep-interview-{slug}.md`
 - [ ] Brownfield questions use evidence-backed confirmation when applicable
 - [ ] Handoff options provided (`$ralplan`, `$autopilot`, `$ralph`, `$team`) plus context-sensitive goal-mode suggestions (`$ultragoal`, `$autoresearch-goal`, `$performance-goal`) when applicable
 - [ ] No direct implementation performed in this mode

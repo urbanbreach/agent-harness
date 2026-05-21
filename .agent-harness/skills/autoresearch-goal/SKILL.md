@@ -21,6 +21,27 @@ Use this skill for research that needs a durable objective, validator criteria, 
 4. Run a critic/validator pass against the objective.
 5. Complete only when the validator criteria are satisfied or a concrete blocker is recorded.
 
+## Boundary
+
+- Do not revive deprecated direct launch surfaces or external state files as workflow authority.
+- Do not claim shell commands mutate hidden goal state.
+- Use Harness workflow events, projections, and evidence as the durable source of truth.
+
+## Artifacts
+
+Harness records mission, rubric, ledger, validation, and completion details as workflow evidence artifacts and replay-derived dossier entries.
+
+## Flow
+
+1. Create the mission objective and validation rubric in Harness workflow state.
+2. Emit a model-facing handoff that cites the active workflow id and evidence expectations.
+3. Research iteratively against the rubric and record every critic outcome as evidence.
+4. Complete only after passing validation and replay-derived status/dossier checks.
+
+## Completion gate
+
+A passing validator artifact and matching Harness workflow projection are required. Assistant prose, partial tests, or failed/blocked verdicts are not sufficient.
+
 ## Output
 Return a concise answer with citations/evidence, unresolved unknowns, and the workflow evidence identifier when available.
 

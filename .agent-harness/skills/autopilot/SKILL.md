@@ -52,8 +52,8 @@ The only normal terminal state is `complete` after a clean code review. Cancella
 <Pre-context Intake>
 Before Phase `ralplan` starts or resumes:
 1. Derive a task slug from the request.
-2. Reuse the latest relevant `.omx/context/{slug}-*.md` snapshot when available.
-3. If none exists, create `.omx/context/{slug}-{timestamp}.md` (UTC `YYYYMMDDTHHMMSSZ`) with:
+2. Reuse the latest relevant `target/harness-artifacts/context/{slug}-*.md` snapshot when available.
+3. If none exists, create `target/harness-artifacts/context/{slug}-{timestamp}.md` (UTC `YYYYMMDDTHHMMSSZ`) with:
    - task statement
    - desired outcome
    - known facts/evidence
@@ -89,7 +89,7 @@ Required fields:
   "max_iterations": 10,
   "phase_cycle": ["ralplan", "ralph", "code-review"],
   "handoff_artifacts": {
-    "context_snapshot_path": ".omx/context/<slug>-<timestamp>.md",
+    "context_snapshot_path": "target/harness-artifacts/context/<slug>-<timestamp>.md",
     "ralplan": null,
     "ralph": null,
     "code_review": null

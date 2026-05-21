@@ -12,8 +12,6 @@ Use a locally installed external advisor CLI for focused questions, reviews, bra
 ```bash
 $ask claude <question or task>
 $ask gemini <question or task>
-omx ask claude "<question or task>"
-omx ask gemini "<question or task>"
 ```
 
 ## Backend selection
@@ -27,14 +25,12 @@ omx ask gemini "<question or task>"
 Claude:
 
 ```bash
-omx ask claude "{{ARGUMENTS}}"
 claude -p "{{ARGUMENTS}}"
 ```
 
 Gemini:
 
 ```bash
-omx ask gemini "{{ARGUMENTS}}"
 gemini -p "{{ARGUMENTS}}"
 ```
 
@@ -45,7 +41,7 @@ If needed, adapt to the user's installed CLI variant while keeping local executi
 After local execution, save a markdown artifact to:
 
 ```text
-.omx/artifacts/ask-<backend>-<slug>-<timestamp>.md
+target/harness-artifacts/ask-<backend>-<slug>-<timestamp>.md
 ```
 
 Minimum artifact sections:

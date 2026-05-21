@@ -50,13 +50,13 @@ The completion artifact must include both an architect approval verdict and an o
 {
   "validator_prompt": "Review the research output against the mission.",
   "architect_review": { "verdict": "approved" },
-  "output_artifact_path": ".omx/specs/autoresearch-demo/report.md"
+  "output_artifact_path": "target/harness-artifacts/specs/autoresearch-demo/report.md"
 }
 ```
 
 ## Recommended flow
 1. Run `$deep-interview --autoresearch` to clarify mission + evaluator.
-2. Materialize `.omx/specs/autoresearch-{slug}/mission.md`, `sandbox.md`, and `result.json`.
+2. Materialize `target/harness-artifacts/specs/autoresearch-{slug}/mission.md`, `sandbox.md`, and `result.json`.
 3. Start `$autoresearch` with the chosen validation mode stored in mode state.
 4. Let stop-hook / auto-nudge continue until the completion artifact satisfies the chosen validation mode.
 5. Finish only after the validator artifact is complete.
