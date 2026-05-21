@@ -10,10 +10,10 @@ Use this skill when users want to install or refresh Agent Harness for the **cur
 ## Command
 
 ```bash
-omx setup [--force] [--merge-agents] [--dry-run] [--verbose] [--scope <user|project>] [--plugin|--legacy|--install-mode <legacy|plugin>]
+harness setup [--force] [--merge-agents] [--dry-run] [--verbose] [--scope <user|project>] [--plugin|--legacy|--install-mode <legacy|plugin>]
 ```
 
-If you only want lightweight `AGENTS.md` scaffolding for an existing repo or subtree, use `omx agents-init [path]` instead of full setup.
+If you only want lightweight `AGENTS.md` scaffolding for an existing repo or subtree, use `Harness agents init [path]` instead of full setup.
 
 Supported setup flags (current implementation):
 - `--force`: overwrite/reinstall managed artifacts where applicable
@@ -27,42 +27,42 @@ Supported setup flags (current implementation):
 
 ## What this setup actually does
 
-`omx setup` performs these steps:
+`harness setup` performs these steps:
 
 1. Resolve setup scope:
    - `--scope` explicit value
-   - else persisted `./.omx/setup-scope.json` (with automatic migration of legacy values)
-   - if a TTY user has persisted setup preferences, `omx setup` first summarizes the recorded choices and asks whether to **keep**, **review/change**, or **reset** them
+   - else persisted `Harness project state/setup-scope.json` (with automatic migration of legacy values)
+   - if a TTY user has persisted setup preferences, `harness setup` first summarizes the recorded choices and asks whether to **keep**, **review/change**, or **reset** them
    - else interactive prompt on TTY (default `user`)
    - else default `user` (safe for CI/tests)
 2. If scope is `user`, resolve user skill delivery mode:
    - explicit `--plugin`, `--legacy`, or `--install-mode legacy|plugin`, if present
-   - persisted install mode in `./.omx/setup-scope.json`, if present and the TTY review decision is `keep`
-   - else discovered installed plugin cache under `${CODEX_HOME:-~/.codex}/plugins/cache/**/.codex-plugin/plugin.json` with `name: Agent Harness` makes `plugin` the default
+   - persisted install mode in `Harness project state/setup-scope.json`, if present and the TTY review decision is `keep`
+   - else discovered installed plugin cache under `configured Harness home/plugins/cache/**/.codex-plugin/plugin.json` with `name: Agent Harness` makes `plugin` the default
    - else interactive prompt on TTY (`legacy` by default, or `plugin` when a plugin cache is discovered)
    - else default `legacy` unless a plugin cache is discovered
 3. Create directories and persist effective scope/install mode
 4. In legacy mode, install prompts/native agents/skills and merge full config.toml. In plugin mode, archive/remove legacy Harness-managed prompts/native agents/skills but keep native Codex hooks installed.
 5. Verify Team CLI API interop markers exist in built `dist/cli/team.js`
 6. Generate AGENTS.md defaults only when selected/allowed (or legacy behavior outside plugin mode)
-7. Configure notify hook references outside plugin mode and write `./.omx/hud-config.json`
+7. Configure notify hook references outside plugin mode and write `Harness project state/hud-config.json`
 
 ## Important behavior notes
 
-- `omx setup` prompts for scope when no scope is provided and stdin/stdout are TTY. If `./.omx/setup-scope.json` already exists, setup now summarizes the saved choices first and asks whether to keep them, review/change them, or reset and behave like a fresh setup run.
+- `harness setup` prompts for scope when no scope is provided and stdin/stdout are TTY. If `Harness project state/setup-scope.json` already exists, setup now summarizes the saved choices first and asks whether to keep them, review/change them, or reset and behave like a fresh setup run.
 - Non-interactive setup never blocks for this review prompt: it keeps deterministic CLI/persisted/default behavior for CI and scripted installs.
-- In `user` scope, `omx setup` also prompts for skill delivery mode when no prior install mode is kept; installed plugin cache discovery makes plugin mode the default prompt/non-interactive choice.
+- In `user` scope, `harness setup` also prompts for skill delivery mode when no prior install mode is kept; installed plugin cache discovery makes plugin mode the default prompt/non-interactive choice.
 - Local project orchestration file is `./AGENTS.md` (project root).
 - If `AGENTS.md` exists and neither `--force` nor `--merge-agents` is used, interactive TTY runs ask whether to overwrite. Non-interactive runs preserve the file.
 - Use `--merge-agents` to keep existing project guidance while allowing setup to refresh Harness-managed AGENTS sections and the generated model capability table idempotently.
 - Scope targets:
-  - `user`: user directories (`~/.codex`, `~/.codex/skills`, `~/.omx/agents`)
-  - `project`: local directories (`./.codex`, `./.codex/skills`, `./.omx/agents`)
+  - `user`: user directories (`configured Harness home`, `configured Harness home/skills`, `configured Harness home/agents`)
+  - `project`: local directories (`./.codex`, `./.codex/skills`, `Harness project state/agents`)
 - User-scope skill delivery targets:
   - `legacy`: keep installing/updating Harness skills in the resolved user skill root
   - `plugin`: rely on Codex plugin discovery for bundled skills and archive/remove legacy Harness-managed prompts/skills/native agents; setup still installs native Codex hooks and setup-owned runtime feature flags (`hooks = true` on current Codex, legacy `codex_hooks = true` when that is the only reported hook feature, plus `goals = true`) because plugins do not carry hooks or enable external goal context by themselves.
-- Migration hint: in `user` scope, if historical `~/.agents/skills` still exists alongside `${CODEX_HOME:-~/.codex}/skills`, current setup prints a cleanup hint. **Why the paths differ**: `${CODEX_HOME:-~/.codex}/skills/` is the path current Codex CLI natively loads as its skill root; `~/.agents/skills/` was the skill root in an older Codex CLI release before `~/.codex` became the standard home directory. Harness writes only to the canonical `${CODEX_HOME:-~/.codex}/skills/` path. When both directories exist simultaneously, Codex discovers skills from both trees and may show duplicate entries in Enable/Disable Skills. Archive or remove `~/.agents/skills/` to resolve this.
-- If persisted scope is `project`, `omx` launch automatically uses `CODEX_HOME=./.codex` unless user explicitly overrides `CODEX_HOME`.
+- Migration hint: in `user` scope, if historical `~/.agents/skills` still exists alongside `configured Harness home/skills`, current setup prints a cleanup hint. **Why the paths differ**: `configured Harness home/skills/` is the path current Codex CLI natively loads as its skill root; `~/.agents/skills/` was the skill root in an older Codex CLI release before `configured Harness home` became the standard home directory. Harness writes only to the canonical `configured Harness home/skills/` path. When both directories exist simultaneously, Codex discovers skills from both trees and may show duplicate entries in Enable/Disable Skills. Archive or remove `~/.agents/skills/` to resolve this.
+- If persisted scope is `project`, `omx` launch automatically uses `HARNESS_HOME=./.codex` unless user explicitly overrides `HARNESS_HOME`.
 - Plugin mode prompts separately for optional AGENTS.md defaults and optional `developer_instructions` defaults. If `developer_instructions` already exists, setup asks before overwriting it; non-interactive runs preserve it.
 - With `--force` or `--merge-agents`, AGENTS updates may still be skipped if an active Harness session is detected (safety guard).
 - Legacy persisted scope values (`project-local`) are automatically migrated to `project` with a one-time warning.
@@ -73,22 +73,22 @@ Use this map when reconciling setup behavior or debugging a confusing install:
 
 | Surface | Owner | Notes |
 | --- | --- | --- |
-| `./.omx/setup-scope.json` | `omx setup` | Persists setup scope and user-scope skill delivery mode. TTY reruns summarize it and offer keep/review/reset. |
-| `~/.codex/config.toml` / `./.codex/config.toml` | `omx setup` generated blocks + user edits | Setup refreshes Harness-managed blocks while preserving supported manual content; setup-owned runtime feature flags include `multi_agent`, `child_agents_md`, the Codex hook feature flag (`hooks` or legacy `codex_hooks`), and `goals`. |
-| `~/.codex/hooks.json` / `./.codex/hooks.json` | `omx setup` shared ownership | Setup owns Harness native hook wrappers and preserves user-owned hooks. |
-| prompts, skills, native agents | `omx setup` or Codex plugin delivery | Legacy mode installs local files; plugin mode relies on plugin discovery for bundled skills and archives/removes legacy Harness-managed prompt/native-agent copies. |
-| `AGENTS.md` | `omx setup` with overwrite safety | Generated defaults or managed refreshes are guarded by force/session checks. |
-| `./.omx/hud-config.json` | `omx setup` / `$hud` | Setup creates the focused default; `$hud` can adjust it later. |
-| notification hooks | `omx setup` / `$configure-notifications` | Setup wires defaults outside plugin skill delivery; notification skill owns deeper provider configuration. |
+| `Harness project state/setup-scope.json` | `harness setup` | Persists setup scope and user-scope skill delivery mode. TTY reruns summarize it and offer keep/review/reset. |
+| `configured Harness home/config.toml` / `./.codex/config.toml` | `harness setup` generated blocks + user edits | Setup refreshes Harness-managed blocks while preserving supported manual content; setup-owned runtime feature flags include `multi_agent`, `child_agents_md`, the Codex hook feature flag (`hooks` or legacy `codex_hooks`), and `goals`. |
+| `configured Harness home/hooks.json` / `./.codex/hooks.json` | `harness setup` shared ownership | Setup owns Harness native hook wrappers and preserves user-owned hooks. |
+| prompts, skills, native agents | `harness setup` or Codex plugin delivery | Legacy mode installs local files; plugin mode relies on plugin discovery for bundled skills and archives/removes legacy Harness-managed prompt/native-agent copies. |
+| `AGENTS.md` | `harness setup` with overwrite safety | Generated defaults or managed refreshes are guarded by force/session checks. |
+| `Harness project state/hud-config.json` | `harness setup` / `$hud` | Setup creates the focused default; `$hud` can adjust it later. |
+| notification hooks | `harness setup` / `$configure-notifications` | Setup wires defaults outside plugin skill delivery; notification skill owns deeper provider configuration. |
 
 ## If `$omx-setup` is missing or stale
 
 The source repo ships `skills/omx-setup/SKILL.md` and the catalog marks it active. If Codex does not show `$omx-setup`, treat it as an installation/discovery issue rather than a missing source skill:
 
-1. Run `omx setup --verbose` in the intended scope.
-2. Run `omx doctor` and check the reported setup scope, Codex home, skill root, and hook/config status.
+1. Run `harness setup --verbose` in the intended scope.
+2. Run `harness doctor` and check the reported setup scope, Codex home, skill root, and hook/config status.
 3. If using project scope, confirm `./.codex/skills/omx-setup/SKILL.md` exists.
-4. If using user scope, confirm `${CODEX_HOME:-~/.codex}/skills/omx-setup/SKILL.md` exists in legacy mode, or that the Agent Harness plugin is installed/discovered in plugin mode.
+4. If using user scope, confirm `configured Harness home/skills/omx-setup/SKILL.md` exists in legacy mode, or that the Agent Harness plugin is installed/discovered in plugin mode.
 5. If duplicate/stale skills appear, check for legacy `~/.agents/skills` overlap and follow the cleanup hint printed by setup/doctor.
 
 ## Recommended workflow
@@ -96,20 +96,20 @@ The source repo ships `skills/omx-setup/SKILL.md` and the catalog marks it activ
 1. Run setup:
 
 ```bash
-omx setup --force --verbose
+harness setup --force --verbose
 ```
 
 2. Verify installation:
 
 ```bash
-omx doctor
+harness doctor
 ```
 
 3. Start Codex with Harness in the target project directory.
 
 ## Expected verification indicators
 
-From `omx doctor`, expect:
+From `harness doctor`, expect:
 - Prompts installed (scope-dependent: user or project)
 - Skills installed (scope-dependent: user or project)
 - AGENTS.md found in project root

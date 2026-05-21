@@ -2,27 +2,27 @@
 name: "hud"
 description: "Show or configure the Harness HUD (two-layer statusline)"
 role: "display"
-scope: ".omx/**"
+scope: ".agent-harness/**"
 ---
 
 # HUD Skill
 
 The Harness HUD uses a two-layer architecture:
 
-1. **Layer 1 - Codex built-in statusLine**: Real-time TUI footer showing model, git branch, and context usage. Configured via `[tui] status_line` in `~/.codex/config.toml`. Zero code required.
+1. **Layer 1 - Codex built-in statusLine**: Real-time TUI footer showing model, git branch, and context usage. Configured via `[tui] status_line` in `configured Harness home/config.toml`. Zero code required.
 
-2. **Layer 2 - `omx hud` CLI command**: Shows Harness-specific orchestration state (ralph, ultrawork, autopilot, team, pipeline, ecomode, turns). Reads `Harness workflow projection/` files.
+2. **Layer 2 - `harness hud` CLI command**: Shows Harness-specific orchestration state (ralph, ultrawork, autopilot, team, pipeline, ecomode, turns). Reads `Harness workflow projection/` files.
 
 ## Quick Commands
 
 | Command | Description |
 |---------|-------------|
-| `omx hud` | Show current HUD (modes, turns, activity) |
-| `omx hud --watch` | Live-updating display (polls every 1s) |
-| `omx hud --json` | Raw state output for scripting |
-| `omx hud --preset=minimal` | Minimal display |
-| `omx hud --preset=focused` | Default display |
-| `omx hud --preset=full` | All elements |
+| `harness hud` | Show current HUD (modes, turns, activity) |
+| `harness hud --watch` | Live-updating display (polls every 1s) |
+| `harness hud --json` | Raw state output for scripting |
+| `harness hud --preset=minimal` | Minimal display |
+| `harness hud --preset=focused` | Default display |
+| `harness hud --preset=full` | All elements |
 
 ## Presets
 
@@ -43,14 +43,14 @@ The Harness HUD uses a two-layer architecture:
 
 ## Setup
 
-`omx setup` automatically configures both layers:
-- Adds `[tui] status_line` to `~/.codex/config.toml` (Layer 1)
-- Writes `.omx/hud-config.json` with default preset (Layer 2)
+`harness setup` automatically configures both layers:
+- Adds `[tui] status_line` to `configured Harness home/config.toml` (Layer 1)
+- Writes `.agent-harness/hud-config.json` with default preset (Layer 2)
 - Default preset is `focused`; if HUD/statusline changes do not appear, restart Codex CLI once.
 
 ## Layer 1: Codex Built-in StatusLine
 
-Configured in `~/.codex/config.toml`:
+Configured in `configured Harness home/config.toml`:
 ```toml
 [tui]
 status_line = ["model-with-reasoning", "git-branch", "context-remaining"]
@@ -61,7 +61,7 @@ Available built-in items (Codex CLI v0.101.0+):
 
 ## Layer 2: Harness Orchestration HUD
 
-The `omx hud` command reads these state files:
+The `harness hud` command reads these state files:
 - `Harness workflow projection/ralph-state.json` - Ralph loop iteration
 - `Harness workflow projection/ultrawork-state.json` - Ultrawork mode
 - `Harness workflow projection/autopilot-state.json` - Autopilot phase
@@ -69,11 +69,11 @@ The `omx hud` command reads these state files:
 - `Harness workflow projection/pipeline-state.json` - Pipeline stage
 - `Harness workflow projection/ecomode-state.json` - Ecomode active
 - `Harness workflow projection/hud-state.json` - Last activity (from notify hook)
-- `.omx/metrics.json` - Turn counts
+- `.agent-harness/metrics.json` - Turn counts
 
 ## Configuration
 
-HUD config stored at `.omx/hud-config.json`:
+HUD config stored at `.agent-harness/hud-config.json`:
 ```json
 {
   "preset": "focused"
@@ -90,10 +90,10 @@ HUD config stored at `.omx/hud-config.json`:
 
 If the TUI statusline is not showing:
 1. Ensure Codex CLI v0.101.0+ is installed
-2. Run `omx setup` to configure `[tui]` section
+2. Run `harness setup` to configure `[tui]` section
 3. Restart Codex CLI
 
-If `omx hud` shows "No active modes":
+If `harness hud` shows "No active modes":
 - This is expected when no workflows are running
 - Start a workflow (ralph, autopilot, etc.) and check again
 

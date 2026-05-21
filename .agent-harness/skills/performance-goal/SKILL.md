@@ -9,52 +9,38 @@ Use this skill when a user asks Harness to optimize performance and wants a goal
 
 ## Contract
 
-- Harness owns durable workflow state under `.omx/goals/performance/<slug>/`.
+- Harness owns durable workflow state through workflow goal/evidence events and replay-derived projections.
 - external goal context owns only the active-thread focus/accounting primitive.
 - Shell commands do **not** mutate hidden Codex goal state. They write artifacts and emit model-facing handoff text.
 - No optimization work may start until an evaluator command and pass/fail contract exist.
-- Do not call `update_goal({status: "complete"})` until the evaluator has a passing checkpoint and a completion audit proves the objective is done; then call `get_goal` again and pass that fresh snapshot to `omx performance-goal complete --codex-goal-json`.
+- Do not mark a goal complete until the evaluator has a passing checkpoint and a completion audit proves the objective is done; record the fresh snapshot as Harness workflow evidence.
 
 ## CLI
 
 Create the workflow and evaluator contract:
 
-```sh
-omx performance-goal create \
-  --objective "Reduce CLI startup latency by 20%" \
-  --evaluator-command "npm run perf:startup" \
-  --evaluator-contract "PASS when p95 latency improves by 20% and regression tests pass" \
-  --slug startup-latency
-```
+Use `$performance-goal` to create the evaluator contract, with an objective, evaluator command, evaluator pass/fail contract, and slug.
 
 Emit the Codex goal handoff:
 
-```sh
-omx performance-goal start --slug startup-latency
-```
+Record the start handoff as workflow evidence and include the evaluator contract in the artifact summary.
 
 Record evaluator evidence:
 
-```sh
-omx performance-goal checkpoint --slug startup-latency --status pass --evidence "benchmark + tests passed"
-omx performance-goal checkpoint --slug startup-latency --status fail --evidence "benchmark regressed"
-omx performance-goal checkpoint --slug startup-latency --status blocked --evidence "missing fixture"
-```
+Record pass/fail/blocked checkpoints as workflow evidence with the evaluator output or blocker artifact.
 
 Complete only after a passing checkpoint:
 
-```sh
-omx performance-goal complete --slug startup-latency --evidence "final evaluator evidence" --codex-goal-json <get_goal-json-or-path>
-```
+Complete only after the passing evaluator checkpoint and final audit are recorded as Harness evidence.
 
 ## Agent Loop
 
-1. Run `omx performance-goal create` if no workflow exists.
-2. Run `omx performance-goal start` and follow the handoff:
+1. Start `$performance-goal` with an evaluator contract if no workflow exists.
+2. Record the start handoff and follow it:
    - call `get_goal`;
    - call `create_goal` only when no active goal exists and the objective is explicit;
    - work only against the evaluator contract;
-   - after evaluator pass and completion audit, call `update_goal({status: "complete"})`, call `get_goal` again, and pass that snapshot to `omx performance-goal complete --codex-goal-json`;
+   - after evaluator pass and completion audit, record the final snapshot as workflow evidence and then close the workflow;
 3. Optimize in small reversible patches.
 4. Run the evaluator and related regression tests.
 5. Record each pass/fail/blocker with `checkpoint`.
@@ -62,7 +48,7 @@ omx performance-goal complete --slug startup-latency --evidence "final evaluator
 
 ## Completion Gate
 
-A performance goal is incomplete unless `.omx/goals/performance/<slug>/state.json` contains a `lastValidation.status` of `pass` and `omx performance-goal complete` receives a matching complete Codex `get_goal` snapshot via `--codex-goal-json`. Passing ordinary tests alone is not sufficient unless they are the declared evaluator contract.
+A performance goal is incomplete unless the replay-derived workflow projection contains a passing evaluator checkpoint and final completion evidence. Passing ordinary tests alone is not sufficient unless they are the declared evaluator contract.
 
 ## Harness substrate override
 

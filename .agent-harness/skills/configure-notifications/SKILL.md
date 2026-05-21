@@ -284,7 +284,7 @@ Show:
 - Generic aliases enabled (`custom_webhook_command`, `custom_cli_command`)
 - Whether explicit `notifications.openclaw` exists (and therefore overrides aliases)
 - Verbosity + idle cooldown + reply listener state
-- Config path (`~/.codex/.omx-config.json`)
+- Config path (`configured Harness home/.omx-config.json`)
 
 ## Harness substrate override
 

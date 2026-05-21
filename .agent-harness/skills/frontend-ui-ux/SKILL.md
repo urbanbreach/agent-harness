@@ -1,51 +1,16 @@
 ---
 name: frontend-ui-ux
-description: Frontend implementation guidance for usable, domain-appropriate interfaces with responsive visual verification.
+description: Deprecated compatibility shim for frontend UI/UX work; use $design or $visual-ralph
 ---
 
-# Frontend UI UX
+# Frontend UI/UX compatibility shim
 
-Use this skill when building or reviewing a user-facing web, app, TUI, or visual workflow.
+Hard-deprecated. Do not invoke or route this skill for new work.
 
-## Product fit
-- Build the actual working surface first, not a marketing placeholder.
-- Match density, layout, and tone to the domain.
-- Keep controls familiar: icons for tools, toggles for binary settings, tabs for views, and menus for option sets.
-- Avoid nested cards, decorative blobs, and one-note color palettes.
+Use `$design` when the task needs product/design context, UX guidance, frontend planning, design-system alignment, or a repo-local `DESIGN.md` source of truth.
 
-## Responsive quality
-- Give fixed-format UI elements stable dimensions with responsive constraints.
-- Ensure text fits in buttons, panels, and cards across mobile and desktop widths.
-- Verify screenshots or rendered output for overlap, blank states, and asset loading when the change affects visuals.
-- Keep visual assets relevant to the real product, place, object, or workflow.
+Use `$visual-ralph` when the task needs implementation against an approved generated/static/live-URL visual reference with screenshot capture, Visual Ralph verdict scoring, and pixel-diff evidence.
 
-## Harness state contract
+This file exists only to preserve the public/catalog-visible `frontend-ui-ux` compatibility contract while canonical design guidance is handled by `$design` and measured visual implementation is handled by `$visual-ralph`.
 
-Harness workflow state is authoritative through coordinator-owned events, workflow projections, native tool artifacts, and recorded workflow evidence. Skills must not require external state files, terminal-pane routing, or upstream CLI lifecycle commands as proof of progress.
-
-## Execution protocol
-
-Use the native Harness command dispatch, question, team, task, evidence, and verification surfaces named by the active workflow. Treat compatibility references as historical context only, and translate them into coordinator-owned actions before acting.
-
-## Evidence and closeout contract
-
-Record material progress as workflow evidence with artifact paths or command output summaries. Close only after the relevant checks pass, pending tasks are resolved or explicitly aborted, and the operator-facing status can be replayed from Harness events.
-
-## Stop/escalation conditions
-
-Stop when the workflow objective is verified complete, cancelled by the operator, or blocked by missing authority. Escalate only for destructive, credentialed, external-production, or materially scope-changing choices.
-
-## Verification checklist
-
-- Native Harness workflow projection reflects the expected mode/status.
-- Required evidence artifacts or command summaries are recorded.
-- Targeted tests, lint, docs checks, or visual/review gates named by the workflow have fresh results.
-- No external state-file, terminal multiplexer, or upstream CLI command is the proof boundary.
-
-## Purpose
-
-Provide a native Harness workflow protocol for this skill so command dispatch, state projection, evidence, and closeout remain coordinator-owned and replayable.
-
-## Use when
-
-Use this skill when the matching `$` workflow command or catalog entry is selected and the operator request fits the workflow description.
+Task: {{ARGUMENTS}}

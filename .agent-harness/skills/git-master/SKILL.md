@@ -1,24 +1,42 @@
 ---
 name: git-master
-description: Git workflow guidance for clean history, safe diffs, and evidence-rich commits in the harness workspace.
+description: Git expert for atomic commits, rebasing, and history management
 ---
 
-# Git master
+# Git Master Command
 
-Use this skill when preparing commits, reviewing local changes, or reasoning about branch state.
+Routes to the git-master agent for git operations.
 
-## Workflow
-- Inspect `git status --short` before editing or committing.
-- Treat uncommitted changes you did not make as user-owned; work around them.
-- Keep commits focused on one behavioral purpose.
-- Prefer non-interactive git commands.
-- Avoid destructive commands unless the user explicitly requested them.
+## Purpose
 
-## Commit notes
-- Use the Lore commit style for this repository.
-- The first line should explain why the change exists.
-- Include useful trailers such as `Constraint:`, `Rejected:`, `Confidence:`, `Scope-risk:`, `Tested:`, and `Not-tested:`.
-- Mention exact verification commands that were run.
+Provide the OMX git-master routing contract while recording Harness workflow state and evidence through coordinator-owned events.
+
+## Use when
+
+Use this skill for git operations that need atomic commits, rebasing, branch hygiene, history inspection, or style detection from repository history.
+
+## Usage
+
+```
+/git-master <git task>
+```
+
+## Routing
+
+```text
+Use /prompts:git-master with the user task.
+```
+
+## Capabilities
+- Atomic commits with conventional format
+- Interactive rebasing
+- Branch management
+- History cleanup
+- Style detection from repo history
+
+## Harness substrate override
+
+When this skill is loaded by `agent-harness`, route the user task through the native `task` tool using the `git-master` subagent profile instead of `/prompts:git-master` text routing.
 
 ## Harness state contract
 
@@ -42,7 +60,3 @@ Stop when the workflow objective is verified complete, cancelled by the operator
 - Required evidence artifacts or command summaries are recorded.
 - Targeted tests, lint, docs checks, or visual/review gates named by the workflow have fresh results.
 - No external state-file, terminal multiplexer, or upstream CLI command is the proof boundary.
-
-## Use when
-
-Use this skill when the matching `$` workflow command or catalog entry is selected and the operator request fits the workflow description.

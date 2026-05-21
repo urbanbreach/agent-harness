@@ -45,7 +45,7 @@ Inspect the repository before writing guidance. Look for:
 
 - `DESIGN.md`, `docs/design*`, `docs/ux*`, `docs/frontend*`, `README.md`, product specs, PRDs, and issue notes.
 - Existing UI source: routes, pages, layouts, components, stories, examples, demos, theme files, CSS variables, Tailwind/theme config, tokens, icons, and assets.
-- Screenshots, mockups, brand files, logos, Figma/export notes, Storybook snapshots, Playwright screenshots, visual-regression baselines, or `.omx/artifacts/visual-ralph/*` references.
+- Screenshots, mockups, brand files, logos, Figma/export notes, Storybook snapshots, Playwright screenshots, visual-regression baselines, or `target/harness-artifacts/visual-ralph/*` references.
 - Accessibility, responsive, i18n, content, and platform constraints already encoded in code or docs.
 
 Record evidence with file paths. Distinguish observed facts from design inferences.

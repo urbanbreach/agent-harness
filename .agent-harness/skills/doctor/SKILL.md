@@ -5,18 +5,18 @@ description: Diagnose and fix Agent Harness installation issues
 
 # Doctor Skill
 
-Note: All `~/.codex/...` paths in this guide respect `CODEX_HOME` when that environment variable is set.
+Note: All `configured Harness home/...` paths in this guide respect `HARNESS_HOME` when that environment variable is set.
 
 ## Canonical skill root
 
-Harness installs skills to `${CODEX_HOME:-~/.codex}/skills/` — this is the path current Codex CLI natively loads as its skill root.
+Harness installs skills to `configured Harness home/skills/` — this is the path current Codex CLI natively loads as its skill root.
 
-`~/.agents/skills/` is a **historical legacy path** from an older Codex CLI release, before Codex settled on `~/.codex` as its home directory. Current Codex CLI and Harness no longer write there.
+`~/.agents/skills/` is a **historical legacy path** from an older Codex CLI release, before Codex settled on `configured Harness home` as its home directory. Current Codex CLI and Harness no longer write there.
 
 **In a mixed Harness + plain Codex environment:**
-- **Use**: `${CODEX_HOME:-~/.codex}/skills/` (user scope) or `.codex/skills/` (project scope)
+- **Use**: `configured Harness home/skills/` (user scope) or `.codex/skills/` (project scope)
 - **Clean up if present**: `~/.agents/skills/` — if this still exists alongside the canonical root, Codex's Enable/Disable Skills UI will show duplicate entries for any skill present in both trees
-- **Interop rule**: Harness writes only to the canonical path; archive or remove `~/.agents/skills/` once you have confirmed `${CODEX_HOME:-~/.codex}/skills/` is your active root
+- **Interop rule**: Harness writes only to the canonical path; archive or remove `~/.agents/skills/` once you have confirmed `configured Harness home/skills/` is your active root
 
 ## Task: Run Installation Diagnostics
 
@@ -24,12 +24,12 @@ You are the Harness Doctor - diagnose and fix installation issues.
 
 ### Step 1: Check Plugin Version
 
-Official Codex plugin caches are marketplace- and version-scoped, for example `${CODEX_HOME:-~/.codex}/plugins/cache/$MARKETPLACE_NAME/Agent Harness/$VERSION/`. Local installs may use `local` as the version identifier.
+Official Codex plugin caches are marketplace- and version-scoped, for example `configured Harness home/plugins/cache/$MARKETPLACE_NAME/Agent Harness/$VERSION/`. Local installs may use `local` as the version identifier.
 
 ```bash
 # Get installed plugin cache versions across marketplaces.
 # Cache shape: $PLUGIN_CACHE_ROOT/$MARKETPLACE_NAME/Agent Harness/$PLUGIN_VERSION/
-PLUGIN_CACHE_ROOT="${CODEX_HOME:-$HOME/.codex}/plugins/cache"
+PLUGIN_CACHE_ROOT="${HARNESS_HOME:-$HOME/.codex}/plugins/cache"
 CACHE_ENTRIES=$(find "$PLUGIN_CACHE_ROOT" -path "*/Agent Harness/*" -mindepth 3 -maxdepth 3 -type d 2>/dev/null)
 
 if [[ -z "$CACHE_ENTRIES" ]]; then
@@ -51,11 +51,11 @@ echo "Latest npm: $LATEST"
 - If no cache entry exists: INFO - plugin marketplace artifact not cached; this may be normal when Harness was installed only through npm/setup
 - Compare each printed `PLUGIN_VERSION` with `LATEST`; if it differs and is not `local`: WARN - outdated plugin cache
 - If one marketplace has multiple version directories: WARN - stale cache for that marketplace/plugin pair
-- Remember: plugin install/discovery is not a replacement for `npm install -g Agent Harness` plus `omx setup`; the packaged plugin carries plugin-scoped companion metadata for optional MCP compatibility servers and apps, with first-party MCP disabled by default, while native/runtime hooks and the rest of Harness runtime wiring stay setup-owned
+- Remember: plugin install/discovery is not a replacement for `npm install -g Agent Harness` plus `harness setup`; the packaged plugin carries plugin-scoped companion metadata for optional MCP compatibility servers and apps, with first-party MCP disabled by default, while native/runtime hooks and the rest of Harness runtime wiring stay setup-owned
 
 ### Step 2: Check Hook Configuration (config.toml + legacy settings.json)
 
-Check `~/.codex/config.toml` first (current Codex config), then check legacy `~/.codex/settings.json` only if it exists.
+Check `configured Harness home/config.toml` first (current Codex config), then check legacy `configured Harness home/settings.json` only if it exists.
 
 Look for hook entries pointing to removed scripts like:
 - `bash $HOME/.codex/hooks/keyword-detector.sh`
@@ -68,7 +68,7 @@ Look for hook entries pointing to removed scripts like:
 ### Step 3: Check for Legacy Bash Hook Scripts
 
 ```bash
-ls -la ~/.codex/hooks/*.sh 2>/dev/null
+ls -la configured Harness home/hooks/*.sh 2>/dev/null
 ```
 
 **Diagnosis**:
@@ -78,10 +78,10 @@ ls -la ~/.codex/hooks/*.sh 2>/dev/null
 
 ```bash
 # Check if AGENTS.md exists
-ls -la ~/.codex/AGENTS.md 2>/dev/null
+ls -la configured Harness home/AGENTS.md 2>/dev/null
 
 # Check for Harness marker
-grep -q "Agent Harness Multi-Agent System" ~/.codex/AGENTS.md 2>/dev/null && echo "Has Harness config" || echo "Missing Harness config"
+grep -q "Agent Harness Multi-Agent System" configured Harness home/AGENTS.md 2>/dev/null && echo "Has Harness config" || echo "Missing Harness config"
 ```
 
 **Diagnosis**:
@@ -92,7 +92,7 @@ grep -q "Agent Harness Multi-Agent System" ~/.codex/AGENTS.md 2>/dev/null && ech
 
 ```bash
 # List marketplace/version cache entries for this plugin
-PLUGIN_CACHE_ROOT="${CODEX_HOME:-$HOME/.codex}/plugins/cache"
+PLUGIN_CACHE_ROOT="${HARNESS_HOME:-$HOME/.codex}/plugins/cache"
 find "$PLUGIN_CACHE_ROOT" -path "*/Agent Harness/*" -mindepth 3 -maxdepth 3 -type d 2>/dev/null \
   | while IFS= read -r VERSION_DIR; do
       MARKETPLACE_NAME=$(basename "$(dirname "$(dirname "$VERSION_DIR")")")
@@ -110,23 +110,23 @@ Check for legacy agents, commands, and historical legacy skill roots from older 
 
 ```bash
 # Check for legacy agents directory
-ls -la ~/.codex/agents/ 2>/dev/null
+ls -la configured Harness home/agents/ 2>/dev/null
 
 # Check for legacy commands directory
-ls -la ~/.codex/commands/ 2>/dev/null
+ls -la configured Harness home/commands/ 2>/dev/null
 
 # Check canonical current skills directory
-ls -la ${CODEX_HOME:-~/.codex}/skills/ 2>/dev/null
+ls -la configured Harness home/skills/ 2>/dev/null
 
 # Check historical legacy skill directory
 ls -la ~/.agents/skills/ 2>/dev/null
 ```
 
 **Diagnosis**:
-- If `~/.codex/agents/` exists with Agent Harness-related files: WARN - legacy generated agents or hand-installed role files. The Codex plugin can package reusable workflows plus plugin-scoped companion metadata for optional MCP/apps; legacy setup installs native agents, while plugin setup archives stale legacy native-agent files and keeps config/hooks current.
-- If `~/.codex/commands/` exists with Agent Harness-related files: WARN - legacy command files from older installs. Current Harness uses skills/workflows plus setup-managed native surfaces.
-- If `${CODEX_HOME:-~/.codex}/skills/` exists with Harness skills: OK - canonical current user skill root
-- If `~/.agents/skills/` exists: WARN - historical legacy skill root that can overlap with `${CODEX_HOME:-~/.codex}/skills/` and cause duplicate Enable/Disable Skills entries
+- If `configured Harness home/agents/` exists with Agent Harness-related files: WARN - legacy generated agents or hand-installed role files. The Codex plugin can package reusable workflows plus plugin-scoped companion metadata for optional MCP/apps; legacy setup installs native agents, while plugin setup archives stale legacy native-agent files and keeps config/hooks current.
+- If `configured Harness home/commands/` exists with Agent Harness-related files: WARN - legacy command files from older installs. Current Harness uses skills/workflows plus setup-managed native surfaces.
+- If `configured Harness home/skills/` exists with Harness skills: OK - canonical current user skill root
+- If `~/.agents/skills/` exists: WARN - historical legacy skill root that can overlap with `configured Harness home/skills/` and cause duplicate Enable/Disable Skills entries
 
 Look for files like:
 - `architect.md`, `researcher.md`, `explore.md`, `executor.md`, etc. in agents/
@@ -151,12 +151,12 @@ After running all checks, output a report:
 |-------|--------|---------|
 | Plugin Version | OK/WARN/CRITICAL | ... |
 | Hook Config (config.toml / legacy settings.json) | OK/CRITICAL | ... |
-| Legacy Scripts (~/.codex/hooks/) | OK/WARN | ... |
+| Legacy Scripts (configured Harness home/hooks/) | OK/WARN | ... |
 | AGENTS.md | OK/WARN/CRITICAL | ... |
 | Plugin Cache | OK/WARN | ... |
-| Legacy Agents (~/.codex/agents/) | OK/WARN | ... |
-| Legacy Commands (~/.codex/commands/) | OK/WARN | ... |
-| Skills (${CODEX_HOME:-~/.codex}/skills) | OK/WARN | ... |
+| Legacy Agents (configured Harness home/agents/) | OK/WARN | ... |
+| Legacy Commands (configured Harness home/commands/) | OK/WARN | ... |
+| Skills (configured Harness home/skills) | OK/WARN | ... |
 | Legacy Skill Root (~/.agents/skills) | OK/WARN | ... |
 
 ### Issues Found
@@ -176,21 +176,21 @@ If issues found, ask user: "Would you like me to fix these issues automatically?
 If yes, apply fixes:
 
 ### Fix: Legacy Hooks in legacy settings.json
-If `~/.codex/settings.json` exists, remove the legacy `"hooks"` section (keep other settings intact).
+If `configured Harness home/settings.json` exists, remove the legacy `"hooks"` section (keep other settings intact).
 
 ### Fix: Legacy Bash Scripts
 ```bash
-rm -f ~/.codex/hooks/keyword-detector.sh
-rm -f ~/.codex/hooks/persistent-mode.sh
-rm -f ~/.codex/hooks/session-start.sh
-rm -f ~/.codex/hooks/stop-continuation.sh
+rm -f configured Harness home/hooks/keyword-detector.sh
+rm -f configured Harness home/hooks/persistent-mode.sh
+rm -f configured Harness home/hooks/session-start.sh
+rm -f configured Harness home/hooks/stop-continuation.sh
 ```
 
 ### Fix: Outdated Plugin
 ```bash
 # Global cache reset across all marketplaces for this plugin.
 # If you only want one marketplace, set MARKETPLACE_NAME and remove just that subtree instead.
-PLUGIN_CACHE_ROOT="${CODEX_HOME:-$HOME/.codex}/plugins/cache"
+PLUGIN_CACHE_ROOT="${HARNESS_HOME:-$HOME/.codex}/plugins/cache"
 find "$PLUGIN_CACHE_ROOT" -path "*/Agent Harness" -type d -prune -exec rm -rf {} +
 echo "Plugin cache cleared across all marketplaces. Restart Codex CLI to fetch the latest marketplace entry."
 ```
@@ -199,7 +199,7 @@ echo "Plugin cache cleared across all marketplaces. Restart Codex CLI to fetch t
 ```bash
 # Keep only the newest version inside the selected marketplace/plugin cache.
 # Set MARKETPLACE_NAME to the exact marketplace printed in Step 1.
-PLUGIN_CACHE_ROOT="${CODEX_HOME:-$HOME/.codex}/plugins/cache"
+PLUGIN_CACHE_ROOT="${HARNESS_HOME:-$HOME/.codex}/plugins/cache"
 PLUGIN_CACHE_DIR="$PLUGIN_CACHE_ROOT/$MARKETPLACE_NAME/Agent Harness"
 KEEP_VERSION=$(for dir in "$PLUGIN_CACHE_DIR"/*; do [[ -d "$dir" ]] && basename "$dir"; done | sort -V | tail -1)
 if [[ -n "$KEEP_VERSION" ]]; then
@@ -208,24 +208,24 @@ fi
 ```
 
 ### Fix: Missing/Outdated AGENTS.md
-Fetch latest from GitHub and write to `~/.codex/AGENTS.md`:
+Fetch latest from GitHub and write to `configured Harness home/AGENTS.md`:
 ```
 WebFetch(url: "https://raw.githubusercontent.com/Yeachan-Heo/Agent Harness/main/docs/AGENTS.md", prompt: "Return the complete raw markdown content exactly as-is")
 ```
 
 ### Fix: Legacy Curl-Installed Content
 
-Remove legacy agents/commands plus the historical `~/.agents/skills` tree if it overlaps with the canonical `${CODEX_HOME:-~/.codex}/skills` install:
+Remove legacy agents/commands plus the historical `~/.agents/skills` tree if it overlaps with the canonical `configured Harness home/skills` install:
 
 ```bash
 # Backup first (optional - ask user)
-# mv ~/.codex/agents ~/.codex/agents.bak
-# mv ~/.codex/commands ~/.codex/commands.bak
+# mv configured Harness home/agents configured Harness home/agents.bak
+# mv configured Harness home/commands configured Harness home/commands.bak
 # mv ~/.agents/skills ~/.agents/skills.bak
 
 # Or remove directly
-rm -rf ~/.codex/agents
-rm -rf ~/.codex/commands
+rm -rf configured Harness home/agents
+rm -rf configured Harness home/commands
 rm -rf ~/.agents/skills
 ```
 
