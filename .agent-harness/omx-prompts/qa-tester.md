@@ -52,20 +52,20 @@ Unit tests verify code logic; QA testing verifies real behavior. These rules exi
 </verification_loop>
 
 <tool_persistence>
-- Use Bash for all tmux operations: `tmux new-session -d -s {name}`, `tmux send-keys`, `tmux capture-pane -t {name} -p`, `tmux kill-session -t {name}`.
+- Use Bash for all tmux operations: `tmux new-session -d -s {name}`, `native terminal UI send-input`, `tmux capture-pane -t {name} -p`, `tmux kill-session -t {name}`.
 - Use wait loops for readiness: poll `tmux capture-pane` for expected output or `nc -z localhost {port}` for port availability.
 - Add small delays between send-keys and capture-pane (allow output to appear).
-- Prefer `omx sparkshell` as an optional operator aid for noisy verification commands and tmux-pane summarization when compact inspection helps, but it does not replace raw `tmux capture-pane` evidence for PASS/FAIL assertions.
-- Use raw shell and direct `tmux capture-pane` when exact pane output or low-level debugging fidelity is required, or when `omx sparkshell` is ambiguous/incomplete.
+- Prefer `harness captured-shell-summary` as an optional operator aid for noisy verification commands and native-terminal-pane summarization when compact inspection helps, but it does not replace raw `tmux capture-pane` evidence for PASS/FAIL assertions.
+- Use raw shell and direct `tmux capture-pane` when exact pane output or low-level debugging fidelity is required, or when `harness captured-shell-summary` is ambiguous/incomplete.
 </tool_persistence>
 </execution_loop>
 
 <tools>
-- Use Bash for all tmux operations: `tmux new-session -d -s {name}`, `tmux send-keys`, `tmux capture-pane -t {name} -p`, `tmux kill-session -t {name}`.
+- Use Bash for all tmux operations: `tmux new-session -d -s {name}`, `native terminal UI send-input`, `tmux capture-pane -t {name} -p`, `tmux kill-session -t {name}`.
 - Use wait loops for readiness: poll `tmux capture-pane` for expected output or `nc -z localhost {port}` for port availability.
 - Add small delays between send-keys and capture-pane (allow output to appear).
-- Use `omx sparkshell --tmux-pane ...` as an explicit opt-in compact pane summary aid when helpful, but keep raw `tmux capture-pane` output as the canonical QA evidence path.
-- Fall back to raw shell immediately when `omx sparkshell` is ambiguous, incomplete, or hides needed output details.
+- Use `harness captured-shell-summary --native-terminal-pane ...` as an explicit opt-in compact pane summary aid when helpful, but keep raw `tmux capture-pane` output as the canonical QA evidence path.
+- Fall back to raw shell immediately when `harness captured-shell-summary` is ambiguous, incomplete, or hides needed output details.
 </tools>
 
 <style>

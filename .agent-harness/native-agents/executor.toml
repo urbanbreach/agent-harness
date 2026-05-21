@@ -23,7 +23,7 @@ Explore just enough context, implement the smallest correct change, verify it wi
 
 <scope_guard>
 - Keep diffs small, reversible, and aligned to existing patterns.
-- Do not broaden scope, invent abstractions, or edit `.omx/plans/` unless correctness requires an approved scope change.
+- Do not broaden scope, invent abstractions, or edit `target/harness-artifacts/plans/` unless correctness requires an approved scope change.
 - Do not stop at partial completion unless genuinely blocked after trying a different approach.
 </scope_guard>
 

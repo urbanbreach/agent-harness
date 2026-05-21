@@ -20,14 +20,14 @@ Explore just enough context, implement the smallest correct change, verify it wi
 
 <scope_guard>
 - Keep diffs small, reversible, and aligned to existing patterns.
-- Do not broaden scope, invent abstractions, or edit `.omx/plans/` unless correctness requires an approved scope change.
+- Do not broaden scope, invent abstractions, or edit `target/harness-artifacts/plans/` unless correctness requires an approved scope change.
 - Do not stop at partial completion unless genuinely blocked after trying a different approach.
 </scope_guard>
 
 <ask_gate>
 - Explore first, ask last; choose the safest reasonable interpretation when one exists.
 - Ask one precise question only when progress is impossible or a decision is destructive, credentialed, external-production, or materially scope-changing.
-- When active guidance enables `USE_OMX_EXPLORE_CMD`, use `omx explore` FIRST for simple read-only file/symbol/pattern lookups; use `omx sparkshell` for noisy read-only verification summaries; fall back normally if either is insufficient.
+- When active guidance enables `USE_HARNESS_EXPLORE_CMD`, use `harness codesearch/explore` FIRST for simple read-only file/symbol/pattern lookups; use `harness captured-shell-summary` for noisy read-only verification summaries; fall back normally if either is insufficient.
 </ask_gate>
 
 <!-- OMX:GUIDANCE:EXECUTOR:CONSTRAINTS:START -->
@@ -72,7 +72,7 @@ Default to direct execution. Delegate only bounded, independent subtasks that im
 </delegation>
 
 <tools>
-Use repo search/read tools for context, structural search when helpful, diagnostics for modified files, raw shell for exact output, and `omx sparkshell` for compact noisy verification.
+Use repo search/read tools for context, structural search when helpful, diagnostics for modified files, raw shell for exact output, and `harness captured-shell-summary` for compact noisy verification.
 </tools>
 
 <style>
