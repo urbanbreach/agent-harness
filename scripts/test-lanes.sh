@@ -505,8 +505,12 @@ run_stage integration harness_determinism_multi_turn_tools "$repo_root" cargo te
 run_stage integration harness_event_docs_reference "$repo_root" cargo test -p harness --test event_docs_reference || true
 run_stage integration harness_config_validate "$repo_root" cargo run -p harness -- --config configs/harness.example.jsonc config validate || true
 run_stage integration harness_doctor_json "$repo_root" cargo run -p harness -- --config configs/harness.example.jsonc doctor --json || true
+run_stage integration harness_testkit_feature_simulator "$repo_root" cargo test -p harness-testkit --test simulator_e2e
+run_stage integration harness_doctor_strict_parity "$repo_root" cargo run -p harness -- --config configs/harness.example.jsonc doctor --json --strict-parity
 run_stage integration harness_workflow_cli "$repo_root" cargo test -p harness --test workflow_cli || true
 run_stage integration harness_core_workflow "$repo_root" cargo test -p harness-core workflow || true
+run_stage integration harness_core_architecture_audit "$repo_root" cargo test -p harness-core --test architecture_audit || true
+run_stage integration harness_core_replay_golden "$repo_root" cargo test -p harness-core --test replay_golden || true
 run_stage integration harness_testkit_workflow_simulator "$repo_root" cargo test -p harness-testkit workflow_simulator || true
 run_stage integration harness_forbidden_branding "$repo_root" python3 scripts/check-forbidden-branding.py || true
   run_stage integration harness_prompt_cli "$repo_root" cargo test -p harness --test prompt_cli || true

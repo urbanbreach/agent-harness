@@ -378,9 +378,14 @@ split by crate responsibility:
 - `harness workflow plan-consensus --json` writes a session-scoped plan artifact
   and records `evidence.plan_consensus`; `/ralplan` and `/consensus-plan`
   command aliases resolve to the same workflow intent.
-- `docs/omx-workflow-slice-spec.md` remains the source narrative for the broader
-  slice, while replayable workflow state must still come from coordinator-owned
-  events and redacted artifact references.
+### Native workflow parity baseline
+
+The Native Harness parity baseline is tracked by the machine-readable
+`docs/workflow-parity-matrix.json` matrix plus replay-derived workflow evidence,
+not by removed migration dossiers. Compatibility with familiar OMX-style `$`
+aliases remains a product requirement, but native Harness coordinator events,
+projections, artifacts, and permissions are the implementation authority, not
+the runtime authority of an external OMX CLI or plugin.
 
 ### Operator workflow examples
 
@@ -402,8 +407,7 @@ workers.
 | Note/wiki memory | `harness workflow wiki add --workflow-id wf-demo --slug release-note --title "Release note" --category handoff --body "operator handoff" --json`; use `harness workflow evidence record --category evidence.note_memory ...` for note/project-memory evidence. | Wiki add/delete require edit permission before project-visible writes. Wiki read/list/query are explicit live reads over the configured wiki root; workflow-significant wiki writes are event-digested. |
 | Closeout and dossier | `harness workflow status --run-dir <run> --workflow-id wf-demo --json`; `harness workflow dossier export --run-dir <run> --workflow-id wf-demo --format markdown --output dossier.md --json` | Closeout and dossier are replay-derived. Do not edit an exported dossier as authority; regenerate it from `events.jsonl` and referenced artifacts. |
 
-The inventory at `docs/harness-omx-workflow-inventory.md` is the honest blocker
-ledger for broader OMX parity. Rows marked `partial` or `missing` are no longer acceptable for applicable `$` command parity. The only non-present reference skill should be an explicitly non-user-facing internal protocol such as `worker`; applicable compatibility aliases must point to native workflow intent/evidence, continuation, or task-tool dispatch rather than prompt-only completions.
+The machine-readable `docs/workflow-parity-matrix.json` file is the current workflow parity ledger, and `docs/workflow-parity-proofs/selected-workflows/` stores the checked-in proof dossiers for active OMX workflow rows. Active rows must stay `selected_for_this_goal` and `native_complete`, point at semantic proof dossiers, and pass `harness doctor --json --strict-parity` after the simulator lane writes generated execution bundles. OMX hard-deprecated aliases remain tracked as `retired_with_reason` / `compat_only` compatibility shims instead of receiving native workflow completion credit. The only non-present reference skill should be an explicitly non-user-facing internal protocol such as `worker`; applicable compatibility aliases must point to native workflow intent/evidence, continuation, or task-tool dispatch rather than prompt-only completions.
 
 ### Plan operator workflow
 

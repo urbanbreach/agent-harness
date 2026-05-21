@@ -75,8 +75,12 @@ Current stage commands:
   - confirm `workflow_skill_protocol_native` passes and any forbidden-substrate
     findings are explicit, machine-readable diagnostics rather than accepted
     workflow authority
+- `cargo run -p harness -- --config configs/harness.example.jsonc doctor --json --strict-parity`
 - `cargo test -p harness --test workflow_cli`
 - `cargo test -p harness-core workflow`
+- `cargo test -p harness-core --test architecture_audit`
+- `cargo test -p harness-core --test replay_golden`
+- `cargo test -p harness-testkit --test simulator_e2e`
 - `cargo test -p harness-testkit workflow_simulator`
 - `cargo test -p harness --test prompt_cli`
 - `cargo test -p harness --test replay_sessions_cli`
@@ -137,12 +141,11 @@ dossier-export evidence, operator waiver/signoff, audit-only non-mutation, close
 legal-next-actions/readiness JSON, replay read-only equivalence, stale dossier export semantics, and
 dossier export without live providers.
 
-For terminal workflow closeout, keep the acceptance dossier in
-`docs/harness-omx-next-completion-dossier.md` aligned with the latest
-replay/ledger evidence. The dossier is a human-readable projection of
-`.omx/ultragoal/ledger.jsonl`, the workflow inventory fixture, docs/schema drift
-tests, and verification artifacts. During staged work it must name pending gates
-instead of implying false completion.
+For terminal workflow closeout, keep `docs/workflow-parity-matrix.json` and the
+captured proof bundle aligned with the latest replay/ledger evidence. The
+matrix names selected scope, strict doctor checks, evidence dossier paths,
+negative-path contracts, and pending parity gaps instead of implying false
+completion.
 
 Focused commands for that dossier are:
 
@@ -152,6 +155,7 @@ cargo test -p harness --test config_docs_reference
 cargo test -p harness --test config_schema_cli
 cargo test -p harness --test event_docs_reference
 cargo run -p harness -- --config configs/harness.example.jsonc config validate
+cargo run -p harness -- --config configs/harness.example.jsonc doctor --json --strict-parity
 cargo check --workspace
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 scripts/test-lanes.sh fast
