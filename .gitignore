@@ -1,5 +1,9 @@
 target/
-docs/
+docs/*
+!docs/workflow-parity-missing-work.md
+!docs/workflow-parity-matrix.json
+!docs/workflow-parity-proofs/
+!docs/workflow-parity-proofs/**
 sessions/
 artifacts/
 .agent-harness/*

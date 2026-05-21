@@ -23,12 +23,11 @@
 ## Configuration
 
 The current public integration surface is documented in [`docs/config.md`](docs/config.md).
-Legacy OMO parity artifacts are retained as background migration evidence only:
-[`docs/omo-parity-spec.md`](docs/omo-parity-spec.md) and
-[`docs/parity-ledger.json`](docs/parity-ledger.json) are not the product
-direction. The default product model is single-operator workflow orchestration,
-with specialist, team, and compatibility lanes exposed only as explicit
-operator-owned escalation.
+Legacy OMX/OMO material is compatibility lineage and inspiration only, not the
+runtime authority. Native Harness coordinator events, replay projections,
+permission gates, and proof artifacts are the product authority. The default
+product model is single-operator workflow orchestration, with specialist, team,
+and compatibility lanes exposed only as explicit operator-owned escalation.
 Config-backed `mcp` servers are first-class: enabled MCP servers are
 registered into the runtime tool registry, discovered server tools are exposed to
 interactive profiles alongside the built-ins, and the generic
@@ -230,7 +229,7 @@ protocol, not a user-facing command.
 | Wiki | `/wiki` (`/workflow-wiki`) | `harness workflow wiki` |
 | Deep interview | `/init-deep` (`/deep-interview`) | `harness workflow snapshot write` |
 | Cleanup/refactor | `/refactor`, `/remove-ai-slops` (`/deslop`, `/ai-slop-cleaner`) | `harness workflow evidence record` |
-| Work start/handoff | `/start-work`, `/handoff`, `/hyperplan` | `harness workflow evidence record` |
+| Work start/handoff/git | `/start-work`, `/handoff`, `/hyperplan`, `/git-master` | `harness workflow evidence record` |
 | Team escalation | `/team`, `/swarm` | typed workflow intent + team/task events |
 | Continuation | `/ralph`, `/ultrawork`, `/ralph-loop`, `/ulw-loop` | continuation events |
 | Analysis, review, and QA | `/analyze`, `/code-review`, `/review`, `/security-review`, `/ultraqa` | `harness workflow evidence record` |
@@ -238,11 +237,10 @@ protocol, not a user-facing command.
 | Planning modifiers | `/autopilot`, `/pipeline`, `/tdd`, `/ecomode`, `/ralph-init` | typed workflow intent + continuation/evidence events |
 | Research/performance | `/autoresearch-goal`, `/deepsearch`, `/performance-goal` | `harness workflow mission` or `harness workflow evidence record` |
 | Design and visual | `/design`, `/frontend-ui-ux`, `/visual-ralph`, `/visual-verdict`, `/web-clone` | `harness workflow evidence record` |
-| Agent shortcuts | `/git-master` | native `task` tool with the `git-master` subagent profile |
 
 Operator workflow examples, non-applicable command classification, and the acceptance-evidence
 dossier live in [`docs/config.md`](docs/config.md#operator-workflow-examples)
-and [`docs/harness-omx-next-completion-dossier.md`](docs/harness-omx-next-completion-dossier.md).
+and the machine-readable [`docs/workflow-parity-matrix.json`](docs/workflow-parity-matrix.json).
 
 The same lineage surface is available from the terminal through `harness sessions tree`, `harness sessions fork`, and `harness sessions clone`. `harness sessions tree` prints the saved Harness session lineage and accepts `--json`, `--root RUN_ID_OR_PATH`, and `--filter TEXT`. `harness sessions fork --source RUN_ID_OR_PATH --cutoff SEQ` writes a child session from a validated stable prefix. `harness sessions clone --source RUN_ID_OR_PATH` writes a child session from the latest stable completed prefix. Both write commands accept `--json`, reject active or writer locked sources, and print the child run id, source cutoff, event count, and copied artifact count when they succeed.
 
