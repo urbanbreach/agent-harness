@@ -12,30 +12,30 @@ Persistent, self-maintained markdown knowledge base for project and session know
 
 ### Ingest
 ```bash
-omx wiki wiki_ingest --input '{"title":"Auth Architecture","content":"...","tags":["auth","architecture"],"category":"architecture"}' --json
+harness workflow wiki wiki_ingest --input '{"title":"Auth Architecture","content":"...","tags":["auth","architecture"],"category":"architecture"}' --json
 ```
 
 ### Query
 ```bash
-omx wiki wiki_query --input '{"query":"authentication","tags":["auth"],"category":"architecture"}' --json
+harness workflow wiki wiki_query --input '{"query":"authentication","tags":["auth"],"category":"architecture"}' --json
 ```
 
 ### Lint
 ```bash
-omx wiki wiki_lint --json
+harness workflow wiki wiki_lint --json
 ```
 
 ### Quick Add
 ```bash
-omx wiki wiki_add --input '{"title":"Page Title","content":"...","tags":["tag1"],"category":"decision"}' --json
+harness workflow wiki wiki_add --input '{"title":"Page Title","content":"...","tags":["tag1"],"category":"decision"}' --json
 ```
 
 ### List / Read / Delete
 ```bash
-omx wiki wiki_list --json
-omx wiki wiki_read --input '{"page":"auth-architecture"}' --json
-omx wiki wiki_delete --input '{"page":"outdated-page"}' --json
-omx wiki wiki_refresh --json
+harness workflow wiki wiki_list --json
+harness workflow wiki wiki_read --input '{"page":"auth-architecture"}' --json
+harness workflow wiki wiki_delete --input '{"page":"outdated-page"}' --json
+harness workflow wiki wiki_refresh --json
 ```
 
 ## Categories
@@ -54,7 +54,7 @@ At session end, discoveries can be captured as `session-log-*` pages. Configure 
 
 ## Hard Constraints
 - No vector embeddings — query uses keyword + tag matching only
-- Wiki files are repository project knowledge under `omx_wiki/`; legacy `.omx/wiki/` is read-only compatibility input when no canonical wiki exists
+- Wiki files are repository project knowledge under `omx_wiki/`; legacy `omx_wiki/` is read-only compatibility input when no canonical wiki exists
 
 ## Harness substrate override
 

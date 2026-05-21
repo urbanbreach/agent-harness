@@ -41,7 +41,7 @@ Complex tasks often fail silently: partial implementations get declared "done", 
 
 <Steps>
 0. **Pre-context intake (required before planning/execution loop starts)**:
-   - Assemble or load a context snapshot at `.omx/context/{task-slug}-{timestamp}.md` (UTC `YYYYMMDDTHHMMSSZ`).
+   - Assemble or load a context snapshot at `target/harness-artifacts/context/{task-slug}-{timestamp}.md` (UTC `YYYYMMDDTHHMMSSZ`).
    - Minimum snapshot fields:
      - task statement
      - desired outcome
@@ -50,7 +50,7 @@ Complex tasks often fail silently: partial implementations get declared "done", 
      - unknowns/open questions
      - likely codebase touchpoints
    - If an existing relevant snapshot is available, reuse it and record the path in Ralph state.
-   - If request ambiguity is high, gather brownfield facts first. When session guidance enables `USE_Harness_EXPLORE_CMD`, prefer `omx explore` for simple read-only repository lookups with narrow, concrete prompts; otherwise use the richer normal explore path. Then run `$deep-interview --quick <task>` to close critical gaps.
+   - If request ambiguity is high, gather brownfield facts first. When session guidance enables `USE_Harness_EXPLORE_CMD`, prefer `harness codesearch/explore` for simple read-only repository lookups with narrow, concrete prompts; otherwise use the richer normal explore path. Then run `$deep-interview --quick <task>` to close critical gaps.
    - Do not begin Ralph execution work (delegation, implementation, or verification loops) until snapshot grounding exists. If forced to proceed quickly, note explicit risk tradeoffs.
 1. **Review progress**: Check TODO list and any prior iteration state
 2. **Continue from where you left off**: Pick up incomplete tasks
@@ -202,9 +202,9 @@ When the user provides the `--prd` flag, initialize a Product Requirements Docum
 ### Detecting PRD Mode
 Check if `{{PROMPT}}` contains `--prd` or `--PRD`.
 
-Prompt-side `$ralph` workflow activation is lighter-weight than `omx ralph --prd ...`.
+Prompt-side `$ralph` workflow activation is lighter-weight than `$ralph --prd ...`.
 It seeds Ralph workflow state and guidance, but it does not implicitly launch the
-CLI entrypoint or apply the PRD startup gate. Treat `omx ralph --prd ...` as the
+CLI entrypoint or apply the PRD startup gate. Treat `$ralph --prd ...` as the
 explicit PRD-gated path.
 
 ### Detecting `--no-deslop`
@@ -223,9 +223,9 @@ Example:
 1. Run deep-interview in quick mode before creating PRD artifacts:
    - Execute: `$deep-interview --quick <task>`
    - Complete a compact requirements pass (context, goals, scope, constraints, validation)
-   - Persist interview output to `.omx/interviews/{slug}-{timestamp}.md`
+   - Persist interview output to `target/harness-artifacts/interviews/{slug}-{timestamp}.md`
 2. Create canonical PRD/progress artifacts:
-   - PRD: `.omx/plans/prd-{slug}.md`
+   - PRD: `target/harness-artifacts/plans/prd-{slug}.md`
    - Progress ledger: harness workflow evidence/projection entries with artifact refs
 3. Parse the task (everything after `--prd` flag)
 4. Break down into user stories:
@@ -254,13 +254,13 @@ Example:
 
 ### Example
 User input: `--prd build a todo app with React and TypeScript`
-Workflow: Detect flag, extract task, create `.omx/plans/prd-{slug}.md` when this compatibility path is in use, record harness workflow progress evidence, begin ralph loop.
+Workflow: Detect flag, extract task, create `target/harness-artifacts/plans/prd-{slug}.md` when this compatibility path is in use, record harness workflow progress evidence, begin ralph loop.
 
 ### Legacy compatibility
-- During the compatibility window, Ralph `--prd` startup still validates machine-readable story state from `.omx/prd.json`.
-- `.omx/plans/prd-{slug}.md` remains the canonical storage/documentation artifact, but it is not yet the startup validation source.
-- If `.omx/prd.json` exists and canonical PRD is absent, migrate one-way into `.omx/plans/prd-{slug}.md`.
-- If `.omx/progress.txt` exists and canonical progress evidence is absent, import one-way into harness workflow evidence/artifact refs.
+- During the compatibility window, Ralph `--prd` startup still validates machine-readable story state from `target/harness-artifacts/prd.json`.
+- `target/harness-artifacts/plans/prd-{slug}.md` remains the canonical storage/documentation artifact, but it is not yet the startup validation source.
+- If `target/harness-artifacts/prd.json` exists and canonical PRD is absent, migrate one-way into `target/harness-artifacts/plans/prd-{slug}.md`.
+- If `target/harness-artifacts/progress.txt` exists and canonical progress evidence is absent, import one-way into harness workflow evidence/artifact refs.
 - Keep legacy files unchanged for one release cycle.
 
 ## Background Execution Rules

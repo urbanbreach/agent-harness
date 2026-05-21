@@ -68,12 +68,12 @@ Prompt requirements:
 When running under Harness CLI/runtime and a generated reference is part of an active Ralph-style loop, queue a continuation checkpoint before invoking the built-in image tool:
 
 ```bash
-omx imagegen continuation <session-id> --artifact <slug-or-filename> --generated-dir "$CODEX_HOME/generated_images/<session>" --work-dir ".omx/artifacts/visual-ralph/<slug>"
+native image generation continuation <session-id> --artifact <slug-or-filename> --generated-dir "$HARNESS_HOME/generated_images/<session>" --work-dir "target/harness-artifacts/visual-ralph/<slug>"
 ```
 
 This helper records `Harness workflow projection/sessions/<session>/imagegen-pending.json` and uses the existing Stop-hook follow-up queue. It exists because built-in image generation may have to end the assistant turn immediately; the next Stop checkpoint should resume artifact recovery, copy the generated image into the workspace, and run the required visual QA/verdict gate instead of relying on a manual `$ralph` re-prompt.
 
-For project-bound implementation, copy the approved reference into the workspace, for example under `.omx/artifacts/visual-ralph/<slug>/reference.png`. Never leave the implementation reference only in `$CODEX_HOME/generated_images/...`.
+For project-bound implementation, copy the approved reference into the workspace, for example under `target/harness-artifacts/visual-ralph/<slug>/reference.png`. Never leave the implementation reference only in `$HARNESS_HOME/generated_images/...`.
 
 ### 3. Require explicit user approval
 

@@ -1,55 +1,10 @@
 ---
 name: security-review
-description: Security-focused code/config review of trust boundaries, secrets, injection, authn/authz, and supply-chain risk.
-tools: [read, grep, bash, task]
-permissions:
-  read: allow
-  grep: allow
-  bash: ask
-  task: ask
+description: Deprecated standalone security review skill
 ---
 
-# Security review
+# Security Review deprecated
 
-Use this skill for security audit requests or high-risk changes.
+Hard-deprecated. Do not invoke or route this skill. Use `$code-review` directly for new review workflows when security concerns are in scope.
 
-## Scope
-- Secrets and credential handling.
-- Input validation, command execution, path traversal, SSRF, XSS/injection as applicable.
-- Authn/authz and permission boundaries.
-- Dependency/config exposure and unsafe defaults.
-- Event/replay/tool side-effect boundaries in this repository.
-
-## Output
-Lead with exploitable findings and concrete mitigation. If clean, state what was reviewed and remaining blind spots.
-
-## Harness state contract
-
-Harness workflow state is authoritative through coordinator-owned events, workflow projections, native tool artifacts, and recorded workflow evidence. Skills must not require external state files, terminal-pane routing, or upstream CLI lifecycle commands as proof of progress.
-
-## Execution protocol
-
-Use the native Harness command dispatch, question, team, task, evidence, and verification surfaces named by the active workflow. Treat compatibility references as historical context only, and translate them into coordinator-owned actions before acting.
-
-## Evidence and closeout contract
-
-Record material progress as workflow evidence with artifact paths or command output summaries. Close only after the relevant checks pass, pending tasks are resolved or explicitly aborted, and the operator-facing status can be replayed from Harness events.
-
-## Stop/escalation conditions
-
-Stop when the workflow objective is verified complete, cancelled by the operator, or blocked by missing authority. Escalate only for destructive, credentialed, external-production, or materially scope-changing choices.
-
-## Verification checklist
-
-- Native Harness workflow projection reflects the expected mode/status.
-- Required evidence artifacts or command summaries are recorded.
-- Targeted tests, lint, docs checks, or visual/review gates named by the workflow have fresh results.
-- No external state-file, terminal multiplexer, or upstream CLI command is the proof boundary.
-
-## Purpose
-
-Provide a native Harness workflow protocol for this skill so command dispatch, state projection, evidence, and closeout remain coordinator-owned and replayable.
-
-## Use when
-
-Use this skill when the matching `$` workflow command or catalog entry is selected and the operator request fits the workflow description.
+Task: {{ARGUMENTS}}

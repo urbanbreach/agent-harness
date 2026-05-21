@@ -70,22 +70,22 @@ When ralplan outputs a final handoff or asks the user to choose a next lane, inc
 - `$autoresearch-goal` — research-project follow-up when the plan centers on a question, literature/reference gathering, evaluator-backed research, or a professor/critic-style research deliverable.
 - `$performance-goal` — optimization/performance follow-up when the plan centers on speed, latency, throughput, memory, benchmark, or other measurable performance work.
 
-Keep `$ralph` and `$team` as first-class execution options where appropriate: use Ralph for persistent single-owner completion/verification pressure and team for coordinated parallel implementation. For parallelizable durable-goal delivery, recommend `$ultragoal` + `$team` together: Ultragoal remains the leader-owned `.omx/ultragoal` ledger/Codex-goal wrapper while Team runs parallel lanes and returns checkpoint-ready evidence. Do not present the goal-mode options as replacements for Ralph/team when the task is mainly implementation delivery; present them as better fits when durable goal tracking, research validation, or performance evaluators are the primary need.
+Keep `$ralph` and `$team` as first-class execution options where appropriate: use Ralph for persistent single-owner completion/verification pressure and team for coordinated parallel implementation. For parallelizable durable-goal delivery, recommend `$ultragoal` + `$team` together: Ultragoal remains the leader-owned `Harness goal ledger artifacts` ledger/Codex-goal wrapper while Team runs parallel lanes and returns checkpoint-ready evidence. Do not present the goal-mode options as replacements for Ralph/team when the task is mainly implementation delivery; present them as better fits when durable goal tracking, research validation, or performance evaluators are the primary need.
 
 ## Pre-context Intake
 
 Before consensus planning or execution handoff, ensure a grounded context snapshot exists:
 
 1. Derive a task slug from the request.
-2. Reuse the latest relevant snapshot in `.omx/context/{slug}-*.md` when available.
-3. If none exists, create `.omx/context/{slug}-{timestamp}.md` (UTC `YYYYMMDDTHHMMSSZ`) with:
+2. Reuse the latest relevant snapshot in `target/harness-artifacts/context/{slug}-*.md` when available.
+3. If none exists, create `target/harness-artifacts/context/{slug}-{timestamp}.md` (UTC `YYYYMMDDTHHMMSSZ`) with:
    - task statement
    - desired outcome
    - known facts/evidence
    - constraints
    - unknowns/open questions
    - likely codebase touchpoints
-4. If ambiguity remains high, gather brownfield facts first. When session guidance enables `USE_Harness_EXPLORE_CMD`, prefer `omx explore` for simple read-only repository lookups with narrow, concrete prompts; otherwise use the richer normal explore path. Then run `$deep-interview --quick <task>` before continuing.
+4. If ambiguity remains high, gather brownfield facts first. When session guidance enables `USE_Harness_EXPLORE_CMD`, prefer `harness codesearch/explore` for simple read-only repository lookups with narrow, concrete prompts; otherwise use the richer normal explore path. Then run `$deep-interview --quick <task>` before continuing.
 5. If the plan depends on official docs, version-aware framework guidance, best practices, or external dependency behavior, use `$best-practice-research` as the bounded evidence wrapper and auto-delegate `researcher` for the official/upstream lookup before finalizing the planning handoff so execution does not start from repo-local recall alone.
 
 Do not hand off to execution modes until this intake is complete; if urgency forces progress, explicitly document the risk tradeoffs.

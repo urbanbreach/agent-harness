@@ -15,13 +15,13 @@ Meta-skill for managing Agent Harness skills via CLI-like commands.
 Show all local skills organized by scope.
 
 **Behavior:**
-1. Scan user skills at `~/.codex/skills/`
+1. Scan user skills at `configured Harness home/skills/`
 2. Scan project skills at `.codex/skills/`
 3. Parse YAML frontmatter for metadata
 4. Display in organized table format:
 
 ```
-USER SKILLS (~/.codex/skills/):
+USER SKILLS (configured Harness home/skills/):
 | Name              | Triggers           | Quality | Usage | Scope |
 |-------------------|--------------------|---------|-------|-------|
 | error-handler     | fix, error         | 95%     | 42    | user  |
@@ -51,7 +51,7 @@ Interactive wizard for creating a new skill.
 4. **Ask for argument hint** (optional)
    - Example: "<file> [options]"
 5. **Ask for scope:**
-   - `user` → `~/.codex/skills/<name>/SKILL.md`
+   - `user` → `configured Harness home/skills/<name>/SKILL.md`
    - `project` → `.codex/skills/<name>/SKILL.md`
 6. **Create skill file** with template:
 
@@ -105,7 +105,7 @@ Triggers (comma-separated): log, logger, logging
 Argument hint (optional): <level> [message]
 Scope (user/project): user
 
-✓ Created skill at ~/.codex/skills/custom-logger/SKILL.md
+✓ Created skill at configured Harness home/skills/custom-logger/SKILL.md
 → Edit with: /skill edit custom-logger
 ```
 
@@ -117,13 +117,13 @@ Remove a skill by name.
 
 **Behavior:**
 1. **Search for skill** in both scopes:
-   - `~/.codex/skills/<name>/SKILL.md`
+   - `configured Harness home/skills/<name>/SKILL.md`
    - `.codex/skills/<name>/SKILL.md`
 2. **If found:**
    - Display skill info (name, description, scope)
    - **Ask for confirmation:** "Delete '<name>' skill from <scope>? (yes/no)"
 3. **If confirmed:**
-   - Delete entire skill directory (e.g., `~/.codex/skills/<name>/`)
+   - Delete entire skill directory (e.g., `configured Harness home/skills/<name>/`)
    - Report: "✓ Removed skill '<name>' from <scope>"
 4. **If not found:**
    - Report: "✗ Skill '<name>' not found in user or project scope"
@@ -135,7 +135,7 @@ Remove a skill by name.
 User: /skill remove old-logger
 Assistant: Found skill 'old-logger' in user scope:
   Description: Legacy logging utility
-  Scope: user (~/.codex/skills/)
+  Scope: user (configured Harness home/skills/)
 
 Delete 'old-logger' skill? (yes/no)
 
@@ -251,7 +251,7 @@ Show detailed information about a skill.
 
 ```
 Skill: custom-logger
-Scope: user (~/.codex/skills/custom-logger/)
+Scope: user (configured Harness home/skills/custom-logger/)
 Description: Enhanced logging with structured output
 Triggers: log, logger, logging
 Argument Hint: <level> [message]
@@ -272,7 +272,7 @@ Assistant: Skill: custom-logger
 Scope: user
 Description: Enhanced logging with structured output
 Triggers: log, logger, logging
-File: ~/.codex/skills/custom-logger/SKILL.md
+File: configured Harness home/skills/custom-logger/SKILL.md
 
 --- CONTENT ---
 # Custom Logger Skill
@@ -290,7 +290,7 @@ Sync skills between user and project scopes.
 
 **Behavior:**
 1. **Scan both scopes:**
-   - User skills: `~/.codex/skills/`
+   - User skills: `configured Harness home/skills/`
    - Project skills: `.codex/skills/`
 2. **Compare and categorize:**
    - User-only skills (not in project)
@@ -385,7 +385,7 @@ Scan both directories and show a comprehensive inventory:
 
 ```bash
 # Scan user-level skills
-echo "=== USER-LEVEL SKILLS (~/.codex/skills/) ==="
+echo "=== USER-LEVEL SKILLS (configured Harness home/skills/) ==="
 if [ -d "$HOME/.codex/skills" ]; then
   USER_COUNT=$(find "$HOME/.codex/skills" -name "*.md" 2>/dev/null | wc -l)
   echo "Total skills: $USER_COUNT"
@@ -468,7 +468,7 @@ Ask user to provide either:
 - **Paste content**: Paste skill markdown content directly
 
 Then ask for scope:
-- **User-level** (~/.codex/skills/) - Available across all projects
+- **User-level** (configured Harness home/skills/) - Available across all projects
 - **Project-level** (.codex/skills/) - Only for this project
 
 Validate the skill format and save to the chosen location.
@@ -761,7 +761,7 @@ Good skills are:
 > /skill list
 
 Checking skill directories...
-✓ User skills directory exists: ~/.codex/skills/
+✓ User skills directory exists: configured Harness home/skills/
 ✓ Project skills directory exists: .codex/skills/
 
 Scanning for skills...

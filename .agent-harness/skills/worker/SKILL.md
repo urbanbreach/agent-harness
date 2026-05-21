@@ -19,8 +19,8 @@ Example: `alpha/worker-2`
 
 When a worker inbox tells you to load this skill, resolve the first existing path:
 
-1. `${CODEX_HOME:-~/.codex}/skills/worker/SKILL.md`
-2. `~/.codex/skills/worker/SKILL.md`
+1. `configured Harness home/skills/worker/SKILL.md`
+2. `configured Harness home/skills/worker/SKILL.md`
 3. `<leader_cwd>/.codex/skills/worker/SKILL.md`
 4. `<leader_cwd>/skills/worker/SKILL.md` (repo fallback)
 
@@ -39,12 +39,12 @@ The lead will see your message in:
 `<team_state_root>/team/<teamName>/mailbox/leader-fixed.json`
 
 Use CLI interop:
-- `native team tools api send-message --input <json> --json` with `{team_name, from_worker, to_worker:"leader-fixed", body}`
+- `Harness team coordination API send-message --input <json> --json` with `{team_name, from_worker, to_worker:"leader-fixed", body}`
 
 Copy/paste template:
 
 ```bash
-native team tools api send-message --input "{\"team_name\":\"<teamName>\",\"from_worker\":\"<workerName>\",\"to_worker\":\"leader-fixed\",\"body\":\"ACK: <workerName> initialized\"}" --json
+Harness team coordination API send-message --input "{\"team_name\":\"<teamName>\",\"from_worker\":\"<workerName>\",\"to_worker\":\"leader-fixed\",\"body\":\"ACK: <workerName> initialized\"}" --json
 ```
 
 ## Inbox + Tasks
@@ -62,11 +62,11 @@ native team tools api send-message --input "{\"team_name\":\"<teamName>\",\"from
 5. Task id format:
    - The MCP/state API uses the numeric id (`"1"`), not `"task-1"`.
    - Never use legacy `tasks/{id}.json` wording.
-6. Claim the task (do NOT start work without a claim) using claim-safe lifecycle CLI interop (`native team tools api claim-task --json`).
+6. Claim the task (do NOT start work without a claim) using claim-safe lifecycle CLI interop (`Harness team coordination API claim-task --json`).
 7. Do the work.
-8. Complete/fail the task via lifecycle transition CLI interop (`native team tools api transition-task-status --json`) from `in_progress` to `completed` or `failed`.
+8. Complete/fail the task via lifecycle transition CLI interop (`Harness team coordination API transition-task-status --json`) from `in_progress` to `completed` or `failed`.
    - Do NOT directly write lifecycle fields (`status`, `owner`, `result`, `error`) in task files.
-9. Use `native team tools api release-task-claim --json` only for rollback/requeue to `pending` (not for completion).
+9. Use `Harness team coordination API release-task-claim --json` only for rollback/requeue to `pending` (not for completion).
 10. Update your worker status:
    `<team_state_root>/team/<teamName>/workers/<workerName>/status.json` with `{"state":"idle", ...}`
 
@@ -83,21 +83,21 @@ Note: leader dispatch is state-first. The durable queue lives at:
 Hooks/watchers may nudge you after mailbox/inbox state is already written.
 
 Use CLI interop:
-- `native team tools api mailbox-list --json` to read
-- `native team tools api mailbox-mark-delivered --json` to acknowledge delivery
+- `Harness team coordination API mailbox-list --json` to read
+- `Harness team coordination API mailbox-mark-delivered --json` to acknowledge delivery
 
 Copy/paste templates:
 
 ```bash
-native team tools api mailbox-list --input "{\"team_name\":\"<teamName>\",\"worker\":\"<workerName>\"}" --json
-native team tools api mailbox-mark-delivered --input "{\"team_name\":\"<teamName>\",\"worker\":\"<workerName>\",\"message_id\":\"<MESSAGE_ID>\"}" --json
+Harness team coordination API mailbox-list --input "{\"team_name\":\"<teamName>\",\"worker\":\"<workerName>\"}" --json
+Harness team coordination API mailbox-mark-delivered --input "{\"team_name\":\"<teamName>\",\"worker\":\"<workerName>\",\"message_id\":\"<MESSAGE_ID>\"}" --json
 ```
 
 ## Dispatch Discipline (state-first)
 
 Worker sessions should treat team state + CLI interop as the source of truth.
 
-- Prefer inbox/mailbox/task state and `native team tools api ... --json` operations.
+- Prefer inbox/mailbox/task state and `Harness team coordination API ... --json` operations.
 - Do **not** rely on ad-hoc native terminal UI keystrokes as a primary delivery channel.
 - If a manual trigger arrives (for example `coordinator message routing` nudge), treat it only as a prompt to re-check state and continue through the normal claim-safe lifecycle.
 

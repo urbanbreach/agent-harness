@@ -5,7 +5,7 @@ description: N coordinated agents on shared task list using coordinator-native o
 
 # Team Skill
 
-`$team` is the coordinator-native parallel execution mode for Harness. It starts real worker Codex and/or Claude CLI sessions in split panes and coordinates them through `Harness workflow projection/team/...` files plus CLI team interop (`native team tools api ...`) and state files.
+`$team` is the coordinator-native parallel execution mode for Harness. It starts real worker Codex and/or Claude CLI sessions in split panes and coordinates them through `Harness workflow projection/team/...` files plus CLI team interop (`Harness team coordination API ...`) and state files.
 
 This skill is operationally sensitive. Treat it as an operator workflow, not a generic prompt pattern. In Codex App or plain outside-runtime sessions, do not present `$team` / `native team tools` as directly available; launch Harness CLI from shell first, or stay on the nearest app-safe surface until the user explicitly wants the Harness runtime.
 
@@ -54,14 +54,14 @@ requiring a separate linked Ralph launch up front.
 
 - **Canonical launch:** use plain `native team tools ...` / `$team ...` for coordinated workers.
 - **Verification ownership:** keep one lane focused on tests, regression coverage, and evidence before shutdown.
-- **Escalation:** start a separate `omx ralph ...` / `$ralph ...` only when a later manual follow-up still needs a persistent single-owner fix/verification loop.
-- **Deprecation:** `native team tools ralph ...` has been removed. Use plain `native team tools ...` for team execution or run `omx ralph ...` separately when you explicitly want a later Ralph loop.
+- **Escalation:** start a separate `$ralph ...` / `$ralph ...` only when a later manual follow-up still needs a persistent single-owner fix/verification loop.
+- **Deprecation:** `native team tools ralph ...` has been removed. Use plain `native team tools ...` for team execution or run `$ralph ...` separately when you explicitly want a later Ralph loop.
 
 ### Team + Ultragoal bridge
 
-Use `$ultragoal` for durable leader-owned goal/ledger tracking and `$team` for parallel execution lanes. When Team is launched with an active `.omx/ultragoal/goals.json`, worker inboxes/status may include leader-owned Ultragoal context: `.omx/ultragoal/goals.json`, `.omx/ultragoal/ledger.jsonl`, the active goal id, external goal context, and the `fresh_leader_get_goal_required` checkpoint policy.
+Use `$ultragoal` for durable leader-owned goal/ledger tracking and `$team` for parallel execution lanes. When Team is launched with an active `Harness goal ledger artifacts/goals.json`, worker inboxes/status may include leader-owned Ultragoal context: `Harness goal ledger artifacts/goals.json`, `Harness goal ledger artifacts/ledger.jsonl`, the active goal id, external goal context, and the `fresh_leader_get_goal_required` checkpoint policy.
 
-Workers provide task status and verification evidence only. They do not own Ultragoal goal state, create worker ledgers, mutate `.omx/ultragoal`, auto-launch Team from Ultragoal, or perform hidden Codex goal mutation. The leader uses terminal Team evidence plus a fresh `get_goal` snapshot to run `omx ultragoal checkpoint --goal-id <id> --status complete --evidence "<team evidence mentioning .omx/ultragoal and <id>>" --codex-goal-json <fresh-get_goal-json-or-path>`.
+Workers provide task status and verification evidence only. They do not own Ultragoal goal state, create worker ledgers, mutate `Harness goal ledger artifacts`, auto-launch Team from Ultragoal, or perform hidden Codex goal mutation. The leader uses terminal Team evidence plus a fresh `get_goal` snapshot to run `harness workflow goal-ledger checkpoint --goal-id <id> --status complete --evidence "<team evidence mentioning Harness goal ledger artifacts and <id>>" --codex-goal-json <fresh-get_goal-json-or-path>`.
 
 ### Claude teammates (v0.6.0+)
 
@@ -103,8 +103,8 @@ If duplicates exist, remove extras before `native team tools` to prevent HUD end
 Before launching `native team tools`, require a grounded context snapshot:
 
 1. Derive a task slug from the request.
-2. Reuse the latest relevant snapshot in `.omx/context/{slug}-*.md` when available.
-3. If none exists, create `.omx/context/{slug}-{timestamp}.md` (UTC `YYYYMMDDTHHMMSSZ`) with:
+2. Reuse the latest relevant snapshot in `target/harness-artifacts/context/{slug}-*.md` when available.
+3. If none exists, create `target/harness-artifacts/context/{slug}-{timestamp}.md` (UTC `YYYYMMDDTHHMMSSZ`) with:
    - task statement
    - desired outcome
    - known facts/evidence
@@ -116,7 +116,7 @@ Before launching `native team tools`, require a grounded context snapshot:
 
 Do not start worker panes until this gate is satisfied; if forced to proceed quickly, state explicit scope/risk limitations in the launch report.
 
-For simple read-only brownfield lookups during intake, follow active session guidance: when `USE_Harness_EXPLORE_CMD` is enabled, prefer `omx explore` with narrow, concrete prompts; otherwise use the richer normal explore path and fall back normally if `omx explore` is unavailable.
+For simple read-only brownfield lookups during intake, follow active session guidance: when `USE_Harness_EXPLORE_CMD` is enabled, prefer `harness codesearch/explore` with narrow, concrete prompts; otherwise use the richer normal explore path and fall back normally if `harness codesearch/explore` is unavailable.
 
 ## Follow-up Staffing Contract
 
@@ -240,7 +240,7 @@ To avoid brittle behavior, **message/task delivery must not be driven by ad-hoc 
 Required default path:
 
 1. Use `native team tools ...` runtime lifecycle commands for orchestration.
-2. Use `native team tools api ... --json` for mailbox/task mutations.
+2. Use `Harness team coordination API ... --json` for mailbox/task mutations.
 3. Verify delivery via mailbox/state evidence (`mailbox/*.json`, task status, `native team tools status`).
 
 Strict rules:
@@ -293,18 +293,18 @@ Semantics:
 
 ## Team Mutation Interop (CLI-first)
 
-Use `native team tools api` for machine-readable mutation/reads instead of legacy `team_*` MCP tools.
+Use `Harness team coordination API` for machine-readable mutation/reads instead of legacy `team_*` MCP tools.
 
 ```bash
-native team tools api <operation> --input '{"team_name":"my-team",...}' --json
+Harness team coordination API <operation> --input '{"team_name":"my-team",...}' --json
 ```
 
 Examples:
 
 ```bash
-native team tools api send-message --input '{"team_name":"my-team","from_worker":"worker-1","to_worker":"leader-fixed","body":"ACK"}' --json
-native team tools api claim-task --input '{"team_name":"my-team","task_id":"1","worker":"worker-1"}' --json
-native team tools api transition-task-status --input '{"team_name":"my-team","task_id":"1","from":"in_progress","to":"completed","claim_token":"<token>"}' --json
+Harness team coordination API send-message --input '{"team_name":"my-team","from_worker":"worker-1","to_worker":"leader-fixed","body":"ACK"}' --json
+Harness team coordination API claim-task --input '{"team_name":"my-team","task_id":"1","worker":"worker-1"}' --json
+Harness team coordination API transition-task-status --input '{"team_name":"my-team","task_id":"1","from":"in_progress","to":"completed","claim_token":"<token>"}' --json
 ```
 
 `--json` responses include stable metadata for automation:
@@ -324,8 +324,8 @@ Leader-to-worker:
 
 Worker-to-leader:
 
-- Send ACK to `leader-fixed` mailbox via `native team tools api send-message --json`
-- Claim/transition/release task lifecycle via `native team tools api <operation> --json`
+- Send ACK to `leader-fixed` mailbox via `Harness team coordination API send-message --json`
+- Claim/transition/release task lifecycle via `Harness team coordination API <operation> --json`
 
 Worker commit protocol (critical for incremental integration):
 
@@ -385,7 +385,7 @@ Use only after checking `native team tools status <team>` and mailbox/state evid
 
 1. Capture pane tail to confirm current worker state:
    - `native terminal UI capture-pane -t %<worker-pane> -p -S -120`
-   - If a larger-tail read or bounded summary would help, prefer explicit opt-in inspection via `omx sparkshell --native terminal UI-pane %<worker-pane> --tail-lines 400` before improvising extra native terminal UI commands.
+   - If a larger-tail read or bounded summary would help, prefer explicit opt-in inspection via `harness captured-shell-summary --native terminal UI-pane %<worker-pane> --tail-lines 400` before improvising extra native terminal UI commands.
 2. If the pane is stuck in an interactive state, safely return to idle prompt first:
    - optional interrupt `C-c` or escape flow (CLI-specific) once, then re-check pane capture
 3. Send one concise trigger (single line) and wait for evidence:
@@ -413,10 +413,10 @@ Checks:
 
 1. Worker pane capture shows inbox processing
 2. `Harness workflow projection/team/<team>/mailbox/leader-fixed.json` exists
-3. Worker skill loaded and `native team tools api send-message --json` called
+3. Worker skill loaded and `Harness team coordination API send-message --json` called
 4. Task-id mismatch not blocking worker flow
 
-### Worker logs `native team tools api ... ENOENT` (or legacy `team_send_message ENOENT` / `team_update_task ENOENT`)
+### Worker logs `Harness team coordination API ... ENOENT` (or legacy `team_send_message ENOENT` / `team_update_task ENOENT`)
 
 Meaning:
 - Team state path no longer exists while worker is still running.
@@ -465,7 +465,7 @@ native team tools 1:executor "fresh retry"
 Guidelines:
 
 - Do not kill leader pane
-- Do not kill HUD pane (`omx hud --watch`) unless intentionally restarting HUD
+- Do not kill HUD pane (`harness hud --watch`) unless intentionally restarting HUD
 
 ## Required Reporting During Execution
 
@@ -478,7 +478,7 @@ When operating this skill, provide concrete progress evidence:
 
 Do not claim success without file/pane evidence.
 Do not claim clean completion if shutdown occurred with `in_progress>0`.
-Use `omx sparkshell --native terminal UI-pane ...` as an explicit opt-in operator aid for pane inspection and summaries; keep raw `native terminal UI capture-pane` evidence available for manual intervention and proof.
+Use `harness captured-shell-summary --native terminal UI-pane ...` as an explicit opt-in operator aid for pane inspection and summaries; keep raw `native terminal UI capture-pane` evidence available for manual intervention and proof.
 
 ## Programmatic Team Orchestration
 
