@@ -511,20 +511,12 @@ async fn consume_chat_sse_stream(
         }
     }
 
-    if !emit_tool_call_completions(&tx, &mut tool_call_state).await {
-        return;
-    }
-
-    if !done_emitted
-        && tx
-            .send(ProviderStreamEvent::DoneWithMetadata {
-                usage,
-                metadata: non_empty_finished_metadata(finished_metadata),
+    if !done_emitted {
+        let _ = tx
+            .send(ProviderStreamEvent::Error {
+                message: "openai_compatible SSE stream ended before chat completion".to_string(),
             })
-            .await
-            .is_err()
-    {
-        warn_stream_send_failure("chat.done_after_stream_end");
+            .await;
     }
 }
 
@@ -839,16 +831,13 @@ async fn consume_responses_sse_stream(
         }
     }
 
-    if !done_emitted
-        && tx
-            .send(ProviderStreamEvent::DoneWithMetadata {
-                usage,
-                metadata: non_empty_finished_metadata(finished_metadata),
+    if !done_emitted {
+        let _ = tx
+            .send(ProviderStreamEvent::Error {
+                message: "openai_compatible SSE stream ended before response completion"
+                    .to_string(),
             })
-            .await
-            .is_err()
-    {
-        warn_stream_send_failure("responses.done_after_stream_end");
+            .await;
     }
 }
 
@@ -1816,6 +1805,188 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn openai_responses_offline_wiremock_preserves_partial_and_duplicate_text_deltas() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/responses"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_raw(responses_text_delta_sse_transcript(), "text/event-stream"),
+            )
+            .mount(&server)
+            .await;
+
+        let provider = provider_for_base_url_with_mode(
+            format!("{}/v1", server.uri()),
+            "test-secret-key",
+            OpenAiApiMode::Responses,
+        );
+        let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
+
+        assert_eq!(
+            events,
+            vec![
+                ProviderStreamEvent::Started { metadata: None },
+                ProviderStreamEvent::ReasoningDelta("check ".to_string()),
+                ProviderStreamEvent::TextDelta("Hel".to_string()),
+                ProviderStreamEvent::TextDelta("lo".to_string()),
+                ProviderStreamEvent::TextDelta("lo".to_string()),
+                ProviderStreamEvent::DoneWithMetadata {
+                    usage: CompletionUsage {
+                        prompt_tokens: 3,
+                        completion_tokens: 2,
+                        total_tokens: 5,
+                    },
+                    metadata: Some(ProviderStreamFinishedMetadata {
+                        provider_response_id: Some("resp-text-1".to_string()),
+                        provider_session_id: Some("session-text-1".to_string()),
+                        provider_stop_reason: Some("completed".to_string()),
+                        ..ProviderStreamFinishedMetadata::default()
+                    }),
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn openai_responses_offline_wiremock_error_event_fails_closed_mid_stream() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/responses"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_raw(responses_error_sse_transcript(), "text/event-stream"),
+            )
+            .mount(&server)
+            .await;
+
+        let provider = provider_for_base_url_with_mode(
+            format!("{}/v1", server.uri()),
+            "test-secret-key",
+            OpenAiApiMode::Responses,
+        );
+        let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
+
+        assert_eq!(
+            events,
+            vec![
+                ProviderStreamEvent::Started { metadata: None },
+                ProviderStreamEvent::TextDelta("partial".to_string()),
+                ProviderStreamEvent::Error {
+                    message: "openai_compatible responses stream returned error event".to_string(),
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn openai_responses_offline_wiremock_truncated_stream_fails_closed() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/responses"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_raw(responses_truncated_sse_transcript(), "text/event-stream"),
+            )
+            .mount(&server)
+            .await;
+
+        let provider = provider_for_base_url_with_mode(
+            format!("{}/v1", server.uri()),
+            "test-secret-key",
+            OpenAiApiMode::Responses,
+        );
+        let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
+
+        assert_eq!(
+            events,
+            vec![
+                ProviderStreamEvent::Started { metadata: None },
+                ProviderStreamEvent::TextDelta("partial".to_string()),
+                ProviderStreamEvent::Error {
+                    message: "openai_compatible SSE stream ended before response completion"
+                        .to_string(),
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn openai_responses_offline_wiremock_accumulates_duplicate_partial_tool_deltas() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/responses"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_raw(
+                        responses_duplicate_partial_tool_call_sse_transcript(),
+                        "text/event-stream",
+                    ),
+            )
+            .mount(&server)
+            .await;
+
+        let provider = provider_for_base_url_with_mode(
+            format!("{}/v1", server.uri()),
+            "test-secret-key",
+            OpenAiApiMode::Responses,
+        );
+        let events = collect_events(&provider, request_with_single_tool("gpt-4o-mini")).await;
+
+        assert_eq!(
+            events,
+            vec![
+                ProviderStreamEvent::Started { metadata: None },
+                ProviderStreamEvent::ToolCallDelta {
+                    tool_call_id: "call_resp_dup".to_string(),
+                    function_name: Some("filesystem_read".to_string()),
+                    arguments_delta: "{\"filePath\":\"/tmp/".to_string(),
+                },
+                ProviderStreamEvent::ToolCallDelta {
+                    tool_call_id: "call_resp_dup".to_string(),
+                    function_name: None,
+                    arguments_delta: "du".to_string(),
+                },
+                ProviderStreamEvent::ToolCallDelta {
+                    tool_call_id: "call_resp_dup".to_string(),
+                    function_name: None,
+                    arguments_delta: "du".to_string(),
+                },
+                ProviderStreamEvent::ToolCallDelta {
+                    tool_call_id: "call_resp_dup".to_string(),
+                    function_name: None,
+                    arguments_delta: "p.txt\"}".to_string(),
+                },
+                ProviderStreamEvent::ToolCallComplete {
+                    tool_call_id: "call_resp_dup".to_string(),
+                    function_name: "filesystem_read".to_string(),
+                    arguments_json: "{\"filePath\":\"/tmp/dudup.txt\"}".to_string(),
+                },
+                ProviderStreamEvent::DoneWithMetadata {
+                    usage: CompletionUsage {
+                        prompt_tokens: 8,
+                        completion_tokens: 4,
+                        total_tokens: 12,
+                    },
+                    metadata: Some(ProviderStreamFinishedMetadata {
+                        provider_response_id: Some("resp-tool-dup".to_string()),
+                        provider_stop_reason: Some("completed".to_string()),
+                        ..ProviderStreamFinishedMetadata::default()
+                    }),
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
     async fn openai_auto_loopback_falls_back_to_chat_completions_on_400() {
         let server = MockServer::start().await;
 
@@ -2255,6 +2426,85 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn openai_responses_offline_wiremock_missing_item_identity_fails_closed() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/responses"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_raw(
+                        responses_missing_item_identity_sse_transcript(),
+                        "text/event-stream",
+                    ),
+            )
+            .mount(&server)
+            .await;
+
+        let provider = provider_for_base_url_with_mode(
+            format!("{}/v1", server.uri()),
+            "test-secret-key",
+            OpenAiApiMode::Responses,
+        );
+        let events = collect_events(&provider, request_with_single_tool("gpt-4o-mini")).await;
+
+        assert_eq!(
+            events,
+            vec![
+                ProviderStreamEvent::Started { metadata: None },
+                ProviderStreamEvent::Error {
+                    message:
+                        "openai_compatible responses tool call is missing both item id and call id"
+                            .to_string(),
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn openai_responses_offline_wiremock_missing_function_name_fails_closed() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/responses"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_raw(
+                        responses_missing_function_name_sse_transcript(),
+                        "text/event-stream",
+                    ),
+            )
+            .mount(&server)
+            .await;
+
+        let provider = provider_for_base_url_with_mode(
+            format!("{}/v1", server.uri()),
+            "test-secret-key",
+            OpenAiApiMode::Responses,
+        );
+        let events = collect_events(&provider, request_with_single_tool("gpt-4o-mini")).await;
+
+        assert_eq!(
+            events,
+            vec![
+                ProviderStreamEvent::Started { metadata: None },
+                ProviderStreamEvent::ToolCallDelta {
+                    tool_call_id: "call_resp_no_name".to_string(),
+                    function_name: None,
+                    arguments_delta: "{\"filePath\":\"/tmp/demo.txt\"}".to_string(),
+                },
+                ProviderStreamEvent::Error {
+                    message:
+                        "openai_compatible responses tool call `call_resp_no_name` missing function name"
+                            .to_string(),
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
     async fn openai_compatible_offline_wiremock_streams_chat_tool_calls() {
         let server = MockServer::start().await;
 
@@ -2333,6 +2583,187 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn openai_compatible_offline_wiremock_invalid_json_chunk_fails_closed_mid_stream() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_raw(
+                        invalid_json_mid_stream_sse_transcript(),
+                        "text/event-stream",
+                    ),
+            )
+            .mount(&server)
+            .await;
+
+        let provider = provider_for_base_url(format!("{}/v1", server.uri()), "test-secret-key");
+        let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
+
+        assert_eq!(
+            events,
+            vec![
+                ProviderStreamEvent::Started { metadata: None },
+                ProviderStreamEvent::TextDelta("partial".to_string()),
+                ProviderStreamEvent::Error {
+                    message: "openai_compatible returned invalid SSE JSON chunk".to_string(),
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn openai_compatible_offline_wiremock_truncated_chat_stream_fails_closed() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_raw(chat_truncated_sse_transcript(), "text/event-stream"),
+            )
+            .mount(&server)
+            .await;
+
+        let provider = provider_for_base_url(format!("{}/v1", server.uri()), "test-secret-key");
+        let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
+
+        assert_eq!(
+            events,
+            vec![
+                ProviderStreamEvent::Started { metadata: None },
+                ProviderStreamEvent::TextDelta("partial".to_string()),
+                ProviderStreamEvent::Error {
+                    message: "openai_compatible SSE stream ended before chat completion"
+                        .to_string(),
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn openai_compatible_offline_wiremock_truncated_chat_tool_call_does_not_complete() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_raw(
+                        chat_truncated_tool_call_sse_transcript(),
+                        "text/event-stream",
+                    ),
+            )
+            .mount(&server)
+            .await;
+
+        let provider = provider_for_base_url(format!("{}/v1", server.uri()), "test-secret-key");
+        let events = collect_events(&provider, request_with_single_tool("gpt-4o-mini")).await;
+
+        assert_eq!(
+            events,
+            vec![
+                ProviderStreamEvent::Started { metadata: None },
+                ProviderStreamEvent::ToolCallDelta {
+                    tool_call_id: "call_truncated".to_string(),
+                    function_name: Some("filesystem_read".to_string()),
+                    arguments_delta: "{\"filePath\":\"/tmp/demo.txt\"}".to_string(),
+                },
+                ProviderStreamEvent::Error {
+                    message: "openai_compatible SSE stream ended before chat completion"
+                        .to_string(),
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn openai_responses_offline_wiremock_truncated_tool_call_does_not_complete() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/responses"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_raw(
+                        responses_truncated_tool_call_sse_transcript(),
+                        "text/event-stream",
+                    ),
+            )
+            .mount(&server)
+            .await;
+
+        let provider = provider_for_base_url_with_mode(
+            format!("{}/v1", server.uri()),
+            "test-secret-key",
+            OpenAiApiMode::Responses,
+        );
+        let events = collect_events(&provider, request_with_single_tool("gpt-4o-mini")).await;
+
+        assert_eq!(
+            events,
+            vec![
+                ProviderStreamEvent::Started { metadata: None },
+                ProviderStreamEvent::ToolCallDelta {
+                    tool_call_id: "call_resp_truncated".to_string(),
+                    function_name: Some("filesystem_read".to_string()),
+                    arguments_delta: "{\"filePath\":\"/tmp/demo.txt\"}".to_string(),
+                },
+                ProviderStreamEvent::Error {
+                    message: "openai_compatible SSE stream ended before response completion"
+                        .to_string(),
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn openai_compatible_offline_wiremock_chat_finish_reason_without_done_marker_succeeds() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_raw(
+                        chat_completion_without_done_marker_sse_transcript(),
+                        "text/event-stream",
+                    ),
+            )
+            .mount(&server)
+            .await;
+
+        let provider = provider_for_base_url(format!("{}/v1", server.uri()), "test-secret-key");
+        let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
+
+        assert_eq!(
+            events,
+            vec![
+                ProviderStreamEvent::Started { metadata: None },
+                ProviderStreamEvent::TextDelta("complete".to_string()),
+                ProviderStreamEvent::DoneWithMetadata {
+                    usage: CompletionUsage {
+                        prompt_tokens: 2,
+                        completion_tokens: 1,
+                        total_tokens: 3,
+                    },
+                    metadata: Some(ProviderStreamFinishedMetadata {
+                        provider_response_id: Some("chatcmpl-no-done".to_string()),
+                        provider_stop_reason: Some("stop".to_string()),
+                        ..ProviderStreamFinishedMetadata::default()
+                    }),
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
     async fn openai_compatible_offline_wiremock_chat_tool_calls_fail_closed_on_invalid_arguments() {
         let server = MockServer::start().await;
 
@@ -2349,22 +2780,94 @@ mod tests {
         let provider = provider_for_base_url(format!("{}/v1", server.uri()), "test-secret-key");
         let events = collect_events(&provider, request_with_single_tool("gpt-4o-mini")).await;
 
-        assert!(matches!(
-            events.first(),
-            Some(ProviderStreamEvent::Started { .. })
-        ));
-        assert!(events
-            .iter()
-            .any(|event| matches!(event, ProviderStreamEvent::ToolCallDelta { .. })));
-        assert!(events
-            .iter()
-            .any(|event| matches!(event, ProviderStreamEvent::Error { .. })));
-        assert!(!events
-            .iter()
-            .any(|event| matches!(event, ProviderStreamEvent::ToolCallComplete { .. })));
-        assert!(!events
-            .iter()
-            .any(|event| matches!(event, ProviderStreamEvent::DoneWithMetadata { .. })));
+        assert_eq!(
+            events,
+            vec![
+                ProviderStreamEvent::Started { metadata: None },
+                ProviderStreamEvent::ToolCallDelta {
+                    tool_call_id: "call_bad".to_string(),
+                    function_name: Some("filesystem_read".to_string()),
+                    arguments_delta: "{\"filePath\":".to_string(),
+                },
+                ProviderStreamEvent::Error {
+                    message:
+                        "openai_compatible chat tool call `call_bad` produced invalid arguments JSON"
+                            .to_string(),
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn openai_compatible_offline_wiremock_chat_tool_call_missing_id_fails_closed() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_raw(
+                        chat_tool_call_missing_id_sse_transcript(),
+                        "text/event-stream",
+                    ),
+            )
+            .mount(&server)
+            .await;
+
+        let provider = provider_for_base_url(format!("{}/v1", server.uri()), "test-secret-key");
+        let events = collect_events(&provider, request_with_single_tool("gpt-4o-mini")).await;
+
+        assert_eq!(
+            events,
+            vec![
+                ProviderStreamEvent::Started { metadata: None },
+                ProviderStreamEvent::Error {
+                    message:
+                        "openai_compatible stream omitted tool_call_id for chat tool call delta"
+                            .to_string(),
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn openai_compatible_offline_wiremock_chat_tool_call_missing_function_name_fails_closed()
+    {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_raw(
+                        chat_tool_call_missing_function_name_sse_transcript(),
+                        "text/event-stream",
+                    ),
+            )
+            .mount(&server)
+            .await;
+
+        let provider = provider_for_base_url(format!("{}/v1", server.uri()), "test-secret-key");
+        let events = collect_events(&provider, request_with_single_tool("gpt-4o-mini")).await;
+
+        assert_eq!(
+            events,
+            vec![
+                ProviderStreamEvent::Started { metadata: None },
+                ProviderStreamEvent::ToolCallDelta {
+                    tool_call_id: "call_no_name".to_string(),
+                    function_name: None,
+                    arguments_delta: "{\"filePath\":\"/tmp/demo.txt\"}".to_string(),
+                },
+                ProviderStreamEvent::Error {
+                    message:
+                        "openai_compatible chat tool call `call_no_name` missing function name"
+                            .to_string(),
+                },
+            ]
+        );
     }
 
     #[tokio::test]
@@ -2607,6 +3110,47 @@ mod tests {
         .to_string()
     }
 
+    fn chat_tool_call_missing_id_sse_transcript() -> String {
+        "data: {\"id\":\"chatcmpl-tool-no-id\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"type\":\"function\",\"function\":{\"name\":\"filesystem_read\",\"arguments\":\"{\\\"filePath\\\":\\\"/tmp/demo.txt\\\"}\"}}]},\"finish_reason\":null}],\"usage\":null}\n\n"
+            .to_string()
+    }
+
+    fn chat_tool_call_missing_function_name_sse_transcript() -> String {
+        concat!(
+            "data: {\"id\":\"chatcmpl-tool-no-name\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_no_name\",\"type\":\"function\",\"function\":{\"arguments\":\"{\\\"filePath\\\":\\\"/tmp/demo.txt\\\"}\"}}]},\"finish_reason\":null}],\"usage\":null}\n\n",
+            "data: {\"id\":\"chatcmpl-tool-no-name\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":3,\"total_tokens\":14}}\n\n",
+            "data: [DONE]\n\n"
+        )
+        .to_string()
+    }
+
+    fn invalid_json_mid_stream_sse_transcript() -> String {
+        concat!(
+            "data: {\"id\":\"chatcmpl-invalid-json\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"partial\"},\"finish_reason\":null}],\"usage\":null}\n\n",
+            "data: {not valid json}\n\n",
+            "data: [DONE]\n\n"
+        )
+        .to_string()
+    }
+
+    fn chat_truncated_sse_transcript() -> String {
+        "data: {\"id\":\"chatcmpl-truncated\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"partial\"},\"finish_reason\":null}],\"usage\":null}\n\n"
+            .to_string()
+    }
+
+    fn chat_truncated_tool_call_sse_transcript() -> String {
+        "data: {\"id\":\"chatcmpl-tool-truncated\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_truncated\",\"type\":\"function\",\"function\":{\"name\":\"filesystem_read\",\"arguments\":\"{\\\"filePath\\\":\\\"/tmp/demo.txt\\\"}\"}}]},\"finish_reason\":null}],\"usage\":null}\n\n"
+            .to_string()
+    }
+
+    fn chat_completion_without_done_marker_sse_transcript() -> String {
+        concat!(
+            "data: {\"id\":\"chatcmpl-no-done\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"complete\"},\"finish_reason\":null}],\"usage\":null}\n\n",
+            "data: {\"id\":\"chatcmpl-no-done\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"total_tokens\":3}}\n\n"
+        )
+        .to_string()
+    }
+
     fn responses_tool_call_sse_transcript() -> String {
         concat!(
             "event: response.output_item.added\n",
@@ -2622,12 +3166,91 @@ mod tests {
         .to_string()
     }
 
+    fn responses_text_delta_sse_transcript() -> String {
+        concat!(
+            "event: response.reasoning_summary_text.delta\n",
+            "data: {\"type\":\"response.reasoning_summary_text.delta\",\"delta\":\"check \"}\n\n",
+            "event: response.output_text.delta\n",
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hel\"}\n\n",
+            "event: response.output_text.delta\n",
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"lo\"}\n\n",
+            "event: response.output_text.delta\n",
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"lo\"}\n\n",
+            "event: response.completed\n",
+            "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp-text-1\",\"status\":\"completed\",\"provider_session_id\":\"session-text-1\",\"usage\":{\"input_tokens\":3,\"output_tokens\":2,\"total_tokens\":5}}}\n\n",
+            "data: [DONE]\n\n"
+        )
+        .to_string()
+    }
+
+    fn responses_error_sse_transcript() -> String {
+        concat!(
+            "event: response.output_text.delta\n",
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n",
+            "event: response.error\n",
+            "data: {\"type\":\"response.error\",\"error\":{\"message\":\"stream failed\"}}\n\n"
+        )
+        .to_string()
+    }
+
+    fn responses_truncated_sse_transcript() -> String {
+        concat!(
+            "event: response.output_text.delta\n",
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n"
+        )
+        .to_string()
+    }
+
+    fn responses_truncated_tool_call_sse_transcript() -> String {
+        concat!(
+            "event: response.output_item.added\n",
+            "data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"id\":\"item_resp_truncated\",\"call_id\":\"call_resp_truncated\",\"name\":\"filesystem_read\",\"arguments\":\"{\\\"filePath\\\":\\\"/tmp/demo.txt\\\"}\"}}\n\n"
+        )
+        .to_string()
+    }
+
+    fn responses_duplicate_partial_tool_call_sse_transcript() -> String {
+        concat!(
+            "event: response.output_item.added\n",
+            "data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"id\":\"item_resp_dup\",\"call_id\":\"call_resp_dup\",\"name\":\"filesystem_read\",\"arguments\":\"{\\\"filePath\\\":\\\"/tmp/\"}}\n\n",
+            "event: response.function_call_arguments.delta\n",
+            "data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"item_resp_dup\",\"delta\":\"du\"}\n\n",
+            "event: response.function_call_arguments.delta\n",
+            "data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"item_resp_dup\",\"delta\":\"du\"}\n\n",
+            "event: response.function_call_arguments.delta\n",
+            "data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"item_resp_dup\",\"delta\":\"p.txt\\\"}\"}\n\n",
+            "event: response.completed\n",
+            "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp-tool-dup\",\"status\":\"completed\",\"usage\":{\"input_tokens\":8,\"output_tokens\":4,\"total_tokens\":12}}}\n\n",
+            "data: [DONE]\n\n"
+        )
+        .to_string()
+    }
+
     fn responses_malformed_tool_args_sse_transcript() -> String {
         concat!(
             "event: response.output_item.added\n",
             "data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"id\":\"item_resp_bad\",\"call_id\":\"call_resp_bad\",\"name\":\"filesystem_read\",\"arguments\":\"{\\\"filePath\\\":\\\"/tmp\"}}\n\n",
             "event: response.function_call_arguments.delta\n",
             "data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"item_resp_bad\",\"delta\":\"/demo.txt\\\"\"}\n\n",
+            "event: response.completed\n",
+            "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":9,\"output_tokens\":3,\"total_tokens\":12}}}\n\n",
+            "data: [DONE]\n\n"
+        )
+        .to_string()
+    }
+
+    fn responses_missing_item_identity_sse_transcript() -> String {
+        concat!(
+            "event: response.output_item.added\n",
+            "data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"name\":\"filesystem_read\",\"arguments\":\"{\\\"filePath\\\":\\\"/tmp/demo.txt\\\"}\"}}\n\n"
+        )
+        .to_string()
+    }
+
+    fn responses_missing_function_name_sse_transcript() -> String {
+        concat!(
+            "event: response.output_item.added\n",
+            "data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"id\":\"item_resp_no_name\",\"call_id\":\"call_resp_no_name\",\"arguments\":\"{\\\"filePath\\\":\\\"/tmp/demo.txt\\\"}\"}}\n\n",
             "event: response.completed\n",
             "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":9,\"output_tokens\":3,\"total_tokens\":12}}}\n\n",
             "data: [DONE]\n\n"
