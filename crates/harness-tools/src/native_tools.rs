@@ -1427,7 +1427,7 @@ fn validate_shell_path_arguments(
             token
         };
 
-        if candidate.contains('$') || candidate.starts_with('~') {
+        if candidate.contains('$') {
             continue;
         }
 
@@ -1437,6 +1437,13 @@ fn validate_shell_path_arguments(
         }
         if extracted_path.is_empty() {
             continue;
+        }
+
+        if extracted_path.starts_with('~') {
+            return Err(ToolError::PathEscapesWorkspace {
+                workspace_root: workspace_root.display().to_string(),
+                path: extracted_path.to_string(),
+            });
         }
 
         if extracted_path.starts_with('/')
@@ -1498,6 +1505,42 @@ mod tests {
         let err = validate_bash_command("ls $(pwd)", tempdir.path(), tempdir.path(), &allowlist)
             .expect_err("command substitution should be blocked");
         assert!(matches!(err, ToolError::CommandBlocked(_)));
+    }
+
+    #[test]
+    fn validate_bash_command_rejects_tilde_path_traversal() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let allowlist = ShellAllowlist {
+            executables: vec!["ls".to_string()],
+            cwd_roots: vec![".".to_string()],
+        };
+
+        let err = validate_bash_command(
+            "ls ~/../../../etc/passwd",
+            tempdir.path(),
+            tempdir.path(),
+            &allowlist,
+        )
+        .expect_err("tilde relative path should be blocked");
+        assert!(matches!(err, ToolError::PathEscapesWorkspace { .. }));
+
+        let err2 = validate_bash_command(
+            "ls ~/.ssh/id_rsa",
+            tempdir.path(),
+            tempdir.path(),
+            &allowlist,
+        )
+        .expect_err("tilde absolute path should be blocked");
+        assert!(matches!(err2, ToolError::PathEscapesWorkspace { .. }));
+
+        let err3 = validate_bash_command(
+            "ls --files-from=~/../../../etc/passwd",
+            tempdir.path(),
+            tempdir.path(),
+            &allowlist,
+        )
+        .expect_err("tilde relative path inside option should be blocked");
+        assert!(matches!(err3, ToolError::PathEscapesWorkspace { .. }));
     }
 
     #[test]

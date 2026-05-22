@@ -5,3 +5,7 @@
 ## 2024-05-19 - Options and Glob strings also bypass workspace boundary validation
 **Learning:** Checking for slashes in arguments is a good start, but shell options (`--git-dir=/etc/passwd`) and paths containing glob characters (`foo/../../../etc/pas*`) also need to be extracted and evaluated. The original code skipped anything starting with `-` or containing glob sequences before looking for paths.
 **Action:** Extract the value component of options (e.g. splitting on `=`), and extract the static path prefix before glob sequences, so that the base path is always evaluated against the workspace bounds.
+
+## 2024-05-22 - Tilde path resolution bypasses workspace boundary validation
+**Learning:** Shell argument validation skipped strings starting with `~` completely. If `~` was evaluated dynamically at runtime by bash (e.g. `ls ~/../../../etc/passwd`), it effectively expanded and traversed upward without static boundary checks.
+**Action:** Always validate paths starting with `~` by treating the tilde as a normal relative path element dynamically. Doing so ensures `..` components correctly overflow the logical root during `normalize_workspace_target_path` validation.
