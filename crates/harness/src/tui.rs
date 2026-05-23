@@ -58,7 +58,7 @@ use crate::defaults::{
 };
 use crate::logging;
 use crate::recovery::{latest_run_name, select_resume_agent_id};
-use crate::replay::{inspect_session_catalog, normalize_lineage_entry};
+use crate::replay::inspect_session_catalog;
 use crate::scenarios::{
     create_workspace, default_permission_policy, deterministic_run_id, golden_path_edit_args,
     golden_path_profiles, golden_path_provider, supervisor_actor, worker_actor, ScenarioName,
@@ -1250,8 +1250,7 @@ fn load_startup_session_history_entries(
     inspect_session_catalog(session_dir).map(|entries| {
         entries
             .into_iter()
-            .map(normalize_lineage_entry)
-            .filter(startup_session_history_entry_visible)
+            .filter(crate::replay::SessionInspectionEntry::is_visible_in_operator_history)
             .map(|entry| SessionHistoryEntry {
                 run_dir: entry.run_dir,
                 catalog: entry.catalog,
@@ -1266,13 +1265,6 @@ fn load_live_session_history_entries(
 ) -> Result<Vec<SessionHistoryEntry>, String> {
     let session_dir = run_dir.parent().unwrap_or(fallback_session_dir);
     load_startup_session_history_entries(session_dir)
-}
-
-fn startup_session_history_entry_visible(entry: &crate::replay::SessionInspectionEntry) -> bool {
-    !matches!(
-        entry.catalog.mode_source,
-        SessionModeSource::ScenarioFixture | SessionModeSource::ReplayOnly
-    )
 }
 
 async fn run_startup_launcher(

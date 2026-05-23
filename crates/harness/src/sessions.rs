@@ -17,8 +17,8 @@ use crate::cli_io::{load_events_from_run_dir, load_run_metadata};
 use crate::defaults::DEFAULT_SESSION_DIR;
 use crate::recovery::{inspect_session_recovery, resolve_session_run_dir, SessionRecoverySummary};
 use crate::replay::{
-    inspect_session_catalog, normalize_lineage_entry, print_human_summary, summarize_session,
-    ReplayCommand, ReplaySummary, SessionInspectionEntry,
+    inspect_session_catalog, print_human_summary, summarize_session, ReplayCommand, ReplaySummary,
+    SessionInspectionEntry,
 };
 use crate::tui::TuiCommand;
 
@@ -343,18 +343,11 @@ fn collect_list_entries(
 ) -> Vec<SessionInspectionEntry> {
     let mut entries = entries
         .into_iter()
-        .filter(is_listed_session)
+        .filter(SessionInspectionEntry::is_visible_in_operator_history)
         .filter(|entry| matches_list_filters(entry, command))
         .collect::<Vec<_>>();
     command.sort.sort_entries(&mut entries);
     entries
-}
-
-fn is_listed_session(entry: &SessionInspectionEntry) -> bool {
-    !matches!(
-        entry.catalog.mode_source,
-        SessionModeSource::ScenarioFixture | SessionModeSource::ReplayOnly
-    )
 }
 
 fn matches_list_filters(entry: &SessionInspectionEntry, command: &SessionsListCommand) -> bool {
@@ -862,10 +855,6 @@ fn collect_tree_rows(
     root_run_id: Option<&str>,
     filter: Option<&str>,
 ) -> Vec<SessionTreeRow> {
-    let entries = entries
-        .into_iter()
-        .map(normalize_lineage_entry)
-        .collect::<Vec<_>>();
     let run_dirs = entries
         .iter()
         .map(|entry| (entry.catalog.run_id.clone(), entry.run_dir.clone()))

@@ -152,6 +152,21 @@ impl SessionInspectionEntry {
     pub(crate) fn sort_by_updated_asc(entries: &mut [Self]) {
         entries.sort_by_key(|entry| (entry.sort_unix_ms, entry.run_dir.clone()));
     }
+
+    pub(crate) fn is_visible_in_operator_history(&self) -> bool {
+        !matches!(
+            self.catalog.mode_source,
+            harness_core::proj::SessionModeSource::ScenarioFixture
+                | harness_core::proj::SessionModeSource::ReplayOnly
+        )
+    }
+
+    pub(crate) fn normalize_lineage(mut self) -> Self {
+        if let Some(parent_run_id) = harness_lineage_parent_run_id(&self.run_dir) {
+            self.catalog.parent_session_id = Some(parent_run_id);
+        }
+        self
+    }
 }
 
 pub fn execute(command: ReplayCommand) -> ExitCode {
@@ -250,19 +265,12 @@ pub fn inspect_session_catalog(session_dir: &Path) -> Result<Vec<SessionInspecti
         .filter_map(|entry| entry.ok().map(|item| item.path()))
         .filter(|path| path.is_dir() && path.join(EVENTS_FILE_NAME).exists())
         .map(|run_dir| inspect_single_session(&run_dir))
-        .map(normalize_lineage_entry)
+        .map(SessionInspectionEntry::normalize_lineage)
         .collect::<Vec<_>>();
 
     SessionInspectionEntry::sort_by_updated_desc(&mut entries);
 
     Ok(entries)
-}
-
-pub(crate) fn normalize_lineage_entry(mut entry: SessionInspectionEntry) -> SessionInspectionEntry {
-    if let Some(parent_run_id) = harness_lineage_parent_run_id(&entry.run_dir) {
-        entry.catalog.parent_session_id = Some(parent_run_id);
-    }
-    entry
 }
 
 fn harness_lineage_parent_run_id(run_dir: &Path) -> Option<String> {
@@ -1133,6 +1141,7 @@ mod tests {
     use harness_core::event::{
         ActorKind, EventActor, EventEnvelopeV1, EventV1, RunStartedEvent, SCHEMA_VERSION,
     };
+    use harness_core::proj::{SessionCatalogEntry, SessionModeSource};
     use tempfile::tempdir;
 
     fn envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
@@ -1158,6 +1167,74 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         std::fs::write(run_dir.join(EVENTS_FILE_NAME), format!("{body}\n")).expect("write events");
+    }
+
+    fn inspection_entry(
+        run_dir: PathBuf,
+        mode_source: SessionModeSource,
+    ) -> SessionInspectionEntry {
+        SessionInspectionEntry {
+            run_dir,
+            catalog: SessionCatalogEntry {
+                run_id: "run-id".to_string(),
+                run_name: None,
+                status: None,
+                last_updated_at: None,
+                workspace_root: None,
+                profile_preset: None,
+                provider_model: None,
+                mode_source,
+                is_resumable: false,
+                resume_disabled_reason: None,
+                artifact_count: 0,
+                child_session_count: 0,
+                parent_session_id: None,
+            },
+            sort_unix_ms: 0,
+            artifact_count: 0,
+            child_session_count: 0,
+        }
+    }
+
+    #[test]
+    fn session_inspection_entry_owns_operator_visibility_rules() {
+        for mode_source in [
+            SessionModeSource::InteractiveLive,
+            SessionModeSource::InteractiveMock,
+            SessionModeSource::Prompt,
+            SessionModeSource::Unknown,
+        ] {
+            assert!(inspection_entry(PathBuf::from("/tmp/visible"), mode_source)
+                .is_visible_in_operator_history());
+        }
+
+        for mode_source in [
+            SessionModeSource::ScenarioFixture,
+            SessionModeSource::ReplayOnly,
+        ] {
+            assert!(!inspection_entry(PathBuf::from("/tmp/hidden"), mode_source)
+                .is_visible_in_operator_history());
+        }
+    }
+
+    #[test]
+    fn session_inspection_entry_normalizes_lineage_from_run_meta() {
+        let temp = tempdir().expect("tempdir");
+        let run_dir = temp.path().join("child_session");
+        std::fs::create_dir_all(&run_dir).expect("create run dir");
+        std::fs::write(
+            run_dir.join(META_FILE_NAME),
+            r#"{"harness_lineage":{"harness_source_run_id":"root_session"}}"#,
+        )
+        .expect("write meta");
+
+        let entry =
+            inspection_entry(run_dir, SessionModeSource::InteractiveLive).normalize_lineage();
+
+        assert_eq!(
+            entry.catalog.parent_session_id.as_deref(),
+            Some("root_session")
+        );
     }
 
     #[test]
