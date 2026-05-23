@@ -654,6 +654,7 @@ pub(crate) fn exact_test_compaction_applied_updates_active_context_usage_estimat
     app.active_context_usage = Some(ActiveContextUsage::estimate(500));
     app.activities.push_back(ActivityEntry {
         request_id: "req_000001".to_string(),
+        profile_label: "build".to_string(),
         model_id: "model-1".to_string(),
         provider_id: "default".to_string(),
         status: ActivityStatus::Done,
