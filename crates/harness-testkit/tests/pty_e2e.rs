@@ -53,8 +53,8 @@ use visual_renderer::{
     render_parser_to_image, TerminalRenderConfig,
 };
 
-const VISUAL_MANIFEST_JSON_FILE: &str = "manifest.json";
-const VISUAL_MANIFEST_JSONL_FILE: &str = "manifest.jsonl";
+#[path = "support/visual_manifest.rs"]
+mod visual_manifest;
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
 const MARKER_TIMEOUT: Duration = Duration::from_secs(6);
@@ -2492,13 +2492,13 @@ fn pty_e2e_snapshots_are_stable() {
 #[test]
 fn checkpoint_snapshot_manifest_paths_drop_checkout_root() {
     assert_eq!(
-        stable_manifest_snapshot_path(Path::new(
+        visual_manifest::stable_manifest_snapshot_path(Path::new(
             "/tmp/repo/target/pty-visual-artifacts/pty-manifests/live_shell/manifest.json",
         )),
         "pty-manifests/live_shell/manifest.json"
     );
     assert_eq!(
-        stable_manifest_snapshot_path(Path::new(
+        visual_manifest::stable_manifest_snapshot_path(Path::new(
             "/tmp/repo/target/pty-visual-artifacts/pty-manifests/live_shell/manifest.jsonl",
         )),
         "pty-manifests/live_shell/manifest.jsonl"
@@ -2643,7 +2643,7 @@ impl FocusCapture {
 }
 
 fn checkpoint_visual_snapshot(screen: &str, markers: &[&str], visual: &VisualCheckpoint) -> String {
-    let mut lines = marker_presence_lines(screen, markers);
+    let mut lines = visual_manifest::marker_presence_lines(screen, markers);
     lines.push(format!("focus_marker: {}", visual.focus_marker));
     // Snapshot terminal render state here so one-cell raster drift does not
     // destabilize the deterministic PTY contract.
@@ -2661,11 +2661,11 @@ fn checkpoint_visual_snapshot(screen: &str, markers: &[&str], visual: &VisualChe
     lines.push(format!("image: {}", visual.file_name));
     lines.push(format!(
         "manifest_json: {}",
-        stable_manifest_snapshot_path(&visual.manifest_json_path)
+        visual_manifest::stable_manifest_snapshot_path(&visual.manifest_json_path)
     ));
     lines.push(format!(
         "manifest_jsonl: {}",
-        stable_manifest_snapshot_path(&visual.manifest_jsonl_path)
+        visual_manifest::stable_manifest_snapshot_path(&visual.manifest_jsonl_path)
     ));
     lines.push(format!(
         "size_px: {}x{}",
@@ -2701,32 +2701,8 @@ fn checkpoint_visual_snapshot_without_focus_position(
         .join("\n")
 }
 
-fn stable_manifest_snapshot_path(path: &Path) -> String {
-    let components = path
-        .components()
-        .map(|component| component.as_os_str().to_string_lossy().into_owned())
-        .collect::<Vec<_>>();
-
-    components
-        .iter()
-        .position(|component| component == "pty-manifests")
-        .map(|index| components[index..].join("/"))
-        .or_else(|| {
-            path.file_name()
-                .map(|name| name.to_string_lossy().into_owned())
-        })
-        .unwrap_or_default()
-}
-
 fn family_manifest_dir(visual_dir: &Path, family: &str) -> PathBuf {
     visual_dir.join("pty-manifests").join(family)
-}
-
-fn marker_presence_states(screen: &str, markers: &[&str]) -> Vec<(String, bool)> {
-    markers
-        .iter()
-        .map(|marker| ((*marker).to_string(), screen.contains(marker)))
-        .collect()
 }
 
 fn write_family_manifest_entry(
@@ -2859,22 +2835,15 @@ fn capture_manifest_backed_visual_checkpoint(
             manifest_dir.display()
         )
     })?;
-    checkpoint.manifest_json_path = manifest_dir.join(VISUAL_MANIFEST_JSON_FILE);
-    checkpoint.manifest_jsonl_path = manifest_dir.join(VISUAL_MANIFEST_JSONL_FILE);
+    checkpoint.manifest_json_path = manifest_dir.join(visual_manifest::VISUAL_MANIFEST_JSON_FILE);
+    checkpoint.manifest_jsonl_path = manifest_dir.join(visual_manifest::VISUAL_MANIFEST_JSONL_FILE);
     write_family_manifest_entry(
         family,
         &checkpoint,
         checkpoint_id,
-        &marker_presence_states(&screen_contents(parser), markers),
+        &visual_manifest::marker_presence_states(&screen_contents(parser), markers),
     )?;
     Ok(checkpoint)
-}
-
-fn marker_presence_lines(screen: &str, markers: &[&str]) -> Vec<String> {
-    markers
-        .iter()
-        .map(|marker| format!("{marker}: {}", screen.contains(marker)))
-        .collect()
 }
 
 fn capture_visual_checkpoint(
