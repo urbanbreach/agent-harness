@@ -83,6 +83,7 @@ use crate::store::{EventEnvelopeWithoutSeqV1, EventStore, EventStoreError, Jsonl
 use crate::text::{non_empty_trimmed, truncate_with_ellipsis};
 use crate::tool::{
     canonical_tool_id_for, sanitize_mcp_tool_segment, ToolContext, ToolRegistry, ToolResult,
+    ToolRunState,
 };
 use harness_providers::{
     AssistantToolCall, CompletionMessage, CompletionRequest, MessageRole, Provider,
@@ -1837,6 +1838,7 @@ impl Coordinator {
             recorded_runtime_context: None,
             allow_initial_runtime_context_recording: true,
             shutdown_token: CancellationToken::new(),
+            tool_state: ToolRunState::default(),
         };
 
         append_payload_event(
@@ -2055,6 +2057,7 @@ impl Coordinator {
             recorded_runtime_context: None,
             allow_initial_runtime_context_recording: false,
             shutdown_token: CancellationToken::new(),
+            tool_state: ToolRunState::default(),
         };
 
         restore_child_session_mirrors(
@@ -5868,6 +5871,7 @@ struct RunState {
     recorded_runtime_context: Option<RecordedRuntimeContext>,
     allow_initial_runtime_context_recording: bool,
     shutdown_token: CancellationToken,
+    tool_state: ToolRunState,
 }
 
 #[derive(Debug)]
@@ -7801,6 +7805,7 @@ where
     )?;
 
     let cancellation_token = run_state.shutdown_token.child_token();
+    let tool_state = run_state.tool_state.clone();
     let run_id = run_state.info.run_id.clone();
     let workspace_root = run_state.info.workspace_root.clone();
     let artifacts_dir = run_state.info.artifacts_dir.clone();
@@ -7857,6 +7862,7 @@ where
                 .as_ref()
                 .map(|(model_ref, _)| model_ref.clone()),
             current_model_settings: current_model.as_ref().map(|(_, settings)| settings.clone()),
+            tool_state,
             coordinator,
         };
 

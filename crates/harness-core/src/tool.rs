@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,7 @@ use thiserror::Error;
 
 use crate::agent::AgentModelSettings;
 use crate::coord::CoordinatorHandle;
+use crate::edit::hashline::LineAnchor;
 use crate::event::{ActorKind, EventActor};
 use crate::session_paths::ARTIFACTS_DIR_NAME;
 
@@ -84,6 +86,124 @@ impl ToolResult {
     }
 }
 
+/// Ephemeral state shared by tool calls in the same coordinator run.
+///
+/// Cloning this value intentionally shares the underlying registry, so read
+/// anchors observed by one tool call can disambiguate a later edit in the same
+/// run without leaking across independently-created run states.
+#[derive(Debug, Clone, Default)]
+pub struct ToolRunState {
+    file_reads: Arc<Mutex<FileReadRegistry>>,
+}
+
+impl ToolRunState {
+    pub fn record_file_read(&self, run_id: &str, resolved_path: &Path) -> Result<(), ToolError> {
+        self.record_file_read_with_anchors(run_id, resolved_path, None)
+    }
+
+    pub fn record_file_hashline_read(
+        &self,
+        run_id: &str,
+        resolved_path: &Path,
+        anchors: Vec<LineAnchor>,
+    ) -> Result<(), ToolError> {
+        self.record_file_read_with_anchors(run_id, resolved_path, Some(anchors))
+    }
+
+    pub fn recent_hashline_anchors(
+        &self,
+        run_id: &str,
+        resolved_path: &Path,
+    ) -> Option<Vec<LineAnchor>> {
+        let key = file_read_key(run_id, resolved_path);
+        let prior = {
+            let state = lock_file_reads(&self.file_reads);
+            state.reads.get(&key).cloned()
+        }?;
+
+        let anchors = prior.hashline_anchors?;
+        let current = file_read_stamp_from_metadata(resolved_path).ok()?;
+        (current.fingerprint == prior.fingerprint).then_some(anchors)
+    }
+
+    fn record_file_read_with_anchors(
+        &self,
+        run_id: &str,
+        resolved_path: &Path,
+        anchors: Option<Vec<LineAnchor>>,
+    ) -> Result<(), ToolError> {
+        let stamp = file_read_stamp_from_metadata(resolved_path)?;
+        let key = file_read_key(run_id, resolved_path);
+        let mut state = lock_file_reads(&self.file_reads);
+        state.reads.insert(
+            key,
+            FileReadStamp {
+                hashline_anchors: anchors,
+                ..stamp
+            },
+        );
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FileFingerprint {
+    content_hash: u64,
+}
+
+#[derive(Debug, Clone)]
+struct FileReadStamp {
+    fingerprint: FileFingerprint,
+    hashline_anchors: Option<Vec<LineAnchor>>,
+}
+
+#[derive(Debug, Default)]
+struct FileReadRegistry {
+    reads: BTreeMap<(String, PathBuf), FileReadStamp>,
+}
+
+fn lock_file_reads(mutex: &Mutex<FileReadRegistry>) -> std::sync::MutexGuard<'_, FileReadRegistry> {
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+fn file_read_key(run_id: &str, resolved_path: &Path) -> (String, PathBuf) {
+    (run_id.to_string(), resolved_path.to_path_buf())
+}
+
+fn file_read_stamp_from_metadata(resolved_path: &Path) -> Result<FileReadStamp, ToolError> {
+    fs::metadata(resolved_path).map_err(|err| match err.kind() {
+        std::io::ErrorKind::NotFound => {
+            ToolError::Execution(format!("File {} not found", resolved_path.display()))
+        }
+        _ => ToolError::Execution(format!(
+            "failed to inspect file freshness for {}: {err}",
+            resolved_path.display()
+        )),
+    })?;
+    let content = fs::read(resolved_path).map_err(|err| {
+        ToolError::Execution(format!(
+            "failed to read file freshness digest for {}: {err}",
+            resolved_path.display()
+        ))
+    })?;
+
+    Ok(FileReadStamp {
+        fingerprint: FileFingerprint {
+            content_hash: content_fingerprint(&content),
+        },
+        hashline_anchors: None,
+    })
+}
+
+fn content_fingerprint(content: &[u8]) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    content.hash(&mut hasher);
+    hasher.finish()
+}
+
 #[derive(Debug, Clone)]
 pub struct ToolContext {
     pub run_id: String,
@@ -94,6 +214,7 @@ pub struct ToolContext {
     pub tool_call_id: String,
     pub current_model_ref: Option<String>,
     pub current_model_settings: Option<AgentModelSettings>,
+    pub tool_state: ToolRunState,
     pub coordinator: CoordinatorHandle,
 }
 
@@ -517,7 +638,7 @@ mod tests {
     use super::{
         build_tool_function_name_mapping, canonical_tool_id_for, sanitize_mcp_tool_segment,
         sanitize_tool_function_name, ArtifactStore, ArtifactStoreError, ToolCapability,
-        ToolContext, ToolError, ToolRegistry,
+        ToolContext, ToolError, ToolRegistry, ToolRunState,
     };
     use crate::clock::RealClock;
     use crate::coord::{spawn_coordinator, CoordinatorConfig};
@@ -545,6 +666,7 @@ mod tests {
             tool_call_id: tool_call_id.to_string(),
             current_model_ref: None,
             current_model_settings: None,
+            tool_state: ToolRunState::default(),
             coordinator,
         }
     }

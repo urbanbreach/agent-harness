@@ -3,18 +3,35 @@ use std::fs;
 use harness_core::agent::{build_provider_tool_defs, AgentProfile};
 use harness_core::config::ShellAllowlist;
 use harness_core::edit::hashline::compute_line_hash;
+use harness_core::tool::ToolRunState;
 use harness_tools::{coordinator_registry, coordinator_registry_with_internal_hashline_tools};
 use serde_json::json;
 
 mod common;
 
-use common::{setup_workspace_fixture, test_context as common_test_context};
+use common::{
+    setup_workspace_fixture, test_context as common_test_context,
+    test_context_with_tool_state as common_test_context_with_tool_state,
+};
 
 fn test_context(
     workspace_root: &std::path::Path,
     tool_call_id: &str,
 ) -> harness_core::tool::ToolContext {
     common_test_context(workspace_root, "run-native-surface-tests", tool_call_id)
+}
+
+fn test_context_with_tool_state(
+    workspace_root: &std::path::Path,
+    tool_call_id: &str,
+    tool_state: ToolRunState,
+) -> harness_core::tool::ToolContext {
+    common_test_context_with_tool_state(
+        workspace_root,
+        "run-native-surface-tests",
+        tool_call_id,
+        tool_state,
+    )
 }
 
 #[tokio::test]
@@ -546,11 +563,12 @@ async fn native_public_edit_uses_recent_hashline_read_to_disambiguate_hash_only_
     let registry = coordinator_registry(ShellAllowlist::default());
     let read = registry.get("read").expect("read in registry");
     let edit = registry.get("edit").expect("edit in registry");
+    let tool_state = ToolRunState::default();
 
     fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").expect("seed existing file");
 
     read.call(
-        test_context(workspace, "read-disambiguation-window"),
+        test_context_with_tool_state(workspace, "read-disambiguation-window", tool_state.clone()),
         json!({
             "filePath": "surface.txt",
             "offset": 1,
@@ -562,7 +580,11 @@ async fn native_public_edit_uses_recent_hashline_read_to_disambiguate_hash_only_
 
     let result = edit
         .call(
-            test_context(workspace, "edit-read-window-hash-only-anchor"),
+            test_context_with_tool_state(
+                workspace,
+                "edit-read-window-hash-only-anchor",
+                tool_state,
+            ),
             json!({
                 "filePath": "surface.txt",
                 "edits": [
@@ -593,11 +615,12 @@ async fn native_internal_hashline_scan_disambiguates_hash_only_anchor_for_edit()
         .get("edit.hashline_scan")
         .expect("edit.hashline_scan in registry");
     let edit = registry.get("edit").expect("edit in registry");
+    let tool_state = ToolRunState::default();
 
     fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").expect("seed existing file");
 
     scan.call(
-        test_context(workspace, "scan-disambiguation-window"),
+        test_context_with_tool_state(workspace, "scan-disambiguation-window", tool_state.clone()),
         json!({
             "path": "surface.txt",
             "start_line": 1,
@@ -609,7 +632,11 @@ async fn native_internal_hashline_scan_disambiguates_hash_only_anchor_for_edit()
 
     let result = edit
         .call(
-            test_context(workspace, "edit-scan-window-hash-only-anchor"),
+            test_context_with_tool_state(
+                workspace,
+                "edit-scan-window-hash-only-anchor",
+                tool_state,
+            ),
             json!({
                 "filePath": "surface.txt",
                 "edits": [
@@ -638,11 +665,16 @@ async fn native_public_edit_ignores_stale_recent_hashline_read_for_hash_only_anc
     let registry = coordinator_registry(ShellAllowlist::default());
     let read = registry.get("read").expect("read in registry");
     let edit = registry.get("edit").expect("edit in registry");
+    let tool_state = ToolRunState::default();
 
     fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").expect("seed existing file");
 
     read.call(
-        test_context(workspace, "read-stale-disambiguation-window"),
+        test_context_with_tool_state(
+            workspace,
+            "read-stale-disambiguation-window",
+            tool_state.clone(),
+        ),
         json!({
             "filePath": "surface.txt",
             "offset": 1,
@@ -657,7 +689,11 @@ async fn native_public_edit_ignores_stale_recent_hashline_read_for_hash_only_anc
 
     let error = edit
         .call(
-            test_context(workspace, "edit-stale-read-window-hash-only-anchor"),
+            test_context_with_tool_state(
+                workspace,
+                "edit-stale-read-window-hash-only-anchor",
+                tool_state,
+            ),
             json!({
                 "filePath": "surface.txt",
                 "edits": [
@@ -678,6 +714,61 @@ async fn native_public_edit_ignores_stale_recent_hashline_read_for_hash_only_anc
     assert_eq!(
         fs::read_to_string(workspace.join("surface.txt")).expect("read edited file"),
         "same\nanother\nsame\n"
+    );
+}
+
+#[tokio::test]
+async fn native_public_edit_does_not_share_recent_hashline_reads_across_tool_state() {
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let read = registry.get("read").expect("read in registry");
+    let edit = registry.get("edit").expect("edit in registry");
+
+    fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").expect("seed existing file");
+
+    read.call(
+        test_context_with_tool_state(
+            workspace,
+            "read-isolated-disambiguation-window",
+            ToolRunState::default(),
+        ),
+        json!({
+            "filePath": "surface.txt",
+            "offset": 1,
+            "limit": 2,
+        }),
+    )
+    .await
+    .expect("anchored read should succeed");
+
+    let error = edit
+        .call(
+            test_context_with_tool_state(
+                workspace,
+                "edit-isolated-hash-only-anchor",
+                ToolRunState::default(),
+            ),
+            json!({
+                "filePath": "surface.txt",
+                "edits": [
+                    {
+                        "op": "replace",
+                        "pos": format!("#{}", compute_line_hash("same")),
+                        "lines": ["after"],
+                    }
+                ],
+            }),
+        )
+        .await
+        .expect_err("separate tool state must not disambiguate hash-only anchor");
+
+    let error = error.to_string();
+    assert!(error.contains("matches multiple current lines"));
+    assert!(error.contains("Re-read the file"));
+    assert_eq!(
+        fs::read_to_string(workspace.join("surface.txt")).expect("read unchanged file"),
+        "same\nother\nsame\n"
     );
 }
 
