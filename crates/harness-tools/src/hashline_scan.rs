@@ -162,7 +162,7 @@ mod tests {
     use harness_core::edit::hashline::compute_line_hash;
     use harness_core::event::{ActorKind, EventActor};
     use harness_core::redact::DefaultRedactor;
-    use harness_core::tool::{Tool, ToolContext};
+    use harness_core::tool::{Tool, ToolContext, ToolRunState};
     use serde_json::json;
     use std::sync::Arc;
 
@@ -184,6 +184,7 @@ mod tests {
             tool_call_id: "tool-call-1".to_string(),
             current_model_ref: None,
             current_model_settings: None,
+            tool_state: ToolRunState::default(),
             coordinator,
         }
     }

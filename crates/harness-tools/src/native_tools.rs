@@ -1432,7 +1432,7 @@ fn validate_shell_path_arguments(
         }
 
         let mut extracted_path = candidate;
-        if let Some(prefix_end) = candidate.find(|c| c == '*' || c == '?' || c == '[') {
+        if let Some(prefix_end) = candidate.find(['*', '?', '[']) {
             extracted_path = &candidate[..prefix_end];
         }
         if extracted_path.is_empty() {
@@ -1485,7 +1485,7 @@ mod tests {
     use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
     use harness_core::event::{ActorKind, EventActor};
     use harness_core::redact::DefaultRedactor;
-    use harness_core::tool::{Tool, ToolContext, ToolError};
+    use harness_core::tool::{Tool, ToolContext, ToolError, ToolRunState};
     use serde_json::json;
 
     #[test]
@@ -1621,6 +1621,7 @@ mod tests {
             tool_call_id: "tree-test".to_string(),
             current_model_ref: None,
             current_model_settings: None,
+            tool_state: ToolRunState::default(),
             coordinator,
         };
 
