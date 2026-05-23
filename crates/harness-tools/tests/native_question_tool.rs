@@ -7,7 +7,7 @@ use harness_core::coord::{spawn_coordinator, CoordinatorConfig, CoordinatorHandl
 use harness_core::event::EventV1;
 use harness_core::perm::PermissionDecision;
 use harness_core::redact::DefaultRedactor;
-use harness_core::tool::{Tool, ToolContext, ToolError, ToolResult};
+use harness_core::tool::{Tool, ToolContext, ToolError, ToolResult, ToolRunState};
 use harness_tools::coordinator_registry;
 use serde_json::{json, Value};
 use tokio::time::{timeout, Duration};
@@ -39,6 +39,7 @@ fn question_tool_context(
         tool_call_id: tool_call_id.to_string(),
         current_model_ref: None,
         current_model_settings: None,
+        tool_state: ToolRunState::default(),
         coordinator,
     }
 }

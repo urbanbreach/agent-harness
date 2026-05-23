@@ -33,7 +33,7 @@ pub(crate) use question_events::wait_for_question_permission;
 #[allow(unused_imports)]
 pub(crate) use repo_root::repo_root;
 #[allow(unused_imports)]
-pub use tool_context::test_context;
+pub use tool_context::{test_context, test_context_with_tool_state};
 #[allow(unused_imports)]
 pub use workspace::{setup_workspace, setup_workspace_fixture};
 

@@ -14,7 +14,7 @@ use harness_core::config::{
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, RunInfo};
 use harness_core::perm::PermissionDecision;
 use harness_core::redact::DefaultRedactor;
-use harness_core::tool::ToolContext;
+use harness_core::tool::{ToolContext, ToolRunState};
 use harness_tools::coordinator_registry;
 use serde_json::json;
 use tokio::time::Duration;
@@ -72,6 +72,7 @@ fn tool_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
         tool_call_id: tool_call_id.to_string(),
         current_model_ref: None,
         current_model_settings: None,
+        tool_state: ToolRunState::default(),
         coordinator,
     }
 }

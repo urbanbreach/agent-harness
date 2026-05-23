@@ -3,7 +3,7 @@ use std::path::Path;
 use harness_core::clock::RealClock;
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
 use harness_core::redact::DefaultRedactor;
-use harness_core::tool::ToolContext;
+use harness_core::tool::{ToolContext, ToolRunState};
 
 use super::worker_actor;
 
@@ -22,6 +22,19 @@ pub fn test_context(workspace_root: &Path, run_id: &str, tool_call_id: &str) -> 
         tool_call_id: tool_call_id.to_string(),
         current_model_ref: None,
         current_model_settings: None,
+        tool_state: ToolRunState::default(),
         coordinator,
+    }
+}
+
+pub fn test_context_with_tool_state(
+    workspace_root: &Path,
+    run_id: &str,
+    tool_call_id: &str,
+    tool_state: ToolRunState,
+) -> ToolContext {
+    ToolContext {
+        tool_state,
+        ..test_context(workspace_root, run_id, tool_call_id)
     }
 }
