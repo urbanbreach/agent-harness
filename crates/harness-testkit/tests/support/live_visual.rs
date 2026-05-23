@@ -9,6 +9,9 @@ use vt100::Parser as VtParser;
 
 use super::focus_region::anchored_region as anchored_focus_region;
 use super::repo_root::repo_root;
+use super::visual_manifest::{
+    marker_presence_states, VISUAL_MANIFEST_JSONL_FILE, VISUAL_MANIFEST_JSON_FILE,
+};
 use super::visual_renderer::{
     extract_region_pixels, extract_region_render_state, render_parser_to_image,
     TerminalRenderConfig,
@@ -25,9 +28,6 @@ pub const CHECKPOINT_FILE_WRITE_FINISHED: &str = "file_write_finished";
 // hashline-backed `edit` tool rather than the removed agent-facing scan tool.
 pub const CHECKPOINT_HASHLINE_SCAN_FINISHED: &str = "hashline_scan_finished";
 pub const CHECKPOINT_RUN_FINISHED: &str = "run_finished";
-pub const VISUAL_MANIFEST_JSON_FILE: &str = "manifest.json";
-pub const VISUAL_MANIFEST_JSONL_FILE: &str = "manifest.jsonl";
-
 const LIVE_PROXY_NAMESPACE: &str = "live-proxy";
 const LIVE_PROXY_PNG_PREFIX: &str = "live_proxy";
 const DEFAULT_LIVE_VISUAL_RETENTION_RUNS: usize = 5;
@@ -676,13 +676,6 @@ fn checkpoint_order(checkpoint_id: &str) -> usize {
         CHECKPOINT_RUN_FINISHED => 6,
         _ => usize::MAX,
     }
-}
-
-fn marker_presence_states(screen: &str, markers: &[&str]) -> Vec<(String, bool)> {
-    markers
-        .iter()
-        .map(|marker| ((*marker).to_string(), screen.contains(marker)))
-        .collect()
 }
 
 #[allow(dead_code)]

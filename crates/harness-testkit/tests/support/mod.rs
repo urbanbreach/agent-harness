@@ -11,4 +11,5 @@ pub(crate) mod live_visual;
 pub(crate) mod pty_process;
 pub(crate) mod repo_root;
 pub(crate) mod temp_path;
+pub(crate) mod visual_manifest;
 pub(crate) mod visual_renderer;
