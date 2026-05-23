@@ -2205,7 +2205,7 @@ fn composer_metadata_candidates(
     app: &AppState,
     dock: &crate::view_model::ControlDockViewModel,
 ) -> Vec<Vec<(String, ComposerMetadataTone)>> {
-    let profile = app.current_agent_label();
+    let profile = active_turn_profile_label(app).or_else(|| app.current_agent_label());
     let model = app.current_model_base_label().to_string();
     let source = app.current_source_label();
     let tail = app
@@ -2268,6 +2268,26 @@ fn composer_metadata_candidates(
             ComposerMetadataTone::Secondary,
         )],
     ]
+}
+
+fn active_turn_profile_label(app: &AppState) -> Option<String> {
+    let activity = app
+        .activities
+        .iter()
+        .rev()
+        .find(|activity| activity.status == ActivityStatus::Streaming)
+        .or_else(|| app.activities.back())?;
+    if !matches!(
+        activity.status,
+        ActivityStatus::Streaming | ActivityStatus::Queued
+    ) {
+        return None;
+    }
+    let profile = activity.profile_label.trim();
+    if profile.is_empty() || profile.eq_ignore_ascii_case("unknown") {
+        return None;
+    }
+    Some(crate::app::humanize_profile_label(profile))
 }
 
 #[cfg(test)]
@@ -3472,6 +3492,7 @@ pub(crate) fn exact_test_tool_status_summary_uses_effective_tool_identity() {
     let mut app = AppState::new_live(None, false, None);
     app.activities.push_front(ActivityEntry {
         request_id: "req_tool_identity".to_string(),
+        profile_label: "build".to_string(),
         model_id: "gpt-5.4".to_string(),
         provider_id: "default".to_string(),
         status: ActivityStatus::Streaming,
