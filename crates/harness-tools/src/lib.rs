@@ -61,6 +61,8 @@ mod text;
 mod shell_run;
 pub(crate) use shell_run::ShellRunTool;
 
+mod shell_safety;
+
 mod agent_ops;
 use agent_ops::AgentOpsExecutor;
 

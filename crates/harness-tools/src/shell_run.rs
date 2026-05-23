@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::native_tools::blocked_shell_command_message;
+use crate::shell_safety::ShellSafety;
 use crate::text::trimmed_non_empty;
 use crate::{
     json_schema_for, parse_tool_args, text_json_artifacts_tool_result, text_json_tool_result,
@@ -320,49 +320,14 @@ fn write_shell_output_artifact(
 }
 
 pub(crate) struct ShellRunTool {
-    allowlist: ShellAllowlist,
+    safety: ShellSafety,
 }
 
 impl ShellRunTool {
     pub(crate) fn new(allowlist: ShellAllowlist) -> Self {
-        Self { allowlist }
-    }
-
-    fn is_executable_allowed(&self, executable: &str) -> bool {
-        self.allowlist
-            .executables
-            .iter()
-            .any(|allowed| allowed == executable)
-    }
-
-    fn resolve_cwd(&self, ctx: &ToolContext, cwd: Option<&str>) -> Result<PathBuf, ToolError> {
-        let cwd = match cwd {
-            Some(cwd) => ctx.resolve_workspace_path(Path::new(cwd))?,
-            None => ctx.workspace_root.clone(),
-        };
-
-        if self.allowlist.cwd_roots.is_empty() {
-            return Ok(cwd);
+        Self {
+            safety: ShellSafety::new(allowlist),
         }
-
-        let canonical = cwd
-            .canonicalize()
-            .map_err(|err| ToolError::Execution(format!("failed to resolve cwd: {err}")))?;
-
-        let allowed = self.allowlist.cwd_roots.iter().any(|root| {
-            ctx.resolve_workspace_path(Path::new(root))
-                .map(|allowed_root| canonical.starts_with(allowed_root))
-                .unwrap_or(false)
-        });
-
-        if !allowed {
-            return Err(ToolError::CommandBlocked(format!(
-                "cwd {} is not in allowlist",
-                canonical.display()
-            )));
-        }
-
-        Ok(canonical)
     }
 }
 
@@ -512,13 +477,15 @@ impl ShellRunTool {
         invocation: DirectShellInvocation,
         timeout_ms: u64,
     ) -> Result<ShellRunExecution, ToolError> {
-        if !self.is_executable_allowed(&invocation.cmd) {
-            return Err(ToolError::CommandBlocked(blocked_shell_command_message(
-                &invocation.cmd,
-            )));
-        }
+        self.safety.ensure_executable_allowed(&invocation.cmd)?;
 
-        let resolved_cwd = self.resolve_cwd(ctx, invocation.cwd.as_deref())?;
+        let resolved_cwd = self.safety.resolve_cwd(ctx, invocation.cwd.as_deref())?;
+        self.safety.validate_direct_args(
+            &invocation.cmd,
+            &invocation.args,
+            &resolved_cwd,
+            &ctx.workspace_root,
+        )?;
         let mut command = tokio::process::Command::new(&invocation.cmd);
         command.args(&invocation.args).current_dir(resolved_cwd);
         let output = run_shell_process(command, timeout_ms).await?;
@@ -536,13 +503,11 @@ impl ShellRunTool {
         invocation: WrapperShellInvocation,
         timeout_ms: u64,
     ) -> Result<ShellRunExecution, ToolError> {
-        let cwd = self.resolve_cwd(ctx, invocation.workdir.as_deref())?;
-        crate::native_tools::validate_bash_command(
-            &invocation.command,
-            &cwd,
-            &ctx.workspace_root,
-            &self.allowlist,
-        )?;
+        let cwd = self
+            .safety
+            .resolve_cwd(ctx, invocation.workdir.as_deref())?;
+        self.safety
+            .validate_bash_command(&invocation.command, &cwd, &ctx.workspace_root)?;
         let shell = resolve_bash_executable();
         let mut shell_command = tokio::process::Command::new(&shell);
         shell_command
@@ -734,7 +699,7 @@ mod tests {
     async fn shell_run_accepts_duplicate_wrapper_command_when_it_matches_cmd() {
         let temp = tempfile::tempdir().expect("tempdir");
         let shell = ShellRunTool::new(ShellAllowlist {
-            executables: vec!["bash".to_string()],
+            executables: vec!["printf".to_string()],
             cwd_roots: Vec::new(),
         });
 
@@ -742,9 +707,9 @@ mod tests {
             .call(
                 shell_test_context(temp.path(), "toolcall-shell-run-duplicate"),
                 json!({
-                    "cmd": "bash",
-                    "command": "bash",
-                    "args": ["-lc", "printf shell-ok"],
+                    "cmd": "printf",
+                    "command": "printf",
+                    "args": ["shell-ok"],
                     "cwd": ".",
                     "workdir": ".",
                 }),
@@ -754,9 +719,37 @@ mod tests {
 
         assert_eq!(result.display_text, "shell-ok");
         let structured = result.structured_json.expect("structured shell output");
-        assert_eq!(structured.get("cmd"), Some(&json!("bash")));
+        assert_eq!(structured.get("cmd"), Some(&json!("printf")));
         assert_eq!(structured.get("stdout"), Some(&json!("shell-ok")));
         assert_eq!(structured.get("success"), Some(&json!(true)));
+    }
+
+    #[tokio::test]
+    async fn shell_run_rejects_direct_bash_command_mode_bypass() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let shell = ShellRunTool::new(ShellAllowlist {
+            executables: vec!["bash".to_string()],
+            cwd_roots: Vec::new(),
+        });
+
+        let error = shell
+            .call(
+                shell_test_context(temp.path(), "toolcall-shell-run-bash-c-blocked"),
+                json!({
+                    "cmd": "bash",
+                    "args": ["-lc", "printf bypass"],
+                    "cwd": ".",
+                }),
+            )
+            .await
+            .expect_err("direct bash -lc should be blocked");
+
+        match error {
+            ToolError::CommandBlocked(message) => {
+                assert!(message.contains("shell safety validation"));
+            }
+            other => panic!("unexpected error variant: {other}"),
+        }
     }
 
     #[tokio::test]
