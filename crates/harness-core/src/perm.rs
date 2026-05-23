@@ -935,13 +935,13 @@ mod tests {
               },
               model: "default/gpt-4o-mini",
               agent: {
-                deep: {
+                worker: {
                   system_prompt: "Deep work",
                   permission: { edit: "allow" },
                   tools: ["edit"]
                 }
               },
-              default_agent: "deep",
+              default_agent: "worker",
               permission: {
                 edit: { "*": "deny" },
                 bash: "allow",
@@ -960,7 +960,7 @@ mod tests {
 
         assert_eq!(
             policy.evaluate_request(
-                Some("deep"),
+                Some("worker"),
                 PermissionKind::EditFs,
                 Some(&PermissionRuleRequest::WorkspacePath(
                     "docs/readme.md".to_string()

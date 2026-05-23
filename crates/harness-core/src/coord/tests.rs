@@ -41,7 +41,9 @@ use crate::proj::{inspect_resume_plan, RecordedRuntimeContext};
 use crate::redact::DefaultRedactor;
 use crate::sched::{ConcurrencyKey, ScheduleDecision, Scheduler, SchedulerLimits};
 use crate::store::JsonlFileEventStore;
-use crate::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
+use crate::tool::{
+    Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult, ToolRunState,
+};
 
 use super::{
     append_background_task_notification_and_schedule, append_payload_event_with_correlation,
@@ -452,12 +454,12 @@ async fn permission_rule_bash_selector_is_enforced_at_tool_call_site() {
           },
           model: "default/gpt-4o-mini",
           agent: {
-            deep: {
+            worker: {
               system_prompt: "Deep work",
               tools: ["shell.run"]
             }
           },
-          default_agent: "deep",
+          default_agent: "worker",
           permission: {
             bash: {
               "git status": "deny",
@@ -493,7 +495,7 @@ async fn permission_rule_bash_selector_is_enforced_at_tool_call_site() {
     let denied = handle
         .request_tool_call(
             actor.clone(),
-            Some("deep".to_string()),
+            Some("worker".to_string()),
             "shell.run",
             json!({"cmd": "git status"}),
         )
@@ -504,7 +506,7 @@ async fn permission_rule_bash_selector_is_enforced_at_tool_call_site() {
     let allowed_tool_call_id = handle
         .request_tool_call(
             actor,
-            Some("deep".to_string()),
+            Some("worker".to_string()),
             "shell.run",
             json!({"cmd": "git diff"}),
         )
@@ -587,12 +589,12 @@ async fn permission_rule_task_selector_is_enforced_at_tool_call_site() {
           },
           model: "default/gpt-4o-mini",
           agent: {
-            deep: {
+            worker: {
               system_prompt: "Deep work",
               tools: ["task"]
             }
           },
-          default_agent: "deep",
+          default_agent: "worker",
           permission: {
             bash: "allow",
             edit: "allow",
@@ -628,7 +630,7 @@ async fn permission_rule_task_selector_is_enforced_at_tool_call_site() {
     let whitespace_denied = handle
         .request_tool_call(
             actor.clone(),
-            Some("deep".to_string()),
+            Some("worker".to_string()),
             "task",
             json!({
                 "description": "Review",
@@ -647,7 +649,7 @@ async fn permission_rule_task_selector_is_enforced_at_tool_call_site() {
     let fallback_denied = handle
         .request_tool_call(
             actor,
-            Some("deep".to_string()),
+            Some("worker".to_string()),
             "task",
             json!({
                 "description": "Quick",
@@ -5680,6 +5682,7 @@ fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
         recorded_runtime_context: None,
         allow_initial_runtime_context_recording: false,
         shutdown_token: CancellationToken::new(),
+        tool_state: ToolRunState::default(),
     }
 }
 
