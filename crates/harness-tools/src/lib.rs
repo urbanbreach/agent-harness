@@ -6,7 +6,7 @@
 
 use harness_core::config::{McpConfig, ShellAllowlist};
 use harness_core::event::ActorKind;
-use harness_core::tool::{ArtifactRef, ToolError, ToolRegistry, ToolResult};
+use harness_core::tool::{ArtifactRef, Tool, ToolError, ToolRegistry, ToolResult};
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde_json::json;
@@ -152,52 +152,74 @@ pub fn coordinator_registry_with_mcp_and_editing(
     mcp_config: McpConfig,
     editing: EditingToolSurfaceConfig,
 ) -> ToolRegistry {
+    let mut registry = ToolRegistry::new();
+    register_coordinator_native_tools(&mut registry, shell_allowlist, editing);
+    mcp::register_mcp_tools(&mut registry, mcp_config);
+    registry
+}
+
+fn register_coordinator_native_tools(
+    registry: &mut ToolRegistry,
+    shell_allowlist: ShellAllowlist,
+    editing: EditingToolSurfaceConfig,
+) {
+    for tool in coordinator_native_tool_surface(shell_allowlist, editing) {
+        registry.register(tool);
+    }
+}
+
+fn coordinator_native_tool_surface(
+    shell_allowlist: ShellAllowlist,
+    editing: EditingToolSurfaceConfig,
+) -> Vec<Arc<dyn Tool>> {
     let agent_ops_executor = Arc::new(AgentOpsExecutor::new());
     let control_plane_executor = Arc::new(ControlPlaneExecutor::new());
     let network_executor = Arc::new(NetworkExecutor::new());
     let code_lsp_executor = Arc::new(CodeLspExecutor::new());
     let github_executor = Arc::new(GitHubExecutor::new());
     let code_lsp_rename_executor = Arc::new(CodeLspRenameExecutor::new());
-    let mut registry = ToolRegistry::new();
-    registry.register(Arc::new(ReadTool::new(editing.hashline_edit)));
-    registry.register(Arc::new(ListTool));
-    registry.register(Arc::new(GlobTool));
-    registry.register(Arc::new(GrepTool));
-    registry.register(Arc::new(TaskTool::new(agent_ops_executor.clone())));
-    registry.register(Arc::new(BackgroundOutputTool::new(
-        agent_ops_executor.clone(),
-    )));
-    registry.register(Arc::new(TeamCreateTool));
-    registry.register(Arc::new(TeamStatusTool));
-    registry.register(Arc::new(TeamSendMessageTool));
-    registry.register(Arc::new(TeamTaskCreateTool));
-    registry.register(Arc::new(TeamTaskListTool));
-    registry.register(Arc::new(TeamTaskGetTool));
-    registry.register(Arc::new(TeamTaskUpdateTool));
-    registry.register(Arc::new(TeamShutdownRequestTool));
-    registry.register(Arc::new(TeamShutdownApproveTool));
-    registry.register(Arc::new(TeamShutdownRejectTool));
-    registry.register(Arc::new(TeamDeleteTool));
-    registry.register(Arc::new(PlanEnterTool));
-    registry.register(Arc::new(PlanExitTool));
-    registry.register(Arc::new(HashlineEditTool));
-    registry.register(Arc::new(ShellRunTool::new(shell_allowlist.clone())));
-    registry.register(Arc::new(BashTool::new(shell_allowlist)));
-    registry.register(Arc::new(WebFetchTool::new(network_executor.clone())));
-    registry.register(Arc::new(WebSearchTool::new(network_executor.clone())));
-    registry.register(Arc::new(CodeSearchTool::new(network_executor.clone())));
-    registry.register(Arc::new(GitHubIssueTool::new(github_executor.clone())));
-    registry.register(Arc::new(GitHubPullRequestTool::new(github_executor)));
-    registry.register(Arc::new(TodoWriteTool::new(control_plane_executor.clone())));
-    registry.register(Arc::new(TodoReadTool::new(control_plane_executor.clone())));
-    registry.register(Arc::new(SkillTool::new(control_plane_executor.clone())));
-    registry.register(Arc::new(BatchTool::new(agent_ops_executor.clone())));
-    registry.register(Arc::new(QuestionTool::new(control_plane_executor.clone())));
-    registry.register(Arc::new(CodeLspRenameTool::new(code_lsp_rename_executor)));
-    registry.register(Arc::new(LspTool::new(code_lsp_executor)));
-    registry.register(Arc::new(InvalidTool::new(control_plane_executor)));
-    mcp::register_mcp_tools(&mut registry, mcp_config);
-    registry
+
+    vec![
+        boxed_tool(ReadTool::new(editing.hashline_edit)),
+        boxed_tool(ListTool),
+        boxed_tool(GlobTool),
+        boxed_tool(GrepTool),
+        boxed_tool(TaskTool::new(agent_ops_executor.clone())),
+        boxed_tool(BackgroundOutputTool::new(agent_ops_executor.clone())),
+        boxed_tool(TeamCreateTool),
+        boxed_tool(TeamStatusTool),
+        boxed_tool(TeamSendMessageTool),
+        boxed_tool(TeamTaskCreateTool),
+        boxed_tool(TeamTaskListTool),
+        boxed_tool(TeamTaskGetTool),
+        boxed_tool(TeamTaskUpdateTool),
+        boxed_tool(TeamShutdownRequestTool),
+        boxed_tool(TeamShutdownApproveTool),
+        boxed_tool(TeamShutdownRejectTool),
+        boxed_tool(TeamDeleteTool),
+        boxed_tool(PlanEnterTool),
+        boxed_tool(PlanExitTool),
+        boxed_tool(HashlineEditTool),
+        boxed_tool(ShellRunTool::new(shell_allowlist.clone())),
+        boxed_tool(BashTool::new(shell_allowlist)),
+        boxed_tool(WebFetchTool::new(network_executor.clone())),
+        boxed_tool(WebSearchTool::new(network_executor.clone())),
+        boxed_tool(CodeSearchTool::new(network_executor.clone())),
+        boxed_tool(GitHubIssueTool::new(github_executor.clone())),
+        boxed_tool(GitHubPullRequestTool::new(github_executor)),
+        boxed_tool(TodoWriteTool::new(control_plane_executor.clone())),
+        boxed_tool(TodoReadTool::new(control_plane_executor.clone())),
+        boxed_tool(SkillTool::new(control_plane_executor.clone())),
+        boxed_tool(BatchTool::new(agent_ops_executor.clone())),
+        boxed_tool(QuestionTool::new(control_plane_executor.clone())),
+        boxed_tool(CodeLspRenameTool::new(code_lsp_rename_executor)),
+        boxed_tool(LspTool::new(code_lsp_executor)),
+        boxed_tool(InvalidTool::new(control_plane_executor)),
+    ]
+}
+
+fn boxed_tool<T: Tool + 'static>(tool: T) -> Arc<dyn Tool> {
+    Arc::new(tool)
 }
 
 pub fn coordinator_registry_with_internal_hashline_tools(
@@ -209,8 +231,13 @@ pub fn coordinator_registry_with_internal_hashline_tools(
 }
 
 fn register_internal_hashline_tools(registry: &mut ToolRegistry) {
-    registry.register(Arc::new(HashlineScanTool));
-    registry.register(Arc::new(HashlineApplyTool));
+    for tool in internal_hashline_tool_surface() {
+        registry.register(tool);
+    }
+}
+
+fn internal_hashline_tool_surface() -> Vec<Arc<dyn Tool>> {
+    vec![boxed_tool(HashlineScanTool), boxed_tool(HashlineApplyTool)]
 }
 
 pub fn worker_registry(shell_allowlist: ShellAllowlist) -> ToolRegistry {
@@ -298,7 +325,7 @@ pub(crate) mod test_support {
     use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
     use harness_core::event::{ActorKind, EventActor};
     use harness_core::redact::DefaultRedactor;
-    use harness_core::tool::ToolContext;
+    use harness_core::tool::{ToolContext, ToolRunState};
 
     pub(crate) fn tool_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
         let coordinator = spawn_coordinator(
@@ -315,6 +342,7 @@ pub(crate) mod test_support {
             tool_call_id: tool_call_id.to_string(),
             current_model_ref: None,
             current_model_settings: None,
+            tool_state: ToolRunState::default(),
             coordinator,
         }
     }
