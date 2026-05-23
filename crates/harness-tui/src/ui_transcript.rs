@@ -16,10 +16,11 @@ use crate::text::{
 use crate::theme::DIFF_SIDE_BY_SIDE_MIN_WIDTH;
 use crate::time_format::short_time_or_trimmed;
 
-use super::ui_secondary::{
-    format_detail_payload, render_structured_diff_lines, render_structured_diff_lines_with_options,
+use super::ui_diff::{
+    render_structured_diff_lines, render_structured_diff_lines_with_options,
     StructuredDiffRenderOptions,
 };
+use super::ui_secondary::format_detail_payload;
 
 #[derive(Debug, Clone, Copy)]
 struct TranscriptToolCardShell {

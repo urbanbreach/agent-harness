@@ -24,6 +24,8 @@ use crate::theme::Theme;
 
 #[path = "ui_chrome.rs"]
 mod ui_chrome;
+#[path = "ui_diff.rs"]
+mod ui_diff;
 #[path = "ui_lifecycle.rs"]
 mod ui_lifecycle;
 #[path = "ui_lsp.rs"]
@@ -42,8 +44,7 @@ use ui_chrome::{
     compact_inline_payload, display_width, elevated_card_surface, interruptive_modal_block,
     live_transcript_shell_section, muted_meta_style, panel_block, panel_style, render_footer,
     render_header, render_unified_bottom_dock, runtime_state_color, status_badge,
-    subdued_payload_style, take_width_prefix, transcript_prefix_style, truncate_plain_text,
-    ChromeFrame,
+    subdued_payload_style, take_width_prefix, truncate_plain_text, ChromeFrame,
 };
 #[cfg(test)]
 pub(crate) use ui_chrome::{
