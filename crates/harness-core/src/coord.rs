@@ -90,6 +90,21 @@ use harness_providers::{
     ProviderStreamEvent, ToolDef,
 };
 
+mod hooks;
+mod team;
+mod tool_execution;
+
+use self::team::{
+    reject_nested_team_create, require_active_team, require_active_team_or_shutdown,
+    validate_team_action, validate_team_actor_can_make_unowned_team_write, validate_team_member,
+    validate_team_message, validate_team_participant, validate_team_profile_role,
+    validate_team_shutdown_request_can_open, validate_team_shutdown_request_pending,
+    validate_team_task_create, validate_team_task_update, TeamActionKind, TeamParticipantRole,
+};
+
+#[cfg(test)]
+use self::hooks::summarize_hook_output;
+
 const DEFAULT_COMMAND_BUFFER: usize = 64;
 const DEFAULT_TOOL_CONCURRENCY: usize = 1;
 const DEFAULT_PROVIDER_MODEL_CONCURRENCY: usize = 1;
@@ -1855,7 +1870,7 @@ impl Coordinator {
 
         write_run_metadata(&run_state, &self.config, self.clock.as_ref())?;
 
-        let hook_batch = run_lifecycle_hooks(
+        let hook_batch = hooks::run_lifecycle_hooks(
             self.clock.as_ref(),
             &self.config.hook_runtime_config,
             HookInvocationContext {
@@ -2140,7 +2155,7 @@ impl Coordinator {
             &summary,
         )?;
 
-        let hook_batch = run_lifecycle_hooks(
+        let hook_batch = hooks::run_lifecycle_hooks(
             self.clock.as_ref(),
             &self.config.hook_runtime_config,
             HookInvocationContext {
@@ -2218,7 +2233,7 @@ impl Coordinator {
 
         let mut subagent_spawn_hook_executions = Vec::new();
         if let Some(parent) = parent_agent_id.as_ref() {
-            let hook_batch = run_lifecycle_hooks(
+            let hook_batch = hooks::run_lifecycle_hooks(
                 self.clock.as_ref(),
                 &self.config.hook_runtime_config,
                 HookInvocationContext {
@@ -2836,7 +2851,7 @@ impl Coordinator {
                     .active_permission_grants
                     .authorizes(&grant_request)
                 {
-                    start_tool_call_execution(
+                    tool_execution::start_tool_call_execution(
                         clock.as_ref(),
                         redactor.as_ref(),
                         job_tx,
@@ -2874,7 +2889,7 @@ impl Coordinator {
                     },
                 )?;
 
-                let requested_hook_batch = run_lifecycle_hooks(
+                let requested_hook_batch = hooks::run_lifecycle_hooks(
                     self.clock.as_ref(),
                     &self.config.hook_runtime_config,
                     HookInvocationContext {
@@ -2926,7 +2941,7 @@ impl Coordinator {
                         Some(final_reason.clone()),
                     )?;
 
-                    let resolved_hook_batch = run_lifecycle_hooks(
+                    let resolved_hook_batch = hooks::run_lifecycle_hooks(
                         self.clock.as_ref(),
                         &self.config.hook_runtime_config,
                         HookInvocationContext {
@@ -3012,7 +3027,7 @@ impl Coordinator {
                 }
             }
             Some(PolicyDecision::Allow) | None => {
-                start_tool_call_execution(
+                tool_execution::start_tool_call_execution(
                     clock.as_ref(),
                     redactor.as_ref(),
                     job_tx,
@@ -3110,7 +3125,7 @@ impl Coordinator {
             reason.clone(),
         )?;
 
-        let resolved_hook_batch = run_lifecycle_hooks(
+        let resolved_hook_batch = hooks::run_lifecycle_hooks(
             self.clock.as_ref(),
             &self.config.hook_runtime_config,
             HookInvocationContext {
@@ -3179,7 +3194,7 @@ impl Coordinator {
                         run_state.active_permission_grants.record(grant);
                     }
 
-                    start_tool_call_execution(
+                    tool_execution::start_tool_call_execution(
                         clock.as_ref(),
                         redactor.as_ref(),
                         job_tx,
@@ -3312,7 +3327,7 @@ impl Coordinator {
             Some(timeout_reason.clone()),
         );
 
-        let resolved_hook_batch = run_lifecycle_hooks(
+        let resolved_hook_batch = hooks::run_lifecycle_hooks(
             self.clock.as_ref(),
             &self.config.hook_runtime_config,
             HookInvocationContext {
@@ -3451,7 +3466,7 @@ impl Coordinator {
                 },
             )?;
 
-            let requested_hook_batch = run_lifecycle_hooks(
+            let requested_hook_batch = hooks::run_lifecycle_hooks(
                 self.clock.as_ref(),
                 &self.config.hook_runtime_config,
                 HookInvocationContext {
@@ -3502,7 +3517,7 @@ impl Coordinator {
                     Some(final_reason.clone()),
                 )?;
 
-                let resolved_hook_batch = run_lifecycle_hooks(
+                let resolved_hook_batch = hooks::run_lifecycle_hooks(
                     self.clock.as_ref(),
                     &self.config.hook_runtime_config,
                     HookInvocationContext {
@@ -3645,7 +3660,7 @@ impl Coordinator {
         if spec.bounds.max_members == 0 {
             spec.bounds.max_members = TeamBounds::default().max_members;
         }
-        validate_team_spec(&spec)?;
+        team::validate_team_spec(&spec)?;
 
         let team_run_id = team_run_id
             .and_then(|value| non_empty_trimmed(&value).map(str::to_string))
@@ -4486,7 +4501,7 @@ impl Coordinator {
                 hook_executions.extend(extract_hook_execution_metadata(
                     result_for_response.structured_json.as_ref(),
                 ));
-                let finish_hook_batch = run_lifecycle_hooks(
+                let finish_hook_batch = hooks::run_lifecycle_hooks(
                     self.clock.as_ref(),
                     &self.config.hook_runtime_config,
                     HookInvocationContext {
@@ -4625,7 +4640,7 @@ impl Coordinator {
                 }
 
                 let mut hook_executions = task_hook_state.hook_executions.clone();
-                let finish_hook_batch = run_lifecycle_hooks(
+                let finish_hook_batch = hooks::run_lifecycle_hooks(
                     self.clock.as_ref(),
                     &self.config.hook_runtime_config,
                     HookInvocationContext {
@@ -4705,7 +4720,7 @@ impl Coordinator {
                 }
 
                 let mut hook_executions = task_hook_state.hook_executions.clone();
-                let finish_hook_batch = run_lifecycle_hooks(
+                let finish_hook_batch = hooks::run_lifecycle_hooks(
                     self.clock.as_ref(),
                     &self.config.hook_runtime_config,
                     HookInvocationContext {
@@ -4821,7 +4836,7 @@ impl Coordinator {
             }),
         )?;
 
-        let hook_batch = run_lifecycle_hooks(
+        let hook_batch = hooks::run_lifecycle_hooks(
             self.clock.as_ref(),
             &self.config.hook_runtime_config,
             HookInvocationContext {
@@ -4987,7 +5002,7 @@ impl Coordinator {
             }),
         )?;
 
-        let hook_batch = run_lifecycle_hooks(
+        let hook_batch = hooks::run_lifecycle_hooks(
             self.clock.as_ref(),
             &self.config.hook_runtime_config,
             HookInvocationContext {
@@ -5179,7 +5194,7 @@ impl Coordinator {
             (existing_context, trigger, hook_context)
         };
 
-        let requested_hook_batch = run_lifecycle_hooks(
+        let requested_hook_batch = hooks::run_lifecycle_hooks(
             self.clock.as_ref(),
             &self.config.hook_runtime_config,
             hook_context,
@@ -5449,7 +5464,7 @@ impl Coordinator {
                     ("failed".to_string(), None, Some(reason.clone()))
                 }
             };
-            let finished_hook_batch = run_lifecycle_hooks(
+            let finished_hook_batch = hooks::run_lifecycle_hooks(
                 self.clock.as_ref(),
                 &self.config.hook_runtime_config,
                 HookInvocationContext {
@@ -5479,7 +5494,7 @@ impl Coordinator {
             let mut critical_hook_failure = finished_hook_batch.critical_failure.clone();
 
             if let Some(parent_agent_id) = subagent_parent_id {
-                let subagent_finished_hook_batch = run_lifecycle_hooks(
+                let subagent_finished_hook_batch = hooks::run_lifecycle_hooks(
                     self.clock.as_ref(),
                     &self.config.hook_runtime_config,
                     HookInvocationContext {
@@ -6018,584 +6033,6 @@ fn agent_turn_child_lineage(
             child_request_id: Some(request_id.to_string()),
             ..TaskLineageMetadata::default()
         })
-}
-
-fn reject_nested_team_create(
-    actor: &EventActor,
-    projection: &TeamProjection,
-) -> Result<(), CoordinatorError> {
-    let Some(agent_id) = actor.agent_id.as_deref() else {
-        return Ok(());
-    };
-    let is_team_member = projection.teams.values().any(|team| {
-        team.members
-            .values()
-            .any(|member| member.agent_id.as_deref() == Some(agent_id))
-    });
-    if is_team_member {
-        return Err(CoordinatorError::PolicyViolation(
-            "team members cannot create nested teams".to_string(),
-        ));
-    }
-    Ok(())
-}
-
-fn validate_team_spec(spec: &TeamSpec) -> Result<(), CoordinatorError> {
-    if spec.version != 1 {
-        return Err(CoordinatorError::PolicyViolation(
-            "team spec version must be 1".to_string(),
-        ));
-    }
-    if non_empty_trimmed(&spec.name).is_none() {
-        return Err(CoordinatorError::PolicyViolation(
-            "team name cannot be empty".to_string(),
-        ));
-    }
-    validate_team_text_field("team name", &spec.name)?;
-    if let Some(description) = spec.description.as_deref() {
-        validate_team_text_field("team description", description)?;
-    }
-    if spec.members.is_empty() || spec.members.len() > TEAM_MAX_MEMBERS {
-        return Err(CoordinatorError::PolicyViolation(format!(
-            "team must have between 1 and {TEAM_MAX_MEMBERS} members"
-        )));
-    }
-    if spec.bounds.max_members == 0 || spec.bounds.max_members as usize > TEAM_MAX_MEMBERS {
-        return Err(CoordinatorError::PolicyViolation(format!(
-            "team max_members must be between 1 and {TEAM_MAX_MEMBERS}"
-        )));
-    }
-    if spec.bounds.max_parallel_members == 0
-        || spec.bounds.max_parallel_members > spec.bounds.max_members
-    {
-        return Err(CoordinatorError::PolicyViolation(
-            "team max_parallel_members must be between 1 and max_members".to_string(),
-        ));
-    }
-    if spec.bounds.max_messages_per_run == 0 {
-        return Err(CoordinatorError::PolicyViolation(
-            "team max_messages_per_run must be greater than zero".to_string(),
-        ));
-    }
-    if spec.bounds.max_wall_clock_minutes == 0 || spec.bounds.max_member_turns == 0 {
-        return Err(CoordinatorError::PolicyViolation(
-            "team wall-clock and member-turn bounds must be greater than zero".to_string(),
-        ));
-    }
-    if spec.members.len() > spec.bounds.max_members as usize {
-        return Err(CoordinatorError::PolicyViolation(format!(
-            "team member count exceeds max_members bound {}",
-            spec.bounds.max_members
-        )));
-    }
-    let mut names = BTreeSet::new();
-    for member in spec.members.iter() {
-        if non_empty_trimmed(&member.name).is_none() {
-            return Err(CoordinatorError::PolicyViolation(
-                "team member name cannot be empty".to_string(),
-            ));
-        }
-        if matches!(member.name.as_str(), "lead" | "*") {
-            return Err(CoordinatorError::PolicyViolation(format!(
-                "team member name `{}` is reserved",
-                member.name
-            )));
-        }
-        validate_team_text_field("team member name", &member.name)?;
-        if let Some(prompt) = member.prompt.as_deref() {
-            validate_team_text_field("team member prompt", prompt)?;
-        }
-        if !names.insert(member.name.clone()) {
-            return Err(CoordinatorError::PolicyViolation(format!(
-                "duplicate team member `{}`",
-                member.name
-            )));
-        }
-    }
-    Ok(())
-}
-
-fn validate_team_text_field(label: &str, value: &str) -> Result<(), CoordinatorError> {
-    if value.chars().count() > TEAM_TEXT_FIELD_MAX_CHARS {
-        return Err(CoordinatorError::PolicyViolation(format!(
-            "{label} exceeds {TEAM_TEXT_FIELD_MAX_CHARS} characters"
-        )));
-    }
-    Ok(())
-}
-
-#[derive(Debug, Clone, Copy)]
-enum TeamParticipantRole {
-    Lead,
-    Member(TeamMemberRole),
-}
-
-fn validate_team_profile_role(
-    profile: &str,
-    profile_config: Option<&AgentProfile>,
-    role: TeamParticipantRole,
-) -> Result<(), CoordinatorError> {
-    let read_only = is_read_only_team_profile(profile, profile_config);
-    match role {
-        TeamParticipantRole::Lead if read_only => Err(CoordinatorError::PolicyViolation(format!(
-            "team lead profile `{profile}` is read-only or planning-only"
-        ))),
-        TeamParticipantRole::Member(TeamMemberRole::Member) if read_only => {
-            Err(CoordinatorError::PolicyViolation(format!(
-                "team member profile `{profile}` is read-only or planning-only; mark the member role as research or use task delegation for ad hoc research"
-            )))
-        }
-        TeamParticipantRole::Member(TeamMemberRole::Research) if !read_only => {
-            Err(CoordinatorError::PolicyViolation(format!(
-                "research team member profile `{profile}` must be read-only or planning-only"
-            )))
-        }
-        _ => Ok(()),
-    }
-}
-
-fn is_read_only_team_profile(profile: &str, profile_config: Option<&AgentProfile>) -> bool {
-    if matches!(
-        profile,
-        "oracle"
-            | "librarian"
-            | "explore"
-            | "metis"
-            | "momus"
-            | "multimodal-looker"
-            | "prometheus"
-            | "plan"
-    ) {
-        return true;
-    }
-    profile_config.is_some_and(|profile| {
-        matches!(
-            profile.category.as_str(),
-            "explore" | "oracle" | "librarian" | "plan" | "research" | "read_only"
-        )
-    })
-}
-
-fn require_active_team<'a>(
-    projection: &'a TeamProjection,
-    team_run_id: &str,
-) -> Result<&'a TeamRunProjection, CoordinatorError> {
-    let team = projection
-        .teams
-        .get(team_run_id)
-        .ok_or_else(|| CoordinatorError::UnknownTask(format!("team:{team_run_id}")))?;
-    if team.status == crate::proj::TeamRunStatus::Deleted {
-        return Err(CoordinatorError::PolicyViolation(format!(
-            "team `{team_run_id}` is deleted"
-        )));
-    }
-    Ok(team)
-}
-
-fn require_active_team_or_shutdown<'a>(
-    projection: &'a TeamProjection,
-    team_run_id: &str,
-) -> Result<&'a TeamRunProjection, CoordinatorError> {
-    require_active_team(projection, team_run_id)
-}
-
-fn validate_team_member(
-    team: &TeamRunProjection,
-    member_name: &str,
-) -> Result<(), CoordinatorError> {
-    if team.members.contains_key(member_name) {
-        Ok(())
-    } else {
-        Err(CoordinatorError::PolicyViolation(format!(
-            "unknown team member `{member_name}`"
-        )))
-    }
-}
-
-fn validate_team_participant(
-    team: &TeamRunProjection,
-    participant: &str,
-) -> Result<(), CoordinatorError> {
-    if participant == "lead" || team.members.contains_key(participant) {
-        Ok(())
-    } else {
-        Err(CoordinatorError::PolicyViolation(format!(
-            "unknown team participant `{participant}`"
-        )))
-    }
-}
-
-fn validate_team_actor_can_act_as(
-    actor: &EventActor,
-    team: &TeamRunProjection,
-    participant: &str,
-) -> Result<(), CoordinatorError> {
-    if actor.kind != ActorKind::Worker {
-        return Ok(());
-    }
-    let Some(actor_agent_id) = actor.agent_id.as_deref() else {
-        return Err(CoordinatorError::PolicyViolation(
-            "worker team action missing agent_id".to_string(),
-        ));
-    };
-    if participant == "lead" {
-        if team.lead.as_ref().and_then(|lead| lead.agent_id.as_deref()) == Some(actor_agent_id) {
-            return Ok(());
-        }
-        return Err(CoordinatorError::PolicyViolation(
-            "worker team members cannot act as lead".to_string(),
-        ));
-    }
-    let Some(member) = team.members.get(participant) else {
-        return Err(CoordinatorError::PolicyViolation(format!(
-            "unknown team participant `{participant}`"
-        )));
-    };
-    if member.agent_id.as_deref() != Some(actor_agent_id) {
-        return Err(CoordinatorError::PolicyViolation(format!(
-            "worker `{actor_agent_id}` cannot act as team participant `{participant}`"
-        )));
-    }
-    Ok(())
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TeamActionKind {
-    TeamWrite,
-    Shutdown,
-}
-
-fn validate_team_action(
-    actor: &EventActor,
-    team: &TeamRunProjection,
-    action: TeamActionKind,
-    participant: &str,
-    now_mono_ms: u64,
-) -> Result<(), CoordinatorError> {
-    validate_team_participant(team, participant)?;
-    validate_team_participant_can_perform(team, action, participant, now_mono_ms)?;
-    validate_team_actor_can_act_as(actor, team, participant)
-}
-
-fn validate_team_actor_can_make_unowned_team_write(
-    actor: &EventActor,
-    team: &TeamRunProjection,
-    now_mono_ms: u64,
-) -> Result<(), CoordinatorError> {
-    validate_team_wall_clock(team, now_mono_ms)?;
-    if actor.kind != ActorKind::Worker {
-        return Ok(());
-    }
-    let participant = team_participant_for_worker_actor(actor, team)?;
-    validate_team_participant_can_perform(
-        team,
-        TeamActionKind::TeamWrite,
-        &participant,
-        now_mono_ms,
-    )
-}
-
-fn validate_team_participant_can_perform(
-    team: &TeamRunProjection,
-    action: TeamActionKind,
-    participant: &str,
-    now_mono_ms: u64,
-) -> Result<(), CoordinatorError> {
-    if action == TeamActionKind::TeamWrite {
-        validate_team_wall_clock(team, now_mono_ms)?;
-    }
-    if participant == "lead" {
-        return Ok(());
-    }
-    let member = team.members.get(participant).ok_or_else(|| {
-        CoordinatorError::PolicyViolation(format!("unknown team participant `{participant}`"))
-    })?;
-    match action {
-        TeamActionKind::TeamWrite => {
-            if member.role == TeamMemberRole::Research {
-                return Err(CoordinatorError::PolicyViolation(format!(
-                    "research team member `{participant}` cannot mutate team messages or tasks"
-                )));
-            }
-            match member.status {
-                crate::proj::TeamMemberStatus::Pending => {
-                    return Err(CoordinatorError::PolicyViolation(format!(
-                        "team member `{participant}` is not active"
-                    )));
-                }
-                crate::proj::TeamMemberStatus::ShutdownApproved => {
-                    return Err(CoordinatorError::PolicyViolation(format!(
-                        "team member `{participant}` is shutdown-approved and cannot mutate team state"
-                    )));
-                }
-                crate::proj::TeamMemberStatus::Running
-                | crate::proj::TeamMemberStatus::ShutdownRequested => {}
-            }
-            if team.bounds_consumption.member_turns >= team.bounds.max_member_turns {
-                return Err(CoordinatorError::PolicyViolation(format!(
-                    "team `{}` has reached max_member_turns {}",
-                    team.team_run_id, team.bounds.max_member_turns
-                )));
-            }
-        }
-        TeamActionKind::Shutdown => {
-            if member.status == crate::proj::TeamMemberStatus::ShutdownApproved {
-                return Err(CoordinatorError::PolicyViolation(format!(
-                    "team member `{participant}` is shutdown-approved and cannot make further shutdown decisions"
-                )));
-            }
-        }
-    }
-    Ok(())
-}
-
-fn validate_team_wall_clock(
-    team: &TeamRunProjection,
-    now_mono_ms: u64,
-) -> Result<(), CoordinatorError> {
-    let Some(created_mono_ms) = team.created_mono_ms else {
-        return Ok(());
-    };
-    let limit_ms = u64::from(team.bounds.max_wall_clock_minutes).saturating_mul(60_000);
-    if now_mono_ms.saturating_sub(created_mono_ms) >= limit_ms {
-        return Err(CoordinatorError::PolicyViolation(format!(
-            "team `{}` has exceeded max_wall_clock_minutes {}",
-            team.team_run_id, team.bounds.max_wall_clock_minutes
-        )));
-    }
-    Ok(())
-}
-
-fn team_participant_for_worker_actor(
-    actor: &EventActor,
-    team: &TeamRunProjection,
-) -> Result<String, CoordinatorError> {
-    let Some(actor_agent_id) = actor.agent_id.as_deref() else {
-        return Err(CoordinatorError::PolicyViolation(
-            "worker team action missing agent_id".to_string(),
-        ));
-    };
-    if team.lead.as_ref().and_then(|lead| lead.agent_id.as_deref()) == Some(actor_agent_id) {
-        return Ok("lead".to_string());
-    }
-    team.members
-        .values()
-        .find(|member| member.agent_id.as_deref() == Some(actor_agent_id))
-        .map(|member| member.name.clone())
-        .ok_or_else(|| {
-            CoordinatorError::PolicyViolation(format!(
-                "worker `{actor_agent_id}` is not a participant in team `{}`",
-                team.team_run_id
-            ))
-        })
-}
-
-fn validate_team_shutdown_request_can_open(
-    team: &TeamRunProjection,
-    member_name: &str,
-) -> Result<(), CoordinatorError> {
-    match team
-        .shutdown_requests
-        .get(member_name)
-        .map(|request| request.status)
-    {
-        Some(crate::proj::TeamMemberStatus::ShutdownRequested) => {
-            Err(CoordinatorError::PolicyViolation(format!(
-                "shutdown request for team member `{member_name}` is already pending"
-            )))
-        }
-        Some(crate::proj::TeamMemberStatus::ShutdownApproved) => {
-            Err(CoordinatorError::PolicyViolation(format!(
-                "shutdown for team member `{member_name}` is already approved"
-            )))
-        }
-        _ => Ok(()),
-    }
-}
-
-fn validate_team_shutdown_request_pending(
-    team: &TeamRunProjection,
-    member_name: &str,
-) -> Result<(), CoordinatorError> {
-    match team
-        .shutdown_requests
-        .get(member_name)
-        .map(|request| request.status)
-    {
-        Some(crate::proj::TeamMemberStatus::ShutdownRequested) => Ok(()),
-        _ => Err(CoordinatorError::PolicyViolation(format!(
-            "team member `{member_name}` has no pending shutdown request"
-        ))),
-    }
-}
-
-fn validate_team_message(
-    team: &TeamRunProjection,
-    message: &TeamMessage,
-) -> Result<(), CoordinatorError> {
-    if message.version != 1 {
-        return Err(CoordinatorError::PolicyViolation(
-            "team message version must be 1".to_string(),
-        ));
-    }
-    if non_empty_trimmed(&message.message_id).is_none() {
-        return Err(CoordinatorError::PolicyViolation(
-            "team message id cannot be empty".to_string(),
-        ));
-    }
-    if team.messages.len() >= team.bounds.max_messages_per_run as usize {
-        return Err(CoordinatorError::PolicyViolation(format!(
-            "team `{}` has reached max_messages_per_run {}",
-            team.team_run_id, team.bounds.max_messages_per_run
-        )));
-    }
-    validate_team_text_field("team message id", &message.message_id)?;
-    if team
-        .messages
-        .iter()
-        .any(|existing| existing.message_id == message.message_id)
-    {
-        return Err(CoordinatorError::PolicyViolation(format!(
-            "team message `{}` already exists",
-            message.message_id
-        )));
-    }
-    validate_team_text_field("team message sender", &message.from)?;
-    validate_team_text_field("team message recipient", &message.to)?;
-    if let Some(summary) = message.summary.as_deref() {
-        validate_team_text_field("team message summary", summary)?;
-    }
-    if message.body.len() > TEAM_MESSAGE_BODY_MAX_BYTES {
-        return Err(CoordinatorError::PolicyViolation(format!(
-            "team message body exceeds {TEAM_MESSAGE_BODY_MAX_BYTES} bytes"
-        )));
-    }
-    if message.references.len() > TEAM_REFERENCE_LIMIT {
-        return Err(CoordinatorError::PolicyViolation(format!(
-            "team message references exceed {TEAM_REFERENCE_LIMIT} entries"
-        )));
-    }
-    for reference in &message.references {
-        validate_team_text_field("team reference path", &reference.path)?;
-        if reference.path.starts_with('/') || reference.path.contains("..") {
-            return Err(CoordinatorError::PolicyViolation(
-                "team reference path must be workspace-relative and must not contain traversal"
-                    .to_string(),
-            ));
-        }
-        if let Some(description) = reference.description.as_deref() {
-            validate_team_text_field("team reference description", description)?;
-        }
-    }
-    validate_team_participant(team, &message.from)?;
-    if message.to == "*" {
-        if message.from != "lead" || message.kind != TeamMessageKind::Announcement {
-            return Err(CoordinatorError::PolicyViolation(
-                "only lead may broadcast announcements".to_string(),
-            ));
-        }
-    } else {
-        validate_team_participant(team, &message.to)?;
-    }
-    Ok(())
-}
-
-fn validate_team_task_create(
-    team: &TeamRunProjection,
-    task: &TeamTask,
-) -> Result<(), CoordinatorError> {
-    if task.version != 1 {
-        return Err(CoordinatorError::PolicyViolation(
-            "team task version must be 1".to_string(),
-        ));
-    }
-    if non_empty_trimmed(&task.task_id).is_none() {
-        return Err(CoordinatorError::PolicyViolation(
-            "team task id cannot be empty".to_string(),
-        ));
-    }
-    validate_team_text_field("team task id", &task.task_id)?;
-    validate_team_text_field("team task subject", &task.subject)?;
-    validate_team_text_field("team task description", &task.description)?;
-    if team.tasks.contains_key(&task.task_id) {
-        return Err(CoordinatorError::PolicyViolation(format!(
-            "team task `{}` already exists",
-            task.task_id
-        )));
-    }
-    validate_team_metadata(&task.metadata)?;
-    if let Some(owner) = task.owner.as_deref() {
-        validate_team_participant(team, owner)?;
-    }
-    for blocker in task.blocked_by.iter() {
-        if !team.tasks.contains_key(blocker) {
-            return Err(CoordinatorError::PolicyViolation(format!(
-                "team task `{}` depends on unknown task `{blocker}`",
-                task.task_id
-            )));
-        }
-    }
-    Ok(())
-}
-
-fn validate_team_task_update(
-    team: &TeamRunProjection,
-    task_id: &str,
-    status: TeamTaskStatus,
-    owner: Option<&str>,
-    metadata: &BTreeMap<String, String>,
-) -> Result<(), CoordinatorError> {
-    let task = team.tasks.get(task_id).ok_or_else(|| {
-        CoordinatorError::UnknownTask(format!("team:{}/task:{task_id}", team.team_run_id))
-    })?;
-    if let Some(owner) = owner {
-        validate_team_participant(team, owner)?;
-    }
-    validate_team_metadata(metadata)?;
-    if matches!(
-        status,
-        TeamTaskStatus::Claimed | TeamTaskStatus::InProgress | TeamTaskStatus::Completed
-    ) {
-        let incomplete = task
-            .blocked_by
-            .iter()
-            .filter(|blocked_by| {
-                team.tasks
-                    .get(*blocked_by)
-                    .is_none_or(|candidate| candidate.status != TeamTaskStatus::Completed)
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        if !incomplete.is_empty() {
-            return Err(CoordinatorError::PolicyViolation(format!(
-                "team task `{task_id}` is blocked by incomplete tasks: {}",
-                incomplete.join(", ")
-            )));
-        }
-    }
-    Ok(())
-}
-
-fn validate_team_metadata(metadata: &BTreeMap<String, String>) -> Result<(), CoordinatorError> {
-    if metadata.len() > TEAM_TASK_METADATA_MAX_ENTRIES {
-        return Err(CoordinatorError::PolicyViolation(format!(
-            "team task metadata exceeds {TEAM_TASK_METADATA_MAX_ENTRIES} entries"
-        )));
-    }
-    for (key, value) in metadata {
-        validate_team_metadata_field("team task metadata key", key)?;
-        validate_team_metadata_field("team task metadata value", value)?;
-    }
-    Ok(())
-}
-
-fn validate_team_metadata_field(label: &str, value: &str) -> Result<(), CoordinatorError> {
-    if value.chars().count() > TEAM_TASK_METADATA_MAX_CHARS {
-        return Err(CoordinatorError::PolicyViolation(format!(
-            "{label} exceeds {TEAM_TASK_METADATA_MAX_CHARS} characters"
-        )));
-    }
-    Ok(())
 }
 
 fn background_notification_status_for_cancel_reason(
@@ -7277,627 +6714,6 @@ fn block_on_coordinator_future<T>(future: impl std::future::Future<Output = T>) 
         .block_on(future)
 }
 
-async fn run_lifecycle_hooks<C>(
-    clock: &C,
-    runtime: &HookRuntimeConfig,
-    context: HookInvocationContext,
-) -> HookExecutionBatch
-where
-    C: Clock + ?Sized,
-{
-    let mut batch = HookExecutionBatch::default();
-
-    for (index, hook) in runtime.hooks.lifecycle.iter().enumerate() {
-        if hook.event != context.event {
-            continue;
-        }
-
-        if runtime.suppress_execution {
-            batch.hook_executions.push(HookExecutionMetadata {
-                hook_name: hook_identifier(hook, index),
-                status: HookExecutionStatus::Skipped,
-                hook_event: Some(context.event.as_str().to_string()),
-                command_digest: Some(digest12(hook.command.join("\u{0}").as_bytes())),
-                output_digest: None,
-                output_summary: Some("suppressed during deterministic execution".to_string()),
-                duration_ms: Some(0),
-            });
-            continue;
-        }
-
-        let (metadata, failure) =
-            execute_lifecycle_hook(clock, runtime, hook, index, &context).await;
-        batch.hook_executions.push(metadata);
-        if hook.critical {
-            if let Some(failure) = failure {
-                batch.critical_failure = Some(failure);
-                break;
-            }
-        }
-    }
-
-    batch
-}
-
-async fn execute_lifecycle_hook<C>(
-    clock: &C,
-    runtime: &HookRuntimeConfig,
-    hook: &LifecycleHookConfig,
-    index: usize,
-    context: &HookInvocationContext,
-) -> (HookExecutionMetadata, Option<String>)
-where
-    C: Clock + ?Sized,
-{
-    let hook_name = hook_identifier(hook, index);
-    let command_digest = digest12(hook.command.join("\u{0}").as_bytes());
-    let started_mono_ms = clock.mono_ms();
-
-    let execution = execute_lifecycle_hook_command(runtime, hook, &hook_name, context).await;
-    let finished_mono_ms = clock.mono_ms();
-
-    match execution {
-        Ok((output_digest, output_summary)) => (
-            HookExecutionMetadata {
-                hook_name,
-                status: HookExecutionStatus::Succeeded,
-                hook_event: Some(context.event.as_str().to_string()),
-                command_digest: Some(command_digest),
-                output_digest: Some(output_digest),
-                output_summary: Some(output_summary),
-                duration_ms: Some(finished_mono_ms.saturating_sub(started_mono_ms)),
-            },
-            None,
-        ),
-        Err((reason, output_summary)) => {
-            let failure = format!(
-                "hook `{hook_name}` for `{}` failed: {reason}",
-                context.event.as_str()
-            );
-            (
-                HookExecutionMetadata {
-                    hook_name,
-                    status: HookExecutionStatus::Failed,
-                    hook_event: Some(context.event.as_str().to_string()),
-                    command_digest: Some(command_digest),
-                    output_digest: Some(digest12(reason.as_bytes())),
-                    output_summary: Some(output_summary),
-                    duration_ms: Some(finished_mono_ms.saturating_sub(started_mono_ms)),
-                },
-                Some(failure),
-            )
-        }
-    }
-}
-
-async fn execute_lifecycle_hook_command(
-    runtime: &HookRuntimeConfig,
-    hook: &LifecycleHookConfig,
-    hook_name: &str,
-    context: &HookInvocationContext,
-) -> Result<(String, String), (String, String)> {
-    let executable = hook.command.first().ok_or_else(|| {
-        (
-            format!("hook `{hook_name}` is missing a command executable"),
-            "no output".to_string(),
-        )
-    })?;
-
-    if !hook_executable_allowed(&runtime.shell_allowlist, executable) {
-        return Err((
-            format!("executable `{executable}` is not in the shell allowlist"),
-            "no output".to_string(),
-        ));
-    }
-
-    let cwd = resolve_hook_cwd(
-        &runtime.shell_allowlist,
-        &context.workspace_root,
-        hook.cwd.as_deref(),
-    )
-    .map_err(|err| (err, "no output".to_string()))?;
-    let mut command = tokio::process::Command::new(executable);
-    command.args(&hook.command[1..]);
-    command.current_dir(&cwd);
-    command.kill_on_drop(true);
-    for (key, value) in hook_environment(hook_name, context, &cwd, hook) {
-        command.env(key, value);
-    }
-
-    let output = tokio::time::timeout(Duration::from_millis(hook.timeout_ms), command.output())
-        .await
-        .map_err(|_| {
-            (
-                format!("timed out after {} ms", hook.timeout_ms),
-                "no output".to_string(),
-            )
-        })?
-        .map_err(|err| {
-            (
-                format!("failed to execute command: {err}"),
-                "no output".to_string(),
-            )
-        })?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let output_summary = summarize_hook_output(&stdout, &stderr);
-    let output_digest =
-        digest12(format!("{}\u{0}{}\u{0}{:?}", stdout, stderr, output.status).as_bytes());
-
-    if output.status.success() {
-        Ok((output_digest, output_summary))
-    } else {
-        Err((
-            format!(
-                "exit status {:?}: {output_summary}",
-                output.status.code().unwrap_or(-1)
-            ),
-            output_summary,
-        ))
-    }
-}
-
-fn hook_identifier(hook: &LifecycleHookConfig, index: usize) -> String {
-    hook.id
-        .clone()
-        .unwrap_or_else(|| format!("{}_{:02}", hook.event.as_str(), index + 1))
-}
-
-fn hook_executable_allowed(allowlist: &ShellAllowlist, executable: &str) -> bool {
-    allowlist
-        .executables
-        .iter()
-        .any(|allowed| allowed == executable)
-}
-
-fn resolve_hook_cwd(
-    allowlist: &ShellAllowlist,
-    workspace_root: &Path,
-    cwd: Option<&str>,
-) -> Result<PathBuf, String> {
-    let cwd = match cwd {
-        Some(value) => workspace_root.join(value),
-        None => workspace_root.to_path_buf(),
-    };
-
-    if allowlist.cwd_roots.is_empty() {
-        return Ok(cwd);
-    }
-
-    let canonical_cwd = cwd
-        .canonicalize()
-        .map_err(|err| format!("failed to resolve cwd: {err}"))?;
-    let allowed = allowlist.cwd_roots.iter().any(|root| {
-        workspace_root
-            .join(root)
-            .canonicalize()
-            .map(|allowed_root| canonical_cwd.starts_with(&allowed_root))
-            .unwrap_or(false)
-    });
-
-    if allowed {
-        Ok(canonical_cwd)
-    } else {
-        Err(format!(
-            "cwd {} is not in the shell allowlist",
-            canonical_cwd.display()
-        ))
-    }
-}
-
-fn hook_environment(
-    hook_name: &str,
-    context: &HookInvocationContext,
-    cwd: &Path,
-    hook: &LifecycleHookConfig,
-) -> BTreeMap<String, String> {
-    let mut env = hook.env.clone();
-    env.insert("HARNESS_HOOK_ID".to_string(), hook_name.to_string());
-    env.insert(
-        "HARNESS_HOOK_EVENT".to_string(),
-        context.event.as_str().to_string(),
-    );
-    env.insert("HARNESS_HOOK_RUN_ID".to_string(), context.run_id.clone());
-    env.insert(
-        "HARNESS_HOOK_WORKSPACE_ROOT".to_string(),
-        context.workspace_root.display().to_string(),
-    );
-    env.insert(
-        "HARNESS_HOOK_ARTIFACTS_DIR".to_string(),
-        context.artifacts_dir.display().to_string(),
-    );
-    env.insert("HARNESS_HOOK_CWD".to_string(), cwd.display().to_string());
-    if let Some(actor) = context.actor.as_ref() {
-        env.insert(
-            "HARNESS_HOOK_ACTOR_KIND".to_string(),
-            format!("{:?}", actor.kind).to_ascii_lowercase(),
-        );
-        if let Some(actor_agent_id) = actor.agent_id.as_ref() {
-            env.insert(
-                "HARNESS_HOOK_ACTOR_AGENT_ID".to_string(),
-                actor_agent_id.clone(),
-            );
-        }
-    }
-    if let Some(agent_id) = context.agent_id.as_ref() {
-        env.insert("HARNESS_HOOK_AGENT_ID".to_string(), agent_id.clone());
-    }
-    if let Some(request_id) = context.request_id.as_ref() {
-        env.insert("HARNESS_HOOK_REQUEST_ID".to_string(), request_id.clone());
-    }
-    if let Some(permission_id) = context.permission_id.as_ref() {
-        env.insert(
-            "HARNESS_HOOK_PERMISSION_ID".to_string(),
-            permission_id.clone(),
-        );
-    }
-    if let Some(task_id) = context.task_id.as_ref() {
-        env.insert("HARNESS_HOOK_TASK_ID".to_string(), task_id.clone());
-    }
-    if let Some(tool_call_id) = context.tool_call_id.as_ref() {
-        env.insert(
-            "HARNESS_HOOK_TOOL_CALL_ID".to_string(),
-            tool_call_id.clone(),
-        );
-    }
-    if let Some(tool_id) = context.tool_id.as_ref() {
-        env.insert("HARNESS_HOOK_TOOL_ID".to_string(), tool_id.clone());
-    }
-    if let Some(provider_id) = context.provider_id.as_ref() {
-        env.insert("HARNESS_HOOK_PROVIDER_ID".to_string(), provider_id.clone());
-    }
-    if let Some(model_id) = context.model_id.as_ref() {
-        env.insert("HARNESS_HOOK_MODEL_ID".to_string(), model_id.clone());
-    }
-    if let Some(parent_agent_id) = context.parent_agent_id.as_ref() {
-        env.insert(
-            "HARNESS_HOOK_PARENT_AGENT_ID".to_string(),
-            parent_agent_id.clone(),
-        );
-    }
-    if let Some(category) = context.category.as_ref() {
-        env.insert("HARNESS_HOOK_CATEGORY".to_string(), category.clone());
-    }
-    if let Some(outcome) = context.outcome.as_ref() {
-        env.insert("HARNESS_HOOK_OUTCOME".to_string(), outcome.clone());
-    }
-    if let Some(output_summary) = context.output_summary.as_ref() {
-        env.insert(
-            "HARNESS_HOOK_OUTPUT_SUMMARY".to_string(),
-            output_summary.clone(),
-        );
-    }
-    if let Some(failure_reason) = context.failure_reason.as_ref() {
-        env.insert(
-            "HARNESS_HOOK_FAILURE_REASON".to_string(),
-            failure_reason.clone(),
-        );
-    }
-
-    env.insert(
-        "HARNESS_HOOK_CONTEXT_JSON".to_string(),
-        json!({
-            "hook_id": hook_name,
-            "event": context.event.as_str(),
-            "run_id": context.run_id,
-            "workspace_root": context.workspace_root.display().to_string(),
-            "artifacts_dir": context.artifacts_dir.display().to_string(),
-            "cwd": cwd.display().to_string(),
-            "actor": context.actor.as_ref().map(|actor| json!({
-                "kind": format!("{:?}", actor.kind).to_ascii_lowercase(),
-                "agent_id": actor.agent_id,
-            })),
-            "agent_id": context.agent_id,
-            "request_id": context.request_id,
-            "permission_id": context.permission_id,
-            "task_id": context.task_id,
-            "tool_call_id": context.tool_call_id,
-            "tool_id": context.tool_id,
-            "provider_id": context.provider_id,
-            "model_id": context.model_id,
-            "parent_agent_id": context.parent_agent_id,
-            "category": context.category,
-            "outcome": context.outcome,
-            "output_summary": context.output_summary,
-            "failure_reason": context.failure_reason,
-        })
-        .to_string(),
-    );
-
-    env
-}
-
-fn summarize_hook_output(stdout: &str, stderr: &str) -> String {
-    let stdout = non_empty_trimmed(stdout);
-    let stderr = non_empty_trimmed(stderr);
-    let combined = if stderr.is_none() {
-        stdout
-    } else if stdout.is_none() {
-        stderr
-    } else {
-        Some("stdout/stderr captured")
-    };
-
-    combined
-        .map(|output| truncate_with_ellipsis(output, 160))
-        .unwrap_or_else(|| "no output".to_string())
-}
-
-async fn start_tool_call_execution<C, R>(
-    clock: &C,
-    redactor: &R,
-    job_tx: mpsc::Sender<Command>,
-    run_state: &mut RunState,
-    hook_runtime_config: HookRuntimeConfig,
-    args: ToolCallExecutionArgs,
-) -> Result<(), CoordinatorError>
-where
-    C: Clock + ?Sized,
-    R: Redactor + ?Sized,
-{
-    let ToolCallExecutionArgs {
-        tool_call_id,
-        tool_id,
-        args_json,
-        actor,
-        category,
-        hook_executions,
-        tool_registry,
-        request_correlation_id,
-        respond_to,
-    } = args;
-    let mut respond_to = respond_to;
-    let tool_metadata = tool_identity_metadata(&tool_id, &args_json);
-
-    let Some(tool) = tool_registry.get(&tool_id) else {
-        append_payload_event(
-            clock,
-            redactor,
-            run_state,
-            actor,
-            Some(format!("tool_call:{tool_call_id}")),
-            EventV1::PolicyViolationDetected(PolicyViolationDetectedEvent {
-                policy: "unknown_tool_id".to_string(),
-                detail: format!("tool `{tool_id}` is not registered"),
-            }),
-        )?;
-
-        append_failed_tool_call_finished_event(
-            clock,
-            redactor,
-            run_state,
-            &tool_call_id,
-            "unknown tool",
-            request_correlation_id.as_deref(),
-            requested_tool_call_metadata(&tool_id, &args_json),
-            &[],
-        )?;
-        return Err(CoordinatorError::PolicyViolation(format!(
-            "tool `{tool_id}` is not registered"
-        )));
-    };
-
-    let actor_kind = actor.kind;
-    if !tool_registry.capability_allowed(actor_kind, tool.capability()) {
-        append_payload_event(
-            clock,
-            redactor,
-            run_state,
-            actor,
-            Some(format!("tool_call:{tool_call_id}")),
-            EventV1::PolicyViolationDetected(PolicyViolationDetectedEvent {
-                policy: "tool_capability_forbidden".to_string(),
-                detail: format!(
-                    "actor {:?} cannot call {} requiring {:?}",
-                    actor_kind,
-                    tool_id,
-                    tool.capability()
-                ),
-            }),
-        )?;
-
-        append_failed_tool_call_finished_event(
-            clock,
-            redactor,
-            run_state,
-            &tool_call_id,
-            "capability forbidden",
-            request_correlation_id.as_deref(),
-            requested_tool_call_metadata(&tool_id, &args_json),
-            &[],
-        )?;
-        return Err(CoordinatorError::PolicyViolation(
-            "tool capability forbidden for actor".to_string(),
-        ));
-    }
-
-    let hashline_edit = hashline_edit_metadata(&tool_id, &args_json, &tool_call_id);
-
-    append_tool_call_started_event(
-        clock,
-        redactor,
-        run_state,
-        &tool_call_id,
-        request_correlation_id.as_deref(),
-    )?;
-
-    if let Some(metadata) = hashline_edit.as_ref() {
-        append_edit_proposed_event(
-            clock,
-            redactor,
-            run_state,
-            &tool_call_id,
-            metadata,
-            request_correlation_id.as_deref(),
-        )?;
-    }
-
-    let started_hook_batch = run_lifecycle_hooks(
-        clock,
-        &hook_runtime_config,
-        HookInvocationContext {
-            event: HookLifecycleEvent::ToolCallStarted,
-            run_id: run_state.info.run_id.clone(),
-            workspace_root: run_state.info.workspace_root.clone(),
-            artifacts_dir: run_state.info.artifacts_dir.clone(),
-            actor: Some(actor.clone()),
-            agent_id: actor.agent_id.clone(),
-            request_id: request_correlation_id.clone(),
-            permission_id: None,
-            task_id: None,
-            tool_call_id: Some(tool_call_id.clone()),
-            tool_id: Some(tool_id.clone()),
-            provider_id: None,
-            model_id: None,
-            parent_agent_id: None,
-            category: category.clone(),
-            outcome: Some("started".to_string()),
-            output_summary: None,
-            failure_reason: None,
-        },
-    )
-    .await;
-    let mut initial_hook_executions = hook_executions;
-    initial_hook_executions.extend(started_hook_batch.hook_executions.clone());
-    if let Some(reason) = started_hook_batch.critical_failure.clone() {
-        append_failed_tool_call_finished_event(
-            clock,
-            redactor,
-            run_state,
-            &tool_call_id,
-            &reason,
-            request_correlation_id.as_deref(),
-            tool_call_metadata(
-                tool_metadata.as_ref(),
-                None,
-                Vec::new(),
-                None,
-                initial_hook_executions.clone(),
-            ),
-            &initial_hook_executions,
-        )?;
-        if let Some(respond_to) = respond_to.take() {
-            let _ = respond_to.send(Err(reason.clone()));
-        }
-        return Err(CoordinatorError::LifecycleHookFailed(reason.to_string()));
-    }
-
-    let task_id = format!("task_{:06}", run_state.next_task_id);
-    run_state.next_task_id += 1;
-
-    let queue_key = ConcurrencyKey::Tool {
-        tool_id: tool_id.clone(),
-    };
-
-    append_payload_event_with_correlation(
-        clock,
-        redactor,
-        run_state,
-        actor.clone(),
-        Some(format!("task:{task_id}")),
-        request_correlation_id.clone(),
-        EventV1::TaskScheduled(TaskScheduledEvent {
-            task_id: task_id.clone(),
-            state: TaskScheduleState::Started,
-            queue_key: Some(queue_key.queue_key()),
-        }),
-    )?;
-
-    let cancellation_token = run_state.shutdown_token.child_token();
-    let tool_state = run_state.tool_state.clone();
-    let run_id = run_state.info.run_id.clone();
-    let workspace_root = run_state.info.workspace_root.clone();
-    let artifacts_dir = run_state.info.artifacts_dir.clone();
-    let coordinator = CoordinatorHandle { tx: job_tx.clone() };
-    let current_model = actor.agent_id.as_deref().and_then(|agent_id| {
-        run_state
-            .running_agent_turns
-            .values()
-            .find(|turn| turn.agent_id == agent_id)
-            .map(|turn| (turn.model_ref.clone(), turn.model_settings.clone()))
-    });
-    run_state.tasks.insert(
-        task_id.clone(),
-        TaskState {
-            tool_call_id: tool_call_id.clone(),
-            tool_metadata,
-            owner_actor: actor.clone(),
-            request_correlation_id,
-            queue_key,
-            state: TaskExecutionState::Running,
-            cancellation_token: cancellation_token.clone(),
-            started_mono_ms: clock.mono_ms(),
-            last_progress_mono_ms: clock.mono_ms(),
-            last_progress_kind: JobProgressKind::Heartbeat,
-            hashline_edit,
-            respond_to,
-        },
-    );
-    run_state.task_hook_state.insert(
-        task_id.clone(),
-        TaskHookState {
-            tool_id: tool_id.clone(),
-            category: category.clone(),
-            hook_executions: initial_hook_executions,
-        },
-    );
-
-    tokio::spawn(async move {
-        let _ = job_tx
-            .send(Command::JobProgress {
-                task_id: task_id.clone(),
-                kind: JobProgressKind::Heartbeat,
-            })
-            .await;
-
-        let context = ToolContext {
-            run_id,
-            workspace_root,
-            artifacts_dir,
-            actor,
-            category,
-            tool_call_id: tool_call_id.clone(),
-            current_model_ref: current_model
-                .as_ref()
-                .map(|(model_ref, _)| model_ref.clone()),
-            current_model_settings: current_model.as_ref().map(|(_, settings)| settings.clone()),
-            tool_state,
-            coordinator,
-        };
-
-        tokio::select! {
-            _ = cancellation_token.cancelled() => {
-                let _ = job_tx
-                    .send(Command::JobFinished {
-                        task_id,
-                        outcome: JobOutcome::Cancelled {
-                            reason: "job cancelled".to_string(),
-                        },
-                    })
-                    .await;
-            }
-            result = tool.call(context, args_json) => {
-                let outcome = match result {
-                    Ok(result) => JobOutcome::Succeeded { result },
-                    Err(err) => JobOutcome::Failed {
-                        error: err.to_string(),
-                    },
-                };
-
-                let _ = job_tx
-                    .send(Command::JobFinished {
-                        task_id,
-                        outcome,
-                    })
-                    .await;
-            }
-        }
-    });
-
-    Ok(())
-}
-
 fn nested_provider_model_queue_key(
     run_state: &RunState,
     agent_id: &str,
@@ -8155,7 +6971,7 @@ where
         .remove(&task.agent_id)
         .unwrap_or_default();
 
-    let started_hook_batch = run_lifecycle_hooks(
+    let started_hook_batch = hooks::run_lifecycle_hooks(
         clock,
         hook_runtime_config,
         HookInvocationContext {
@@ -9134,7 +7950,7 @@ where
         Some(denial_reason.clone()),
     )?;
 
-    let resolved_hook_batch = run_lifecycle_hooks(
+    let resolved_hook_batch = hooks::run_lifecycle_hooks(
         clock,
         hook_runtime_config,
         HookInvocationContext {
