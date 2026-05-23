@@ -1480,6 +1480,7 @@ fn transcript_selection_test_app_with_text(transcript_text: &str) -> AppState {
     let mut app = AppState::new_live(None, false, None);
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "req_copy_select".to_string(),
+        profile_label: "build".to_string(),
         model_id: "model-1".to_string(),
         provider_id: "default".to_string(),
         status: ActivityStatus::Done,
@@ -2790,6 +2791,38 @@ fn tab_cycles_build_and_plan_primary_agents() {
     };
     assert_eq!(profile, "build");
     assert_eq!(launch_metadata.profile(), "build");
+}
+
+#[test]
+fn switching_agent_after_submit_keeps_existing_turn_footer_agent() {
+    let build_option =
+        runtime_context_model_option("build", "default", "gpt-5.4-mini", None, "GPT-5.4 Mini");
+    let plan_option =
+        runtime_context_model_option("plan", "default", "gpt-5.4-mini", None, "GPT-5.4 Mini");
+
+    let mut app = AppState::new_live(None, false, None);
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_option(&build_option)
+            .with_available_models(vec![build_option, plan_option])
+            .with_switchable_profiles(vec!["build".to_string(), "plan".to_string()]),
+    );
+
+    for ch in "keep footer agent".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
+    app.handle_key(key(KeyCode::Tab));
+
+    assert_eq!(app.active_profile(), "plan");
+    let rendered = render_debug(&app, 100, 32);
+    assert!(
+        rendered.contains("Build · active"),
+        "submitted turn footer should keep its original agent after switching\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("Plan · active"),
+        "submitted turn footer must not follow the newly selected agent\n{rendered}"
+    );
 }
 
 #[test]

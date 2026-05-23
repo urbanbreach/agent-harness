@@ -121,13 +121,14 @@ fn transcript_turn_sections_render_open_rail_surfaces() {
         "plan",
         "default:gpt-5.4-mini",
     ));
-    plan_app.activities =
-        std::collections::VecDeque::from(vec![transcript_turn_group_test_activity(
-            "req_plan_turn_groups",
-            app::ActivityStatus::Done,
-            Some("Plan this work"),
-            "Planned response",
-        )]);
+    let mut plan_activity = transcript_turn_group_test_activity(
+        "req_plan_turn_groups",
+        app::ActivityStatus::Done,
+        Some("Plan this work"),
+        "Planned response",
+    );
+    plan_activity.profile_label = "plan".to_string();
+    plan_app.activities = std::collections::VecDeque::from(vec![plan_activity]);
     plan_app.selected_activity_index = 0;
     plan_app.follow_mode = false;
     plan_app.transcript_scroll = usize::MAX;
@@ -9795,6 +9796,7 @@ fn transcript_turn_group_test_activity(
 ) -> app::ActivityEntry {
     app::ActivityEntry {
         request_id: request_id.to_string(),
+        profile_label: "default".to_string(),
         model_id: "gpt-5.4-mini".to_string(),
         provider_id: "openai".to_string(),
         status,
