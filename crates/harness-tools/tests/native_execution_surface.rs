@@ -607,6 +607,62 @@ async fn native_public_edit_uses_recent_hashline_read_to_disambiguate_hash_only_
 }
 
 #[tokio::test]
+async fn native_public_edit_scopes_recent_hashline_reads_to_shared_tool_run_state_not_run_id() {
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let read = registry.get("read").expect("read in registry");
+    let edit = registry.get("edit").expect("edit in registry");
+    let tool_state = ToolRunState::default();
+
+    fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").expect("seed existing file");
+
+    read.call(
+        common_test_context_with_tool_state(
+            workspace,
+            "read-owner-run",
+            "read-shared-edit-session-owner",
+            tool_state.clone(),
+        ),
+        json!({
+            "filePath": "surface.txt",
+            "offset": 1,
+            "limit": 2,
+        }),
+    )
+    .await
+    .expect("anchored read should succeed");
+
+    let result = edit
+        .call(
+            common_test_context_with_tool_state(
+                workspace,
+                "edit-owner-run",
+                "edit-shared-edit-session-owner",
+                tool_state,
+            ),
+            json!({
+                "filePath": "surface.txt",
+                "edits": [
+                    {
+                        "op": "replace",
+                        "pos": format!("#{}", compute_line_hash("same")),
+                        "lines": ["after"],
+                    }
+                ],
+            }),
+        )
+        .await
+        .expect("shared edit session should disambiguate independent of run id");
+
+    assert!(result.display_text.contains("Edit applied successfully"));
+    assert_eq!(
+        fs::read_to_string(workspace.join("surface.txt")).expect("read edited file"),
+        "after\nother\nsame\n"
+    );
+}
+
+#[tokio::test]
 async fn native_internal_hashline_scan_disambiguates_hash_only_anchor_for_edit() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();

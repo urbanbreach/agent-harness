@@ -93,32 +93,37 @@ impl ToolResult {
 /// run without leaking across independently-created run states.
 #[derive(Debug, Clone, Default)]
 pub struct ToolRunState {
-    file_reads: Arc<Mutex<FileReadRegistry>>,
+    edit_session: EditSession,
 }
 
 impl ToolRunState {
-    pub fn record_file_read(&self, run_id: &str, resolved_path: &Path) -> Result<(), ToolError> {
-        self.record_file_read_with_anchors(run_id, resolved_path, None)
+    pub fn edit_session(&self) -> &EditSession {
+        &self.edit_session
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct EditSession {
+    file_reads: Arc<Mutex<FileReadRegistry>>,
+}
+
+impl EditSession {
+    pub fn record_file_read(&self, resolved_path: &Path) -> Result<(), ToolError> {
+        self.record_file_read_with_anchors(resolved_path, None)
     }
 
     pub fn record_file_hashline_read(
         &self,
-        run_id: &str,
         resolved_path: &Path,
         anchors: Vec<LineAnchor>,
     ) -> Result<(), ToolError> {
-        self.record_file_read_with_anchors(run_id, resolved_path, Some(anchors))
+        self.record_file_read_with_anchors(resolved_path, Some(anchors))
     }
 
-    pub fn recent_hashline_anchors(
-        &self,
-        run_id: &str,
-        resolved_path: &Path,
-    ) -> Option<Vec<LineAnchor>> {
-        let key = file_read_key(run_id, resolved_path);
+    pub fn recent_hashline_anchors(&self, resolved_path: &Path) -> Option<Vec<LineAnchor>> {
         let prior = {
             let state = lock_file_reads(&self.file_reads);
-            state.reads.get(&key).cloned()
+            state.reads.get(resolved_path).cloned()
         }?;
 
         let anchors = prior.hashline_anchors?;
@@ -128,15 +133,13 @@ impl ToolRunState {
 
     fn record_file_read_with_anchors(
         &self,
-        run_id: &str,
         resolved_path: &Path,
         anchors: Option<Vec<LineAnchor>>,
     ) -> Result<(), ToolError> {
         let stamp = file_read_stamp_from_metadata(resolved_path)?;
-        let key = file_read_key(run_id, resolved_path);
         let mut state = lock_file_reads(&self.file_reads);
         state.reads.insert(
-            key,
+            resolved_path.to_path_buf(),
             FileReadStamp {
                 hashline_anchors: anchors,
                 ..stamp
@@ -159,7 +162,7 @@ struct FileReadStamp {
 
 #[derive(Debug, Default)]
 struct FileReadRegistry {
-    reads: BTreeMap<(String, PathBuf), FileReadStamp>,
+    reads: BTreeMap<PathBuf, FileReadStamp>,
 }
 
 fn lock_file_reads(mutex: &Mutex<FileReadRegistry>) -> std::sync::MutexGuard<'_, FileReadRegistry> {
@@ -167,10 +170,6 @@ fn lock_file_reads(mutex: &Mutex<FileReadRegistry>) -> std::sync::MutexGuard<'_,
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
     }
-}
-
-fn file_read_key(run_id: &str, resolved_path: &Path) -> (String, PathBuf) {
-    (run_id.to_string(), resolved_path.to_path_buf())
 }
 
 fn file_read_stamp_from_metadata(resolved_path: &Path) -> Result<FileReadStamp, ToolError> {
