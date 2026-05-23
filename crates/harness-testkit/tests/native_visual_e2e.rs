@@ -27,6 +27,8 @@ mod repo_root;
 #[path = "support/temp_path.rs"]
 #[allow(dead_code)]
 mod temp_path;
+#[path = "support/visual_manifest.rs"]
+mod visual_manifest;
 #[path = "support/visual_renderer.rs"]
 #[allow(dead_code)]
 mod visual_renderer;
