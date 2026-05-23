@@ -393,7 +393,6 @@ struct BuildTurnSectionArgs<'a> {
     show_tool_details: bool,
     show_generic_tool_output: bool,
     stacked_diffs: bool,
-    profile_label: &'a str,
     session_path: Option<&'a Path>,
     app: &'a AppState,
 }
@@ -1561,7 +1560,6 @@ fn build_transcript_sections(app: &AppState) -> Vec<TranscriptSection> {
             show_tool_details: app.tool_details_visible(),
             show_generic_tool_output: app.generic_tool_output_visible(),
             stacked_diffs: app.stacked_transcript_diffs(),
-            profile_label: app.active_profile(),
             session_path: app.session_path.as_deref(),
             app,
         }));
@@ -1660,7 +1658,6 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
         show_tool_details,
         show_generic_tool_output,
         stacked_diffs,
-        profile_label,
         session_path,
         app,
     } = args;
@@ -1739,7 +1736,7 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
         header: TranscriptTurnHeader {
             status: activity.status,
             is_selected,
-            profile_label: profile_label.to_string(),
+            profile_label: activity.profile_label.clone(),
             model_id: activity.model_id.clone(),
             duration_ms: activity.duration_ms(),
         },
@@ -12408,6 +12405,7 @@ fn transcript_section_model_test_activity(
 ) -> ActivityEntry {
     ActivityEntry {
         request_id: request_id.to_string(),
+        profile_label: "default".to_string(),
         model_id: "gpt-5.4-mini".to_string(),
         provider_id: "openai".to_string(),
         status,
@@ -12539,6 +12537,7 @@ mod tests {
         let mut app = AppState::default();
         app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
             request_id: "request-streaming-cache".to_string(),
+            profile_label: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             provider_id: "openai".to_string(),
             status: ActivityStatus::Streaming,
@@ -12584,6 +12583,7 @@ mod tests {
         let mut app = AppState::default();
         app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
             request_id: "request-theme-cache".to_string(),
+            profile_label: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             provider_id: "openai".to_string(),
             status: ActivityStatus::Done,
@@ -12668,6 +12668,7 @@ mod tests {
         let mut app = AppState::default();
         app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
             request_id: "request-streaming-header".to_string(),
+            profile_label: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             provider_id: "openai".to_string(),
             status: ActivityStatus::Streaming,
@@ -12707,6 +12708,7 @@ mod tests {
         app.activities = std::collections::VecDeque::from(vec![
             ActivityEntry {
                 request_id: "request-old-footer".to_string(),
+                profile_label: "default".to_string(),
                 model_id: "gpt-old".to_string(),
                 provider_id: "openai".to_string(),
                 status: ActivityStatus::Done,
@@ -12729,6 +12731,7 @@ mod tests {
             },
             ActivityEntry {
                 request_id: "request-new-footer".to_string(),
+                profile_label: "default".to_string(),
                 model_id: "gpt-new".to_string(),
                 provider_id: "openai".to_string(),
                 status: ActivityStatus::Done,
@@ -12970,6 +12973,7 @@ mod tests {
         let mut app = AppState::default();
         app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
             request_id: "request-user-padding".to_string(),
+            profile_label: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             provider_id: "openai".to_string(),
             status: ActivityStatus::Done,
@@ -13189,6 +13193,7 @@ mod tests {
         let mut app = AppState::default();
         app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
             request_id: "request-streaming-spinner".to_string(),
+            profile_label: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             provider_id: "openai".to_string(),
             status: ActivityStatus::Streaming,
@@ -13230,6 +13235,7 @@ mod tests {
         app.activities = std::collections::VecDeque::from(vec![
             ActivityEntry {
                 request_id: "request-complete".to_string(),
+                profile_label: "default".to_string(),
                 model_id: "gpt-5.4-mini".to_string(),
                 provider_id: "openai".to_string(),
                 status: ActivityStatus::Done,
@@ -13252,6 +13258,7 @@ mod tests {
             },
             ActivityEntry {
                 request_id: "request-queued-followup".to_string(),
+                profile_label: "default".to_string(),
                 model_id: "gpt-5.4-mini".to_string(),
                 provider_id: "openai".to_string(),
                 status: ActivityStatus::Queued,
@@ -13298,6 +13305,7 @@ mod tests {
         let mut app = AppState::default();
         app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
             request_id: "request-started-followup".to_string(),
+            profile_label: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             provider_id: "openai".to_string(),
             status: ActivityStatus::Streaming,
@@ -13344,6 +13352,7 @@ mod tests {
         app.activities = std::collections::VecDeque::from(vec![
             ActivityEntry {
                 request_id: "request-active".to_string(),
+                profile_label: "default".to_string(),
                 model_id: "gpt-5.4-mini".to_string(),
                 provider_id: "openai".to_string(),
                 status: ActivityStatus::Streaming,
@@ -13366,6 +13375,7 @@ mod tests {
             },
             ActivityEntry {
                 request_id: "request-queued-followup".to_string(),
+                profile_label: "default".to_string(),
                 model_id: "gpt-5.4-mini".to_string(),
                 provider_id: "openai".to_string(),
                 status: ActivityStatus::Queued,
@@ -13418,6 +13428,7 @@ mod tests {
         let mut app = AppState::default();
         app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
             request_id: "request-wide-wrap".to_string(),
+            profile_label: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             provider_id: "openai".to_string(),
             status: ActivityStatus::Done,
@@ -13460,6 +13471,7 @@ mod tests {
         let mut app = AppState::default();
         app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
             request_id: "req_selection_cache".to_string(),
+            profile_label: "default".to_string(),
             model_id: "model-1".to_string(),
             provider_id: "default".to_string(),
             status: ActivityStatus::Done,

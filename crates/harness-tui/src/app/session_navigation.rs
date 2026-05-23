@@ -1108,7 +1108,7 @@ impl AppState {
                 (!Self::launch_value_is_unknown(profile) && profile != "default").then_some(profile)
             })
             .filter(|value| !Self::launch_value_is_unknown(value))?;
-        Some(humanize_profile_label(profile))
+        Some(super::humanize_profile_label(profile))
     }
 
     pub(in crate::app) fn runtime_context_metadata(&self) -> &LaunchMetadata {
@@ -2214,7 +2214,7 @@ impl AppState {
                     .as_ref()
                     .and_then(|agent| agent.label.as_deref())
             })
-            .map(humanize_profile_label)
+            .map(super::humanize_profile_label)
             .unwrap_or_else(|| "Subagent".to_string());
         let title = task
             .as_ref()
@@ -3500,24 +3500,6 @@ fn compact_usage_count(value: u64) -> String {
     } else {
         value.to_string()
     }
-}
-
-fn humanize_profile_label(profile: &str) -> String {
-    let words = profile
-        .split(['_', '-', ' '])
-        .filter(|part| !part.is_empty())
-        .map(|part| {
-            let mut chars = part.chars();
-            let Some(first) = chars.next() else {
-                return String::new();
-            };
-            format!("{}{}", first.to_uppercase(), chars.as_str())
-        })
-        .collect::<Vec<_>>();
-    if words.is_empty() {
-        return profile.to_string();
-    }
-    words.join(" ")
 }
 
 fn provider_label_includes_backend(provider: &str, backend: &str) -> bool {

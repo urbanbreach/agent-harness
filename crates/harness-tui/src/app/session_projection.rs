@@ -61,6 +61,16 @@ impl SessionProjection {
         self.seen_seqs.contains(&seq)
     }
 
+    fn profile_label_for_event(&self, event: &EventEnvelopeV1) -> String {
+        event
+            .actor
+            .agent_id
+            .as_deref()
+            .and_then(|agent_id| self.agent_profiles.get(agent_id))
+            .cloned()
+            .unwrap_or_else(|| "default".to_string())
+    }
+
     pub(crate) fn ingest_event(&mut self, event: EventEnvelopeV1, historical: bool) -> usize {
         self.seen_seqs.insert(event.seq);
         self.update_derived_state_for_event(&event, historical);
@@ -188,6 +198,7 @@ impl SessionProjection {
         self.activities.push_back(new_streaming_activity_entry(
             NewStreamingActivityEntryArgs {
                 request_id: request_id.to_string(),
+                profile_label: self.profile_label_for_event(event),
                 model_id: String::new(),
                 provider_id: String::new(),
                 user_message: Some(UserMessageSubmittedEvent {
@@ -718,6 +729,7 @@ impl SessionProjection {
                     self.activities.push_back(new_streaming_activity_entry(
                         NewStreamingActivityEntryArgs {
                             request_id: data.request_id.clone(),
+                            profile_label: self.profile_label_for_event(event),
                             model_id: String::new(),
                             provider_id: String::new(),
                             user_message: Some(data.clone()),
@@ -750,8 +762,12 @@ impl SessionProjection {
                 }
                 if let Some(index) = self.activity_index_for_provider_event(event, &data.request_id)
                 {
+                    let profile_label = self.profile_label_for_event(event);
                     if let Some(entry) = self.activities.get_mut(index) {
                         entry.status = ActivityStatus::Streaming;
+                        if entry.profile_label.is_empty() {
+                            entry.profile_label = profile_label;
+                        }
                         entry.model_id = data.model_id.clone();
                         entry.provider_id = data.provider_id.clone();
                         entry.request_data = Some(data.clone());
@@ -761,6 +777,7 @@ impl SessionProjection {
                     self.activities.push_back(new_streaming_activity_entry(
                         NewStreamingActivityEntryArgs {
                             request_id: turn_id.to_string(),
+                            profile_label: self.profile_label_for_event(event),
                             model_id: data.model_id.clone(),
                             provider_id: data.provider_id.clone(),
                             user_message: None,
@@ -787,6 +804,7 @@ impl SessionProjection {
                     self.activities.push_back(new_streaming_activity_entry(
                         NewStreamingActivityEntryArgs {
                             request_id: turn_id.to_string(),
+                            profile_label: self.profile_label_for_event(event),
                             model_id: String::new(),
                             provider_id: String::new(),
                             user_message: None,
@@ -814,6 +832,7 @@ impl SessionProjection {
                     self.activities.push_back(new_streaming_activity_entry(
                         NewStreamingActivityEntryArgs {
                             request_id: turn_id.to_string(),
+                            profile_label: self.profile_label_for_event(event),
                             model_id: String::new(),
                             provider_id: String::new(),
                             user_message: None,

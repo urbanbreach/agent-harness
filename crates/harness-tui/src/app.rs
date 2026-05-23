@@ -464,6 +464,7 @@ fn execution_timing_elapsed_ms(timing: &ExecutionTimingMetadata) -> Option<u64> 
 
 pub struct ActivityEntry {
     pub request_id: String,
+    pub profile_label: String,
     pub model_id: String,
     pub provider_id: String,
     pub status: ActivityStatus,
@@ -540,6 +541,7 @@ impl ActiveContextUsage {
 
 struct NewStreamingActivityEntryArgs {
     request_id: String,
+    profile_label: String,
     model_id: String,
     provider_id: String,
     user_message: Option<UserMessageSubmittedEvent>,
@@ -553,6 +555,7 @@ struct NewStreamingActivityEntryArgs {
 fn new_streaming_activity_entry(args: NewStreamingActivityEntryArgs) -> ActivityEntry {
     let NewStreamingActivityEntryArgs {
         request_id,
+        profile_label,
         model_id,
         provider_id,
         user_message,
@@ -564,6 +567,7 @@ fn new_streaming_activity_entry(args: NewStreamingActivityEntryArgs) -> Activity
     } = args;
     ActivityEntry {
         request_id,
+        profile_label,
         model_id,
         provider_id,
         status: ActivityStatus::Streaming,
@@ -588,6 +592,24 @@ impl ActivityEntry {
         (self.last_mono_ms >= self.first_mono_ms)
             .then_some(self.last_mono_ms.saturating_sub(self.first_mono_ms))
     }
+}
+
+pub(crate) fn humanize_profile_label(profile: &str) -> String {
+    let words = profile
+        .split(['_', '-', ' '])
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            let Some(first) = chars.next() else {
+                return String::new();
+            };
+            format!("{}{}", first.to_uppercase(), chars.as_str())
+        })
+        .collect::<Vec<_>>();
+    if words.is_empty() {
+        return profile.to_string();
+    }
+    words.join(" ")
 }
 
 fn mark_activity_event(entry: &mut ActivityEntry, seq: u64, mono_ms: u64) {
@@ -1882,6 +1904,7 @@ impl AppState {
     fn hash_transcript_content(&self, hasher: &mut impl Hasher) {
         for activity in &self.activities {
             activity.request_id.hash(hasher);
+            activity.profile_label.hash(hasher);
             activity.model_id.hash(hasher);
             activity.provider_id.hash(hasher);
             activity.status.hash(hasher);
@@ -2547,8 +2570,10 @@ impl AppState {
     }
 
     fn echo_submitted_prompt(&mut self, text: String, status: ActivityStatus) {
+        let profile_label = self.active_profile().to_string();
         self.activities.push_back(ActivityEntry {
             request_id: String::new(),
+            profile_label,
             model_id: String::new(),
             provider_id: String::new(),
             status,
