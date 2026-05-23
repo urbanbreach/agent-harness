@@ -292,13 +292,22 @@ fn models_generate_updates_static_catalog_artifact_from_models_dev_json() {
     );
 
     let generated = fs::read_to_string(&output_path).expect("read generated catalog");
-    let catalog: Value = serde_json::from_str(&generated).expect("generated catalog json");
+    let compact: Value = serde_json::from_str(&generated).expect("generated catalog json");
     assert_eq!(
-        catalog["provider"]["openai"]["models"]["gpt-5-mini"]["name"],
+        generated.matches('\n').count(),
+        1,
+        "generate should produce one compact JSON line"
+    );
+    assert!(
+        generated.ends_with('\n'),
+        "generate should preserve a trailing newline"
+    );
+    assert_eq!(
+        compact["provider"]["openai"]["models"]["gpt-5-mini"]["name"],
         "GPT-5 mini"
     );
     assert_eq!(
-        catalog["provider"]["openai"]["models"]["gpt-5-mini"]["variants"]["medium"]["metadata"]
+        compact["provider"]["openai"]["models"]["gpt-5-mini"]["variants"]["medium"]["metadata"]
             ["reasoningEffort"],
         "medium"
     );

@@ -137,7 +137,7 @@ fn generate_catalog_body(
     let providers: BTreeMap<String, ModelsDevProvider> = serde_json::from_str(&source_body)
         .map_err(|err| format!("failed to parse models.dev JSON: {err}"))?;
     let catalog = build_catalog(&providers, filters, source_label);
-    serde_json::to_string_pretty(&catalog)
+    serde_json::to_string(&catalog)
         .map(|body| format!("{body}\n"))
         .map_err(|err| format!("failed to serialize generated catalog: {err}"))
 }
