@@ -1,14 +1,15 @@
 use std::collections::BTreeMap;
 use std::net::IpAddr;
+use std::pin::Pin;
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use eventsource_stream::Eventsource;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::mpsc;
-use tokio_stream::{self as stream, StreamExt};
+use tokio_stream::{self as stream, Stream, StreamExt};
 
 use crate::{
     CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider,
@@ -52,13 +53,86 @@ pub enum OpenAiCompatibleProviderError {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct OpenAiCompatibleProvider {
-    client: reqwest::Client,
+    transport: Arc<dyn OpenAiHttpTransport>,
     base_url: String,
     api_key: String,
     api_mode: OpenAiApiMode,
     headers: HeaderMap,
+}
+
+pub type OpenAiResponseBody = Pin<Box<dyn Stream<Item = Result<Vec<u8>, String>> + Send>>;
+
+pub struct OpenAiHttpResponse {
+    pub status: u16,
+    pub headers: HeaderMap,
+    pub body: OpenAiResponseBody,
+}
+
+impl OpenAiHttpResponse {
+    pub fn new(status: u16, headers: HeaderMap, body: OpenAiResponseBody) -> Self {
+        Self {
+            status,
+            headers,
+            body,
+        }
+    }
+
+    pub fn text(status: u16, headers: HeaderMap, body: impl Into<String>) -> Self {
+        Self::new(
+            status,
+            headers,
+            Box::pin(stream::iter(vec![Ok(body.into().into_bytes())])),
+        )
+    }
+}
+
+#[async_trait]
+pub trait OpenAiHttpTransport: Send + Sync {
+    async fn post_json(
+        &self,
+        endpoint: String,
+        headers: HeaderMap,
+        bearer_token: String,
+        body: serde_json::Value,
+    ) -> Result<OpenAiHttpResponse, String>;
+}
+
+#[derive(Debug, Clone)]
+struct ReqwestOpenAiHttpTransport {
+    client: reqwest::Client,
+}
+
+#[async_trait]
+impl OpenAiHttpTransport for ReqwestOpenAiHttpTransport {
+    async fn post_json(
+        &self,
+        endpoint: String,
+        headers: HeaderMap,
+        bearer_token: String,
+        body: serde_json::Value,
+    ) -> Result<OpenAiHttpResponse, String> {
+        let response = self
+            .client
+            .post(endpoint)
+            .headers(headers)
+            .bearer_auth(bearer_token)
+            .json(&body)
+            .send()
+            .await
+            .map_err(format_transport_error)?;
+
+        let status = response.status().as_u16();
+        let headers = response.headers().clone();
+        let body = response.bytes_stream().map(|chunk| {
+            chunk
+                .map(|bytes| bytes.to_vec())
+                .map_err(format_transport_error)
+        });
+
+        Ok(OpenAiHttpResponse::new(status, headers, Box::pin(body)))
+    }
 }
 
 impl OpenAiCompatibleProvider {
@@ -83,7 +157,21 @@ impl OpenAiCompatibleProvider {
             .map_err(OpenAiCompatibleProviderError::BuildHttpClient)?;
 
         Ok(Self {
-            client,
+            transport: Arc::new(ReqwestOpenAiHttpTransport { client }),
+            base_url: config.base_url,
+            api_key: config.api_key,
+            api_mode: config.api_mode,
+            headers,
+        })
+    }
+
+    pub fn with_transport(
+        config: OpenAiCompatibleProviderConfig,
+        transport: Arc<dyn OpenAiHttpTransport>,
+    ) -> Result<Self, OpenAiCompatibleProviderError> {
+        let headers = parse_headers(&config.headers)?;
+        Ok(Self {
+            transport,
             base_url: config.base_url,
             api_key: config.api_key,
             api_mode: config.api_mode,
@@ -118,21 +206,18 @@ impl OpenAiCompatibleProvider {
         &self,
         endpoint: String,
         request: &T,
-    ) -> Result<reqwest::Response, String> {
-        self.client
-            .post(endpoint)
-            .headers(self.headers.clone())
-            .bearer_auth(&self.api_key)
-            .json(request)
-            .send()
+    ) -> Result<OpenAiHttpResponse, String> {
+        let body = serde_json::to_value(request)
+            .map_err(|err| format!("failed to serialize openai_compatible request: {err}"))?;
+        self.transport
+            .post_json(endpoint, self.headers.clone(), self.api_key.clone(), body)
             .await
-            .map_err(format_transport_error)
     }
 
     async fn send_chat_request(
         &self,
         request: &OpenAiChatCompletionsRequest,
-    ) -> Result<reqwest::Response, String> {
+    ) -> Result<OpenAiHttpResponse, String> {
         self.send_request(self.chat_completions_endpoint(), request)
             .await
     }
@@ -140,14 +225,14 @@ impl OpenAiCompatibleProvider {
     async fn send_responses_request(
         &self,
         request: &OpenAiResponsesRequest,
-    ) -> Result<reqwest::Response, String> {
+    ) -> Result<OpenAiHttpResponse, String> {
         self.send_request(self.responses_endpoint(), request).await
     }
 
-    async fn non_success_status_message(&self, response: reqwest::Response) -> String {
-        let status = response.status();
-        let body = response.text().await.ok();
-        format_non_success_status_message(status.as_u16(), body.as_deref(), &self.api_key)
+    async fn non_success_status_message(&self, response: OpenAiHttpResponse) -> String {
+        let status = response.status;
+        let body = collect_body_text(response.body).await.ok();
+        format_non_success_status_message(status, body.as_deref(), &self.api_key)
     }
 }
 
@@ -162,6 +247,69 @@ fn format_non_success_status_message(status: u16, body: Option<&str>, api_key: &
         Some(detail) => format!("openai_compatible request failed with status {status}: {detail}"),
         None => format!("openai_compatible request failed with status {status}"),
     }
+}
+
+async fn collect_body_text(mut body: OpenAiResponseBody) -> Result<String, String> {
+    let mut bytes = Vec::new();
+    while let Some(chunk) = body.next().await {
+        bytes.extend_from_slice(&chunk?);
+    }
+    String::from_utf8(bytes)
+        .map_err(|err| format!("openai_compatible response body was not valid UTF-8: {err}"))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SseEvent {
+    data: String,
+}
+
+async fn next_sse_event(
+    body: &mut OpenAiResponseBody,
+    buffer: &mut String,
+) -> Result<Option<SseEvent>, String> {
+    loop {
+        if let Some((frame, remaining)) = split_sse_frame(buffer) {
+            *buffer = remaining;
+            if let Some(event) = parse_sse_frame(&frame) {
+                return Ok(Some(event));
+            }
+            continue;
+        }
+
+        let Some(chunk) = body.next().await else {
+            if buffer.is_empty() {
+                return Ok(None);
+            }
+            let frame = std::mem::take(buffer);
+            return Ok(parse_sse_frame(&frame));
+        };
+        let chunk = chunk?;
+        let text = String::from_utf8(chunk).map_err(|err| {
+            format!("openai_compatible SSE stream returned non-UTF-8 bytes: {err}")
+        })?;
+        buffer.push_str(&text);
+    }
+}
+
+fn split_sse_frame(buffer: &str) -> Option<(String, String)> {
+    for delimiter in ["\r\n\r\n", "\n\n", "\r\r"] {
+        if let Some(index) = buffer.find(delimiter) {
+            let frame = buffer[..index].to_string();
+            let remaining = buffer[index + delimiter.len()..].to_string();
+            return Some((frame, remaining));
+        }
+    }
+    None
+}
+
+fn parse_sse_frame(frame: &str) -> Option<SseEvent> {
+    let data = frame
+        .lines()
+        .filter_map(|line| line.strip_prefix("data:"))
+        .map(|value| value.strip_prefix(' ').unwrap_or(value))
+        .collect::<Vec<_>>()
+        .join("\n");
+    (!data.is_empty()).then_some(SseEvent { data })
 }
 
 fn extract_provider_error_detail(body: &str) -> Option<String> {
@@ -214,9 +362,8 @@ impl Provider for OpenAiCompatibleProvider {
                 let responses_request = OpenAiResponsesRequest::from(req.clone());
                 match self.send_responses_request(&responses_request).await {
                     Ok(response)
-                        if matches!(response.status().as_u16(), 404 | 405)
-                            || (response.status().as_u16() == 400
-                                && self.is_loopback_base_url()) =>
+                        if matches!(response.status, 404 | 405)
+                            || (response.status == 400 && self.is_loopback_base_url()) =>
                     {
                         let chat_request = OpenAiChatCompletionsRequest::from(req);
                         self.send_chat_request(&chat_request)
@@ -238,13 +385,12 @@ impl Provider for OpenAiCompatibleProvider {
             }
         };
 
-        let status = response.status();
-        if !status.is_success() {
+        if !(200..300).contains(&response.status) {
             let message = self.non_success_status_message(response).await;
             return Box::pin(stream::iter(vec![ProviderStreamEvent::Error { message }]));
         }
 
-        let start_metadata = provider_stream_start_metadata_from_headers(response.headers());
+        let start_metadata = provider_stream_start_metadata_from_headers(&response.headers);
 
         let (tx, rx) = mpsc::channel(64);
         tokio::spawn(async move {
@@ -361,7 +507,7 @@ fn non_empty_finished_metadata(
 }
 
 async fn consume_chat_sse_stream(
-    response: reqwest::Response,
+    response: OpenAiHttpResponse,
     tx: mpsc::Sender<ProviderStreamEvent>,
     start_metadata: Option<ProviderStreamStartMetadata>,
 ) {
@@ -380,11 +526,13 @@ async fn consume_chat_sse_stream(
     let mut finished_metadata = provider_stream_finished_metadata_from_start(start_metadata);
     let mut done_emitted = false;
     let mut tool_call_state = ChatToolCallState::default();
-    let mut sse_stream = response.bytes_stream().eventsource();
+    let mut body = response.body;
+    let mut sse_buffer = String::new();
 
-    while let Some(next_event) = sse_stream.next().await {
-        let event = match next_event {
-            Ok(event) => event,
+    loop {
+        let event = match next_sse_event(&mut body, &mut sse_buffer).await {
+            Ok(Some(event)) => event,
+            Ok(None) => break,
             Err(_) => {
                 warn_stream_processing_failure(
                     "chat.transport",
@@ -666,7 +814,7 @@ async fn emit_tool_call_completions(
 }
 
 async fn consume_responses_sse_stream(
-    response: reqwest::Response,
+    response: OpenAiHttpResponse,
     tx: mpsc::Sender<ProviderStreamEvent>,
     start_metadata: Option<ProviderStreamStartMetadata>,
 ) {
@@ -684,12 +832,14 @@ async fn consume_responses_sse_stream(
     let mut usage = zero_usage();
     let mut finished_metadata = provider_stream_finished_metadata_from_start(start_metadata);
     let mut done_emitted = false;
-    let mut sse_stream = response.bytes_stream().eventsource();
+    let mut body = response.body;
+    let mut sse_buffer = String::new();
     let mut tool_calls = BTreeMap::<String, ResponsesToolCallAccumulator>::new();
 
-    while let Some(next_event) = sse_stream.next().await {
-        let event = match next_event {
-            Ok(event) => event,
+    loop {
+        let event = match next_sse_event(&mut body, &mut sse_buffer).await {
+            Ok(Some(event)) => event,
+            Ok(None) => break,
             Err(_) => {
                 warn_stream_processing_failure(
                     "responses.transport",
@@ -1640,39 +1790,122 @@ struct OpenAiChatToolFunctionDeltaChunk {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeMap, env, fs, path::PathBuf, time::Duration};
+    use std::{
+        collections::{BTreeMap, VecDeque},
+        env, fs,
+        path::PathBuf,
+        sync::{Arc, Mutex},
+        time::Duration,
+    };
 
+    use async_trait::async_trait;
+    use reqwest::header::HeaderMap;
     use serde::Deserialize;
     use serde_json::json;
     use tokio::time::timeout;
     use tokio_stream::StreamExt;
-    use wiremock::matchers::{method, path};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::{
         OpenAiApiMode, OpenAiCompatibleProvider, OpenAiCompatibleProviderConfig,
-        OpenAiResponsesRequest,
+        OpenAiHttpResponse, OpenAiHttpTransport, OpenAiResponsesRequest,
     };
     use crate::{
         CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider,
         ProviderStreamEvent, ProviderStreamFinishedMetadata, ToolChoice, ToolDef,
     };
 
+    #[derive(Debug, Clone)]
+    struct RecordedOpenAiRequest {
+        endpoint: String,
+        bearer_token: String,
+        body: serde_json::Value,
+    }
+
+    #[derive(Debug, Clone)]
+    struct ScriptedOpenAiResponse {
+        status: u16,
+        body: String,
+    }
+
+    impl ScriptedOpenAiResponse {
+        fn sse(body: String) -> Self {
+            Self { status: 200, body }
+        }
+
+        fn text(status: u16, body: impl Into<String>) -> Self {
+            Self {
+                status,
+                body: body.into(),
+            }
+        }
+    }
+
+    #[derive(Debug)]
+    struct ScriptedOpenAiTransport {
+        responses: Mutex<VecDeque<ScriptedOpenAiResponse>>,
+        requests: Mutex<Vec<RecordedOpenAiRequest>>,
+    }
+
+    impl ScriptedOpenAiTransport {
+        fn new(responses: impl IntoIterator<Item = ScriptedOpenAiResponse>) -> Arc<Self> {
+            Arc::new(Self {
+                responses: Mutex::new(responses.into_iter().collect()),
+                requests: Mutex::new(Vec::new()),
+            })
+        }
+
+        fn requests(&self) -> Vec<RecordedOpenAiRequest> {
+            self.requests
+                .lock()
+                .expect("scripted transport requests lock")
+                .clone()
+        }
+    }
+
+    #[async_trait]
+    impl OpenAiHttpTransport for ScriptedOpenAiTransport {
+        async fn post_json(
+            &self,
+            endpoint: String,
+            _headers: HeaderMap,
+            bearer_token: String,
+            body: serde_json::Value,
+        ) -> Result<OpenAiHttpResponse, String> {
+            self.requests
+                .lock()
+                .expect("scripted transport requests lock")
+                .push(RecordedOpenAiRequest {
+                    endpoint,
+                    bearer_token,
+                    body,
+                });
+            let response = self
+                .responses
+                .lock()
+                .expect("scripted transport responses lock")
+                .pop_front()
+                .expect("scripted OpenAI response");
+            let mut headers = HeaderMap::new();
+            if response.status == 200 {
+                headers.insert(
+                    reqwest::header::CONTENT_TYPE,
+                    reqwest::header::HeaderValue::from_static("text/event-stream"),
+                );
+            }
+            Ok(OpenAiHttpResponse::text(
+                response.status,
+                headers,
+                response.body,
+            ))
+        }
+    }
+
     #[tokio::test]
-    async fn openai_compatible_offline_wiremock_parses_sse_deltas() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("POST"))
-            .and(path("/v1/chat/completions"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .insert_header("content-type", "text/event-stream")
-                    .set_body_raw(deterministic_sse_transcript(), "text/event-stream"),
-            )
-            .mount(&server)
-            .await;
-
-        let provider = provider_for_base_url(format!("{}/v1", server.uri()), "test-secret-key");
+    async fn openai_compatible_offline_transport_parses_sse_deltas() {
+        let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(
+            deterministic_sse_transcript(),
+        )]);
+        let provider = provider_for_transport(Arc::clone(&transport), "test-secret-key");
         let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
 
         assert_eq!(
@@ -1696,22 +1929,14 @@ mod tests {
             ]
         );
 
-        let requests = server
-            .received_requests()
-            .await
-            .expect("request recording must be enabled");
+        let requests = transport.requests();
         assert_eq!(requests.len(), 1);
 
         let request = &requests[0];
-        let authorization = request
-            .headers
-            .get("authorization")
-            .expect("authorization header")
-            .to_str()
-            .expect("authorization header is utf-8");
-        assert_eq!(authorization, "Bearer test-secret-key");
+        assert!(request.endpoint.ends_with("/v1/chat/completions"));
+        assert_eq!(request.bearer_token, "test-secret-key");
 
-        let body: serde_json::Value = request.body_json().expect("request body must be JSON");
+        let body = &request.body;
         assert_eq!(body.get("stream"), Some(&serde_json::Value::Bool(true)));
         assert_eq!(
             body.get("model"),
@@ -1721,21 +1946,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn openai_responses_offline_wiremock_streams_tool_call_complete() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("POST"))
-            .and(path("/v1/responses"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .insert_header("content-type", "text/event-stream")
-                    .set_body_raw(responses_tool_call_sse_transcript(), "text/event-stream"),
-            )
-            .mount(&server)
-            .await;
-
-        let provider = provider_for_base_url_with_mode(
-            format!("{}/v1", server.uri()),
+    async fn openai_responses_offline_transport_streams_tool_call_complete() {
+        let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(
+            responses_tool_call_sse_transcript(),
+        )]);
+        let provider = provider_for_transport_with_mode(
+            Arc::clone(&transport),
             "test-secret-key",
             OpenAiApiMode::Responses,
         );
@@ -1779,21 +1995,13 @@ mod tests {
             ]
         );
 
-        let requests = server
-            .received_requests()
-            .await
-            .expect("request recording must be enabled");
+        let requests = transport.requests();
         assert_eq!(requests.len(), 1);
 
-        let authorization = requests[0]
-            .headers
-            .get("authorization")
-            .expect("authorization header")
-            .to_str()
-            .expect("authorization header is utf-8");
-        assert_eq!(authorization, "Bearer test-secret-key");
+        assert!(requests[0].endpoint.ends_with("/v1/responses"));
+        assert_eq!(requests[0].bearer_token, "test-secret-key");
 
-        let body: serde_json::Value = requests[0].body_json().expect("request body must be JSON");
+        let body = &requests[0].body;
         assert_eq!(
             body.get("tool_choice"),
             Some(&serde_json::Value::String("auto".to_string()))
@@ -1817,26 +2025,12 @@ mod tests {
 
     #[tokio::test]
     async fn openai_auto_loopback_falls_back_to_chat_completions_on_400() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("POST"))
-            .and(path("/v1/responses"))
-            .respond_with(ResponseTemplate::new(400))
-            .mount(&server)
-            .await;
-
-        Mock::given(method("POST"))
-            .and(path("/v1/chat/completions"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .insert_header("content-type", "text/event-stream")
-                    .set_body_raw(deterministic_sse_transcript(), "text/event-stream"),
-            )
-            .mount(&server)
-            .await;
-
-        let provider = provider_for_base_url_with_mode(
-            format!("{}/v1", server.uri()),
+        let transport = ScriptedOpenAiTransport::new([
+            ScriptedOpenAiResponse::text(400, "unsupported responses"),
+            ScriptedOpenAiResponse::sse(deterministic_sse_transcript()),
+        ]);
+        let provider = provider_for_transport_with_mode(
+            Arc::clone(&transport),
             "test-secret-key",
             OpenAiApiMode::Auto,
         );
@@ -1863,23 +2057,16 @@ mod tests {
             ]
         );
 
-        let requests = server
-            .received_requests()
-            .await
-            .expect("request recording must be enabled");
+        let requests = transport.requests();
         assert_eq!(requests.len(), 2);
-        assert_eq!(requests[0].url.path(), "/v1/responses");
-        assert_eq!(requests[1].url.path(), "/v1/chat/completions");
+        assert!(requests[0].endpoint.ends_with("/v1/responses"));
+        assert!(requests[1].endpoint.ends_with("/v1/chat/completions"));
     }
 
     #[tokio::test]
     async fn openai_transport_failure_keeps_sanitized_context() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind local port");
-        let addr = listener.local_addr().expect("local addr");
-        drop(listener);
-
         let provider = OpenAiCompatibleProvider::new(OpenAiCompatibleProviderConfig {
-            base_url: format!("http://{addr}/v1?api_key=should-not-leak"),
+            base_url: "http://127.0.0.1:9/v1?api_key=should-not-leak".to_string(),
             api_key: "test-secret-key".to_string(),
             api_mode: OpenAiApiMode::ChatCompletions,
             timeout_ms: 1_000,
@@ -2213,24 +2400,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn openai_responses_offline_wiremock_malformed_args_fail_closed() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("POST"))
-            .and(path("/v1/responses"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .insert_header("content-type", "text/event-stream")
-                    .set_body_raw(
-                        responses_malformed_tool_args_sse_transcript(),
-                        "text/event-stream",
-                    ),
-            )
-            .mount(&server)
-            .await;
-
-        let provider = provider_for_base_url_with_mode(
-            format!("{}/v1", server.uri()),
+    async fn openai_responses_offline_transport_malformed_args_fail_closed() {
+        let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(
+            responses_malformed_tool_args_sse_transcript(),
+        )]);
+        let provider = provider_for_transport_with_mode(
+            transport,
             "test-secret-key",
             OpenAiApiMode::Responses,
         );
@@ -2255,20 +2430,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn openai_compatible_offline_wiremock_streams_chat_tool_calls() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("POST"))
-            .and(path("/v1/chat/completions"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .insert_header("content-type", "text/event-stream")
-                    .set_body_raw(tool_call_sse_transcript(), "text/event-stream"),
-            )
-            .mount(&server)
-            .await;
-
-        let provider = provider_for_base_url(format!("{}/v1", server.uri()), "test-secret-key");
+    async fn openai_compatible_offline_transport_streams_chat_tool_calls() {
+        let transport =
+            ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(tool_call_sse_transcript())]);
+        let provider = provider_for_transport(Arc::clone(&transport), "test-secret-key");
         let events = collect_events(&provider, request_with_single_tool("gpt-4o-mini")).await;
 
         assert_eq!(
@@ -2305,13 +2470,10 @@ mod tests {
             ]
         );
 
-        let requests = server
-            .received_requests()
-            .await
-            .expect("request recording must be enabled");
+        let requests = transport.requests();
         assert_eq!(requests.len(), 1);
 
-        let body: serde_json::Value = requests[0].body_json().expect("request body must be JSON");
+        let body = &requests[0].body;
         assert_eq!(
             body.get("tool_choice"),
             Some(&serde_json::Value::String("auto".to_string()))
@@ -2333,20 +2495,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn openai_compatible_offline_wiremock_chat_tool_calls_fail_closed_on_invalid_arguments() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("POST"))
-            .and(path("/v1/chat/completions"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .insert_header("content-type", "text/event-stream")
-                    .set_body_raw(malformed_tool_call_sse_transcript(), "text/event-stream"),
-            )
-            .mount(&server)
-            .await;
-
-        let provider = provider_for_base_url(format!("{}/v1", server.uri()), "test-secret-key");
+    async fn openai_compatible_offline_transport_chat_tool_calls_fail_closed_on_invalid_arguments()
+    {
+        let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(
+            malformed_tool_call_sse_transcript(),
+        )]);
+        let provider = provider_for_transport(transport, "test-secret-key");
         let events = collect_events(&provider, request_with_single_tool("gpt-4o-mini")).await;
 
         assert!(matches!(
@@ -2369,19 +2523,13 @@ mod tests {
 
     #[tokio::test]
     async fn openai_compatible_errors_do_not_leak_auth_secrets() {
-        let server = MockServer::start().await;
         let api_key = "test-secret-key";
 
-        Mock::given(method("POST"))
-            .and(path("/v1/chat/completions"))
-            .respond_with(
-                ResponseTemplate::new(401)
-                    .set_body_string(format!("Authorization: Bearer {api_key} should never leak")),
-            )
-            .mount(&server)
-            .await;
-
-        let provider = provider_for_base_url(format!("{}/v1", server.uri()), api_key);
+        let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::text(
+            401,
+            format!("Authorization: Bearer {api_key} should never leak"),
+        )]);
+        let provider = provider_for_transport(transport, api_key);
         let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
 
         assert_eq!(events.len(), 1);
@@ -2396,19 +2544,17 @@ mod tests {
 
     #[tokio::test]
     async fn openai_compatible_errors_include_response_body_detail() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("POST"))
-            .and(path("/v1/chat/completions"))
-            .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+        let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::text(
+            400,
+            json!({
                 "error": {
                     "message": "Invalid schema for function 'question': object schema missing properties"
                 }
-            })))
-            .mount(&server)
-            .await;
+            })
+            .to_string(),
+        )]);
 
-        let provider = provider_for_base_url(format!("{}/v1", server.uri()), "test-secret-key");
+        let provider = provider_for_transport(transport, "test-secret-key");
         let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
 
         assert_eq!(events.len(), 1);
@@ -2494,22 +2640,28 @@ mod tests {
         assert!(delta_chars > 0, "expected at least one text delta");
     }
 
-    fn provider_for_base_url(base_url: String, api_key: &str) -> OpenAiCompatibleProvider {
-        provider_for_base_url_with_mode(base_url, api_key, OpenAiApiMode::ChatCompletions)
+    fn provider_for_transport(
+        transport: Arc<ScriptedOpenAiTransport>,
+        api_key: &str,
+    ) -> OpenAiCompatibleProvider {
+        provider_for_transport_with_mode(transport, api_key, OpenAiApiMode::ChatCompletions)
     }
 
-    fn provider_for_base_url_with_mode(
-        base_url: String,
+    fn provider_for_transport_with_mode(
+        transport: Arc<ScriptedOpenAiTransport>,
         api_key: &str,
         api_mode: OpenAiApiMode,
     ) -> OpenAiCompatibleProvider {
-        OpenAiCompatibleProvider::new(OpenAiCompatibleProviderConfig {
-            base_url,
-            api_key: api_key.to_string(),
-            api_mode,
-            timeout_ms: 15_000,
-            headers: std::collections::BTreeMap::new(),
-        })
+        OpenAiCompatibleProvider::with_transport(
+            OpenAiCompatibleProviderConfig {
+                base_url: "http://127.0.0.1/v1".to_string(),
+                api_key: api_key.to_string(),
+                api_mode,
+                timeout_ms: 15_000,
+                headers: std::collections::BTreeMap::new(),
+            },
+            transport,
+        )
         .expect("build provider")
     }
 
@@ -2651,6 +2803,10 @@ mod tests {
     }
 
     fn resolve_env_reference(value: &str) -> String {
+        resolve_env_reference_with(value, |key| env::var(key).ok())
+    }
+
+    fn resolve_env_reference_with(value: &str, lookup: impl Fn(&str) -> Option<String>) -> String {
         if !(value.starts_with("${") && value.ends_with('}')) {
             return value.to_string();
         }
@@ -2664,56 +2820,32 @@ mod tests {
             if key.is_empty() {
                 return value.to_string();
             }
-            return env::var(key)
-                .ok()
+            return lookup(key)
                 .filter(|resolved| !resolved.is_empty())
                 .unwrap_or_else(|| fallback.to_string());
         }
 
-        env::var(reference).unwrap_or_else(|_| value.to_string())
-    }
-
-    #[allow(unsafe_code)]
-    fn with_env_var_state<T>(name: &str, value: Option<&str>, run: impl FnOnce() -> T) -> T {
-        let previous = env::var_os(name);
-
-        match value {
-            Some(value) => unsafe { env::set_var(name, value) },
-            None => unsafe { env::remove_var(name) },
-        }
-
-        let result = run();
-
-        match previous {
-            Some(value) => unsafe { env::set_var(name, value) },
-            None => unsafe { env::remove_var(name) },
-        }
-
-        result
+        lookup(reference).unwrap_or_else(|| value.to_string())
     }
 
     #[test]
     fn live_smoke_env_reference_supports_default_fallback_syntax() {
-        with_env_var_state("HARNESS_PROVIDER_TEST_API_KEY", None, || {
-            assert_eq!(
-                resolve_env_reference("${HARNESS_PROVIDER_TEST_API_KEY:-fallback-key}"),
-                "fallback-key"
-            );
-        });
-
-        with_env_var_state("HARNESS_PROVIDER_TEST_API_KEY", Some(""), || {
-            assert_eq!(
-                resolve_env_reference("${HARNESS_PROVIDER_TEST_API_KEY:-fallback-key}"),
-                "fallback-key"
-            );
-        });
-
-        with_env_var_state("HARNESS_PROVIDER_TEST_API_KEY", Some("real-key"), || {
-            assert_eq!(
-                resolve_env_reference("${HARNESS_PROVIDER_TEST_API_KEY:-fallback-key}"),
-                "real-key"
-            );
-        });
+        assert_eq!(
+            resolve_env_reference_with("${HARNESS_PROVIDER_TEST_API_KEY:-fallback-key}", |_| None),
+            "fallback-key"
+        );
+        assert_eq!(
+            resolve_env_reference_with("${HARNESS_PROVIDER_TEST_API_KEY:-fallback-key}", |_| {
+                Some(String::new())
+            }),
+            "fallback-key"
+        );
+        assert_eq!(
+            resolve_env_reference_with("${HARNESS_PROVIDER_TEST_API_KEY:-fallback-key}", |_| {
+                Some("real-key".to_string())
+            }),
+            "real-key"
+        );
     }
 
     fn default_timeout_ms() -> u64 {

@@ -7,7 +7,6 @@ version.workspace = true
 [dependencies]
 async-trait = "0.1"
 blake3 = "1"
-eventsource-stream = "0.2"
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 serde.workspace = true
 serde_json.workspace = true
@@ -17,8 +16,9 @@ tokio-stream.workspace = true
 tracing = "0.1"
 
 [dev-dependencies]
+harness-testkit = { path = "../harness-testkit" }
 json5.workspace = true
-wiremock = "0.6"
+tempfile.workspace = true
 
 [lints]
 workspace = true

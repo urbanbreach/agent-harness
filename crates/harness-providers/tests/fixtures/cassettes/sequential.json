@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "interactions": [
+    {
+      "request": {
+        "provider_id": "default",
+        "model_id": "test-model",
+        "messages": [
+          {
+            "role": "user",
+            "content": "first"
+          }
+        ],
+        "temperature": 0.0,
+        "stream": true
+      },
+      "events": [
+        {
+          "TextDelta": "one"
+        }
+      ]
+    },
+    {
+      "request": {
+        "provider_id": "default",
+        "model_id": "test-model",
+        "messages": [
+          {
+            "role": "user",
+            "content": "second"
+          }
+        ],
+        "temperature": 0.0,
+        "stream": true
+      },
+      "events": [
+        {
+          "TextDelta": "two"
+        }
+      ]
+    }
+  ]
+}

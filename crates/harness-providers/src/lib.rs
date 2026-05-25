@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio_stream::{self, Stream};
 
+pub mod cassette;
 pub mod mock;
 pub mod openai;
 
