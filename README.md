@@ -167,6 +167,7 @@ The same lineage surface is available from the terminal through `harness session
 scripts/test-lanes.sh fast
 scripts/test-lanes.sh integration
 scripts/test-lanes.sh all-deterministic
+scripts/test-lanes.sh signoff-binary
 ```
 
 See [`docs/testing.md`](docs/testing.md) for every lane mode, dry-run usage, env-gated live and

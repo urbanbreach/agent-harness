@@ -5,8 +5,12 @@ change, keep the generated artifacts with the review evidence, and run broader l
 the change touches the contracts they cover.
 
 ```bash
+scripts/test-lanes.sh quality-gates
 scripts/test-lanes.sh fast
 scripts/test-lanes.sh integration
+scripts/test-lanes.sh perf
+scripts/test-lanes.sh coverage
+scripts/test-lanes.sh signoff-binary
 scripts/test-lanes.sh signoff-pty
 scripts/test-lanes.sh signoff-live
 scripts/test-lanes.sh signoff-native
@@ -26,6 +30,38 @@ Each run writes `<artifact-root>/summary.txt`, `<artifact-root>/env.txt`, and pe
 under `<artifact-root>/<mode>/stages/<stage>/`. Keep those files with closeout notes when a lane
 is used as signoff evidence.
 
+## Nextest profiles and deterministic partitions
+
+The deterministic suite is configured in `.config/nextest.toml`:
+
+- `default`: parallel T1-T3 tests, `retries = 0`, `fail-fast = false`, `test-threads = "num-cpus"`, and `slow-timeout = { period = "2s", terminate-after = 10 }`.
+- `ci`: inherits `default`, emits JUnit at `target/nextest/ci/junit.xml`, and is the CI/default deterministic runner.
+- `perf`: T4 budget tests only (`test(/perf_/)`), with JUnit at `target/nextest/perf/junit.xml`.
+- `process-global-state`: a documented serial group with zero current members; new tests must not be added to it to hide isolation bugs.
+
+The `ci` profile excludes T5 PTY/live/native visual binaries and perf tests. Ignored live/native
+signoff tests remain opt-in through explicit signoff lanes.
+
+## Test-suite overhaul gates
+
+`scripts/check-test-suite-gates.py` is the static gate runner for the test-suite overhaul tracked
+in `docs/test-suite-progress.md`:
+
+```bash
+python3 scripts/check-test-suite-gates.py
+python3 scripts/check-test-suite-gates.py --report-only --json
+python3 scripts/check-test-suite-gates.py --self-test
+```
+
+The gates cover deterministic-test sleeps, process-global env/cwd mutation, subprocess and
+real-world dependency usage, widened test-file focus, T5 tree-total line budget, arrange/act/assert
+conventions, cassette secret hygiene, committed snapshot orphans, and test taxonomy. Existing
+arrange/act/assert debt is stored as SHA-256 keys in `docs/test-suite-conventions-baseline.json`;
+the gate fails on new or stale debt without storing source-brand terms in docs. Committed `.snap`
+files with `source:` metadata must point at an existing source file with an insta assertion, or be
+referenced by snapshot name in crate Rust code. Acceptance requires the strict command without
+`--report-only` to return zero violations.
+
 ## Fast default developer lane
 
 Run this first for ordinary local changes:
@@ -38,78 +74,65 @@ scripts/test-lanes.sh fast
 
 - `cargo fmt --all -- --check`
 - `cargo check --workspace`
-- `cargo test -p harness-tui --lib`
-- `cargo test -p harness-tui --test model_switcher_metadata`
-- `cargo test -p harness-tui --test session_navigation_keybindings`
+- `cargo nextest run --profile ci --workspace --all-features`
 
-`fast` explicitly excludes PTY signoff, live provider signoff, native visual signoff, stress
-lanes, ignored tests, and real-network signoff commands. Use it for quick deterministic feedback,
-not release signoff for UI rendering, provider behavior, native screenshots, or stress coverage.
+`fast` explicitly excludes PTY signoff, live provider signoff, native visual signoff, stress lanes,
+ignored tests, and real-network signoff commands. Use it for deterministic T1-T3 feedback across
+all workspace crates.
 
-## Integration CI lane
+## Integration CI partition lane
 
-Run this after `fast` when a change touches deterministic runtime, config, replay, permission,
-compaction, or tool-surface contracts:
+Run this to prove the deterministic profile can be partitioned without returning to dozens of
+bespoke Cargo invocations:
 
 ```bash
 scripts/test-lanes.sh integration
 ```
 
-`integration` carries the protected deterministic checks that are too focused or too slow for
-`fast`: public config drift, event docs drift, coordinator scheduling and replay contracts,
-permission and redelegation guards, native tool parity, and provider-context compaction
-regressions. Run the forbidden-branding scan with integration-focused changes that add public
-docs, help text, snapshots, or generated artifacts. It remains non-live, non-native-visual, and
-non-PTY-signoff.
+`integration` currently runs:
 
-Current stage commands:
+- `cargo nextest run --profile ci --workspace --all-features --partition hash:1/2`
+- `cargo nextest run --profile ci --workspace --all-features --partition hash:2/2`
 
+GitLab CI uses the unpartitioned `rust:test_nextest` job as the canonical JUnit-producing
+deterministic job; this lane documents and validates the partition shape for larger runners.
+
+## Quality gates lane
+
+Run static gates before long jobs when changing tests, fixtures, cassettes, docs, or public output:
+
+```bash
+scripts/test-lanes.sh quality-gates
+```
+
+`quality-gates` runs:
+
+- `python3 scripts/check-test-suite-gates.py`
 - `python3 scripts/check-forbidden-branding.py`
-- `cargo test -p harness --test bootstrap_profiles`
-- `cargo test -p harness --test config_docs_reference`
-- `cargo test -p harness --test determinism_multi_turn_tools`
-- `cargo test -p harness --test event_docs_reference`
-- `cargo test -p harness-core`
-- `cargo test -p harness --test prompt_cli`
-- `cargo test -p harness --test replay_sessions_cli`
-- `cargo test -p harness --test run_cli`
-- `cargo test -p harness --test stress_harness_script`
-- `cargo test -p harness --test tui_cli replay_flag_bypasses_launcher_shell`
-- `cargo test -p harness-providers --lib`
-- `cargo test -p harness-providers --test openai_compatible_serializes_native_tool_schema_without_alias_dupes`
-- `cargo test -p harness-tools --lib`
-- `cargo test -p harness-tools team`
-- `cargo test -p harness-tools --test native_tool_parity_matrix`
-- `cargo test -p harness-tools --test hashline_apply`
-- `cargo test -p harness-tools --test mcp_generic`
-- `cargo test -p harness-tools --test native_agent_spawn_child_session_observability`
-- `cargo test -p harness-tools --test native_agent_spawn_and_batch_preserve_lineage_permissions_and_order`
-- `cargo test -p harness-tools --test native_code_lsp`
-- `cargo test -p harness-tools --test native_code_search`
-- `cargo test -p harness-tools --test native_github`
-- `cargo test -p harness-tools --test native_question_tool`
-- `cargo test -p harness-tools --test native_web_fetch`
-- `cargo test -p harness-tools --test native_web_search`
-- `cargo test -p harness-tools --test native_workspace_edit_routing`
-- `cargo test -p harness-tools --test single_surface_live`
-- `cargo test -p harness-tools --test skill_load_discovery`
-- `cargo test -p harness-testkit --lib`
-- `cargo test -p harness-testkit --test live_proxy_e2e`
-- `cargo test -p harness-testkit --test secretscan`
-- `cargo test -p harness-tools --test native_execution_surface`
-- `cargo test -p harness-tools --test native_control_plane_tools`
-- `cargo test -p harness-core deterministic_summary_uses_required_harness_sections`
-- `cargo test -p harness-core model_summary_validation_rejects_missing_required_harness_section`
-- `cargo test -p harness-core compaction_trigger_pre_prompt_uses_estimate_without_provider_usage`
-- `cargo test -p harness-core compaction_trigger_uses_fallback_budget_without_model_metadata`
-- `cargo test -p harness-core failed_turn_context`
-- `cargo test -p harness-core failed_terminal_compaction_preserves_original_failure`
-- `cargo test -p harness-core split_oversized_turn`
-- `cargo test -p harness-core operational_memory`
-- `cargo test -p harness --test config_schema_cli public_runtime_config_accepts_new_compaction_settings`
-- `cargo test -p harness --test config_schema_cli public_runtime_config_accepts_compaction_settings`
-- `cargo test -p harness-core conversation_projection_failed_checkpoint_turn_status`
-- `cargo test -p harness-core --test resume_plan session_catalog_counts_checkpoint_artifacts_alongside_tool_artifacts`
+
+## Perf and coverage lanes
+
+T4 performance budgets run through the perf nextest profile:
+
+```bash
+scripts/test-lanes.sh perf
+cargo nextest run --profile perf --workspace --all-features
+```
+
+The current budget owner is `crates/harness-core/tests/perf_test.rs`, which asserts the resume-plan
+projection stays under its measured wall-clock budget for a fixed large event log.
+
+Coverage ratchet evidence is produced with:
+
+```bash
+scripts/test-lanes.sh coverage
+```
+
+`coverage` delegates to `scripts/coverage-ratchet.sh`, which requires `cargo-llvm-cov`, writes
+`target/coverage/lcov.info` and `target/coverage/summary.txt`, and compares aggregate line coverage
+at two-decimal precision against the source-controlled ratchet seed in
+`docs/test-suite-coverage-baseline.txt` by default. Override `COVERAGE_BASELINE_PATH` only for local
+experiments; a missing custom baseline records a new seed.
 
 ## Deterministic signoff PTY lane
 
@@ -121,16 +144,22 @@ scripts/test-lanes.sh signoff-pty
 ```
 
 This lane runs the PTY E2E tests single-threaded and writes manifest-backed visual evidence under
-the configured artifact root. Do not parallelize it. For a combined deterministic closeout, use:
+the configured artifact root. Legacy committed harness-testkit PTY snapshots were removed during
+T5 slimming; current PTY evidence is generated under `target/pty-visual-artifacts/`, while retained
+committed snapshots are owned by harness-tui deterministic snapshot tests. The harness-tui PTY test
+target is fail-closed behind `HARNESS_TUI_PTY_SIGNOFF=1`, so ordinary
+`cargo test -p harness-tui --test pty_e2e` remains a fast non-terminal helper check while the
+signoff lane opts into the real PTY captures. Do not parallelize PTY signoff. For a combined
+deterministic closeout, use:
 
-- `env RUST_TEST_THREADS=1 cargo test -p harness-testkit pty_e2e`
-- `env RUST_TEST_THREADS=1 cargo test -p harness-tui pty_e2e`
+- `env RUST_TEST_THREADS=1 cargo test -p harness-testkit --test pty_e2e`
+- `env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo test -p harness-tui --test pty_e2e`
 
 ```bash
 scripts/test-lanes.sh all-deterministic
 ```
 
-`all-deterministic` runs `fast`, then `integration`, then `signoff-pty` only when PTY support checks
+`all-deterministic` runs `quality-gates`, then `fast`, then `integration`, then `signoff-pty` only when PTY support checks
 pass. Its PTY gate requires `cargo` on `PATH`, both PTY test files to exist, and
 `HARNESS_TEST_LANES_SKIP_PTY` not set to `1`.
 
@@ -154,21 +183,35 @@ Required live environment:
 - `HARNESS_LIVE_PROXY_MODEL=<model>`
 
 `signoff-live` fails closed when the live environment is missing. When the environment is present,
-it runs `live_proxy_preflight` first, then the prompt parity wrapper, then the TUI parity wrapper.
+it runs `live_proxy_preflight_requires_live_env` first, then the prompt parity wrapper, then the TUI parity wrapper.
 The underlying parity order is documented in
 [`crates/harness-testkit/tests/README.live-proxy.md`](../crates/harness-testkit/tests/README.live-proxy.md):
-CLI parity runs `live_proxy_prompt_responses_smoke`, `live_proxy_prompt_chat_tool_flow`, and
-`live_proxy_prompt_native_tool_flow`; TUI parity runs `live_proxy_preflight`,
-`live_proxy_e2e_tui_prompt_responses_smoke`, and `live_proxy_e2e_tui_tool_flow`.
+CLI parity runs `live_proxy_preflight_requires_live_env` and `live_proxy_prompt_parity_signoff`;
+TUI parity runs `live_proxy_preflight_requires_live_env` and
+`live_proxy_e2e_tui_parity_signoff`.
 
 Current stage commands:
 
-- `cargo test -p harness-testkit live_proxy_preflight -- --ignored --exact`
+- `cargo test -p harness-testkit live_proxy_preflight_requires_live_env -- --ignored --exact`
 - `cargo test -p harness-testkit live_proxy_prompt_parity_signoff -- --ignored --exact`
 - `cargo test -p harness-testkit live_proxy_e2e_tui_parity_signoff -- --ignored --exact`
 
 Use the live README for exact preflight details, optional live vars, artifacts, retention, and
 agent iteration order instead of duplicating that contract here.
+
+## Binary shim smoke
+
+The single real-process CLI shim smoke is ignored by default and excluded from the deterministic
+nextest profile. Run it only when validating the compiled `main.rs` wiring:
+
+```bash
+scripts/test-lanes.sh signoff-binary
+```
+
+`signoff-binary` sets `HARNESS_BINARY_SMOKE=1` and runs the ignored
+`cargo test -p harness --test binary_smoke -- --ignored --exact` stage through the canonical
+artifact-recording lane runner. The smoke runs `harness --help` through `CARGO_BIN_EXE_harness`;
+in-process CLI tests remain the default proof for command behavior.
 
 ## Native visual lane
 
@@ -180,10 +223,11 @@ DISPLAY=<display> \
 scripts/test-lanes.sh signoff-native
 ```
 
-This lane runs the native visual tests single-threaded. It requires `HARNESS_NATIVE_VISUAL=1` and
-`DISPLAY=<display>`, then records native screenshot provenance under the artifact root. Treat this
-as local visual evidence, not a portable hash oracle. If native prerequisites are unavailable, use
-`signoff-pty` for deterministic UI signoff.
+This lane runs the native visual tests single-threaded. In the current slim T5 surface it fails
+closed unless `HARNESS_NATIVE_VISUAL=1` and `DISPLAY=<display>` are present, and preserves the native
+visual metadata/artifact-root contract for local signoff tooling. Treat native screenshots as local
+visual evidence, not a portable hash oracle. If native prerequisites are unavailable, use `signoff-pty`
+for deterministic UI signoff.
 
 Current stage command:
 
@@ -222,12 +266,49 @@ Before deleting or narrowing tests, update the test-suite overhaul evidence rath
 memory. Every deletion needs a preserved invariant owner in the current map, or replacement coverage
 that proves the same behavior before the old test is removed.
 
-Expect the invariant map to keep these owners visible:
+Current invariant owners:
 
-- Drift checks for public config docs and event docs.
-- Coordinator scheduling, replay-derived background output, cancellation, permission, and redelegation contracts.
-- Native tool parity and stable public tool IDs.
-- Provider-context compaction regressions and checkpoint artifact accounting.
-- Deterministic PTY rendering evidence for UI behavior that cannot be proven with unit tests.
-- Live and native visual lanes as opt-in signoff only, with artifacts and provenance included in
-  the closeout evidence.
+| Protected invariant | Owning tests / lane |
+|---|---|
+| Coordinator scheduling, cancellation, failed-turn handling, compaction, and tool lifecycle | `cargo test -p harness-core --test coord_test`; focused chunks under `crates/harness-core/tests/coord/` |
+| Replay purity and projection derivation from append-only events | `cargo test -p harness --test replay_sessions_cli_test`; `cargo test -p harness-core --test conversation_projection_test`; `cargo test -p harness-core --test transcript_projection_test`; `cargo test -p harness-core --test resume_plan_test`; `cargo test -p harness-core --test session_lineage_materialization_test` |
+| Permission checks and redelegation guard | `cargo test -p harness-core --test permission_policy_supports_native_tool_permission_kinds_test`; `cargo test -p harness-tools --test native_agent_spawn_and_batch_preserve_lineage_permissions_and_order_test` |
+| Native tool parity and stable public tool IDs | `cargo test -p harness-tools --test native_tool_parity_matrix_test` |
+| Provider serialization, replay-only cassettes, redaction, and checkpoint accounting | `cargo test -p harness-providers --test openai_compatible_serializes_native_tool_schema_without_alias_dupes_test`; `cargo test -p harness-providers --test recorded_test`; `cargo test -p harness-testkit --test secretscan_test` |
+| Config/event docs drift and public schema generation | `cargo test -p harness --test config_docs_reference_test`; `cargo test -p harness --test event_docs_reference_test`; `cargo test -p harness --test config_schema_cli_test` |
+| Deterministic UI content rendering, transcript layout, and navigation | `cargo test -p harness-tui --test deterministic_render_test`; `cargo test -p harness-tui --test lineage_view_model_test`; `cargo test -p harness-tui --test model_switcher_metadata_test`; `cargo test -p harness-tui --test session_navigation_keybindings_test`; `cargo test -p harness-tui --test pty_e2e` as the fail-closed helper lane |
+| Live, PTY, native visual provenance contracts | `scripts/test-lanes.sh signoff-pty`; `scripts/test-lanes.sh signoff-live`; `scripts/test-lanes.sh signoff-native` as opt-in T5 lanes only |
+
+Retired harness-tui PTY helper scenario owners:
+
+| Removed T5 helper scenario | Surviving deterministic owner |
+|---|---|
+| Startup shell / startup palette / startup session history | `cargo test -p harness-tui --test deterministic_render_test startup_shell_is_compose_first_without_pty startup_session_history_picker_renders_without_pty`; `cargo test -p harness-tui startup_slash_commands_execute_without_menu command_palette_renders_and_filters` |
+| Streamed response and completed live shell | `cargo test -p harness-tui live_shell_enter_submits_and_echoes_prompt_snapshot live_shell_type_first_input_snapshot`; `cargo test -p harness-tui --test deterministic_render_test live_transcript_and_operator_sidebar_render_without_pty` |
+| Tool lifecycle and inline diff parity | `cargo test -p harness-tui --test deterministic_render_test tool_lifecycle_rows_stay_ordered_without_pty`; `cargo test -p harness-tui transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs transcript_inline_diff_stays_compact_between_tool_rows transcript_native_edit_renders_inline_diff_from_artifact` |
+| Permission and question overlays | `cargo test -p harness-tui permission_modal_preempts_palette_and_slash permission_overlay_preserves_draft_and_transcript_context permission_overlay_ignores_plain_draft_input_once_prompt_is_active`; `cargo test -p harness-tui --test deterministic_render_test permission_modal_preserves_draft_without_pty question_permission_prompt_renders_without_pty` |
+| Operator sidebar, details drawer, and orchestration states | `cargo test -p harness-tui --test deterministic_render_test live_transcript_and_operator_sidebar_render_without_pty`; `cargo test -p harness-tui operator_sidebar_preserves_section_order_and_copy live_shell_details_drawer_orchestration_snapshot orchestration_projection_tracks_queued_started_completed_counts orchestration_projection_tracks_stale_then_late_result` |
+| Degraded/disconnected/replay shells | `cargo test -p harness-tui live_shell_degraded_bootstrap_snapshot live_shell_disconnected_stream_snapshot`; `cargo test -p harness-tui --test deterministic_render_test replay_shell_is_read_only_without_pty` |
+
+Narrowed harness-testkit PTY assertion owners:
+
+| Removed or narrowed T5 assertion | Surviving owner |
+|---|---|
+| Duplicate operator-sidebar screen-string assertions in `pty_e2e_sidebar_session_parity` and `pty_helper_operator_sidebar_session_contract` | `cargo test -p harness-tui --test deterministic_render_test live_transcript_and_operator_sidebar_render_without_pty`; `cargo test -p harness-tui operator_sidebar_preserves_section_order_and_copy`; remaining T5 manifest-backed screenshots assert only smoke/provenance markers. |
+| Duplicate permission-overlay screen-string assertions in `pty_e2e_permission_dock_parity` and `pty_helper_permission_with_draft` | `cargo test -p harness-tui permission_modal_preempts_palette_and_slash permission_overlay_preserves_draft_and_transcript_context permission_overlay_ignores_plain_draft_input_once_prompt_is_active`; `cargo test -p harness-tui --test deterministic_render_test permission_modal_preserves_draft_without_pty`; remaining T5 captures keep permission smoke/provenance markers. |
+
+Retired harness-testkit T5 scenario owners:
+
+| Removed T5 scenario group | Surviving owner |
+|---|---|
+| PTY startup, command palette, replay/continue history, and type-first shell content checks | `cargo test -p harness-tui --test deterministic_render_test startup_shell_is_compose_first_without_pty startup_session_history_picker_renders_without_pty replay_shell_is_read_only_without_pty`; `cargo test -p harness-tui startup_slash_commands_execute_without_menu command_palette_renders_and_filters`; slim `cargo test -p harness-testkit --test pty_e2e` keeps only single-thread/env/artifact-path smoke. |
+| PTY transcript, native-tool row, inline diff, MCP/background, and dense-log screen checks | `cargo test -p harness-tui --test deterministic_render_test tool_lifecycle_rows_stay_ordered_without_pty live_transcript_and_operator_sidebar_render_without_pty`; `cargo test -p harness-tui transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs transcript_inline_diff_stays_compact_between_tool_rows transcript_native_edit_renders_inline_diff_from_artifact`; `cargo test -p harness-tools --test native_tool_parity_matrix_test`. |
+| PTY child-session, lineage, replay-read-only, active/unrestorable continue rejection checks | `cargo test -p harness --test replay_sessions_cli_test`; `cargo test -p harness-tui --test lineage_view_model_test`; `cargo test -p harness-tui --test session_navigation_keybindings_test`; `cargo test -p harness-core --test session_lineage_materialization_test`. |
+| Live proxy prompt/TUI/native tool-flow, provider parity, config mutation, request/evidence, and wiremock checks | `cargo test -p harness-providers --test recorded_test`; `cargo test -p harness-providers --test openai_compatible_serializes_native_tool_schema_without_alias_dupes_test`; `cargo test -p harness-testkit --test live_proxy_e2e` for env-gated signoff names and fail-closed config preflight. |
+| Live visual manifest, vision, screenshot evidence, and artifact-retention checks | `cargo test -p harness-tui --test deterministic_render_test`; `cargo test -p harness-testkit --test native_visual_e2e`; opt-in `scripts/test-lanes.sh signoff-native` for local screenshot provenance only. |
+| Native visual startup geometry, navigation, permission, transcript, operator-sidebar, Ghostty, capture-helper, and managed-session checks | `cargo test -p harness-tui --test deterministic_render_test`; `cargo test -p harness-tui permission_modal_preempts_palette_and_slash operator_sidebar_preserves_section_order_and_copy`; `cargo test -p harness-testkit --test native_visual_e2e`; `cargo test -p harness-testkit --bin native_visual_helper -- --help` when validating the helper CLI. |
+| Shared T5 fixture/rendering helpers (`harness_bin`, session fixtures, temp paths, visual renderer, manifest writers, markers) | `cargo test -p harness-testkit --lib`; `cargo test -p harness-testkit --test secretscan_test`; deterministic fixture ownership moved to crate-local test helpers and harness-tui render fixtures rather than uncompiled T5 support. |
+
+The acceptance dossier for the test-suite overhaul is recorded in
+`docs/test-suite-progress.md` under the G008 checkpoint. It maps the Section 12 A1–A15 gates to
+the concrete artifacts under `target/test-suite-overhaul/`.

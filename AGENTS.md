@@ -64,20 +64,20 @@ agent-harness/
 cargo fmt --all -- --check
 cargo check --workspace
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-features -- --test-threads=1
+cargo test --workspace --all-features
 cargo run -p harness -- --config configs/harness.example.jsonc config validate
 scripts/stress-harness.sh --mode offline
 ```
 
 Targeted checks:
 ```bash
-cargo test -p harness --test config_schema_cli
-cargo test -p harness --test config_docs_reference
-cargo test -p harness --test event_docs_reference
+cargo test -p harness --test config_schema_cli_test
+cargo test -p harness --test config_docs_reference_test
+cargo test -p harness --test event_docs_reference_test
 cargo test -p harness-core
-cargo test -p harness-tools --test native_tool_parity_matrix
+cargo test -p harness-tools --test native_tool_parity_matrix_test
 cargo test -p harness-tui
-RUST_TEST_THREADS=1 cargo test -p harness-testkit pty_e2e
+RUST_TEST_THREADS=1 cargo test -p harness-testkit --test pty_e2e
 ```
 
 ## CONVENTIONS

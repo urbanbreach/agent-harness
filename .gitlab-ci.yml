@@ -9,7 +9,6 @@ include:
 variables:
   SECRET_DETECTION_ENABLED: "true"
   INSTA_UPDATE: "no"
-  RUST_TEST_THREADS: "1"
   TZ: "UTC"
   LANG: "C.UTF-8"
   LC_ALL: "C.UTF-8"
@@ -17,6 +16,9 @@ variables:
   HARNESS_DETERMINISTIC: "1"
   HARNESS_DISABLE_ANIMATIONS: "1"
   HARNESS_SEED: "42"
+  NEXTEST_PROFILE: "ci"
+  CARGO_NEXTEST_VERSION: "0.9.98"
+  CARGO_LLVM_COV_VERSION: "0.6.18"
 
 .rust_cache: &rust_cache
   key: "${CI_PROJECT_NAME}-${CI_COMMIT_REF_SLUG}"
@@ -24,26 +26,53 @@ variables:
     - .cargo/registry/
     - .cargo/git/
 
-.test_artifacts_on_failure: &test_artifacts_on_failure
-  when: on_failure
+.rust_nextest_before_script: &rust_nextest_before_script
+  - rustup component add rustfmt clippy
+  - cargo install cargo-nextest --version "${CARGO_NEXTEST_VERSION}" --locked
+
+.nextest_junit_artifacts: &nextest_junit_artifacts
+  when: always
+  expire_in: 1 week
+  reports:
+    junit:
+      - target/nextest/ci/junit.xml
+  paths:
+    - target/nextest/
+
+.perf_junit_artifacts: &perf_junit_artifacts
+  when: always
+  expire_in: 1 week
+  reports:
+    junit:
+      - target/nextest/perf/junit.xml
+  paths:
+    - target/nextest/perf/
+
+.coverage_artifacts: &coverage_artifacts
+  when: always
   expire_in: 1 week
   paths:
-    - target/
-    - .agent-harness/
-    - crates/**/snapshots/
+    - target/coverage/
+    - docs/test-suite-coverage-baseline.txt
 
 .pty_visual_artifacts_always: &pty_visual_artifacts_always
   when: always
   expire_in: 1 week
   paths:
     - target/pty-visual-artifacts/
-    - crates/harness-testkit/tests/snapshots/
 
 sast:
   stage: test
 
 secret_detection:
   stage: secret-detection
+
+rust:quality_gates:
+  stage: test
+  image: python:3.12
+  script:
+    - python3 scripts/check-test-suite-gates.py
+    - python3 scripts/check-forbidden-branding.py
 
 rust:fmt:
   stage: test
@@ -52,7 +81,7 @@ rust:fmt:
   before_script:
     - rustup component add rustfmt
   script:
-    - cargo fmt --check
+    - cargo fmt --all -- --check
 
 rust:clippy:
   stage: test
@@ -75,13 +104,35 @@ rust:build_harness:
     paths:
       - target/debug/harness
 
-rust:test:
+rust:test_nextest:
   stage: test
   image: rust:latest
   cache: *rust_cache
+  before_script: *rust_nextest_before_script
   script:
-    - cargo test --workspace --all-features -- --test-threads=1
-  artifacts: *test_artifacts_on_failure
+    - cargo nextest run --profile ci --workspace --all-features
+  artifacts: *nextest_junit_artifacts
+
+rust:perf:
+  stage: test
+  image: rust:latest
+  cache: *rust_cache
+  before_script: *rust_nextest_before_script
+  script:
+    - cargo nextest run --profile perf --workspace --all-features
+  artifacts: *perf_junit_artifacts
+
+rust:coverage:
+  stage: test
+  image: rust:latest
+  cache: *rust_cache
+  before_script:
+    - rustup component add llvm-tools-preview
+    - cargo install cargo-nextest --version "${CARGO_NEXTEST_VERSION}" --locked
+    - cargo install cargo-llvm-cov --version "${CARGO_LLVM_COV_VERSION}" --locked
+  script:
+    - scripts/coverage-ratchet.sh
+  artifacts: *coverage_artifacts
 
 rust:pty_e2e:
   stage: test
@@ -92,5 +143,16 @@ rust:pty_e2e:
       artifacts: true
   script:
     - export HARNESS_VISUAL_ARTIFACT_DIR=target/pty-visual-artifacts
-    - for i in 1 2 3 4 5; do echo "PTY E2E run $i/5"; cargo test -p harness-testkit pty_e2e -- --test-threads=1 || exit 1; done
+    - env RUST_TEST_THREADS=1 cargo test -p harness-testkit --test pty_e2e
+    - env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo test -p harness-tui --test pty_e2e
   artifacts: *pty_visual_artifacts_always
+
+rust:binary_smoke:
+  stage: test
+  image: rust:latest
+  cache: *rust_cache
+  needs:
+    - job: rust:build_harness
+      artifacts: true
+  script:
+    - env HARNESS_BINARY_SMOKE=1 cargo test -p harness --test binary_smoke -- --ignored --exact

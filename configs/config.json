@@ -62,6 +62,92 @@
         }
       ]
     },
+    "McpServerConfig": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "command": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "cwd": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "env": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "default": {},
+              "type": "object"
+            },
+            "timeout_secs": {
+              "default": 30,
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "transport": {
+              "enum": [
+                "stdio"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "command",
+            "transport"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "endpoint": {
+              "type": "string"
+            },
+            "headers": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "default": {},
+              "type": "object"
+            },
+            "timeout_secs": {
+              "default": 30,
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "transport": {
+              "enum": [
+                "http"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "endpoint",
+            "transport"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "ModelConfig": {
       "additionalProperties": false,
       "properties": {
@@ -1389,7 +1475,9 @@
       "default": null
     },
     "mcp": {
-      "additionalProperties": true,
+      "additionalProperties": {
+        "$ref": "#/definitions/McpServerConfig"
+      },
       "default": {},
       "type": "object"
     },

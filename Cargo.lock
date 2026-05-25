@@ -720,17 +720,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "eventsource-stream"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74fef4569247a5f429d9156b9d0a2599914385dd189c539334c625d8099d90ab"
-dependencies = [
- "futures-core",
- "nom",
- "pin-project-lite",
-]
-
-[[package]]
 name = "fancy-regex"
 version = "0.16.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1011,6 +1000,7 @@ dependencies = [
  "clap",
  "harness-core",
  "harness-providers",
+ "harness-testkit",
  "harness-tools",
  "harness-tui",
  "json5",
@@ -1024,7 +1014,6 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "uuid",
- "wiremock",
 ]
 
 [[package]]
@@ -1056,16 +1045,16 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "blake3",
- "eventsource-stream",
+ "harness-testkit",
  "json5",
  "reqwest",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
  "tracing",
- "wiremock",
 ]
 
 [[package]]
@@ -1083,6 +1072,7 @@ dependencies = [
  "regex",
  "reqwest",
  "serde_json",
+ "tempfile",
  "time",
  "tokio",
  "vt100",
@@ -1630,12 +1620,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "minimal-lexical"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
-
-[[package]]
 name = "miniz_oxide"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1679,16 +1663,6 @@ dependencies = [
  "libc",
  "memoffset 0.6.5",
  "pin-utils",
-]
-
-[[package]]
-name = "nom"
-version = "7.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
-dependencies = [
- "memchr",
- "minimal-lexical",
 ]
 
 [[package]]
