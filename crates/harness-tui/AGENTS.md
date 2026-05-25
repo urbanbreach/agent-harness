@@ -45,5 +45,5 @@ Approved rendering stack; do not add alternatives without explicit signoff:
 ## COMMANDS
 ```bash
 cargo test -p harness-tui
-cargo test -p harness-tui pty_e2e
+cargo test -p harness-tui --test pty_e2e
 ```

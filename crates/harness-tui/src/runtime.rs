@@ -138,6 +138,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             session_history_entries,
         } => {
             let mut app = AppState::new_startup(session_history_entries, on_ui_intent);
+            app.should_quit = exit_on_finish;
             if let Some(bindings) = keybindings.as_ref() {
                 app.apply_keybindings(bindings.clone());
             }

@@ -909,7 +909,7 @@ mod tests {
     }
 
     #[test]
-    fn keymap_overrides_binding() {
+    fn keymap_override_replaces_default_binding() {
         let mut overrides = BTreeMap::new();
         overrides.insert("quit".to_string(), "x".to_string());
 

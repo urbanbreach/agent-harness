@@ -13,6 +13,7 @@ pub mod layout;
 #[cfg(test)]
 mod lib_tests;
 pub mod overlay;
+pub mod render_test;
 mod runtime;
 #[cfg(test)]
 mod tests;

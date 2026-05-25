@@ -57,7 +57,9 @@ pub use crate::view_model::{ForkSelectorViewModel, LineageBrowserViewModel};
 #[cfg(test)]
 pub(crate) use file_mentions::FileMentionSelectedTag;
 pub(crate) use file_mentions::{
-    FileMentionEntry, FileMentionFrecency, FileMentionIndex, FileMentionTag,
+    system_file_mention_now_unix, system_file_mention_workspace_root, FileMentionEntry,
+    FileMentionFrecency, FileMentionIndex, FileMentionTag, FileMentionWorkspaceScanner,
+    SystemFileMentionWorkspaceScanner,
 };
 pub use lineage::{ForkSelectorState, LineageBrowserState};
 pub use pending_live::{
@@ -1210,6 +1212,9 @@ pub struct AppState {
     pub(crate) file_mention_selected: usize,
     file_mention_trigger: Option<usize>,
     file_mention_workspace_root: Option<PathBuf>,
+    file_mention_workspace_root_provider: Arc<dyn Fn() -> Option<PathBuf> + Send + Sync>,
+    file_mention_scanner: Arc<dyn FileMentionWorkspaceScanner>,
+    file_mention_now_unix: Arc<dyn Fn() -> u64 + Send + Sync>,
     workspace_context_labels: Vec<String>,
     file_mention_index: Option<FileMentionIndex>,
     pub(crate) file_mention_tags: Vec<FileMentionTag>,
@@ -1334,6 +1339,9 @@ impl Default for AppState {
             file_mention_selected: 0,
             file_mention_trigger: None,
             file_mention_workspace_root: None,
+            file_mention_workspace_root_provider: Arc::new(system_file_mention_workspace_root),
+            file_mention_scanner: Arc::new(SystemFileMentionWorkspaceScanner),
+            file_mention_now_unix: Arc::new(system_file_mention_now_unix),
             workspace_context_labels: Vec::new(),
             file_mention_index: None,
             file_mention_tags: Vec::new(),
@@ -3205,7 +3213,7 @@ impl AppState {
             && !key.modifiers.contains(KeyModifiers::ALT)
             && matches!(key.code, KeyCode::Char(_))
         {
-            if mapped_action.is_some_and(action_preempts_text_input) {
+            if mapped_action.is_some_and(|action| action_preempts_text_input(action, key)) {
                 self.execute_action(mapped_action.expect("preempting action"));
                 self.maybe_auto_exit();
                 return;
@@ -3225,7 +3233,7 @@ impl AppState {
             && !key.modifiers.contains(KeyModifiers::ALT)
             && matches!(key.code, KeyCode::Char(_))
         {
-            if mapped_action.is_some_and(action_preempts_text_input) {
+            if mapped_action.is_some_and(|action| action_preempts_text_input(action, key)) {
                 self.execute_action(mapped_action.expect("preempting action"));
                 self.maybe_auto_exit();
                 return;
@@ -3670,9 +3678,7 @@ impl AppState {
                 }
             }
             Action::ToggleOperatorSidebar
-                if !self.replay_mode
-                    && self.focus != Focus::Prompt
-                    && !self.post_run_handoff_visible() =>
+                if !self.replay_mode && !self.post_run_handoff_visible() =>
             {
                 let opening = self.active_review_surface.is_some() || !self.details_drawer_open();
                 self.active_tab = Tab::Run;
@@ -4007,10 +4013,17 @@ impl AppState {
     }
 }
 
-fn action_preempts_text_input(action: Action) -> bool {
+fn action_preempts_text_input(action: Action, key: KeyEvent) -> bool {
     matches!(
         action,
         Action::SessionChildCycle | Action::SessionChildCycleReverse | Action::ToggleTerminalPanel
+    ) || matches!(
+        (action, key.code, key.modifiers),
+        (
+            Action::ToggleOperatorSidebar,
+            KeyCode::Char('2'),
+            KeyModifiers::NONE
+        )
     )
 }
 
@@ -4566,7 +4579,11 @@ pub(crate) fn exact_test_compact_operator_rail_skips_focus_cycle() {
     assert_eq!(live.focus, Focus::Prompt);
     assert!(!live.details_drawer_open());
 
-    live.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::CONTROL));
+    live.handle_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE));
+    assert_eq!(live.focus, Focus::Details);
+    assert!(live.details_drawer_open());
+
+    live.handle_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE));
     assert_eq!(live.focus, Focus::Details);
     assert!(!live.details_drawer_open());
 
@@ -4574,8 +4591,12 @@ pub(crate) fn exact_test_compact_operator_rail_skips_focus_cycle() {
     assert_eq!(live.focus, Focus::Prompt);
     assert!(!live.details_drawer_open());
 
-    live.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::CONTROL));
+    live.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::CONTROL));
     assert_eq!(live.focus, Focus::Details);
+    assert!(!live.details_drawer_open());
+
+    live.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::CONTROL));
+    assert_eq!(live.focus, Focus::Prompt);
     assert!(!live.details_drawer_open());
 
     let mut live_overlay = AppState::new_live(None, false, None);

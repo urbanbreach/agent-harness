@@ -7583,7 +7583,7 @@ fn lifecycle_shell_state_transitions() {
 
 #[cfg(test)]
 #[test]
-fn lifecycle_shell_snapshots() {
+fn lifecycle_shell_snapshots_preserve_startup_and_handoff_contracts() {
     let mut startup = app::AppState::new_startup(
         vec![startup_session_entry(
             "run_resume",

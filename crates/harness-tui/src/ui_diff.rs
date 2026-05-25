@@ -1358,6 +1358,9 @@ fn highlight_diff_line_chunks(
     row_bg: Option<Color>,
 ) -> Option<Vec<StyledTextChunk>> {
     let path = path?;
+    if diff_path_is_plain_prose(path) {
+        return None;
+    }
     let assets = diff_syntax_highlight_assets();
     let syntax = assets
         .syntax_set
@@ -1380,6 +1383,20 @@ fn highlight_diff_line_chunks(
                 style: diff_syntect_style_to_ratatui(style, row_bg),
             })
             .collect(),
+    )
+}
+
+fn diff_path_is_plain_prose(path: &str) -> bool {
+    let Some(extension) = Path::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+    else {
+        return false;
+    };
+
+    matches!(
+        extension.to_ascii_lowercase().as_str(),
+        "adoc" | "asciidoc" | "markdown" | "md" | "mdown" | "mkd" | "rst" | "text" | "txt"
     )
 }
 
@@ -2018,6 +2035,52 @@ mod tests {
         assert_eq!(find_chunk("note").style.bg, Some(reference_diff_added_bg()));
     }
 
+    #[test]
+    fn prose_diff_paths_skip_syntax_highlighting_fast_path() {
+        // arrange
+        let prose_paths = [
+            "README.md",
+            "docs/guide.markdown",
+            "notes.MDOWN",
+            "changelog.mkd",
+            "manual.rst",
+            "plain.text",
+            "message.txt",
+            "guide.adoc",
+            "guide.asciidoc",
+        ];
+        let syntax_paths = ["src/lib.rs", "script.py", "Makefile"];
+
+        // act
+        let prose_results = prose_paths.map(|path| {
+            (
+                path,
+                diff_path_is_plain_prose(path),
+                highlight_diff_line_chunks(
+                    Some(path),
+                    "# heading",
+                    Some(reference_diff_added_bg()),
+                )
+                .is_none(),
+            )
+        });
+        let syntax_results = syntax_paths.map(|path| (path, diff_path_is_plain_prose(path)));
+        let extensionless_result = diff_path_is_plain_prose("README");
+
+        // assert
+        for (path, is_plain_prose, skips_highlighting) in prose_results {
+            assert!(is_plain_prose, "{path} should be treated as prose");
+            assert!(
+                skips_highlighting,
+                "{path} should not initialize syntect syntax highlighting"
+            );
+        }
+
+        for (path, is_plain_prose) in syntax_results {
+            assert!(!is_plain_prose, "{path} should keep normal syntax handling");
+        }
+        assert!(!extensionless_result);
+    }
     #[test]
     fn structured_diff_headers_surface_rename_paths() {
         let diff = "--- src/old_name.rs\n+++ src/new_name.rs\n@@ -1,1 +1,1 @@\n-old\n+new\n";

@@ -4466,6 +4466,38 @@ fn file_mention_enter_inserts_selected_file_with_space() {
 }
 
 #[test]
+fn file_mentions_use_injected_scanner_workspace_and_clock() {
+    let mut app = AppState::new_live(None, false, None);
+    app.set_file_mention_collaborators_for_test(
+        PathBuf::from("/virtual/workspace"),
+        vec!["docs/main.rs".to_string(), "src/main.rs".to_string()],
+        123,
+    );
+    app.focus = Focus::Prompt;
+
+    for ch in "@src/main".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
+
+    let selected = app.selected_file_tags();
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].path, "src/main.rs");
+    assert_eq!(selected[0].url, "file:///virtual/workspace/src/main.rs");
+    assert_eq!(
+        app.file_mention_frecency_for_test("src/main.rs"),
+        Some((1, 123))
+    );
+
+    app.clear_prompt_input();
+    for ch in "@main".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+
+    assert_eq!(app.file_mention_entries[0].display, "src/main.rs");
+}
+
+#[test]
 fn submitting_selected_file_mention_emits_structured_file_part() {
     let tempdir = tempfile::tempdir().expect("tempdir");
     std::fs::create_dir(tempdir.path().join("src")).expect("create src");

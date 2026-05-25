@@ -89,10 +89,54 @@ impl FileMentionFrecency {
     }
 }
 
+pub(crate) trait FileMentionWorkspaceScanner: Send + Sync {
+    fn workspace_files(&self, workspace_root: &Path) -> Option<Vec<String>>;
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct SystemFileMentionWorkspaceScanner;
+
+impl FileMentionWorkspaceScanner for SystemFileMentionWorkspaceScanner {
+    fn workspace_files(&self, workspace_root: &Path) -> Option<Vec<String>> {
+        ripgrep_workspace_files(workspace_root)
+    }
+}
+
+#[cfg(test)]
+#[derive(Debug)]
+pub(crate) struct FixedFileMentionWorkspaceScanner {
+    files: Vec<String>,
+}
+
+#[cfg(test)]
+impl FixedFileMentionWorkspaceScanner {
+    pub(crate) fn new(files: Vec<String>) -> Self {
+        Self { files }
+    }
+}
+
+#[cfg(test)]
+impl FileMentionWorkspaceScanner for FixedFileMentionWorkspaceScanner {
+    fn workspace_files(&self, _workspace_root: &Path) -> Option<Vec<String>> {
+        Some(self.files.clone())
+    }
+}
+
+pub(crate) fn system_file_mention_workspace_root() -> Option<PathBuf> {
+    std::env::current_dir().ok()
+}
+
+pub(crate) fn system_file_mention_now_unix() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default()
+}
+
 impl FileMentionIndex {
-    fn build(root: PathBuf) -> Self {
+    fn build(root: PathBuf, scanner: &dyn FileMentionWorkspaceScanner) -> Self {
         Self {
-            entries: scan_workspace_entries(&root),
+            entries: scan_workspace_entries(&root, scanner),
             root,
         }
     }
@@ -393,7 +437,7 @@ impl AppState {
     fn file_mention_workspace_root(&self) -> PathBuf {
         self.file_mention_workspace_root
             .clone()
-            .or_else(|| std::env::current_dir().ok())
+            .or_else(|| (self.file_mention_workspace_root_provider)())
             .unwrap_or_else(|| PathBuf::from("."))
     }
 
@@ -403,7 +447,11 @@ impl AppState {
             .as_ref()
             .is_none_or(|index| index.root() != workspace_root);
         if rebuild {
-            self.file_mention_index = Some(FileMentionIndex::build(workspace_root.to_path_buf()));
+            let scanner = std::sync::Arc::clone(&self.file_mention_scanner);
+            self.file_mention_index = Some(FileMentionIndex::build(
+                workspace_root.to_path_buf(),
+                scanner.as_ref(),
+            ));
         }
         self.file_mention_index
             .as_ref()
@@ -434,6 +482,27 @@ impl AppState {
     pub(crate) fn set_file_mention_workspace_root_for_test(&mut self, root: PathBuf) {
         self.file_mention_workspace_root = Some(root);
         self.file_mention_index = None;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_file_mention_collaborators_for_test(
+        &mut self,
+        root: PathBuf,
+        files: Vec<String>,
+        now_unix: u64,
+    ) {
+        self.file_mention_workspace_root = Some(root);
+        self.file_mention_scanner =
+            std::sync::Arc::new(FixedFileMentionWorkspaceScanner::new(files));
+        self.file_mention_now_unix = std::sync::Arc::new(move || now_unix);
+        self.file_mention_index = None;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn file_mention_frecency_for_test(&self, path: &str) -> Option<(u32, u64)> {
+        self.file_mention_frecency
+            .get(path)
+            .map(|entry| (entry.frequency, entry.last_used_unix))
     }
 
     pub(crate) fn selected_file_tags(&self) -> Vec<SelectedFileTag> {
@@ -467,10 +536,7 @@ impl AppState {
     }
 
     fn record_file_mention_frecency(&mut self, path: &str) {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|duration| duration.as_secs())
-            .unwrap_or_default();
+        let now = (self.file_mention_now_unix)();
         let entry = self
             .file_mention_frecency
             .entry(path.to_string())
@@ -688,8 +754,11 @@ fn valid_line_range(value: &str) -> bool {
         && (end.is_empty() || end.chars().all(|ch| ch.is_ascii_digit()))
 }
 
-fn scan_workspace_entries(workspace_root: &Path) -> Vec<FileMentionEntry> {
-    let files = ripgrep_workspace_files(workspace_root).unwrap_or_else(|| {
+fn scan_workspace_entries(
+    workspace_root: &Path,
+    scanner: &dyn FileMentionWorkspaceScanner,
+) -> Vec<FileMentionEntry> {
+    let files = scanner.workspace_files(workspace_root).unwrap_or_else(|| {
         let mut files = Vec::new();
         scan_directory(workspace_root, workspace_root, &mut files);
         files
@@ -936,7 +1005,10 @@ fn prompt_char_to_byte(value: &str, char_index: usize) -> usize {
 mod tests {
     use std::collections::BTreeMap;
 
-    use super::{extract_line_range, search_file_mentions, FileMentionFrecency, FileMentionIndex};
+    use super::{
+        extract_line_range, search_file_mentions, FileMentionFrecency, FileMentionIndex,
+        SystemFileMentionWorkspaceScanner,
+    };
 
     #[test]
     fn line_range_parser_matches_harness_suffix_behavior() {
@@ -956,7 +1028,10 @@ mod tests {
         std::fs::write(tempdir.path().join("src/lib.rs"), "lib").expect("write lib");
         std::fs::write(tempdir.path().join("README.md"), "readme").expect("write readme");
 
-        let index = FileMentionIndex::build(tempdir.path().to_path_buf());
+        let index = FileMentionIndex::build(
+            tempdir.path().to_path_buf(),
+            &SystemFileMentionWorkspaceScanner,
+        );
         let entries = search_file_mentions(index.entries(), "", &BTreeMap::new());
 
         assert_eq!(entries.len(), 1);
@@ -970,7 +1045,10 @@ mod tests {
         std::fs::create_dir(tempdir.path().join("src")).expect("create src");
         std::fs::write(tempdir.path().join("src/main.rs"), "fn main() {}").expect("write main");
 
-        let index = FileMentionIndex::build(tempdir.path().to_path_buf());
+        let index = FileMentionIndex::build(
+            tempdir.path().to_path_buf(),
+            &SystemFileMentionWorkspaceScanner,
+        );
         let entries = search_file_mentions(index.entries(), "main#3", &BTreeMap::new());
 
         assert_eq!(entries[0].value, "src/main.rs#3");
@@ -993,7 +1071,10 @@ mod tests {
         std::fs::write(tempdir.path().join("docs/guide.md"), "workspace docs")
             .expect("write docs file");
 
-        let index = FileMentionIndex::build(tempdir.path().to_path_buf());
+        let index = FileMentionIndex::build(
+            tempdir.path().to_path_buf(),
+            &SystemFileMentionWorkspaceScanner,
+        );
         let entries = search_file_mentions(index.entries(), "docs", &BTreeMap::new());
 
         assert_eq!(entries[0].value, "docs/");
@@ -1005,7 +1086,10 @@ mod tests {
         std::fs::create_dir_all(tempdir.path().join("src/deep")).expect("create nested dir");
         std::fs::write(tempdir.path().join("alpha.rs"), "root").expect("write root");
         std::fs::write(tempdir.path().join("src/deep/alpha.rs"), "nested").expect("write nested");
-        let index = FileMentionIndex::build(tempdir.path().to_path_buf());
+        let index = FileMentionIndex::build(
+            tempdir.path().to_path_buf(),
+            &SystemFileMentionWorkspaceScanner,
+        );
         let mut frecency = BTreeMap::new();
         frecency.insert(
             "src/deep/alpha.rs".to_string(),

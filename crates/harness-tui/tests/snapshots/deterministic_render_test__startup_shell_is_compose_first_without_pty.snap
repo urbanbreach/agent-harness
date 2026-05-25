@@ -1,0 +1,28 @@
+---
+source: crates/harness-tui/tests/deterministic_render_test.rs
+expression: "&rendered"
+---
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                  ╻ ╻  ┏━┓  ┏━┓  ┏┓╻  ┏━╸  ┏━┓  ┏━┓                                 
+                                  ┣━┫  ┣━┫  ┣┳┛  ┃┗┫  ┣╸   ┗━┓  ┗━┓                                 
+                                  ╹ ╹  ╹ ╹  ╹┗╸  ╹ ╹  ┗━╸  ┗━┛  ┗━┛                                 
+                                                                                                    
+            ┃                                                                                       
+            ┃  Explain deterministic TUI tests                                                      
+            ┃                                                                                       
+            ┃  Worker model-1 mock · Demo                                                           
+            ┃                                                                                       
+            ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀             
+                                           ctrl+t variants  tab agents  ctrl+p commands             
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+            /srv/samba/code/accela/agent-harness/crates/harness-tu…  Ctrl+p open  q quit
