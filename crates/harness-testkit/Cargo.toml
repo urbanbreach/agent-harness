@@ -8,6 +8,7 @@ version.workspace = true
 image = { version = "0.25", default-features = false, features = ["png"] }
 regex = "1"
 serde_json.workspace = true
+tempfile.workspace = true
 zbus = "5.14"
 
 [dev-dependencies]
@@ -23,6 +24,11 @@ time = { version = "0.3", features = ["formatting", "macros"] }
 tokio.workspace = true
 vt100 = "0.15"
 wiremock = "0.6"
+
+[[test]]
+name = "pty_e2e"
+path = "tests/pty_e2e.rs"
+test = false
 
 [lints]
 workspace = true

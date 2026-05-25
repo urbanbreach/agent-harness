@@ -1,6 +1,9 @@
 # Live proxy E2E lane
 
-This lane exercises real tool use against the configured live proxy/model.
+This lane retains env-gated live proxy signoff entrypoint names after T5 slimming. The current
+wrappers verify live prerequisites and documented provider/model selection; provider/tool-flow
+behavior is owned by deterministic tests listed in `docs/testing.md` unless a human explicitly runs
+and records separate live evidence.
 
 ## Preflight
 
@@ -11,24 +14,18 @@ HARNESS_LIVE_PROXY=1 \
 HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
 HARNESS_LIVE_PROXY_PROVIDER=default \
 HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini \
-cargo test -p harness-testkit live_proxy_preflight -- --ignored --exact
+cargo test -p harness-testkit live_proxy_preflight_requires_live_env -- --ignored --exact
 ```
 
 The preflight verifies:
 
 - live config path resolves
-- provider/model/profile selection succeeds
-- provider `api_mode` is `responses` or `auto`
-- the harness binary is available
-- the configured proxy host:port is reachable
-- the later live visual lane can use the bundled PTY→PNG capture path and the shell-free
-  `edit` bootstrap used by the file-edit review flow
+- live env gating is explicit
+- the documented default provider/model tuple is visible in the test target
 
-The live visual review lane does **not** require KDE, `konsole`, or `spectacle`. Later live
-TUI/tool-flow lanes render screenshots from captured PTY state inside the harness, and the
-tool-flow bootstrap uses `edit` instead of `bash`, so signoff does not depend on a desktop session
-or a local POSIX shell. `live_proxy_preflight` itself only verifies config/provider reachability
-plus the prepared live-config path.
+The live proxy smoke lane does **not** require KDE, `konsole`, `spectacle`, a desktop session, or a
+local POSIX shell. `live_proxy_preflight_requires_live_env` and the retained prompt/TUI signoff
+names verify only the slim env/config prerequisites now retained in T5.
 
 When `configs/harness.example.jsonc` is the active live config, the interactive `build` profile
 defaults `gpt-5.4-mini` to the `high` variant so live TUI runs can surface visible `Thinking:`
@@ -38,9 +35,8 @@ helper default.
 
 Minimal portable baseline:
 
-- a local environment that can launch the harness binary under `portable_pty`
 - a reachable configured live proxy/provider
-- the bundled renderer path used by `LiveVisualRun`
+- the shipped `configs/harness.example.jsonc` provider/model tuple, unless overridden by env
 
 ## Batch 1 parity signoff
 
@@ -62,80 +58,26 @@ HARNESS_VISUAL_ARTIFACT_DIR=target/pty-visual-artifacts \
 cargo test -p harness-testkit live_proxy_e2e_tui_parity_signoff -- --ignored --exact
 ```
 
-These wrappers chain the shipped live lanes:
+These wrappers are the shipped slim live signoff entrypoints:
 
-- CLI: `live_proxy_prompt_responses_smoke` → `live_proxy_prompt_chat_tool_flow` → `live_proxy_prompt_native_tool_flow`
-- TUI: `live_proxy_preflight` → `live_proxy_e2e_tui_prompt_responses_smoke` → `live_proxy_e2e_tui_tool_flow`
+- CLI: `live_proxy_preflight_requires_live_env` → `live_proxy_prompt_parity_signoff`
+- TUI: `live_proxy_preflight_requires_live_env` → `live_proxy_e2e_tui_parity_signoff`
 
 Batch 1 live parity signoff is scoped to the selected `HARNESS_LIVE_PROXY_PROVIDER` / model /
-variant tuple. The live helpers record that tuple in the manifest metadata and summarize observed
-provider-turn behavior in `run_summary.json` / `run_summary.txt` for later provider work.
+variant tuple. After T5 slimming, these wrappers only assert the prerequisite tuple and config path;
+they do not write live manifests or summarize provider-turn behavior.
 
-## Main live tool-flow test
+## Retired full live tool-flow tests
 
-Run the prompt-based chat-control lane first when the change is about tool orchestration, todo/question state, or agent workflow helpers:
-
-```bash
-HARNESS_LIVE_PROXY=1 \
-HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
-HARNESS_LIVE_PROXY_PROVIDER=default \
-HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini \
-cargo test -p harness-testkit live_proxy_prompt_chat_tool_flow -- --ignored --exact
-```
-
-This lane exercises a real model against prepared live agents for:
-
-- `todowrite`
-- `question`
-- `skill`
-
-The prepared signoff agents prefer the documented `low` variant automatically so
-`gpt-5.4-mini` stays on the low-reasoning parity path.
-
-The repo ships `rust-best-practices` in `.agent-harness/skills`, and the prepared live chat-tool lane
-copies that skill into its temporary workspace before the `skill` stage runs. A fresh checkout does
-not depend on an externally installed skill. You can still override it by placing a same-named
-skill earlier in the configured project-root search order.
-
-The live lane examples below use `configs/harness.example.jsonc` explicitly via
-`HARNESS_LIVE_PROXY_CONFIG`; the harness CLI does not auto-discover that file unless you copy it to
-`./harness.jsonc`.
-
-Then run the headless native tool-flow lane:
-
-```bash
-HARNESS_LIVE_PROXY=1 \
-HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
-HARNESS_LIVE_PROXY_PROVIDER=default \
-HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini \
-cargo test -p harness-testkit live_proxy_prompt_native_tool_flow -- --ignored --exact
-```
-
-This keeps the headless signoff aligned with the same `edit` → `read` → `edit` → `read`
-path that the TUI live lane exercises.
-
-Then run the hashline-first visual lane:
-
-```bash
-HARNESS_LIVE_PROXY=1 \
-HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
-HARNESS_LIVE_PROXY_PROVIDER=default \
-HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini \
-HARNESS_VISUAL_ARTIFACT_DIR=target/pty-visual-artifacts \
-cargo test -p harness-testkit live_proxy_e2e_tui_tool_flow -- --ignored --exact
-```
-
-## Local helper trust checks
-
-These exact helper tests keep the manifest/retention layer machine-verifiable without requiring
-live proxy credentials:
-
-```bash
-cargo test -p harness-testkit live_visual_checkpoint_writes_png_and_manifest -- --exact
-cargo test -p harness-testkit live_visual_run_retention_prunes_old_runs -- --exact
-```
+The previous prompt chat/native-tool/TUI tool-flow matrix was retired during T5 slimming. Its
+behavioral assertions are now owned by deterministic provider cassette, harness-tools native parity,
+and harness-tui render/view-model tests listed in `docs/testing.md`. T5 retains only the explicit
+env-gated live signoff names above.
 
 ## Artifact layout
+
+The slim live proxy wrappers do not currently write artifacts. The layout below is retained for
+historic full live visual runs and for any future explicit live evidence capture.
 
 Artifacts are written under:
 
@@ -175,7 +117,7 @@ Example run id:
 run-20260307-081508-190134Z
 ```
 
-Each run directory includes:
+Historic full visual runs included:
 
 - `live_proxy_startup.png`
 - `live_proxy_draft_visible.png`
@@ -212,17 +154,13 @@ HARNESS_LIVE_VISUAL_VIEWPORT=desktop
 Agents can run this lane if the required env vars are present and the local proxy is reachable.
 Use this order while iterating:
 
-1. `live_proxy_preflight`
-2. `live_proxy_prompt_chat_tool_flow`
-3. `live_proxy_prompt_native_tool_flow`
-4. `live_proxy_prompt_parity_signoff` when you want the full prompt/CLI Batch 1 closeout
-5. `live_proxy_e2e_tui_tool_flow`
-6. `live_proxy_e2e_tui_parity_signoff` when you want the full TUI Batch 1 closeout
-7. `live_proxy_e2e_visual_verifier` only for screenshot/signoff work
+1. `live_proxy_preflight_requires_live_env`
+2. `live_proxy_prompt_parity_signoff` when you want the CLI live signoff name
+3. `live_proxy_e2e_tui_parity_signoff` when you want the TUI live signoff name
 
-The tests are live-model dependent, so retries are expected and already built into the TUI
-tool-flow lane.
+The tests are live-model dependent and intentionally opt-in. Deterministic behavior assertions live
+outside this T5 lane.
 
 When provider behavior differs, record it under the selected provider name in the live summary
-evidence and, when it becomes part of signoff, in the provider-turn expectations helper instead of
+evidence and, when it becomes part of signoff, in provider cassette expectations instead of
 loosening assertions globally.

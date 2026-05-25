@@ -5,18 +5,26 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 pub enum ForbiddenPattern {
-    Regex {
-        name: &'static str,
-        expression: Regex,
-    },
-    Substring {
-        name: &'static str,
-        needle: &'static str,
-    },
+    Regex { name: String, expression: Regex },
+    Substring { name: String, needle: String },
 }
 
 impl ForbiddenPattern {
-    fn name(&self) -> &'static str {
+    pub fn regex(name: impl Into<String>, expression: &str) -> Self {
+        Self::Regex {
+            name: name.into(),
+            expression: Regex::new(expression).expect("valid forbidden-pattern regex"),
+        }
+    }
+
+    pub fn substring(name: impl Into<String>, needle: impl Into<String>) -> Self {
+        Self::Substring {
+            name: name.into(),
+            needle: needle.into(),
+        }
+    }
+
+    fn name(&self) -> &str {
         match self {
             Self::Regex { name, .. } | Self::Substring { name, .. } => name,
         }
@@ -32,26 +40,58 @@ impl ForbiddenPattern {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SecretFinding {
-    pub pattern: &'static str,
+    pub pattern: String,
     pub file: PathBuf,
     pub line_number: usize,
 }
 
 pub fn default_forbidden_patterns() -> Vec<ForbiddenPattern> {
     vec![
-        ForbiddenPattern::Regex {
-            name: "sk-[A-Za-z0-9]{10,}",
-            expression: Regex::new(r"sk-[A-Za-z0-9]{10,}").expect("valid sk token regex"),
-        },
-        ForbiddenPattern::Substring {
-            name: "Authorization: Bearer",
-            needle: "Authorization: Bearer",
-        },
-        ForbiddenPattern::Substring {
-            name: "Bearer sk-",
-            needle: "Bearer sk-",
-        },
+        ForbiddenPattern::regex("openai_api_key", r"\bsk-[A-Za-z0-9_-]{10,}\b"),
+        ForbiddenPattern::regex("anthropic_api_key", r"\bsk-ant-[A-Za-z0-9_-]{10,}\b"),
+        ForbiddenPattern::regex("google_api_key", r"\bAIza[0-9A-Za-z_-]{20,}\b"),
+        ForbiddenPattern::regex("aws_access_key_id", r"\bAKIA[0-9A-Z]{16}\b"),
+        ForbiddenPattern::regex("github_pat", r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"),
+        ForbiddenPattern::regex("github_token", r"\bghp_[A-Za-z0-9]{20,}\b"),
+        ForbiddenPattern::regex(
+            "authorization_bearer",
+            r#"(?i)\bauthorization"?\s*:\s*"?bearer\s+[A-Za-z0-9._~+/=-]{8,}"#,
+        ),
+        ForbiddenPattern::regex("pem_private_key", r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+        ForbiddenPattern::substring("Bearer sk-", "Bearer sk-"),
     ]
+}
+
+pub fn forbidden_patterns_with_env_values<I, K, V>(vars: I) -> Vec<ForbiddenPattern>
+where
+    I: IntoIterator<Item = (K, V)>,
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    let mut patterns = default_forbidden_patterns();
+    patterns.extend(env_credential_patterns(vars));
+    patterns
+}
+
+pub fn env_credential_patterns<I, K, V>(vars: I) -> Vec<ForbiddenPattern>
+where
+    I: IntoIterator<Item = (K, V)>,
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    vars.into_iter()
+        .filter_map(|(key, value)| {
+            let key = key.as_ref();
+            let value = value.as_ref();
+            if !looks_like_credential_name(key) || value.len() < 8 {
+                return None;
+            }
+            Some(ForbiddenPattern::substring(
+                format!("env:{key}"),
+                value.to_owned(),
+            ))
+        })
+        .collect()
 }
 
 pub fn scan_directory_tree_for_secrets(
@@ -121,7 +161,7 @@ fn scan_file(
         for pattern in patterns {
             if pattern.matches(line) {
                 findings.push(SecretFinding {
-                    pattern: pattern.name(),
+                    pattern: pattern.name().to_owned(),
                     file: path.to_path_buf(),
                     line_number,
                 });
@@ -138,4 +178,64 @@ fn read_dir_sorted(dir: &Path) -> io::Result<Vec<PathBuf>> {
         .collect::<Result<_, _>>()?;
     paths.sort();
     Ok(paths)
+}
+
+fn looks_like_credential_name(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    [
+        "TOKEN",
+        "SECRET",
+        "PASSWORD",
+        "CREDENTIAL",
+        "API_KEY",
+        "ACCESS_KEY",
+    ]
+    .iter()
+    .any(|needle| upper.contains(needle))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        default_forbidden_patterns, env_credential_patterns, scan_directory_tree_for_secrets,
+    };
+
+    #[test]
+    fn default_patterns_detect_common_cassette_secret_shapes() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cassette = temp.path().join("cassette.json");
+        std::fs::write(
+            &cassette,
+            r#"{"Authorization":"Bearer sk-ant-secret00000000000000000000"}"#,
+        )
+        .expect("write cassette");
+
+        let findings = scan_directory_tree_for_secrets(temp.path(), &default_forbidden_patterns())
+            .expect("scan");
+
+        assert!(findings
+            .iter()
+            .any(|finding| finding.pattern == "anthropic_api_key"));
+        assert!(findings
+            .iter()
+            .any(|finding| finding.pattern == "authorization_bearer"));
+    }
+
+    #[test]
+    fn env_credential_patterns_only_use_credential_named_values() {
+        let patterns = env_credential_patterns([
+            ("OPENAI_API_KEY", "sk-live-secret"),
+            ("ORDINARY_VALUE", "sk-live-secret"),
+            ("SHORT_TOKEN", "short"),
+        ]);
+
+        assert_eq!(patterns.len(), 1);
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cassette = temp.path().join("cassette.json");
+        std::fs::write(&cassette, "sk-live-secret").expect("write cassette");
+
+        let findings = scan_directory_tree_for_secrets(temp.path(), &patterns).expect("scan");
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].pattern, "env:OPENAI_API_KEY");
+    }
 }

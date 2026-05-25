@@ -17,11 +17,10 @@ mod secretscan {
     fn secret_scan_does_not_find_api_keys_in_artifacts() {
         let repo_root = repo_root();
 
-        let mut scan_roots = pty_temp_session_dirs();
-        scan_roots.push(repo_root.join("target").join("pty-visual-artifacts"));
-        scan_roots.extend(
-            snapshot_dirs(repo_root.join("crates").as_path()).expect("discover snapshot dirs"),
-        );
+        let mut scan_roots = snapshot_dirs(repo_root.join("crates").as_path())
+            .expect("discover committed snapshot dirs");
+        scan_roots.extend(committed_cassette_dirs(&repo_root).expect("discover cassette dirs"));
+        scan_roots.extend(explicit_artifact_roots(&repo_root));
         scan_roots.sort();
 
         let patterns = default_forbidden_patterns();
@@ -34,6 +33,19 @@ mod secretscan {
             format_findings(&repo_root, &findings)
         );
     }
+}
+
+fn explicit_artifact_roots(repo_root: &Path) -> Vec<PathBuf> {
+    if std::env::var_os("HARNESS_SECRETS_SCAN_ARTIFACTS").is_none() {
+        return Vec::new();
+    }
+
+    let mut roots = pty_temp_session_dirs();
+    roots.push(repo_root.join("target").join("pty-visual-artifacts"));
+    if let Some(path) = std::env::var_os("HARNESS_VISUAL_ARTIFACT_DIR") {
+        roots.push(PathBuf::from(path));
+    }
+    roots
 }
 
 fn pty_temp_session_dirs() -> Vec<PathBuf> {
@@ -57,6 +69,14 @@ fn pty_temp_session_dirs() -> Vec<PathBuf> {
 
     dirs.sort();
     dirs
+}
+
+fn committed_cassette_dirs(repo_root: &Path) -> io::Result<Vec<PathBuf>> {
+    let mut found = Vec::new();
+    collect_named_dirs(&repo_root.join("crates"), "cassettes", &mut found)?;
+    found.retain(|path| path.components().any(|part| part.as_os_str() == "fixtures"));
+    found.sort();
+    Ok(found)
 }
 
 fn snapshot_dirs(root: &Path) -> io::Result<Vec<PathBuf>> {

@@ -10,9 +10,9 @@ Read the workspace root `AGENTS.md` first. TUI shell contract details live in `c
 tests/
 ├── native_visual_e2e.rs   # local Ghostty/tmux real-screenshot signoff lane
 ├── pty_e2e.rs             # offline deterministic PTY lane
-├── live_proxy_e2e.rs      # real provider / real prompt + TUI tool-flow lanes
+├── live_proxy_e2e.rs      # env-gated live proxy smoke/preflight wrappers
 ├── README.live-proxy.md   # preflight, env, artifact layout, retention
-├── support/               # live_events, live_vision, live_visual, pty_process helpers
+├── support/               # small helpers retained by deterministic support tests
 └── snapshots/             # PTY snapshot expectations
 ```
 
@@ -21,25 +21,24 @@ tests/
 |------|----------|-------|
 | Native local screenshot lane | `native_visual_e2e.rs` | Ghostty renderer + tmux control + manifest-backed screenshots. |
 | Offline UI regression lane | `pty_e2e.rs` | Single-threaded, deterministic, artifact-producing fallback. |
-| Live prompt/chat-control lanes | `live_proxy_e2e.rs` | Real model + live config for prompt, tools, TUI parity. |
+| Live proxy smoke lanes | `live_proxy_e2e.rs` | Env/config preflight plus retained signoff entrypoint names; behavior assertions live in deterministic owners listed in `docs/testing.md`. |
 | Live setup and artifacts | `README.live-proxy.md` | Preflight and retention contract. |
-| Shared helpers | `support/` | Extract repeated markers/assertions/setup before growing E2E files. |
+| Shared helpers | `support/` | Keep helpers small and only for tests that still import them. |
 
 ## LANE ORDER
-- PTY fallback: `RUST_TEST_THREADS=1 cargo test -p harness-testkit pty_e2e`.
-- Live TUI order: `live_proxy_preflight` → `live_proxy_e2e_tui_prompt_responses_smoke` → `live_proxy_e2e_tui_tool_flow`.
-- Live CLI order: `live_proxy_prompt_responses_smoke` → `live_proxy_prompt_chat_tool_flow` → `live_proxy_prompt_native_tool_flow`.
+- PTY fallback: `RUST_TEST_THREADS=1 cargo test -p harness-testkit --test pty_e2e`.
+- Live TUI order: `live_proxy_preflight_requires_live_env` → `live_proxy_e2e_tui_parity_signoff`.
+- Live CLI order: `live_proxy_preflight_requires_live_env` → `live_proxy_prompt_parity_signoff`.
 - Native screenshots are local signoff only; run ignored native tests single-threaded.
 
 ## ENV CONTRACT
 - Visual artifacts root: `HARNESS_VISUAL_ARTIFACT_DIR`.
 - Native gates: `HARNESS_NATIVE_VISUAL`, `HARNESS_NATIVE_VISUAL_FONT_FAMILY`, `HARNESS_NATIVE_VISUAL_FONT_SIZE`, `HARNESS_NATIVE_VISUAL_CAPTURE_HELPER`.
 - Live gates: `HARNESS_LIVE_PROXY`, `HARNESS_LIVE_PROXY_CONFIG`, `HARNESS_LIVE_PROXY_PROVIDER`, `HARNESS_LIVE_PROXY_MODEL`, optional `HARNESS_LIVE_PROXY_VARIANT`.
-- `live_proxy_prompt_chat_tool_flow` depends on the `rust-best-practices` skill being available to the `skill` tool.
 
 ## CONVENTIONS
 - Treat `pty_e2e` as the deterministic CI/headless oracle and fallback lane.
-- Treat `live_proxy_*` as explicit provider signoff; never run without documented preflight.
+- Treat `live_proxy_*` as explicit env-gated signoff entrypoints; never run without documented preflight, and do not claim provider/tool-flow behavior unless a deterministic owner or a real live run supplied the evidence.
 - Treat native screenshots as provenance-checked local visual signoff, not a portable hash oracle.
 - Manifest-backed screenshots plus PTY/live artifacts are the verification record; do not claim success without artifact paths and capture provenance.
 - The native lane assumes Ghostty + tmux + `xprop` plus an authorized capture helper inside managed 2560×1440 nested KWin/XWayland; if unavailable, fail closed and use PTY.
@@ -53,9 +52,9 @@ tests/
 
 ## COMMANDS
 ```bash
-RUST_TEST_THREADS=1 cargo test -p harness-testkit pty_e2e
+RUST_TEST_THREADS=1 cargo test -p harness-testkit --test pty_e2e
 HARNESS_NATIVE_VISUAL=1 cargo test -p harness-testkit --test native_visual_e2e -- --ignored --test-threads=1
-HARNESS_LIVE_PROXY=1 HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc HARNESS_LIVE_PROXY_PROVIDER=default HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini cargo test -p harness-testkit live_proxy_preflight -- --ignored --exact
-HARNESS_LIVE_PROXY=1 HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc HARNESS_LIVE_PROXY_PROVIDER=default HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini cargo test -p harness-testkit live_proxy_prompt_chat_tool_flow -- --ignored --exact
-HARNESS_LIVE_PROXY=1 HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc HARNESS_LIVE_PROXY_PROVIDER=default HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini HARNESS_VISUAL_ARTIFACT_DIR=target/pty-visual-artifacts cargo test -p harness-testkit live_proxy_e2e_tui_tool_flow -- --ignored --exact
+HARNESS_LIVE_PROXY=1 HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc HARNESS_LIVE_PROXY_PROVIDER=default HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini cargo test -p harness-testkit live_proxy_preflight_requires_live_env -- --ignored --exact
+HARNESS_LIVE_PROXY=1 HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc HARNESS_LIVE_PROXY_PROVIDER=default HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini cargo test -p harness-testkit live_proxy_prompt_parity_signoff -- --ignored --exact
+HARNESS_LIVE_PROXY=1 HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc HARNESS_LIVE_PROXY_PROVIDER=default HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini HARNESS_VISUAL_ARTIFACT_DIR=target/pty-visual-artifacts cargo test -p harness-testkit live_proxy_e2e_tui_parity_signoff -- --ignored --exact
 ```
