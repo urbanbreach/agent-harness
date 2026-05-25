@@ -1,0 +1,742 @@
+#!/usr/bin/env python3
+"""Static gates for the deterministic test-suite overhaul.
+
+The default command is intentionally strict and returns non-zero when violations are
+present. Use --report-only during migration to capture the current baseline without
+claiming acceptance.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import re
+import sys
+import tempfile
+from collections.abc import Iterable
+from dataclasses import dataclass, asdict
+from typing import cast
+from pathlib import Path
+
+GATES = (
+    "no-sleeps",
+    "no-global-state",
+    "no-real-world-deps",
+    "file-focus",
+    "cassette-secrets",
+    "orphan-snapshots",
+    "taxonomy",
+    "test-names",
+    "path-isolation",
+    "t5-line-budget",
+    "conventions",
+)
+
+DEFAULT_T5_LINE_BUDGET = 4_000
+CONVENTIONS_BASELINE_PATH = Path("docs/test-suite-conventions-baseline.json")
+
+PATTERNS = {
+    "no-sleeps": [
+        re.compile(r"\bstd::thread::sleep\b"),
+        re.compile(r"\bthread::sleep\b"),
+        re.compile(r"\btokio::time::sleep\b"),
+        re.compile(r"\bsleep\s*\("),
+    ],
+    "no-global-state": [
+        re.compile(r"\bstd::env::set_var\s*\("),
+        re.compile(r"\benv::set_var\s*\("),
+        re.compile(r"\bset_process_env_var\s*\("),
+        re.compile(r"\bstd::env::remove_var\s*\("),
+        re.compile(r"\benv::remove_var\s*\("),
+        re.compile(r"\bremove_process_env_var\s*\("),
+        re.compile(r"\bstd::env::set_current_dir\s*\("),
+        re.compile(r"\benv::set_current_dir\s*\("),
+        re.compile(r"\bstd::env::current_dir\s*\("),
+        re.compile(r"\benv::current_dir\s*\("),
+        re.compile(r"\bEnvGuard::set\s*\("),
+    ],
+    "no-real-world-deps": [
+        re.compile(r"\bstd::process::Command::new\s*\("),
+        re.compile(r"\btokio::process::Command::new\s*\("),
+        re.compile(r"\bCommand::new\s*\("),
+        re.compile(r"\bProcessCommand::new\s*\("),
+        re.compile(r"CARGO_BIN_EXE_"),
+        re.compile(r"\bTcpListener::bind\s*\("),
+        re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*TcpListener::bind\s*\("),
+        re.compile(r"\bTcpStream::connect"),
+        re.compile(r"\bMockServer::start\s*\("),
+        re.compile(r"\bwiremock::"),
+        re.compile(r"\bportable_pty\b"),
+    ],
+}
+
+SECRET_PATTERNS = {
+    "openai_api_key": re.compile(r"\bsk-[A-Za-z0-9_-]{10,}\b"),
+    "anthropic_api_key": re.compile(r"\bsk-ant-[A-Za-z0-9_-]{10,}\b"),
+    "google_api_key": re.compile(r"\bAIza[0-9A-Za-z_-]{20,}\b"),
+    "aws_access_key_id": re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    "github_pat": re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"),
+    "github_token": re.compile(r"\bghp_[A-Za-z0-9]{20,}\b"),
+    "authorization_bearer": re.compile(
+        r'\bauthorization"?\s*:\s*"?bearer\s+[A-Za-z0-9._~+/=-]{8,}',
+        re.I,
+    ),
+    "pem_private_key": re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+}
+
+TEST_ATTRIBUTE = re.compile(r"\s*#\[(?:tokio::)?test(?:\([^]]*\))?\]")
+TEST_FUNCTION = re.compile(r"(?:async\s+)?fn\s+([A-Za-z0-9_]+)\s*\(")
+INSTA_ASSERTION = re.compile(r"\binsta::assert_[A-Za-z0-9_]*snapshot!\s*\(")
+REQUIRED_SECTION_MARKERS = ("// arrange", "// act", "// assert")
+
+T5_PATH_PARTS = (
+    "crates/harness-testkit/src/bin/native_visual_helper.rs",
+    "crates/harness-testkit/tests/pty_e2e.rs",
+    "crates/harness-testkit/tests/live_proxy_e2e.rs",
+    "crates/harness-testkit/tests/native_visual_e2e.rs",
+    "crates/harness-testkit/tests/support/harness_bin.rs",
+    "crates/harness-testkit/tests/support/live_",
+    "crates/harness-testkit/tests/support/native_visual.rs",
+    "crates/harness-testkit/tests/support/native_visual/",
+    "crates/harness-testkit/tests/support/native_visual_",
+    "crates/harness-testkit/tests/support/native_visual_e2e_impl.rs",
+    "crates/harness-testkit/tests/support/pty_",
+    "crates/harness/tests/binary_smoke.rs",
+    "crates/harness-tui/tests/pty_e2e.rs",
+    "crates/harness-tui/tests/support/pty_e2e_impl.rs",
+    "crates/harness-tui/tests/support/visual_renderer.rs",
+)
+
+
+HOST_PATH_LITERAL = re.compile(r'"/(?:tmp|var|home|srv|Users|private/tmp)[^"\\n]*"')
+FS_LITERAL_ACCESS = re.compile(
+    r"\b(?:std::fs::|fs::|File::|OpenOptions::)"
+    + r"(?:read|read_to_string|write|create_dir|create_dir_all|read_dir|copy|remove_file|remove_dir_all|open|create|new)\s*\("
+)
+
+TAXONOMY_SUFFIXES = (
+    "_test.rs",
+    "_tests.rs",
+    "_regression.rs",
+    "_repro.rs",
+    "_recorded.rs",
+    "_perf.rs",
+    "_smoke.rs",
+)
+
+@dataclass(frozen=True)
+class Violation:
+    gate: str
+    path: str
+    line: int
+    detail: str
+
+
+class ParsedArgs(argparse.Namespace):
+    gate: list[str] | None
+    max_lines: int
+    t5_max_lines: int
+    json: bool
+    report_only: bool
+    self_test: bool
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.gate = None
+        self.max_lines = 600
+        self.t5_max_lines = DEFAULT_T5_LINE_BUDGET
+        self.json = False
+        self.report_only = False
+        self.self_test = False
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def rel(path: Path, root: Path) -> str:
+    return path.resolve().relative_to(root.resolve()).as_posix()
+
+
+def rust_files(root: Path) -> list[Path]:
+    return sorted((root / "crates").glob("**/*.rs"))
+
+
+def is_t5_path(relative: str) -> bool:
+    return any(part in relative for part in T5_PATH_PARTS)
+
+
+def is_source_test_module_path(path: Path, root: Path) -> bool:
+    relative = rel(path, root)
+    parts = relative.split("/")
+    if "src" not in parts:
+        return False
+    src_index = parts.index("src")
+    src_parts = parts[src_index + 1 :]
+    return path.name == "tests.rs" or "tests" in src_parts[:-1]
+
+
+def is_test_code(path: Path, root: Path) -> bool:
+    relative = rel(path, root)
+    if is_t5_path(relative):
+        return False
+    if is_source_test_module_path(path, root):
+        return True
+    if "/tests/" in f"/{relative}":
+        return True
+    if "/src/" in f"/{relative}":
+        try:
+            text = path.read_text(errors="ignore")
+        except OSError:
+            return False
+        return "#[cfg(test)]" in text or "mod tests" in text
+    return False
+
+
+def test_code_lines(path: Path, root: Path) -> list[tuple[int, str]]:
+    """Return lines that belong to deterministic test code.
+
+    Integration-test files under `tests/` are entirely test code. Files under
+    `src/` can contain both product code and `#[cfg(test)]` modules; only the
+    latter are part of the static test-suite gates so production waits,
+    subprocess launchers, or TCP listeners do not create false positives.
+    """
+    relative = rel(path, root)
+    lines = path.read_text(errors="ignore").splitlines()
+    if "/tests/" in f"/{relative}":
+        return list(enumerate(lines, start=1))
+    if is_source_test_module_path(path, root):
+        return list(enumerate(lines, start=1))
+    if "/src/" not in f"/{relative}":
+        return []
+
+    selected: list[tuple[int, str]] = []
+    pending_cfg_test = False
+    in_cfg_test_item = False
+    brace_depth = 0
+
+    for line_number, line in enumerate(lines, start=1):
+        stripped = line.strip()
+        if "#[cfg(test)]" in stripped:
+            pending_cfg_test = True
+            continue
+
+        if pending_cfg_test and (
+            not stripped
+            or stripped.startswith("#[")
+            or stripped.startswith("//")
+        ):
+            continue
+
+        if pending_cfg_test:
+            in_cfg_test_item = True
+            pending_cfg_test = False
+            brace_depth = line.count("{") - line.count("}")
+            selected.append((line_number, line))
+            if brace_depth <= 0 and ";" in line:
+                in_cfg_test_item = False
+            continue
+
+        if in_cfg_test_item:
+            selected.append((line_number, line))
+            brace_depth += line.count("{") - line.count("}")
+            if brace_depth <= 0:
+                in_cfg_test_item = False
+
+    return selected
+
+
+def scan_pattern_gate(root: Path, gate: str) -> list[Violation]:
+    violations: list[Violation] = []
+    for path in rust_files(root):
+        if not is_test_code(path, root):
+            continue
+        relative = rel(path, root)
+        for line_number, line in test_code_lines(path, root):
+            for pattern in PATTERNS[gate]:
+                if pattern.search(line):
+                    violations.append(Violation(gate, relative, line_number, pattern.pattern))
+                    break
+    return violations
+
+
+def contains_test_function(path: Path) -> bool:
+    text = path.read_text(errors="ignore")
+    return "#[test]" in text or "#[tokio::test" in text
+
+
+def scan_file_focus(root: Path, max_lines: int) -> list[Violation]:
+    violations: list[Violation] = []
+    for path in sorted((root / "crates").glob("**/tests/**/*.rs")):
+        relative = rel(path, root)
+        helper_path = "/support/" in f"/{relative}" or "/common/" in f"/{relative}"
+        covered_helper = "/support/" in f"/{relative}" or path.name.endswith("_impl.rs")
+        if helper_path and not covered_helper and not contains_test_function(path):
+            continue
+        text = path.read_text(errors="ignore")
+        line_count = len(text.splitlines())
+        if line_count > max_lines:
+            violations.append(Violation("file-focus", relative, 0, f"{line_count} lines > {max_lines}"))
+    return violations
+
+
+def iter_test_function_bodies(root: Path) -> Iterable[tuple[str, int, str, str]]:
+    for path in rust_files(root):
+        relative = rel(path, root)
+        if is_t5_path(relative) or "_perf" in path.stem:
+            continue
+        if not is_test_code(path, root):
+            continue
+
+        lines = path.read_text(errors="ignore").splitlines()
+        for index, line in enumerate(lines):
+            if not TEST_ATTRIBUTE.match(line):
+                continue
+            cursor = index + 1
+            while cursor < len(lines):
+                candidate = lines[cursor].strip()
+                if candidate and not candidate.startswith("#"):
+                    break
+                cursor += 1
+            if cursor >= len(lines):
+                continue
+            match = TEST_FUNCTION.search(lines[cursor])
+            if not match:
+                continue
+            brace_depth = 0
+            body: list[str] = []
+            for body_index in range(cursor, len(lines)):
+                body.append(lines[body_index])
+                brace_depth += lines[body_index].count("{") - lines[body_index].count("}")
+                if brace_depth <= 0 and "{" in "\n".join(body):
+                    break
+            yield relative, cursor + 1, match.group(1), "\n".join(body)
+
+
+def conventions_key(relative: str, name: str) -> str:
+    return f"{relative}::{name}"
+
+
+def conventions_baseline_entry(relative: str, name: str) -> str:
+    return hashlib.sha256(conventions_key(relative, name).encode("utf-8")).hexdigest()
+
+
+def load_conventions_baseline(root: Path) -> set[str]:
+    path = root / CONVENTIONS_BASELINE_PATH
+    if not path.exists():
+        return set()
+    try:
+        data = cast(object, json.loads(path.read_text(errors="ignore")))
+    except json.JSONDecodeError as exc:
+        return {f"<invalid-baseline-json>:{exc.lineno}:{exc.colno}"}
+    if not isinstance(data, list):
+        return {"<invalid-baseline-shape>"}
+    entries: set[str] = set()
+    for entry in cast(list[object], data):
+        if isinstance(entry, str):
+            entries.add(entry)
+        else:
+            entries.add("<invalid-baseline-entry>")
+    return entries
+
+
+def scan_conventions(root: Path) -> list[Violation]:
+    violations: list[Violation] = []
+    baseline = load_conventions_baseline(root)
+    current_debt: set[str] = set()
+    invalid_baseline = sorted(entry for entry in baseline if entry.startswith("<invalid-baseline"))
+    for entry in invalid_baseline:
+        violations.append(
+            Violation(
+                "conventions",
+                rel(root / CONVENTIONS_BASELINE_PATH, root),
+                0,
+                f"invalid conventions baseline entry: {entry}",
+            )
+        )
+    for relative, line_number, _name, body in iter_test_function_bodies(root):
+        missing = [marker for marker in REQUIRED_SECTION_MARKERS if marker not in body]
+        if missing:
+            key = conventions_baseline_entry(relative, _name)
+            current_debt.add(key)
+            if key in baseline:
+                continue
+            violations.append(
+                Violation(
+                    "conventions",
+                    relative,
+                    line_number,
+                    "new convention debt: test body must include // arrange, // act, and // assert sections or be recorded in docs/test-suite-conventions-baseline.json",
+                )
+            )
+    for stale in sorted(baseline - current_debt):
+        if stale.startswith("<invalid-baseline"):
+            continue
+        violations.append(
+            Violation(
+                "conventions",
+                rel(root / CONVENTIONS_BASELINE_PATH, root),
+                0,
+                f"stale conventions baseline entry no longer matches current debt: {stale}",
+            )
+        )
+    return violations
+
+
+def scan_t5_line_budget(root: Path, max_lines: int) -> list[Violation]:
+    t5_root = root / "crates" / "harness-testkit" / "tests"
+    if not t5_root.exists():
+        return []
+    total = 0
+    for path in sorted(t5_root.glob("**/*.rs")):
+        total += len(path.read_text(errors="ignore").splitlines())
+    if total <= max_lines:
+        return []
+    return [
+        Violation(
+            "t5-line-budget",
+            rel(t5_root, root),
+            0,
+            f"{total} total Rust lines > {max_lines}; measured with `find crates/harness-testkit/tests -name '*.rs' -exec wc -l {{}} +`",
+        )
+    ]
+
+
+def cassette_roots(root: Path) -> list[Path]:
+    return [path for path in (root / "crates").glob("**/fixtures/cassettes") if path.is_dir()]
+
+
+def scan_cassette_secrets(root: Path) -> list[Violation]:
+    violations: list[Violation] = []
+    for cassette_root in cassette_roots(root):
+        for path in sorted(cassette_root.glob("**/*")):
+            if not path.is_file():
+                continue
+            relative = rel(path, root)
+            text = path.read_text(errors="ignore")
+            for line_number, line in enumerate(text.splitlines(), start=1):
+                for name, pattern in SECRET_PATTERNS.items():
+                    if pattern.search(line):
+                        violations.append(Violation("cassette-secrets", relative, line_number, name))
+    return violations
+
+
+
+def snapshot_source(path: Path) -> str | None:
+    lines = path.read_text(errors="ignore").splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    for line in lines[1:]:
+        stripped = line.strip()
+        if stripped == "---":
+            return None
+        if stripped.startswith("source:"):
+            value = stripped.split(":", 1)[1].strip()
+            return value.strip('"\'') or None
+    return None
+
+
+def snapshot_crate_root(path: Path, root: Path) -> Path | None:
+    try:
+        relative = path.resolve().relative_to((root / "crates").resolve())
+    except ValueError:
+        return None
+    parts = relative.parts
+    if not parts:
+        return None
+    return root / "crates" / parts[0]
+
+
+def crate_rust_text(path: Path, root: Path) -> str:
+    crate_root = snapshot_crate_root(path, root)
+    if crate_root is None:
+        return ""
+    return "\n".join(
+        rust_path.read_text(errors="ignore")
+        for rust_path in sorted(crate_root.glob("**/*.rs"))
+    )
+
+
+def scan_orphan_snapshots(root: Path) -> list[Violation]:
+    violations: list[Violation] = []
+    rust_text_cache: dict[Path, str] = {}
+    for path in sorted((root / "crates").glob("**/snapshots/*.snap")):
+        relative = rel(path, root)
+        source = snapshot_source(path)
+        if source is None:
+            continue
+        source_path = Path(source)
+        if not source_path.is_absolute():
+            source_path = root / source_path
+        crate_root = snapshot_crate_root(path, root)
+        crate_text = rust_text_cache.setdefault(
+            crate_root or root,
+            crate_rust_text(path, root),
+        )
+        if path.stem in crate_text:
+            continue
+        if not source_path.exists():
+            violations.append(
+                Violation(
+                    "orphan-snapshots",
+                    relative,
+                    0,
+                    f"snapshot source does not exist: {source}",
+                )
+            )
+            continue
+        source_text = source_path.read_text(errors="ignore")
+        if not INSTA_ASSERTION.search(source_text):
+            violations.append(
+                Violation(
+                    "orphan-snapshots",
+                    relative,
+                    0,
+                    f"snapshot source has no insta snapshot assertion and snapshot name is unreferenced in crate Rust code: {source}",
+                )
+            )
+    return violations
+
+
+def scan_taxonomy(root: Path) -> list[Violation]:
+    violations: list[Violation] = []
+    for path in sorted((root / "crates").glob("**/tests/**/*.rs")):
+        relative = rel(path, root)
+        helper_path = "/support/" in f"/{relative}" or "/common/" in f"/{relative}"
+        if is_t5_path(relative) or (helper_path and not contains_test_function(path)):
+            continue
+        name = path.name
+        if not name.endswith(TAXONOMY_SUFFIXES):
+            violations.append(
+                Violation(
+                    "taxonomy",
+                    relative,
+                    0,
+                    "test file name must use a tier/intent suffix such as _test, _regression, _recorded, _perf, or _smoke",
+                )
+            )
+        stem = path.stem
+        if "regression" in stem and not stem.endswith("_regression"):
+            violations.append(
+                Violation(
+                    "taxonomy",
+                    relative,
+                    0,
+                    "regression test files must end with _regression",
+                )
+            )
+        if "repro" in stem and not stem.endswith("_repro"):
+            violations.append(
+                Violation(
+                    "taxonomy",
+                    relative,
+                    0,
+                    "repro test files must end with _repro",
+                )
+            )
+    return violations
+
+
+
+def iter_test_functions(root: Path) -> Iterable[tuple[str, int, str]]:
+    attribute = re.compile(r"\s*#\[(?:tokio::)?test(?:\([^]]*\))?\]")
+    function = re.compile(r"(?:async\s+)?fn\s+([A-Za-z0-9_]+)\s*\(")
+    for path in rust_files(root):
+        relative = rel(path, root)
+        lines = path.read_text(errors="ignore").splitlines()
+        for index, line in enumerate(lines):
+            if not attribute.match(line):
+                continue
+            cursor = index + 1
+            while cursor < len(lines):
+                candidate = lines[cursor].strip()
+                if candidate and not candidate.startswith("#"):
+                    break
+                cursor += 1
+            if cursor >= len(lines):
+                continue
+            match = function.search(lines[cursor])
+            if match:
+                yield relative, cursor + 1, match.group(1)
+
+
+def scan_test_names(root: Path) -> list[Violation]:
+    violations: list[Violation] = []
+    for relative, line_number, name in iter_test_functions(root):
+        word_count = len([part for part in name.split("_") if part])
+        if word_count < 4:
+            violations.append(
+                Violation(
+                    "test-names",
+                    relative,
+                    line_number,
+                    "test function name must be a descriptive snake_case sentence with at least four words",
+                )
+            )
+        if "regression" in name and not name.endswith("_regression"):
+            violations.append(
+                Violation(
+                    "test-names",
+                    relative,
+                    line_number,
+                    "regression test functions must end with _regression",
+                )
+            )
+        if "repro" in name and not name.endswith("_repro"):
+            violations.append(
+                Violation(
+                    "test-names",
+                    relative,
+                    line_number,
+                    "repro test functions must end with _repro",
+                )
+            )
+    return violations
+
+
+def scan_path_isolation(root: Path) -> list[Violation]:
+    violations: list[Violation] = []
+    for path in rust_files(root):
+        if not is_test_code(path, root):
+            continue
+        relative = rel(path, root)
+        for line_number, line in test_code_lines(path, root):
+            if FS_LITERAL_ACCESS.search(line) and HOST_PATH_LITERAL.search(line):
+                violations.append(
+                    Violation(
+                        "path-isolation",
+                        relative,
+                        line_number,
+                        "test filesystem access must use TestWorkspace/temp dirs or committed fixtures, not literal host paths",
+                    )
+                )
+    return violations
+
+def run_gates(root: Path, gates: Iterable[str], max_lines: int, t5_max_lines: int) -> list[Violation]:
+    violations: list[Violation] = []
+    for gate in gates:
+        if gate in PATTERNS:
+            violations.extend(scan_pattern_gate(root, gate))
+        elif gate == "file-focus":
+            violations.extend(scan_file_focus(root, max_lines))
+        elif gate == "cassette-secrets":
+            violations.extend(scan_cassette_secrets(root))
+        elif gate == "orphan-snapshots":
+            violations.extend(scan_orphan_snapshots(root))
+        elif gate == "taxonomy":
+            violations.extend(scan_taxonomy(root))
+        elif gate == "test-names":
+            violations.extend(scan_test_names(root))
+        elif gate == "path-isolation":
+            violations.extend(scan_path_isolation(root))
+        elif gate == "t5-line-budget":
+            violations.extend(scan_t5_line_budget(root, t5_max_lines))
+        elif gate == "conventions":
+            violations.extend(scan_conventions(root))
+        else:
+            raise ValueError(f"unknown gate: {gate}")
+    return violations
+
+
+def print_text(violations: list[Violation], report_only: bool) -> None:
+    if not violations:
+        print("test-suite gates: PASS")
+        return
+    status = "REPORT" if report_only else "FAIL"
+    print(f"test-suite gates: {status} ({len(violations)} violation(s))")
+    for violation in violations[:300]:
+        location = violation.path if violation.line == 0 else f"{violation.path}:{violation.line}"
+        print(f"- [{violation.gate}] {location} {violation.detail}")
+    if len(violations) > 300:
+        print(f"... {len(violations) - 300} more violation(s) omitted")
+
+
+def self_test() -> int:
+    with tempfile.TemporaryDirectory(prefix="harness-gate-self-test-") as tmp:
+        root = Path(tmp)
+        test_dir = root / "crates" / "demo" / "tests"
+        cassette_dir = root / "crates" / "demo" / "tests" / "fixtures" / "cassettes"
+        test_dir.mkdir(parents=True)
+        cassette_dir.mkdir(parents=True)
+        _ = (test_dir / "slow.rs").write_text(
+            "#[test]\nfn slow() { std::thread::sleep(std::time::Duration::from_millis(1)); }\n"
+        )
+        _ = (test_dir / "global_state.rs").write_text(
+            "#[test]\nfn global() { std::env::set_var(\"A\", \"B\"); }\n"
+        )
+        _ = (test_dir / "subprocess.rs").write_text(
+            "use std::process::Command;\n#[test]\nfn p() { let _ = Command::new(\"echo\"); }\n"
+        )
+        _ = (test_dir / "aliases_test.rs").write_text(
+            "".join(
+                [
+                    "use std::process::Command as ProcessCommand;\n",
+                    "use std::net::TcpListener as LocalTcpListener;\n",
+                    "#[test]\n",
+                    "fn aliases() {\n",
+                    "    let _ = EnvGuard::set(&[(\"A\", Some(\"B\"))]);\n",
+                    "    let _ = ProcessCommand::new(\"echo\");\n",
+                    "    let _ = LocalTcpListener::bind(\"127.0.0.1:0\");\n",
+                    "    let _ = MockServer::start();\n",
+                    "}\n",
+                ]
+            )
+        )
+        _ = (test_dir / "path_leak_test.rs").write_text(
+            'use std::fs;\n#[test]\nfn writes_literal_tmp_path() { fs::write("/tmp/leak", "bad").unwrap(); }\n'
+        )
+        _ = (test_dir / "fixed_bug_test.rs").write_text(
+            "#[test]\nfn fixed_bug_regression_name_is_wrong() {}\n"
+        )
+        t5_dir = root / "crates" / "harness-testkit" / "tests"
+        t5_dir.mkdir(parents=True)
+        _ = (t5_dir / "t5_smoke.rs").write_text("#[test]\nfn t5_smoke_runs() {}\n")
+
+        source_test_dir = root / "crates" / "demo" / "src"
+        source_test_dir.mkdir(parents=True)
+        _ = (source_test_dir / "tests.rs").write_text(
+            "#[tokio::test]\nasync fn source_test_sleep() { tokio::time::sleep(std::time::Duration::from_millis(1)).await; }\n"
+        )
+        _ = (test_dir / "oversized_test.rs").write_text("#[test]\nfn t() {}\n" + "// filler\n" * 605)
+        _ = (cassette_dir / "bad.json").write_text('{"Authorization":"Bearer sk-secret000000000"}\n')
+        snapshot_dir = test_dir / "snapshots"
+        snapshot_dir.mkdir()
+        _ = (snapshot_dir / "slow__old.snap").write_text(
+            "---\nsource: crates/demo/tests/slow.rs\nexpression: old\n---\nold\n"
+        )
+        violations = run_gates(root, GATES, 600, 1)
+        gates = {violation.gate for violation in violations}
+        expected = {"no-sleeps", "no-global-state", "no-real-world-deps", "file-focus", "cassette-secrets", "orphan-snapshots", "taxonomy", "test-names", "path-isolation", "t5-line-budget", "conventions"}
+        missing = expected - gates
+        if missing:
+            print(f"self-test missing gates: {sorted(missing)}", file=sys.stderr)
+            return 1
+    print("self-test: PASS")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    _ = parser.add_argument("--gate", action="append", choices=GATES, help="Gate to run; repeatable. Defaults to all gates.")
+    _ = parser.add_argument("--max-lines", type=int, default=600, help="Maximum lines allowed for focused test files.")
+    _ = parser.add_argument("--t5-max-lines", type=int, default=DEFAULT_T5_LINE_BUDGET, help="Maximum total Rust lines allowed under crates/harness-testkit/tests.")
+    _ = parser.add_argument("--json", action="store_true", help="Emit JSON instead of text.")
+    _ = parser.add_argument("--report-only", action="store_true", help="Print violations but exit zero during migration.")
+    _ = parser.add_argument("--self-test", action="store_true", help="Run the script's built-in unit self-test.")
+    args = parser.parse_args(argv, namespace=ParsedArgs())
+
+    if args.self_test:
+        return self_test()
+
+    root = repo_root()
+    gates = args.gate or list(GATES)
+    violations = run_gates(root, gates, args.max_lines, args.t5_max_lines)
+    if args.json:
+        print(json.dumps({"ok": not violations, "violations": [asdict(v) for v in violations]}, indent=2))
+    else:
+        print_text(violations, args.report_only)
+    return 0 if args.report_only or not violations else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

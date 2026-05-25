@@ -1,0 +1,30 @@
+# Deterministic test-suite profiles for the harness workspace.
+# T1-T3 are parallel by default; T4/T5 run through explicit lanes.
+
+[profile.default]
+retries = 0
+fail-fast = false
+test-threads = "num-cpus"
+slow-timeout = { period = "2s", terminate-after = 10 }
+default-filter = 'not test(/perf_/) and not binary(/(binary_smoke|pty_e2e|live_proxy_e2e|native_visual_e2e)/)'
+
+
+[profile.ci]
+inherits = "default"
+failure-output = "immediate-final"
+success-output = "never"
+status-level = "slow"
+final-status-level = "slow"
+# GitLab collects this as a JUnit report.
+junit = { path = "target/nextest/ci/junit.xml" }
+
+[profile.perf]
+inherits = "default"
+default-filter = 'test(/perf_/)'
+failure-output = "immediate-final"
+status-level = "pass"
+final-status-level = "none"
+junit = { path = "target/nextest/perf/junit.xml" }
+
+[test-groups.process-global-state]
+max-threads = 1

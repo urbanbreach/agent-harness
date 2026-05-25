@@ -22,14 +22,18 @@ Usage: scripts/test-lanes.sh <mode> [options]
        scripts/test-lanes.sh --help
 
 Modes:
-  fast                 Fast deterministic developer lane. No PTY, live, native visual, stress, ignored, or real-network signoff commands.
-  integration          Remaining deterministic non-live, non-native-visual, non-PTY-signoff integration commands using explicit Cargo invocations.
+  fast                 Parallel deterministic T1-T3 developer lane via cargo nextest profile ci.
+  integration          Partitioned deterministic T1-T3 nextest run for CI fan-out checks.
+  quality-gates        Static test-suite gates for sleeps, globals, real deps, focus, taxonomy, and cassette secrets.
+  perf                 T4 performance-budget lane via cargo nextest profile perf.
+  coverage             Coverage ratchet lane via scripts/coverage-ratchet.sh.
+  signoff-binary       Real-process CLI shim smoke, env-gated and ignored by default.
   signoff-pty          Deterministic PTY signoff, single-threaded.
-  signoff-live         Live provider signoff. Requires live env and runs live_proxy_preflight first.
+  signoff-live         Live provider signoff. Requires live env and runs live_proxy_preflight_requires_live_env first.
   signoff-native       Native visual signoff. Requires native visual env and runs ignored native visual tests single-threaded.
   stress-offline       Delegates to scripts/stress-harness.sh --mode offline.
   stress-live          Requires live env/config and delegates to scripts/stress-harness.sh --mode live.
-  all-deterministic    Runs fast, then integration, then signoff-pty only when PTY support checks pass.
+  all-deterministic    Runs quality-gates, fast, integration, then signoff-pty only when PTY support checks pass.
   help                 Show this help.
 
 Options:
@@ -56,6 +60,7 @@ Required environment:
   signoff-native requires:
     HARNESS_NATIVE_VISUAL=1
     DISPLAY=<display>
+  signoff-binary sets HARNESS_BINARY_SMOKE=1 for the ignored binary smoke.
   all-deterministic PTY support requires:
     cargo on PATH
     crates/harness-testkit/tests/pty_e2e.rs
@@ -104,7 +109,7 @@ while [[ $# -gt 0 ]]; do
       usage
       exit 0
       ;;
-    fast|integration|signoff-pty|signoff-live|signoff-native|stress-offline|stress-live|all-deterministic|help)
+    fast|integration|quality-gates|perf|coverage|signoff-binary|signoff-pty|signoff-live|signoff-native|stress-offline|stress-live|all-deterministic|help)
       if [[ -n "$mode" ]]; then
         printf 'Multiple modes provided: %s and %s\n' "$mode" "$1" >&2
         usage >&2
@@ -467,66 +472,39 @@ require_native_env() {
 run_fast() {
   run_stage fast fmt "$repo_root" cargo fmt --all -- --check || true
   run_stage fast check "$repo_root" cargo check --workspace || true
-  run_stage fast harness_tui_lib "$repo_root" cargo test -p harness-tui --lib || true
-  run_stage fast harness_tui_model_switcher_metadata "$repo_root" cargo test -p harness-tui --test model_switcher_metadata || true
-  run_stage fast harness_tui_session_navigation_keybindings "$repo_root" cargo test -p harness-tui --test session_navigation_keybindings || true
+  run_stage fast nextest_ci "$repo_root" cargo nextest run --profile ci --workspace --all-features || true
 }
 
 run_integration() {
-run_stage integration harness_bootstrap_profiles "$repo_root" cargo test -p harness --test bootstrap_profiles || true
-run_stage integration harness_config_docs_reference "$repo_root" cargo test -p harness --test config_docs_reference || true
-run_stage integration harness_determinism_multi_turn_tools "$repo_root" cargo test -p harness --test determinism_multi_turn_tools || true
-run_stage integration harness_event_docs_reference "$repo_root" cargo test -p harness --test event_docs_reference || true
-run_stage integration harness_forbidden_branding "$repo_root" python3 scripts/check-forbidden-branding.py || true
-  run_stage integration harness_prompt_cli "$repo_root" cargo test -p harness --test prompt_cli || true
-  run_stage integration harness_replay_sessions_cli "$repo_root" cargo test -p harness --test replay_sessions_cli || true
-  run_stage integration harness_run_cli "$repo_root" cargo test -p harness --test run_cli || true
-  run_stage integration harness_stress_harness_script "$repo_root" cargo test -p harness --test stress_harness_script || true
-  run_stage integration harness_tui_cli_replay_flag_bypasses_launcher_shell "$repo_root" cargo test -p harness --test tui_cli replay_flag_bypasses_launcher_shell || true
-  run_stage integration harness_providers_lib "$repo_root" cargo test -p harness-providers --lib || true
-  run_stage integration harness_providers_openai_native_schema "$repo_root" cargo test -p harness-providers --test openai_compatible_serializes_native_tool_schema_without_alias_dupes || true
-  run_stage integration harness_tools_lib "$repo_root" cargo test -p harness-tools --lib || true
-  run_stage integration harness_tools_native_tool_parity_matrix "$repo_root" cargo test -p harness-tools --test native_tool_parity_matrix || true
-  run_stage integration harness_tools_hashline_apply "$repo_root" cargo test -p harness-tools --test hashline_apply || true
-  run_stage integration harness_tools_mcp_generic "$repo_root" cargo test -p harness-tools --test mcp_generic || true
-  run_stage integration harness_tools_native_agent_spawn_child_session_observability "$repo_root" cargo test -p harness-tools --test native_agent_spawn_child_session_observability || true
-  run_stage integration harness_tools_native_agent_spawn_batch_lineage "$repo_root" cargo test -p harness-tools --test native_agent_spawn_and_batch_preserve_lineage_permissions_and_order || true
-  run_stage integration harness_tools_native_code_lsp "$repo_root" cargo test -p harness-tools --test native_code_lsp || true
-  run_stage integration harness_tools_native_code_search "$repo_root" cargo test -p harness-tools --test native_code_search || true
-  run_stage integration harness_tools_native_github "$repo_root" cargo test -p harness-tools --test native_github || true
-  run_stage integration harness_tools_native_question_tool "$repo_root" cargo test -p harness-tools --test native_question_tool || true
-  run_stage integration harness_tools_native_web_fetch "$repo_root" cargo test -p harness-tools --test native_web_fetch || true
-  run_stage integration harness_tools_native_web_search "$repo_root" cargo test -p harness-tools --test native_web_search || true
-  run_stage integration harness_tools_native_workspace_edit_routing "$repo_root" cargo test -p harness-tools --test native_workspace_edit_routing || true
-  run_stage integration harness_tools_single_surface_live "$repo_root" cargo test -p harness-tools --test single_surface_live || true
-  run_stage integration harness_tools_skill_load_discovery "$repo_root" cargo test -p harness-tools --test skill_load_discovery || true
-  run_stage integration harness_testkit_lib "$repo_root" cargo test -p harness-testkit --lib || true
-  run_stage integration harness_testkit_live_proxy_local_helpers "$repo_root" cargo test -p harness-testkit --test live_proxy_e2e || true
-  run_stage integration harness_testkit_secretscan "$repo_root" cargo test -p harness-testkit --test secretscan || true
-  run_stage integration harness_tools_native_execution_surface "$repo_root" cargo test -p harness-tools --test native_execution_surface || true
-  run_stage integration harness_tools_native_control_plane_tools "$repo_root" cargo test -p harness-tools --test native_control_plane_tools || true
-  run_stage integration harness_core_deterministic_summary_uses_required_harness_sections "$repo_root" cargo test -p harness-core deterministic_summary_uses_required_harness_sections || true
-  run_stage integration harness_core_model_summary_validation_rejects_missing_required_harness_section "$repo_root" cargo test -p harness-core model_summary_validation_rejects_missing_required_harness_section || true
-  run_stage integration harness_core_compaction_trigger_pre_prompt_uses_estimate_without_provider_usage "$repo_root" cargo test -p harness-core compaction_trigger_pre_prompt_uses_estimate_without_provider_usage || true
-  run_stage integration harness_core_compaction_trigger_uses_fallback_budget_without_model_metadata "$repo_root" cargo test -p harness-core compaction_trigger_uses_fallback_budget_without_model_metadata || true
-  run_stage integration harness_core_failed_turn_context "$repo_root" cargo test -p harness-core failed_turn_context || true
-  run_stage integration harness_core_failed_terminal_compaction_preserves_original_failure "$repo_root" cargo test -p harness-core failed_terminal_compaction_preserves_original_failure || true
-  run_stage integration harness_core_split_oversized_turn "$repo_root" cargo test -p harness-core split_oversized_turn || true
-  run_stage integration harness_core_operational_memory "$repo_root" cargo test -p harness-core operational_memory || true
-  run_stage integration harness_config_schema_cli_public_runtime_config_accepts_new_compaction_settings "$repo_root" cargo test -p harness --test config_schema_cli public_runtime_config_accepts_new_compaction_settings || true
-  run_stage integration harness_config_schema_cli_public_runtime_config_accepts_compaction_settings "$repo_root" cargo test -p harness --test config_schema_cli public_runtime_config_accepts_compaction_settings || true
-  run_stage integration harness_core_conversation_projection_failed_checkpoint_turn_status "$repo_root" cargo test -p harness-core conversation_projection_failed_checkpoint_turn_status || true
-  run_stage integration harness_core_resume_plan_session_catalog_counts_checkpoint_artifacts_alongside_tool_artifacts "$repo_root" cargo test -p harness-core --test resume_plan session_catalog_counts_checkpoint_artifacts_alongside_tool_artifacts || true
+  run_stage integration nextest_ci_partition_1 "$repo_root" cargo nextest run --profile ci --workspace --all-features --partition hash:1/2 || true
+  run_stage integration nextest_ci_partition_2 "$repo_root" cargo nextest run --profile ci --workspace --all-features --partition hash:2/2 || true
+}
+
+run_quality_gates() {
+  run_stage quality-gates static_test_suite_gates "$repo_root" python3 scripts/check-test-suite-gates.py || true
+  run_stage quality-gates forbidden_branding "$repo_root" python3 scripts/check-forbidden-branding.py || true
+}
+
+run_perf() {
+  run_stage perf nextest_perf "$repo_root" cargo nextest run --profile perf --workspace --all-features || true
+}
+
+run_coverage() {
+  run_stage coverage coverage_ratchet "$repo_root" scripts/coverage-ratchet.sh || true
+}
+
+run_signoff_binary() {
+  run_stage signoff-binary harness_binary_smoke "$repo_root" env HARNESS_BINARY_SMOKE=1 cargo test -p harness --test binary_smoke -- --ignored --exact || true
 }
 
 run_signoff_pty() {
-  run_stage signoff-pty harness_testkit_pty_e2e "$repo_root" env RUST_TEST_THREADS=1 cargo test -p harness-testkit pty_e2e || true
-  run_stage signoff-pty harness_tui_pty_e2e "$repo_root" env RUST_TEST_THREADS=1 cargo test -p harness-tui pty_e2e || true
+  run_stage signoff-pty harness_testkit_pty_e2e "$repo_root" env RUST_TEST_THREADS=1 cargo test -p harness-testkit --test pty_e2e || true
+  run_stage signoff-pty harness_tui_pty_e2e "$repo_root" env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo test -p harness-tui --test pty_e2e || true
 }
 
 run_signoff_live() {
   require_live_env signoff-live || return 0
-  run_stage signoff-live live_proxy_preflight "$repo_root" cargo test -p harness-testkit live_proxy_preflight -- --ignored --exact || true
+  run_stage signoff-live live_proxy_preflight_requires_live_env "$repo_root" cargo test -p harness-testkit live_proxy_preflight_requires_live_env -- --ignored --exact || true
   run_stage signoff-live live_proxy_prompt_parity_signoff "$repo_root" cargo test -p harness-testkit live_proxy_prompt_parity_signoff -- --ignored --exact || true
   run_stage signoff-live live_proxy_e2e_tui_parity_signoff "$repo_root" cargo test -p harness-testkit live_proxy_e2e_tui_parity_signoff -- --ignored --exact || true
 }
@@ -570,6 +548,18 @@ run_mode() {
     integration)
       run_integration
       ;;
+    quality-gates)
+      run_quality_gates
+      ;;
+    perf)
+      run_perf
+      ;;
+    coverage)
+      run_coverage
+      ;;
+    signoff-binary)
+      run_signoff_binary
+      ;;
     signoff-pty)
       run_signoff_pty
       ;;
@@ -586,6 +576,7 @@ run_mode() {
       run_stress_live
       ;;
     all-deterministic)
+      run_mode quality-gates
       run_mode fast
       run_mode integration
       if all_deterministic_pty_supported; then
