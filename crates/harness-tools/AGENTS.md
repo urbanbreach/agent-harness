@@ -31,15 +31,15 @@ Read the workspace root `AGENTS.md` first; runtime policy lives in `harness-core
 ## TESTS
 ```bash
 cargo test -p harness-tools
-cargo test -p harness-tools --test native_tool_parity_matrix
-cargo test -p harness-tools --test native_execution_surface
-cargo test -p harness-tools --test native_workspace_edit_routing
-cargo test -p harness-tools --test native_control_plane_tools
-cargo test -p harness-tools --test native_agent_spawn_and_batch_preserve_lineage_permissions_and_order
-cargo test -p harness-tools --test native_code_lsp
-cargo test -p harness-tools --test native_code_search
-cargo test -p harness-tools --test native_github
-cargo test -p harness-tools --test mcp_generic
+cargo test -p harness-tools --test native_tool_parity_matrix_test
+cargo test -p harness-tools --test native_execution_surface_test
+cargo test -p harness-tools --test native_workspace_edit_routing_test
+cargo test -p harness-tools --test native_control_plane_tools_test
+cargo test -p harness-tools --test native_agent_spawn_and_batch_preserve_lineage_permissions_and_order_test
+cargo test -p harness-tools --test native_code_lsp_test
+cargo test -p harness-tools --test native_code_search_test
+cargo test -p harness-tools --test native_github_test
+cargo test -p harness-tools --test mcp_generic_test
 ```
 
 ## ANTI-PATTERNS

@@ -1,84 +1,3 @@
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-
-use harness_core::clock::RealClock;
-use harness_core::coord::{spawn_coordinator, CoordinatorConfig, CoordinatorHandle};
-use harness_core::event::EventV1;
-use harness_core::perm::PermissionDecision;
-use harness_core::redact::DefaultRedactor;
-use harness_core::tool::{Tool, ToolContext, ToolError, ToolResult, ToolRunState};
-use harness_tools::coordinator_registry;
-use serde_json::{json, Value};
-use tokio::time::{timeout, Duration};
-
-mod common;
-
-use common::{
-    allow_all_permission_policy, read_events, setup_workspace_fixture,
-    wait_for_question_permission as wait_for_question_permission_event, worker_actor,
-};
-
-async fn wait_for_question_permission(path: &Path) -> String {
-    wait_for_question_permission_event(path, None, Duration::from_secs(5)).await
-}
-
-fn question_tool_context(
-    coordinator: CoordinatorHandle,
-    run_id: &str,
-    workspace_root: &Path,
-    artifacts_dir: &Path,
-    tool_call_id: &str,
-) -> ToolContext {
-    ToolContext {
-        run_id: run_id.to_string(),
-        workspace_root: workspace_root.to_path_buf(),
-        artifacts_dir: artifacts_dir.to_path_buf(),
-        actor: worker_actor("agent-worker"),
-        category: Some("deep".to_string()),
-        tool_call_id: tool_call_id.to_string(),
-        current_model_ref: None,
-        current_model_settings: None,
-        tool_state: ToolRunState::default(),
-        coordinator,
-    }
-}
-
-fn spawn_question_coordinator(session_dir: PathBuf, ask_timeout_ms: u64) -> CoordinatorHandle {
-    let mut config = CoordinatorConfig::new(session_dir);
-    config.permission_policy = allow_all_permission_policy().with_ask_timeout_ms(ask_timeout_ms);
-    spawn_coordinator(
-        config,
-        Arc::new(RealClock::new()),
-        Arc::new(DefaultRedactor::default()),
-    )
-}
-
-fn question_tool() -> Arc<dyn Tool> {
-    coordinator_registry(Default::default())
-        .get("question")
-        .expect("question tool")
-}
-
-fn spawn_question_tool_call(
-    coordinator: CoordinatorHandle,
-    run_id: &str,
-    workspace_root: &Path,
-    artifacts_dir: &Path,
-    tool_call_id: &str,
-    args: Value,
-) -> tokio::task::JoinHandle<Result<ToolResult, ToolError>> {
-    let question_tool = question_tool();
-    let context = question_tool_context(
-        coordinator,
-        run_id,
-        workspace_root,
-        artifacts_dir,
-        tool_call_id,
-    );
-    tokio::spawn(async move { question_tool.call(context, args).await })
-}
-
 #[tokio::test]
 async fn native_question_tool_uses_permission_answers() {
     let workspace = setup_workspace_fixture();
@@ -182,7 +101,6 @@ async fn native_question_tool_uses_permission_answers() {
 
     coordinator.stop_run().await.expect("stop run");
 }
-
 #[tokio::test]
 async fn native_question_tool_accepts_string_option_shorthand() {
     let workspace = setup_workspace_fixture();
@@ -258,7 +176,6 @@ async fn native_question_tool_accepts_string_option_shorthand() {
 
     coordinator.stop_run().await.expect("stop run");
 }
-
 #[tokio::test]
 async fn native_question_tool_accepts_single_question_shape_and_legacy_fields() {
     let workspace = setup_workspace_fixture();
@@ -332,7 +249,6 @@ async fn native_question_tool_accepts_single_question_shape_and_legacy_fields() 
 
     coordinator.stop_run().await.expect("stop run");
 }
-
 #[tokio::test]
 async fn native_question_tool_accepts_allow_freeform_legacy_field() {
     let workspace = setup_workspace_fixture();
@@ -380,7 +296,6 @@ async fn native_question_tool_accepts_allow_freeform_legacy_field() {
 
     coordinator.stop_run().await.expect("stop run");
 }
-
 #[tokio::test]
 async fn native_question_tool_accepts_text_prompt_compat_shape_and_schema_advertises_it() {
     let workspace = setup_workspace_fixture();
@@ -450,7 +365,6 @@ async fn native_question_tool_accepts_text_prompt_compat_shape_and_schema_advert
 
     coordinator.stop_run().await.expect("stop run");
 }
-
 #[tokio::test]
 async fn native_question_tool_waits_indefinitely_when_timeout_disabled() {
     let workspace = setup_workspace_fixture();
@@ -477,7 +391,7 @@ async fn native_question_tool_waits_indefinitely_when_timeout_disabled() {
         }),
     );
 
-    tokio::time::sleep(Duration::from_millis(80)).await;
+    tokio::task::yield_now().await;
     assert!(
         !tool_task.is_finished(),
         "question should still be pending with timeout disabled"
@@ -502,102 +416,4 @@ async fn native_question_tool_waits_indefinitely_when_timeout_disabled() {
         .contains("\"Wait for a human answer\"=\"done\""));
 
     coordinator.stop_run().await.expect("stop run");
-}
-
-#[tokio::test]
-async fn native_question_tool_rejects_or_times_out_cleanly() {
-    let reject_workspace = setup_workspace_fixture();
-    let reject_workspace_root = reject_workspace.workspace();
-    let reject_coordinator =
-        spawn_question_coordinator(reject_workspace.temp_dir().join("sessions"), 1_000);
-    let reject_run = reject_coordinator
-        .start_run("native_question_reject", reject_workspace_root)
-        .await
-        .expect("start reject run");
-
-    let reject_task = spawn_question_tool_call(
-        reject_coordinator.clone(),
-        &reject_run.run_id,
-        reject_workspace_root,
-        &reject_run.artifacts_dir,
-        "native-question-reject",
-        json!({
-            "questions": [{
-                "question": "Pick one",
-                "header": "Choice",
-                "options": [{"label": "A", "description": "Option A"}]
-            }]
-        }),
-    );
-
-    let reject_permission_id = wait_for_question_permission(&reject_run.events_path).await;
-    reject_coordinator
-        .resolve_permission(reject_permission_id.clone(), PermissionDecision::Deny, None)
-        .await
-        .expect("deny question permission");
-    let reject_err = reject_task
-        .await
-        .expect("join reject task")
-        .expect_err("denied question should fail");
-    assert!(matches!(
-        reject_err,
-        ToolError::Execution(message) if message == "question rejected by user"
-    ));
-    assert!(read_events(&reject_run.events_path).iter().any(|event| {
-        matches!(
-            &event.payload,
-            EventV1::PermissionResolved(data)
-                if data.permission_id == reject_permission_id
-                    && data.reason.is_none()
-        )
-    }));
-    reject_coordinator
-        .stop_run()
-        .await
-        .expect("stop reject run");
-
-    let timeout_workspace = setup_workspace_fixture();
-    let timeout_workspace_root = timeout_workspace.workspace();
-    let timeout_coordinator =
-        spawn_question_coordinator(timeout_workspace.temp_dir().join("sessions"), 25);
-    let timeout_run = timeout_coordinator
-        .start_run("native_question_timeout", timeout_workspace_root)
-        .await
-        .expect("start timeout run");
-
-    let timeout_task = spawn_question_tool_call(
-        timeout_coordinator.clone(),
-        &timeout_run.run_id,
-        timeout_workspace_root,
-        &timeout_run.artifacts_dir,
-        "native-question-timeout",
-        json!({
-            "questions": [{
-                "question": "Pick one",
-                "header": "Choice",
-                "options": [{"label": "A", "description": "Option A"}]
-            }]
-        }),
-    );
-
-    let timeout_err = timeout(Duration::from_secs(2), timeout_task)
-        .await
-        .expect("question timeout should complete")
-        .expect("join timeout task")
-        .expect_err("timed out question should fail");
-    assert!(matches!(
-        timeout_err,
-        ToolError::Execution(message) if message == "question timed out awaiting user input"
-    ));
-    assert!(read_events(&timeout_run.events_path).iter().any(|event| {
-        matches!(
-            &event.payload,
-            EventV1::PermissionResolved(data)
-                if data.reason.as_deref() == Some("permission request timed out")
-        )
-    }));
-    timeout_coordinator
-        .stop_run()
-        .await
-        .expect("stop timeout run");
 }

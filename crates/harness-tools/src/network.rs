@@ -1,7 +1,10 @@
+use std::collections::BTreeMap;
 use std::fs;
+use std::sync::Arc;
 use std::sync::LazyLock;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use harness_core::config::{
     DEFAULT_REMOTE_SEARCH_ENDPOINT, DEFAULT_REMOTE_SEARCH_MAX_RETRIES,
     DEFAULT_REMOTE_SEARCH_RETRY_BACKOFF_MS, DEFAULT_REMOTE_SEARCH_TIMEOUT_SECS,
@@ -46,7 +49,7 @@ const REMOTE_SEARCH_RETRY_BACKOFF_MS_ENV_VARS: &[&str] =
     &["HARNESS_REMOTE_SEARCH_RETRY_BACKOFF_MS"];
 
 pub(crate) struct NetworkExecutor {
-    client: reqwest::Client,
+    web_fetch_transport: Arc<dyn WebFetchHttpTransport>,
     remote_search: RemoteSearchClient,
 }
 
@@ -55,7 +58,31 @@ impl NetworkExecutor {
         let client = http_client::redirect_limited_client(10, "http client");
         Self {
             remote_search: RemoteSearchClient::from_env(client.clone()),
-            client,
+            web_fetch_transport: Arc::new(ReqwestWebFetchHttpTransport { client }),
+        }
+    }
+
+    #[doc(hidden)]
+    pub(crate) fn with_remote_search_transport(
+        config: RemoteSearchTestConfig,
+        transport: Arc<dyn RemoteSearchHttpTransport>,
+    ) -> Result<Self, String> {
+        let client = http_client::redirect_limited_client(10, "http client");
+        Ok(Self {
+            remote_search: RemoteSearchClient::from_config(
+                RemoteSearchConfig::from_test_config(config)?,
+                transport,
+            ),
+            web_fetch_transport: Arc::new(ReqwestWebFetchHttpTransport { client }),
+        })
+    }
+
+    #[doc(hidden)]
+    pub(crate) fn with_web_fetch_transport(transport: Arc<dyn WebFetchHttpTransport>) -> Self {
+        let client = http_client::redirect_limited_client(10, "http client");
+        Self {
+            remote_search: RemoteSearchClient::from_env(client),
+            web_fetch_transport: transport,
         }
     }
 
@@ -72,21 +99,16 @@ impl NetworkExecutor {
         let response = self
             .send_web_fetch_request(&url, request.format, timeout_secs)
             .await?;
-        let status = response.status();
-        if !status.is_success() {
+        let status = response.status;
+        if !(200..300).contains(&status) {
             return Err(ToolError::Execution(format!(
                 "request failed with status code: {}",
                 status
             )));
         }
-        let content_type = response
-            .headers()
-            .get(reqwest::header::CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .unwrap_or("")
-            .to_string();
+        let content_type = response.header(reqwest::header::CONTENT_TYPE.as_str());
         let mime = media_type(&content_type);
-        let bytes = read_web_fetch_body(response).await?;
+        let bytes = read_web_fetch_body(response)?;
         let kind = classify_web_fetch_body(&mime, &bytes);
 
         match kind {
@@ -145,17 +167,11 @@ impl NetworkExecutor {
         url: &reqwest::Url,
         format: WebFetchFormat,
         timeout_secs: u64,
-    ) -> Result<reqwest::Response, ToolError> {
+    ) -> Result<WebFetchHttpResponse, ToolError> {
         let initial = self
             .execute_web_fetch_request(url, format, timeout_secs, HARNESS_WEBFETCH_USER_AGENT)
             .await?;
-        if initial.status() == reqwest::StatusCode::FORBIDDEN
-            && initial
-                .headers()
-                .get("cf-mitigated")
-                .and_then(|value| value.to_str().ok())
-                == Some("challenge")
-        {
+        if initial.status == 403 && initial.header("cf-mitigated") == "challenge" {
             return self
                 .execute_web_fetch_request(
                     url,
@@ -174,25 +190,17 @@ impl NetworkExecutor {
         format: WebFetchFormat,
         timeout_secs: u64,
         user_agent: &str,
-    ) -> Result<reqwest::Response, ToolError> {
-        self.client
-            .get(url.clone())
-            .header(reqwest::header::USER_AGENT, user_agent)
-            .header(reqwest::header::ACCEPT, accept_header(format))
-            .header(
-                reqwest::header::ACCEPT_LANGUAGE,
-                HARNESS_WEBFETCH_ACCEPT_LANGUAGE,
-            )
-            .timeout(Duration::from_secs(timeout_secs))
-            .send()
-            .await
-            .map_err(|err| {
-                if err.is_timeout() {
-                    ToolError::Execution(format!("request timed out after {timeout_secs}s"))
-                } else {
-                    ToolError::Execution(format!("request failed: {err}"))
-                }
+    ) -> Result<WebFetchHttpResponse, ToolError> {
+        self.web_fetch_transport
+            .execute(WebFetchHttpRequest {
+                url: url.as_str().to_string(),
+                user_agent: user_agent.to_string(),
+                accept: accept_header(format).to_string(),
+                accept_language: HARNESS_WEBFETCH_ACCEPT_LANGUAGE.to_string(),
+                timeout_secs,
             })
+            .await
+            .map_err(|err| normalize_web_fetch_transport_error(err, timeout_secs))
     }
 
     pub(crate) async fn web_search(
@@ -244,6 +252,140 @@ impl NetworkExecutor {
                 "empty": empty,
             }),
         ))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct WebFetchHttpRequest {
+    pub url: String,
+    pub user_agent: String,
+    pub accept: String,
+    pub accept_language: String,
+    pub timeout_secs: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct WebFetchHttpResponse {
+    pub status: u16,
+    pub headers: BTreeMap<String, String>,
+    pub content_length: Option<u64>,
+    pub body: Vec<u8>,
+}
+
+impl WebFetchHttpResponse {
+    #[doc(hidden)]
+    pub fn new(
+        status: u16,
+        headers: impl IntoIterator<Item = (impl Into<String>, impl Into<String>)>,
+        body: impl Into<Vec<u8>>,
+    ) -> Self {
+        Self {
+            status,
+            headers: normalize_web_fetch_headers(headers),
+            content_length: None,
+            body: body.into(),
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn with_content_length(mut self, content_length: u64) -> Self {
+        self.content_length = Some(content_length);
+        self
+    }
+
+    fn header(&self, name: &str) -> String {
+        self.headers
+            .get(&name.to_ascii_lowercase())
+            .cloned()
+            .unwrap_or_default()
+    }
+}
+
+fn normalize_web_fetch_headers(
+    headers: impl IntoIterator<Item = (impl Into<String>, impl Into<String>)>,
+) -> BTreeMap<String, String> {
+    headers
+        .into_iter()
+        .map(|(name, value)| (name.into().to_ascii_lowercase(), value.into()))
+        .collect()
+}
+
+#[async_trait]
+pub trait WebFetchHttpTransport: Send + Sync {
+    async fn execute(
+        &self,
+        request: WebFetchHttpRequest,
+    ) -> Result<WebFetchHttpResponse, ToolError>;
+}
+
+#[derive(Debug, Clone)]
+struct ReqwestWebFetchHttpTransport {
+    client: reqwest::Client,
+}
+
+#[async_trait]
+impl WebFetchHttpTransport for ReqwestWebFetchHttpTransport {
+    async fn execute(
+        &self,
+        request: WebFetchHttpRequest,
+    ) -> Result<WebFetchHttpResponse, ToolError> {
+        let url = reqwest::Url::parse(&request.url)
+            .map_err(|err| ToolError::InvalidArguments(format!("invalid URL: {err}")))?;
+        let mut response = self
+            .client
+            .get(url)
+            .header(reqwest::header::USER_AGENT, request.user_agent)
+            .header(reqwest::header::ACCEPT, request.accept)
+            .header(reqwest::header::ACCEPT_LANGUAGE, request.accept_language)
+            .timeout(Duration::from_secs(request.timeout_secs))
+            .send()
+            .await
+            .map_err(|err| {
+                if err.is_timeout() {
+                    ToolError::Execution("timeout".to_string())
+                } else {
+                    ToolError::Execution(format!("request failed: {err}"))
+                }
+            })?;
+        let status = response.status().as_u16();
+        let content_length = response.content_length();
+        if content_length.unwrap_or_default() > MAX_FETCH_BYTES as u64 {
+            return Ok(WebFetchHttpResponse {
+                status,
+                headers: BTreeMap::new(),
+                content_length,
+                body: Vec::new(),
+            });
+        }
+        let headers = response
+            .headers()
+            .iter()
+            .filter_map(|(name, value)| {
+                value
+                    .to_str()
+                    .ok()
+                    .map(|value| (name.as_str().to_ascii_lowercase(), value.to_string()))
+            })
+            .collect::<BTreeMap<_, _>>();
+        let mut body = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|err| ToolError::Execution(format!("failed to read response body: {err}")))?
+        {
+            if body.len() + chunk.len() > MAX_FETCH_BYTES {
+                return Err(ToolError::Execution(
+                    "response too large (exceeds 5MB limit)".to_string(),
+                ));
+            }
+            body.extend_from_slice(&chunk);
+        }
+        Ok(WebFetchHttpResponse {
+            status,
+            headers,
+            content_length,
+            body,
+        })
     }
 }
 
@@ -300,17 +442,153 @@ impl RemoteSearchTextResult {
     }
 }
 
+#[doc(hidden)]
 #[derive(Debug, Clone)]
-struct RemoteSearchClient {
+pub struct RemoteSearchTestConfig {
+    pub endpoint: String,
+    pub auth_token: Option<String>,
+    pub require_auth: bool,
+    pub timeout_secs: u64,
+    pub max_retries: u32,
+    pub retry_backoff_ms: u64,
+}
+
+impl Default for RemoteSearchTestConfig {
+    fn default() -> Self {
+        Self {
+            endpoint: DEFAULT_REMOTE_SEARCH_ENDPOINT.to_string(),
+            auth_token: Some("fixture-token".to_string()),
+            require_auth: true,
+            timeout_secs: DEFAULT_REMOTE_SEARCH_TIMEOUT_SECS,
+            max_retries: DEFAULT_REMOTE_SEARCH_MAX_RETRIES,
+            retry_backoff_ms: DEFAULT_REMOTE_SEARCH_RETRY_BACKOFF_MS,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RemoteSearchHttpRequest {
+    pub endpoint: String,
+    pub auth_token: Option<String>,
+    pub tool_name: String,
+    pub arguments: Value,
+    pub timeout_secs: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct RemoteSearchHttpResponse {
+    pub status: u16,
+    pub retry_after_secs: Option<u64>,
+    pub body: String,
+}
+
+impl RemoteSearchHttpResponse {
+    #[doc(hidden)]
+    pub fn new(status: u16, body: impl Into<String>) -> Self {
+        Self {
+            status,
+            retry_after_secs: None,
+            body: body.into(),
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn with_retry_after_secs(mut self, retry_after_secs: u64) -> Self {
+        self.retry_after_secs = Some(retry_after_secs);
+        self
+    }
+}
+
+#[async_trait]
+pub trait RemoteSearchHttpTransport: Send + Sync {
+    async fn execute(
+        &self,
+        request: RemoteSearchHttpRequest,
+    ) -> Result<RemoteSearchHttpResponse, ToolError>;
+}
+
+#[derive(Debug, Clone)]
+struct ReqwestRemoteSearchTransport {
     client: reqwest::Client,
+}
+
+#[async_trait]
+impl RemoteSearchHttpTransport for ReqwestRemoteSearchTransport {
+    async fn execute(
+        &self,
+        request: RemoteSearchHttpRequest,
+    ) -> Result<RemoteSearchHttpResponse, ToolError> {
+        let endpoint = reqwest::Url::parse(&request.endpoint).map_err(|err| {
+            ToolError::Execution(format!("invalid remote search endpoint: {err}"))
+        })?;
+        let mut builder = self
+            .client
+            .post(endpoint)
+            .header(reqwest::header::USER_AGENT, "agent-harness")
+            .header(
+                reqwest::header::ACCEPT,
+                "application/json, text/event-stream",
+            )
+            .json(&json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": request.tool_name,
+                    "arguments": request.arguments,
+                }
+            }))
+            .timeout(Duration::from_secs(request.timeout_secs));
+
+        if let Some(token) = &request.auth_token {
+            builder = builder.bearer_auth(token);
+        }
+
+        let response = builder.send().await.map_err(|err| {
+            if err.is_timeout() {
+                ToolError::Execution(format!(
+                    "remote search request timed out after {}s",
+                    request.timeout_secs
+                ))
+            } else {
+                ToolError::Execution(format!("remote search request failed: {err}"))
+            }
+        })?;
+
+        let status = response.status().as_u16();
+        let retry_after_secs = retry_after_secs(response.headers());
+        let body = response.text().await.map_err(|err| {
+            ToolError::Execution(format!("failed to read remote search response body: {err}"))
+        })?;
+        Ok(RemoteSearchHttpResponse {
+            status,
+            retry_after_secs,
+            body,
+        })
+    }
+}
+
+#[derive(Clone)]
+struct RemoteSearchClient {
     backend: Result<RemoteSearchBackend, String>,
 }
 
 impl RemoteSearchClient {
     fn from_env(client: reqwest::Client) -> Self {
         Self {
-            client,
-            backend: RemoteSearchBackend::from_env(),
+            backend: RemoteSearchBackend::from_env(client),
+        }
+    }
+
+    fn from_config(
+        config: RemoteSearchConfig,
+        transport: Arc<dyn RemoteSearchHttpTransport>,
+    ) -> Self {
+        Self {
+            backend: Ok(RemoteSearchBackend::ExaMcp(ExaRemoteSearchBackend {
+                config,
+                transport,
+            })),
         }
     }
 
@@ -318,14 +596,14 @@ impl RemoteSearchClient {
         &self,
         request: &NormalizedWebSearchRequest,
     ) -> Result<RemoteSearchTextResult, ToolError> {
-        self.backend()?.web_search(&self.client, request).await
+        self.backend()?.web_search(request).await
     }
 
     async fn code_search(
         &self,
         request: &NormalizedCodeSearchRequest,
     ) -> Result<RemoteSearchTextResult, ToolError> {
-        self.backend()?.code_search(&self.client, request).await
+        self.backend()?.code_search(request).await
     }
 
     fn backend(&self) -> Result<&RemoteSearchBackend, ToolError> {
@@ -335,28 +613,27 @@ impl RemoteSearchClient {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 enum RemoteSearchBackend {
     ExaMcp(ExaRemoteSearchBackend),
 }
 
 impl RemoteSearchBackend {
-    fn from_env() -> Result<Self, String> {
+    fn from_env(client: reqwest::Client) -> Result<Self, String> {
         Ok(Self::ExaMcp(ExaRemoteSearchBackend {
             config: RemoteSearchConfig::from_env()?,
+            transport: Arc::new(ReqwestRemoteSearchTransport { client }),
         }))
     }
 
     async fn web_search(
         &self,
-        client: &reqwest::Client,
         request: &NormalizedWebSearchRequest,
     ) -> Result<RemoteSearchTextResult, ToolError> {
         match self {
             Self::ExaMcp(backend) => {
                 backend
                     .call_text_tool(
-                        client,
                         EXA_WEB_SEARCH_TOOL_NAME,
                         json!({
                             "query": request.query,
@@ -374,14 +651,12 @@ impl RemoteSearchBackend {
 
     async fn code_search(
         &self,
-        client: &reqwest::Client,
         request: &NormalizedCodeSearchRequest,
     ) -> Result<RemoteSearchTextResult, ToolError> {
         match self {
             Self::ExaMcp(backend) => {
                 backend
                     .call_text_tool(
-                        client,
                         EXA_CODE_SEARCH_TOOL_NAME,
                         json!({
                             "query": request.query,
@@ -395,15 +670,15 @@ impl RemoteSearchBackend {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct ExaRemoteSearchBackend {
     config: RemoteSearchConfig,
+    transport: Arc<dyn RemoteSearchHttpTransport>,
 }
 
 impl ExaRemoteSearchBackend {
     async fn call_text_tool(
         &self,
-        client: &reqwest::Client,
         tool_name: &str,
         arguments: Value,
         operation: &str,
@@ -413,10 +688,10 @@ impl ExaRemoteSearchBackend {
         let mut attempt = 0_u32;
         loop {
             let response = self
-                .execute_call(client, tool_name, arguments.clone(), operation)
+                .execute_call(tool_name, arguments.clone(), operation)
                 .await?;
-            let status = response.status();
-            let retry_after_secs = retry_after_secs(response.headers());
+            let status = response.status;
+            let retry_after_secs = response.retry_after_secs;
 
             if should_retry_remote_search(status) && attempt < self.config.max_retries {
                 tokio::time::sleep(remote_search_retry_delay(
@@ -428,7 +703,7 @@ impl ExaRemoteSearchBackend {
                 continue;
             }
 
-            if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            if status == 429 {
                 let attempts = attempt + 1;
                 let retry_hint = retry_after_secs
                     .map(|seconds| format!("; retry after {seconds}s"))
@@ -440,10 +715,7 @@ impl ExaRemoteSearchBackend {
                 )));
             }
 
-            if matches!(
-                status,
-                reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN
-            ) {
+            if matches!(status, 401 | 403) {
                 let message = if self.config.auth_token.is_some() {
                     "remote search authentication failed"
                 } else {
@@ -452,65 +724,34 @@ impl ExaRemoteSearchBackend {
                 return Err(ToolError::Execution(message.to_string()));
             }
 
-            if !status.is_success() {
-                let body = response.text().await.map_err(|err| {
-                    ToolError::Execution(format!(
-                        "remote search request failed with status {status}; failed to read error body: {err}"
-                    ))
-                })?;
+            if !(200..300).contains(&status) {
                 return Err(ToolError::Execution(format!(
                     "remote search request failed with status {status}{}",
-                    backend_error_suffix(&body),
+                    backend_error_suffix(&response.body),
                 )));
             }
 
-            let body = response.text().await.map_err(|err| {
-                ToolError::Execution(format!("failed to read remote search response body: {err}"))
-            })?;
-            let text = parse_sse_text_result(&body)?.unwrap_or_default();
+            let text = parse_sse_text_result(&response.body)?.unwrap_or_default();
             return Ok(RemoteSearchTextResult { text });
         }
     }
 
     async fn execute_call(
         &self,
-        client: &reqwest::Client,
         tool_name: &str,
         arguments: Value,
         operation: &str,
-    ) -> Result<reqwest::Response, ToolError> {
-        let mut request = client
-            .post(self.config.endpoint.clone())
-            .header(reqwest::header::USER_AGENT, "agent-harness")
-            .header(
-                reqwest::header::ACCEPT,
-                "application/json, text/event-stream",
-            )
-            .json(&json!({
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": {
-                    "name": tool_name,
-                    "arguments": arguments,
-                }
-            }))
-            .timeout(Duration::from_secs(self.config.timeout_secs));
-
-        if let Some(token) = &self.config.auth_token {
-            request = request.bearer_auth(token);
-        }
-
-        request.send().await.map_err(|err| {
-            if err.is_timeout() {
-                ToolError::Execution(format!(
-                    "{operation} request timed out after {}s",
-                    self.config.timeout_secs
-                ))
-            } else {
-                ToolError::Execution(format!("remote search request failed: {err}"))
-            }
-        })
+    ) -> Result<RemoteSearchHttpResponse, ToolError> {
+        self.transport
+            .execute(RemoteSearchHttpRequest {
+                endpoint: self.config.endpoint.as_str().to_string(),
+                auth_token: self.config.auth_token.clone(),
+                tool_name: tool_name.to_string(),
+                arguments,
+                timeout_secs: self.config.timeout_secs,
+            })
+            .await
+            .map_err(|err| normalize_remote_search_transport_error(err, operation))
     }
 }
 
@@ -547,6 +788,19 @@ impl RemoteSearchConfig {
             timeout_secs,
             max_retries,
             retry_backoff_ms,
+        })
+    }
+
+    fn from_test_config(config: RemoteSearchTestConfig) -> Result<Self, String> {
+        Ok(Self {
+            endpoint: parse_remote_search_endpoint(&config.endpoint)?,
+            auth_token: config.auth_token,
+            require_auth: config.require_auth,
+            timeout_secs: config.timeout_secs.clamp(1, MAX_WEB_TIMEOUT_SECS),
+            max_retries: config.max_retries,
+            retry_backoff_ms: config
+                .retry_backoff_ms
+                .min(MAX_REMOTE_SEARCH_RETRY_BACKOFF_MS),
         })
     }
 
@@ -616,27 +870,19 @@ fn normalize_url(url: &str) -> Result<reqwest::Url, ToolError> {
     }
 }
 
-async fn read_web_fetch_body(mut response: reqwest::Response) -> Result<Vec<u8>, ToolError> {
-    if response.content_length().unwrap_or_default() > MAX_FETCH_BYTES as u64 {
+fn read_web_fetch_body(response: WebFetchHttpResponse) -> Result<Vec<u8>, ToolError> {
+    if response.content_length.unwrap_or_default() > MAX_FETCH_BYTES as u64 {
         return Err(ToolError::Execution(
             "response too large (exceeds 5MB limit)".to_string(),
         ));
     }
 
-    let mut body = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|err| ToolError::Execution(format!("failed to read response body: {err}")))?
-    {
-        if body.len() + chunk.len() > MAX_FETCH_BYTES {
-            return Err(ToolError::Execution(
-                "response too large (exceeds 5MB limit)".to_string(),
-            ));
-        }
-        body.extend_from_slice(&chunk);
+    if response.body.len() > MAX_FETCH_BYTES {
+        return Err(ToolError::Execution(
+            "response too large (exceeds 5MB limit)".to_string(),
+        ));
     }
-    Ok(body)
+    Ok(response.body)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -869,8 +1115,8 @@ fn retry_after_secs(headers: &reqwest::header::HeaderMap) -> Option<u64> {
         .and_then(|value| value.trim().parse::<u64>().ok())
 }
 
-fn should_retry_remote_search(status: reqwest::StatusCode) -> bool {
-    status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
+fn should_retry_remote_search(status: u16) -> bool {
+    status == 429 || (500..600).contains(&status)
 }
 
 fn remote_search_retry_delay(retry_after_secs: Option<u64>, retry_backoff_ms: u64) -> Duration {
@@ -890,6 +1136,24 @@ fn normalize_code_search_error(error: ToolError) -> ToolError {
     match error {
         ToolError::Execution(message) if is_code_search_timeout(&message) => {
             ToolError::Execution(CODE_SEARCH_TIMEOUT_MESSAGE.to_string())
+        }
+        other => other,
+    }
+}
+
+fn normalize_remote_search_transport_error(error: ToolError, operation: &str) -> ToolError {
+    match error {
+        ToolError::Execution(message) if message == "timeout" => ToolError::Execution(format!(
+            "{operation} request timed out after transport timeout"
+        )),
+        other => other,
+    }
+}
+
+fn normalize_web_fetch_transport_error(error: ToolError, timeout_secs: u64) -> ToolError {
+    match error {
+        ToolError::Execution(message) if message == "timeout" => {
+            ToolError::Execution(format!("request timed out after {timeout_secs}s"))
         }
         other => other,
     }

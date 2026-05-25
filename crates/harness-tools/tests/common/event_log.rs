@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use harness_core::event::{EventEnvelopeV1, EventV1, ToolCallFinishedEvent, ToolCallStatus};
-use tokio::time::{sleep, Duration, Instant};
+use tokio::time::{Duration, Instant};
 
 pub(crate) use super::event_reader::read_events;
 
@@ -21,7 +21,7 @@ pub(crate) async fn wait_for_tool_call_finish(path: &Path, tool_call_id: &str) {
             Instant::now() < deadline,
             "timed out waiting for tool call {tool_call_id}"
         );
-        sleep(Duration::from_millis(20)).await;
+        tokio::task::yield_now().await;
     }
 }
 
@@ -53,7 +53,7 @@ pub(crate) async fn wait_for_succeeded_tool_call_finish(
             );
         }
 
-        sleep(Duration::from_millis(20)).await;
+        tokio::task::yield_now().await;
     }
 }
 
@@ -74,7 +74,7 @@ pub(crate) async fn wait_for_request_terminal(path: &Path, request_id: &str) {
             Instant::now() < deadline,
             "timed out waiting for request {request_id} terminal event"
         );
-        sleep(Duration::from_millis(20)).await;
+        tokio::task::yield_now().await;
     }
 }
 

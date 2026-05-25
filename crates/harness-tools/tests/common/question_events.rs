@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use harness_core::event::{EventEnvelopeV1, EventV1};
-use tokio::time::{sleep, Duration, Instant};
+use tokio::time::{Duration, Instant};
 
 pub(crate) use super::event_reader::read_events;
 
@@ -32,7 +32,7 @@ pub(crate) async fn wait_for_question_permission(
             Instant::now() < deadline,
             "timed out waiting for question permission"
         );
-        sleep(Duration::from_millis(20)).await;
+        tokio::task::yield_now().await;
     }
 }
 

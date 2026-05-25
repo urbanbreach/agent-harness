@@ -24,7 +24,7 @@ use crate::text::trimmed_non_empty;
 use crate::workspace_paths::resolve_existing_path;
 use crate::{
     parse_tool_args, text_json_tool_result, FsGlobTool, FsGrepTool, FsLsTool, FsReadTool,
-    ShellRunTool,
+    ShellCommandRunner, ShellRunTool,
 };
 use async_trait::async_trait;
 use globset::Glob;
@@ -51,6 +51,7 @@ pub(crate) struct GlobTool;
 pub(crate) struct GrepTool;
 pub(crate) struct BashTool {
     allowlist: ShellAllowlist,
+    runner: Arc<dyn ShellCommandRunner>,
 }
 pub(crate) struct WebFetchTool {
     executor: Arc<NetworkExecutor>,
@@ -146,8 +147,11 @@ impl InvalidTool {
 }
 
 impl BashTool {
-    pub(crate) fn new(allowlist: ShellAllowlist) -> Self {
-        Self { allowlist }
+    pub(crate) fn with_runner(
+        allowlist: ShellAllowlist,
+        runner: Arc<dyn ShellCommandRunner>,
+    ) -> Self {
+        Self { allowlist, runner }
     }
 }
 
@@ -691,7 +695,7 @@ impl Tool for BashTool {
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: BashArgs = parse_tool_args(args_json)?;
-        ShellRunTool::new(self.allowlist.clone())
+        ShellRunTool::with_runner(self.allowlist.clone(), self.runner.clone())
             .call(
                 ctx,
                 json!({

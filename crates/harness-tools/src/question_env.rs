@@ -1,24 +1,49 @@
+use std::sync::Arc;
+
 use harness_core::tool::{ToolContext, ToolError};
 use serde_json::Value;
 
-const QUESTION_ANSWERS_ENV_VAR: &str = "HARNESS_QUESTION_ANSWERS";
-
-pub(crate) fn read_question_answers_from_env() -> Result<Option<Vec<Vec<String>>>, ToolError> {
-    std::env::var(QUESTION_ANSWERS_ENV_VAR)
-        .ok()
-        .map(|value| serde_json::from_str::<Vec<Vec<String>>>(&value))
-        .transpose()
-        .map_err(|err| {
-            ToolError::Execution(format!("failed to parse {QUESTION_ANSWERS_ENV_VAR}: {err}"))
-        })
+pub trait QuestionAnswerSource: Send + Sync {
+    fn answers(&self) -> Option<Vec<Vec<String>>>;
 }
 
-pub(crate) async fn question_answers_from_env_or_request(
+#[derive(Debug, Default)]
+pub struct CoordinatorQuestionAnswerSource;
+
+impl QuestionAnswerSource for CoordinatorQuestionAnswerSource {
+    fn answers(&self) -> Option<Vec<Vec<String>>> {
+        None
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ScriptedQuestionAnswerSource {
+    answers: Vec<Vec<String>>,
+}
+
+impl ScriptedQuestionAnswerSource {
+    pub fn new(answers: Vec<Vec<String>>) -> Self {
+        Self { answers }
+    }
+}
+
+impl QuestionAnswerSource for ScriptedQuestionAnswerSource {
+    fn answers(&self) -> Option<Vec<Vec<String>>> {
+        Some(self.answers.clone())
+    }
+}
+
+pub(crate) fn coordinator_question_answer_source() -> Arc<dyn QuestionAnswerSource> {
+    Arc::new(CoordinatorQuestionAnswerSource)
+}
+
+pub(crate) async fn question_answers_from_source_or_request(
+    source: &dyn QuestionAnswerSource,
     ctx: &ToolContext,
     questions: Value,
     coordinator_error: impl FnOnce(String) -> ToolError,
 ) -> Result<Vec<Vec<String>>, ToolError> {
-    if let Some(answers) = read_question_answers_from_env()? {
+    if let Some(answers) = source.answers() {
         return Ok(answers);
     }
 

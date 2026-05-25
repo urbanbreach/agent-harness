@@ -1,4 +1,5 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -192,12 +193,62 @@ fn is_existing_bash_file(path: &Path) -> bool {
             .unwrap_or(false)
 }
 
-#[derive(Debug)]
-struct ShellProcessOutput {
-    stdout: String,
-    stderr: String,
-    status: i32,
-    success: bool,
+#[derive(Debug, Clone)]
+#[doc(hidden)]
+pub struct ShellProcessOutput {
+    pub stdout: String,
+    pub stderr: String,
+    pub status: i32,
+    pub success: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[doc(hidden)]
+pub struct ShellCommandInvocation {
+    pub program: String,
+    pub args: Vec<String>,
+    pub cwd: PathBuf,
+}
+
+impl ShellCommandInvocation {
+    fn new(program: impl Into<String>, cwd: PathBuf) -> Self {
+        Self {
+            program: program.into(),
+            args: Vec::new(),
+            cwd,
+        }
+    }
+
+    fn args(mut self, args: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.args = args.into_iter().map(Into::into).collect();
+        self
+    }
+}
+
+#[async_trait]
+#[doc(hidden)]
+pub trait ShellCommandRunner: Send + Sync {
+    async fn run(
+        &self,
+        invocation: ShellCommandInvocation,
+        timeout_ms: u64,
+    ) -> Result<ShellProcessOutput, ToolError>;
+}
+
+#[derive(Debug, Default)]
+struct TokioShellCommandRunner;
+
+#[async_trait]
+impl ShellCommandRunner for TokioShellCommandRunner {
+    async fn run(
+        &self,
+        invocation: ShellCommandInvocation,
+        timeout_ms: u64,
+    ) -> Result<ShellProcessOutput, ToolError> {
+        let mut command = tokio::process::Command::new(&invocation.program);
+        command.args(&invocation.args).current_dir(invocation.cwd);
+        run_shell_process(command, timeout_ms).await
+    }
 }
 
 impl From<std::process::Output> for ShellProcessOutput {
@@ -321,12 +372,21 @@ fn write_shell_output_artifact(
 
 pub(crate) struct ShellRunTool {
     safety: ShellSafety,
+    runner: Arc<dyn ShellCommandRunner>,
 }
 
 impl ShellRunTool {
-    pub(crate) fn new(allowlist: ShellAllowlist) -> Self {
+    pub(crate) fn default_runner() -> Arc<dyn ShellCommandRunner> {
+        Arc::new(TokioShellCommandRunner)
+    }
+
+    pub(crate) fn with_runner(
+        allowlist: ShellAllowlist,
+        runner: Arc<dyn ShellCommandRunner>,
+    ) -> Self {
         Self {
             safety: ShellSafety::new(allowlist),
+            runner,
         }
     }
 }
@@ -486,9 +546,13 @@ impl ShellRunTool {
             &resolved_cwd,
             &ctx.workspace_root,
         )?;
-        let mut command = tokio::process::Command::new(&invocation.cmd);
-        command.args(&invocation.args).current_dir(resolved_cwd);
-        let output = run_shell_process(command, timeout_ms).await?;
+        let output = self
+            .runner
+            .run(
+                ShellCommandInvocation::new(&invocation.cmd, resolved_cwd).args(&invocation.args),
+                timeout_ms,
+            )
+            .await?;
         let structured_json = invocation.into_metadata(&output);
 
         Ok(ShellRunExecution {
@@ -509,12 +573,14 @@ impl ShellRunTool {
         self.safety
             .validate_bash_command(&invocation.command, &cwd, &ctx.workspace_root)?;
         let shell = resolve_bash_executable();
-        let mut shell_command = tokio::process::Command::new(&shell);
-        shell_command
-            .arg("-lc")
-            .arg(&invocation.command)
-            .current_dir(cwd);
-        let output = run_shell_process(shell_command, timeout_ms).await?;
+        let output = self
+            .runner
+            .run(
+                ShellCommandInvocation::new(shell, cwd)
+                    .args(["-lc".to_string(), invocation.command.clone()]),
+                timeout_ms,
+            )
+            .await?;
         let structured_json = invocation.into_metadata(&output);
 
         Ok(ShellRunExecution {
@@ -557,12 +623,56 @@ impl Tool for ShellRunTool {
 
 #[cfg(test)]
 mod tests {
-    use super::{ShellOutputPreviewLimits, ShellRunTool, SHELL_OUTPUT_INLINE_LINE_LIMIT};
+    use std::sync::Mutex;
+
+    use super::{
+        ShellCommandInvocation, ShellCommandRunner, ShellOutputPreviewLimits, ShellProcessOutput,
+        ShellRunTool, SHELL_OUTPUT_INLINE_LINE_LIMIT,
+    };
     use crate::coordinator_registry;
     use crate::test_support::{read_spilled_artifact, tool_context as shell_test_context};
     use harness_core::config::ShellAllowlist;
     use harness_core::tool::{Tool, ToolError};
     use serde_json::json;
+
+    #[derive(Debug)]
+    struct FakeShellCommandRunner {
+        output: ShellProcessOutput,
+        calls: Mutex<Vec<(ShellCommandInvocation, u64)>>,
+    }
+
+    impl FakeShellCommandRunner {
+        fn success(stdout: &str) -> std::sync::Arc<Self> {
+            std::sync::Arc::new(Self {
+                output: ShellProcessOutput {
+                    stdout: stdout.to_string(),
+                    stderr: String::new(),
+                    status: 0,
+                    success: true,
+                },
+                calls: Mutex::new(Vec::new()),
+            })
+        }
+
+        fn calls(&self) -> Vec<(ShellCommandInvocation, u64)> {
+            self.calls.lock().expect("fake calls lock").clone()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ShellCommandRunner for FakeShellCommandRunner {
+        async fn run(
+            &self,
+            invocation: ShellCommandInvocation,
+            timeout_ms: u64,
+        ) -> Result<ShellProcessOutput, ToolError> {
+            self.calls
+                .lock()
+                .expect("fake calls lock")
+                .push((invocation, timeout_ms));
+            Ok(self.output.clone())
+        }
+    }
 
     #[test]
     fn shell_output_preview_enforces_line_limit_without_trailing_newline() {
@@ -672,7 +782,8 @@ mod tests {
     #[tokio::test]
     async fn bash_direct_exec_returns_recovery_hint_for_blocked_find() {
         let temp = tempfile::tempdir().expect("tempdir");
-        let bash = ShellRunTool::new(ShellAllowlist::default());
+        let bash =
+            ShellRunTool::with_runner(ShellAllowlist::default(), ShellRunTool::default_runner());
 
         let error = bash
             .call(
@@ -698,10 +809,13 @@ mod tests {
     #[tokio::test]
     async fn shell_run_accepts_duplicate_wrapper_command_when_it_matches_cmd() {
         let temp = tempfile::tempdir().expect("tempdir");
-        let shell = ShellRunTool::new(ShellAllowlist {
-            executables: vec!["printf".to_string()],
-            cwd_roots: Vec::new(),
-        });
+        let shell = ShellRunTool::with_runner(
+            ShellAllowlist {
+                executables: vec!["printf".to_string()],
+                cwd_roots: Vec::new(),
+            },
+            ShellRunTool::default_runner(),
+        );
 
         let result = shell
             .call(
@@ -725,12 +839,79 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn shell_run_direct_invocation_uses_injected_runner_without_spawning() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let runner = FakeShellCommandRunner::success("direct-ok");
+        let shell = ShellRunTool::with_runner(
+            ShellAllowlist {
+                executables: vec!["printf".to_string()],
+                cwd_roots: Vec::new(),
+            },
+            runner.clone(),
+        );
+
+        let result = shell
+            .call(
+                shell_test_context(temp.path(), "toolcall-shell-run-fake-direct"),
+                json!({
+                    "cmd": "printf",
+                    "args": ["direct-ok"],
+                    "cwd": ".",
+                    "timeout": 1234,
+                }),
+            )
+            .await
+            .expect("fake direct shell run");
+
+        assert_eq!(result.display_text, "direct-ok");
+        let calls = runner.calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0.program, "printf");
+        assert_eq!(calls[0].0.args, vec!["direct-ok"]);
+        assert_eq!(calls[0].0.cwd, temp.path());
+        assert_eq!(calls[0].1, 1234);
+    }
+
+    #[tokio::test]
+    async fn shell_run_wrapper_invocation_uses_injected_runner_without_spawning_bash() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let runner = FakeShellCommandRunner::success("wrapper-ok");
+        let shell = ShellRunTool::with_runner(ShellAllowlist::default(), runner.clone());
+
+        let result = shell
+            .call(
+                shell_test_context(temp.path(), "toolcall-shell-run-fake-wrapper"),
+                json!({
+                    "command": "printf wrapper-ok",
+                    "workdir": ".",
+                    "timeout": 4321,
+                }),
+            )
+            .await
+            .expect("fake wrapper shell run");
+
+        assert_eq!(result.display_text, "wrapper-ok");
+        let calls = runner.calls();
+        assert_eq!(calls.len(), 1);
+        assert!(calls[0].0.program.ends_with("bash"));
+        assert_eq!(
+            calls[0].0.args,
+            vec!["-lc".to_string(), "printf wrapper-ok".to_string()]
+        );
+        assert_eq!(calls[0].0.cwd, temp.path());
+        assert_eq!(calls[0].1, 4321);
+    }
+
+    #[tokio::test]
     async fn shell_run_rejects_direct_bash_command_mode_bypass() {
         let temp = tempfile::tempdir().expect("tempdir");
-        let shell = ShellRunTool::new(ShellAllowlist {
-            executables: vec!["bash".to_string()],
-            cwd_roots: Vec::new(),
-        });
+        let shell = ShellRunTool::with_runner(
+            ShellAllowlist {
+                executables: vec!["bash".to_string()],
+                cwd_roots: Vec::new(),
+            },
+            ShellRunTool::default_runner(),
+        );
 
         let error = shell
             .call(
@@ -755,7 +936,8 @@ mod tests {
     #[tokio::test]
     async fn shell_run_rejects_conflicting_cmd_and_command() {
         let temp = tempfile::tempdir().expect("tempdir");
-        let shell = ShellRunTool::new(ShellAllowlist::default());
+        let shell =
+            ShellRunTool::with_runner(ShellAllowlist::default(), ShellRunTool::default_runner());
 
         let error = shell
             .call(

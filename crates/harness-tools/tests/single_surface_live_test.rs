@@ -1,10 +1,3 @@
-use std::collections::BTreeMap;
-use std::fs;
-use std::io::{Read, Write};
-use std::net::TcpListener;
-use std::path::PathBuf;
-use std::sync::Arc;
-
 use harness_core::agent::AgentProfile;
 use harness_core::clock::RealClock;
 use harness_core::config::{load_config_from_file, McpConfig};
@@ -12,14 +5,22 @@ use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
 use harness_core::edit::hashline::compute_line_hash;
 use harness_core::perm::PermissionDecision;
 use harness_core::redact::DefaultRedactor;
-use harness_tools::{coordinator_registry_with_mcp_and_editing, EditingToolSurfaceConfig};
+use harness_tools::{
+    coordinator_registry_with_mcp_and_editing, coordinator_registry_with_mcp_editing_and_executors,
+    CoordinatorRegistryExecutors, EditingToolSurfaceConfig,
+};
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::time::Duration;
 
 mod common;
 
 use common::{
     allow_all_permission_policy, anonymous_supervisor_actor, repo_root, setup_workspace_fixture,
-    wait_for_question_permission, worker_actor,
+    wait_for_question_permission, worker_actor, SingleSurfaceShellRunner,
+    SingleSurfaceWebFetchTransport,
 };
 
 const SURFACE_LIVE_PROFILE: &str = "surface_live";
@@ -51,21 +52,6 @@ fn surface_live_toolset() -> Vec<String> {
 
 fn example_config_path() -> PathBuf {
     repo_root().join("configs").join("harness.example.jsonc")
-}
-
-fn spawn_test_http_server() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind test http server");
-    let addr = listener.local_addr().expect("local addr");
-    std::thread::spawn(move || {
-        if let Ok((mut stream, _)) = listener.accept() {
-            let mut buf = [0_u8; 1024];
-            let _ = stream.read(&mut buf);
-            let _ = stream.write_all(
-                b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 12\r\nConnection: close\r\n\r\nhello fetch\n",
-            );
-        }
-    });
-    format!("http://{addr}")
 }
 
 fn example_profiles(
@@ -175,13 +161,18 @@ async fn single_surface_tools_execute_under_example_config() {
 
     let mut coordinator_config = CoordinatorConfig::new(session_dir.clone());
     coordinator_config.permission_policy = allow_all_permission_policy();
-    coordinator_config.tool_registry = Arc::new(coordinator_registry_with_mcp_and_editing(
-        config.permissions.shell_allowlist.clone(),
-        McpConfig::default(),
-        EditingToolSurfaceConfig {
-            hashline_edit: config.hashline_edit,
-        },
-    ));
+    coordinator_config.tool_registry =
+        Arc::new(coordinator_registry_with_mcp_editing_and_executors(
+            config.permissions.shell_allowlist.clone(),
+            McpConfig::default(),
+            EditingToolSurfaceConfig {
+                hashline_edit: config.hashline_edit,
+            },
+            CoordinatorRegistryExecutors::with_web_fetch_transport(Arc::new(
+                SingleSurfaceWebFetchTransport,
+            ))
+            .with_shell_command_runner(Arc::new(SingleSurfaceShellRunner::new())),
+        ));
     coordinator_config.agent_profiles = example_profiles(&config);
 
     let handle = spawn_coordinator(
@@ -478,15 +469,15 @@ async fn single_surface_tools_execute_under_example_config() {
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "lsp",
             serde_json::json!({
-                "operation": "goToDefinition",
+                "operation": "renameSymbol",
                 "filePath": "src/lib.rs",
                 "line": 4,
                 "character": 6,
             }),
         )
         .await
-        .expect("lsp tool");
-    assert!(!lsp.display_text.trim().is_empty());
+        .expect_err("unsupported lsp operation should fail before starting a real server");
+    assert!(lsp.to_string().contains("unsupported lsp operation"));
 
     let batch = handle
         .execute_agent_tool_call(
@@ -523,14 +514,13 @@ async fn single_surface_tools_execute_under_example_config() {
         .expect("task tool");
     assert!(task.display_text.contains("Background task scheduled"));
 
-    let fetch_url = spawn_test_http_server();
     let fetched = handle
         .execute_agent_tool_call(
             worker_actor(&worker_id),
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "webfetch",
             serde_json::json!({
-                "url": fetch_url,
+                "url": "https://fixture.test/fetch",
                 "format": "text",
                 "timeout": 10,
             }),

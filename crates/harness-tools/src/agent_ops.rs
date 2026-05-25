@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use harness_core::coord::{AgentRuntimeInfo, ChildTaskRequestMetadata, CoordinatorError};
@@ -18,6 +19,7 @@ use tokio_stream::StreamExt;
 use crate::control_plane::{
     render_task_skill_context, resolve_task_skill_context, TaskSkillContext,
 };
+use crate::question_env::QuestionAnswerSource;
 use crate::text_json_tool_result;
 
 const DEFAULT_TASK_WAIT_TIMEOUT_MS: u64 = 300_000;
@@ -27,11 +29,22 @@ const BATCH_NESTED_ERROR: &str = "batch cannot be nested inside batch";
 const BATCH_MAX_CALLS_ERROR: &str = "Maximum of 25 tools allowed in batch";
 const CATEGORY_FALLBACK_PROFILE: &str = "general";
 
-pub(crate) struct AgentOpsExecutor;
+pub(crate) struct AgentOpsExecutor {
+    question_answer_source: Arc<dyn QuestionAnswerSource>,
+}
 
 impl AgentOpsExecutor {
+    #[cfg(test)]
     pub(crate) fn new() -> Self {
-        Self
+        Self::with_question_answer_source(crate::question_env::coordinator_question_answer_source())
+    }
+
+    pub(crate) fn with_question_answer_source(
+        question_answer_source: Arc<dyn QuestionAnswerSource>,
+    ) -> Self {
+        Self {
+            question_answer_source,
+        }
     }
 
     pub(crate) async fn spawn_agent(
@@ -40,7 +53,12 @@ impl AgentOpsExecutor {
         mut request: AgentSpawnRequest,
     ) -> Result<ToolResult, ToolError> {
         enforce_parent_child_profile_policy(ctx, &request)?;
-        let loaded_skills = resolve_task_skill_context(ctx, &request.load_skills).await?;
+        let loaded_skills = resolve_task_skill_context(
+            ctx,
+            &request.load_skills,
+            self.question_answer_source.as_ref(),
+        )
+        .await?;
 
         let supervisor = EventActor::new(ActorKind::Supervisor, None);
         let existing_session_id = request.session_id.clone().or(request.task_id.clone());

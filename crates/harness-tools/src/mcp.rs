@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::io;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -14,8 +15,8 @@ use reqwest::StatusCode;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::process::{Child, Command};
 use tokio::time::timeout;
 
 use crate::http_client;
@@ -920,22 +921,58 @@ impl McpSession {
 }
 
 struct StdioMcpSession {
-    child: Child,
-    stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
+    child: Box<dyn StdioMcpChild>,
+    stdin: Box<dyn AsyncWrite + Send + Unpin>,
+    stdout: BufReader<Box<dyn AsyncRead + Send + Unpin>>,
     next_id: u64,
     timeout: Duration,
     metadata: McpSessionMetadata,
 }
 
-impl StdioMcpSession {
-    async fn start(
+struct StdioMcpProcess {
+    child: Box<dyn StdioMcpChild>,
+    stdin: Box<dyn AsyncWrite + Send + Unpin>,
+    stdout: Box<dyn AsyncRead + Send + Unpin>,
+}
+
+#[async_trait]
+trait StdioMcpChild: Send {
+    async fn kill(&mut self) -> io::Result<()>;
+    async fn wait(&mut self) -> io::Result<()>;
+}
+
+#[async_trait]
+impl StdioMcpChild for Child {
+    async fn kill(&mut self) -> io::Result<()> {
+        Child::kill(self).await
+    }
+
+    async fn wait(&mut self) -> io::Result<()> {
+        Child::wait(self).await.map(|_| ())
+    }
+}
+
+trait StdioMcpProcessStarter: Sync {
+    fn start(
+        &self,
         server_id: &str,
         command: &[String],
         env: &BTreeMap<String, String>,
         cwd: Option<&std::path::PathBuf>,
-        timeout_secs: u64,
-    ) -> Result<Self, ToolError> {
+    ) -> Result<StdioMcpProcess, ToolError>;
+}
+
+#[derive(Debug, Default)]
+struct RealStdioMcpProcessStarter;
+
+impl StdioMcpProcessStarter for RealStdioMcpProcessStarter {
+    fn start(
+        &self,
+        server_id: &str,
+        command: &[String],
+        env: &BTreeMap<String, String>,
+        cwd: Option<&std::path::PathBuf>,
+    ) -> Result<StdioMcpProcess, ToolError> {
         if command.is_empty() {
             return Err(ToolError::Execution(format!(
                 "MCP server `{server_id}` has empty stdio command"
@@ -966,12 +1003,47 @@ impl StdioMcpSession {
         let stdout = child.stdout.take().ok_or_else(|| {
             ToolError::Execution(format!("MCP stdio server `{server_id}` stdout unavailable"))
         })?;
-        let timeout = Duration::from_secs(timeout_secs.max(1));
+        Ok(StdioMcpProcess {
+            child: Box::new(child),
+            stdin: Box::new(stdin),
+            stdout: Box::new(stdout),
+        })
+    }
+}
 
+impl StdioMcpSession {
+    async fn start(
+        server_id: &str,
+        command: &[String],
+        env: &BTreeMap<String, String>,
+        cwd: Option<&std::path::PathBuf>,
+        timeout_secs: u64,
+    ) -> Result<Self, ToolError> {
+        Self::start_with_starter(
+            server_id,
+            command,
+            env,
+            cwd,
+            timeout_secs,
+            &RealStdioMcpProcessStarter,
+        )
+        .await
+    }
+
+    async fn start_with_starter(
+        server_id: &str,
+        command: &[String],
+        env: &BTreeMap<String, String>,
+        cwd: Option<&std::path::PathBuf>,
+        timeout_secs: u64,
+        starter: &dyn StdioMcpProcessStarter,
+    ) -> Result<Self, ToolError> {
+        let process = starter.start(server_id, command, env, cwd)?;
+        let timeout = Duration::from_secs(timeout_secs.max(1));
         let mut session = Self {
-            child,
-            stdin,
-            stdout: BufReader::new(stdout),
+            child: process.child,
+            stdin: process.stdin,
+            stdout: BufReader::new(process.stdout),
             next_id: 1,
             timeout,
             metadata: McpSessionMetadata::default(),
@@ -1667,10 +1739,90 @@ fn parse_content_length(line: &str) -> Result<usize, ToolError> {
 mod tests {
     use super::{
         describe_upstream_non_json_response, normalize_mcp_error_message,
-        render_mcp_http_parse_error, render_mcp_http_status_error,
+        render_mcp_http_parse_error, render_mcp_http_status_error, StdioMcpChild, StdioMcpProcess,
+        StdioMcpProcessStarter, StdioMcpSession,
     };
+    use async_trait::async_trait;
     use reqwest::{header::HeaderMap, StatusCode};
     use serde_json::Value;
+    use std::collections::BTreeMap;
+    use std::io;
+    use std::path::PathBuf;
+    use std::sync::Mutex;
+
+    struct FakeStdioMcpChild;
+
+    #[async_trait]
+    impl StdioMcpChild for FakeStdioMcpChild {
+        async fn kill(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+
+        async fn wait(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    struct FakeStdioMcpStart {
+        server_id: String,
+        command: Vec<String>,
+        env: BTreeMap<String, String>,
+        cwd: Option<PathBuf>,
+    }
+
+    struct FakeStdioMcpStarter {
+        started: Mutex<Vec<FakeStdioMcpStart>>,
+    }
+
+    impl FakeStdioMcpStarter {
+        fn new() -> Self {
+            Self {
+                started: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    impl StdioMcpProcessStarter for FakeStdioMcpStarter {
+        fn start(
+            &self,
+            server_id: &str,
+            command: &[String],
+            env: &BTreeMap<String, String>,
+            cwd: Option<&PathBuf>,
+        ) -> Result<StdioMcpProcess, harness_core::tool::ToolError> {
+            self.started
+                .lock()
+                .expect("fake MCP starter lock")
+                .push(FakeStdioMcpStart {
+                    server_id: server_id.to_string(),
+                    command: command.to_vec(),
+                    env: env.clone(),
+                    cwd: cwd.cloned(),
+                });
+            Ok(StdioMcpProcess {
+                child: Box::new(FakeStdioMcpChild),
+                stdin: Box::new(Vec::<u8>::new()),
+                stdout: Box::new(std::io::Cursor::new(mcp_stdio_startup_responses())),
+            })
+        }
+    }
+
+    fn mcp_stdio_startup_responses() -> Vec<u8> {
+        let body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": "1",
+            "result": {
+                "protocolVersion": "2025-06-18",
+                "serverInfo": {
+                    "name": "fake-mcp",
+                    "version": "1.0.0"
+                }
+            }
+        });
+        let mut bytes = serde_json::to_vec(&body).expect("serialize MCP response");
+        bytes.push(b'\n');
+        bytes
+    }
 
     #[test]
     fn mcp_error_normalization_marks_rate_limited_non_json_errors() {
@@ -1690,6 +1842,46 @@ mod tests {
         let message = render_mcp_http_parse_error("Too Many Requests", &err);
         assert!(message.contains("non-JSON"));
         assert!(message.contains("Too Many Requests"));
+    }
+
+    #[tokio::test]
+    async fn stdio_mcp_session_start_can_use_injected_process_starter_without_spawning() {
+        let starter = FakeStdioMcpStarter::new();
+        let command = vec!["fake-mcp".to_string(), "--stdio".to_string()];
+        let env = BTreeMap::from([("TOKEN".to_string(), "redacted".to_string())]);
+        let cwd = PathBuf::from("/tmp/fake-mcp-root");
+
+        let session = StdioMcpSession::start_with_starter(
+            "fake-server",
+            &command,
+            &env,
+            Some(&cwd),
+            1,
+            &starter,
+        )
+        .await
+        .expect("start fake MCP stdio session");
+
+        assert_eq!(session.next_id, 2);
+        assert_eq!(
+            session.metadata.protocol_version.as_deref(),
+            Some("2025-06-18")
+        );
+        assert_eq!(
+            session
+                .metadata
+                .server_info
+                .as_ref()
+                .and_then(|info| info.get("name"))
+                .and_then(Value::as_str),
+            Some("fake-mcp")
+        );
+        let started = starter.started.lock().expect("fake MCP starter lock");
+        assert_eq!(started.len(), 1);
+        assert_eq!(started[0].server_id, "fake-server");
+        assert_eq!(started[0].command, command);
+        assert_eq!(started[0].env, env);
+        assert_eq!(started[0].cwd.as_ref(), Some(&cwd));
     }
 
     #[test]

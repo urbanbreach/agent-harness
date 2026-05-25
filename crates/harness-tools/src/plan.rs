@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use harness_core::event::{ActorKind, EventActor};
 use harness_core::plan::{plan_file_display_path, BUILD_AGENT_NAME, PLAN_AGENT_NAME};
@@ -6,13 +8,48 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::question_env::question_answers_from_env_or_request;
+use crate::question_env::{
+    coordinator_question_answer_source, question_answers_from_source_or_request,
+    QuestionAnswerSource,
+};
 
 const PLAN_EXIT_YES: &str = "Yes";
 const PLAN_EXIT_NO: &str = "No";
 
-pub(crate) struct PlanExitTool;
-pub(crate) struct PlanEnterTool;
+pub(crate) struct PlanExitTool {
+    question_answer_source: Arc<dyn QuestionAnswerSource>,
+}
+pub(crate) struct PlanEnterTool {
+    question_answer_source: Arc<dyn QuestionAnswerSource>,
+}
+
+impl PlanEnterTool {
+    pub(crate) fn new(question_answer_source: Arc<dyn QuestionAnswerSource>) -> Self {
+        Self {
+            question_answer_source,
+        }
+    }
+}
+
+impl PlanExitTool {
+    pub(crate) fn new(question_answer_source: Arc<dyn QuestionAnswerSource>) -> Self {
+        Self {
+            question_answer_source,
+        }
+    }
+}
+
+impl Default for PlanEnterTool {
+    fn default() -> Self {
+        Self::new(coordinator_question_answer_source())
+    }
+}
+
+impl Default for PlanExitTool {
+    fn default() -> Self {
+        Self::new(coordinator_question_answer_source())
+    }
+}
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -59,7 +96,7 @@ impl Tool for PlanEnterTool {
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: PlanEnterArgs = crate::parse_tool_args(args_json)?;
-        execute_plan_enter(ctx, args).await
+        execute_plan_enter(ctx, args, self.question_answer_source.as_ref()).await
     }
 }
 
@@ -88,13 +125,14 @@ impl Tool for PlanExitTool {
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let _args: PlanExitArgs = crate::parse_tool_args(args_json)?;
-        execute_plan_exit(ctx).await
+        execute_plan_exit(ctx, self.question_answer_source.as_ref()).await
     }
 }
 
 async fn execute_plan_enter(
     ctx: ToolContext,
     args: PlanEnterArgs,
+    question_answer_source: &dyn QuestionAnswerSource,
 ) -> Result<ToolResult, ToolError> {
     let goal = args
         .goal
@@ -102,7 +140,9 @@ async fn execute_plan_enter(
         .map(str::trim)
         .filter(|goal| !goal.is_empty())
         .unwrap_or("the current user request");
-    let approved = request_plan_enter_approval(&ctx, goal, args.reason.as_deref()).await?;
+    let approved =
+        request_plan_enter_approval(&ctx, goal, args.reason.as_deref(), question_answer_source)
+            .await?;
     if !approved {
         return Ok(crate::text_json_tool_result(
             "Staying with build agent",
@@ -149,9 +189,12 @@ async fn execute_plan_enter(
     ))
 }
 
-async fn execute_plan_exit(ctx: ToolContext) -> Result<ToolResult, ToolError> {
+async fn execute_plan_exit(
+    ctx: ToolContext,
+    question_answer_source: &dyn QuestionAnswerSource,
+) -> Result<ToolResult, ToolError> {
     let plan_file = plan_file_display_path(&ctx.run_id);
-    let approved = request_plan_exit_approval(&ctx, &plan_file).await?;
+    let approved = request_plan_exit_approval(&ctx, &plan_file, question_answer_source).await?;
     if !approved {
         return Ok(crate::text_json_tool_result(
             "Staying in plan mode",
@@ -202,6 +245,7 @@ async fn request_plan_enter_approval(
     ctx: &ToolContext,
     goal: &str,
     reason: Option<&str>,
+    question_answer_source: &dyn QuestionAnswerSource,
 ) -> Result<bool, ToolError> {
     let reason_text = reason
         .map(str::trim)
@@ -219,8 +263,13 @@ async fn request_plan_enter_approval(
         }]
     });
 
-    let answers =
-        question_answers_from_env_or_request(ctx, questions, ToolError::Execution).await?;
+    let answers = question_answers_from_source_or_request(
+        question_answer_source,
+        ctx,
+        questions,
+        ToolError::Execution,
+    )
+    .await?;
     let answer = answers
         .first()
         .and_then(|group| group.first())
@@ -236,7 +285,11 @@ async fn request_plan_enter_approval(
     }
 }
 
-async fn request_plan_exit_approval(ctx: &ToolContext, plan_file: &str) -> Result<bool, ToolError> {
+async fn request_plan_exit_approval(
+    ctx: &ToolContext,
+    plan_file: &str,
+    question_answer_source: &dyn QuestionAnswerSource,
+) -> Result<bool, ToolError> {
     let questions = json!({
         "questions": [{
             "question": format!("Plan at {plan_file} is complete. Would you like to switch to the build agent and start implementing?"),
@@ -248,8 +301,13 @@ async fn request_plan_exit_approval(ctx: &ToolContext, plan_file: &str) -> Resul
         }]
     });
 
-    let answers =
-        question_answers_from_env_or_request(ctx, questions, ToolError::Execution).await?;
+    let answers = question_answers_from_source_or_request(
+        question_answer_source,
+        ctx,
+        questions,
+        ToolError::Execution,
+    )
+    .await?;
     let answer = answers
         .first()
         .and_then(|group| group.first())

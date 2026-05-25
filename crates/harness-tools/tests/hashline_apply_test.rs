@@ -1,7 +1,6 @@
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
 
 mod common;
 
@@ -55,7 +54,7 @@ async fn hashline_apply_success_writes_file_and_emits_applied_event() {
         .await
         .expect("request tool call");
 
-    tokio::time::sleep(Duration::from_millis(80)).await;
+    tokio::task::yield_now().await;
     handle.stop_run().await.expect("stop run");
 
     let updated = fs::read_to_string(&file_path).expect("read updated file");
@@ -129,7 +128,7 @@ async fn hashline_apply_mismatch_leaves_file_unchanged() {
         .await
         .expect("request tool call");
 
-    tokio::time::sleep(Duration::from_millis(80)).await;
+    tokio::task::yield_now().await;
     handle.stop_run().await.expect("stop run");
 
     let unchanged = fs::read_to_string(&file_path).expect("read unchanged file");
@@ -212,7 +211,7 @@ async fn hashline_apply_overlap_rejection_explains_recovery() {
         .await
         .expect("request tool call");
 
-    tokio::time::sleep(Duration::from_millis(80)).await;
+    tokio::task::yield_now().await;
     handle.stop_run().await.expect("stop run");
 
     let unchanged = fs::read_to_string(&file_path).expect("read unchanged file");
@@ -278,7 +277,7 @@ async fn hashline_apply_permission_ask_blocks_until_resolved() {
         .await
         .expect("request tool call");
 
-    tokio::time::sleep(Duration::from_millis(40)).await;
+    tokio::task::yield_now().await;
     let before_resolve = read_events(&run.events_path);
 
     assert_eq!(
@@ -320,7 +319,7 @@ async fn hashline_apply_permission_ask_blocks_until_resolved() {
         .await
         .expect("resolve permission");
 
-    tokio::time::sleep(Duration::from_millis(80)).await;
+    tokio::task::yield_now().await;
     handle.stop_run().await.expect("stop run");
 
     assert_eq!(

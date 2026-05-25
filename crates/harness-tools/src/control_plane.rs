@@ -9,7 +9,10 @@ use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
 
-use crate::question_env::question_answers_from_env_or_request;
+use crate::question_env::{
+    coordinator_question_answer_source, question_answers_from_source_or_request,
+    QuestionAnswerSource,
+};
 use crate::text::has_trimmed_content;
 
 const TODO_STATE_FILE: &str = "control-plane/todos.json";
@@ -19,11 +22,22 @@ const SKILL_LOAD_CONFIRM_NO: &str = "No";
 const TODO_STATUSES: &[&str] = &["pending", "in_progress", "completed", "cancelled"];
 const TODO_PRIORITIES: &[&str] = &["high", "medium", "low"];
 
-pub(crate) struct ControlPlaneExecutor;
+pub(crate) struct ControlPlaneExecutor {
+    question_answer_source: std::sync::Arc<dyn QuestionAnswerSource>,
+}
 
 impl ControlPlaneExecutor {
+    #[allow(dead_code)]
     pub(crate) fn new() -> Self {
-        Self
+        Self::with_question_answer_source(coordinator_question_answer_source())
+    }
+
+    pub(crate) fn with_question_answer_source(
+        question_answer_source: std::sync::Arc<dyn QuestionAnswerSource>,
+    ) -> Self {
+        Self {
+            question_answer_source,
+        }
     }
 
     pub(crate) fn write_todos(
@@ -56,7 +70,8 @@ impl ControlPlaneExecutor {
             DiscoveredSkill::Visible(skill) => match skill.permission {
                 PermissionMode::Allow => skill,
                 PermissionMode::Ask => {
-                    request_skill_load_approval(ctx, name).await?;
+                    request_skill_load_approval(ctx, name, self.question_answer_source.as_ref())
+                        .await?;
                     skill
                 }
                 PermissionMode::Deny => {
@@ -110,7 +125,8 @@ impl ControlPlaneExecutor {
         )
         .map_err(|err| ToolError::Execution(format!("failed to write question state: {err}")))?;
 
-        let answers = question_answers_from_env_or_request(
+        let answers = question_answers_from_source_or_request(
+            self.question_answer_source.as_ref(),
             ctx,
             json!({ "questions": questions }),
             ToolError::Execution,
@@ -618,6 +634,7 @@ fn validate_question_prompts(questions: &[QuestionPrompt]) -> Result<(), String>
 pub(crate) async fn resolve_task_skill_context(
     ctx: &ToolContext,
     names: &[String],
+    question_answer_source: &dyn QuestionAnswerSource,
 ) -> Result<Vec<TaskSkillContext>, ToolError> {
     if names.is_empty() {
         return Ok(Vec::new());
@@ -645,7 +662,7 @@ pub(crate) async fn resolve_task_skill_context(
             DiscoveredSkill::Visible(skill) => match skill.permission {
                 PermissionMode::Allow => skill,
                 PermissionMode::Ask => {
-                    request_skill_load_approval(ctx, name).await?;
+                    request_skill_load_approval(ctx, name, question_answer_source).await?;
                     skill
                 }
                 PermissionMode::Deny => {
@@ -668,15 +685,23 @@ pub(crate) async fn resolve_task_skill_context(
     Ok(resolved)
 }
 
-async fn request_skill_load_approval(ctx: &ToolContext, name: &str) -> Result<(), ToolError> {
+async fn request_skill_load_approval(
+    ctx: &ToolContext,
+    name: &str,
+    question_answer_source: &dyn QuestionAnswerSource,
+) -> Result<(), ToolError> {
     let questions = vec![skill_load_confirmation_question(name)];
-    let answers =
-        question_answers_from_env_or_request(ctx, json!({ "questions": questions }), |err| {
+    let answers = question_answers_from_source_or_request(
+        question_answer_source,
+        ctx,
+        json!({ "questions": questions }),
+        |err| {
             ToolError::Execution(format!(
                 "Skill \"{name}\" approval failed before loading: {err}"
             ))
-        })
-        .await?;
+        },
+    )
+    .await?;
     let answers = validate_question_answers(&questions, answers).map_err(ToolError::Execution)?;
     let approved = answers
         .first()

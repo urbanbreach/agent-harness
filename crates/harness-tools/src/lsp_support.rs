@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::Duration;
 
@@ -924,16 +924,44 @@ fn language_id(path: &Path, server_name: &str) -> String {
 }
 
 struct LspSession {
-    child: Child,
-    stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
+    child: Box<dyn LspChild>,
+    stdin: Box<dyn Write + Send>,
+    stdout: BufReader<Box<dyn Read + Send>>,
     next_id: u64,
     root: PathBuf,
     diagnostics: BTreeMap<String, Vec<Value>>,
 }
 
-impl LspSession {
-    fn start(spec: &LspServerSpec, root: &Path) -> Result<Self, ToolError> {
+struct LspProcess {
+    child: Box<dyn LspChild>,
+    stdin: Box<dyn Write + Send>,
+    stdout: Box<dyn Read + Send>,
+}
+
+trait LspChild: Send {
+    fn kill(&mut self) -> io::Result<()>;
+    fn wait(&mut self) -> io::Result<()>;
+}
+
+impl LspChild for Child {
+    fn kill(&mut self) -> io::Result<()> {
+        Child::kill(self)
+    }
+
+    fn wait(&mut self) -> io::Result<()> {
+        Child::wait(self).map(|_| ())
+    }
+}
+
+trait LspProcessStarter {
+    fn start(&self, spec: &LspServerSpec, root: &Path) -> Result<LspProcess, ToolError>;
+}
+
+#[derive(Debug, Default)]
+struct RealLspProcessStarter;
+
+impl LspProcessStarter for RealLspProcessStarter {
+    fn start(&self, spec: &LspServerSpec, root: &Path) -> Result<LspProcess, ToolError> {
         let mut command = Command::new(&spec.command[0]);
         command
             .args(spec.command.iter().skip(1))
@@ -956,10 +984,29 @@ impl LspSession {
             ToolError::Execution("language server stdout unavailable".to_string())
         })?;
 
+        Ok(LspProcess {
+            child: Box::new(child),
+            stdin: Box::new(stdin),
+            stdout: Box::new(stdout),
+        })
+    }
+}
+
+impl LspSession {
+    fn start(spec: &LspServerSpec, root: &Path) -> Result<Self, ToolError> {
+        Self::start_with_starter(spec, root, &RealLspProcessStarter)
+    }
+
+    fn start_with_starter(
+        spec: &LspServerSpec,
+        root: &Path,
+        starter: &dyn LspProcessStarter,
+    ) -> Result<Self, ToolError> {
+        let process = starter.start(spec, root)?;
         let mut session = Self {
-            child,
-            stdin,
-            stdout: BufReader::new(stdout),
+            child: process.child,
+            stdin: process.stdin,
+            stdout: BufReader::new(process.stdout),
             next_id: 1,
             root: root.to_path_buf(),
             diagnostics: BTreeMap::new(),
@@ -1275,11 +1322,77 @@ fn lsp_value_is_empty(value: &Value) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{server_for_path, LspOperation, LspPosition, SUPPORTED_LSP_OPERATION_NAMES};
+    use super::{
+        server_for_path, LspChild, LspOperation, LspPosition, LspProcess, LspProcessStarter,
+        LspServerSpec, LspSession, SUPPORTED_LSP_OPERATION_NAMES,
+    };
     use crate::workspace_paths::file_uri_from_path;
     use harness_core::config::LspConfig;
     use harness_core::tool::ToolError;
+    use std::cell::RefCell;
     use std::fs;
+    use std::io;
+    use std::path::Path;
+
+    struct FakeLspChild {
+        killed: bool,
+        waited: bool,
+    }
+
+    impl LspChild for FakeLspChild {
+        fn kill(&mut self) -> io::Result<()> {
+            self.killed = true;
+            Ok(())
+        }
+
+        fn wait(&mut self) -> io::Result<()> {
+            self.waited = true;
+            Ok(())
+        }
+    }
+
+    struct FakeLspStarter {
+        started: RefCell<Vec<(Vec<String>, std::path::PathBuf)>>,
+    }
+
+    impl FakeLspStarter {
+        fn new() -> Self {
+            Self {
+                started: RefCell::new(Vec::new()),
+            }
+        }
+    }
+
+    impl LspProcessStarter for FakeLspStarter {
+        fn start(&self, spec: &LspServerSpec, root: &Path) -> Result<LspProcess, ToolError> {
+            self.started
+                .borrow_mut()
+                .push((spec.command.clone(), root.to_path_buf()));
+            Ok(LspProcess {
+                child: Box::new(FakeLspChild {
+                    killed: false,
+                    waited: false,
+                }),
+                stdin: Box::new(Vec::<u8>::new()),
+                stdout: Box::new(io::Cursor::new(lsp_startup_responses())),
+            })
+        }
+    }
+
+    fn lsp_message(body: serde_json::Value) -> Vec<u8> {
+        let body = serde_json::to_vec(&body).expect("serialize lsp body");
+        let mut message = format!("Content-Length: {}\r\n\r\n", body.len()).into_bytes();
+        message.extend(body);
+        message
+    }
+
+    fn lsp_startup_responses() -> Vec<u8> {
+        lsp_message(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {"capabilities": {}}
+        }))
+    }
 
     #[test]
     fn file_uri_from_path_percent_encodes_spaces() {
@@ -1329,6 +1442,21 @@ mod tests {
         assert!(
             matches!(err, ToolError::InvalidArguments(message) if message.contains("unsupported lsp language extension: .lua"))
         );
+    }
+
+    #[test]
+    fn lsp_session_start_can_use_injected_process_starter_without_spawning() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let starter = FakeLspStarter::new();
+        let spec = LspServerSpec::builtin("rust", &["fake-lsp", "--stdio"], &[".rs"], &[]);
+
+        let session = LspSession::start_with_starter(&spec, tempdir.path(), &starter)
+            .expect("start fake lsp session");
+
+        assert_eq!(session.next_id, 2);
+        assert_eq!(starter.started.borrow().len(), 1);
+        assert_eq!(starter.started.borrow()[0].0, vec!["fake-lsp", "--stdio"]);
+        assert_eq!(starter.started.borrow()[0].1, tempdir.path());
     }
 
     #[test]

@@ -25,9 +25,70 @@ const MAX_LIST_PER_PAGE: u8 = 100;
 const USER_AGENT: &str = concat!("agent-harness/", env!("CARGO_PKG_VERSION"));
 
 pub(crate) struct GitHubExecutor {
-    client: reqwest::Client,
+    transport: Arc<dyn GitHubHttpTransport>,
     api_base_url: String,
     auth_token: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GitHubHttpRequest {
+    pub method: Method,
+    pub url: String,
+    pub auth_token: Option<String>,
+    pub body: Option<Value>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GitHubHttpResponse {
+    pub status: u16,
+    pub body: String,
+}
+
+impl GitHubHttpResponse {
+    pub fn json(status: u16, body: Value) -> Self {
+        Self {
+            status,
+            body: body.to_string(),
+        }
+    }
+}
+
+#[async_trait]
+pub trait GitHubHttpTransport: Send + Sync {
+    async fn send(&self, request: GitHubHttpRequest) -> Result<GitHubHttpResponse, ToolError>;
+}
+
+#[derive(Debug, Clone)]
+struct ReqwestGitHubHttpTransport {
+    client: reqwest::Client,
+}
+
+#[async_trait]
+impl GitHubHttpTransport for ReqwestGitHubHttpTransport {
+    async fn send(&self, request: GitHubHttpRequest) -> Result<GitHubHttpResponse, ToolError> {
+        let mut builder = self
+            .client
+            .request(request.method, request.url)
+            .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", GITHUB_API_VERSION)
+            .header(reqwest::header::USER_AGENT, USER_AGENT);
+        if let Some(token) = request.auth_token {
+            builder = builder.bearer_auth(token);
+        }
+        if let Some(body) = request.body {
+            builder = builder.json(&body);
+        }
+
+        let response = builder
+            .send()
+            .await
+            .map_err(|err| ToolError::Execution(format!("GitHub request failed: {err}")))?;
+        let status = response.status().as_u16();
+        let body = response.text().await.map_err(|err| {
+            ToolError::Execution(format!("failed to read GitHub response: {err}"))
+        })?;
+        Ok(GitHubHttpResponse { status, body })
+    }
 }
 
 struct ListedItems {
@@ -38,10 +99,24 @@ struct ListedItems {
 impl GitHubExecutor {
     pub(crate) fn new() -> Self {
         Self {
-            client: http_client::default_client("GitHub client should build"),
+            transport: Arc::new(ReqwestGitHubHttpTransport {
+                client: http_client::default_client("GitHub client should build"),
+            }),
             api_base_url: first_env_value(HARNESS_GITHUB_API_BASE_URL_ENV_VARS)
                 .unwrap_or_else(|| DEFAULT_GITHUB_API_BASE_URL.to_string()),
             auth_token: first_env_value(GITHUB_TOKEN_ENV_VARS),
+        }
+    }
+
+    pub(crate) fn with_transport(
+        api_base_url: impl Into<String>,
+        auth_token: Option<String>,
+        transport: Arc<dyn GitHubHttpTransport>,
+    ) -> Self {
+        Self {
+            transport,
+            api_base_url: api_base_url.into(),
+            auth_token,
         }
     }
 
@@ -255,40 +330,22 @@ impl GitHubExecutor {
         body: Option<Value>,
         require_auth: bool,
     ) -> Result<Value, ToolError> {
-        let mut request = self.github_request(method, path, require_auth)?;
-        if let Some(body) = body {
-            request = request.json(&body);
-        }
-
-        let response = request
-            .send()
-            .await
-            .map_err(|err| ToolError::Execution(format!("GitHub request failed: {err}")))?;
-        read_github_json_response(response).await
-    }
-
-    fn github_request(
-        &self,
-        method: Method,
-        path: &str,
-        require_auth: bool,
-    ) -> Result<reqwest::RequestBuilder, ToolError> {
-        let mut request = self
-            .client
-            .request(method, self.api_url(path))
-            .header(reqwest::header::ACCEPT, "application/vnd.github+json")
-            .header("X-GitHub-Api-Version", GITHUB_API_VERSION)
-            .header(reqwest::header::USER_AGENT, USER_AGENT);
-
-        if let Some(token) = self.auth_token() {
-            request = request.bearer_auth(token);
-        } else if require_auth {
+        let auth_token = self.auth_token().map(str::to_string);
+        if auth_token.is_none() && require_auth {
             return Err(ToolError::Execution(
                 "GitHub authentication is required for this operation; set HARNESS_GITHUB_TOKEN, GITHUB_TOKEN, or GH_TOKEN".to_string(),
             ));
         }
-
-        Ok(request)
+        let response = self
+            .transport
+            .send(GitHubHttpRequest {
+                method,
+                url: self.api_url(path),
+                auth_token,
+                body,
+            })
+            .await?;
+        read_github_json_response(response)
     }
 
     fn api_url(&self, path: &str) -> String {
@@ -511,17 +568,14 @@ fn github_api_error_message(response_text: &str) -> String {
         .unwrap_or_else(|| response_text.to_string())
 }
 
-async fn read_github_json_response(response: reqwest::Response) -> Result<Value, ToolError> {
-    let status = response.status();
-    let text = response
-        .text()
-        .await
-        .map_err(|err| ToolError::Execution(format!("failed to read GitHub response: {err}")))?;
+fn read_github_json_response(response: GitHubHttpResponse) -> Result<Value, ToolError> {
+    let status = response.status;
+    let text = response.body;
 
-    if !status.is_success() {
+    if !(200..300).contains(&status) {
         return Err(ToolError::Execution(format!(
             "GitHub API request failed with status {}: {}",
-            status.as_u16(),
+            status,
             github_api_error_message(&text)
         )));
     }

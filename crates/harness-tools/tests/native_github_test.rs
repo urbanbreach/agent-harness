@@ -1,19 +1,19 @@
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 mod common;
 
+use async_trait::async_trait;
 use common::{
-    env_test_lock, expect_execution_error, setup_workspace_fixture, spawn_http_server,
-    test_context as common_test_context, EnvGuard, TestRequest, TestResponse,
+    expect_execution_error, setup_workspace_fixture, test_context as common_test_context,
 };
 use harness_core::config::ShellAllowlist;
-use harness_tools::coordinator_registry;
+use harness_core::tool::ToolError;
+use harness_tools::{
+    coordinator_registry_with_github_transport, GitHubHttpRequest, GitHubHttpResponse,
+    GitHubHttpTransport,
+};
+use reqwest::Method;
 use serde_json::{json, Value};
-
-const GITHUB_API_BASE_URL_ENV: &str = "HARNESS_GITHUB_API_BASE_URL";
-const GITHUB_TOKEN_ENV: &str = "HARNESS_GITHUB_TOKEN";
-const GITHUB_REPOSITORY_ENV: &str = "HARNESS_GITHUB_REPOSITORY";
 
 fn test_context(
     workspace_root: &std::path::Path,
@@ -22,48 +22,83 @@ fn test_context(
     common_test_context(workspace_root, "run-native-github-tests", tool_call_id)
 }
 
+#[derive(Debug)]
+struct ScriptedGitHubTransport {
+    requests: Mutex<Vec<GitHubHttpRequest>>,
+    responses: Mutex<Vec<GitHubHttpResponse>>,
+}
+
+impl ScriptedGitHubTransport {
+    fn new(responses: Vec<GitHubHttpResponse>) -> Arc<Self> {
+        Arc::new(Self {
+            requests: Mutex::new(Vec::new()),
+            responses: Mutex::new(responses),
+        })
+    }
+
+    fn requests(&self) -> Vec<GitHubHttpRequest> {
+        self.requests.lock().expect("github request log").clone()
+    }
+}
+
+#[async_trait]
+impl GitHubHttpTransport for ScriptedGitHubTransport {
+    async fn send(&self, request: GitHubHttpRequest) -> Result<GitHubHttpResponse, ToolError> {
+        self.requests
+            .lock()
+            .expect("github request log")
+            .push(request);
+        Ok(self
+            .responses
+            .lock()
+            .expect("github response script")
+            .remove(0))
+    }
+}
+
+fn github_registry(
+    auth_token: Option<&str>,
+    transport: Arc<ScriptedGitHubTransport>,
+) -> harness_core::tool::ToolRegistry {
+    coordinator_registry_with_github_transport(
+        ShellAllowlist::default(),
+        "https://api.github.test",
+        auth_token.map(str::to_string),
+        transport,
+    )
+}
+
+fn request_path(request: &GitHubHttpRequest) -> String {
+    let url = reqwest::Url::parse(&request.url).expect("github request url");
+    match url.query() {
+        Some(query) => format!("{}?{}", url.path(), query),
+        None => url.path().to_string(),
+    }
+}
+
 #[tokio::test]
-#[expect(
-    clippy::await_holding_lock,
-    reason = "the global env lock intentionally serializes process-wide GitHub env mutation across awaits"
-)]
 async fn github_issue_get_uses_env_repository_and_auth_headers() {
-    let _env_guard = env_test_lock();
     let workspace = setup_workspace_fixture();
-    let requests = Arc::new(Mutex::new(Vec::<TestRequest>::new()));
-    let request_log = Arc::clone(&requests);
-    let base_url = spawn_http_server(Arc::new(move |request| {
-        request_log.lock().expect("request log").push(request);
-        TestResponse {
-            status: "200 OK",
-            headers: vec![(
-                "Content-Type".to_string(),
-                "application/json; charset=utf-8".to_string(),
-            )],
-            body: json!({
+    let transport = ScriptedGitHubTransport::new(vec![GitHubHttpResponse::json(
+        200,
+        json!({
                 "number": 19,
                 "title": "Add first-class GitHub issue and PR integration",
                 "state": "open",
                 "body": "Tracked body",
                 "html_url": "https://github.com/urbanbreach/agent-harness/issues/19"
-            })
-            .to_string(),
-            delay: Duration::ZERO,
-        }
-    }));
-    let _env = EnvGuard::set(&[
-        (GITHUB_API_BASE_URL_ENV, Some(base_url.as_str())),
-        (GITHUB_TOKEN_ENV, Some("fixture-token")),
-        (GITHUB_REPOSITORY_ENV, Some("urbanbreach/agent-harness")),
-    ]);
+        }),
+    )]);
 
-    let registry = coordinator_registry(ShellAllowlist::default());
+    let registry = github_registry(Some("fixture-token"), Arc::clone(&transport));
     let tool = registry.get("github.issue").expect("github.issue tool");
     let result = tool
         .call(
             test_context(workspace.workspace(), "toolcall-github-issue-get"),
             json!({
                 "operation": "get",
+                "owner": "urbanbreach",
+                "repo": "agent-harness",
                 "issue_number": 19
             }),
         )
@@ -82,42 +117,26 @@ async fn github_issue_get_uses_env_repository_and_auth_headers() {
         Some(&json!(19))
     );
 
-    let requests = requests.lock().expect("request log");
+    let requests = transport.requests();
     let request = requests.first().expect("request captured");
-    assert_eq!(request.path, "/repos/urbanbreach/agent-harness/issues/19");
+    assert_eq!(request.method, Method::GET);
     assert_eq!(
-        request.headers.get("authorization"),
-        Some(&"Bearer fixture-token".to_string())
+        request_path(request),
+        "/repos/urbanbreach/agent-harness/issues/19"
     );
-    assert_eq!(
-        request.headers.get("x-github-api-version"),
-        Some(&"2022-11-28".to_string())
-    );
+    assert_eq!(request.auth_token.as_deref(), Some("fixture-token"));
     assert!(
-        request.body.is_empty(),
+        request.body.is_none(),
         "get request should not include a body"
     );
 }
 
 #[tokio::test]
-#[expect(
-    clippy::await_holding_lock,
-    reason = "the global env lock intentionally serializes process-wide GitHub env mutation across awaits"
-)]
 async fn github_issue_list_filters_pull_requests_and_preserves_query_parameters() {
-    let _env_guard = env_test_lock();
     let workspace = setup_workspace_fixture();
-    let requests = Arc::new(Mutex::new(Vec::<TestRequest>::new()));
-    let request_log = Arc::clone(&requests);
-    let base_url = spawn_http_server(Arc::new(move |request| {
-        request_log.lock().expect("request log").push(request);
-        TestResponse {
-            status: "200 OK",
-            headers: vec![(
-                "Content-Type".to_string(),
-                "application/json; charset=utf-8".to_string(),
-            )],
-            body: json!([
+    let transport = ScriptedGitHubTransport::new(vec![GitHubHttpResponse::json(
+        200,
+        json!([
                 {
                     "number": 7,
                     "title": "Real issue",
@@ -131,24 +150,18 @@ async fn github_issue_list_filters_pull_requests_and_preserves_query_parameters(
                     "html_url": "https://github.com/urbanbreach/agent-harness/pull/8",
                     "pull_request": {"url": "https://api.github.com/repos/urbanbreach/agent-harness/pulls/8"}
                 }
-            ])
-            .to_string(),
-            delay: Duration::ZERO,
-        }
-    }));
-    let _env = EnvGuard::set(&[
-        (GITHUB_API_BASE_URL_ENV, Some(base_url.as_str())),
-        (GITHUB_TOKEN_ENV, None),
-        (GITHUB_REPOSITORY_ENV, Some("urbanbreach/agent-harness")),
-    ]);
+        ]),
+    )]);
 
-    let registry = coordinator_registry(ShellAllowlist::default());
+    let registry = github_registry(None, Arc::clone(&transport));
     let tool = registry.get("github.issue").expect("github.issue tool");
     let result = tool
         .call(
             test_context(workspace.workspace(), "toolcall-github-issue-list"),
             json!({
                 "operation": "list",
+                "owner": "urbanbreach",
+                "repo": "agent-harness",
                 "state": "closed",
                 "per_page": 2
             }),
@@ -166,37 +179,24 @@ async fn github_issue_list_filters_pull_requests_and_preserves_query_parameters(
         .expect("items array");
     assert_eq!(items.len(), 1);
 
-    let requests = requests.lock().expect("request log");
+    let requests = transport.requests();
     let request = requests.first().expect("request captured");
     assert_eq!(
-        request.path,
+        request_path(request),
         "/repos/urbanbreach/agent-harness/issues?per_page=2&state=closed"
     );
     assert!(
-        !request.headers.contains_key("authorization"),
+        request.auth_token.is_none(),
         "read-only list call should not require auth"
     );
 }
 
 #[tokio::test]
-#[expect(
-    clippy::await_holding_lock,
-    reason = "the global env lock intentionally serializes process-wide GitHub env mutation across awaits"
-)]
 async fn github_pull_request_list_preserves_query_parameters_and_renders_refs() {
-    let _env_guard = env_test_lock();
     let workspace = setup_workspace_fixture();
-    let requests = Arc::new(Mutex::new(Vec::<TestRequest>::new()));
-    let request_log = Arc::clone(&requests);
-    let base_url = spawn_http_server(Arc::new(move |request| {
-        request_log.lock().expect("request log").push(request);
-        TestResponse {
-            status: "200 OK",
-            headers: vec![(
-                "Content-Type".to_string(),
-                "application/json; charset=utf-8".to_string(),
-            )],
-            body: json!([
+    let transport = ScriptedGitHubTransport::new(vec![GitHubHttpResponse::json(
+        200,
+        json!([
                 {
                     "number": 11,
                     "title": "Simplify GitHub rendering",
@@ -205,18 +205,10 @@ async fn github_pull_request_list_preserves_query_parameters_and_renders_refs() 
                     "head": {"ref": "cleanup/github-rendering"},
                     "base": {"ref": "dev"}
                 }
-            ])
-            .to_string(),
-            delay: Duration::ZERO,
-        }
-    }));
-    let _env = EnvGuard::set(&[
-        (GITHUB_API_BASE_URL_ENV, Some(base_url.as_str())),
-        (GITHUB_TOKEN_ENV, None),
-        (GITHUB_REPOSITORY_ENV, Some("urbanbreach/agent-harness")),
-    ]);
+        ]),
+    )]);
 
-    let registry = coordinator_registry(ShellAllowlist::default());
+    let registry = github_registry(None, Arc::clone(&transport));
     let tool = registry
         .get("github.pull_request")
         .expect("github.pull_request tool");
@@ -225,6 +217,8 @@ async fn github_pull_request_list_preserves_query_parameters_and_renders_refs() 
             test_context(workspace.workspace(), "toolcall-github-pr-list"),
             json!({
                 "operation": "list",
+                "owner": "urbanbreach",
+                "repo": "agent-harness",
                 "state": "all",
                 "per_page": 1
             }),
@@ -244,39 +238,31 @@ async fn github_pull_request_list_preserves_query_parameters_and_renders_refs() 
         Some(&json!(11))
     );
 
-    let requests = requests.lock().expect("request log");
+    let requests = transport.requests();
     let request = requests.first().expect("request captured");
     assert_eq!(
-        request.path,
+        request_path(request),
         "/repos/urbanbreach/agent-harness/pulls?per_page=1&state=all"
     );
     assert!(
-        !request.headers.contains_key("authorization"),
+        request.auth_token.is_none(),
         "read-only pull request list call should not require auth"
     );
 }
 
 #[tokio::test]
-#[expect(
-    clippy::await_holding_lock,
-    reason = "the global env lock intentionally serializes process-wide GitHub env mutation across awaits"
-)]
 async fn github_issue_close_requires_authentication() {
-    let _env_guard = env_test_lock();
     let workspace = setup_workspace_fixture();
-    let _env = EnvGuard::set(&[
-        (GITHUB_API_BASE_URL_ENV, Some("http://127.0.0.1:9")),
-        (GITHUB_TOKEN_ENV, None),
-        (GITHUB_REPOSITORY_ENV, Some("urbanbreach/agent-harness")),
-    ]);
 
-    let registry = coordinator_registry(ShellAllowlist::default());
+    let registry = github_registry(None, ScriptedGitHubTransport::new(Vec::new()));
     let tool = registry.get("github.issue").expect("github.issue tool");
     let error = tool
         .call(
             test_context(workspace.workspace(), "toolcall-github-issue-close"),
             json!({
                 "operation": "close",
+                "owner": "urbanbreach",
+                "repo": "agent-harness",
                 "issue_number": 19
             }),
         )
@@ -286,45 +272,26 @@ async fn github_issue_close_requires_authentication() {
 }
 
 #[tokio::test]
-#[expect(
-    clippy::await_holding_lock,
-    reason = "the global env lock intentionally serializes process-wide GitHub env mutation across awaits"
-)]
 async fn github_issue_comment_posts_body_and_renders_comment_url() {
-    let _env_guard = env_test_lock();
     let workspace = setup_workspace_fixture();
-    let requests = Arc::new(Mutex::new(Vec::<TestRequest>::new()));
-    let request_log = Arc::clone(&requests);
-    let base_url = spawn_http_server(Arc::new(move |request| {
-        request_log.lock().expect("request log").push(request);
-        TestResponse {
-            status: "201 Created",
-            headers: vec![(
-                "Content-Type".to_string(),
-                "application/json; charset=utf-8".to_string(),
-            )],
-            body: json!({
+    let transport = ScriptedGitHubTransport::new(vec![GitHubHttpResponse::json(
+        201,
+        json!({
                 "id": 55,
                 "body": "Looks good from here.",
                 "html_url": "https://github.com/urbanbreach/agent-harness/issues/19#issuecomment-55"
-            })
-            .to_string(),
-            delay: Duration::ZERO,
-        }
-    }));
-    let _env = EnvGuard::set(&[
-        (GITHUB_API_BASE_URL_ENV, Some(base_url.as_str())),
-        (GITHUB_TOKEN_ENV, Some("fixture-token")),
-        (GITHUB_REPOSITORY_ENV, Some("urbanbreach/agent-harness")),
-    ]);
+        }),
+    )]);
 
-    let registry = coordinator_registry(ShellAllowlist::default());
+    let registry = github_registry(Some("fixture-token"), Arc::clone(&transport));
     let tool = registry.get("github.issue").expect("github.issue tool");
     let result = tool
         .call(
             test_context(workspace.workspace(), "toolcall-github-issue-comment"),
             json!({
                 "operation": "comment",
+                "owner": "urbanbreach",
+                "repo": "agent-harness",
                 "issue_number": 19,
                 "body": "Looks good from here."
             }),
@@ -344,39 +311,24 @@ async fn github_issue_comment_posts_body_and_renders_comment_url() {
         Some(&json!(55))
     );
 
-    let requests = requests.lock().expect("request log");
+    let requests = transport.requests();
     let request = requests.first().expect("request captured");
+    assert_eq!(request.method, Method::POST);
     assert_eq!(
-        request.path,
+        request_path(request),
         "/repos/urbanbreach/agent-harness/issues/19/comments"
     );
-    assert_eq!(
-        request.headers.get("authorization"),
-        Some(&"Bearer fixture-token".to_string())
-    );
-    let payload: Value = serde_json::from_str(&request.body).expect("request json");
+    assert_eq!(request.auth_token.as_deref(), Some("fixture-token"));
+    let payload = request.body.as_ref().expect("request json");
     assert_eq!(payload.get("body"), Some(&json!("Looks good from here.")));
 }
 
 #[tokio::test]
-#[expect(
-    clippy::await_holding_lock,
-    reason = "the global env lock intentionally serializes process-wide GitHub env mutation across awaits"
-)]
 async fn github_pull_request_create_posts_expected_payload() {
-    let _env_guard = env_test_lock();
     let workspace = setup_workspace_fixture();
-    let requests = Arc::new(Mutex::new(Vec::<TestRequest>::new()));
-    let request_log = Arc::clone(&requests);
-    let base_url = spawn_http_server(Arc::new(move |request| {
-        request_log.lock().expect("request log").push(request);
-        TestResponse {
-            status: "201 Created",
-            headers: vec![(
-                "Content-Type".to_string(),
-                "application/json; charset=utf-8".to_string(),
-            )],
-            body: json!({
+    let transport = ScriptedGitHubTransport::new(vec![GitHubHttpResponse::json(
+        201,
+        json!({
                 "number": 42,
                 "title": "Add GitHub tool docs",
                 "state": "open",
@@ -384,18 +336,10 @@ async fn github_pull_request_create_posts_expected_payload() {
                 "body": "This adds docs.",
                 "head": {"ref": "feature/github-docs"},
                 "base": {"ref": "main"}
-            })
-            .to_string(),
-            delay: Duration::ZERO,
-        }
-    }));
-    let _env = EnvGuard::set(&[
-        (GITHUB_API_BASE_URL_ENV, Some(base_url.as_str())),
-        (GITHUB_TOKEN_ENV, Some("fixture-token")),
-        (GITHUB_REPOSITORY_ENV, Some("urbanbreach/agent-harness")),
-    ]);
+        }),
+    )]);
 
-    let registry = coordinator_registry(ShellAllowlist::default());
+    let registry = github_registry(Some("fixture-token"), Arc::clone(&transport));
     let tool = registry
         .get("github.pull_request")
         .expect("github.pull_request tool");
@@ -404,6 +348,8 @@ async fn github_pull_request_create_posts_expected_payload() {
             test_context(workspace.workspace(), "toolcall-github-pr-create"),
             json!({
                 "operation": "create",
+                "owner": "urbanbreach",
+                "repo": "agent-harness",
                 "title": "Add GitHub tool docs",
                 "body": "This adds docs.",
                 "head": "feature/github-docs",
@@ -423,14 +369,15 @@ async fn github_pull_request_create_posts_expected_payload() {
         Some(&json!(42))
     );
 
-    let requests = requests.lock().expect("request log");
+    let requests = transport.requests();
     let request = requests.first().expect("request captured");
-    assert_eq!(request.path, "/repos/urbanbreach/agent-harness/pulls");
+    assert_eq!(request.method, Method::POST);
     assert_eq!(
-        request.headers.get("authorization"),
-        Some(&"Bearer fixture-token".to_string())
+        request_path(request),
+        "/repos/urbanbreach/agent-harness/pulls"
     );
-    let payload: Value = serde_json::from_str(&request.body).expect("request json");
+    assert_eq!(request.auth_token.as_deref(), Some("fixture-token"));
+    let payload = request.body.as_ref().expect("request json");
     assert_eq!(payload.get("title"), Some(&json!("Add GitHub tool docs")));
     assert_eq!(payload.get("head"), Some(&json!("feature/github-docs")));
     assert_eq!(payload.get("base"), Some(&json!("main")));

@@ -1,39 +1,3 @@
-use std::fs;
-
-use harness_core::agent::{build_provider_tool_defs, AgentProfile};
-use harness_core::config::ShellAllowlist;
-use harness_core::edit::hashline::compute_line_hash;
-use harness_core::tool::ToolRunState;
-use harness_tools::{coordinator_registry, coordinator_registry_with_internal_hashline_tools};
-use serde_json::json;
-
-mod common;
-
-use common::{
-    setup_workspace_fixture, test_context as common_test_context,
-    test_context_with_tool_state as common_test_context_with_tool_state,
-};
-
-fn test_context(
-    workspace_root: &std::path::Path,
-    tool_call_id: &str,
-) -> harness_core::tool::ToolContext {
-    common_test_context(workspace_root, "run-native-surface-tests", tool_call_id)
-}
-
-fn test_context_with_tool_state(
-    workspace_root: &std::path::Path,
-    tool_call_id: &str,
-    tool_state: ToolRunState,
-) -> harness_core::tool::ToolContext {
-    common_test_context_with_tool_state(
-        workspace_root,
-        "run-native-surface-tests",
-        tool_call_id,
-        tool_state,
-    )
-}
-
 #[tokio::test]
 async fn native_execution_surface_tools_execute_through_native_ids() {
     let workspace_fixture = setup_workspace_fixture();
@@ -101,7 +65,6 @@ async fn native_execution_surface_tools_execute_through_native_ids() {
         .expect("invalid");
     assert!(invalid_result.display_text.contains("bad args"));
 }
-
 #[tokio::test]
 async fn native_todowrite_accepts_legacy_text_shape_and_defaults_priority() {
     let workspace_fixture = setup_workspace_fixture();
@@ -142,7 +105,6 @@ async fn native_todowrite_accepts_legacy_text_shape_and_defaults_priority() {
     assert!(todo_read_result.display_text.contains("legacy title entry"));
     assert!(todo_read_result.display_text.contains("medium"));
 }
-
 #[tokio::test]
 async fn native_todowrite_accepts_state_alias_from_model_tool_call() {
     let workspace_fixture = setup_workspace_fixture();
@@ -174,7 +136,6 @@ async fn native_todowrite_accepts_state_alias_from_model_tool_call() {
         }))
     );
 }
-
 #[tokio::test]
 async fn native_todowrite_accepts_done_shape_and_schema_advertises_it() {
     let workspace_fixture = setup_workspace_fixture();
@@ -214,7 +175,6 @@ async fn native_todowrite_accepts_done_shape_and_schema_advertises_it() {
         }))
     );
 }
-
 #[tokio::test]
 async fn native_todowrite_rejects_unknown_status_values() {
     let workspace_fixture = setup_workspace_fixture();
@@ -239,7 +199,6 @@ async fn native_todowrite_rejects_unknown_status_values() {
     assert!(error.contains("status must be one of"));
     assert!(error.contains("doing"));
 }
-
 #[tokio::test]
 async fn native_public_edit_uses_hashline_surface_and_reports_success() {
     let workspace_fixture = setup_workspace_fixture();
@@ -293,7 +252,6 @@ async fn native_public_edit_uses_hashline_surface_and_reports_success() {
         "after\n"
     );
 }
-
 #[tokio::test]
 async fn native_public_edit_accepts_start_alias_for_pos() {
     let workspace_fixture = setup_workspace_fixture();
@@ -326,7 +284,6 @@ async fn native_public_edit_accepts_start_alias_for_pos() {
         "after\n"
     );
 }
-
 #[tokio::test]
 async fn native_public_edit_accepts_opless_anchored_delete_shape() {
     let workspace_fixture = setup_workspace_fixture();
@@ -358,7 +315,6 @@ async fn native_public_edit_accepts_opless_anchored_delete_shape() {
         "next\n"
     );
 }
-
 #[tokio::test]
 async fn native_public_edit_rejects_delete_flag_with_edit_payload() {
     let workspace_fixture = setup_workspace_fixture();
@@ -404,7 +360,6 @@ async fn native_public_edit_rejects_delete_flag_with_edit_payload() {
         "delete should not run when edit payload is invalid"
     );
 }
-
 #[test]
 fn native_provider_tool_defs_accept_edit_and_question_export_schemas() {
     let registry = coordinator_registry(ShellAllowlist::default());
@@ -428,7 +383,6 @@ fn native_provider_tool_defs_accept_edit_and_question_export_schemas() {
         assert_eq!(def.parameters["type"], json!("object"));
     }
 }
-
 #[tokio::test]
 async fn native_public_edit_rejects_opless_anchored_non_delete_shape() {
     let workspace_fixture = setup_workspace_fixture();
@@ -459,7 +413,6 @@ async fn native_public_edit_rejects_opless_anchored_non_delete_shape() {
     assert!(error.contains("replace, append, and prepend can all use pos/end anchors"));
     assert!(!error.contains("missing field `op`"));
 }
-
 #[tokio::test]
 async fn native_public_edit_rejects_opless_anchorless_shape() {
     let workspace_fixture = setup_workspace_fixture();
@@ -489,7 +442,6 @@ async fn native_public_edit_rejects_opless_anchorless_shape() {
     assert!(error.contains("append inserts at EOF and prepend inserts at BOF"));
     assert!(!error.contains("missing field `op`"));
 }
-
 #[tokio::test]
 async fn native_public_edit_accepts_quoted_refresh_snippet_anchor() {
     let workspace_fixture = setup_workspace_fixture();
@@ -521,407 +473,4 @@ async fn native_public_edit_accepts_quoted_refresh_snippet_anchor() {
         fs::read_to_string(workspace.join("surface.txt")).expect("read edited file"),
         "after\nnext\n"
     );
-}
-
-#[tokio::test]
-async fn native_public_edit_accepts_unique_hash_only_anchor() {
-    let workspace_fixture = setup_workspace_fixture();
-    let workspace = workspace_fixture.workspace();
-    let registry = coordinator_registry(ShellAllowlist::default());
-    let edit = registry.get("edit").expect("edit in registry");
-
-    fs::write(workspace.join("surface.txt"), "current\nnext\n").expect("seed existing file");
-
-    let result = edit
-        .call(
-            test_context(workspace, "edit-hash-only-anchor"),
-            json!({
-                "filePath": "surface.txt",
-                "edits": [
-                    {
-                        "op": "replace",
-                        "pos": format!("#{}", compute_line_hash("current")),
-                        "lines": ["after"],
-                    }
-                ],
-            }),
-        )
-        .await
-        .expect("hashline edit with unique hash-only anchor");
-
-    assert!(result.display_text.contains("Edit applied successfully"));
-    assert_eq!(
-        fs::read_to_string(workspace.join("surface.txt")).expect("read edited file"),
-        "after\nnext\n"
-    );
-}
-
-#[tokio::test]
-async fn native_public_edit_uses_recent_hashline_read_to_disambiguate_hash_only_anchor() {
-    let workspace_fixture = setup_workspace_fixture();
-    let workspace = workspace_fixture.workspace();
-    let registry = coordinator_registry(ShellAllowlist::default());
-    let read = registry.get("read").expect("read in registry");
-    let edit = registry.get("edit").expect("edit in registry");
-    let tool_state = ToolRunState::default();
-
-    fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").expect("seed existing file");
-
-    read.call(
-        test_context_with_tool_state(workspace, "read-disambiguation-window", tool_state.clone()),
-        json!({
-            "filePath": "surface.txt",
-            "offset": 1,
-            "limit": 2,
-        }),
-    )
-    .await
-    .expect("anchored read should succeed");
-
-    let result = edit
-        .call(
-            test_context_with_tool_state(
-                workspace,
-                "edit-read-window-hash-only-anchor",
-                tool_state,
-            ),
-            json!({
-                "filePath": "surface.txt",
-                "edits": [
-                    {
-                        "op": "replace",
-                        "pos": format!("#{}", compute_line_hash("same")),
-                        "lines": ["after"],
-                    }
-                ],
-            }),
-        )
-        .await
-        .expect("hashline edit should use recent read window to disambiguate");
-
-    assert!(result.display_text.contains("Edit applied successfully"));
-    assert_eq!(
-        fs::read_to_string(workspace.join("surface.txt")).expect("read edited file"),
-        "after\nother\nsame\n"
-    );
-}
-
-#[tokio::test]
-async fn native_public_edit_scopes_recent_hashline_reads_to_shared_tool_run_state_not_run_id() {
-    let workspace_fixture = setup_workspace_fixture();
-    let workspace = workspace_fixture.workspace();
-    let registry = coordinator_registry(ShellAllowlist::default());
-    let read = registry.get("read").expect("read in registry");
-    let edit = registry.get("edit").expect("edit in registry");
-    let tool_state = ToolRunState::default();
-
-    fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").expect("seed existing file");
-
-    read.call(
-        common_test_context_with_tool_state(
-            workspace,
-            "read-owner-run",
-            "read-shared-edit-session-owner",
-            tool_state.clone(),
-        ),
-        json!({
-            "filePath": "surface.txt",
-            "offset": 1,
-            "limit": 2,
-        }),
-    )
-    .await
-    .expect("anchored read should succeed");
-
-    let result = edit
-        .call(
-            common_test_context_with_tool_state(
-                workspace,
-                "edit-owner-run",
-                "edit-shared-edit-session-owner",
-                tool_state,
-            ),
-            json!({
-                "filePath": "surface.txt",
-                "edits": [
-                    {
-                        "op": "replace",
-                        "pos": format!("#{}", compute_line_hash("same")),
-                        "lines": ["after"],
-                    }
-                ],
-            }),
-        )
-        .await
-        .expect("shared edit session should disambiguate independent of run id");
-
-    assert!(result.display_text.contains("Edit applied successfully"));
-    assert_eq!(
-        fs::read_to_string(workspace.join("surface.txt")).expect("read edited file"),
-        "after\nother\nsame\n"
-    );
-}
-
-#[tokio::test]
-async fn native_internal_hashline_scan_disambiguates_hash_only_anchor_for_edit() {
-    let workspace_fixture = setup_workspace_fixture();
-    let workspace = workspace_fixture.workspace();
-    let registry = coordinator_registry_with_internal_hashline_tools(ShellAllowlist::default());
-    let scan = registry
-        .get("edit.hashline_scan")
-        .expect("edit.hashline_scan in registry");
-    let edit = registry.get("edit").expect("edit in registry");
-    let tool_state = ToolRunState::default();
-
-    fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").expect("seed existing file");
-
-    scan.call(
-        test_context_with_tool_state(workspace, "scan-disambiguation-window", tool_state.clone()),
-        json!({
-            "path": "surface.txt",
-            "start_line": 1,
-            "limit": 2,
-        }),
-    )
-    .await
-    .expect("hashline scan should succeed");
-
-    let result = edit
-        .call(
-            test_context_with_tool_state(
-                workspace,
-                "edit-scan-window-hash-only-anchor",
-                tool_state,
-            ),
-            json!({
-                "filePath": "surface.txt",
-                "edits": [
-                    {
-                        "op": "replace",
-                        "pos": format!("#{}", compute_line_hash("same")),
-                        "lines": ["after"],
-                    }
-                ],
-            }),
-        )
-        .await
-        .expect("hashline edit should use recent scan window to disambiguate");
-
-    assert!(result.display_text.contains("Edit applied successfully"));
-    assert_eq!(
-        fs::read_to_string(workspace.join("surface.txt")).expect("read edited file"),
-        "after\nother\nsame\n"
-    );
-}
-
-#[tokio::test]
-async fn native_public_edit_ignores_stale_recent_hashline_read_for_hash_only_anchor() {
-    let workspace_fixture = setup_workspace_fixture();
-    let workspace = workspace_fixture.workspace();
-    let registry = coordinator_registry(ShellAllowlist::default());
-    let read = registry.get("read").expect("read in registry");
-    let edit = registry.get("edit").expect("edit in registry");
-    let tool_state = ToolRunState::default();
-
-    fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").expect("seed existing file");
-
-    read.call(
-        test_context_with_tool_state(
-            workspace,
-            "read-stale-disambiguation-window",
-            tool_state.clone(),
-        ),
-        json!({
-            "filePath": "surface.txt",
-            "offset": 1,
-            "limit": 2,
-        }),
-    )
-    .await
-    .expect("anchored read should succeed");
-
-    fs::write(workspace.join("surface.txt"), "same\nanother\nsame\n")
-        .expect("mutate file after anchored read");
-
-    let error = edit
-        .call(
-            test_context_with_tool_state(
-                workspace,
-                "edit-stale-read-window-hash-only-anchor",
-                tool_state,
-            ),
-            json!({
-                "filePath": "surface.txt",
-                "edits": [
-                    {
-                        "op": "replace",
-                        "pos": format!("#{}", compute_line_hash("same")),
-                        "lines": ["after"],
-                    }
-                ],
-            }),
-        )
-        .await
-        .expect_err("stale cached anchors should not disambiguate hash-only anchor");
-
-    let error = error.to_string();
-    assert!(error.contains("matches multiple current lines"));
-    assert!(error.contains("Re-read the file"));
-    assert_eq!(
-        fs::read_to_string(workspace.join("surface.txt")).expect("read edited file"),
-        "same\nanother\nsame\n"
-    );
-}
-
-#[tokio::test]
-async fn native_public_edit_does_not_share_recent_hashline_reads_across_tool_state() {
-    let workspace_fixture = setup_workspace_fixture();
-    let workspace = workspace_fixture.workspace();
-    let registry = coordinator_registry(ShellAllowlist::default());
-    let read = registry.get("read").expect("read in registry");
-    let edit = registry.get("edit").expect("edit in registry");
-
-    fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").expect("seed existing file");
-
-    read.call(
-        test_context_with_tool_state(
-            workspace,
-            "read-isolated-disambiguation-window",
-            ToolRunState::default(),
-        ),
-        json!({
-            "filePath": "surface.txt",
-            "offset": 1,
-            "limit": 2,
-        }),
-    )
-    .await
-    .expect("anchored read should succeed");
-
-    let error = edit
-        .call(
-            test_context_with_tool_state(
-                workspace,
-                "edit-isolated-hash-only-anchor",
-                ToolRunState::default(),
-            ),
-            json!({
-                "filePath": "surface.txt",
-                "edits": [
-                    {
-                        "op": "replace",
-                        "pos": format!("#{}", compute_line_hash("same")),
-                        "lines": ["after"],
-                    }
-                ],
-            }),
-        )
-        .await
-        .expect_err("separate tool state must not disambiguate hash-only anchor");
-
-    let error = error.to_string();
-    assert!(error.contains("matches multiple current lines"));
-    assert!(error.contains("Re-read the file"));
-    assert_eq!(
-        fs::read_to_string(workspace.join("surface.txt")).expect("read unchanged file"),
-        "same\nother\nsame\n"
-    );
-}
-
-#[tokio::test]
-async fn native_public_edit_rejects_ambiguous_hash_only_anchor() {
-    let workspace_fixture = setup_workspace_fixture();
-    let workspace = workspace_fixture.workspace();
-    let registry = coordinator_registry(ShellAllowlist::default());
-    let edit = registry.get("edit").expect("edit in registry");
-
-    fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").expect("seed existing file");
-
-    let error = edit
-        .call(
-            test_context(workspace, "edit-ambiguous-hash-only-anchor"),
-            json!({
-                "filePath": "surface.txt",
-                "edits": [
-                    {
-                        "op": "replace",
-                        "pos": format!("#{}", compute_line_hash("same")),
-                        "lines": ["after"],
-                    }
-                ],
-            }),
-        )
-        .await
-        .expect_err("ambiguous hash-only anchor should fail");
-
-    let error = error.to_string();
-    assert!(error.contains("omitted its line number and matches multiple current lines"));
-    assert!(error.contains("Re-read the file"));
-    assert!(error.contains(&format!(">>> 1#{}|same", compute_line_hash("same"))));
-    assert!(error.contains(&format!(">>> 3#{}|same", compute_line_hash("same"))));
-}
-
-#[tokio::test]
-async fn native_public_edit_rejects_unknown_hash_only_anchor() {
-    let workspace_fixture = setup_workspace_fixture();
-    let workspace = workspace_fixture.workspace();
-    let registry = coordinator_registry(ShellAllowlist::default());
-    let edit = registry.get("edit").expect("edit in registry");
-
-    fs::write(workspace.join("surface.txt"), "same\nother\n").expect("seed existing file");
-
-    let error = edit
-        .call(
-            test_context(workspace, "edit-missing-hash-only-anchor"),
-            json!({
-                "filePath": "surface.txt",
-                "edits": [
-                    {
-                        "op": "replace",
-                        "pos": "#deadbeefdead",
-                        "lines": ["after"],
-                    }
-                ],
-            }),
-        )
-        .await
-        .expect_err("unknown hash-only anchor should fail");
-
-    let error = error.to_string();
-    assert!(error.contains("does not match any current line"));
-    assert!(error.contains("Re-read the file"));
-}
-
-#[tokio::test]
-async fn native_public_edit_stale_anchor_error_includes_refresh_snippet() {
-    let workspace_fixture = setup_workspace_fixture();
-    let workspace = workspace_fixture.workspace();
-    let registry = coordinator_registry(ShellAllowlist::default());
-    let edit = registry.get("edit").expect("edit in registry");
-
-    fs::write(workspace.join("surface.txt"), "current\nnext\n").expect("seed existing file");
-
-    let error = edit
-        .call(
-            test_context(workspace, "edit-stale"),
-            json!({
-                "filePath": "surface.txt",
-                "edits": [
-                    {
-                        "op": "replace",
-                        "pos": format!("1#{}", compute_line_hash("stale")),
-                        "lines": ["after"],
-                    }
-                ],
-            }),
-        )
-        .await
-        .expect_err("stale anchor should fail");
-
-    let error = error.to_string();
-    assert!(error.contains("Copy updated tags from this snippet"));
-    assert!(error.contains("re-read the file"));
-    assert!(error.contains(">>> 1#"));
-    assert!(error.contains("|current"));
-    assert!(error.contains(">>> 2#"));
 }

@@ -39,6 +39,10 @@ mod workspace_paths;
 
 mod network;
 use network::NetworkExecutor;
+pub use network::{
+    RemoteSearchHttpRequest, RemoteSearchHttpResponse, RemoteSearchHttpTransport,
+    RemoteSearchTestConfig, WebFetchHttpRequest, WebFetchHttpResponse, WebFetchHttpTransport,
+};
 
 mod mcp;
 
@@ -46,6 +50,7 @@ mod control_plane;
 use control_plane::ControlPlaneExecutor;
 
 mod question_env;
+use question_env::coordinator_question_answer_source;
 
 mod env_vars;
 
@@ -60,6 +65,7 @@ mod text;
 
 mod shell_run;
 pub(crate) use shell_run::ShellRunTool;
+pub use shell_run::{ShellCommandInvocation, ShellCommandRunner, ShellProcessOutput};
 
 mod shell_safety;
 
@@ -78,6 +84,7 @@ use code_lsp::CodeLspExecutor;
 
 mod github;
 use github::{GitHubExecutor, GitHubIssueTool, GitHubPullRequestTool};
+pub use github::{GitHubHttpRequest, GitHubHttpResponse, GitHubHttpTransport};
 
 mod code_lsp_rename;
 use code_lsp_rename::{CodeLspRenameExecutor, CodeLspRenameTool};
@@ -95,6 +102,101 @@ mod plan;
 use plan::{PlanEnterTool, PlanExitTool};
 
 pub use harness_core::tool::canonical_tool_id_for;
+
+#[doc(hidden)]
+pub struct CoordinatorRegistryExecutors {
+    network_executor: Arc<NetworkExecutor>,
+    github_executor: Arc<GitHubExecutor>,
+    question_answer_source: Arc<dyn question_env::QuestionAnswerSource>,
+    shell_command_runner: Arc<dyn ShellCommandRunner>,
+}
+
+impl Default for CoordinatorRegistryExecutors {
+    fn default() -> Self {
+        Self {
+            network_executor: Arc::new(NetworkExecutor::new()),
+            github_executor: Arc::new(GitHubExecutor::new()),
+            question_answer_source: coordinator_question_answer_source(),
+            shell_command_runner: ShellRunTool::default_runner(),
+        }
+    }
+}
+
+impl CoordinatorRegistryExecutors {
+    #[doc(hidden)]
+    pub fn with_web_fetch_transport(transport: Arc<dyn WebFetchHttpTransport>) -> Self {
+        Self {
+            network_executor: Arc::new(NetworkExecutor::with_web_fetch_transport(transport)),
+            ..Self::default()
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn with_remote_search_transport(
+        config: RemoteSearchTestConfig,
+        transport: Arc<dyn RemoteSearchHttpTransport>,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            network_executor: Arc::new(NetworkExecutor::with_remote_search_transport(
+                config, transport,
+            )?),
+            ..Self::default()
+        })
+    }
+
+    #[doc(hidden)]
+    pub fn with_github_transport(
+        api_base_url: impl Into<String>,
+        auth_token: Option<String>,
+        transport: Arc<dyn GitHubHttpTransport>,
+    ) -> Self {
+        Self {
+            github_executor: Arc::new(GitHubExecutor::with_transport(
+                api_base_url,
+                auth_token,
+                transport,
+            )),
+            ..Self::default()
+        }
+    }
+
+    #[doc(hidden)]
+    pub(crate) fn with_question_answer_source(
+        question_answer_source: Arc<dyn question_env::QuestionAnswerSource>,
+    ) -> Self {
+        Self {
+            question_answer_source,
+            ..Self::default()
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn with_shell_command_runner(
+        mut self,
+        shell_command_runner: Arc<dyn ShellCommandRunner>,
+    ) -> Self {
+        self.shell_command_runner = shell_command_runner;
+        self
+    }
+}
+
+#[doc(hidden)]
+pub fn coordinator_registry_with_mcp_editing_and_executors(
+    shell_allowlist: ShellAllowlist,
+    mcp_config: McpConfig,
+    editing: EditingToolSurfaceConfig,
+    executors: CoordinatorRegistryExecutors,
+) -> ToolRegistry {
+    let mut registry = ToolRegistry::new();
+    register_coordinator_native_tools_with_executors(
+        &mut registry,
+        shell_allowlist,
+        editing,
+        executors,
+    );
+    mcp::register_mcp_tools(&mut registry, mcp_config);
+    registry
+}
 
 pub(crate) fn parse_tool_args<T: DeserializeOwned>(
     args_json: serde_json::Value,
@@ -154,18 +256,110 @@ pub fn coordinator_registry_with_mcp_and_editing(
     mcp_config: McpConfig,
     editing: EditingToolSurfaceConfig,
 ) -> ToolRegistry {
+    coordinator_registry_with_mcp_editing_and_web_fetch_transport(
+        shell_allowlist,
+        mcp_config,
+        editing,
+        None,
+    )
+}
+
+#[doc(hidden)]
+pub fn coordinator_registry_with_mcp_editing_and_web_fetch_transport(
+    shell_allowlist: ShellAllowlist,
+    mcp_config: McpConfig,
+    editing: EditingToolSurfaceConfig,
+    web_fetch_transport: Option<Arc<dyn WebFetchHttpTransport>>,
+) -> ToolRegistry {
+    let executors = web_fetch_transport
+        .map(CoordinatorRegistryExecutors::with_web_fetch_transport)
+        .unwrap_or_default();
+    coordinator_registry_with_mcp_editing_and_executors(
+        shell_allowlist,
+        mcp_config,
+        editing,
+        executors,
+    )
+}
+
+#[doc(hidden)]
+pub fn coordinator_registry_with_question_answers(
+    shell_allowlist: ShellAllowlist,
+    answers: Vec<Vec<String>>,
+) -> ToolRegistry {
     let mut registry = ToolRegistry::new();
-    register_coordinator_native_tools(&mut registry, shell_allowlist, editing);
-    mcp::register_mcp_tools(&mut registry, mcp_config);
+    register_coordinator_native_tools_with_question_answer_source(
+        &mut registry,
+        shell_allowlist,
+        EditingToolSurfaceConfig::default(),
+        Arc::new(question_env::ScriptedQuestionAnswerSource::new(answers)),
+    );
     registry
 }
 
-fn register_coordinator_native_tools(
+#[doc(hidden)]
+pub fn coordinator_registry_with_remote_search_transport(
+    shell_allowlist: ShellAllowlist,
+    config: RemoteSearchTestConfig,
+    transport: Arc<dyn RemoteSearchHttpTransport>,
+) -> Result<ToolRegistry, String> {
+    Ok(coordinator_registry_with_mcp_editing_and_executors(
+        shell_allowlist,
+        McpConfig::default(),
+        EditingToolSurfaceConfig::default(),
+        CoordinatorRegistryExecutors::with_remote_search_transport(config, transport)?,
+    ))
+}
+
+#[doc(hidden)]
+pub fn coordinator_registry_with_web_fetch_transport(
+    shell_allowlist: ShellAllowlist,
+    transport: Arc<dyn WebFetchHttpTransport>,
+) -> ToolRegistry {
+    coordinator_registry_with_mcp_editing_and_executors(
+        shell_allowlist,
+        McpConfig::default(),
+        EditingToolSurfaceConfig::default(),
+        CoordinatorRegistryExecutors::with_web_fetch_transport(transport),
+    )
+}
+
+#[doc(hidden)]
+pub fn coordinator_registry_with_github_transport(
+    shell_allowlist: ShellAllowlist,
+    api_base_url: impl Into<String>,
+    auth_token: Option<String>,
+    transport: Arc<dyn GitHubHttpTransport>,
+) -> ToolRegistry {
+    coordinator_registry_with_mcp_editing_and_executors(
+        shell_allowlist,
+        McpConfig::default(),
+        EditingToolSurfaceConfig::default(),
+        CoordinatorRegistryExecutors::with_github_transport(api_base_url, auth_token, transport),
+    )
+}
+
+fn register_coordinator_native_tools_with_question_answer_source(
     registry: &mut ToolRegistry,
     shell_allowlist: ShellAllowlist,
     editing: EditingToolSurfaceConfig,
+    question_answer_source: Arc<dyn question_env::QuestionAnswerSource>,
 ) {
-    for tool in coordinator_native_tool_surface(shell_allowlist, editing) {
+    register_coordinator_native_tools_with_executors(
+        registry,
+        shell_allowlist,
+        editing,
+        CoordinatorRegistryExecutors::with_question_answer_source(question_answer_source),
+    );
+}
+
+fn register_coordinator_native_tools_with_executors(
+    registry: &mut ToolRegistry,
+    shell_allowlist: ShellAllowlist,
+    editing: EditingToolSurfaceConfig,
+    executors: CoordinatorRegistryExecutors,
+) {
+    for tool in coordinator_native_tool_surface(shell_allowlist, editing, executors) {
         registry.register(tool);
     }
 }
@@ -173,12 +367,19 @@ fn register_coordinator_native_tools(
 fn coordinator_native_tool_surface(
     shell_allowlist: ShellAllowlist,
     editing: EditingToolSurfaceConfig,
+    executors: CoordinatorRegistryExecutors,
 ) -> Vec<Arc<dyn Tool>> {
-    let agent_ops_executor = Arc::new(AgentOpsExecutor::new());
-    let control_plane_executor = Arc::new(ControlPlaneExecutor::new());
-    let network_executor = Arc::new(NetworkExecutor::new());
+    let question_answer_source = executors.question_answer_source.clone();
+    let network_executor = executors.network_executor.clone();
+    let github_executor = executors.github_executor.clone();
+    let shell_command_runner = executors.shell_command_runner.clone();
+    let agent_ops_executor = Arc::new(AgentOpsExecutor::with_question_answer_source(
+        question_answer_source.clone(),
+    ));
+    let control_plane_executor = Arc::new(ControlPlaneExecutor::with_question_answer_source(
+        question_answer_source.clone(),
+    ));
     let code_lsp_executor = Arc::new(CodeLspExecutor::new());
-    let github_executor = Arc::new(GitHubExecutor::new());
     let code_lsp_rename_executor = Arc::new(CodeLspRenameExecutor::new());
 
     vec![
@@ -199,11 +400,14 @@ fn coordinator_native_tool_surface(
         boxed_tool(TeamShutdownApproveTool),
         boxed_tool(TeamShutdownRejectTool),
         boxed_tool(TeamDeleteTool),
-        boxed_tool(PlanEnterTool),
-        boxed_tool(PlanExitTool),
+        boxed_tool(PlanEnterTool::new(question_answer_source.clone())),
+        boxed_tool(PlanExitTool::new(question_answer_source.clone())),
         boxed_tool(HashlineEditTool),
-        boxed_tool(ShellRunTool::new(shell_allowlist.clone())),
-        boxed_tool(BashTool::new(shell_allowlist)),
+        boxed_tool(ShellRunTool::with_runner(
+            shell_allowlist.clone(),
+            shell_command_runner.clone(),
+        )),
+        boxed_tool(BashTool::with_runner(shell_allowlist, shell_command_runner)),
         boxed_tool(WebFetchTool::new(network_executor.clone())),
         boxed_tool(WebSearchTool::new(network_executor.clone())),
         boxed_tool(CodeSearchTool::new(network_executor.clone())),
