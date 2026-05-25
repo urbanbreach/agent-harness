@@ -2,13 +2,12 @@ use std::env;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use clap::Args;
 use harness_core::agent::{default_model_settings_for_profile, AgentModelSettings};
-use harness_core::clock::{Clock, Determinism, FakeClock, RealClock};
+use harness_core::clock::Determinism;
 use harness_core::config::{resolve_configured_model_metadata, ShellAllowlist};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
 use harness_core::event::{
@@ -22,7 +21,7 @@ use harness_core::store::{EventStore, EventStoreError};
 use harness_tools::coordinator_registry;
 use uuid::Uuid;
 
-use crate::cli_config::{apply_runtime_metadata, load_optional_config_with_digest};
+use crate::cli_config::{apply_runtime_metadata, load_optional_config_with_digest_context};
 use crate::cli_io::{copy_events_file, load_events_from_run_dir};
 use crate::defaults::{
     DEFAULT_INTERACTIVE_RUN_NAME, DEFAULT_MOCK_PROFILE, DEFAULT_SESSION_DIR,
@@ -34,6 +33,7 @@ use crate::recovery::{
 use crate::{
     bootstrap, logging,
     scenarios::{golden_path_profiles, golden_path_provider, supervisor_actor},
+    CliDeps,
 };
 
 const DEFAULT_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -76,24 +76,55 @@ pub struct PromptCommand {
     pub print_run_dir: bool,
 }
 
-pub fn execute(
+pub fn execute_with_io(
     cmd: PromptCommand,
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
-) -> ExitCode {
-    let prompt_text = match resolve_prompt_text(&cmd) {
+    io: &mut crate::CliIo<'_>,
+    deps: &CliDeps,
+) -> i32 {
+    let prompt_text = match resolve_prompt_text(&cmd, io.stdin) {
         Ok(prompt_text) => prompt_text,
         Err(err) => {
-            eprintln!("prompt setup failed: {err}");
-            return ExitCode::from(2);
+            let _ = writeln!(io.stderr, "prompt setup failed: {err}");
+            return 2;
         }
     };
 
-    let settings = match resolve_settings(&cmd, config_path, global_session_dir) {
+    let workspace_root = match deps.current_dir() {
+        Ok(current_dir) => current_dir,
+        Err(err) => {
+            let _ = writeln!(
+                io.stderr,
+                "prompt setup failed: failed to resolve current working directory: {err}"
+            );
+            return 2;
+        }
+    };
+
+    let config_context = match deps.config_load_context() {
+        Ok(context) => context,
+        Err(err) => {
+            let _ = writeln!(
+                io.stderr,
+                "prompt setup failed: failed to resolve config context: {err}"
+            );
+            return 2;
+        }
+    };
+
+    let settings = match resolve_settings(
+        &cmd,
+        config_path,
+        global_session_dir,
+        workspace_root,
+        &config_context,
+        deps,
+    ) {
         Ok(settings) => settings,
         Err(err) => {
-            eprintln!("prompt setup failed: {err}");
-            return ExitCode::from(2);
+            let _ = writeln!(io.stderr, "prompt setup failed: {err}");
+            return 2;
         }
     };
 
@@ -103,29 +134,29 @@ pub fn execute(
     {
         Ok(runtime) => runtime,
         Err(err) => {
-            eprintln!("failed to build async runtime: {err}");
-            return ExitCode::from(1);
+            let _ = writeln!(io.stderr, "failed to build async runtime: {err}");
+            return 1;
         }
     };
 
-    match runtime.block_on(run_prompt(&cmd, &settings, &prompt_text)) {
+    match runtime.block_on(run_prompt(&cmd, &settings, &prompt_text, io.stdout)) {
         Ok(outcome) => {
             if let Some(out) = &cmd.out {
                 if let Err(err) = copy_events_file(&outcome.events_path, out) {
-                    eprintln!("failed to write --out file: {err}");
-                    return ExitCode::from(1);
+                    let _ = writeln!(io.stderr, "failed to write --out file: {err}");
+                    return 1;
                 }
             }
 
             if cmd.print_run_dir {
-                println!("{}", outcome.run_dir.display());
+                let _ = writeln!(io.stdout, "{}", outcome.run_dir.display());
             }
 
-            ExitCode::SUCCESS
+            0
         }
         Err(err) => {
-            eprintln!("prompt failed: {err}");
-            ExitCode::from(1)
+            let _ = writeln!(io.stderr, "prompt failed: {err}");
+            1
         }
     }
 }
@@ -137,6 +168,8 @@ struct PromptSettings {
     deterministic: bool,
     deterministic_seed: u64,
     config_digest: String,
+    workspace_root: PathBuf,
+    deps: CliDeps,
 }
 
 struct PromptOutcome {
@@ -148,12 +181,21 @@ fn resolve_settings(
     cmd: &PromptCommand,
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
+    workspace_root: PathBuf,
+    config_context: &harness_core::config::ConfigLoadContext,
+    deps: &CliDeps,
 ) -> Result<PromptSettings, String> {
     if cmd.mock {
-        return resolve_mock_settings(config_path, global_session_dir);
+        return resolve_mock_settings(
+            config_path,
+            global_session_dir,
+            workspace_root,
+            config_context,
+            deps,
+        );
     }
 
-    let loaded = load_optional_config_with_digest(config_path.as_deref())?.ok_or_else(|| {
+    let loaded = load_optional_config_with_digest_context(config_path.as_deref(), config_context)?.ok_or_else(|| {
             "prompt mode requires a config file; pass --config <path>, create ./harness.jsonc or ./harness.json, or create $XDG_CONFIG_HOME/harness/harness.jsonc or $XDG_CONFIG_HOME/harness/harness.json for shared defaults. A starting point lives at configs/harness.example.jsonc, or re-run with --mock"
                 .to_string()
         })?;
@@ -165,7 +207,10 @@ fn resolve_settings(
     let deterministic = Determinism::enabled(config.deterministic.enabled);
     let deterministic_seed = config.deterministic.seed;
     let default_profile = bootstrap::interactive_profile_name(&config);
-    let coordinator_config = bootstrap::build_interactive_coordinator_config(&config)?;
+    let mut coordinator_config = bootstrap::build_interactive_coordinator_config(&config)?;
+    if let Some(provider) = deps.provider_override() {
+        coordinator_config.provider = provider;
+    }
 
     Ok(PromptSettings {
         logging_config: Some(config),
@@ -174,12 +219,17 @@ fn resolve_settings(
         deterministic,
         deterministic_seed,
         config_digest,
+        workspace_root,
+        deps: deps.clone(),
     })
 }
 
 fn resolve_mock_settings(
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
+    workspace_root: PathBuf,
+    config_context: &harness_core::config::ConfigLoadContext,
+    deps: &CliDeps,
 ) -> Result<PromptSettings, String> {
     let mut shell_allowlist = ShellAllowlist::default();
     let mut session_dir = PathBuf::from(DEFAULT_SESSION_DIR);
@@ -188,7 +238,9 @@ fn resolve_mock_settings(
     let mut config_digest = "none".to_string();
     let mut logging_config = None;
 
-    if let Some(loaded) = load_optional_config_with_digest(config_path.as_deref())? {
+    if let Some(loaded) =
+        load_optional_config_with_digest_context(config_path.as_deref(), config_context)?
+    {
         let mut config = loaded.config;
         config.apply_session_dir_override(global_session_dir.clone());
 
@@ -207,6 +259,9 @@ fn resolve_mock_settings(
     coordinator_config.permission_policy = default_prompt_permission_policy();
     coordinator_config.tool_registry = Arc::new(coordinator_registry(shell_allowlist));
     coordinator_config.provider = Arc::new(golden_path_provider());
+    if let Some(provider) = deps.provider_override() {
+        coordinator_config.provider = provider;
+    }
     coordinator_config.agent_profiles = golden_path_profiles();
 
     Ok(PromptSettings {
@@ -216,6 +271,8 @@ fn resolve_mock_settings(
         deterministic,
         deterministic_seed,
         config_digest,
+        workspace_root,
+        deps: deps.clone(),
     })
 }
 
@@ -223,9 +280,10 @@ async fn run_prompt(
     cmd: &PromptCommand,
     settings: &PromptSettings,
     prompt_text: &str,
+    stdout: &mut dyn Write,
 ) -> Result<PromptOutcome, String> {
     if let Some(selector) = &cmd.resume {
-        return run_resumed_prompt(cmd, settings, selector, prompt_text).await;
+        return run_resumed_prompt(cmd, settings, selector, prompt_text, stdout).await;
     }
 
     let mut coordinator_config = settings.coordinator_config.clone();
@@ -264,11 +322,7 @@ async fn run_prompt(
     fs::create_dir_all(&coordinator_config.session_dir)
         .map_err(|err| format!("failed to create session dir: {err}"))?;
 
-    let clock: Arc<dyn Clock + Send + Sync> = if settings.deterministic {
-        Arc::new(FakeClock::new())
-    } else {
-        Arc::new(RealClock::new())
-    };
+    let clock = settings.deps.clock(settings.deterministic);
 
     let run_name = create_default_title(clock.as_ref(), false);
     let coordinator = spawn_coordinator(
@@ -277,11 +331,8 @@ async fn run_prompt(
         Arc::new(DefaultRedactor::default()),
     );
 
-    let workspace = std::env::current_dir()
-        .map_err(|err| format!("failed to resolve current working directory: {err}"))?;
-
     let run = coordinator
-        .start_run(run_name, workspace)
+        .start_run(run_name, settings.workspace_root.clone())
         .await
         .map_err(|err| err.to_string())?;
 
@@ -329,6 +380,7 @@ async fn run_prompt(
         &request_id,
         wait_timeout,
         cmd.thinking,
+        stdout,
     )
     .await;
     let stop_result = coordinator.stop_run().await;
@@ -347,6 +399,7 @@ async fn run_resumed_prompt(
     settings: &PromptSettings,
     selector: &str,
     prompt_text: &str,
+    stdout: &mut dyn Write,
 ) -> Result<PromptOutcome, String> {
     let mut coordinator_config = settings.coordinator_config.clone();
     coordinator_config.session_mode_source = Some(SessionModeSource::Prompt);
@@ -395,11 +448,7 @@ async fn run_resumed_prompt(
         .map_err(|err| format!("failed to create session dir: {err}"))?;
     coordinator_config.session_dir = session_dir.to_path_buf();
 
-    let clock: Arc<dyn Clock + Send + Sync> = if settings.deterministic {
-        Arc::new(FakeClock::new())
-    } else {
-        Arc::new(RealClock::new())
-    };
+    let clock = settings.deps.clock(settings.deterministic);
 
     let coordinator = spawn_coordinator(
         coordinator_config,
@@ -447,6 +496,7 @@ async fn run_resumed_prompt(
         &request_id,
         wait_timeout,
         cmd.thinking,
+        stdout,
     )
     .await;
     let stop_result = coordinator.stop_run().await;
@@ -464,7 +514,10 @@ fn user_actor() -> EventActor {
     EventActor::new(ActorKind::User, Some("agent-supervisor".to_string()))
 }
 
-fn resolve_prompt_text(cmd: &PromptCommand) -> Result<String, String> {
+fn resolve_prompt_text<R: Read + ?Sized>(
+    cmd: &PromptCommand,
+    stdin_reader: &mut R,
+) -> Result<String, String> {
     if let Some(text) = cmd.text.clone() {
         return Ok(text);
     }
@@ -475,7 +528,7 @@ fn resolve_prompt_text(cmd: &PromptCommand) -> Result<String, String> {
 
     if cmd.stdin {
         let mut stdin = String::new();
-        std::io::stdin()
+        stdin_reader
             .read_to_string(&mut stdin)
             .map_err(|err| format!("failed to read stdin: {err}"))?;
         let trimmed = stdin.trim_end_matches(['\r', '\n']);
@@ -507,18 +560,21 @@ async fn wait_for_prompt_completion(
     request_id: &str,
     timeout: Duration,
 ) -> Result<(), String> {
-    wait_for_prompt_completion_with_output(event_store, request_id, timeout, false).await
+    let mut output = Vec::new();
+    wait_for_prompt_completion_with_output(event_store, request_id, timeout, false, &mut output)
+        .await
 }
 
-async fn wait_for_prompt_completion_with_output(
+async fn wait_for_prompt_completion_with_output<W: Write + ?Sized>(
     event_store: Arc<dyn EventStore>,
     request_id: &str,
     timeout: Duration,
     show_thinking: bool,
+    stdout: &mut W,
 ) -> Result<(), String> {
     let deadline = Instant::now() + timeout;
     let mut tracker = PromptCompletionTracker::new(request_id);
-    let mut printer = PromptStreamPrinter::new(show_thinking);
+    let mut printer = PromptStreamPrinter::new(show_thinking, stdout);
     let mut next_seq = 1;
     let mut stream = event_store
         .subscribe(next_seq)
@@ -677,18 +733,20 @@ enum PromptStreamSection {
     Assistant,
 }
 
-struct PromptStreamPrinter {
+struct PromptStreamPrinter<'a, W: Write + ?Sized> {
     show_thinking: bool,
+    stdout: &'a mut W,
     active_section: Option<PromptStreamSection>,
     wrote_output: bool,
     assistant_buffer: String,
     saw_thinking: bool,
 }
 
-impl PromptStreamPrinter {
-    fn new(show_thinking: bool) -> Self {
+impl<'a, W: Write + ?Sized> PromptStreamPrinter<'a, W> {
+    fn new(show_thinking: bool, stdout: &'a mut W) -> Self {
         Self {
             show_thinking,
+            stdout,
             active_section: None,
             wrote_output: false,
             assistant_buffer: String::new(),
@@ -716,7 +774,7 @@ impl PromptStreamPrinter {
     fn finish(&mut self) {
         self.flush_assistant_buffer();
         if self.wrote_output {
-            println!();
+            let _ = writeln!(self.stdout);
         }
         self.active_section = None;
         self.wrote_output = false;
@@ -728,15 +786,15 @@ impl PromptStreamPrinter {
         }
         if self.active_section != Some(PromptStreamSection::Thinking) {
             if self.wrote_output {
-                println!();
+                let _ = writeln!(self.stdout);
             }
-            print!("Thinking: ");
+            let _ = write!(self.stdout, "Thinking: ");
             self.active_section = Some(PromptStreamSection::Thinking);
         }
         self.saw_thinking = true;
         self.wrote_output = true;
-        print!("{delta}");
-        let _ = std::io::stdout().flush();
+        let _ = write!(self.stdout, "{delta}");
+        let _ = self.stdout.flush();
     }
 
     fn write_assistant(&mut self, delta: &str) {
@@ -748,12 +806,12 @@ impl PromptStreamPrinter {
             return;
         }
         if self.active_section == Some(PromptStreamSection::Thinking) {
-            println!();
+            let _ = writeln!(self.stdout);
         }
         self.active_section = Some(PromptStreamSection::Assistant);
         self.wrote_output = true;
-        print!("{delta}");
-        let _ = std::io::stdout().flush();
+        let _ = write!(self.stdout, "{delta}");
+        let _ = self.stdout.flush();
     }
 
     fn buffer_assistant_delta(&mut self, delta: &str) {
@@ -778,10 +836,10 @@ impl PromptStreamPrinter {
             return;
         }
         if self.wrote_output {
-            println!();
+            let _ = writeln!(self.stdout);
         }
-        print!("{}", self.assistant_buffer);
-        let _ = std::io::stdout().flush();
+        let _ = write!(self.stdout, "{}", self.assistant_buffer);
+        let _ = self.stdout.flush();
         self.assistant_buffer.clear();
         self.active_section = Some(PromptStreamSection::Assistant);
         self.wrote_output = true;
@@ -1211,7 +1269,7 @@ mod tests {
             ))
             .expect("append provider finish");
 
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        tokio::task::yield_now().await;
         assert!(
             !waiter.is_finished(),
             "provider finish alone must not complete prompt wait"

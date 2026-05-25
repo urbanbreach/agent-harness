@@ -375,7 +375,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_interactive_permissions() {
+    fn scenario_name_reports_interactive_permission_mode() {
         assert!(!ScenarioName::GoldenPath.interactive_permissions());
         assert!(ScenarioName::GoldenPathInteractive.interactive_permissions());
     }

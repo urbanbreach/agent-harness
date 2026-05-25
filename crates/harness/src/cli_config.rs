@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use harness_core::config::{load_resolved_config, HarnessConfig};
+use harness_core::config::{load_resolved_config_with_context, ConfigLoadContext, HarnessConfig};
 use harness_core::coord::CoordinatorConfig;
 
 #[cfg(test)]
@@ -30,7 +30,16 @@ pub(crate) struct LoadedCliConfig {
 pub(crate) fn load_optional_config_with_digest(
     config_path: Option<&Path>,
 ) -> Result<Option<LoadedCliConfig>, String> {
-    let Some(loaded) = load_resolved_config(config_path).map_err(|err| err.to_string())? else {
+    load_optional_config_with_digest_context(config_path, &ConfigLoadContext::from_env())
+}
+
+pub(crate) fn load_optional_config_with_digest_context(
+    config_path: Option<&Path>,
+    context: &ConfigLoadContext,
+) -> Result<Option<LoadedCliConfig>, String> {
+    let Some(loaded) =
+        load_resolved_config_with_context(config_path, context).map_err(|err| err.to_string())?
+    else {
         return Ok(None);
     };
 

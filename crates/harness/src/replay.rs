@@ -3,7 +3,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Args;
@@ -169,25 +168,31 @@ impl SessionInspectionEntry {
     }
 }
 
-pub fn execute(command: ReplayCommand) -> ExitCode {
+pub fn execute_with_io(
+    command: ReplayCommand,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> i32 {
     match summarize_session(&command.session) {
         Ok(summary) => {
             if command.json {
                 match serde_json::to_string_pretty(&summary) {
-                    Ok(body) => println!("{body}"),
+                    Ok(body) => {
+                        let _ = writeln!(stdout, "{body}");
+                    }
                     Err(err) => {
-                        eprintln!("failed to serialize replay summary: {err}");
-                        return ExitCode::from(1);
+                        let _ = writeln!(stderr, "failed to serialize replay summary: {err}");
+                        return 1;
                     }
                 }
             } else {
-                print_human_summary(&summary);
+                print_human_summary(&summary, stdout);
             }
-            ExitCode::SUCCESS
+            0
         }
         Err(err) => {
-            eprintln!("replay failed: {err}");
-            ExitCode::from(1)
+            let _ = writeln!(stderr, "replay failed: {err}");
+            1
         }
     }
 }
@@ -870,11 +875,16 @@ fn parse_unix_ms_from_string_timestamp(value: &str) -> Option<u128> {
     value.parse::<u128>().ok()
 }
 
-pub(crate) fn print_human_summary(summary: &ReplaySummary) {
+pub(crate) fn print_human_summary(summary: &ReplaySummary, out: &mut dyn std::io::Write) {
+    macro_rules! line {
+        ($($arg:tt)*) => {
+            let _ = writeln!(out, $($arg)*);
+        };
+    }
     let session_path = sanitize_human_text(&summary.session_path.display().to_string());
 
-    println!("run_id: {}", sanitize_human_text(&summary.run_id));
-    println!(
+    line!("run_id: {}", sanitize_human_text(&summary.run_id));
+    line!(
         "run_name: {}",
         summary
             .run_name
@@ -882,9 +892,9 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary) {
             .map(sanitize_human_text)
             .unwrap_or_else(|| "<unknown>".to_string())
     );
-    println!("session_path: {session_path}");
-    println!("status: {:?}", summary.status);
-    println!(
+    line!("session_path: {session_path}");
+    line!("status: {:?}", summary.status);
+    line!(
         "workspace_root: {}",
         summary
             .workspace_root
@@ -892,8 +902,8 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary) {
             .map(sanitize_human_text)
             .unwrap_or_else(|| "<unknown>".to_string())
     );
-    println!("mode: {:?}", summary.mode_source);
-    println!(
+    line!("mode: {:?}", summary.mode_source);
+    line!(
         "continue: {}",
         if summary.is_resumable {
             "ready".to_string()
@@ -905,7 +915,7 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary) {
                 .unwrap_or_else(|| "blocked".to_string())
         }
     );
-    println!(
+    line!(
         "parent_session: {}",
         summary
             .parent_session_id
@@ -913,19 +923,19 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary) {
             .map(sanitize_human_text)
             .unwrap_or_else(|| "-".to_string())
     );
-    println!("child_sessions: {}", summary.child_session_count);
-    println!("artifacts: {}", summary.artifact_count);
-    println!("teams: {}", summary.teams.len());
-    println!("total_events: {}", summary.total_events);
+    line!("child_sessions: {}", summary.child_session_count);
+    line!("artifacts: {}", summary.artifact_count);
+    line!("teams: {}", summary.teams.len());
+    line!("total_events: {}", summary.total_events);
     if let Some(last_error) = &summary.last_error {
-        println!("last_error: {}", sanitize_human_text(last_error));
+        line!("last_error: {}", sanitize_human_text(last_error));
     }
-    println!("next_steps:");
-    println!("  replay_tui: harness tui --replay {session_path}");
+    line!("next_steps:");
+    line!("  replay_tui: harness tui --replay {session_path}");
     if summary.is_resumable {
-        println!("  continue_tui: harness tui --continue {session_path}");
+        line!("  continue_tui: harness tui --continue {session_path}");
     } else {
-        println!(
+        line!(
             "  continue_tui: unavailable ({})",
             summary
                 .resume_disabled_reason
@@ -934,17 +944,17 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary) {
                 .unwrap_or_else(|| RESUME_UNAVAILABLE_FALLBACK_REASON.to_string())
         );
     }
-    println!("counts:");
+    line!("counts:");
     for (event_type, count) in &summary.counts_by_type {
-        println!("  {event_type}: {count}");
+        line!("  {event_type}: {count}");
     }
 
-    println!("artifacts: {}", summary.artifact_count);
+    line!("artifacts: {}", summary.artifact_count);
     if summary.artifacts.is_empty() {
-        println!("  <none>");
+        line!("  <none>");
     } else {
         for artifact in &summary.artifacts {
-            println!("  - {}", sanitize_human_text(&artifact.path));
+            line!("  - {}", sanitize_human_text(&artifact.path));
             let mut details = Vec::new();
             if let Some(digest) = artifact.digest.as_deref() {
                 details.push(format!("digest={}", short_digest(digest)));
@@ -983,17 +993,17 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary) {
                 }
             ));
             if !details.is_empty() {
-                println!("    {}", details.join(", "));
+                line!("    {}", details.join(", "));
             }
         }
     }
 
-    println!("child_sessions: {}", summary.child_session_count);
+    line!("child_sessions: {}", summary.child_session_count);
     if summary.child_sessions.is_empty() {
-        println!("  <none>");
+        line!("  <none>");
     } else {
         for child in &summary.child_sessions {
-            println!("  - {}", sanitize_human_text(&child.child_session_id));
+            line!("  - {}", sanitize_human_text(&child.child_session_id));
             let mut details = Vec::new();
             push_sanitized_detail(&mut details, "profile", child.profile.as_deref());
             push_sanitized_detail(
@@ -1040,10 +1050,10 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary) {
                 child.notification_summary.as_deref(),
             );
             if !details.is_empty() {
-                println!("    {}", details.join(", "));
+                line!("    {}", details.join(", "));
             }
             if !child.related_tool_call_ids.is_empty() {
-                println!(
+                line!(
                     "    tool_calls={}",
                     child
                         .related_tool_call_ids
@@ -1054,7 +1064,7 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary) {
                 );
             }
             if !child.artifact_paths.is_empty() {
-                println!(
+                line!(
                     "    artifacts={}",
                     child
                         .artifact_paths
@@ -1065,25 +1075,25 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary) {
                 );
             }
             if !child.next_actions.is_empty() {
-                println!("    next_actions:");
+                line!("    next_actions:");
                 for action in &child.next_actions {
-                    println!("      - {}", sanitize_human_text(action));
+                    line!("      - {}", sanitize_human_text(action));
                 }
             }
         }
     }
 
-    println!("teams: {}", summary.teams.len());
+    line!("teams: {}", summary.teams.len());
     if summary.teams.is_empty() {
-        println!("  <none>");
+        line!("  <none>");
     } else {
         for team in &summary.teams {
-            println!(
+            line!(
                 "  - {} ({})",
                 sanitize_human_text(&team.name),
                 sanitize_human_text(&team.team_run_id)
             );
-            println!(
+            line!(
                 "    status={}, members={} (running={}, pending={}), messages={}, tasks={}, shutdown_requests={}, member_turns={}",
                 sanitize_human_text(&team.status),
                 team.member_count,
@@ -1095,7 +1105,7 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary) {
                 team.member_turns
             );
             if let Some(lead_profile) = team.lead_profile.as_deref() {
-                println!(
+                line!(
                     "    lead={} ({})",
                     sanitize_human_text(lead_profile),
                     sanitize_human_text(team.lead_status.as_deref().unwrap_or("unknown"))

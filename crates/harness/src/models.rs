@@ -1,8 +1,8 @@
+use std::io::Write;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use clap::{Args, Subcommand};
-use harness_core::config::{configured_model_catalog, load_resolved_config};
+use harness_core::config::{configured_model_catalog, load_resolved_config_with_context};
 
 use crate::model_probe::{GeneratedModelCatalogCommand, ModelGenerateCommand, ModelProbeCommand};
 
@@ -22,26 +22,57 @@ enum ModelsSubcommand {
     Probe(ModelProbeCommand),
 }
 
-pub fn execute(cmd: ModelsCommand, config_path: Option<PathBuf>) -> ExitCode {
+pub fn execute_with_io(
+    cmd: ModelsCommand,
+    config_path: Option<PathBuf>,
+    io: &mut crate::CliIo<'_>,
+    deps: &crate::CliDeps,
+) -> i32 {
+    execute_with_writers(cmd, config_path, io.stdout, io.stderr, deps)
+}
+
+fn execute_with_writers(
+    cmd: ModelsCommand,
+    config_path: Option<PathBuf>,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+    deps: &crate::CliDeps,
+) -> i32 {
     if let Some(command) = cmd.command {
         return match command {
-            ModelsSubcommand::Generate(command) => crate::model_probe::execute_generate(command),
-            ModelsSubcommand::Generated(command) => crate::model_probe::execute_generated(command),
-            ModelsSubcommand::Probe(command) => crate::model_probe::execute(command),
+            ModelsSubcommand::Generate(command) => {
+                crate::model_probe::execute_generate_with_writers(command, stdout, stderr)
+            }
+            ModelsSubcommand::Generated(command) => {
+                crate::model_probe::execute_generated_with_writers(command, stdout, stderr)
+            }
+            ModelsSubcommand::Probe(command) => {
+                crate::model_probe::execute_probe_with_writers(command, stdout, stderr)
+            }
         };
     }
 
-    let Some(loaded) = (match load_resolved_config(config_path.as_deref()) {
-        Ok(loaded) => loaded,
+    let config_context = match deps.config_load_context() {
+        Ok(context) => context,
         Err(err) => {
-            eprintln!("failed to load config: {err}");
-            return ExitCode::from(1);
+            let _ = writeln!(stderr, "failed to resolve config context: {err}");
+            return 2;
         }
-    }) else {
-        eprintln!(
+    };
+    let Some(loaded) =
+        (match load_resolved_config_with_context(config_path.as_deref(), &config_context) {
+            Ok(loaded) => loaded,
+            Err(err) => {
+                let _ = writeln!(stderr, "failed to load config: {err}");
+                return 1;
+            }
+        })
+    else {
+        let _ = writeln!(
+            stderr,
             "models requires a config file; pass --config <path>, create ./harness.jsonc or ./harness.json, or create $XDG_CONFIG_HOME/harness/harness.jsonc or $XDG_CONFIG_HOME/harness/harness.json for shared defaults. A starting point lives at configs/harness.example.jsonc"
         );
-        return ExitCode::from(2);
+        return 2;
     };
 
     let config = loaded.config;
@@ -63,8 +94,8 @@ pub fn execute(cmd: ModelsCommand, config_path: Option<PathBuf>) -> ExitCode {
             segments.push(format!("tokens={token_window_label}"));
         }
 
-        println!("{}", segments.join(" | "));
+        let _ = writeln!(stdout, "{}", segments.join(" | "));
     }
 
-    ExitCode::SUCCESS
+    0
 }

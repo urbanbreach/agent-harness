@@ -1,8 +1,7 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::path::PathBuf;
-use std::process::ExitCode;
 use std::time::Duration;
 
 use clap::Args;
@@ -81,49 +80,65 @@ struct ModelCatalogFilterOptions {
     emit_reasoning_variants: bool,
 }
 
-pub fn execute(command: ModelProbeCommand) -> ExitCode {
-    match execute_probe(command) {
-        Ok(()) => ExitCode::SUCCESS,
+pub(crate) fn execute_probe_with_writers(
+    command: ModelProbeCommand,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    match execute_probe(command, stdout) {
+        Ok(()) => 0,
         Err(err) => {
-            eprintln!("model probe failed: {err}");
-            ExitCode::from(1)
+            let _ = writeln!(stderr, "model probe failed: {err}");
+            1
         }
     }
 }
 
-pub fn execute_generate(command: ModelGenerateCommand) -> ExitCode {
-    match execute_generate_inner(command) {
-        Ok(()) => ExitCode::SUCCESS,
+pub(crate) fn execute_generate_with_writers(
+    command: ModelGenerateCommand,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    match execute_generate_inner(command, stdout) {
+        Ok(()) => 0,
         Err(err) => {
-            eprintln!("model generate failed: {err}");
-            ExitCode::from(1)
+            let _ = writeln!(stderr, "model generate failed: {err}");
+            1
         }
     }
 }
 
-pub fn execute_generated(command: GeneratedModelCatalogCommand) -> ExitCode {
+pub(crate) fn execute_generated_with_writers(
+    command: GeneratedModelCatalogCommand,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
     match write_catalog_body(
         crate::generated_model_catalog::PROVIDER_CATALOG_JSON,
         command.output.as_ref(),
+        stdout,
     ) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => 0,
         Err(err) => {
-            eprintln!("model generated failed: {err}");
-            ExitCode::from(1)
+            let _ = writeln!(stderr, "model generated failed: {err}");
+            1
         }
     }
 }
 
-fn execute_probe(command: ModelProbeCommand) -> Result<(), String> {
+fn execute_probe(command: ModelProbeCommand, stdout: &mut dyn Write) -> Result<(), String> {
     let body = generate_catalog_body(&command.source, &command.filters)?;
-    write_catalog_body(&body, command.output.as_ref())
+    write_catalog_body(&body, command.output.as_ref(), stdout)
 }
 
-fn execute_generate_inner(command: ModelGenerateCommand) -> Result<(), String> {
+fn execute_generate_inner(
+    command: ModelGenerateCommand,
+    stdout: &mut dyn Write,
+) -> Result<(), String> {
     let mut filters = command.filters;
     filters.emit_reasoning_variants = true;
     let body = generate_catalog_body(&command.source, &filters)?;
-    write_catalog_body(&body, Some(&command.output))
+    write_catalog_body(&body, Some(&command.output), stdout)
 }
 
 fn generate_catalog_body(
@@ -155,7 +170,11 @@ fn validate_source_options(source: &ModelCatalogSourceOptions) -> Result<(), Str
     Ok(())
 }
 
-fn write_catalog_body(body: &str, output: Option<&PathBuf>) -> Result<(), String> {
+fn write_catalog_body(
+    body: &str,
+    output: Option<&PathBuf>,
+    stdout: &mut dyn Write,
+) -> Result<(), String> {
     if let Some(path) = output {
         if let Some(parent) = path
             .parent()
@@ -167,7 +186,9 @@ fn write_catalog_body(body: &str, output: Option<&PathBuf>) -> Result<(), String
         fs::write(path, body)
             .map_err(|err| format!("failed to write {}: {err}", path.display()))?;
     } else {
-        print!("{body}");
+        stdout
+            .write_all(body.as_bytes())
+            .map_err(|err| format!("failed to write generated catalog to stdout: {err}"))?;
     }
     Ok(())
 }
@@ -658,8 +679,11 @@ mod tests {
             output: Some(path.clone()),
         };
 
-        let result = execute_generated(command);
-        assert_eq!(result, ExitCode::SUCCESS);
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let result = execute_generated_with_writers(command, &mut stdout, &mut stderr);
+        assert_eq!(result, 0);
+        assert!(stderr.is_empty());
 
         let content = fs::read_to_string(&path).unwrap();
         assert_eq!(
@@ -672,7 +696,14 @@ mod tests {
     fn test_execute_generated_with_stdout() {
         let command = GeneratedModelCatalogCommand { output: None };
 
-        let result = execute_generated(command);
-        assert_eq!(result, ExitCode::SUCCESS);
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let result = execute_generated_with_writers(command, &mut stdout, &mut stderr);
+        assert_eq!(result, 0);
+        assert!(stderr.is_empty());
+        assert_eq!(
+            String::from_utf8(stdout).expect("catalog stdout is utf8"),
+            crate::generated_model_catalog::PROVIDER_CATALOG_JSON
+        );
     }
 }

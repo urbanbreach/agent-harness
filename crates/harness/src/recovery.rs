@@ -491,7 +491,7 @@ mod tests {
                 3,
                 Some("agent-1"),
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req-1".to_string(),
+                    request_id: "req_1".to_string(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "hello".to_string(),
@@ -704,7 +704,7 @@ mod tests {
                 4,
                 Some("agent-1"),
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req-1".to_string(),
+                    request_id: "req_1".to_string(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "hello from 1".to_string(),
@@ -716,7 +716,7 @@ mod tests {
                 5,
                 Some("agent-2"),
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req-2".to_string(),
+                    request_id: "req_2".to_string(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "hello from 2".to_string(),

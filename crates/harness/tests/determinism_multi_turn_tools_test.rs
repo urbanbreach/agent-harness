@@ -1,12 +1,10 @@
 use std::fs;
-use std::path::Path;
-use std::process::Command;
 
 use sha2::{Digest, Sha256};
 
 mod common;
 
-use common::repo_root;
+use common::CliHarness;
 
 #[test]
 fn deterministic_multi_turn_tools_twice_produces_identical_sha256_digest() {
@@ -15,8 +13,8 @@ fn deterministic_multi_turn_tools_twice_produces_identical_sha256_digest() {
     let output_a = temp_dir.path().join("run-a.jsonl");
     let output_b = temp_dir.path().join("run-b.jsonl");
 
-    run_scenario(&session_dir, &output_a);
-    run_scenario(&session_dir, &output_b);
+    run_scenario(session_dir.as_path(), output_a.as_path());
+    run_scenario(session_dir.as_path(), output_b.as_path());
 
     let bytes_a = fs::read(&output_a).expect("read first jsonl output");
     let bytes_b = fs::read(&output_b).expect("read second jsonl output");
@@ -26,28 +24,26 @@ fn deterministic_multi_turn_tools_twice_produces_identical_sha256_digest() {
     assert!(has_event_type(&bytes_a, "tool_call_finished"));
 }
 
-fn run_scenario(session_dir: &Path, out_path: &Path) {
-    let repo_root = repo_root();
+fn run_scenario(session_dir: &std::path::Path, out_path: &std::path::Path) {
+    let output = CliHarness::new()
+        .args([
+            "run".into(),
+            "--scenario".into(),
+            "golden_path".into(),
+            "--deterministic".into(),
+            "--session-dir".into(),
+            session_dir.as_os_str().to_owned(),
+            "--out".into(),
+            out_path.as_os_str().to_owned(),
+        ])
+        .output();
 
-    let status = Command::new("cargo")
-        .arg("run")
-        .arg("-p")
-        .arg("harness")
-        .arg("--")
-        .arg("run")
-        .arg("--scenario")
-        .arg("golden_path")
-        .arg("--deterministic")
-        .arg("--session-dir")
-        .arg(session_dir)
-        .arg("--out")
-        .arg(out_path)
-        .env("HARNESS_DETERMINISTIC", "1")
-        .current_dir(&repo_root)
-        .status()
-        .expect("spawn harness run command");
-
-    assert!(status.success(), "harness run failed with status {status}");
+    assert!(
+        output.status.success(),
+        "harness run failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 fn has_event_type(bytes: &[u8], event_type: &str) -> bool {

@@ -1,10 +1,9 @@
-use std::env;
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-
-use harness_core::config::{load_config_from_file, load_config_from_str};
+use harness_core::config::{
+    load_config_from_file_with_context, load_config_from_str, ConfigLoadContext, HarnessConfig,
+};
 use harness_core::perm::{PermissionKind, PolicyDecision};
+use std::fs;
+use std::path::Path;
 use tempfile::tempdir;
 
 #[allow(dead_code)]
@@ -19,26 +18,6 @@ mod bootstrap;
 #[path = "../src/cli_config.rs"]
 mod cli_config;
 
-static DISCOVERY_TEST_LOCK: Mutex<()> = Mutex::new(());
-
-struct CurrentDirGuard {
-    previous: PathBuf,
-}
-
-impl CurrentDirGuard {
-    fn set(path: &Path) -> Self {
-        let previous = env::current_dir().expect("capture current dir");
-        env::set_current_dir(path).expect("set current dir");
-        Self { previous }
-    }
-}
-
-impl Drop for CurrentDirGuard {
-    fn drop(&mut self) {
-        let _ = env::set_current_dir(&self.previous);
-    }
-}
-
 fn write_agent_markdown(repo_root: &Path, name: &str, body: &str) {
     let path = repo_root
         .join(".agent-harness")
@@ -47,6 +26,11 @@ fn write_agent_markdown(repo_root: &Path, name: &str, body: &str) {
     fs::create_dir_all(path.parent().expect("agent markdown parent"))
         .expect("create agent markdown dir");
     fs::write(path, body).expect("write agent markdown");
+}
+
+fn load_config_from_repo_file(config_path: &Path, repo: &Path) -> HarnessConfig {
+    let context = ConfigLoadContext::from_env().with_current_dir(repo.to_path_buf());
+    load_config_from_file_with_context(config_path, &context).expect("load harness config")
 }
 
 #[test]
@@ -247,12 +231,10 @@ fn build_and_review_permissions_follow_configured_policy() {
 
 #[test]
 fn interactive_bootstrap_uses_discovered_markdown_prompt_when_inline_missing() {
-    let _lock = DISCOVERY_TEST_LOCK.lock().expect("lock discovery tests");
     let temp = tempdir().expect("tempdir");
     let repo = temp.path().join("repo");
     fs::create_dir_all(repo.join(".git")).expect("create git dir");
     fs::create_dir_all(&repo).expect("create repo");
-    let _cwd = CurrentDirGuard::set(&repo);
 
     let config_path = repo.join("harness.jsonc");
     fs::write(
@@ -312,7 +294,7 @@ fn interactive_bootstrap_uses_discovered_markdown_prompt_when_inline_missing() {
     .expect("write config");
     write_agent_markdown(&repo, "build", "Markdown-backed build prompt.");
 
-    let config = load_config_from_file(&config_path).expect("load harness config");
+    let config = load_config_from_repo_file(&config_path, &repo);
     let coordinator_config =
         bootstrap::build_interactive_coordinator_config(&config).expect("build config");
     let prompt = &coordinator_config.agent_profiles["build"].system_prompt;
@@ -322,12 +304,10 @@ fn interactive_bootstrap_uses_discovered_markdown_prompt_when_inline_missing() {
 
 #[test]
 fn interactive_bootstrap_uses_discovered_discipline_markdown_prompt() {
-    let _lock = DISCOVERY_TEST_LOCK.lock().expect("lock discovery tests");
     let temp = tempdir().expect("tempdir");
     let repo = temp.path().join("repo");
     fs::create_dir_all(repo.join(".git")).expect("create git dir");
     fs::create_dir_all(&repo).expect("create repo");
-    let _cwd = CurrentDirGuard::set(&repo);
 
     let config_path = repo.join("harness.jsonc");
     fs::write(
@@ -370,7 +350,7 @@ Unique markdown discipline prompt.
 "#,
     );
 
-    let config = load_config_from_file(&config_path).expect("load harness config");
+    let config = load_config_from_repo_file(&config_path, &repo);
     let coordinator_config =
         bootstrap::build_interactive_coordinator_config(&config).expect("build config");
     let prompt = &coordinator_config.agent_profiles["discipline"].system_prompt;
@@ -380,12 +360,10 @@ Unique markdown discipline prompt.
 
 #[test]
 fn interactive_bootstrap_allows_discipline_without_markdown_prompt() {
-    let _lock = DISCOVERY_TEST_LOCK.lock().expect("lock discovery tests");
     let temp = tempdir().expect("tempdir");
     let repo = temp.path().join("repo");
     fs::create_dir_all(repo.join(".git")).expect("create git dir");
     fs::create_dir_all(&repo).expect("create repo");
-    let _cwd = CurrentDirGuard::set(&repo);
 
     let config_path = repo.join("harness.jsonc");
     fs::write(
@@ -418,7 +396,7 @@ fn interactive_bootstrap_allows_discipline_without_markdown_prompt() {
     )
     .expect("write config");
 
-    let config = load_config_from_file(&config_path).expect("load harness config");
+    let config = load_config_from_repo_file(&config_path, &repo);
     let coordinator_config =
         bootstrap::build_interactive_coordinator_config(&config).expect("build config");
     let prompt = &coordinator_config.agent_profiles["discipline"].system_prompt;
@@ -428,12 +406,10 @@ fn interactive_bootstrap_allows_discipline_without_markdown_prompt() {
 
 #[test]
 fn interactive_bootstrap_prepends_project_agents_md_to_agent_prompt() {
-    let _lock = DISCOVERY_TEST_LOCK.lock().expect("lock discovery tests");
     let temp = tempdir().expect("tempdir");
     let repo = temp.path().join("repo");
     fs::create_dir_all(repo.join(".git")).expect("create git dir");
     fs::create_dir_all(&repo).expect("create repo");
-    let _cwd = CurrentDirGuard::set(&repo);
 
     let config_path = repo.join("harness.jsonc");
     fs::write(
@@ -495,7 +471,7 @@ fn interactive_bootstrap_prepends_project_agents_md_to_agent_prompt() {
     fs::write(repo.join("AGENTS.md"), "Project-wide instructions.")
         .expect("write project instructions");
 
-    let config = load_config_from_file(&config_path).expect("load harness config");
+    let config = load_config_from_repo_file(&config_path, &repo);
     let coordinator_config =
         bootstrap::build_interactive_coordinator_config(&config).expect("build config");
     let prompt = &coordinator_config.agent_profiles["build"].system_prompt;

@@ -44,7 +44,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
-use crate::cli_config::{apply_runtime_metadata, load_optional_config_with_digest};
+use crate::cli_config::{apply_runtime_metadata, load_optional_config_with_digest_context};
 use serde::{Deserialize, Serialize};
 
 use crate::bootstrap;
@@ -304,16 +304,41 @@ pub fn execute(
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
 ) -> ExitCode {
-    let mode = match resolve_tui_mode(&cmd, config_path, global_session_dir) {
+    let mut stderr = std::io::stderr();
+    let config_context = harness_core::config::ConfigLoadContext::from_env();
+    execute_with_io(
+        cmd,
+        config_path,
+        global_session_dir,
+        config_context,
+        &mut stderr,
+    )
+}
+
+pub(crate) fn execute_with_io(
+    cmd: TuiCommand,
+    config_path: Option<PathBuf>,
+    global_session_dir: Option<PathBuf>,
+    config_context: harness_core::config::ConfigLoadContext,
+    stderr: &mut dyn Write,
+) -> ExitCode {
+    let workspace_root = config_context.discovery.current_dir.clone();
+    let mode = match resolve_tui_mode(
+        &cmd,
+        config_path,
+        global_session_dir,
+        workspace_root,
+        &config_context,
+    ) {
         Ok(mode) => mode,
         Err(err) => {
-            eprintln!("tui setup failed: {err}");
+            let _ = writeln!(stderr, "tui setup failed: {err}");
             return ExitCode::from(2);
         }
     };
 
     if let ResolvedTuiMode::Replay { run_dir } = &mode {
-        return execute_replay_mode(run_dir, cmd.exit_on_finish);
+        return execute_replay_mode(run_dir, cmd.exit_on_finish, stderr);
     }
 
     let runtime = match tokio::runtime::Builder::new_multi_thread()
@@ -322,7 +347,7 @@ pub fn execute(
     {
         Ok(runtime) => runtime,
         Err(err) => {
-            eprintln!("failed to build async runtime: {err}");
+            let _ = writeln!(stderr, "failed to build async runtime: {err}");
             return ExitCode::from(1);
         }
     };
@@ -346,17 +371,17 @@ pub fn execute(
     match run_result {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
-            eprintln!("tui failed: {err}");
+            let _ = writeln!(stderr, "tui failed: {err}");
             ExitCode::from(1)
         }
     }
 }
 
-fn execute_replay_mode(run_dir: &Path, exit_on_finish: bool) -> ExitCode {
+fn execute_replay_mode(run_dir: &Path, exit_on_finish: bool, stderr: &mut dyn Write) -> ExitCode {
     let events = match load_events_from_run_dir(run_dir) {
         Ok(events) => events,
         Err(err) => {
-            eprintln!("replay setup failed: {err}");
+            let _ = writeln!(stderr, "replay setup failed: {err}");
             return ExitCode::from(2);
         }
     };
@@ -378,7 +403,7 @@ fn execute_replay_mode(run_dir: &Path, exit_on_finish: bool) -> ExitCode {
         toggles: None,
         preserve_terminal_on_exit: false,
     }) {
-        eprintln!("TUI error: {err}");
+        let _ = writeln!(stderr, "TUI error: {err}");
         return ExitCode::from(1);
     }
 
@@ -389,6 +414,8 @@ fn resolve_tui_mode(
     cmd: &TuiCommand,
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
+    workspace_root: PathBuf,
+    config_context: &harness_core::config::ConfigLoadContext,
 ) -> Result<ResolvedTuiMode, String> {
     if let Some(run_dir) = &cmd.replay {
         return Ok(ResolvedTuiMode::Replay {
@@ -396,7 +423,13 @@ fn resolve_tui_mode(
         });
     }
 
-    let settings = resolve_live_settings(cmd, config_path, global_session_dir)?;
+    let settings = resolve_live_settings(
+        cmd,
+        config_path,
+        global_session_dir,
+        workspace_root,
+        config_context,
+    )?;
 
     if let Some(run_dir) = &cmd.continue_session {
         return Ok(ResolvedTuiMode::Continue {
@@ -420,9 +453,9 @@ fn resolve_live_settings(
     cmd: &TuiCommand,
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
+    workspace_root: PathBuf,
+    config_context: &harness_core::config::ConfigLoadContext,
 ) -> Result<LiveSettings, String> {
-    let workspace_root = std::env::current_dir()
-        .map_err(|err| format!("failed to resolve current working directory: {err}"))?;
     let mut shell_allowlist = ShellAllowlist::default();
     let mut config_session_dir = PathBuf::from(DEFAULT_SESSION_DIR);
     let mut config_deterministic = false;
@@ -435,7 +468,7 @@ fn resolve_live_settings(
     let loaded = if cmd.mock || cmd.scenario.is_some() {
         None
     } else {
-        load_optional_config_with_digest(config_path.as_deref())?
+        load_optional_config_with_digest_context(config_path.as_deref(), config_context)?
     };
 
     if let Some(loaded) = loaded {
@@ -3491,9 +3524,6 @@ mod tests {
         )
         .expect("write discovered cwd config");
 
-        let previous_dir = std::env::current_dir().expect("read current dir");
-        std::env::set_current_dir(temp.path()).expect("enter temp dir");
-
         let result = resolve_live_settings(
             &TuiCommand {
                 replay: None,
@@ -3507,9 +3537,10 @@ mod tests {
             },
             None,
             None,
+            temp.path().to_path_buf(),
+            &harness_core::config::ConfigLoadContext::from_env()
+                .with_current_dir(temp.path().to_path_buf()),
         );
-
-        std::env::set_current_dir(previous_dir).expect("restore current dir");
 
         let settings = result.expect("mock mode settings should resolve");
         assert!(settings.config.is_none());
@@ -3578,9 +3609,6 @@ mod tests {
         )
         .expect("write live config");
 
-        let previous_dir = std::env::current_dir().expect("read current dir");
-        std::env::set_current_dir(temp.path()).expect("enter temp dir");
-
         let result = resolve_live_settings(
             &TuiCommand {
                 replay: None,
@@ -3594,9 +3622,10 @@ mod tests {
             },
             Some(config_path.clone()),
             None,
+            temp.path().to_path_buf(),
+            &harness_core::config::ConfigLoadContext::from_env()
+                .with_current_dir(temp.path().to_path_buf()),
         );
-
-        std::env::set_current_dir(previous_dir).expect("restore current dir");
 
         let settings = result.expect("live mode settings should resolve");
         let workspace = prepare_new_live_workspace(&settings, false, "run_test")
@@ -3905,7 +3934,7 @@ mod tests {
     }
 
     #[test]
-    fn shipped_example_config_does_not_synthesize_unconfigured_model_variant() {
+    fn shipped_example_config_preserves_configured_model_variant() {
         let config_path = crate::cli_config::shipped_example_config_path();
         let config = harness_core::config::load_config_from_file(&config_path)
             .expect("shipped example config should parse with discovered prompts");
@@ -3916,7 +3945,7 @@ mod tests {
             .expect("launch metadata should build");
 
         assert_eq!(metadata.profile(), "build");
-        assert_eq!(metadata.variant(), None);
+        assert_eq!(metadata.variant(), Some("high"));
     }
 
     #[test]

@@ -1,15 +1,16 @@
 use std::collections::BTreeSet;
-use std::env;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
 
 use clap::Args;
 use harness_core::config::{
-    load_resolved_config, resolve_model_selection, AgentMode, HarnessConfig, McpServerConfig,
-    PermissionMode, ProviderConfig,
+    resolve_model_selection, AgentMode, HarnessConfig, McpServerConfig, PermissionMode,
+    ProviderConfig,
 };
 use harness_tools::{coordinator_registry_with_mcp_and_editing, EditingToolSurfaceConfig};
 use serde::Serialize;
+
+use crate::{CliDeps, CliIo};
 
 const REQUIRED_PRIMARY_AGENTS: [&str; 3] = ["build", "plan", "discipline"];
 const REQUIRED_SUBAGENTS: [&str; 2] = ["explore", "general"];
@@ -100,52 +101,75 @@ impl DoctorReport {
     }
 }
 
-pub(crate) fn execute(
+pub(crate) fn execute_with_io(
     command: DoctorCommand,
     config_path: Option<PathBuf>,
     session_dir: Option<PathBuf>,
-) -> ExitCode {
-    let Some(loaded) = (match load_resolved_config(config_path.as_deref()) {
+    io: &mut CliIo<'_>,
+    deps: &CliDeps,
+) -> i32 {
+    let config_context = match deps.config_load_context() {
+        Ok(context) => context,
+        Err(err) => {
+            let _ = writeln!(
+                io.stderr,
+                "doctor failed: failed to resolve config context: {err}"
+            );
+            return 2;
+        }
+    };
+
+    let Some(loaded) = (match harness_core::config::load_resolved_config_with_context(
+        config_path.as_deref(),
+        &config_context,
+    ) {
         Ok(loaded) => loaded,
         Err(err) => {
-            eprintln!("doctor failed: {err}");
-            return ExitCode::from(1);
+            let _ = writeln!(io.stderr, "doctor failed: {err}");
+            return 1;
         }
     }) else {
-        eprintln!(
+        let _ = writeln!(
+            io.stderr,
             "doctor failed: no config file found; pass --config <path>, create ./harness.jsonc or ./harness.json, or start from configs/harness.example.jsonc"
         );
-        return ExitCode::from(2);
+        return 2;
     };
 
     let config_display = loaded.path_display();
     let mut config = loaded.config;
     config.apply_session_dir_override(session_dir);
 
-    let report = build_report(config_display, &config);
+    let report = build_report(config_display, &config, &|name| deps.env_var_is_set(name));
     if command.json {
         match serde_json::to_string_pretty(&report) {
-            Ok(json) => println!("{json}"),
+            Ok(json) => {
+                let _ = writeln!(io.stdout, "{json}");
+            }
             Err(err) => {
-                eprintln!("doctor failed to render JSON: {err}");
-                return ExitCode::from(1);
+                let _ = writeln!(io.stderr, "doctor failed to render JSON: {err}");
+                return 1;
             }
         }
     } else {
-        print_text_report(&report);
+        print_text_report(&report, io.stdout);
     }
 
     if report.has_failures() {
-        ExitCode::from(1)
+        1
     } else {
-        ExitCode::SUCCESS
+        0
     }
 }
 
-fn build_report(config_display: String, config: &HarnessConfig) -> DoctorReport {
+fn build_report(
+    config_display: String,
+    config: &HarnessConfig,
+    env_var_is_set: &dyn Fn(&str) -> bool,
+) -> DoctorReport {
     let checks = vec![
         check_provider_catalog(config),
-        check_provider_credentials(config),
+        check_provider_credentials(config, env_var_is_set),
         check_model_references(config),
         check_shipped_profiles(config),
         check_category_routes(config),
@@ -161,7 +185,7 @@ fn build_report(config_display: String, config: &HarnessConfig) -> DoctorReport 
     }
 }
 
-fn print_text_report(report: &DoctorReport) {
+fn print_text_report(report: &DoctorReport, out: &mut dyn Write) {
     let (passes, warnings, failures) = report.status_counts();
     let headline = if failures == 0 && warnings == 0 {
         "doctor ok"
@@ -170,10 +194,14 @@ fn print_text_report(report: &DoctorReport) {
     } else {
         "doctor found issues"
     };
-    println!("{headline}: {}", report.config);
-    println!("checks: {passes} passed, {warnings} warnings, {failures} failures");
+    let _ = writeln!(out, "{headline}: {}", report.config);
+    let _ = writeln!(
+        out,
+        "checks: {passes} passed, {warnings} warnings, {failures} failures"
+    );
     for check in &report.checks {
-        println!(
+        let _ = writeln!(
+            out,
             "[{}] {}: {}",
             check.status.label(),
             check.name,
@@ -182,7 +210,10 @@ fn print_text_report(report: &DoctorReport) {
     }
 }
 
-fn check_provider_credentials(config: &HarnessConfig) -> DoctorCheck {
+fn check_provider_credentials(
+    config: &HarnessConfig,
+    env_var_is_set: &dyn Fn(&str) -> bool,
+) -> DoctorCheck {
     if config.providers.is_empty() {
         return fail("provider_credentials", "no providers are configured");
     }
@@ -610,10 +641,6 @@ fn check_mcp(config: &HarnessConfig) -> DoctorCheck {
 
 fn non_empty(value: &str) -> bool {
     !value.trim().is_empty()
-}
-
-fn env_var_is_set(name: &str) -> bool {
-    non_empty(name) && env::var(name).is_ok_and(|value| non_empty(&value))
 }
 
 fn pass(name: impl Into<String>, message: impl Into<String>) -> DoctorCheck {

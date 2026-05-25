@@ -286,37 +286,66 @@ struct ChildSessionWriteReport {
     errors: Vec<String>,
 }
 
-pub fn execute(
+pub fn execute_with_io(
     command: SessionsCommand,
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
-) -> ExitCode {
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> i32 {
     match command {
-        SessionsCommand::List(command) => list_sessions(command, global_session_dir),
-        SessionsCommand::Inspect(command) => inspect_session(command, global_session_dir),
-        SessionsCommand::Reopen(command) => reopen_session(command, global_session_dir),
-        SessionsCommand::Replay(command) => replay_session(command, global_session_dir),
-        SessionsCommand::Continue(command) => {
-            continue_session(command, config_path, global_session_dir)
+        SessionsCommand::List(command) => {
+            list_sessions(command, global_session_dir, stdout, stderr)
         }
-        SessionsCommand::Export(command) => export_session(command, global_session_dir),
-        SessionsCommand::Tree(command) => tree_sessions(command, global_session_dir),
-        SessionsCommand::Fork(command) => fork_session(command, global_session_dir),
-        SessionsCommand::Clone(command) => clone_session(command, global_session_dir),
+        SessionsCommand::Inspect(command) => {
+            inspect_session(command, global_session_dir, stdout, stderr)
+        }
+        SessionsCommand::Reopen(command) => {
+            reopen_session(command, global_session_dir, stdout, stderr)
+        }
+        SessionsCommand::Replay(command) => {
+            replay_session(command, global_session_dir, stdout, stderr)
+        }
+        SessionsCommand::Continue(command) => {
+            continue_session(command, config_path, global_session_dir, stderr)
+        }
+        SessionsCommand::Export(command) => {
+            export_session(command, global_session_dir, stdout, stderr)
+        }
+        SessionsCommand::Tree(command) => {
+            tree_sessions(command, global_session_dir, stdout, stderr)
+        }
+        SessionsCommand::Fork(command) => fork_session(command, global_session_dir, stdout, stderr),
+        SessionsCommand::Clone(command) => {
+            clone_session(command, global_session_dir, stdout, stderr)
+        }
     }
 }
 
-fn list_sessions(command: SessionsListCommand, global_session_dir: Option<PathBuf>) -> ExitCode {
+fn exit_code_to_i32(code: ExitCode) -> i32 {
+    if code == ExitCode::SUCCESS {
+        0
+    } else {
+        1
+    }
+}
+
+fn list_sessions(
+    command: SessionsListCommand,
+    global_session_dir: Option<PathBuf>,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> i32 {
     let session_dir = session_dir(global_session_dir);
-    if let Err(code) = ensure_session_dir_exists(&session_dir) {
+    if let Err(code) = ensure_session_dir_exists(&session_dir, stderr) {
         return code;
     }
 
     let entries = match inspect_session_catalog(&session_dir) {
         Ok(entries) => entries,
         Err(err) => {
-            eprintln!("{err}");
-            return ExitCode::from(1);
+            let _ = writeln!(stderr, "{err}");
+            return 1;
         }
     };
 
@@ -324,17 +353,19 @@ fn list_sessions(command: SessionsListCommand, global_session_dir: Option<PathBu
 
     if command.json {
         match render_json_session_list(&entries) {
-            Ok(body) => println!("{body}"),
+            Ok(body) => {
+                let _ = writeln!(stdout, "{body}");
+            }
             Err(err) => {
-                eprintln!("{err}");
-                return ExitCode::from(1);
+                let _ = writeln!(stderr, "{err}");
+                return 1;
             }
         }
     } else {
-        print!("{}", render_human_session_table(&entries));
+        let _ = write!(stdout, "{}", render_human_session_table(&entries));
     }
 
-    ExitCode::SUCCESS
+    0
 }
 
 fn collect_list_entries(
@@ -426,44 +457,56 @@ fn render_human_session_table(entries: &[SessionInspectionEntry]) -> String {
     output
 }
 
-fn reopen_session(command: ReopenCommand, global_session_dir: Option<PathBuf>) -> ExitCode {
+fn reopen_session(
+    command: ReopenCommand,
+    global_session_dir: Option<PathBuf>,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> i32 {
     let session_dir = session_dir(global_session_dir);
     let run_dir = match resolve_session_run_dir(&command.session, &session_dir) {
         Ok(run_dir) => run_dir,
         Err(err) => {
-            eprintln!("session reopen failed: {err}");
-            return ExitCode::from(1);
+            let _ = writeln!(stderr, "session reopen failed: {err}");
+            return 1;
         }
     };
     let summary = match inspect_session_recovery(&run_dir) {
         Ok(summary) => summary,
         Err(err) => {
-            eprintln!("session reopen failed: {err}");
-            return ExitCode::from(1);
+            let _ = writeln!(stderr, "session reopen failed: {err}");
+            return 1;
         }
     };
 
     if command.json {
         match serde_json::to_string_pretty(&summary) {
-            Ok(body) => println!("{body}"),
+            Ok(body) => {
+                let _ = writeln!(stdout, "{body}");
+            }
             Err(err) => {
-                eprintln!("session reopen failed: failed to serialize recovery summary: {err}");
-                return ExitCode::from(1);
+                let _ = writeln!(
+                    stderr,
+                    "session reopen failed: failed to serialize recovery summary: {err}"
+                );
+                return 1;
             }
         }
     } else {
-        print_recovery_summary(&summary);
+        print_recovery_summary(&summary, stdout);
     }
 
-    ExitCode::SUCCESS
+    0
 }
 
 fn inspect_session(
     command: InspectSessionCommand,
     global_session_dir: Option<PathBuf>,
-) -> ExitCode {
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> i32 {
     let session_dir = session_dir(global_session_dir);
-    if let Err(code) = ensure_session_dir_exists(&session_dir) {
+    if let Err(code) = ensure_session_dir_exists(&session_dir, stderr) {
         return code;
     }
 
@@ -474,16 +517,16 @@ fn inspect_session(
     let session = match session {
         Ok(session) => session,
         Err(err) => {
-            eprintln!("session inspect failed: {err}");
-            return ExitCode::from(1);
+            let _ = writeln!(stderr, "session inspect failed: {err}");
+            return 1;
         }
     };
 
     let summary = match summarize_session(&session.run_dir) {
         Ok(summary) => summary,
         Err(err) => {
-            eprintln!("session inspect failed: {err}");
-            return ExitCode::from(1);
+            let _ = writeln!(stderr, "session inspect failed: {err}");
+            return 1;
         }
     };
 
@@ -495,57 +538,77 @@ fn inspect_session(
                 "replay": summary,
             }),
             None,
+            stdout,
+            stderr,
         );
     }
 
-    println!("mode: {}", mode_source_label(session.catalog.mode_source));
-    println!("resume: {}", resumable_label(session.catalog.is_resumable));
+    let _ = writeln!(
+        stdout,
+        "mode: {}",
+        mode_source_label(session.catalog.mode_source)
+    );
+    let _ = writeln!(
+        stdout,
+        "resume: {}",
+        resumable_label(session.catalog.is_resumable)
+    );
     if let Some(reason) = session.catalog.resume_disabled_reason.as_deref() {
-        println!("resume_reason: {reason}");
+        let _ = writeln!(stdout, "resume_reason: {reason}");
     }
-    print_human_summary(&summary);
-    ExitCode::SUCCESS
+    print_human_summary(&summary, stdout);
+    0
 }
 
-fn replay_session(command: ReplaySessionCommand, global_session_dir: Option<PathBuf>) -> ExitCode {
+fn replay_session(
+    command: ReplaySessionCommand,
+    global_session_dir: Option<PathBuf>,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> i32 {
     let session_dir = session_dir(global_session_dir);
-    if let Err(code) = ensure_session_dir_exists(&session_dir) {
+    if let Err(code) = ensure_session_dir_exists(&session_dir, stderr) {
         return code;
     }
 
     let session = match resolve_session(&session_dir, &command.session) {
         Ok(session) => session,
         Err(err) => {
-            eprintln!("{err}");
-            return ExitCode::from(1);
+            let _ = writeln!(stderr, "{err}");
+            return 1;
         }
     };
 
-    crate::replay::execute(ReplayCommand {
-        session: session.run_dir,
-        json: command.json,
-    })
+    crate::replay::execute_with_io(
+        ReplayCommand {
+            session: session.run_dir,
+            json: command.json,
+        },
+        stdout,
+        stderr,
+    )
 }
 
 fn continue_session(
     command: ContinueSessionCommand,
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
-) -> ExitCode {
+    stderr: &mut dyn std::io::Write,
+) -> i32 {
     let session_dir = session_dir(global_session_dir);
-    if let Err(code) = ensure_session_dir_exists(&session_dir) {
+    if let Err(code) = ensure_session_dir_exists(&session_dir, stderr) {
         return code;
     }
 
     let session = match resolve_session(&session_dir, &command.session) {
         Ok(session) => session,
         Err(err) => {
-            eprintln!("{err}");
-            return ExitCode::from(1);
+            let _ = writeln!(stderr, "{err}");
+            return 1;
         }
     };
 
-    crate::tui::execute(
+    exit_code_to_i32(crate::tui::execute(
         TuiCommand {
             replay: None,
             continue_session: Some(session.run_dir),
@@ -558,35 +621,48 @@ fn continue_session(
         },
         config_path,
         Some(session_dir),
-    )
+    ))
 }
 
-fn export_session(command: ExportSessionCommand, global_session_dir: Option<PathBuf>) -> ExitCode {
+fn export_session(
+    command: ExportSessionCommand,
+    global_session_dir: Option<PathBuf>,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> i32 {
     let session_dir = session_dir(global_session_dir);
-    if let Err(code) = ensure_session_dir_exists(&session_dir) {
+    if let Err(code) = ensure_session_dir_exists(&session_dir, stderr) {
         return code;
     }
 
     let session = match resolve_session(&session_dir, &command.session) {
         Ok(session) => session,
         Err(err) => {
-            eprintln!("{err}");
-            return ExitCode::from(1);
+            let _ = writeln!(stderr, "{err}");
+            return 1;
         }
     };
 
     let events = match load_events_from_run_dir(&session.run_dir) {
         Ok(events) => events,
         Err(err) => {
-            eprintln!("failed to export session {}: {err}", session.catalog.run_id);
-            return ExitCode::from(1);
+            let _ = writeln!(
+                stderr,
+                "failed to export session {}: {err}",
+                session.catalog.run_id
+            );
+            return 1;
         }
     };
     let replay = match summarize_session(&session.run_dir) {
         Ok(summary) => summary,
         Err(err) => {
-            eprintln!("failed to export session {}: {err}", session.catalog.run_id);
-            return ExitCode::from(1);
+            let _ = writeln!(
+                stderr,
+                "failed to export session {}: {err}",
+                session.catalog.run_id
+            );
+            return 1;
         }
     };
 
@@ -600,10 +676,15 @@ fn export_session(command: ExportSessionCommand, global_session_dir: Option<Path
         events,
     };
 
-    write_json_output(&export, command.output)
+    write_json_output(&export, command.output, stdout, stderr)
 }
 
-fn tree_sessions(command: TreeSessionCommand, global_session_dir: Option<PathBuf>) -> ExitCode {
+fn tree_sessions(
+    command: TreeSessionCommand,
+    global_session_dir: Option<PathBuf>,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> i32 {
     let default_session_dir = session_dir(global_session_dir);
     let (session_dir, root_run_id) = match command.root.as_deref() {
         Some(root) => match resolve_session_for_write_or_tree(&default_session_dir, root) {
@@ -616,12 +697,12 @@ fn tree_sessions(command: TreeSessionCommand, global_session_dir: Option<PathBuf
                 (session_dir, Some(session.catalog.run_id))
             }
             Err(err) => {
-                eprintln!("Harness session tree failed: {err}");
-                return ExitCode::from(1);
+                let _ = writeln!(stderr, "Harness session tree failed: {err}");
+                return 1;
             }
         },
         None => {
-            if let Err(code) = ensure_session_dir_exists(&default_session_dir) {
+            if let Err(code) = ensure_session_dir_exists(&default_session_dir, stderr) {
                 return code;
             }
             (default_session_dir, None)
@@ -631,8 +712,8 @@ fn tree_sessions(command: TreeSessionCommand, global_session_dir: Option<PathBuf
     let entries = match inspect_session_catalog(&session_dir) {
         Ok(entries) => entries,
         Err(err) => {
-            eprintln!("Harness session tree failed: {err}");
-            return ExitCode::from(1);
+            let _ = writeln!(stderr, "Harness session tree failed: {err}");
+            return 1;
         }
     };
     let rows = collect_tree_rows(entries, root_run_id.as_deref(), command.filter.as_deref());
@@ -651,32 +732,47 @@ fn tree_sessions(command: TreeSessionCommand, global_session_dir: Option<PathBuf
             root: root_run_id,
             filter: command.filter,
         };
-        write_json_output(&report, None)
+        write_json_output(&report, None, stdout, stderr)
     } else {
-        print!(
+        let _ = write!(
+            stdout,
             "{}",
             render_human_session_tree(&rows, root_run_id.as_deref(), command.filter.as_deref())
         );
-        ExitCode::SUCCESS
+        0
     }
 }
 
-fn fork_session(command: ForkSessionCommand, global_session_dir: Option<PathBuf>) -> ExitCode {
+fn fork_session(
+    command: ForkSessionCommand,
+    global_session_dir: Option<PathBuf>,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> i32 {
     write_child_session(
         "fork",
         &command.source,
         global_session_dir,
         command.json,
+        stdout,
+        stderr,
         |events| validate_fork_stable_prefix(events, command.cutoff),
     )
 }
 
-fn clone_session(command: CloneSessionCommand, global_session_dir: Option<PathBuf>) -> ExitCode {
+fn clone_session(
+    command: CloneSessionCommand,
+    global_session_dir: Option<PathBuf>,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> i32 {
     write_child_session(
         "clone",
         &command.source,
         global_session_dir,
         command.json,
+        stdout,
+        stderr,
         latest_clone_stable_prefix,
     )
 }
@@ -686,36 +782,39 @@ fn write_child_session(
     source: &str,
     global_session_dir: Option<PathBuf>,
     json: bool,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
     stable_prefix: impl FnOnce(
         &[harness_core::event::EventEnvelopeV1],
     ) -> Result<
         StableSessionPrefix,
         harness_core::session_lineage::SessionLineageError,
     >,
-) -> ExitCode {
+) -> i32 {
     let session_dir = session_dir(global_session_dir);
     let source = match resolve_session_for_write_or_tree(&session_dir, source) {
         Ok(session) => session,
         Err(err) => {
-            eprintln!("Harness session {operation} failed: {err}");
-            return ExitCode::from(1);
+            let _ = writeln!(stderr, "Harness session {operation} failed: {err}");
+            return 1;
         }
     };
     let events = match load_events_from_run_dir(&source.run_dir) {
         Ok(events) => events,
         Err(err) => {
-            eprintln!(
+            let _ = writeln!(
+                stderr,
                 "Harness session {operation} failed: failed to read source session {}: {err}",
                 source.catalog.run_id
             );
-            return ExitCode::from(1);
+            return 1;
         }
     };
     let stable_prefix = match stable_prefix(&events) {
         Ok(prefix) => prefix,
         Err(err) => {
-            eprintln!("Harness session {operation} failed: {err}");
-            return ExitCode::from(1);
+            let _ = writeln!(stderr, "Harness session {operation} failed: {err}");
+            return 1;
         }
     };
     let result = match materialize_child_session(ChildSessionMaterializationRequest {
@@ -726,8 +825,8 @@ fn write_child_session(
     }) {
         Ok(result) => result,
         Err(err) => {
-            eprintln!("Harness session {operation} failed: {err}");
-            return ExitCode::from(1);
+            let _ = writeln!(stderr, "Harness session {operation} failed: {err}");
+            return 1;
         }
     };
 
@@ -745,19 +844,23 @@ fn write_child_session(
     };
 
     if json {
-        write_json_output(&report, None)
+        write_json_output(&report, None, stdout, stderr)
     } else {
-        println!("Harness session {operation} created");
-        println!("child_run_id: {}", report.child_run_id);
-        println!("child_run_dir: {}", report.child_run_dir.display());
+        let _ = writeln!(stdout, "Harness session {operation} created");
+        let _ = writeln!(stdout, "child_run_id: {}", report.child_run_id);
+        let _ = writeln!(stdout, "child_run_dir: {}", report.child_run_dir.display());
         if let Some(source_run_id) = report.source_run_id.as_deref() {
-            println!("source_run_id: {source_run_id}");
+            let _ = writeln!(stdout, "source_run_id: {source_run_id}");
         }
-        println!("source_run_dir: {}", report.source_run_dir.display());
-        println!("source_cutoff_seq: {}", report.source_cutoff_seq);
-        println!("events: {}", report.event_count);
-        println!("artifacts: {}", report.artifact_count);
-        ExitCode::SUCCESS
+        let _ = writeln!(
+            stdout,
+            "source_run_dir: {}",
+            report.source_run_dir.display()
+        );
+        let _ = writeln!(stdout, "source_cutoff_seq: {}", report.source_cutoff_seq);
+        let _ = writeln!(stdout, "events: {}", report.event_count);
+        let _ = writeln!(stdout, "artifacts: {}", report.artifact_count);
+        0
     }
 }
 
@@ -765,20 +868,25 @@ fn session_dir(global_session_dir: Option<PathBuf>) -> PathBuf {
     global_session_dir.unwrap_or_else(|| PathBuf::from(DEFAULT_SESSION_DIR))
 }
 
-fn ensure_session_dir_exists(session_dir: &Path) -> Result<(), ExitCode> {
+fn ensure_session_dir_exists(
+    session_dir: &Path,
+    stderr: &mut dyn std::io::Write,
+) -> Result<(), i32> {
     if !session_dir.exists() {
-        eprintln!(
+        let _ = writeln!(
+            stderr,
             "failed to read session directory {}: directory does not exist",
             session_dir.display()
         );
-        return Err(ExitCode::from(1));
+        return Err(1);
     }
     if let Err(err) = fs::read_dir(session_dir) {
-        eprintln!(
+        let _ = writeln!(
+            stderr,
             "failed to read session directory {}: {err}",
             session_dir.display()
         );
-        return Err(ExitCode::from(1));
+        return Err(1);
     }
     Ok(())
 }
@@ -972,25 +1080,30 @@ fn run_dir_name(path: &Path) -> Option<&str> {
     path.file_name().and_then(|name| name.to_str())
 }
 
-fn write_json_output<T: Serialize>(value: &T, output: Option<PathBuf>) -> ExitCode {
+fn write_json_output<T: Serialize>(
+    value: &T,
+    output: Option<PathBuf>,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> i32 {
     let body = match serde_json::to_string_pretty(value) {
         Ok(body) => body,
         Err(err) => {
-            eprintln!("failed to serialize session report: {err}");
-            return ExitCode::from(1);
+            let _ = writeln!(stderr, "failed to serialize session report: {err}");
+            return 1;
         }
     };
 
     if let Some(path) = output {
         if let Err(err) = fs::write(&path, format!("{body}\n")) {
-            eprintln!("failed to write {}: {err}", path.display());
-            return ExitCode::from(1);
+            let _ = writeln!(stderr, "failed to write {}: {err}", path.display());
+            return 1;
         }
     } else {
-        println!("{body}");
+        let _ = writeln!(stdout, "{body}");
     }
 
-    ExitCode::SUCCESS
+    0
 }
 
 fn resumable_label(is_resumable: bool) -> &'static str {
@@ -1021,58 +1134,63 @@ fn mode_source_label(mode_source: SessionModeSource) -> &'static str {
     }
 }
 
-fn print_recovery_summary(summary: &SessionRecoverySummary) {
-    println!("run_id: {}", summary.run_id);
-    println!(
+fn print_recovery_summary(summary: &SessionRecoverySummary, out: &mut dyn std::io::Write) {
+    macro_rules! line {
+        ($($arg:tt)*) => {
+            let _ = writeln!(out, $($arg)*);
+        };
+    }
+    line!("run_id: {}", summary.run_id);
+    line!(
         "run_name: {}",
         summary.run_name.as_deref().unwrap_or("<unknown>")
     );
-    println!("run_dir: {}", summary.run_dir.display());
-    println!(
+    line!("run_dir: {}", summary.run_dir.display());
+    line!(
         "workspace_root: {}",
         summary.workspace_root.as_deref().unwrap_or("<unknown>")
     );
-    println!("status: {}", status_label(summary.status));
-    println!(
+    line!("status: {}", status_label(summary.status));
+    line!(
         "profile: {}",
         summary.profile.as_deref().unwrap_or("<unavailable>")
     );
-    println!(
+    line!(
         "provider/model: {}",
         summary.provider_model.as_deref().unwrap_or("<unavailable>")
     );
-    println!("mode: {}", mode_source_label(summary.mode));
-    println!("resumable: {}", resumable_label(summary.resumable));
+    line!("mode: {}", mode_source_label(summary.mode));
+    line!("resumable: {}", resumable_label(summary.resumable));
     if let Some(reason) = &summary.resume_disabled_reason {
-        println!("resume_disabled_reason: {reason}");
+        line!("resume_disabled_reason: {reason}");
     }
     if let Some(agent_id) = &summary.resume_agent_id {
-        println!("resume_agent_id: {agent_id}");
+        line!("resume_agent_id: {agent_id}");
     }
     if let Some(last_error) = &summary.last_error {
-        println!("last_error: {last_error}");
+        line!("last_error: {last_error}");
     }
     if let Some(continue_hint) = &summary.continue_hint {
-        println!("continue_hint: {continue_hint}");
+        line!("continue_hint: {continue_hint}");
     }
-    println!("total_events: {}", summary.total_events);
+    line!("total_events: {}", summary.total_events);
 
     if !summary.pending_permissions.is_empty() {
-        println!("pending_permissions:");
+        line!("pending_permissions:");
         for permission_id in &summary.pending_permissions {
-            println!("  - {permission_id}");
+            line!("  - {permission_id}");
         }
     }
     if !summary.tasks_in_flight.is_empty() {
-        println!("tasks_in_flight:");
+        line!("tasks_in_flight:");
         for task_id in &summary.tasks_in_flight {
-            println!("  - {task_id}");
+            line!("  - {task_id}");
         }
     }
     if !summary.prompt_context.is_empty() {
-        println!("prompt_context:");
+        line!("prompt_context:");
         for entry in &summary.prompt_context {
-            println!(
+            line!(
                 "  - seq={} kind={} request={} agent={} text={}",
                 entry.seq,
                 entry.kind,
@@ -1083,9 +1201,9 @@ fn print_recovery_summary(summary: &SessionRecoverySummary) {
         }
     }
     if !summary.child_sessions.is_empty() {
-        println!("child_sessions:");
+        line!("child_sessions:");
         for child in &summary.child_sessions {
-            println!(
+            line!(
                 "  - {} profile={} provider/model={} child_request={} state={} elapsed_ms={}",
                 child.agent_id,
                 child.profile.as_deref().unwrap_or("<unavailable>"),
@@ -1104,9 +1222,9 @@ fn print_recovery_summary(summary: &SessionRecoverySummary) {
         }
     }
     if !summary.artifacts.is_empty() {
-        println!("artifacts:");
+        line!("artifacts:");
         for artifact in &summary.artifacts {
-            println!(
+            line!(
                 "  - tool_call={} tool={} kind={} path={} digest={}",
                 artifact.tool_call_id.as_deref().unwrap_or("<none>"),
                 artifact.tool_id.as_deref().unwrap_or("<unavailable>"),

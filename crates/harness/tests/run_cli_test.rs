@@ -1,9 +1,12 @@
 use std::fs;
-use std::io::Write;
 use std::path::Path;
-use std::process::{Command, Stdio};
 
 use tempfile::tempdir;
+
+mod common;
+
+use common::CliHarness;
+use harness_testkit::workspace::TestWorkspace;
 
 fn run_cli_config(session_dir: &Path) -> String {
     serde_json::json!({
@@ -63,12 +66,12 @@ fn run_cli_config(session_dir: &Path) -> String {
 
 #[test]
 fn run_cli_writes_out_file_and_prints_run_dir() {
-    let temp = tempdir().expect("tempdir");
-    let out_path = temp.path().join("events/out.jsonl");
-    let session_dir = temp.path().join("sessions");
+    let workspace = TestWorkspace::new().expect("test workspace");
+    let out_path = workspace.path("events/out.jsonl");
+    let session_dir = workspace.sessions_dir();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
-        .current_dir(temp.path())
+    let output = CliHarness::new()
+        .test_workspace(workspace)
         .args([
             "run",
             "--scenario",
@@ -80,8 +83,7 @@ fn run_cli_writes_out_file_and_prints_run_dir() {
             out_path.to_str().expect("out path utf-8"),
             "--print-run-dir",
         ])
-        .output()
-        .expect("run harness run command");
+        .output();
 
     assert!(
         output.status.success(),
@@ -102,15 +104,32 @@ fn run_cli_writes_out_file_and_prints_run_dir() {
             .contains("run_finished"),
         "expected copied events jsonl to include run_finished"
     );
+
+    let captured_run = output.single_run();
+    assert_eq!(
+        captured_run.events_path,
+        Path::new(&run_dir).join("events.jsonl")
+    );
+    assert!(
+        captured_run.events.contains("run_finished"),
+        "expected captured event log to include run_finished"
+    );
+    assert!(
+        captured_run
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.relative_path.starts_with("artifacts")),
+        "expected CliHarness to capture run artifacts under {}",
+        captured_run.run_dir.display()
+    );
 }
 
 #[test]
-fn run_cli_interactive_permissions_accepts_allow_on_stdin() {
+fn run_cli_interactive_permissions_accepts_allow_on_in_memory_stdin() {
     let temp = tempdir().expect("tempdir");
     let session_dir = temp.path().join("sessions");
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_harness"))
-        .current_dir(temp.path())
+    let output = CliHarness::new()
         .args([
             "run",
             "--scenario",
@@ -119,20 +138,10 @@ fn run_cli_interactive_permissions_accepts_allow_on_stdin() {
             "--session-dir",
             session_dir.to_str().expect("session dir utf-8"),
         ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn interactive run command");
+        .capture_session_dir(&session_dir)
+        .stdin(b"allow\n".to_vec())
+        .output();
 
-    child
-        .stdin
-        .as_mut()
-        .expect("stdin pipe")
-        .write_all(b"allow\n")
-        .expect("write allow decision");
-
-    let output = child.wait_with_output().expect("wait for interactive run");
     assert!(
         output.status.success(),
         "stdout:\n{}\nstderr:\n{}",
@@ -143,6 +152,7 @@ fn run_cli_interactive_permissions_accepts_allow_on_stdin() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("permission requested:"));
     assert!(stdout.contains("scenario golden_path_interactive complete:"));
+    assert!(output.single_run().events.contains("run_finished"));
 }
 
 #[test]
@@ -153,8 +163,7 @@ fn run_cli_creates_durable_run_logs_under_run_dir() {
 
     fs::write(&config_path, run_cli_config(&session_dir)).expect("write config");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_harness"))
-        .current_dir(temp.path())
+    let output = CliHarness::new()
         .args([
             "--config",
             config_path.to_str().expect("config path utf-8"),
@@ -166,8 +175,7 @@ fn run_cli_creates_durable_run_logs_under_run_dir() {
             session_dir.to_str().expect("session dir utf-8"),
             "--print-run-dir",
         ])
-        .output()
-        .expect("run harness run command with logging");
+        .output();
 
     assert!(
         output.status.success(),

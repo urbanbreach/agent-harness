@@ -1,11 +1,9 @@
 use std::fs;
-use std::io;
 use std::path::PathBuf;
-use std::process::ExitCode;
 use std::sync::Arc;
 
 use clap::Args;
-use harness_core::clock::{Clock, Determinism, FakeClock, RealClock};
+use harness_core::clock::Determinism;
 use harness_core::config::{HarnessConfig, ShellAllowlist};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
 use harness_core::event::ToolCallStatus;
@@ -25,6 +23,7 @@ use crate::cli_io::{
     DEFAULT_EVENT_WAIT_TIMEOUT,
 };
 use crate::defaults::DEFAULT_SESSION_DIR;
+use crate::{CliDeps, CliIo};
 
 #[derive(Debug, Args, Clone)]
 pub struct RunCommand {
@@ -53,16 +52,18 @@ struct RunSettings {
     config_digest: String,
 }
 
-pub fn execute(
+pub fn execute_with_io(
     cmd: RunCommand,
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
-) -> ExitCode {
+    io: &mut CliIo<'_>,
+    deps: &CliDeps,
+) -> i32 {
     let settings = match resolve_settings(&cmd, config_path, global_session_dir) {
         Ok(settings) => settings,
         Err(err) => {
-            eprintln!("run setup failed: {err}");
-            return ExitCode::from(2);
+            let _ = writeln!(io.stderr, "run setup failed: {err}");
+            return 2;
         }
     };
 
@@ -72,35 +73,36 @@ pub fn execute(
     {
         Ok(runtime) => runtime,
         Err(err) => {
-            eprintln!("failed to build async runtime: {err}");
-            return ExitCode::from(1);
+            let _ = writeln!(io.stderr, "failed to build async runtime: {err}");
+            return 1;
         }
     };
 
-    match runtime.block_on(run_once(&cmd, &settings)) {
+    match runtime.block_on(run_once(&cmd, &settings, io, deps)) {
         Ok(outcome) => {
             if let Some(out) = &cmd.out {
                 if let Err(err) = copy_events_file(&outcome.events_path, out) {
-                    eprintln!("failed to write --out file: {err}");
-                    return ExitCode::from(1);
+                    let _ = writeln!(io.stderr, "failed to write --out file: {err}");
+                    return 1;
                 }
             }
 
             if cmd.print_run_dir {
-                println!("{}", outcome.run_dir.display());
+                let _ = writeln!(io.stdout, "{}", outcome.run_dir.display());
             } else {
-                println!(
+                let _ = writeln!(
+                    io.stdout,
                     "scenario {} complete: {}",
                     cmd.scenario.as_str(),
                     outcome.events_path.display()
                 );
             }
 
-            ExitCode::SUCCESS
+            0
         }
         Err(err) => {
-            eprintln!("run failed: {err}");
-            ExitCode::from(1)
+            let _ = writeln!(io.stderr, "run failed: {err}");
+            1
         }
     }
 }
@@ -149,7 +151,12 @@ struct RunOutcome {
     events_path: PathBuf,
 }
 
-async fn run_once(cmd: &RunCommand, settings: &RunSettings) -> Result<RunOutcome, String> {
+async fn run_once(
+    cmd: &RunCommand,
+    settings: &RunSettings,
+    io: &mut CliIo<'_>,
+    deps: &CliDeps,
+) -> Result<RunOutcome, String> {
     fs::create_dir_all(&settings.session_dir)
         .map_err(|err| format!("failed to create session dir: {err}"))?;
 
@@ -171,17 +178,15 @@ async fn run_once(cmd: &RunCommand, settings: &RunSettings) -> Result<RunOutcome
         deterministic_run_id.as_deref(),
     )?;
 
-    let clock: Arc<dyn Clock + Send + Sync> = if settings.deterministic {
-        Arc::new(FakeClock::new())
-    } else {
-        Arc::new(RealClock::new())
-    };
+    let clock = deps.clock(settings.deterministic);
 
     let mut coordinator_config = CoordinatorConfig::new(settings.session_dir.clone());
     coordinator_config.permission_policy = default_permission_policy();
     coordinator_config.tool_registry =
         Arc::new(coordinator_registry(settings.shell_allowlist.clone()));
-    coordinator_config.provider = Arc::new(golden_path_provider());
+    coordinator_config.provider = deps
+        .provider_override()
+        .unwrap_or_else(|| Arc::new(golden_path_provider()));
     coordinator_config.agent_profiles = golden_path_profiles();
     coordinator_config.run_id_override = deterministic_run_id;
     apply_runtime_metadata(
@@ -228,7 +233,7 @@ async fn run_once(cmd: &RunCommand, settings: &RunSettings) -> Result<RunOutcome
     let permission_id =
         wait_for_permission_id(&run.events_path, &tool_call_id, DEFAULT_EVENT_WAIT_TIMEOUT).await?;
     let decision = if cmd.scenario.interactive_permissions() {
-        interactive_permission_decision(&permission_id)?
+        interactive_permission_decision(&permission_id, io)?
     } else {
         PermissionDecision::Allow
     };
@@ -260,10 +265,17 @@ async fn run_once(cmd: &RunCommand, settings: &RunSettings) -> Result<RunOutcome
     })
 }
 
-fn interactive_permission_decision(permission_id: &str) -> Result<PermissionDecision, String> {
-    println!("permission requested: {permission_id} (allow/deny)");
+fn interactive_permission_decision(
+    permission_id: &str,
+    io: &mut CliIo<'_>,
+) -> Result<PermissionDecision, String> {
+    writeln!(
+        io.stdout,
+        "permission requested: {permission_id} (allow/deny)"
+    )
+    .map_err(|err| format!("failed to write interactive permission prompt: {err}"))?;
     let mut input = String::new();
-    io::stdin()
+    io.stdin
         .read_line(&mut input)
         .map_err(|err| format!("failed to read interactive permission input: {err}"))?;
 
@@ -281,10 +293,16 @@ mod tests {
     use crate::cli_io::load_events_file;
     use crate::replay::summarize_session;
     use crate::scenarios::{deterministic_run_id, ScenarioName};
+    use crate::CliIo;
     use harness_core::config::ShellAllowlist;
     use harness_core::event::EventV1;
     use harness_core::proj::RunStatus;
     use sha2::{Digest, Sha256};
+    use std::io::Cursor;
+
+    fn test_io() -> (Cursor<Vec<u8>>, Vec<u8>, Vec<u8>) {
+        (Cursor::new(Vec::new()), Vec::new(), Vec::new())
+    }
 
     #[tokio::test]
     async fn deterministic_golden_path_twice_produces_identical_sha256_digest() {
@@ -305,12 +323,15 @@ mod tests {
             print_run_dir: false,
         };
 
-        let run_a = run_once(&command, &settings)
+        let (mut stdin, mut stdout, mut stderr) = test_io();
+        let mut io = CliIo::new(&mut stdin, &mut stdout, &mut stderr);
+
+        let run_a = run_once(&command, &settings, &mut io, &crate::CliDeps::real())
             .await
             .expect("first deterministic run");
         let digest_a = sha256_hex(&std::fs::read(&run_a.events_path).expect("read first jsonl"));
 
-        let run_b = run_once(&command, &settings)
+        let run_b = run_once(&command, &settings, &mut io, &crate::CliDeps::real())
             .await
             .expect("second deterministic run");
         let digest_b = sha256_hex(&std::fs::read(&run_b.events_path).expect("read second jsonl"));
@@ -349,12 +370,15 @@ mod tests {
             print_run_dir: false,
         };
 
-        let run_a = run_once(&command, &settings)
+        let (mut stdin, mut stdout, mut stderr) = test_io();
+        let mut io = CliIo::new(&mut stdin, &mut stdout, &mut stderr);
+
+        let run_a = run_once(&command, &settings, &mut io, &crate::CliDeps::real())
             .await
             .expect("first deterministic run");
         let meta_a = std::fs::read(run_a.run_dir.join("meta.json")).expect("read first meta");
 
-        let run_b = run_once(&command, &settings)
+        let run_b = run_once(&command, &settings, &mut io, &crate::CliDeps::real())
             .await
             .expect("second deterministic run");
         let meta_b = std::fs::read(run_b.run_dir.join("meta.json")).expect("read second meta");
@@ -384,7 +408,10 @@ mod tests {
             print_run_dir: false,
         };
 
-        let run = run_once(&command, &settings)
+        let (mut stdin, mut stdout, mut stderr) = test_io();
+        let mut io = CliIo::new(&mut stdin, &mut stdout, &mut stderr);
+
+        let run = run_once(&command, &settings, &mut io, &crate::CliDeps::real())
             .await
             .expect("deterministic golden path run");
         let summary = summarize_session(&run.run_dir).expect("replay summary");
@@ -415,7 +442,10 @@ mod tests {
             print_run_dir: false,
         };
 
-        let run = run_once(&command, &settings)
+        let (mut stdin, mut stdout, mut stderr) = test_io();
+        let mut io = CliIo::new(&mut stdin, &mut stdout, &mut stderr);
+
+        let run = run_once(&command, &settings, &mut io, &crate::CliDeps::real())
             .await
             .expect("deterministic golden path run");
         let events = load_events_file(&run.events_path).expect("load events");
