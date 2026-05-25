@@ -132,7 +132,7 @@ pub struct PublicRuntimeConfig {
     #[serde(default)]
     pub permission: PublicPermissionValue,
     #[serde(default)]
-    pub mcp: BTreeMap<String, serde_json::Value>,
+    pub mcp: BTreeMap<String, McpServerConfig>,
     #[serde(default)]
     pub runtime: PublicRuntimeSettingsConfig,
     #[serde(default)]

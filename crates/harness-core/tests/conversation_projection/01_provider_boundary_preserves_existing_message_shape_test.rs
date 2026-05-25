@@ -1,23 +1,3 @@
-use harness_core::agent::{
-    build_provider_context_messages, build_provider_tool_defs, transform_context_for_provider,
-    AgentModelRef, AgentModelSettings, AgentProfile, AgentRequest, ProviderBoundaryContext,
-    ProviderBoundaryInput, ProviderCompactionFacts, ProviderContext, ProviderContextCheckpoint,
-    ProviderContextCheckpointMetadata, ProviderConversationTurn, ProviderConversationTurnStatus,
-};
-use harness_core::config::ToolFailureMode;
-use harness_core::conversation::{
-    project_conversation, ConversationAssistantMessage, ConversationMessage, ConversationToolCall,
-    ConversationToolResultMessage, ConversationUserMessage,
-};
-use harness_core::event::{
-    ActorKind, EventActor, EventEnvelopeV1, EventV1, ProviderRequestFinishedEvent,
-    ProviderRequestStartedEvent, ProviderStreamDeltaEvent, ToolCallFinishedEvent,
-    ToolCallRequestedEvent, ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
-};
-use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
-use harness_providers::{CompletionMessage, CompletionRequest, MessageRole, ToolChoice};
-use std::sync::Arc;
-
 #[test]
 fn provider_boundary_preserves_existing_message_shape() {
     let profile = boundary_profile();
@@ -133,7 +113,6 @@ fn provider_boundary_preserves_existing_message_shape() {
         }
     );
 }
-
 #[test]
 fn conversation_projection_failed_checkpoint_turn_status() {
     let checkpoint = ProviderContextCheckpoint {
@@ -173,7 +152,6 @@ fn conversation_projection_failed_checkpoint_turn_status() {
     assert!(assistant.text.contains("Reason: connection reset"));
     assert!(assistant.text.contains("Partial answer before failure"));
 }
-
 #[test]
 fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events() {
     let checkpoint = ProviderContextCheckpoint {
@@ -428,7 +406,6 @@ fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events
         .expect("tool result provider message");
     assert_eq!(provider_tool_result.name.as_deref(), Some("read"));
 }
-
 #[test]
 fn provider_boundary_falls_back_for_non_json_historical_tool_args() {
     let events = vec![
@@ -491,220 +468,4 @@ fn provider_boundary_falls_back_for_non_json_historical_tool_args() {
         .as_ref()
         .expect("tool calls");
     assert_eq!(tool_calls[0].arguments_json, "{}");
-}
-
-#[test]
-fn provider_boundary_sanitizes_unknown_historical_tool_ids() {
-    let mut profile = boundary_profile();
-    profile.toolset.clear();
-    let prior_context = ProviderContext {
-        compacted_summary: None,
-        preserved_turns: vec![ProviderConversationTurn {
-            user_prompt: "use unknown tools".to_string(),
-            assistant_response: "done".to_string(),
-            request_id: Some("req_unknown_tools".to_string()),
-            messages: vec![
-                ConversationMessage::User(ConversationUserMessage {
-                    request_id: "req_unknown_tools".to_string(),
-                    text: "use unknown tools".to_string(),
-                    seq: None,
-                    agent_id: Some("agent_1".to_string()),
-                }),
-                ConversationMessage::Assistant(ConversationAssistantMessage {
-                    request_id: "req_unknown_tools".to_string(),
-                    agent_id: Some("agent_1".to_string()),
-                    text: String::new(),
-                    tool_calls: vec![
-                        ConversationToolCall {
-                            tool_call_id: "toolcall_dot".to_string(),
-                            tool_id: "unknown.tool".to_string(),
-                            args_summary: r#"{"value":1}"#.to_string(),
-                            args_digest: "digest-dot".to_string(),
-                            seq: None,
-                            metadata: None,
-                        },
-                        ConversationToolCall {
-                            tool_call_id: "toolcall_slash".to_string(),
-                            tool_id: "unknown/tool".to_string(),
-                            args_summary: r#"{"value":2}"#.to_string(),
-                            args_digest: "digest-slash".to_string(),
-                            seq: None,
-                            metadata: None,
-                        },
-                    ],
-                    stop_reason: None,
-                    first_seq: None,
-                    last_seq: None,
-                    provider_id: None,
-                    model_id: None,
-                    output_digest: None,
-                }),
-                ConversationMessage::ToolResult(Box::new(ConversationToolResultMessage {
-                    request_id: "req_unknown_tools".to_string(),
-                    tool_call_id: "toolcall_dot".to_string(),
-                    tool_id: Some("unknown.tool".to_string()),
-                    status: ToolCallStatus::Succeeded,
-                    output_summary: Some("dot ok".to_string()),
-                    output_digest: None,
-                    output_json: None,
-                    seq: None,
-                    metadata: None,
-                })),
-                ConversationMessage::ToolResult(Box::new(ConversationToolResultMessage {
-                    request_id: "req_unknown_tools".to_string(),
-                    tool_call_id: "toolcall_slash".to_string(),
-                    tool_id: Some("unknown/tool".to_string()),
-                    status: ToolCallStatus::Succeeded,
-                    output_summary: Some("slash ok".to_string()),
-                    output_digest: None,
-                    output_json: None,
-                    seq: None,
-                    metadata: None,
-                })),
-                ConversationMessage::Assistant(ConversationAssistantMessage {
-                    request_id: "req_unknown_tools".to_string(),
-                    agent_id: Some("agent_1".to_string()),
-                    text: "done".to_string(),
-                    tool_calls: Vec::new(),
-                    stop_reason: None,
-                    first_seq: None,
-                    last_seq: None,
-                    provider_id: None,
-                    model_id: None,
-                    output_digest: None,
-                }),
-            ],
-            ..ProviderConversationTurn::default()
-        }],
-        checkpoint: None,
-    };
-
-    let messages = build_provider_context_messages(&profile, &prior_context, "next");
-    let assistant_tool_calls = messages
-        .iter()
-        .find_map(|message| message.assistant_tool_calls.as_ref())
-        .expect("assistant tool calls");
-    assert_eq!(assistant_tool_calls[0].function_name, "unknown_tool");
-    assert_eq!(assistant_tool_calls[1].function_name, "unknown_tool");
-    assert_eq!(
-        messages
-            .iter()
-            .filter(|message| {
-                message.role == MessageRole::Tool && message.name.as_deref() == Some("unknown_tool")
-            })
-            .count(),
-        2
-    );
-}
-
-fn worker() -> EventActor {
-    EventActor::new(ActorKind::Worker, Some("agent_000001".to_string()))
-}
-
-fn envelope(
-    seq: u64,
-    actor: EventActor,
-    correlation_id: Option<&str>,
-    payload: EventV1,
-) -> EventEnvelopeV1 {
-    EventEnvelopeV1 {
-        schema_version: SCHEMA_VERSION,
-        event_id: format!("evt-{seq:020}"),
-        seq,
-        run_id: "run_conversation_projection".to_string(),
-        mono_ms: seq,
-        ts: None,
-        actor,
-        correlation_id: correlation_id.map(str::to_string),
-        causation_id: None,
-        stream_key: None,
-        payload,
-    }
-}
-
-fn boundary_profile() -> AgentProfile {
-    AgentProfile {
-        name: "worker".to_string(),
-        category: "deep".to_string(),
-        model_ref: "mock:model-1".to_string(),
-        model_ref_explicit: true,
-        system_prompt: "sys".to_string(),
-        temperature: Some(0.1),
-        max_iters: Some(12),
-        tool_failure_mode: ToolFailureMode::FailTurn,
-        toolset: vec!["read".to_string()],
-    }
-}
-
-fn checkpoint_metadata() -> ProviderContextCheckpointMetadata {
-    ProviderContextCheckpointMetadata {
-        checkpoint_id: "checkpoint_1".to_string(),
-        agent_id: "agent_1".to_string(),
-        run_id: "run_1".to_string(),
-        through_seq: 9,
-        through_request_id: Some("req_prior".to_string()),
-        provider_id: Some("mock".to_string()),
-        model_id: Some("model-1".to_string()),
-        tokens_before: None,
-        tokens_before_estimate: Some(100),
-        tokens_after_estimate: Some(40),
-        summary_tokens_estimate: Some(12),
-        compacted_turns: Some(3),
-        preserved_turns: Some(1),
-        reduction_tokens_estimate: Some(60),
-        reduction_percent_estimate: Some(60),
-        trigger_reason: Some("test".to_string()),
-    }
-}
-
-fn completion_message(role: MessageRole, content: &str) -> CompletionMessage {
-    CompletionMessage {
-        role,
-        content: content.to_string(),
-        name: None,
-        tool_call_id: None,
-        assistant_tool_calls: None,
-    }
-}
-
-fn boundary_tool_registry() -> Arc<ToolRegistry> {
-    let mut registry = ToolRegistry::new();
-    registry.register(Arc::new(BoundaryReadTool));
-    Arc::new(registry)
-}
-
-struct BoundaryReadTool;
-
-#[async_trait::async_trait]
-impl Tool for BoundaryReadTool {
-    fn id(&self) -> &str {
-        "read"
-    }
-
-    fn description(&self) -> &str {
-        "Read file content by path"
-    }
-
-    fn parameters_json_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "filePath": {"type": "string"}
-            },
-            "required": ["filePath"],
-            "additionalProperties": false
-        })
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::ReadFs
-    }
-
-    async fn call(
-        &self,
-        _ctx: ToolContext,
-        _args_json: serde_json::Value,
-    ) -> Result<ToolResult, ToolError> {
-        Ok(ToolResult::text("unused"))
-    }
 }

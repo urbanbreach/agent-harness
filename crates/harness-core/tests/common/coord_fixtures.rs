@@ -1,0 +1,1276 @@
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use async_trait::async_trait;
+use harness_core::agent::{
+    build_provider_context_messages, build_provider_tool_defs, stream_assistant_response_once,
+    AgentModelRef, AgentModelSettings, AgentProfile, AgentRequest, AgentRuntimeEvent,
+    ProviderBoundaryContext, ProviderContext, ProviderContextCheckpoint,
+    StreamAssistantResponseOnceRequest,
+};
+use harness_core::clock::FakeClock;
+use harness_core::config::{
+    CompactionRuntimeConfig, HookLifecycleEvent, HookRuntimeConfig, HooksConfig,
+    LifecycleHookConfig, PermissionMode, ShellAllowlist,
+};
+use harness_core::coord::{
+    spawn_coordinator, ChildTaskRequestMetadata, CoordinatorConfig, CoordinatorError,
+    CoordinatorHandle, JobOutcome, JobProgressKind, ManualCompactionOutcome, RunInfo,
+};
+use harness_core::event::{
+    ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1, ExecutionTimingMetadata,
+    HookExecutionMetadata, HookExecutionStatus, PermissionDecision as EventPermissionDecision,
+    PermissionRequestedEvent, PermissionResolvedEvent, ProviderRequestStartedEvent,
+    RunFinishedEvent, RunStartedEvent, TaskCancelledEvent, TaskCompletedEvent,
+    TaskCompletionMetadata, TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState,
+    TaskScheduledEvent, ToolCallFinishedEvent, ToolCallMetadata, ToolCallRequestedEvent,
+    ToolCallStatus, SCHEMA_VERSION,
+};
+use harness_core::perm::{PermissionDecision as RuntimePermissionDecision, PermissionPolicy};
+use harness_core::proj::{inspect_resume_plan, ChildSessionTerminalState, LifecycleSegmentStatus};
+use harness_core::redact::DefaultRedactor;
+use harness_core::store::EventStoreError;
+use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
+use harness_providers::mock::{request_digest, MockProvider};
+use harness_providers::{
+    CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider,
+    ProviderEventStream, ProviderStreamEvent, ProviderStreamFinishedMetadata,
+    ProviderStreamStartMetadata, ProviderStreamThinkingMetadata,
+};
+use serde_json::json;
+use tokio::sync::Notify;
+use tokio_stream::StreamExt;
+
+#[path = "mod.rs"]
+mod common;
+use common::load_events;
+
+async fn cooperative_provider_delay(delay: Duration) {
+    let ticks = delay.as_millis().min(250) as usize;
+    for _ in 0..ticks {
+        tokio::task::yield_now().await;
+    }
+}
+
+struct TestShellTool;
+
+#[async_trait]
+impl Tool for TestShellTool {
+    fn id(&self) -> &str {
+        "shell.run"
+    }
+
+    fn capability(&self) -> ToolCapability {
+        ToolCapability::Shell
+    }
+
+    async fn call(
+        &self,
+        _ctx: ToolContext,
+        args_json: serde_json::Value,
+    ) -> Result<ToolResult, ToolError> {
+        Ok(ToolResult::text(format!("ok {args_json}")))
+    }
+}
+
+struct CountingShellTool {
+    calls: Arc<AtomicUsize>,
+}
+
+#[async_trait]
+impl Tool for CountingShellTool {
+    fn id(&self) -> &str {
+        "shell.run"
+    }
+
+    fn capability(&self) -> ToolCapability {
+        ToolCapability::Shell
+    }
+
+    async fn call(
+        &self,
+        _ctx: ToolContext,
+        args_json: serde_json::Value,
+    ) -> Result<ToolResult, ToolError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Ok(ToolResult::text(format!("counted {args_json}")))
+    }
+}
+
+struct FailingShellTool;
+
+#[async_trait]
+impl Tool for FailingShellTool {
+    fn id(&self) -> &str {
+        "shell.fail"
+    }
+
+    fn capability(&self) -> ToolCapability {
+        ToolCapability::Shell
+    }
+
+    async fn call(
+        &self,
+        _ctx: ToolContext,
+        _args_json: serde_json::Value,
+    ) -> Result<ToolResult, ToolError> {
+        Err(ToolError::Execution("boom".to_string()))
+    }
+}
+
+struct BlockingShellTool {
+    release: Arc<Notify>,
+}
+
+#[async_trait]
+impl Tool for BlockingShellTool {
+    fn id(&self) -> &str {
+        "shell.block"
+    }
+
+    fn capability(&self) -> ToolCapability {
+        ToolCapability::Shell
+    }
+
+    async fn call(
+        &self,
+        _ctx: ToolContext,
+        _args_json: serde_json::Value,
+    ) -> Result<ToolResult, ToolError> {
+        self.release.notified().await;
+        Ok(ToolResult::text("unblocked"))
+    }
+}
+
+struct NamedShellTool {
+    id: &'static str,
+    output: &'static str,
+    started: Option<Arc<Notify>>,
+    release: Option<Arc<Notify>>,
+}
+
+#[async_trait]
+impl Tool for NamedShellTool {
+    fn id(&self) -> &str {
+        self.id
+    }
+
+    fn capability(&self) -> ToolCapability {
+        ToolCapability::Shell
+    }
+
+    async fn call(
+        &self,
+        _ctx: ToolContext,
+        _args_json: serde_json::Value,
+    ) -> Result<ToolResult, ToolError> {
+        if let Some(started) = &self.started {
+            started.notify_one();
+        }
+        if let Some(release) = &self.release {
+            release.notified().await;
+        }
+        Ok(ToolResult::text(self.output))
+    }
+}
+
+#[derive(Clone)]
+struct CapturingProvider {
+    captured_requests: Arc<Mutex<Vec<CompletionRequest>>>,
+    queued_responses: Arc<Mutex<VecDeque<String>>>,
+}
+
+impl CapturingProvider {
+    fn new(responses: Vec<&str>) -> Self {
+        Self {
+            captured_requests: Arc::new(Mutex::new(Vec::new())),
+            queued_responses: Arc::new(Mutex::new(
+                responses.into_iter().map(str::to_string).collect(),
+            )),
+        }
+    }
+
+    fn requests(&self) -> Vec<CompletionRequest> {
+        self.captured_requests
+            .lock()
+            .expect("capturing provider lock")
+            .clone()
+    }
+}
+
+#[async_trait]
+impl Provider for CapturingProvider {
+    async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
+        self.captured_requests
+            .lock()
+            .expect("capturing provider lock")
+            .push(req);
+
+        let response = self
+            .queued_responses
+            .lock()
+            .expect("queued response lock")
+            .pop_front()
+            .unwrap_or_else(|| "ok".to_string());
+
+        Box::pin(tokio_stream::iter(vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta(response),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 3,
+                    completion_tokens: 3,
+                    total_tokens: 6,
+                },
+            },
+        ]))
+    }
+}
+
+#[derive(Clone)]
+struct DelayedCapturingProvider {
+    inner: CapturingProvider,
+    delay: Duration,
+}
+
+impl DelayedCapturingProvider {
+    fn new(responses: Vec<&str>, delay: Duration) -> Self {
+        Self {
+            inner: CapturingProvider::new(responses),
+            delay,
+        }
+    }
+
+    fn requests(&self) -> Vec<CompletionRequest> {
+        self.inner.requests()
+    }
+}
+
+#[async_trait]
+impl Provider for DelayedCapturingProvider {
+    async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
+        let delay = self.delay;
+        let stream = self
+            .inner
+            .stream_completion(req)
+            .await
+            .then(move |event| async move {
+                cooperative_provider_delay(delay).await;
+                event
+            });
+        Box::pin(stream)
+    }
+}
+
+#[derive(Clone)]
+struct SequentialScriptedProvider {
+    captured_requests: Arc<Mutex<Vec<CompletionRequest>>>,
+    scripted_events: Arc<Vec<Vec<ProviderStreamEvent>>>,
+    next_call_index: Arc<Mutex<usize>>,
+}
+
+impl SequentialScriptedProvider {
+    fn new(scripted_events: Vec<Vec<ProviderStreamEvent>>) -> Self {
+        Self {
+            captured_requests: Arc::new(Mutex::new(Vec::new())),
+            scripted_events: Arc::new(scripted_events),
+            next_call_index: Arc::new(Mutex::new(0)),
+        }
+    }
+
+    fn requests(&self) -> Vec<CompletionRequest> {
+        self.captured_requests
+            .lock()
+            .expect("sequential scripted provider lock")
+            .clone()
+    }
+}
+
+#[async_trait]
+impl Provider for SequentialScriptedProvider {
+    async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
+        self.captured_requests
+            .lock()
+            .expect("sequential scripted provider lock")
+            .push(req);
+
+        let mut next_call_index = self
+            .next_call_index
+            .lock()
+            .expect("sequential scripted call index");
+        let call_index = *next_call_index;
+        *next_call_index += 1;
+
+        Box::pin(tokio_stream::iter(
+            self.scripted_events
+                .get(call_index)
+                .cloned()
+                .unwrap_or_else(|| {
+                    vec![ProviderStreamEvent::Error {
+                        message: format!("unexpected stream_completion call index {call_index}"),
+                    }]
+                }),
+        ))
+    }
+}
+
+async fn deterministic_runs_suppress_live_hook_execution() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let hook_output_path = temp_dir.path().join("deterministic-hook-side-effect.txt");
+    let hook_runtime_config = HookRuntimeConfig {
+        hooks: HooksConfig {
+            lifecycle: vec![LifecycleHookConfig {
+                id: Some("tool-finish-suppressed".to_string()),
+                event: HookLifecycleEvent::ToolCallFinished,
+                command: vec![
+                    "bash".to_string(),
+                    "-lc".to_string(),
+                    "printf '%s|%s' \"$HARNESS_HOOK_EVENT\" \"$HARNESS_HOOK_TOOL_ID\" > \"$HOOK_OUTPUT_PATH\""
+                        .to_string(),
+                ],
+                cwd: Some(".".to_string()),
+                timeout_ms: 4_000,
+                critical: false,
+                env: BTreeMap::from([(
+                    "HOOK_OUTPUT_PATH".to_string(),
+                    hook_output_path.display().to_string(),
+                )]),
+            }],
+        },
+        shell_allowlist: ShellAllowlist {
+            executables: vec!["bash".to_string()],
+            cwd_roots: vec![".".to_string()],
+        },
+        suppress_execution: true,
+    };
+
+    let clock = Arc::new(FakeClock::new());
+    let coordinator = test_tool_lifecycle_coordinator_with_hook_runtime(
+        temp_dir.path(),
+        clock,
+        lifecycle_tool_registry(Arc::new(Notify::new())),
+        Duration::from_millis(50),
+        15_000,
+        5,
+        1,
+        hook_runtime_config,
+    );
+
+    let run = coordinator
+        .start_run(
+            "deterministic_runs_suppress_live_hook_execution",
+            temp_dir.path().to_path_buf(),
+        )
+        .await
+        .expect("start run");
+
+    let tool_call_id = coordinator
+        .request_tool_call(
+            supervisor_actor(),
+            Some("deep".to_string()),
+            "shell.run",
+            json!({"cmd": "true"}),
+        )
+        .await
+        .expect("request tool call");
+
+    tokio::task::yield_now().await;
+    coordinator.stop_run().await.expect("stop run");
+
+    assert!(
+        !hook_output_path.exists(),
+        "deterministic suppression should prevent live hook side effects"
+    );
+
+    let events = load_events(&run.events_path);
+    let tool_finished = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::ToolCallFinished(data) if data.tool_call_id == tool_call_id => Some(data),
+            _ => None,
+        })
+        .expect("tool finished event");
+    let hook_executions = tool_finished
+        .metadata
+        .as_ref()
+        .map(|metadata| metadata.hook_executions.clone())
+        .expect("hook metadata on tool finish");
+    assert_eq!(hook_executions.len(), 1);
+    assert_eq!(hook_executions[0].hook_name, "tool-finish-suppressed");
+    assert_eq!(hook_executions[0].status, HookExecutionStatus::Skipped);
+    assert_eq!(
+        hook_executions[0].output_summary.as_deref(),
+        Some("suppressed during deterministic execution")
+    );
+}
+
+fn test_coordinator(session_dir: &Path) -> CoordinatorHandle {
+    let mut config = CoordinatorConfig::new(session_dir.to_path_buf());
+    config.deterministic_store = true;
+    config.command_buffer = 32;
+    let clock = Arc::new(FakeClock::new());
+    let redactor = Arc::new(DefaultRedactor::default());
+    spawn_coordinator(config, clock, redactor)
+}
+
+fn provider_text_events(text: &str) -> Vec<ProviderStreamEvent> {
+    vec![
+        ProviderStreamEvent::Start,
+        ProviderStreamEvent::TextDelta(text.to_string()),
+        ProviderStreamEvent::Done {
+            usage: CompletionUsage {
+                prompt_tokens: 100,
+                completion_tokens: 100,
+                total_tokens: 200,
+            },
+        },
+    ]
+}
+
+fn structured_model_summary(goal: &str, next_step: &str) -> String {
+    format!(
+        "## Goal\n- {goal}\n\n## Constraints\n- Preserve Harness checkpoint structure.\n\n## Progress\n- Done: older turns were summarized by the configured compaction model.\n- In progress: continue from preserved recent context.\n- Blocked: (none)\n\n## Key Decisions\n- Use the model summary because it passed Harness validation.\n\n## Next Steps\n1. {next_step}\n\n## Critical Context\n- This is a structured checkpoint update.\n- Source facts: model summary retained compacted turn facts.\n- Relevant files/artifacts: (none)"
+    )
+}
+
+fn structured_split_model_summary(goal: &str, next_step: &str, split_prefix: &str) -> String {
+    format!(
+        "## Goal\n- {goal}\n\n## Constraints\n- Preserve Harness checkpoint structure.\n\n## Progress\n- Done: older turns were summarized by the configured compaction model.\n- In progress: continue from preserved split-turn suffix.\n- Blocked: (none)\n\n## Key Decisions\n- Use the model split-prefix summary because it passed Harness validation.\n\n## Next Steps\n1. {next_step}\n\n## Critical Context\n- Split prefix summary: {split_prefix}; the provider-visible suffix follows this checkpoint as recent context.\n- Source facts: split prefix summary: {split_prefix}\n- Relevant files/artifacts: (none)"
+    )
+}
+
+fn test_compaction_excerpt(text: &str) -> String {
+    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.chars().count() <= 240 {
+        return normalized;
+    }
+
+    let mut truncated = normalized.chars().take(240).collect::<String>();
+    truncated.push('…');
+    truncated
+}
+
+fn manual_checkpoint(run: &RunInfo, events: &[EventEnvelopeV1]) -> ProviderContextCheckpoint {
+    checkpoint_for_trigger(run, events, "manual")
+}
+
+fn overflow_checkpoint(run: &RunInfo, events: &[EventEnvelopeV1]) -> ProviderContextCheckpoint {
+    checkpoint_for_trigger(run, events, "overflow_retry")
+}
+
+fn checkpoint_for_trigger(
+    run: &RunInfo,
+    events: &[EventEnvelopeV1],
+    trigger_reason: &str,
+) -> ProviderContextCheckpoint {
+    let written = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::CompactionWritten(payload) if payload.trigger_reason == trigger_reason => {
+                Some(payload.clone())
+            }
+            _ => None,
+        })
+        .expect("compaction written event");
+    let checkpoint_path = run.run_dir.join(&written.artifact_path);
+    let checkpoint_body = fs::read_to_string(&checkpoint_path).expect("read checkpoint artifact");
+    serde_json::from_str(&checkpoint_body).expect("parse checkpoint artifact")
+}
+
+fn test_agent_coordinator(session_dir: &Path, delay: Duration) -> CoordinatorHandle {
+    test_agent_coordinator_with_provider(
+        session_dir,
+        Arc::new(SlowMockProvider {
+            inner: test_mock_provider(),
+            delay,
+        }),
+        1,
+    )
+}
+
+fn test_agent_coordinator_with_provider(
+    session_dir: &Path,
+    provider: Arc<dyn Provider>,
+    provider_model_concurrency: usize,
+) -> CoordinatorHandle {
+    test_agent_coordinator_with_provider_and_compaction(
+        session_dir,
+        provider,
+        provider_model_concurrency,
+        CompactionRuntimeConfig::default(),
+    )
+}
+
+fn test_agent_coordinator_with_provider_and_compaction(
+    session_dir: &Path,
+    provider: Arc<dyn Provider>,
+    provider_model_concurrency: usize,
+    compaction: CompactionRuntimeConfig,
+) -> CoordinatorHandle {
+    test_agent_coordinator_with_provider_compaction_and_hooks(
+        session_dir,
+        provider,
+        provider_model_concurrency,
+        compaction,
+        HookRuntimeConfig::default(),
+    )
+}
+
+fn test_agent_coordinator_with_provider_compaction_and_hooks(
+    session_dir: &Path,
+    provider: Arc<dyn Provider>,
+    provider_model_concurrency: usize,
+    compaction: CompactionRuntimeConfig,
+    hook_runtime_config: HookRuntimeConfig,
+) -> CoordinatorHandle {
+    let mut config = CoordinatorConfig::new(session_dir.to_path_buf());
+    config.deterministic_store = true;
+    config.command_buffer = 64;
+    config.provider_model_concurrency = provider_model_concurrency;
+    config.provider = provider;
+    config.compaction = compaction;
+    config.hook_runtime_config = hook_runtime_config;
+    config.agent_profiles = agent_profiles();
+
+    let clock = Arc::new(FakeClock::new());
+    let redactor = Arc::new(DefaultRedactor::default());
+    spawn_coordinator(config, clock, redactor)
+}
+
+fn allow_all_permission_policy() -> PermissionPolicy {
+    PermissionPolicy::new(
+        PermissionMode::Allow,
+        PermissionMode::Allow,
+        PermissionMode::Allow,
+    )
+}
+
+fn shell_only_permission_policy() -> PermissionPolicy {
+    PermissionPolicy::new(
+        PermissionMode::Deny,
+        PermissionMode::Allow,
+        PermissionMode::Deny,
+    )
+}
+
+fn ask_shell_permission_policy() -> PermissionPolicy {
+    PermissionPolicy::new(
+        PermissionMode::Deny,
+        PermissionMode::Ask,
+        PermissionMode::Deny,
+    )
+    .with_ask_timeout_ms(5_000)
+}
+
+fn deny_all_permission_policy() -> PermissionPolicy {
+    PermissionPolicy::new(
+        PermissionMode::Deny,
+        PermissionMode::Deny,
+        PermissionMode::Deny,
+    )
+}
+
+fn test_resume_coordinator(session_dir: &Path) -> CoordinatorHandle {
+    test_resume_coordinator_with_provider(session_dir, Arc::new(test_mock_provider()))
+}
+
+fn test_resume_coordinator_with_provider(
+    session_dir: &Path,
+    provider: Arc<dyn Provider>,
+) -> CoordinatorHandle {
+    let mut config = CoordinatorConfig::new(session_dir.to_path_buf());
+    config.deterministic_store = true;
+    config.command_buffer = 64;
+    config.permission_policy = ask_shell_permission_policy();
+    config.tool_registry = test_tool_registry();
+    config.provider = provider;
+    config.agent_profiles = agent_profiles();
+
+    let clock = Arc::new(FakeClock::new());
+    let redactor = Arc::new(DefaultRedactor::default());
+    spawn_coordinator(config, clock, redactor)
+}
+
+fn test_tool_registry() -> Arc<ToolRegistry> {
+    let mut registry = ToolRegistry::new();
+    registry.register(Arc::new(TestShellTool));
+    Arc::new(registry)
+}
+
+fn named_tool_registry(tools: Vec<NamedShellTool>) -> Arc<ToolRegistry> {
+    let mut registry = ToolRegistry::new();
+    for tool in tools {
+        registry.register(Arc::new(tool));
+    }
+    Arc::new(registry)
+}
+
+fn test_agent_tool_coordinator(
+    session_dir: &Path,
+    provider: Arc<dyn Provider>,
+    tool_registry: Arc<ToolRegistry>,
+    permission_policy: PermissionPolicy,
+    alpha_toolset: Vec<String>,
+    alpha_max_iters: usize,
+) -> CoordinatorHandle {
+    test_agent_tool_coordinator_with_compaction(
+        session_dir,
+        provider,
+        tool_registry,
+        permission_policy,
+        alpha_toolset,
+        alpha_max_iters,
+        CompactionRuntimeConfig::default(),
+    )
+}
+
+fn test_agent_tool_coordinator_with_compaction(
+    session_dir: &Path,
+    provider: Arc<dyn Provider>,
+    tool_registry: Arc<ToolRegistry>,
+    permission_policy: PermissionPolicy,
+    alpha_toolset: Vec<String>,
+    alpha_max_iters: usize,
+    compaction: CompactionRuntimeConfig,
+) -> CoordinatorHandle {
+    let mut config = CoordinatorConfig::new(session_dir.to_path_buf());
+    config.deterministic_store = true;
+    config.command_buffer = 64;
+    config.provider_model_concurrency = 1;
+    config.provider = provider;
+    config.tool_registry = tool_registry;
+    config.permission_policy = permission_policy;
+    config.compaction = compaction;
+    config.agent_profiles = agent_profiles();
+    if let Some(profile) = config.agent_profiles.get_mut("alpha") {
+        profile.toolset = alpha_toolset;
+        profile.max_iters = Some(alpha_max_iters);
+    }
+
+    let clock = Arc::new(FakeClock::new());
+    let redactor = Arc::new(DefaultRedactor::default());
+    spawn_coordinator(config, clock, redactor)
+}
+
+fn lifecycle_tool_registry(blocking_release: Arc<Notify>) -> Arc<ToolRegistry> {
+    let mut registry = ToolRegistry::new();
+    registry.register(Arc::new(TestShellTool));
+    registry.register(Arc::new(FailingShellTool));
+    registry.register(Arc::new(BlockingShellTool {
+        release: blocking_release,
+    }));
+    Arc::new(registry)
+}
+
+fn test_tool_lifecycle_coordinator(
+    session_dir: &Path,
+    clock: Arc<FakeClock>,
+    tool_registry: Arc<ToolRegistry>,
+    provider_delay: Duration,
+    stale_timeout_ms: u64,
+    watchdog_tick_ms: u64,
+    tool_concurrency: usize,
+) -> CoordinatorHandle {
+    let mut config = CoordinatorConfig::new(session_dir.to_path_buf());
+    config.deterministic_store = true;
+    config.command_buffer = 64;
+    config.tool_registry = tool_registry;
+    config.provider_model_concurrency = 1;
+    config.tool_concurrency = tool_concurrency;
+    config.stale_timeout_ms = stale_timeout_ms;
+    config.watchdog_tick_ms = watchdog_tick_ms;
+    config.provider = Arc::new(SlowMockProvider {
+        inner: test_mock_provider(),
+        delay: provider_delay,
+    });
+    config.agent_profiles = agent_profiles();
+    if let Some(profile) = config.agent_profiles.get_mut("alpha") {
+        profile.toolset = vec![
+            "shell.run".to_string(),
+            "shell.fail".to_string(),
+            "shell.block".to_string(),
+        ];
+    }
+
+    let redactor = Arc::new(DefaultRedactor::default());
+    spawn_coordinator(config, clock, redactor)
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "test helper keeps lifecycle coordinator knobs explicit for focused hook/runtime scenarios"
+)]
+fn test_tool_lifecycle_coordinator_with_hook_runtime(
+    session_dir: &Path,
+    clock: Arc<FakeClock>,
+    tool_registry: Arc<ToolRegistry>,
+    provider_delay: Duration,
+    stale_timeout_ms: u64,
+    watchdog_tick_ms: u64,
+    tool_concurrency: usize,
+    hook_runtime_config: HookRuntimeConfig,
+) -> CoordinatorHandle {
+    let mut config = CoordinatorConfig::new(session_dir.to_path_buf());
+    config.deterministic_store = true;
+    config.command_buffer = 64;
+    config.tool_registry = tool_registry;
+    config.provider_model_concurrency = 1;
+    config.tool_concurrency = tool_concurrency;
+    config.stale_timeout_ms = stale_timeout_ms;
+    config.watchdog_tick_ms = watchdog_tick_ms;
+    config.provider = Arc::new(SlowMockProvider {
+        inner: test_mock_provider(),
+        delay: provider_delay,
+    });
+    config.agent_profiles = agent_profiles();
+    config.hook_runtime_config = hook_runtime_config;
+    if let Some(profile) = config.agent_profiles.get_mut("alpha") {
+        profile.toolset = vec![
+            "shell.run".to_string(),
+            "shell.fail".to_string(),
+            "shell.block".to_string(),
+        ];
+    }
+
+    let redactor = Arc::new(DefaultRedactor::default());
+    spawn_coordinator(config, clock, redactor)
+}
+
+fn supervisor_actor() -> EventActor {
+    EventActor::new(ActorKind::Supervisor, Some("agent_supervisor".to_string()))
+}
+
+fn tool_task_ids(events: &[EventEnvelopeV1]) -> BTreeSet<String> {
+    events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            EventV1::TaskScheduled(data)
+                if data
+                    .queue_key
+                    .as_deref()
+                    .is_some_and(|queue_key| queue_key.starts_with("tool:")) =>
+            {
+                Some(data.task_id.clone())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn assert_task_event_context(
+    event: &EventEnvelopeV1,
+    expected_actor: &EventActor,
+    expected_correlation: &str,
+) {
+    assert_eq!(
+        &event.actor, expected_actor,
+        "unexpected actor for event seq {}",
+        event.seq
+    );
+    assert_eq!(
+        event.correlation_id.as_deref(),
+        Some(expected_correlation),
+        "unexpected correlation for event seq {}",
+        event.seq
+    );
+}
+
+fn provider_started_request_ids(events: &[EventEnvelopeV1]) -> Vec<String> {
+    events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            EventV1::ProviderRequestStarted(_) => event.correlation_id.clone(),
+            _ => None,
+        })
+        .collect()
+}
+
+fn task_schedule_states_for_request(
+    events: &[EventEnvelopeV1],
+    request_id: &str,
+) -> Vec<TaskScheduleState> {
+    events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            EventV1::TaskScheduled(data) if event.correlation_id.as_deref() == Some(request_id) => {
+                Some(data.state)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+async fn wait_for_events<F>(
+    events_path: &Path,
+    timeout: Duration,
+    mut predicate: F,
+) -> Vec<EventEnvelopeV1>
+where
+    F: FnMut(&[EventEnvelopeV1]) -> bool,
+{
+    tokio::time::timeout(timeout, async {
+        loop {
+            let events = load_events(events_path);
+            if predicate(&events) {
+                return events;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("timed out waiting for expected events")
+}
+
+fn write_resumable_history_fixture(session_dir: &Path, run_id: &str) {
+    let events = vec![
+        resume_fixture_event(
+            run_id,
+            1,
+            EventV1::RunStarted(RunStartedEvent {
+                run_name: "interactive".to_string(),
+                workspace_root: "/workspace/project".to_string(),
+            }),
+        ),
+        resume_fixture_event(
+            run_id,
+            2,
+            EventV1::AgentSpawned(AgentSpawnedEvent {
+                agent_id: "agent_000001".to_string(),
+                profile: "alpha".to_string(),
+                parent_agent_id: None,
+            }),
+        ),
+        resume_fixture_event_with_actor_and_correlation(
+            run_id,
+            3,
+            EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+            Some("req_000001"),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_000001".to_string(),
+                provider_id: "mock".to_string(),
+                model_id: "model-1".to_string(),
+                prompt_summary: "first question".to_string(),
+                request_digest: "digest-req-1".to_string(),
+                metadata: None,
+            }),
+        ),
+        resume_fixture_event_with_actor_and_correlation(
+            run_id,
+            4,
+            EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+            Some("req_000001"),
+            EventV1::ProviderStreamDelta(harness_core::event::ProviderStreamDeltaEvent {
+                request_id: "req_000001".to_string(),
+                delta: "first answer".to_string(),
+            }),
+        ),
+        resume_fixture_event_with_actor_and_correlation(
+            run_id,
+            5,
+            EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+            Some("req_000001"),
+            EventV1::ProviderRequestFinished(harness_core::event::ProviderRequestFinishedEvent {
+                request_id: "req_000001".to_string(),
+                finish_reason: "done".to_string(),
+                output_digest: Some("digest-out-1".to_string()),
+                usage: None,
+                metadata: None,
+            }),
+        ),
+        resume_fixture_event_with_actor_and_correlation(
+            run_id,
+            6,
+            EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+            Some("req_000001"),
+            EventV1::TaskCompleted(TaskCompletedEvent {
+                task_id: "task_000001".to_string(),
+                result_summary: "first answer".to_string(),
+                result_digest: "digest-task-1".to_string(),
+                metadata: None,
+            }),
+        ),
+        resume_fixture_event(
+            run_id,
+            7,
+            EventV1::RunFinished(RunFinishedEvent {
+                summary: "segment complete".to_string(),
+            }),
+        ),
+    ];
+    let _ = write_resume_fixture(session_dir, run_id, &events);
+}
+
+fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) {
+    let events = vec![
+        resume_fixture_event(
+            run_id,
+            1,
+            EventV1::RunStarted(RunStartedEvent {
+                run_name: "interactive".to_string(),
+                workspace_root: "/workspace/project".to_string(),
+            }),
+        ),
+        resume_fixture_event(
+            run_id,
+            2,
+            EventV1::AgentSpawned(AgentSpawnedEvent {
+                agent_id: "agent_000001".to_string(),
+                profile: "alpha".to_string(),
+                parent_agent_id: None,
+            }),
+        ),
+        resume_fixture_event_with_actor_and_correlation(
+            run_id,
+            3,
+            EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+            Some("req_000001"),
+            EventV1::TaskScheduled(TaskScheduledEvent {
+                task_id: "task_000001".to_string(),
+                state: TaskScheduleState::Started,
+                queue_key: Some("provider_model:mock:model-1".to_string()),
+            }),
+        ),
+        resume_fixture_event_with_actor_and_correlation(
+            run_id,
+            4,
+            EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+            Some("req_000001"),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_000001".to_string(),
+                provider_id: "mock".to_string(),
+                model_id: "model-1".to_string(),
+                prompt_summary: "first question".to_string(),
+                request_digest: "digest-req-1".to_string(),
+                metadata: None,
+            }),
+        ),
+        resume_fixture_event_with_actor_and_correlation(
+            run_id,
+            5,
+            EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+            Some("req_000001"),
+            EventV1::ProviderStreamDelta(harness_core::event::ProviderStreamDeltaEvent {
+                request_id: "req_000001".to_string(),
+                delta: "calling tool".to_string(),
+            }),
+        ),
+        resume_fixture_event_with_actor_and_correlation(
+            run_id,
+            6,
+            EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+            Some("req_000001"),
+            EventV1::ProviderRequestFinished(harness_core::event::ProviderRequestFinishedEvent {
+                request_id: "req_000001".to_string(),
+                finish_reason: "done".to_string(),
+                output_digest: Some("digest-out-1".to_string()),
+                usage: None,
+                metadata: None,
+            }),
+        ),
+        resume_fixture_event_with_actor_and_correlation(
+            run_id,
+            7,
+            EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+            Some("req_000001"),
+            EventV1::TaskScheduled(TaskScheduledEvent {
+                task_id: "task_000002".to_string(),
+                state: TaskScheduleState::Started,
+                queue_key: Some("tool:edit.hashline_apply".to_string()),
+            }),
+        ),
+        resume_fixture_event_with_actor_and_correlation(
+            run_id,
+            8,
+            EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+            Some("req_000001"),
+            EventV1::TaskCompleted(TaskCompletedEvent {
+                task_id: "task_000002".to_string(),
+                result_summary: "tool output".to_string(),
+                result_digest: "digest-tool-task".to_string(),
+                metadata: None,
+            }),
+        ),
+        resume_fixture_event_with_actor_and_correlation(
+            run_id,
+            9,
+            EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+            Some("req_000002"),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_000002".to_string(),
+                provider_id: "mock".to_string(),
+                model_id: "model-1".to_string(),
+                prompt_summary: "tool result + continue".to_string(),
+                request_digest: "digest-req-2".to_string(),
+                metadata: None,
+            }),
+        ),
+        resume_fixture_event_with_actor_and_correlation(
+            run_id,
+            10,
+            EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+            Some("req_000002"),
+            EventV1::ProviderStreamDelta(harness_core::event::ProviderStreamDeltaEvent {
+                request_id: "req_000002".to_string(),
+                delta: "first final answer".to_string(),
+            }),
+        ),
+        resume_fixture_event_with_actor_and_correlation(
+            run_id,
+            11,
+            EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+            Some("req_000002"),
+            EventV1::ProviderRequestFinished(harness_core::event::ProviderRequestFinishedEvent {
+                request_id: "req_000002".to_string(),
+                finish_reason: "done".to_string(),
+                output_digest: Some("digest-out-2".to_string()),
+                usage: None,
+                metadata: None,
+            }),
+        ),
+        resume_fixture_event_with_actor_and_correlation(
+            run_id,
+            12,
+            EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+            Some("req_000001"),
+            EventV1::TaskCompleted(TaskCompletedEvent {
+                task_id: "task_000001".to_string(),
+                result_summary: "first final answer".to_string(),
+                result_digest: "digest-task-1".to_string(),
+                metadata: None,
+            }),
+        ),
+        resume_fixture_event(
+            run_id,
+            13,
+            EventV1::RunFinished(RunFinishedEvent {
+                summary: "segment complete".to_string(),
+            }),
+        ),
+    ];
+    let _ = write_resume_fixture(session_dir, run_id, &events);
+}
+
+fn write_resume_fixture(session_dir: &Path, run_id: &str, events: &[EventEnvelopeV1]) -> PathBuf {
+    let run_dir = session_dir.join(run_id);
+    fs::create_dir_all(run_dir.join("artifacts")).expect("create fixture artifacts directory");
+
+    let mut body = String::new();
+    for event in events {
+        let line = serde_json::to_string(event).expect("serialize fixture event");
+        body.push_str(&line);
+        body.push('\n');
+    }
+
+    let events_path = run_dir.join("events.jsonl");
+    fs::write(&events_path, body).expect("write fixture events");
+    events_path
+}
+
+fn resume_fixture_event(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
+    resume_fixture_event_with_actor_and_correlation(
+        run_id,
+        seq,
+        EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+        None,
+        payload,
+    )
+}
+
+fn resume_fixture_event_with_actor_and_correlation(
+    run_id: &str,
+    seq: u64,
+    actor: EventActor,
+    correlation_id: Option<&str>,
+    payload: EventV1,
+) -> EventEnvelopeV1 {
+    EventEnvelopeV1 {
+        schema_version: SCHEMA_VERSION,
+        event_id: format!("evt-{seq:04}"),
+        seq,
+        run_id: run_id.to_string(),
+        mono_ms: seq,
+        ts: None,
+        actor,
+        correlation_id: correlation_id.map(str::to_string),
+        causation_id: None,
+        stream_key: Some(format!("run:{run_id}")),
+        payload,
+    }
+}
+
+fn agent_profiles() -> BTreeMap<String, AgentProfile> {
+    let mut profiles = BTreeMap::new();
+    profiles.insert(
+        "alpha".to_string(),
+        AgentProfile {
+            name: "alpha".to_string(),
+            category: "deep".to_string(),
+            model_ref: "mock:model-1".to_string(),
+            model_ref_explicit: true,
+            system_prompt: "alpha-prompt".to_string(),
+            max_iters: Some(12),
+            temperature: Some(0.0),
+            tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+            toolset: vec![],
+        },
+    );
+    profiles.insert(
+        "beta".to_string(),
+        AgentProfile {
+            name: "beta".to_string(),
+            category: "deep".to_string(),
+            model_ref: "mock:model-1".to_string(),
+            model_ref_explicit: true,
+            system_prompt: "beta-prompt".to_string(),
+            max_iters: Some(12),
+            temperature: Some(0.0),
+            tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+            toolset: vec![],
+        },
+    );
+    profiles
+}
+
+fn agent_profiles_with_title_agent() -> BTreeMap<String, AgentProfile> {
+    let mut profiles = agent_profiles();
+    profiles.insert(
+        harness_core::session_title::TITLE_AGENT_NAME.to_string(),
+        AgentProfile {
+            name: harness_core::session_title::TITLE_AGENT_NAME.to_string(),
+            category: harness_core::session_title::TITLE_AGENT_NAME.to_string(),
+            model_ref: "mock:title-model".to_string(),
+            model_ref_explicit: true,
+            system_prompt: harness_core::session_title::TITLE_AGENT_SYSTEM_PROMPT.to_string(),
+            max_iters: None,
+            temperature: Some(harness_core::session_title::TITLE_AGENT_TEMPERATURE),
+            tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+            toolset: vec![],
+        },
+    );
+    profiles
+}
+
+fn test_mock_provider() -> MockProvider {
+    let mut scripted = BTreeMap::new();
+
+    for prompt in ["alpha-prompt", "beta-prompt"] {
+        let request = CompletionRequest {
+            provider_id: Some("mock".to_string()),
+            model_id: "model-1".to_string(),
+            messages: vec![
+                CompletionMessage {
+                    role: MessageRole::System,
+                    content: prompt.to_string(),
+                    name: None,
+                    tool_call_id: None,
+                    assistant_tool_calls: None,
+                },
+                CompletionMessage {
+                    role: MessageRole::User,
+                    content: prompt.to_string(),
+                    name: None,
+                    tool_call_id: None,
+                    assistant_tool_calls: None,
+                },
+            ],
+            temperature: Some(0.0),
+            max_tokens: None,
+            variant: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            reasoning_summary: None,
+            tools: None,
+            tool_choice: None,
+            stream: true,
+        };
+
+        scripted.insert(
+            request_digest(&request),
+            vec![
+                ProviderStreamEvent::Start,
+                ProviderStreamEvent::TextDelta(format!("{prompt}-delta")),
+                ProviderStreamEvent::Done {
+                    usage: CompletionUsage {
+                        prompt_tokens: 2,
+                        completion_tokens: 1,
+                        total_tokens: 3,
+                    },
+                },
+            ],
+        );
+    }
+
+    MockProvider::new(scripted)
+}
+
+#[derive(Clone)]
+struct SlowMockProvider {
+    inner: MockProvider,
+    delay: Duration,
+}
+
+#[async_trait]
+impl Provider for SlowMockProvider {
+    async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
+        let delay = self.delay;
+        let stream = self
+            .inner
+            .stream_completion(req)
+            .await
+            .then(move |event| async move {
+                cooperative_provider_delay(delay).await;
+                event
+            });
+        Box::pin(stream)
+    }
+}
+
+#[derive(Clone)]
+struct PromptScriptedProvider {
+    scripts: BTreeMap<String, Vec<ProviderStreamEvent>>,
+    delay: Duration,
+}
+
+impl PromptScriptedProvider {
+    fn new(scripts: BTreeMap<String, Vec<ProviderStreamEvent>>, delay: Duration) -> Self {
+        Self { scripts, delay }
+    }
+}
+
+#[async_trait]
+impl Provider for PromptScriptedProvider {
+    async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
+        let prompt = req
+            .messages
+            .iter()
+            .rev()
+            .find(|message| message.role == MessageRole::User)
+            .map(|message| message.content.clone())
+            .unwrap_or_default();
+
+        let events = self.scripts.get(&prompt).cloned().unwrap_or_else(|| {
+            vec![
+                ProviderStreamEvent::Start,
+                ProviderStreamEvent::TextDelta("ok".to_string()),
+                ProviderStreamEvent::Done {
+                    usage: CompletionUsage {
+                        prompt_tokens: 1,
+                        completion_tokens: 1,
+                        total_tokens: 2,
+                    },
+                },
+            ]
+        });
+
+        let delay = self.delay;
+        let stream = tokio_stream::iter(events).then(move |event| async move {
+            cooperative_provider_delay(delay).await;
+            event
+        });
+        Box::pin(stream)
+    }
+}

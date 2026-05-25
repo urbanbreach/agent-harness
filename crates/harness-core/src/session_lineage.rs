@@ -87,6 +87,24 @@ pub struct ChildSessionMaterializationResult {
     pub artifact_count: usize,
 }
 
+pub trait ChildRunIdSource {
+    fn next_child_run_id(&self) -> String;
+}
+
+#[derive(Debug, Default)]
+pub struct SystemChildRunIdSource;
+
+impl ChildRunIdSource for SystemChildRunIdSource {
+    fn next_child_run_id(&self) -> String {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default();
+        let counter = CHILD_RUN_COUNTER.fetch_add(1, AtomicOrdering::Relaxed);
+        format!("{CHILD_RUN_ID_PREFIX}_{nanos:x}_{counter:04}")
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum ChildSessionMaterializationError {
     #[error(transparent)]
@@ -214,11 +232,25 @@ pub enum ChildSessionMaterializationError {
 pub fn materialize_child_session(
     request: ChildSessionMaterializationRequest<'_>,
 ) -> Result<ChildSessionMaterializationResult, ChildSessionMaterializationError> {
-    materialize_child_session_inner(request, None, || {}, |from, to| fs::rename(from, to))
+    materialize_child_session_with_child_run_id_source(request, &SystemChildRunIdSource)
+}
+
+pub fn materialize_child_session_with_child_run_id_source(
+    request: ChildSessionMaterializationRequest<'_>,
+    child_run_ids: &dyn ChildRunIdSource,
+) -> Result<ChildSessionMaterializationResult, ChildSessionMaterializationError> {
+    materialize_child_session_inner(
+        request,
+        child_run_ids,
+        None,
+        || {},
+        |from, to| fs::rename(from, to),
+    )
 }
 
 fn materialize_child_session_inner<BeforePublish, Publish>(
     request: ChildSessionMaterializationRequest<'_>,
+    child_run_ids: &dyn ChildRunIdSource,
     path_plan: Option<(String, PathBuf, PathBuf)>,
     before_publish: BeforePublish,
     publish: Publish,
@@ -273,7 +305,7 @@ where
     })?;
     let source_run_id = validated.run_id.clone();
     let (child_run_id, child_run_dir, temp_run_dir) =
-        path_plan.unwrap_or_else(|| fresh_child_run_paths(session_dir));
+        path_plan.unwrap_or_else(|| fresh_child_run_paths(session_dir, child_run_ids));
 
     fs::create_dir(&temp_run_dir).map_err(|source| {
         ChildSessionMaterializationError::CreateTempRunDirectory {
@@ -989,24 +1021,18 @@ fn materialization_created_at() -> String {
     format!("unix_ms:{millis}")
 }
 
-fn fresh_child_run_paths(session_dir: &Path) -> (String, PathBuf, PathBuf) {
+fn fresh_child_run_paths(
+    session_dir: &Path,
+    child_run_ids: &dyn ChildRunIdSource,
+) -> (String, PathBuf, PathBuf) {
     loop {
-        let child_run_id = fresh_child_run_id();
+        let child_run_id = child_run_ids.next_child_run_id();
         let child_run_dir = session_dir.join(&child_run_id);
         let temp_run_dir = sibling_temp_run_dir(session_dir, &child_run_id);
         if !child_run_dir.exists() && !temp_run_dir.exists() {
             return (child_run_id, child_run_dir, temp_run_dir);
         }
     }
-}
-
-fn fresh_child_run_id() -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or_default();
-    let counter = CHILD_RUN_COUNTER.fetch_add(1, AtomicOrdering::Relaxed);
-    format!("{CHILD_RUN_ID_PREFIX}_{nanos:x}_{counter:04}")
 }
 
 fn sibling_temp_run_dir(session_dir: &Path, child_run_id: &str) -> PathBuf {
@@ -1606,8 +1632,8 @@ mod tests {
     use super::{
         latest_clone_stable_prefix, materialize_child_session_inner, project_lineage_tree,
         validate_fork_stable_prefix, validate_stable_prefix, validate_tui_fork_stable_prefix,
-        ChildSessionMaterializationError, ChildSessionMaterializationRequest,
-        ChildSessionMaterializationSourceKind, SessionLineageError,
+        ChildRunIdSource, ChildSessionMaterializationError, ChildSessionMaterializationRequest,
+        ChildSessionMaterializationSourceKind, SessionLineageError, SystemChildRunIdSource,
     };
     use crate::event::{
         ActorKind, AgentSpawnedEvent, EditAppliedEvent, EditProposedEvent, EventActor,
@@ -1618,6 +1644,15 @@ mod tests {
         UserMessageSubmittedEvent, SCHEMA_VERSION,
     };
     use crate::proj::{RunStatus, SessionCatalogEntry, SessionModeSource};
+    use crate::session_paths::EVENTS_FILE_NAME;
+
+    struct StaticChildRunIdSource(&'static str);
+
+    impl ChildRunIdSource for StaticChildRunIdSource {
+        fn next_child_run_id(&self) -> String {
+            self.0.to_string()
+        }
+    }
 
     #[test]
     fn session_lineage_projects_tree_root_child_sibling_deep_ordering() {
@@ -2236,6 +2271,7 @@ mod tests {
                 stable_prefix: &prefix,
                 source_kind: ChildSessionMaterializationSourceKind::DiskRunDirectory,
             },
+            &SystemChildRunIdSource,
             None,
             || write_events_jsonl(&source_run_dir, &changed_events),
             |from, to| fs::rename(from, to),
@@ -2274,6 +2310,7 @@ mod tests {
                 stable_prefix: &prefix,
                 source_kind: ChildSessionMaterializationSourceKind::DiskRunDirectory,
             },
+            &SystemChildRunIdSource,
             Some((
                 child_run_id.clone(),
                 child_run_dir.clone(),
@@ -2312,6 +2349,7 @@ mod tests {
                 stable_prefix: &prefix,
                 source_kind: ChildSessionMaterializationSourceKind::DiskRunDirectory,
             },
+            &SystemChildRunIdSource,
             Some((
                 child_run_id.clone(),
                 child_run_dir.clone(),
@@ -2329,6 +2367,38 @@ mod tests {
         assert!(!child_run_dir.exists());
         assert!(!temp_run_dir.exists());
         assert_no_unpublished_temp_dirs(temp_dir.path());
+    }
+
+    #[test]
+    fn session_lineage_materialization_uses_injected_child_run_id_source() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let source_run_dir = temp_dir.path().join("run_session_lineage");
+        fs::create_dir_all(&source_run_dir).expect("create source run dir");
+        let events = finished_events();
+        write_events_jsonl(&source_run_dir, &events);
+        let prefix = validate_fork_stable_prefix(&events, events.len() as u64)
+            .expect("source prefix is stable");
+
+        let result = materialize_child_session_inner(
+            ChildSessionMaterializationRequest {
+                source_run_dir: &source_run_dir,
+                events: &events,
+                stable_prefix: &prefix,
+                source_kind: ChildSessionMaterializationSourceKind::DiskRunDirectory,
+            },
+            &StaticChildRunIdSource("run_harness_child_seeded"),
+            None,
+            || {},
+            |from, to| fs::rename(from, to),
+        )
+        .expect("materialize child with injected id");
+
+        assert_eq!(result.child_run_id, "run_harness_child_seeded");
+        assert!(result.child_run_dir.ends_with("run_harness_child_seeded"));
+        let child_events = fs::read_to_string(result.child_run_dir.join(EVENTS_FILE_NAME))
+            .expect("read child events");
+        assert!(child_events.contains("run_harness_child_seeded"));
+        assert!(child_events.contains("evt-run_harness_child_seeded-00000000000000000001"));
     }
 
     fn envelope(seq: u64, payload: EventV1) -> EventEnvelopeV1 {

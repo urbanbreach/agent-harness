@@ -103,6 +103,11 @@ use self::team::{
 #[cfg(test)]
 use self::hooks::summarize_hook_output;
 
+pub use self::hooks::{
+    LifecycleHookCommandExecutor, LifecycleHookCommandInvocation, LifecycleHookCommandOutput,
+    TokioLifecycleHookCommandExecutor,
+};
+
 use self::provider_context::{
     approximate_provider_context_tokens, approximate_text_tokens,
     build_provider_context_checkpoint, compaction_summary_model_ref,
@@ -172,6 +177,7 @@ pub struct CoordinatorConfig {
     pub provider: Arc<dyn Provider>,
     pub agent_profiles: BTreeMap<String, AgentProfile>,
     pub hook_runtime_config: HookRuntimeConfig,
+    pub hook_command_executor: Arc<dyn LifecycleHookCommandExecutor + Send + Sync>,
     pub compaction: CompactionRuntimeConfig,
     pub config_digest: String,
     pub harness_version: String,
@@ -195,6 +201,7 @@ impl CoordinatorConfig {
             provider: default_provider(),
             agent_profiles: BTreeMap::new(),
             hook_runtime_config: registered_hook_runtime_config(),
+            hook_command_executor: Arc::new(TokioLifecycleHookCommandExecutor),
             compaction: CompactionRuntimeConfig::default(),
             config_digest: "none".to_string(),
             harness_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -1842,6 +1849,7 @@ impl Coordinator {
 
         let hook_batch = hooks::run_lifecycle_hooks(
             self.clock.as_ref(),
+            self.config.hook_command_executor.as_ref(),
             &self.config.hook_runtime_config,
             HookInvocationContext {
                 event: HookLifecycleEvent::RunStarted,
@@ -2127,6 +2135,7 @@ impl Coordinator {
 
         let hook_batch = hooks::run_lifecycle_hooks(
             self.clock.as_ref(),
+            self.config.hook_command_executor.as_ref(),
             &self.config.hook_runtime_config,
             HookInvocationContext {
                 event: HookLifecycleEvent::RunFinished,
@@ -2205,6 +2214,7 @@ impl Coordinator {
         if let Some(parent) = parent_agent_id.as_ref() {
             let hook_batch = hooks::run_lifecycle_hooks(
                 self.clock.as_ref(),
+                self.config.hook_command_executor.as_ref(),
                 &self.config.hook_runtime_config,
                 HookInvocationContext {
                     event: HookLifecycleEvent::SubagentSpawned,
@@ -2313,6 +2323,7 @@ impl Coordinator {
             schedule_agent_turn(
                 self.clock.as_ref(),
                 self.redactor.as_ref(),
+                self.config.hook_command_executor.clone(),
                 self.job_tx.clone(),
                 run_state,
                 self.config.hook_runtime_config.clone(),
@@ -2446,6 +2457,7 @@ impl Coordinator {
         schedule_agent_turn(
             self.clock.as_ref(),
             self.redactor.as_ref(),
+            self.config.hook_command_executor.clone(),
             self.job_tx.clone(),
             run_state,
             self.config.hook_runtime_config.clone(),
@@ -2721,6 +2733,7 @@ impl Coordinator {
             finalize_permission_denied(
                 clock.as_ref(),
                 redactor.as_ref(),
+                self.config.hook_command_executor.as_ref(),
                 &self.config.hook_runtime_config,
                 run_state,
                 PermissionDeniedArgs {
@@ -2748,6 +2761,7 @@ impl Coordinator {
             finalize_permission_denied(
                 clock.as_ref(),
                 redactor.as_ref(),
+                self.config.hook_command_executor.as_ref(),
                 &self.config.hook_runtime_config,
                 run_state,
                 PermissionDeniedArgs {
@@ -2774,6 +2788,7 @@ impl Coordinator {
                 finalize_permission_denied(
                     clock.as_ref(),
                     redactor.as_ref(),
+                    self.config.hook_command_executor.as_ref(),
                     &self.config.hook_runtime_config,
                     run_state,
                     PermissionDeniedArgs {
@@ -2824,6 +2839,7 @@ impl Coordinator {
                     tool_execution::start_tool_call_execution(
                         clock.as_ref(),
                         redactor.as_ref(),
+                        self.config.hook_command_executor.clone(),
                         job_tx,
                         run_state,
                         self.config.hook_runtime_config.clone(),
@@ -2861,6 +2877,7 @@ impl Coordinator {
 
                 let requested_hook_batch = hooks::run_lifecycle_hooks(
                     self.clock.as_ref(),
+                    self.config.hook_command_executor.as_ref(),
                     &self.config.hook_runtime_config,
                     HookInvocationContext {
                         event: HookLifecycleEvent::PermissionRequested,
@@ -2913,6 +2930,7 @@ impl Coordinator {
 
                     let resolved_hook_batch = hooks::run_lifecycle_hooks(
                         self.clock.as_ref(),
+                        self.config.hook_command_executor.as_ref(),
                         &self.config.hook_runtime_config,
                         HookInvocationContext {
                             event: HookLifecycleEvent::PermissionResolved,
@@ -3000,6 +3018,7 @@ impl Coordinator {
                 tool_execution::start_tool_call_execution(
                     clock.as_ref(),
                     redactor.as_ref(),
+                    self.config.hook_command_executor.clone(),
                     job_tx,
                     run_state,
                     self.config.hook_runtime_config.clone(),
@@ -3097,6 +3116,7 @@ impl Coordinator {
 
         let resolved_hook_batch = hooks::run_lifecycle_hooks(
             self.clock.as_ref(),
+            self.config.hook_command_executor.as_ref(),
             &self.config.hook_runtime_config,
             HookInvocationContext {
                 event: HookLifecycleEvent::PermissionResolved,
@@ -3167,6 +3187,7 @@ impl Coordinator {
                     tool_execution::start_tool_call_execution(
                         clock.as_ref(),
                         redactor.as_ref(),
+                        self.config.hook_command_executor.clone(),
                         job_tx,
                         run_state,
                         self.config.hook_runtime_config.clone(),
@@ -3299,6 +3320,7 @@ impl Coordinator {
 
         let resolved_hook_batch = hooks::run_lifecycle_hooks(
             self.clock.as_ref(),
+            self.config.hook_command_executor.as_ref(),
             &self.config.hook_runtime_config,
             HookInvocationContext {
                 event: HookLifecycleEvent::PermissionResolved,
@@ -3438,6 +3460,7 @@ impl Coordinator {
 
             let requested_hook_batch = hooks::run_lifecycle_hooks(
                 self.clock.as_ref(),
+                self.config.hook_command_executor.as_ref(),
                 &self.config.hook_runtime_config,
                 HookInvocationContext {
                     event: HookLifecycleEvent::PermissionRequested,
@@ -3489,6 +3512,7 @@ impl Coordinator {
 
                 let resolved_hook_batch = hooks::run_lifecycle_hooks(
                     self.clock.as_ref(),
+                    self.config.hook_command_executor.as_ref(),
                     &self.config.hook_runtime_config,
                     HookInvocationContext {
                         event: HookLifecycleEvent::PermissionResolved,
@@ -4197,6 +4221,7 @@ impl Coordinator {
             append_background_task_notification_and_schedule(
                 self.clock.as_ref(),
                 self.redactor.as_ref(),
+                self.config.hook_command_executor.clone(),
                 self.job_tx.clone(),
                 run_state,
                 self.config.hook_runtime_config.clone(),
@@ -4254,6 +4279,7 @@ impl Coordinator {
             append_background_task_notification_and_schedule(
                 self.clock.as_ref(),
                 self.redactor.as_ref(),
+                self.config.hook_command_executor.clone(),
                 self.job_tx.clone(),
                 run_state,
                 self.config.hook_runtime_config.clone(),
@@ -4473,6 +4499,7 @@ impl Coordinator {
                 ));
                 let finish_hook_batch = hooks::run_lifecycle_hooks(
                     self.clock.as_ref(),
+                    self.config.hook_command_executor.as_ref(),
                     &self.config.hook_runtime_config,
                     HookInvocationContext {
                         event: HookLifecycleEvent::ToolCallFinished,
@@ -4612,6 +4639,7 @@ impl Coordinator {
                 let mut hook_executions = task_hook_state.hook_executions.clone();
                 let finish_hook_batch = hooks::run_lifecycle_hooks(
                     self.clock.as_ref(),
+                    self.config.hook_command_executor.as_ref(),
                     &self.config.hook_runtime_config,
                     HookInvocationContext {
                         event: HookLifecycleEvent::ToolCallFinished,
@@ -4692,6 +4720,7 @@ impl Coordinator {
                 let mut hook_executions = task_hook_state.hook_executions.clone();
                 let finish_hook_batch = hooks::run_lifecycle_hooks(
                     self.clock.as_ref(),
+                    self.config.hook_command_executor.as_ref(),
                     &self.config.hook_runtime_config,
                     HookInvocationContext {
                         event: HookLifecycleEvent::ToolCallFinished,
@@ -4808,6 +4837,7 @@ impl Coordinator {
 
         let hook_batch = hooks::run_lifecycle_hooks(
             self.clock.as_ref(),
+            self.config.hook_command_executor.as_ref(),
             &self.config.hook_runtime_config,
             HookInvocationContext {
                 event: HookLifecycleEvent::ProviderRequestStarted,
@@ -4974,6 +5004,7 @@ impl Coordinator {
 
         let hook_batch = hooks::run_lifecycle_hooks(
             self.clock.as_ref(),
+            self.config.hook_command_executor.as_ref(),
             &self.config.hook_runtime_config,
             HookInvocationContext {
                 event: HookLifecycleEvent::ProviderRequestFinished,
@@ -5166,6 +5197,7 @@ impl Coordinator {
 
         let requested_hook_batch = hooks::run_lifecycle_hooks(
             self.clock.as_ref(),
+            self.config.hook_command_executor.as_ref(),
             &self.config.hook_runtime_config,
             hook_context,
         )
@@ -5382,6 +5414,7 @@ impl Coordinator {
                 start_agent_turn_execution(
                     self.clock.as_ref(),
                     self.redactor.as_ref(),
+                    self.config.hook_command_executor.clone(),
                     self.job_tx.clone(),
                     run_state,
                     self.config.hook_runtime_config.clone(),
@@ -5436,6 +5469,7 @@ impl Coordinator {
             };
             let finished_hook_batch = hooks::run_lifecycle_hooks(
                 self.clock.as_ref(),
+                self.config.hook_command_executor.as_ref(),
                 &self.config.hook_runtime_config,
                 HookInvocationContext {
                     event: HookLifecycleEvent::AgentTurnFinished,
@@ -5466,6 +5500,7 @@ impl Coordinator {
             if let Some(parent_agent_id) = subagent_parent_id {
                 let subagent_finished_hook_batch = hooks::run_lifecycle_hooks(
                     self.clock.as_ref(),
+                    self.config.hook_command_executor.as_ref(),
                     &self.config.hook_runtime_config,
                     HookInvocationContext {
                         event: HookLifecycleEvent::SubagentFinished,
@@ -5552,6 +5587,7 @@ impl Coordinator {
                             append_background_task_notification_and_schedule(
                                 self.clock.as_ref(),
                                 self.redactor.as_ref(),
+                                self.config.hook_command_executor.clone(),
                                 self.job_tx.clone(),
                                 run_state,
                                 self.config.hook_runtime_config.clone(),
@@ -5612,6 +5648,7 @@ impl Coordinator {
                             append_background_task_notification_and_schedule(
                                 self.clock.as_ref(),
                                 self.redactor.as_ref(),
+                                self.config.hook_command_executor.clone(),
                                 self.job_tx.clone(),
                                 run_state,
                                 self.config.hook_runtime_config.clone(),
@@ -5738,6 +5775,7 @@ impl Coordinator {
                         append_background_task_notification_and_schedule(
                             self.clock.as_ref(),
                             self.redactor.as_ref(),
+                            self.config.hook_command_executor.clone(),
                             self.job_tx.clone(),
                             run_state,
                             self.config.hook_runtime_config.clone(),
@@ -5794,6 +5832,7 @@ impl Coordinator {
                 start_agent_turn_execution(
                     self.clock.as_ref(),
                     self.redactor.as_ref(),
+                    self.config.hook_command_executor.clone(),
                     self.job_tx.clone(),
                     run_state,
                     self.config.hook_runtime_config.clone(),
@@ -5809,6 +5848,7 @@ impl Coordinator {
         schedule_pending_agent_wakeups_for_idle_agent(
             self.clock.as_ref(),
             self.redactor.as_ref(),
+            self.config.hook_command_executor.clone(),
             self.job_tx.clone(),
             run_state,
             self.config.hook_runtime_config.clone(),
@@ -6082,6 +6122,7 @@ fn background_task_notification_text(notification: &BackgroundTaskNotificationEv
 async fn append_background_task_notification_and_schedule<C, R>(
     clock: &C,
     redactor: &R,
+    hook_command_executor: Arc<dyn LifecycleHookCommandExecutor + Send + Sync>,
     job_tx: mpsc::Sender<Command>,
     run_state: &mut RunState,
     hook_runtime_config: HookRuntimeConfig,
@@ -6193,6 +6234,7 @@ where
     schedule_agent_turn(
         clock,
         redactor,
+        hook_command_executor,
         job_tx,
         run_state,
         hook_runtime_config,
@@ -6225,6 +6267,7 @@ where
 async fn schedule_pending_agent_wakeups_for_idle_agent<C, R>(
     clock: &C,
     redactor: &R,
+    hook_command_executor: Arc<dyn LifecycleHookCommandExecutor + Send + Sync>,
     job_tx: mpsc::Sender<Command>,
     run_state: &mut RunState,
     hook_runtime_config: HookRuntimeConfig,
@@ -6256,6 +6299,7 @@ where
         schedule_agent_turn(
             clock,
             redactor,
+            hook_command_executor.clone(),
             job_tx.clone(),
             run_state,
             hook_runtime_config.clone(),
@@ -6688,9 +6732,14 @@ fn nested_provider_model_queue_key(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "agent turn scheduling needs explicit coordinator dependencies"
+)]
 async fn schedule_agent_turn<C, R>(
     clock: &C,
     redactor: &R,
+    hook_command_executor: Arc<dyn LifecycleHookCommandExecutor + Send + Sync>,
     job_tx: mpsc::Sender<Command>,
     run_state: &mut RunState,
     hook_runtime_config: HookRuntimeConfig,
@@ -6780,6 +6829,7 @@ where
             start_agent_turn_execution(
                 clock,
                 redactor,
+                hook_command_executor,
                 job_tx,
                 run_state,
                 hook_runtime_config,
@@ -6905,6 +6955,7 @@ fn provider_request_finished_metadata(
 
 async fn run_turn_start_phase<C>(
     clock: &C,
+    hook_command_executor: &(dyn LifecycleHookCommandExecutor + Send + Sync),
     run_state: &mut RunState,
     hook_runtime_config: &HookRuntimeConfig,
     task: &QueuedAgentTurn,
@@ -6921,6 +6972,7 @@ where
 
     let started_hook_batch = hooks::run_lifecycle_hooks(
         clock,
+        hook_command_executor,
         hook_runtime_config,
         HookInvocationContext {
             event: HookLifecycleEvent::AgentTurnStarted,
@@ -7006,6 +7058,7 @@ async fn request_agent_context_compaction(
 async fn start_agent_turn_execution<C, R>(
     clock: &C,
     _redactor: &R,
+    hook_command_executor: Arc<dyn LifecycleHookCommandExecutor + Send + Sync>,
     job_tx: mpsc::Sender<Command>,
     run_state: &mut RunState,
     hook_runtime_config: HookRuntimeConfig,
@@ -7018,7 +7071,14 @@ where
     C: Clock + ?Sized,
     R: Redactor + ?Sized,
 {
-    let turn_start = run_turn_start_phase(clock, run_state, &hook_runtime_config, &task).await;
+    let turn_start = run_turn_start_phase(
+        clock,
+        hook_command_executor.as_ref(),
+        run_state,
+        &hook_runtime_config,
+        &task,
+    )
+    .await;
     let cancellation_token = turn_start.cancellation_token;
 
     if let Some(reason) = turn_start.critical_failure {
@@ -7865,6 +7925,7 @@ fn provider_tool_message_status(content: &str) -> ToolCallStatus {
 async fn finalize_permission_denied<C, R>(
     clock: &C,
     redactor: &R,
+    hook_command_executor: &(dyn LifecycleHookCommandExecutor + Send + Sync),
     hook_runtime_config: &HookRuntimeConfig,
     run_state: &mut RunState,
     args: PermissionDeniedArgs<'_>,
@@ -7900,6 +7961,7 @@ where
 
     let resolved_hook_batch = hooks::run_lifecycle_hooks(
         clock,
+        hook_command_executor,
         hook_runtime_config,
         HookInvocationContext {
             event: HookLifecycleEvent::PermissionResolved,

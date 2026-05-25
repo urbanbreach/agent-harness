@@ -1,6 +1,5 @@
 use std::fs;
 use std::path::Path;
-use std::time::Duration;
 
 use harness_core::config::PermissionMode;
 use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1};
@@ -53,7 +52,7 @@ pub async fn wait_for_tool_call_finish(events_path: &Path, tool_call_id: &str) {
             return;
         }
 
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::task::yield_now().await;
     }
 
     panic!("timed out waiting for tool call {tool_call_id} to finish");

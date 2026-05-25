@@ -38,18 +38,18 @@ Read the workspace root `AGENTS.md` first for search scope, commands, and cross-
 ## TESTS
 ```bash
 cargo test -p harness-core
-cargo test -p harness-core --test coord
-cargo test -p harness-core --test coord_auth
-cargo test -p harness-core --test mcp_config
-cargo test -p harness-core --test permission_policy_supports_native_tool_permission_kinds
-cargo test -p harness-core --test replay_preserves_batch_and_child_task_metadata_for_native_and_compat_paths
-cargo test -p harness-core --test transcript_projection
+cargo test -p harness-core --test coord_test
+cargo test -p harness-core --test coord_auth_test
+cargo test -p harness-core --test mcp_config_test
+cargo test -p harness-core --test permission_policy_supports_native_tool_permission_kinds_test
+cargo test -p harness-core --test replay_preserves_batch_and_child_task_metadata_for_native_and_compat_paths_test
+cargo test -p harness-core --test transcript_projection_test
 ```
 
 Run root drift checks when event/config public contracts change:
 ```bash
-cargo test -p harness --test event_docs_reference
-cargo test -p harness --test config_docs_reference
+cargo test -p harness --test event_docs_reference_test
+cargo test -p harness --test config_docs_reference_test
 ```
 
 ## ANTI-PATTERNS

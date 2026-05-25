@@ -1,11 +1,16 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
+use std::process::ExitStatus;
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Duration;
+
+#[cfg(unix)]
+use std::os::unix::process::ExitStatusExt;
 
 use async_trait::async_trait;
 use serde_json::json;
 use tokio::sync::mpsc;
+use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 
 use crate::agent::{
@@ -18,7 +23,8 @@ use crate::clock::{FakeClock, RealClock};
 use crate::config::{
     clear_registered_mcp_server_first_class_tool_ids, load_config_from_str,
     resolve_profile_model_metadata, set_registered_mcp_server_first_class_tool_ids,
-    CategoryPermissions, CompactionRuntimeConfig, PermissionMode,
+    CategoryPermissions, CompactionRuntimeConfig, HookLifecycleEvent, HookRuntimeConfig,
+    HooksConfig, LifecycleHookConfig, PermissionMode, ShellAllowlist,
 };
 use crate::conversation::{
     ConversationAssistantMessage, ConversationMessage, ConversationToolCall,
@@ -54,11 +60,15 @@ use super::{
     provider_tool_message_status, restore_provider_context_from_history,
     schedule_pending_agent_wakeups_for_idle_agent, spawn_coordinator, summarize_hook_output,
     validate_model_compaction_summary, ChildTaskTurnState, Coordinator, CoordinatorConfig,
-    CoordinatorError, FailedTerminalCompactionRequest, HookExecutionBatch, JobOutcome,
-    JobProgressKind, ProviderCompactionTrigger, ProviderContextCompactionPlan, RunInfo, RunState,
-    RunningAgentTurn, TaskExecutionState, TaskState,
+    CoordinatorError, FailedTerminalCompactionRequest, HookExecutionBatch, HookInvocationContext,
+    JobOutcome, JobProgressKind, ProviderCompactionTrigger, ProviderContextCompactionPlan, RunInfo,
+    RunState, RunningAgentTurn, TaskExecutionState, TaskState, TokioLifecycleHookCommandExecutor,
 };
 use harness_providers::{CompletionMessage, MessageRole};
+
+use super::hooks::{
+    LifecycleHookCommandExecutor, LifecycleHookCommandInvocation, LifecycleHookCommandOutput,
+};
 
 struct TestShellTool;
 
@@ -71,6 +81,124 @@ struct TestMcpWrapperTool;
 fn mcp_identity_registry_test_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
+}
+
+struct FakeLifecycleHookCommandExecutor {
+    invocations: Mutex<Vec<LifecycleHookCommandInvocation>>,
+}
+
+impl FakeLifecycleHookCommandExecutor {
+    fn new() -> Self {
+        Self {
+            invocations: Mutex::new(Vec::new()),
+        }
+    }
+}
+
+#[async_trait]
+impl LifecycleHookCommandExecutor for FakeLifecycleHookCommandExecutor {
+    async fn execute(
+        &self,
+        invocation: LifecycleHookCommandInvocation,
+    ) -> Result<LifecycleHookCommandOutput, String> {
+        self.invocations
+            .lock()
+            .expect("fake hook executor lock")
+            .push(invocation);
+        Ok(LifecycleHookCommandOutput {
+            status: success_exit_status(),
+            stdout: "hook stdout".to_string(),
+            stderr: String::new(),
+        })
+    }
+}
+
+#[cfg(unix)]
+fn success_exit_status() -> ExitStatus {
+    ExitStatus::from_raw(0)
+}
+
+#[tokio::test]
+async fn lifecycle_hooks_use_injected_executor_without_spawning() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let executor = FakeLifecycleHookCommandExecutor::new();
+    let runtime = HookRuntimeConfig {
+        hooks: HooksConfig {
+            lifecycle: vec![LifecycleHookConfig {
+                id: Some("fake-hook".to_string()),
+                event: HookLifecycleEvent::RunStarted,
+                command: vec!["fake-hook-bin".to_string(), "--flag".to_string()],
+                cwd: Some(".".to_string()),
+                timeout_ms: 123,
+                critical: true,
+                env: BTreeMap::from([("CUSTOM".to_string(), "value".to_string())]),
+            }],
+        },
+        shell_allowlist: ShellAllowlist {
+            executables: vec!["fake-hook-bin".to_string()],
+            cwd_roots: Vec::new(),
+        },
+        suppress_execution: false,
+    };
+    let clock = FakeClock::new();
+
+    let batch = super::hooks::run_lifecycle_hooks(
+        &clock,
+        &executor,
+        &runtime,
+        HookInvocationContext {
+            event: HookLifecycleEvent::RunStarted,
+            run_id: "run_fake_hook".to_string(),
+            workspace_root: temp_dir.path().to_path_buf(),
+            artifacts_dir: temp_dir.path().join("artifacts"),
+            actor: Some(EventActor::new(ActorKind::System, None)),
+            agent_id: None,
+            request_id: None,
+            permission_id: None,
+            task_id: None,
+            tool_call_id: None,
+            tool_id: None,
+            provider_id: None,
+            model_id: None,
+            parent_agent_id: None,
+            category: None,
+            outcome: Some("started".to_string()),
+            output_summary: None,
+            failure_reason: None,
+        },
+    )
+    .await;
+
+    assert_eq!(batch.critical_failure, None);
+    assert_eq!(batch.hook_executions.len(), 1);
+    assert_eq!(
+        batch.hook_executions[0].status,
+        HookExecutionStatus::Succeeded
+    );
+    assert_eq!(
+        batch.hook_executions[0].output_summary.as_deref(),
+        Some("hook stdout")
+    );
+    let invocations = executor
+        .invocations
+        .lock()
+        .expect("fake hook executor lock");
+    assert_eq!(invocations.len(), 1);
+    assert_eq!(invocations[0].executable, "fake-hook-bin");
+    assert_eq!(invocations[0].args, vec!["--flag"]);
+    assert_eq!(invocations[0].cwd, temp_dir.path());
+    assert_eq!(invocations[0].timeout_ms, 123);
+    assert_eq!(
+        invocations[0].env.get("CUSTOM").map(String::as_str),
+        Some("value")
+    );
+    assert_eq!(
+        invocations[0]
+            .env
+            .get("HARNESS_HOOK_EVENT")
+            .map(String::as_str),
+        Some("run_started")
+    );
 }
 
 #[test]
@@ -405,7 +533,19 @@ async fn perm_allow_path_proceeds() {
         .await
         .expect("request tool call");
 
-    tokio::time::sleep(Duration::from_millis(80)).await;
+    wait_for_events(
+        &handle,
+        &run.events_path,
+        "allowed tool call to finish",
+        |event| {
+            matches!(
+                &event.payload,
+                EventV1::ToolCallFinished(data)
+                    if data.tool_call_id == tool_call_id && data.status == ToolCallStatus::Succeeded
+            )
+        },
+    )
+    .await;
     handle.stop_run().await.expect("stop run");
 
     let events = read_events(&run.events_path);
@@ -513,7 +653,18 @@ async fn permission_rule_bash_selector_is_enforced_at_tool_call_site() {
         .await
         .expect("catch-all bash rule should allow");
 
-    tokio::time::sleep(Duration::from_millis(80)).await;
+    wait_for_events(
+        &handle,
+        &run.events_path,
+        "allowed bash rule tool call to start",
+        |event| {
+            matches!(
+                &event.payload,
+                EventV1::ToolCallStarted(data) if data.tool_call_id == allowed_tool_call_id
+            )
+        },
+    )
+    .await;
     handle.stop_run().await.expect("stop run");
 
     let events = read_events(&run.events_path);
@@ -706,8 +857,19 @@ async fn perm_ask_path_blocks_until_resolved() {
         .await
         .expect("request tool call");
 
-    tokio::time::sleep(Duration::from_millis(40)).await;
-    let before_resolve = read_events(&run.events_path);
+    let before_resolve = wait_for_events(
+        &handle,
+        &run.events_path,
+        "permission request before resolve",
+        |event| {
+            matches!(
+                &event.payload,
+                EventV1::PermissionRequested(data)
+                    if data.tool_call_id.as_deref() == Some(tool_call_id.as_str())
+            )
+        },
+    )
+    .await;
     assert!(
         !before_resolve.iter().any(|event| {
             matches!(
@@ -735,7 +897,18 @@ async fn perm_ask_path_blocks_until_resolved() {
         .await
         .expect("resolve permission");
 
-    tokio::time::sleep(Duration::from_millis(80)).await;
+    wait_for_events(
+        &handle,
+        &run.events_path,
+        "tool start after permission resolve",
+        |event| {
+            matches!(
+                &event.payload,
+                EventV1::ToolCallStarted(data) if data.tool_call_id == tool_call_id
+            )
+        },
+    )
+    .await;
     handle.stop_run().await.expect("stop run");
 
     let events = read_events(&run.events_path);
@@ -801,8 +974,19 @@ async fn allow_always_records_grant_and_authorizes_matching_future_shell_call() 
         .await
         .expect("request first tool call");
 
-    tokio::time::sleep(Duration::from_millis(40)).await;
-    let before_resolve = read_events(&run.events_path);
+    let before_resolve = wait_for_events(
+        &handle,
+        &run.events_path,
+        "first durable-grant permission request",
+        |event| {
+            matches!(
+                &event.payload,
+                EventV1::PermissionRequested(data)
+                    if data.tool_call_id.as_deref() == Some(first_tool_call_id.as_str())
+            )
+        },
+    )
+    .await;
     let permission_id = before_resolve
         .iter()
         .find_map(|event| match &event.payload {
@@ -824,7 +1008,13 @@ async fn allow_always_records_grant_and_authorizes_matching_future_shell_call() 
         )
         .await
         .expect("resolve with durable grant");
-    tokio::time::sleep(Duration::from_millis(80)).await;
+    wait_for_events(
+        &handle,
+        &run.events_path,
+        "durable permission grant",
+        |event| matches!(event.payload, EventV1::PermissionGrantRecorded(_)),
+    )
+    .await;
 
     let second_tool_call_id = handle
         .request_tool_call(
@@ -836,7 +1026,18 @@ async fn allow_always_records_grant_and_authorizes_matching_future_shell_call() 
         .await
         .expect("matching grant starts without ask");
 
-    tokio::time::sleep(Duration::from_millis(80)).await;
+    wait_for_events(
+        &handle,
+        &run.events_path,
+        "second durable-grant tool call to start",
+        |event| {
+            matches!(
+                &event.payload,
+                EventV1::ToolCallStarted(data) if data.tool_call_id == second_tool_call_id
+            )
+        },
+    )
+    .await;
     handle.stop_run().await.expect("stop run");
 
     let events = read_events(&run.events_path);
@@ -890,18 +1091,29 @@ async fn allow_always_shell_run_grant_does_not_authorize_changed_args() {
         .await
         .expect("request first tool call");
 
-    tokio::time::sleep(Duration::from_millis(40)).await;
-    let permission_id = read_events(&run.events_path)
-        .iter()
-        .find_map(|event| match &event.payload {
-            EventV1::PermissionRequested(data)
-                if data.tool_call_id.as_deref() == Some(first_tool_call_id.as_str()) =>
-            {
-                Some(data.permission_id.clone())
-            }
-            _ => None,
-        })
-        .expect("permission requested");
+    let permission_id = wait_for_events(
+        &handle,
+        &run.events_path,
+        "first shell args permission request",
+        |event| {
+            matches!(
+                &event.payload,
+                EventV1::PermissionRequested(data)
+                    if data.tool_call_id.as_deref() == Some(first_tool_call_id.as_str())
+            )
+        },
+    )
+    .await
+    .iter()
+    .find_map(|event| match &event.payload {
+        EventV1::PermissionRequested(data)
+            if data.tool_call_id.as_deref() == Some(first_tool_call_id.as_str()) =>
+        {
+            Some(data.permission_id.clone())
+        }
+        _ => None,
+    })
+    .expect("permission requested");
 
     handle
         .resolve_permission_with_grant_scope(
@@ -912,7 +1124,13 @@ async fn allow_always_shell_run_grant_does_not_authorize_changed_args() {
         )
         .await
         .expect("resolve with durable grant");
-    tokio::time::sleep(Duration::from_millis(80)).await;
+    wait_for_events(
+        &handle,
+        &run.events_path,
+        "shell args durable permission grant",
+        |event| matches!(event.payload, EventV1::PermissionGrantRecorded(_)),
+    )
+    .await;
 
     let second_tool_call_id = handle
         .request_tool_call(
@@ -924,7 +1142,19 @@ async fn allow_always_shell_run_grant_does_not_authorize_changed_args() {
         .await
         .expect("request changed args tool call");
 
-    tokio::time::sleep(Duration::from_millis(80)).await;
+    wait_for_events(
+        &handle,
+        &run.events_path,
+        "changed args permission request",
+        |event| {
+            matches!(
+                &event.payload,
+                EventV1::PermissionRequested(data)
+                    if data.tool_call_id.as_deref() == Some(second_tool_call_id.as_str())
+            )
+        },
+    )
+    .await;
     handle.stop_run().await.expect("stop run");
 
     let events = read_events(&run.events_path);
@@ -973,18 +1203,29 @@ async fn static_deny_overrides_permission_grant() {
         )
         .await
         .expect("request grantable call");
-    tokio::time::sleep(Duration::from_millis(40)).await;
-    let permission_id = read_events(&run.events_path)
-        .iter()
-        .find_map(|event| match &event.payload {
-            EventV1::PermissionRequested(data)
-                if data.tool_call_id.as_deref() == Some(granted_tool_call_id.as_str()) =>
-            {
-                Some(data.permission_id.clone())
-            }
-            _ => None,
-        })
-        .expect("permission requested");
+    let permission_id = wait_for_events(
+        &handle,
+        &run.events_path,
+        "static-deny grantable permission request",
+        |event| {
+            matches!(
+                &event.payload,
+                EventV1::PermissionRequested(data)
+                    if data.tool_call_id.as_deref() == Some(granted_tool_call_id.as_str())
+            )
+        },
+    )
+    .await
+    .iter()
+    .find_map(|event| match &event.payload {
+        EventV1::PermissionRequested(data)
+            if data.tool_call_id.as_deref() == Some(granted_tool_call_id.as_str()) =>
+        {
+            Some(data.permission_id.clone())
+        }
+        _ => None,
+    })
+    .expect("permission requested");
     handle
         .resolve_permission_with_grant_scope(
             permission_id,
@@ -994,7 +1235,13 @@ async fn static_deny_overrides_permission_grant() {
         )
         .await
         .expect("record durable grant");
-    tokio::time::sleep(Duration::from_millis(80)).await;
+    wait_for_events(
+        &handle,
+        &run.events_path,
+        "static-deny durable permission grant",
+        |event| matches!(event.payload, EventV1::PermissionGrantRecorded(_)),
+    )
+    .await;
 
     let denied = handle
         .request_tool_call(
@@ -1050,18 +1297,29 @@ async fn permission_grant_event_does_not_persist_raw_shell_command_secret() {
         )
         .await
         .expect("request shell call");
-    tokio::time::sleep(Duration::from_millis(40)).await;
-    let permission_id = read_events(&run.events_path)
-        .iter()
-        .find_map(|event| match &event.payload {
-            EventV1::PermissionRequested(data)
-                if data.tool_call_id.as_deref() == Some(tool_call_id.as_str()) =>
-            {
-                Some(data.permission_id.clone())
-            }
-            _ => None,
-        })
-        .expect("permission requested");
+    let permission_id = wait_for_events(
+        &handle,
+        &run.events_path,
+        "redaction permission request",
+        |event| {
+            matches!(
+                &event.payload,
+                EventV1::PermissionRequested(data)
+                    if data.tool_call_id.as_deref() == Some(tool_call_id.as_str())
+            )
+        },
+    )
+    .await
+    .iter()
+    .find_map(|event| match &event.payload {
+        EventV1::PermissionRequested(data)
+            if data.tool_call_id.as_deref() == Some(tool_call_id.as_str()) =>
+        {
+            Some(data.permission_id.clone())
+        }
+        _ => None,
+    })
+    .expect("permission requested");
 
     handle
         .resolve_permission_with_grant_scope(
@@ -1072,7 +1330,13 @@ async fn permission_grant_event_does_not_persist_raw_shell_command_secret() {
         )
         .await
         .expect("resolve durable grant");
-    tokio::time::sleep(Duration::from_millis(80)).await;
+    wait_for_events(
+        &handle,
+        &run.events_path,
+        "redacted permission grant",
+        |event| matches!(event.payload, EventV1::PermissionGrantRecorded(_)),
+    )
+    .await;
     handle.stop_run().await.expect("stop run");
 
     let events_body = fs::read_to_string(&run.events_path).expect("read events body");
@@ -1112,7 +1376,19 @@ async fn perm_timeout_path_denies_deterministically() {
         .await
         .expect("request tool call");
 
-    tokio::time::sleep(Duration::from_millis(90)).await;
+    wait_for_events(
+        &handle,
+        &run.events_path,
+        "permission timeout failure",
+        |event| {
+            matches!(
+                &event.payload,
+                EventV1::ToolCallFinished(data)
+                    if data.tool_call_id == tool_call_id && data.status == ToolCallStatus::Failed
+            )
+        },
+    )
+    .await;
     handle.stop_run().await.expect("stop run");
 
     let events = read_events(&run.events_path);
@@ -1170,8 +1446,18 @@ async fn malformed_question_answer_does_not_resolve_permission() {
             .await
     });
 
-    tokio::time::sleep(Duration::from_millis(40)).await;
-    let before = read_events(&run.events_path);
+    let before = wait_for_events(
+        &handle,
+        &run.events_path,
+        "question permission request",
+        |event| {
+            matches!(
+                &event.payload,
+                EventV1::PermissionRequested(data) if data.kind == "question"
+            )
+        },
+    )
+    .await;
     let permission_id = before
         .iter()
         .find_map(|event| match &event.payload {
@@ -1246,7 +1532,18 @@ async fn mcp_effective_identity_persists_for_direct_and_wrapper_calls() {
         .await
         .expect("request wrapper MCP tool call");
 
-    tokio::time::sleep(Duration::from_millis(80)).await;
+    wait_for_events(
+        &handle,
+        &run.events_path,
+        "wrapper MCP tool call finished",
+        |event| {
+            matches!(
+                &event.payload,
+                EventV1::ToolCallFinished(data) if data.tool_call_id == wrapper_call_id
+            )
+        },
+    )
+    .await;
     handle.stop_run().await.expect("stop run");
 
     let events = read_events(&run.events_path);
@@ -5014,6 +5311,7 @@ async fn background_task_completion_notifies_parent_once_and_queues_active_paren
     append_background_task_notification_and_schedule(
         &clock,
         &redactor,
+        Arc::new(TokioLifecycleHookCommandExecutor),
         job_tx.clone(),
         &mut run_state,
         Default::default(),
@@ -5030,6 +5328,7 @@ async fn background_task_completion_notifies_parent_once_and_queues_active_paren
     append_background_task_notification_and_schedule(
         &clock,
         &redactor,
+        Arc::new(TokioLifecycleHookCommandExecutor),
         job_tx,
         &mut run_state,
         Default::default(),
@@ -5132,6 +5431,7 @@ async fn background_task_completion_caps_and_redacts_description_and_summary() {
     append_background_task_notification_and_schedule(
         &clock,
         &redactor,
+        Arc::new(TokioLifecycleHookCommandExecutor),
         job_tx,
         &mut run_state,
         Default::default(),
@@ -5202,6 +5502,7 @@ async fn background_task_completion_schedules_pending_wakeup_when_parent_finishe
     append_background_task_notification_and_schedule(
         &clock,
         &redactor,
+        Arc::new(TokioLifecycleHookCommandExecutor),
         job_tx.clone(),
         &mut run_state,
         Default::default(),
@@ -5228,6 +5529,7 @@ async fn background_task_completion_schedules_pending_wakeup_when_parent_finishe
     schedule_pending_agent_wakeups_for_idle_agent(
         &clock,
         &redactor,
+        Arc::new(TokioLifecycleHookCommandExecutor),
         job_tx,
         &mut run_state,
         Default::default(),
@@ -5276,6 +5578,7 @@ async fn background_task_completion_queues_parent_when_parent_is_idle() {
     append_background_task_notification_and_schedule(
         &clock,
         &redactor,
+        Arc::new(TokioLifecycleHookCommandExecutor),
         job_tx,
         &mut run_state,
         Default::default(),
@@ -5344,6 +5647,7 @@ async fn background_task_completion_sync_spawn_does_not_notify() {
     append_background_task_notification_and_schedule(
         &clock,
         &redactor,
+        Arc::new(TokioLifecycleHookCommandExecutor),
         job_tx,
         &mut run_state,
         Default::default(),
@@ -5393,6 +5697,7 @@ async fn background_task_completion_records_pending_notification_when_parent_can
     append_background_task_notification_and_schedule(
         &clock,
         &redactor,
+        Arc::new(TokioLifecycleHookCommandExecutor),
         job_tx,
         &mut run_state,
         Default::default(),
@@ -5448,6 +5753,7 @@ async fn background_task_completion_cancellation_and_late_terminal_do_not_duplic
     append_background_task_notification_and_schedule(
         &clock,
         &redactor,
+        Arc::new(TokioLifecycleHookCommandExecutor),
         job_tx.clone(),
         &mut run_state,
         Default::default(),
@@ -5480,6 +5786,7 @@ async fn background_task_completion_cancellation_and_late_terminal_do_not_duplic
     append_background_task_notification_and_schedule(
         &clock,
         &redactor,
+        Arc::new(TokioLifecycleHookCommandExecutor),
         job_tx,
         &mut run_state,
         Default::default(),
@@ -5977,4 +6284,24 @@ fn read_events(path: &Path) -> Vec<EventEnvelopeV1> {
     text.lines()
         .map(|line| serde_json::from_str::<EventEnvelopeV1>(line).expect("valid event"))
         .collect()
+}
+
+async fn wait_for_events(
+    handle: &super::CoordinatorHandle,
+    path: &Path,
+    label: &str,
+    matches: impl Fn(&EventEnvelopeV1) -> bool,
+) -> Vec<EventEnvelopeV1> {
+    let store = handle.event_store().await.expect("get event store");
+    let mut stream = store.subscribe(1).expect("subscribe to event store");
+
+    while let Some(next) = stream.next().await {
+        let event = next.expect("event stream item");
+        if matches(&event) {
+            return read_events(path);
+        }
+    }
+
+    let events = read_events(path);
+    panic!("event stream ended waiting for {label}; events: {events:#?}");
 }

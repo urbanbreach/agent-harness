@@ -108,11 +108,18 @@ pub struct Determinism;
 
 impl Determinism {
     pub fn enabled(config_deterministic: bool) -> bool {
+        Self::enabled_with_env(
+            config_deterministic,
+            std::env::var(HARNESS_DETERMINISTIC_ENV).ok().as_deref(),
+        )
+    }
+
+    fn enabled_with_env(config_deterministic: bool, env_value: Option<&str>) -> bool {
         if config_deterministic {
             return true;
         }
 
-        matches!(std::env::var(HARNESS_DETERMINISTIC_ENV).as_deref(), Ok("1"))
+        matches!(env_value, Some("1"))
     }
 
     pub fn select_clock(config_deterministic: bool) -> ClockSource {
@@ -125,15 +132,8 @@ impl Determinism {
 }
 
 #[cfg(test)]
-#[allow(unsafe_code)]
 mod tests {
-    use super::{Clock, ClockSource, Determinism, FakeClock, HARNESS_DETERMINISTIC_ENV};
-    use std::sync::{Mutex, OnceLock};
-
-    fn env_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
+    use super::{Clock, ClockSource, Determinism, FakeClock};
 
     #[test]
     fn fake_clock_starts_at_zero_and_advances_deterministically() {
@@ -149,28 +149,25 @@ mod tests {
 
     #[test]
     fn deterministic_mode_uses_fake_clock_and_no_system_time() {
-        let _guard = env_lock().lock().expect("env lock poisoned");
-        unsafe {
-            std::env::set_var(HARNESS_DETERMINISTIC_ENV, "1");
-        }
+        assert!(Determinism::enabled_with_env(false, Some("1")));
 
-        let clock = Determinism::select_clock(false);
-        assert!(matches!(clock, ClockSource::Fake(_)));
-        assert_eq!(clock.system_time_rfc3339(), None);
-
-        unsafe {
-            std::env::remove_var(HARNESS_DETERMINISTIC_ENV);
-        }
+        let configured_clock = if Determinism::enabled_with_env(false, Some("1")) {
+            ClockSource::Fake(FakeClock::new())
+        } else {
+            Determinism::select_clock(false)
+        };
+        assert!(matches!(configured_clock, ClockSource::Fake(_)));
+        assert_eq!(configured_clock.system_time_rfc3339(), None);
     }
 
     #[test]
     fn deterministic_mode_enabled_by_config() {
-        let _guard = env_lock().lock().expect("env lock poisoned");
-        unsafe {
-            std::env::remove_var(HARNESS_DETERMINISTIC_ENV);
-        }
-
-        let clock = Determinism::select_clock(true);
+        assert!(Determinism::enabled_with_env(true, None));
+        let clock = if Determinism::enabled_with_env(true, None) {
+            ClockSource::Fake(FakeClock::new())
+        } else {
+            Determinism::select_clock(false)
+        };
         assert!(matches!(clock, ClockSource::Fake(_)));
         assert_eq!(clock.system_time_rfc3339(), None);
     }

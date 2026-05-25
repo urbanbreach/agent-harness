@@ -63,3 +63,91 @@ where
         })
         .collect())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Prompt {
+        header: &'static str,
+        multiple: bool,
+    }
+
+    impl QuestionAnswerPrompt for Prompt {
+        fn header(&self) -> &str {
+            self.header
+        }
+
+        fn multiple(&self) -> bool {
+            self.multiple
+        }
+
+        fn canonical_option_label<'a>(&'a self, answer: &str) -> Option<&'a str> {
+            match answer {
+                "y" => Some("Yes"),
+                "n" => Some("No"),
+                _ => None,
+            }
+        }
+    }
+
+    #[test]
+    fn validates_question_answer_count_before_normalizing() {
+        // arrange
+        let prompts = [Prompt {
+            header: "Proceed?",
+            multiple: false,
+        }];
+
+        // act
+        let error = validate_question_answers(&prompts, Vec::new()).expect_err("answer count");
+
+        // assert
+        assert_eq!(
+            error,
+            "Expected 1 answer group(s) for 1 question(s); received 0."
+        );
+    }
+
+    #[test]
+    fn rejects_multiple_answers_for_single_select_question() {
+        // arrange
+        let prompts = [Prompt {
+            header: "Proceed?",
+            multiple: false,
+        }];
+
+        // act
+        let error = validate_question_answers(
+            &prompts,
+            vec![vec![" y ".to_string(), "n".to_string(), " ".to_string()]],
+        )
+        .expect_err("single-select overflow");
+
+        // assert
+        assert_eq!(error, "Question 1 (Proceed?) accepts only one answer.");
+    }
+
+    #[test]
+    fn trims_filters_and_canonicalizes_valid_answers() {
+        // arrange
+        let prompts = [Prompt {
+            header: "Choices",
+            multiple: true,
+        }];
+
+        // act
+        let answers = validate_question_answers(
+            &prompts,
+            vec![vec![
+                " y ".to_string(),
+                "custom".to_string(),
+                " ".to_string(),
+            ]],
+        )
+        .expect("normalized answers");
+
+        // assert
+        assert_eq!(answers, vec![vec!["Yes".to_string(), "custom".to_string()]]);
+    }
+}

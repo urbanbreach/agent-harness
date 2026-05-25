@@ -1,7 +1,10 @@
 use super::*;
+use async_trait::async_trait;
+use std::process::ExitStatus;
 
 pub(in crate::coord) async fn run_lifecycle_hooks<C>(
     clock: &C,
+    executor: &(dyn LifecycleHookCommandExecutor + Send + Sync),
     runtime: &HookRuntimeConfig,
     context: HookInvocationContext,
 ) -> HookExecutionBatch
@@ -29,7 +32,7 @@ where
         }
 
         let (metadata, failure) =
-            execute_lifecycle_hook(clock, runtime, hook, index, &context).await;
+            execute_lifecycle_hook(clock, executor, runtime, hook, index, &context).await;
         batch.hook_executions.push(metadata);
         if hook.critical {
             if let Some(failure) = failure {
@@ -44,6 +47,7 @@ where
 
 async fn execute_lifecycle_hook<C>(
     clock: &C,
+    executor: &(dyn LifecycleHookCommandExecutor + Send + Sync),
     runtime: &HookRuntimeConfig,
     hook: &LifecycleHookConfig,
     index: usize,
@@ -56,7 +60,8 @@ where
     let command_digest = digest12(hook.command.join("\u{0}").as_bytes());
     let started_mono_ms = clock.mono_ms();
 
-    let execution = execute_lifecycle_hook_command(runtime, hook, &hook_name, context).await;
+    let execution =
+        execute_lifecycle_hook_command(executor, runtime, hook, &hook_name, context).await;
     let finished_mono_ms = clock.mono_ms();
 
     match execution {
@@ -94,6 +99,7 @@ where
 }
 
 async fn execute_lifecycle_hook_command(
+    executor: &(dyn LifecycleHookCommandExecutor + Send + Sync),
     runtime: &HookRuntimeConfig,
     hook: &LifecycleHookConfig,
     hook_name: &str,
@@ -119,34 +125,26 @@ async fn execute_lifecycle_hook_command(
         hook.cwd.as_deref(),
     )
     .map_err(|err| (err, "no output".to_string()))?;
-    let mut command = tokio::process::Command::new(executable);
-    command.args(&hook.command[1..]);
-    command.current_dir(&cwd);
-    command.kill_on_drop(true);
-    for (key, value) in hook_environment(hook_name, context, &cwd, hook) {
-        command.env(key, value);
-    }
+    let invocation = LifecycleHookCommandInvocation {
+        executable: executable.clone(),
+        args: hook.command[1..].to_vec(),
+        cwd: cwd.clone(),
+        env: hook_environment(hook_name, context, &cwd, hook),
+        timeout_ms: hook.timeout_ms,
+    };
+    let output = executor.execute(invocation).await.map_err(|reason| {
+        let output_summary = "no output".to_string();
+        (reason, output_summary)
+    })?;
 
-    let output = tokio::time::timeout(Duration::from_millis(hook.timeout_ms), command.output())
-        .await
-        .map_err(|_| {
-            (
-                format!("timed out after {} ms", hook.timeout_ms),
-                "no output".to_string(),
-            )
-        })?
-        .map_err(|err| {
-            (
-                format!("failed to execute command: {err}"),
-                "no output".to_string(),
-            )
-        })?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let output_summary = summarize_hook_output(&stdout, &stderr);
-    let output_digest =
-        digest12(format!("{}\u{0}{}\u{0}{:?}", stdout, stderr, output.status).as_bytes());
+    let output_summary = summarize_hook_output(&output.stdout, &output.stderr);
+    let output_digest = digest12(
+        format!(
+            "{}\u{0}{}\u{0}{:?}",
+            output.stdout, output.stderr, output.status
+        )
+        .as_bytes(),
+    );
 
     if output.status.success() {
         Ok((output_digest, output_summary))
@@ -158,6 +156,63 @@ async fn execute_lifecycle_hook_command(
             ),
             output_summary,
         ))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LifecycleHookCommandInvocation {
+    pub executable: String,
+    pub args: Vec<String>,
+    pub cwd: PathBuf,
+    pub env: BTreeMap<String, String>,
+    pub timeout_ms: u64,
+}
+
+#[derive(Debug)]
+pub struct LifecycleHookCommandOutput {
+    pub status: ExitStatus,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+#[async_trait]
+pub trait LifecycleHookCommandExecutor {
+    async fn execute(
+        &self,
+        invocation: LifecycleHookCommandInvocation,
+    ) -> Result<LifecycleHookCommandOutput, String>;
+}
+
+#[derive(Debug, Default)]
+pub struct TokioLifecycleHookCommandExecutor;
+
+#[async_trait]
+impl LifecycleHookCommandExecutor for TokioLifecycleHookCommandExecutor {
+    async fn execute(
+        &self,
+        invocation: LifecycleHookCommandInvocation,
+    ) -> Result<LifecycleHookCommandOutput, String> {
+        let mut command = tokio::process::Command::new(&invocation.executable);
+        command.args(&invocation.args);
+        command.current_dir(&invocation.cwd);
+        command.kill_on_drop(true);
+        for (key, value) in invocation.env {
+            command.env(key, value);
+        }
+
+        let output = tokio::time::timeout(
+            Duration::from_millis(invocation.timeout_ms),
+            command.output(),
+        )
+        .await
+        .map_err(|_| format!("timed out after {} ms", invocation.timeout_ms))?
+        .map_err(|err| format!("failed to execute command: {err}"))?;
+
+        Ok(LifecycleHookCommandOutput {
+            status: output.status,
+            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        })
     }
 }
 

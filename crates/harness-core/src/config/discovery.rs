@@ -2,6 +2,52 @@ use serde::de::DeserializeOwned;
 
 use super::*;
 
+#[derive(Debug, Clone)]
+pub struct ConfigDiscoveryContext {
+    pub current_dir: PathBuf,
+    pub xdg_config_home: Option<PathBuf>,
+    pub home: Option<PathBuf>,
+    pub runtime_config_path: Option<PathBuf>,
+    pub tui_config_path: Option<PathBuf>,
+}
+
+impl ConfigDiscoveryContext {
+    pub fn from_env() -> Self {
+        Self {
+            current_dir: env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+            xdg_config_home: env::var_os("XDG_CONFIG_HOME").map(PathBuf::from),
+            home: env::var_os("HOME").map(PathBuf::from),
+            runtime_config_path: env::var_os("HARNESS_CONFIG")
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from),
+            tui_config_path: env::var_os("HARNESS_TUI_CONFIG")
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from),
+        }
+    }
+
+    pub fn with_current_dir(mut self, current_dir: PathBuf) -> Self {
+        self.current_dir = current_dir;
+        self
+    }
+
+    pub fn apply_env_var(mut self, name: &str, value: Option<String>) -> Self {
+        match name {
+            "XDG_CONFIG_HOME" => self.xdg_config_home = value.map(PathBuf::from),
+            "HOME" => self.home = value.map(PathBuf::from),
+            "HARNESS_CONFIG" => {
+                self.runtime_config_path =
+                    value.filter(|value| !value.is_empty()).map(PathBuf::from);
+            }
+            "HARNESS_TUI_CONFIG" => {
+                self.tui_config_path = value.filter(|value| !value.is_empty()).map(PathBuf::from);
+            }
+            _ => {}
+        }
+        self
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 struct MarkdownAgentFrontmatter {
@@ -37,16 +83,25 @@ pub(super) fn resolve_discovered_prompt_assets(
     parsed: &mut HarnessConfig,
     config_path: &Path,
 ) -> Result<(), ConfigError> {
-    parsed.agents = merge_configured_and_markdown_agents(&parsed.agents, config_path)?;
-    parsed.instruction_files = discover_instruction_files(config_path)?;
+    resolve_discovered_prompt_assets_with_current_dir(parsed, config_path, None)
+}
+
+pub(super) fn resolve_discovered_prompt_assets_with_current_dir(
+    parsed: &mut HarnessConfig,
+    config_path: &Path,
+    current_dir: Option<&Path>,
+) -> Result<(), ConfigError> {
+    parsed.agents = merge_configured_and_markdown_agents(&parsed.agents, config_path, current_dir)?;
+    parsed.instruction_files = discover_instruction_files(config_path, current_dir)?;
     Ok(())
 }
 
 fn merge_configured_and_markdown_agents(
     configured: &BTreeMap<String, ProfileConfig>,
     config_path: &Path,
+    current_dir: Option<&Path>,
 ) -> Result<BTreeMap<String, ProfileConfig>, ConfigError> {
-    let discovered = discover_markdown_agents(config_path)?;
+    let discovered = discover_markdown_agents(config_path, current_dir)?;
     let agent_names = discovered
         .keys()
         .chain(configured.keys())
@@ -161,10 +216,11 @@ fn profile_from_markdown_agent(
 
 fn discover_markdown_agents(
     config_path: &Path,
+    current_dir: Option<&Path>,
 ) -> Result<BTreeMap<String, MarkdownAgentFile>, ConfigError> {
     let mut agents = BTreeMap::new();
 
-    for dir in agent_prompt_search_dirs(config_path) {
+    for dir in agent_prompt_search_dirs(config_path, current_dir) {
         if !dir.exists() {
             continue;
         }
@@ -206,11 +262,14 @@ fn discover_markdown_agents(
     Ok(agents)
 }
 
-fn discover_instruction_files(config_path: &Path) -> Result<Vec<InstructionFile>, ConfigError> {
+fn discover_instruction_files(
+    config_path: &Path,
+    current_dir: Option<&Path>,
+) -> Result<Vec<InstructionFile>, ConfigError> {
     let mut instructions = Vec::new();
     let mut seen = BTreeSet::new();
 
-    for path in instruction_search_paths(config_path) {
+    for path in instruction_search_paths(config_path, current_dir) {
         if !path.exists() || !seen.insert(path.clone()) {
             continue;
         }
@@ -310,10 +369,10 @@ fn collect_markdown_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), Co
     Ok(())
 }
 
-fn agent_prompt_search_dirs(config_path: &Path) -> Vec<PathBuf> {
+fn agent_prompt_search_dirs(config_path: &Path, current_dir: Option<&Path>) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
 
-    for base in discovery_search_bases(config_path) {
+    for base in discovery_search_bases(config_path, current_dir) {
         push_unique_path(&mut dirs, base.join(".agent-harness").join("agents"));
     }
 
@@ -324,10 +383,10 @@ fn agent_prompt_search_dirs(config_path: &Path) -> Vec<PathBuf> {
     dirs
 }
 
-fn instruction_search_paths(config_path: &Path) -> Vec<PathBuf> {
+fn instruction_search_paths(config_path: &Path, current_dir: Option<&Path>) -> Vec<PathBuf> {
     let mut paths = Vec::new();
 
-    for base in discovery_search_bases(config_path) {
+    for base in discovery_search_bases(config_path, current_dir) {
         push_unique_path(&mut paths, base.join("AGENTS.md"));
     }
 
@@ -338,11 +397,11 @@ fn instruction_search_paths(config_path: &Path) -> Vec<PathBuf> {
     paths
 }
 
-fn discovery_search_bases(config_path: &Path) -> Vec<PathBuf> {
+fn discovery_search_bases(config_path: &Path, current_dir: Option<&Path>) -> Vec<PathBuf> {
     let mut bases = Vec::new();
 
-    if let Ok(cwd) = env::current_dir() {
-        for base in project_search_bases(&cwd) {
+    if let Some(current_dir) = current_dir {
+        for base in project_search_bases(current_dir) {
             push_unique_path(&mut bases, base);
         }
     }
@@ -375,26 +434,28 @@ fn push_unique_path(paths: &mut Vec<PathBuf>, candidate: PathBuf) {
 }
 
 pub fn resolve_config_layer_paths(explicit_path: Option<&Path>) -> Vec<PathBuf> {
+    resolve_config_layer_paths_with_context(explicit_path, &ConfigDiscoveryContext::from_env())
+}
+
+pub fn resolve_config_layer_paths_with_context(
+    explicit_path: Option<&Path>,
+    context: &ConfigDiscoveryContext,
+) -> Vec<PathBuf> {
     if let Some(path) = explicit_path {
         return vec![path.to_path_buf()];
     }
 
     let mut paths = Vec::new();
 
-    if let Some(global_path) = discover_xdg_runtime_config_path() {
+    if let Some(global_path) = discover_xdg_runtime_config_path(context) {
         push_unique_path(&mut paths, global_path);
     }
 
-    if let Some(env_path) = discover_runtime_config_env_path() {
+    if let Some(env_path) = discover_runtime_config_env_path(context) {
         push_unique_path(&mut paths, env_path);
     }
 
-    for local_path in discover_project_runtime_config_paths(
-        env::current_dir()
-            .ok()
-            .as_deref()
-            .unwrap_or_else(|| Path::new(".")),
-    ) {
+    for local_path in discover_project_runtime_config_paths(&context.current_dir) {
         push_unique_path(&mut paths, local_path);
     }
 
@@ -402,30 +463,44 @@ pub fn resolve_config_layer_paths(explicit_path: Option<&Path>) -> Vec<PathBuf> 
 }
 
 pub fn resolve_config_path(explicit_path: Option<&Path>) -> Option<PathBuf> {
+    resolve_config_path_with_context(explicit_path, &ConfigDiscoveryContext::from_env())
+}
+
+pub fn resolve_config_path_with_context(
+    explicit_path: Option<&Path>,
+    context: &ConfigDiscoveryContext,
+) -> Option<PathBuf> {
     if let Some(path) = explicit_path {
         return Some(path.to_path_buf());
     }
 
-    resolve_config_layer_paths(None).into_iter().last()
+    resolve_config_layer_paths_with_context(None, context)
+        .into_iter()
+        .last()
 }
 
-pub(super) fn resolve_tui_config_layer_paths(explicit_path: Option<&Path>) -> Vec<PathBuf> {
+pub(super) fn resolve_tui_config_layer_paths_with_context(
+    explicit_path: Option<&Path>,
+    context: &ConfigDiscoveryContext,
+) -> Vec<PathBuf> {
     let mut paths = Vec::new();
 
-    if let Some(global_path) = discover_xdg_tui_config_path() {
+    if let Some(global_path) = discover_xdg_tui_config_path(context) {
         push_unique_path(&mut paths, global_path);
     }
 
-    if let Some(env_path) = discover_tui_config_env_path() {
+    if let Some(env_path) = discover_tui_config_env_path(context) {
         push_unique_path(&mut paths, env_path);
     }
 
-    let local_base = env::current_dir().unwrap_or_else(|_| {
+    let local_base = if context.current_dir.as_os_str().is_empty() {
         explicit_path
             .and_then(Path::parent)
             .map(Path::to_path_buf)
             .unwrap_or_else(|| PathBuf::from("."))
-    });
+    } else {
+        context.current_dir.clone()
+    };
     for local_path in discover_project_tui_config_paths(&local_base) {
         push_unique_path(&mut paths, local_path);
     }
@@ -433,8 +508,8 @@ pub(super) fn resolve_tui_config_layer_paths(explicit_path: Option<&Path>) -> Ve
     paths
 }
 
-fn discover_xdg_runtime_config_path() -> Option<PathBuf> {
-    config_home_dir().and_then(|base| {
+fn discover_xdg_runtime_config_path(context: &ConfigDiscoveryContext) -> Option<PathBuf> {
+    config_home_dir(context).and_then(|base| {
         [
             base.join("harness").join("harness.jsonc"),
             base.join("harness").join("harness.json"),
@@ -445,8 +520,8 @@ fn discover_xdg_runtime_config_path() -> Option<PathBuf> {
     })
 }
 
-fn discover_xdg_tui_config_path() -> Option<PathBuf> {
-    config_home_dir().and_then(|base| {
+fn discover_xdg_tui_config_path(context: &ConfigDiscoveryContext) -> Option<PathBuf> {
+    config_home_dir(context).and_then(|base| {
         [
             base.join("harness").join("tui.jsonc"),
             base.join("harness").join("tui.json"),
@@ -456,22 +531,19 @@ fn discover_xdg_tui_config_path() -> Option<PathBuf> {
     })
 }
 
-fn config_home_dir() -> Option<PathBuf> {
-    env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
+fn config_home_dir(context: &ConfigDiscoveryContext) -> Option<PathBuf> {
+    context
+        .xdg_config_home
+        .clone()
+        .or_else(|| context.home.as_ref().map(|home| home.join(".config")))
 }
 
-fn discover_runtime_config_env_path() -> Option<PathBuf> {
-    env::var_os("HARNESS_CONFIG")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
+fn discover_runtime_config_env_path(context: &ConfigDiscoveryContext) -> Option<PathBuf> {
+    context.runtime_config_path.clone()
 }
 
-fn discover_tui_config_env_path() -> Option<PathBuf> {
-    env::var_os("HARNESS_TUI_CONFIG")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
+fn discover_tui_config_env_path(context: &ConfigDiscoveryContext) -> Option<PathBuf> {
+    context.tui_config_path.clone()
 }
 
 fn discover_project_runtime_config_paths(start: &Path) -> Vec<PathBuf> {

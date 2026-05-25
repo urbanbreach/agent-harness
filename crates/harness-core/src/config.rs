@@ -20,9 +20,13 @@ mod discovery;
 mod loader;
 mod public;
 
-pub use self::discovery::{resolve_config_layer_paths, resolve_config_path};
+pub use self::discovery::{
+    resolve_config_layer_paths, resolve_config_path, resolve_config_path_with_context,
+    ConfigDiscoveryContext,
+};
 pub use self::loader::{
-    load_config_from_file, load_config_from_str, load_resolved_config, LoadedConfig,
+    load_config_from_file, load_config_from_file_with_context, load_config_from_str,
+    load_resolved_config, load_resolved_config_with_context, ConfigLoadContext, LoadedConfig,
 };
 pub use self::public::{
     harness_schema_pretty_json, harness_tui_schema_pretty_json, InstructionList, PublicAgentConfig,
@@ -2625,81 +2629,19 @@ fn is_builtin_lsp_server(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{
-        ffi::{OsStr, OsString},
-        sync::Mutex,
-    };
+    use std::sync::Mutex;
 
     static CONFIG_DISCOVERY_TEST_LOCK: Mutex<()> = Mutex::new(());
-    static CONFIG_ENV_TEST_LOCK: Mutex<()> = Mutex::new(());
-    const DISCOVERY_ENV_VARS: &[&str] = &[
-        "XDG_CONFIG_HOME",
-        "HOME",
-        "HARNESS_CONFIG",
-        "HARNESS_CONFIG_CONTENT",
-        "HARNESS_TUI_CONFIG",
-    ];
-
-    fn set_env_var(name: &str, value: Option<&OsStr>) {
-        match value {
-            Some(value) => env::set_var(name, value),
-            None => env::remove_var(name),
-        }
-    }
-
-    #[allow(unsafe_code)]
-    fn with_env_var_state<T>(name: &str, value: Option<&str>, run: impl FnOnce() -> T) -> T {
-        let _lock = CONFIG_ENV_TEST_LOCK
-            .lock()
-            .expect("config env test lock should not be poisoned");
-        let previous = env::var_os(name);
-
-        set_env_var(name, value.map(OsStr::new));
-
-        let result = run();
-
-        set_env_var(name, previous.as_deref());
-
-        result
-    }
-
-    struct DiscoveryTestContext {
-        previous_cwd: PathBuf,
-        previous_env: Vec<(&'static str, Option<OsString>)>,
-    }
-
-    impl DiscoveryTestContext {
-        fn new(cwd: &Path, xdg_config_home: Option<&Path>) -> Self {
-            let previous_cwd = env::current_dir().expect("capture current dir");
-            let previous_env = DISCOVERY_ENV_VARS
-                .iter()
-                .map(|name| (*name, env::var_os(name)))
-                .collect();
-
-            env::set_current_dir(cwd).expect("set test current dir");
-            set_env_var("XDG_CONFIG_HOME", xdg_config_home.map(Path::as_os_str));
-            set_env_var("HOME", Some(cwd.as_os_str()));
-            for name in [
-                "HARNESS_CONFIG",
-                "HARNESS_CONFIG_CONTENT",
-                "HARNESS_TUI_CONFIG",
-            ] {
-                set_env_var(name, None);
-            }
-
-            Self {
-                previous_cwd,
-                previous_env,
-            }
-        }
-    }
-
-    impl Drop for DiscoveryTestContext {
-        fn drop(&mut self) {
-            let _ = env::set_current_dir(&self.previous_cwd);
-            for (name, value) in self.previous_env.drain(..).rev() {
-                set_env_var(name, value.as_deref());
-            }
+    fn discovery_context(cwd: &Path, xdg_config_home: Option<&Path>) -> ConfigLoadContext {
+        ConfigLoadContext {
+            discovery: ConfigDiscoveryContext {
+                current_dir: cwd.to_path_buf(),
+                xdg_config_home: xdg_config_home.map(Path::to_path_buf),
+                home: Some(cwd.to_path_buf()),
+                runtime_config_path: None,
+                tui_config_path: None,
+            },
+            runtime_content: None,
         }
     }
 
@@ -2854,7 +2796,7 @@ mod tests {
     }
 
     #[test]
-    fn example_config_parses() {
+    fn example_config_parses_public_agents_and_compaction() {
         let agents = r#"
             deep: {
               description: "Default deep execution profile",
@@ -4183,7 +4125,6 @@ mod tests {
         let config_path = temp.path().join("nested/config.jsonc");
         fs::create_dir_all(config_path.parent().expect("config parent"))
             .expect("create config parent");
-        let _ctx = DiscoveryTestContext::new(temp.path(), None);
         let cfg = r#"
             {
               providers: {
@@ -4413,10 +4354,10 @@ mod tests {
         fs::write(&cwd_config, "cwd").expect("write cwd config");
         fs::write(&explicit_config, "explicit").expect("write explicit config");
 
-        let _context = DiscoveryTestContext::new(temp.path(), Some(&xdg_root));
+        let context = discovery_context(temp.path(), Some(&xdg_root));
 
         assert_eq!(
-            resolve_config_path(Some(&explicit_config)),
+            resolve_config_path_with_context(Some(&explicit_config), &context.discovery),
             Some(explicit_config)
         );
     }
@@ -4436,9 +4377,12 @@ mod tests {
         fs::write(&xdg_config, "xdg").expect("write xdg config");
         fs::write(&cwd_config, "cwd").expect("write cwd config");
 
-        let _context = DiscoveryTestContext::new(temp.path(), Some(&xdg_root));
+        let context = discovery_context(temp.path(), Some(&xdg_root));
 
-        assert_eq!(resolve_config_path(None), Some(cwd_config));
+        assert_eq!(
+            resolve_config_path_with_context(None, &context.discovery),
+            Some(cwd_config)
+        );
     }
 
     #[test]
@@ -4460,10 +4404,10 @@ mod tests {
         .expect("write xdg config");
         fs::write(&cwd_config, "{ agents: {} }").expect("write cwd config");
 
-        let _context = DiscoveryTestContext::new(temp.path(), Some(&xdg_root));
+        let context = discovery_context(temp.path(), Some(&xdg_root));
 
         assert_eq!(
-            resolve_config_layer_paths(None),
+            discovery::resolve_config_layer_paths_with_context(None, &context.discovery),
             vec![xdg_config, cwd_config]
         );
     }
@@ -4511,21 +4455,19 @@ mod tests {
             fs::write(path, "{}").expect("write placeholder config");
         }
 
-        let _context = DiscoveryTestContext::new(&nested, Some(&xdg_root));
-        let env_config_value = env_config.to_str().expect("env config utf-8").to_string();
-        with_env_var_state("HARNESS_CONFIG", Some(&env_config_value), || {
-            assert_eq!(
-                resolve_config_layer_paths(None),
-                vec![
-                    xdg_config,
-                    env_config,
-                    repo_config,
-                    repo_dot_config,
-                    nested_config,
-                    nested_dot_config,
-                ]
-            );
-        });
+        let mut context = discovery_context(&nested, Some(&xdg_root));
+        context.discovery.runtime_config_path = Some(env_config.clone());
+        assert_eq!(
+            discovery::resolve_config_layer_paths_with_context(None, &context.discovery),
+            vec![
+                xdg_config,
+                env_config,
+                repo_config,
+                repo_dot_config,
+                nested_config,
+                nested_dot_config,
+            ]
+        );
     }
 
     #[test]
@@ -4616,9 +4558,9 @@ mod tests {
         )
         .expect("write cwd config");
 
-        let _context = DiscoveryTestContext::new(temp.path(), Some(&xdg_root));
+        let context = discovery_context(temp.path(), Some(&xdg_root));
 
-        let loaded = load_resolved_config(None)
+        let loaded = load_resolved_config_with_context(None, &context)
             .expect("load resolved config")
             .expect("merged config should resolve");
 
@@ -4665,21 +4607,17 @@ mod tests {
         )
         .expect("write config");
 
-        let _context = DiscoveryTestContext::new(temp.path(), None);
-        with_env_var_state(
-            "HARNESS_CONFIG_CONTENT",
-            Some("{ permission: { bash: \"allow\" }, default_agent: \"plan\" }"),
-            || {
-                let loaded = load_resolved_config(None)
-                    .expect("load config")
-                    .expect("config should resolve");
-                assert!(matches!(
-                    loaded.config.permissions.defaults.shell,
-                    PermissionMode::Allow
-                ));
-                assert_eq!(loaded.config.default_agent.as_deref(), Some("plan"));
-            },
-        );
+        let mut context = discovery_context(temp.path(), None);
+        context.runtime_content =
+            Some("{ permission: { bash: \"allow\" }, default_agent: \"plan\" }".to_string());
+        let loaded = load_resolved_config_with_context(None, &context)
+            .expect("load config")
+            .expect("config should resolve");
+        assert!(matches!(
+            loaded.config.permissions.defaults.shell,
+            PermissionMode::Allow
+        ));
+        assert_eq!(loaded.config.default_agent.as_deref(), Some("plan"));
     }
 
     #[test]
@@ -4707,9 +4645,9 @@ mod tests {
         )
         .expect("write explicit config");
 
-        let _context = DiscoveryTestContext::new(temp.path(), Some(&xdg_root));
+        let context = discovery_context(temp.path(), Some(&xdg_root));
 
-        let loaded = load_resolved_config(Some(&explicit_config))
+        let loaded = load_resolved_config_with_context(Some(&explicit_config), &context)
             .expect("load explicit config")
             .expect("explicit config should resolve");
 
@@ -4813,56 +4751,47 @@ mod tests {
 
     #[test]
     fn env_var_default_fallback_works() {
-        with_env_var_state("HARNESS_CONFIG_TEST_API_KEY_FALLBACK", None, || {
-            let cfg = config_fixture(
-                &deep_profile(r#"tools: ["fs.read"],"#),
-                "${HARNESS_CONFIG_TEST_API_KEY_FALLBACK:-fallback-key}",
-                None,
-                None,
-            );
+        let cfg = config_fixture(
+            &deep_profile(r#"tools: ["fs.read"],"#),
+            "${HARNESS_CONFIG_TEST_API_KEY_FALLBACK:-fallback-key}",
+            None,
+            None,
+        );
 
-            let parsed =
-                load_config_from_str(&cfg).expect("config with fallback env reference must parse");
-            let ProviderConfig::OpenAiCompatible(provider) =
-                parsed.providers.get("default").unwrap();
-            assert_eq!(provider.api_key, "fallback-key");
-        });
+        let parsed = loader::load_config_from_str_with_lookup(&cfg, &|_| None)
+            .expect("config with fallback env reference must parse");
+        let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
+        assert_eq!(provider.api_key, "fallback-key");
     }
 
     #[test]
     fn env_var_default_fallback_uses_fallback_for_empty_var() {
-        with_env_var_state("HARNESS_CONFIG_TEST_API_KEY_FALLBACK", Some(""), || {
-            let cfg = config_fixture(
-                &deep_profile(r#"tools: ["fs.read"],"#),
-                "${HARNESS_CONFIG_TEST_API_KEY_FALLBACK:-fallback-key}",
-                None,
-                None,
-            );
+        let cfg = config_fixture(
+            &deep_profile(r#"tools: ["fs.read"],"#),
+            "${HARNESS_CONFIG_TEST_API_KEY_FALLBACK:-fallback-key}",
+            None,
+            None,
+        );
 
-            let parsed = load_config_from_str(&cfg)
-                .expect("config with empty fallback env reference must parse");
-            let ProviderConfig::OpenAiCompatible(provider) =
-                parsed.providers.get("default").unwrap();
-            assert_eq!(provider.api_key, "fallback-key");
-        });
+        let parsed = loader::load_config_from_str_with_lookup(&cfg, &|_| Some(String::new()))
+            .expect("config with empty fallback env reference must parse");
+        let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
+        assert_eq!(provider.api_key, "fallback-key");
     }
 
     #[test]
     fn empty_env_var_uses_default_fallback() {
-        with_env_var_state("HARNESS_CONFIG_TEST_API_KEY_EMPTY", Some(""), || {
-            let cfg = config_fixture(
-                &deep_profile(r#"tools: ["fs.read"],"#),
-                "${HARNESS_CONFIG_TEST_API_KEY_EMPTY:-fallback-key}",
-                None,
-                None,
-            );
+        let cfg = config_fixture(
+            &deep_profile(r#"tools: ["fs.read"],"#),
+            "${HARNESS_CONFIG_TEST_API_KEY_EMPTY:-fallback-key}",
+            None,
+            None,
+        );
 
-            let parsed = load_config_from_str(&cfg)
-                .expect("config with empty env reference should use fallback value");
-            let ProviderConfig::OpenAiCompatible(provider) =
-                parsed.providers.get("default").unwrap();
-            assert_eq!(provider.api_key, "fallback-key");
-        });
+        let parsed = loader::load_config_from_str_with_lookup(&cfg, &|_| Some(String::new()))
+            .expect("config with empty env reference should use fallback value");
+        let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
+        assert_eq!(provider.api_key, "fallback-key");
     }
 
     #[test]
@@ -4874,8 +4803,8 @@ mod tests {
             None,
         );
 
-        let err =
-            load_config_from_str(&cfg).expect_err("missing required env variable should fail");
+        let err = loader::load_config_from_str_with_lookup(&cfg, &|_| None)
+            .expect_err("missing required env variable should fail");
         assert_eq!(
             err.to_string(),
             "environment variable `HARNESS_CONFIG_TEST_API_KEY_REQUIRED` referenced in config is not set"
@@ -4884,8 +4813,9 @@ mod tests {
 
     #[test]
     fn missing_openai_api_key_errors_even_for_cliproxy_loopback_base_url() {
-        let err = loader::resolve_string_reference("${OPENAI_API_KEY}", None)
-            .expect_err("loopback providers should still require OPENAI_API_KEY");
+        let err =
+            loader::resolve_string_reference_with_lookup("${OPENAI_API_KEY}", None, &|_| None)
+                .expect_err("loopback providers should still require OPENAI_API_KEY");
 
         assert_eq!(
             err.to_string(),
@@ -4895,29 +4825,28 @@ mod tests {
 
     #[test]
     fn configured_openai_api_key_env_reference_resolves_without_fallback() {
-        with_env_var_state("OPENAI_API_KEY", Some("test-openai-api-key"), || {
-            let resolved = loader::resolve_string_reference("${OPENAI_API_KEY}", None)
-                .expect("OPENAI_API_KEY should resolve when it is set");
+        let resolved =
+            loader::resolve_string_reference_with_lookup("${OPENAI_API_KEY}", None, &|_| {
+                Some("test-openai-api-key".to_string())
+            })
+            .expect("OPENAI_API_KEY should resolve when it is set");
 
-            assert_eq!(resolved, "test-openai-api-key");
-        });
+        assert_eq!(resolved, "test-openai-api-key");
     }
 
     #[test]
     fn upstream_env_reference_uses_empty_string_when_missing() {
-        with_env_var_state("HARNESS_CONFIG_TEST_OPTIONAL_EMPTY", None, || {
-            let cfg = config_fixture(
-                &deep_profile(r#"tools: ["fs.read"],"#),
-                "{env:HARNESS_CONFIG_TEST_OPTIONAL_EMPTY}",
-                None,
-                None,
-            );
+        let cfg = config_fixture(
+            &deep_profile(r#"tools: ["fs.read"],"#),
+            "{env:HARNESS_CONFIG_TEST_OPTIONAL_EMPTY}",
+            None,
+            None,
+        );
 
-            let parsed = load_config_from_str(&cfg).expect("upstream env reference should parse");
-            let ProviderConfig::OpenAiCompatible(provider) =
-                parsed.providers.get("default").unwrap();
-            assert_eq!(provider.api_key, "");
-        });
+        let parsed = loader::load_config_from_str_with_lookup(&cfg, &|_| None)
+            .expect("upstream env reference should parse");
+        let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
+        assert_eq!(provider.api_key, "");
     }
 
     #[test]
@@ -4955,7 +4884,6 @@ mod tests {
         let repo = temp.path().join("repo");
         fs::create_dir_all(&repo).expect("create repo dir");
         fs::create_dir_all(repo.join(".git")).expect("create git dir");
-        let _ctx = DiscoveryTestContext::new(&repo, None);
 
         let config_path = repo.join("harness.jsonc");
         fs::write(&config_path, config_fixture("", "test-key", None, None)).expect("write config");
@@ -4995,7 +4923,6 @@ Execute from markdown only."#,
         let repo = temp.path().join("repo");
         fs::create_dir_all(&repo).expect("create repo dir");
         fs::create_dir_all(repo.join(".git")).expect("create git dir");
-        let _ctx = DiscoveryTestContext::new(&repo, None);
 
         let config_path = repo.join("harness.jsonc");
         fs::write(&config_path, config_fixture("", "test-key", None, None)).expect("write config");
@@ -5029,7 +4956,6 @@ Legacy prompt body."#,
         let repo = temp.path().join("repo");
         fs::create_dir_all(&repo).expect("create repo dir");
         fs::create_dir_all(repo.join(".git")).expect("create git dir");
-        let _ctx = DiscoveryTestContext::new(&repo, None);
 
         let config_path = repo.join("harness.jsonc");
         fs::write(
@@ -5065,7 +4991,6 @@ Legacy prompt body."#,
         let repo = temp.path().join("repo");
         fs::create_dir_all(&repo).expect("create repo dir");
         fs::create_dir_all(repo.join(".git")).expect("create git dir");
-        let _ctx = DiscoveryTestContext::new(&repo, None);
 
         let config_path = repo.join("harness.jsonc");
         fs::write(
@@ -5097,7 +5022,6 @@ Legacy prompt body."#,
         fs::create_dir_all(&outside).expect("create outside dir");
         fs::create_dir_all(&config_dir).expect("create config dir");
         fs::create_dir_all(repo.join(".git")).expect("create git dir");
-        let _ctx = DiscoveryTestContext::new(&outside, None);
 
         let config_path = config_dir.join("harness.jsonc");
         fs::write(&config_path, config_fixture("", "test-key", None, None)).expect("write config");
@@ -5139,7 +5063,6 @@ Prompt discovered from the config repo root."#,
         let repo = temp.path().join("repo");
         fs::create_dir_all(&repo).expect("create repo dir");
         fs::create_dir_all(repo.join(".git")).expect("create git dir");
-        let _ctx = DiscoveryTestContext::new(&repo, None);
 
         let config_path = repo.join("harness.jsonc");
         fs::write(
@@ -5163,7 +5086,6 @@ Prompt discovered from the config repo root."#,
         let repo = temp.path().join("repo");
         fs::create_dir_all(&repo).expect("create repo dir");
         fs::create_dir_all(repo.join(".git")).expect("create git dir");
-        let _ctx = DiscoveryTestContext::new(&repo, None);
 
         let config_path = repo.join("harness.jsonc");
         fs::write(
@@ -5195,7 +5117,6 @@ Broken prompt."#,
         let repo = temp.path().join("repo");
         fs::create_dir_all(&repo).expect("create repo dir");
         fs::create_dir_all(repo.join(".git")).expect("create git dir");
-        let _ctx = DiscoveryTestContext::new(&repo, None);
 
         let config_path = repo.join("harness.jsonc");
         fs::write(

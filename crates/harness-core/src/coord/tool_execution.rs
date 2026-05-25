@@ -3,6 +3,7 @@ use super::*;
 pub(in crate::coord) async fn start_tool_call_execution<C, R>(
     clock: &C,
     redactor: &R,
+    hook_command_executor: Arc<dyn LifecycleHookCommandExecutor + Send + Sync>,
     job_tx: mpsc::Sender<Command>,
     run_state: &mut RunState,
     hook_runtime_config: HookRuntimeConfig,
@@ -111,6 +112,7 @@ where
 
     let started_hook_batch = hooks::run_lifecycle_hooks(
         clock,
+        hook_command_executor.as_ref(),
         &hook_runtime_config,
         HookInvocationContext {
             event: HookLifecycleEvent::ToolCallStarted,
