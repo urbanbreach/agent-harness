@@ -1,0 +1,167 @@
+{
+  "schema_version": "simulation-matrix-v1",
+  "invariants": [
+    {
+      "invariant_id": "INV-001",
+      "description": "Deterministic golden_path runs finish with the expected event vocabulary and replay status.",
+      "behavioral": true
+    },
+    {
+      "invariant_id": "INV-002",
+      "description": "The edit tool permission, lifecycle, edit_applied, and artifact_written events form one complete digest-linked chain.",
+      "behavioral": true
+    },
+    {
+      "invariant_id": "INV-003",
+      "description": "Replay projection for the admitted scenario is side-effect-free, finished, not resumable, and has no pending work.",
+      "behavioral": true
+    },
+    {
+      "invariant_id": "INV-004",
+      "description": "Simulation artifacts are redacted, indexed with relative paths, and same-seed normalized summaries match exactly.",
+      "behavioral": true
+    }
+  ],
+  "scenarios": [
+    {
+      "scenario_id": "golden_path",
+      "description": "Offline deterministic golden path run using the built-in mock provider and native edit tool flow.",
+      "determinism_class": "offline-deterministic",
+      "invariant_ids": [
+        "INV-001",
+        "INV-002",
+        "INV-003",
+        "INV-004"
+      ],
+      "owner_tests_or_lanes": [
+        "scripts/test-lanes.sh simulation",
+        "cargo test -p harness-testkit --test simulation_validator_test"
+      ],
+      "replay_command": "harness replay --session <simulation-run-dir> --json",
+      "expected_artifacts": [
+        "simulation-matrix.json",
+        "simulation-events.jsonl",
+        "simulation-report.json",
+        "artifact-index.jsonl",
+        "simulation-summary.txt",
+        "normalized-summary-baseline.json",
+        "normalized-summary-repeat.json",
+        "same-seed-comparison.txt"
+      ],
+      "seed_policy": "fixed deterministic harness seed 0 recorded in artifacts",
+      "artifact_schema_versions": {
+        "matrix": "simulation-matrix-v1",
+        "event": "simulation-event-v1",
+        "report": "simulation-report-v1",
+        "artifact_index": "artifact-index-v1",
+        "normalization": "simulation-normalization-v1"
+      },
+      "negative_controls": [
+        "matrix-drift-fails",
+        "unknown-invariant-id-fails",
+        "invalid-schema-row-fails",
+        "duplicate-scenario-id-fails",
+        "non-monotonic-jsonl-sequence-fails",
+        "missing-actor-identity-fails",
+        "missing-component-identity-fails",
+        "unknown-scenario-id-in-event-row-fails",
+        "signoff-row-claiming-behavioral-ownership-fails",
+        "missing-expected-artifact-fails",
+        "same-seed-normalized-summary-mismatch-fails",
+        "secret-bearing-artifact-fails"
+      ],
+      "live_policy": "not-applicable",
+      "source_surface": "crates/harness/src/scenarios.rs",
+      "fixture_paths": [
+        "crates/harness-testkit/fixtures/mock_provider"
+      ],
+      "provider_mode": "mock-provider-no-cassette",
+      "failure_modes": [
+        "provider_request_digest_changed",
+        "edit_artifact_digest_changed",
+        "replay_projection_changed",
+        "same_seed_summary_changed"
+      ],
+      "report_sections": [
+        "narrative-summary",
+        "behavior-delta",
+        "invariant-results",
+        "artifact-index",
+        "replay-commands",
+        "failure-signals",
+        "redaction-summary",
+        "raw-evidence-paths",
+        "volatile-fields"
+      ],
+      "expected_predicates": {
+        "event_kind_counts": {
+          "agent_spawned": 2,
+          "artifact_written": 1,
+          "assistant_message_finished": 1,
+          "edit_applied": 1,
+          "edit_proposed": 1,
+          "permission_requested": 1,
+          "permission_resolved": 1,
+          "provider_request_finished": 2,
+          "provider_request_started": 2,
+          "provider_stream_delta": 1,
+          "run_finished": 1,
+          "run_started": 1,
+          "task_cancelled": 1,
+          "task_completed": 2,
+          "task_scheduled": 3,
+          "tool_call_finished": 1,
+          "tool_call_requested": 1,
+          "tool_call_started": 1
+        },
+        "provider_request_digests": [
+          "1cfa33b6fe6a",
+          "b99a116ac75e"
+        ],
+        "edit_artifact_links": {
+          "artifact_digest": "5a0337d1b44806cc0ae095412f6d42e5fe725124c445f279db0f85f08a4adff6",
+          "artifact_path": "artifacts/edit-edit-golden-path.diff",
+          "diff_digest": "5a0337d1b44806cc0ae095412f6d42e5fe725124c445f279db0f85f08a4adff6",
+          "diff_rel_path": "artifacts/edit-edit-golden-path.diff",
+          "path_digest_match": true
+        },
+        "permission_lifecycle": {
+          "decisions": [
+            "allow"
+          ],
+          "requested": 1,
+          "resolved": 1
+        },
+        "replay": {
+          "status": "finished",
+          "mode_source": "scenario_fixture",
+          "is_resumable": false,
+          "artifact_count": 1,
+          "pending_permissions": 0,
+          "tasks_in_flight": 0,
+          "total_events": 24
+        },
+        "tool_artifacts": [
+          {
+            "path": "artifacts/edit-edit-golden-path.diff",
+            "digest": "5a0337d1b44806cc0ae095412f6d42e5fe725124c445f279db0f85f08a4adff6"
+          }
+        ],
+        "tool_lifecycle": {
+          "finish_statuses": [
+            "succeeded"
+          ],
+          "finished": 1,
+          "requested": 1,
+          "started": 1
+        }
+      },
+      "post_mvp": [
+        {
+          "area": "provider-cassette-determinism",
+          "reason": "The admitted MVP scenario uses the existing mock provider surface, not recorded provider cassettes; missing cassette, request mismatch, and secret-bearing cassette controls remain post-MVP until a cassette-backed scenario is admitted."
+        }
+      ]
+    }
+  ]
+}
