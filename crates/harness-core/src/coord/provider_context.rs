@@ -171,6 +171,107 @@ pub(super) struct ProviderContextCompactionPlan {
     pub(super) tail_boundary: ProviderCompactionTailBoundary,
 }
 
+pub(super) struct ProviderContextCompactionRequest<'a> {
+    run_state: &'a RunState,
+    trigger: ProviderCompactionTrigger,
+    compaction_config: &'a CompactionRuntimeConfig,
+    summary_decision: &'a CompactionSummaryDecision,
+}
+
+impl<'a> ProviderContextCompactionRequest<'a> {
+    pub(super) fn new(
+        run_state: &'a RunState,
+        trigger: ProviderCompactionTrigger,
+        compaction_config: &'a CompactionRuntimeConfig,
+        summary_decision: &'a CompactionSummaryDecision,
+    ) -> Self {
+        Self {
+            run_state,
+            trigger,
+            compaction_config,
+            summary_decision,
+        }
+    }
+
+    pub(super) fn plan(
+        self,
+        redactor: &(impl Redactor + ?Sized),
+    ) -> Option<ProviderContextCompactionDecision> {
+        let current_context = self
+            .run_state
+            .provider_context_by_agent
+            .get(&self.trigger.agent_id)
+            .cloned()
+            .unwrap_or_default();
+        let current_context_tokens = approximate_provider_context_tokens(&current_context);
+        let metadata = recorded_runtime_context_for_compaction(self.run_state, &self.trigger);
+        if !should_compact_provider_context(
+            &current_context,
+            &metadata,
+            &self.trigger,
+            self.compaction_config,
+        ) {
+            return None;
+        }
+
+        let trigger_estimate = provider_context_trigger_estimate(
+            &current_context,
+            &metadata,
+            &self.trigger,
+            self.compaction_config,
+        );
+        let tokens_before_estimate = trigger_estimate
+            .as_ref()
+            .map(|estimate| estimate.tokens_before_estimate)
+            .unwrap_or(current_context_tokens);
+        let mut trigger = self.trigger;
+        if trigger.estimate_source.is_none() {
+            trigger.estimate_source = trigger_estimate.map(|estimate| estimate.source.to_string());
+        }
+
+        let checkpoint = build_provider_context_checkpoint(
+            ProviderContextCheckpointRequest {
+                run_state: self.run_state,
+                trigger: &trigger,
+                context: &current_context,
+                keep_recent_budget: provider_context_keep_recent_tokens(&metadata),
+                tokens_before_estimate,
+                compaction_config: self.compaction_config,
+                summary_decision: self.summary_decision,
+            },
+            redactor,
+        )?;
+        let updated_context = ProviderContext::from_checkpoint(checkpoint.clone());
+        let tokens_after_estimate = approximate_provider_context_tokens(&updated_context);
+
+        Some(ProviderContextCompactionDecision {
+            trigger,
+            checkpoint,
+            updated_context,
+            tokens_before_estimate,
+            tokens_after_estimate,
+        })
+    }
+}
+
+pub(super) struct ProviderContextCompactionDecision {
+    pub(super) trigger: ProviderCompactionTrigger,
+    pub(super) checkpoint: ProviderContextCheckpoint,
+    pub(super) updated_context: ProviderContext,
+    pub(super) tokens_before_estimate: u32,
+    pub(super) tokens_after_estimate: u32,
+}
+
+struct ProviderContextCheckpointRequest<'a> {
+    run_state: &'a RunState,
+    trigger: &'a ProviderCompactionTrigger,
+    context: &'a ProviderContext,
+    keep_recent_budget: u32,
+    tokens_before_estimate: u32,
+    compaction_config: &'a CompactionRuntimeConfig,
+    summary_decision: &'a CompactionSummaryDecision,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SplitPrefixSummaryDecision {
     summary: String,
@@ -330,20 +431,20 @@ pub(super) fn provider_context_trigger_estimate(
     })
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "checkpoint assembly keeps run state, trigger, token estimates, redaction, and summary decision explicit"
-)]
-pub(super) fn build_provider_context_checkpoint(
-    run_state: &RunState,
-    trigger: &ProviderCompactionTrigger,
-    context: &ProviderContext,
+fn build_provider_context_checkpoint(
+    request: ProviderContextCheckpointRequest<'_>,
     redactor: &(impl Redactor + ?Sized),
-    keep_recent_budget: u32,
-    tokens_before_estimate: u32,
-    compaction_config: &CompactionRuntimeConfig,
-    summary_decision: &CompactionSummaryDecision,
 ) -> Option<ProviderContextCheckpoint> {
+    let ProviderContextCheckpointRequest {
+        run_state,
+        trigger,
+        context,
+        keep_recent_budget,
+        tokens_before_estimate,
+        compaction_config,
+        summary_decision,
+    } = request;
+
     let plan = build_provider_context_compaction_plan(
         run_state,
         trigger,

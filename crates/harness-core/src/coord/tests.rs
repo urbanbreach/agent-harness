@@ -9,7 +9,7 @@ use std::os::unix::process::ExitStatusExt;
 
 use async_trait::async_trait;
 use serde_json::json;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 
@@ -40,8 +40,8 @@ use crate::event::{
     ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use crate::perm::{
-    PermissionDecision, PermissionGrantScope, PermissionKind, PermissionPolicy,
-    PermissionRuleRequest,
+    PermissionDecision, PermissionGrant, PermissionGrantMatcher, PermissionGrantScope,
+    PermissionKind, PermissionPolicy, PermissionRuleRequest, PermissionToolSelector,
 };
 use crate::proj::{inspect_resume_plan, RecordedRuntimeContext};
 use crate::redact::DefaultRedactor;
@@ -55,20 +55,22 @@ use super::{
     append_background_task_notification_and_schedule, append_payload_event_with_correlation,
     build_model_compaction_prompt, build_provider_context_summary, compact_provider_context,
     compaction_summary_override_from_hooks, completion_messages_to_conversation_messages,
-    mark_failed_terminal_compaction_attempt, permission_rule_request_selectors,
-    plan_mode_shell_boundary_denial, provider_context_summary_required_headings,
-    provider_tool_message_status, restore_provider_context_from_history,
-    schedule_pending_agent_wakeups_for_idle_agent, spawn_coordinator, summarize_hook_output,
-    validate_model_compaction_summary, ChildTaskTurnState, Coordinator, CoordinatorConfig,
-    CoordinatorError, FailedTerminalCompactionRequest, HookExecutionBatch, HookInvocationContext,
-    JobOutcome, JobProgressKind, ProviderCompactionTrigger, ProviderContextCompactionPlan, RunInfo,
-    RunState, RunningAgentTurn, TaskExecutionState, TaskState, TokioLifecycleHookCommandExecutor,
+    permission_rule_request_selectors, plan_mode_shell_boundary_denial,
+    provider_context_summary_required_headings, provider_tool_message_status,
+    restore_provider_context_from_history, schedule_pending_agent_wakeups_for_idle_agent,
+    spawn_coordinator, summarize_hook_output, validate_model_compaction_summary,
+    ChildTaskTurnState, Coordinator, CoordinatorConfig, CoordinatorError,
+    FailedTerminalCompactionRequest, HookExecutionBatch, HookInvocationContext, JobOutcome,
+    JobProgressKind, PendingPermissionResolution, PendingPermissionState,
+    ProviderCompactionTrigger, ProviderContextCompactionPlan, QueuedAgentTurn, RunInfo, RunState,
+    RunningAgentTurn, TaskExecutionState, TaskState, TokioLifecycleHookCommandExecutor,
 };
 use harness_providers::{CompletionMessage, MessageRole};
 
 use super::hooks::{
     LifecycleHookCommandExecutor, LifecycleHookCommandInvocation, LifecycleHookCommandOutput,
 };
+use super::provider_context::ProviderContextCompactionRequest;
 
 struct TestShellTool;
 
@@ -2089,6 +2091,101 @@ fn proactive_compaction_writes_checkpoint_artifact_and_updates_provider_context(
         Some(true)
     );
     assert!(checkpoint.summary.contains("first question"));
+}
+
+#[test]
+fn provider_context_compaction_request_returns_none_for_single_turn_manual_context() {
+    // arrange
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let redactor = DefaultRedactor::default();
+    let mut run_state = test_run_state(temp_dir.path(), "run_compaction_request_noop");
+    run_state.recorded_runtime_context = Some(compaction_runtime_context());
+    run_state.provider_context_by_agent.insert(
+        "agent_000001".to_string(),
+        ProviderContext::from_turns(vec![long_turn("only question", 'A')]),
+    );
+    let trigger = ProviderCompactionTrigger {
+        agent_id: "agent_000001".to_string(),
+        profile_name: "alpha".to_string(),
+        model_ref: "default:model-1".to_string(),
+        provider_id: Some("default".to_string()),
+        model_id: Some("model-1".to_string()),
+        through_request_id: Some("req_000001".to_string()),
+        trigger_reason: "manual".to_string(),
+        tokens_before: None,
+        prompt_tokens_estimate: None,
+        estimate_source: None,
+    };
+    let summary_decision = super::CompactionSummaryDecision::deterministic(&trigger);
+
+    // act
+    let decision = ProviderContextCompactionRequest::new(
+        &run_state,
+        trigger,
+        &CompactionRuntimeConfig::default(),
+        &summary_decision,
+    )
+    .plan(&redactor);
+
+    // assert
+    assert!(decision.is_none());
+    assert!(read_events(&run_state.info.events_path).is_empty());
+}
+
+#[test]
+fn provider_context_compaction_request_builds_checkpoint_decision_without_appending_events() {
+    // arrange
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let redactor = DefaultRedactor::default();
+    let mut run_state = test_run_state(temp_dir.path(), "run_compaction_request_plan");
+    run_state.recorded_runtime_context = Some(compaction_runtime_context());
+    run_state.provider_context_by_agent.insert(
+        "agent_000001".to_string(),
+        ProviderContext::from_turns(vec![
+            long_turn("planned first question", 'A'),
+            long_turn("planned second question", 'B'),
+        ]),
+    );
+    let trigger = ProviderCompactionTrigger {
+        agent_id: "agent_000001".to_string(),
+        profile_name: "alpha".to_string(),
+        model_ref: "default:model-1".to_string(),
+        provider_id: Some("default".to_string()),
+        model_id: Some("model-1".to_string()),
+        through_request_id: Some("req_000002".to_string()),
+        trigger_reason: "pre_prompt".to_string(),
+        tokens_before: None,
+        prompt_tokens_estimate: Some(512),
+        estimate_source: None,
+    };
+    let summary_decision = super::CompactionSummaryDecision::deterministic(&trigger);
+
+    // act
+    let decision = ProviderContextCompactionRequest::new(
+        &run_state,
+        trigger,
+        &CompactionRuntimeConfig::default(),
+        &summary_decision,
+    )
+    .plan(&redactor)
+    .expect("compaction request should produce checkpoint decision");
+
+    // assert
+    assert_eq!(
+        decision.trigger.estimate_source.as_deref(),
+        Some("estimated_context_and_prompt")
+    );
+    assert_eq!(decision.checkpoint.metadata.agent_id, "agent_000001");
+    assert_eq!(decision.checkpoint.metadata.through_seq, 0);
+    assert_eq!(decision.checkpoint.recent_turns.len(), 1);
+    assert_eq!(
+        decision.checkpoint.recent_turns[0].user_prompt,
+        "planned second question"
+    );
+    assert_eq!(decision.checkpoint.facts.compacted_turns.len(), 1);
+    assert!(decision.tokens_after_estimate < decision.tokens_before_estimate);
+    assert!(decision.updated_context.compacted_summary.is_some());
+    assert!(read_events(&run_state.info.events_path).is_empty());
 }
 
 #[test]
@@ -4379,7 +4476,7 @@ fn failed_response_compaction_does_not_double_compact_same_request() {
         trigger_reason: "failed_response".to_string(),
     };
     assert!(
-        !mark_failed_terminal_compaction_attempt(&mut unchanged, &failed_request),
+        !unchanged.failed_terminal_compaction_attempt_should_run(&failed_request),
         "unchanged context already checkpointed by overflow retry should not compact again"
     );
     let aborted_request = FailedTerminalCompactionRequest {
@@ -4387,7 +4484,7 @@ fn failed_response_compaction_does_not_double_compact_same_request() {
         ..failed_request.clone()
     };
     assert!(
-        !mark_failed_terminal_compaction_attempt(&mut unchanged, &aborted_request),
+        !unchanged.failed_terminal_compaction_attempt_should_run(&aborted_request),
         "same task/request must not run both failed and aborted terminal compaction"
     );
 
@@ -4412,11 +4509,11 @@ fn failed_response_compaction_does_not_double_compact_same_request() {
             ..ProviderConversationTurn::default()
         });
     assert!(
-        mark_failed_terminal_compaction_attempt(&mut changed, &failed_request),
+        changed.failed_terminal_compaction_attempt_should_run(&failed_request),
         "appending the failed turn materially changes context and permits terminal compaction"
     );
     assert!(
-        !mark_failed_terminal_compaction_attempt(&mut changed, &aborted_request),
+        !changed.failed_terminal_compaction_attempt_should_run(&aborted_request),
         "terminal compaction is still one-shot per task/request after a real attempt"
     );
 }
@@ -5941,6 +6038,177 @@ fn background_child_task(run_in_background: bool) -> ChildTaskTurnState {
         description: "Summarize the repository".to_string(),
         run_in_background,
     }
+}
+
+fn queued_agent_turn_fixture(
+    task_id: &str,
+    agent_id: &str,
+    scheduler_queued: bool,
+) -> QueuedAgentTurn {
+    QueuedAgentTurn {
+        task_id: task_id.to_string(),
+        agent_id: agent_id.to_string(),
+        request_id: format!("req_{task_id}"),
+        profile: test_agent_profile(agent_id),
+        request: crate::agent::AgentRequest {
+            agent_id: agent_id.to_string(),
+            prompt: format!("prompt for {agent_id}"),
+            prompt_context: None,
+            selected_file_tags: Vec::new(),
+            selected_agent_tags: Vec::new(),
+            selected_resource_tags: Vec::new(),
+            model_ref: "mock:model-1".to_string(),
+            model_settings: Default::default(),
+        },
+        queue_key: ConcurrencyKey::ProviderModel {
+            provider_id: "mock".to_string(),
+            model_id: "model-1".to_string(),
+        },
+        scheduler_queued,
+        child_task: None,
+    }
+}
+
+fn permission_grant_request_fixture() -> crate::perm::PermissionGrantRequest {
+    crate::perm::PermissionGrantRequest {
+        kind: PermissionKind::Shell,
+        tool: PermissionToolSelector {
+            effective_tool_id: "bash".to_string(),
+            canonical_tool_id: Some("bash".to_string()),
+        },
+        matcher: PermissionGrantMatcher::RequestDigest {
+            request_digest: "digest-1".to_string(),
+        },
+    }
+}
+
+#[test]
+fn run_state_turn_queue_methods_own_agent_turn_lifecycle_state() {
+    // arrange
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let clock = FakeClock::new();
+    let mut run_state = test_run_state(temp_dir.path(), "run_state_turn_methods");
+
+    run_state.queue_agent_turn(queued_agent_turn_fixture(
+        "task_000002",
+        "agent_000001",
+        false,
+    ));
+    run_state.queue_agent_turn(queued_agent_turn_fixture(
+        "task_000001",
+        "agent_000001",
+        false,
+    ));
+    run_state.queue_agent_turn(queued_agent_turn_fixture(
+        "task_000003",
+        "agent_000001",
+        true,
+    ));
+
+    // act
+    assert!(run_state.agent_has_active_or_queued_turn("agent_000001"));
+    assert_eq!(
+        run_state
+            .next_agent_blocked_turn_id("agent_000001")
+            .as_deref(),
+        Some("task_000001")
+    );
+
+    run_state.mark_queued_agent_turn_scheduler_queued("task_000001");
+    assert_eq!(
+        run_state
+            .next_agent_blocked_turn_id("agent_000001")
+            .as_deref(),
+        Some("task_000002")
+    );
+
+    let running = queued_agent_turn_fixture("task_000004", "agent_000001", false);
+    let cancellation_token = CancellationToken::new();
+    run_state.begin_running_agent_turn(&clock, &running, Vec::new(), cancellation_token.clone());
+
+    // assert
+    assert!(run_state.agent_has_running_turn("agent_000001"));
+    assert!(run_state.agent_has_active_or_queued_turn("agent_000001"));
+    assert_eq!(
+        run_state.running_agent_turns["task_000004"].request_prompt,
+        "prompt for agent_000001"
+    );
+    assert_eq!(
+        run_state.running_agent_turns["task_000004"]
+            .queue_key
+            .queue_key(),
+        "provider_model:mock:model-1"
+    );
+}
+
+#[test]
+fn run_state_permission_methods_own_pending_and_grant_state() {
+    // arrange
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let mut run_state = test_run_state(temp_dir.path(), "run_state_permission_methods");
+    let (respond_to, _response_rx) = oneshot::channel();
+    let request = permission_grant_request_fixture();
+    let pending = PendingPermissionState {
+        tool_call_id: "toolcall_000001".to_string(),
+        request_correlation_id: Some("req_000001".to_string()),
+        hook_executions: Vec::new(),
+        grant_request: Some(request.clone()),
+        resolution: PendingPermissionResolution::ToolCall {
+            tool_id: "bash".to_string(),
+            args_json: serde_json::json!({"cmd":"git status"}),
+            actor: EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+            category: Some("build".to_string()),
+            respond_to: Some(respond_to),
+        },
+    };
+
+    // act
+    run_state.insert_pending_permission("perm_000001".to_string(), pending);
+
+    // assert
+    assert!(run_state.pending_permission("perm_000001").is_some());
+    assert!(run_state.take_pending_permission("perm_000001").is_some());
+    assert!(run_state.pending_permission("perm_000001").is_none());
+
+    run_state.record_permission_grant(PermissionGrant {
+        grant_id: "grant_000001".to_string(),
+        permission_id: "perm_000001".to_string(),
+        scope: PermissionGrantScope::Session,
+        expires_at: None,
+        kind: request.kind,
+        tool: request.tool.clone(),
+        matcher: request.matcher.clone(),
+    });
+
+    assert!(run_state.permission_grant_authorizes(&request));
+}
+
+#[test]
+fn run_state_compaction_methods_own_overflow_retry_attempt_state() {
+    // arrange
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let mut run_state = test_run_state(temp_dir.path(), "run_state_compaction_methods");
+    let request = FailedTerminalCompactionRequest::new(
+        "task_000001",
+        "agent_000001",
+        "req_000001",
+        "failed_response",
+    );
+
+    // act
+    assert!(run_state.failed_terminal_compaction_attempt_should_run(&request));
+
+    // assert
+    assert!(!run_state.failed_terminal_compaction_attempt_should_run(&request));
+
+    let mut second = test_run_state(temp_dir.path(), "run_state_compaction_overflow_skip");
+    let compacted = ProviderContext::from_turns(vec![long_turn("same turn", 'A')]);
+    second
+        .provider_context_by_agent
+        .insert("agent_000001".to_string(), compacted.clone());
+    second.record_overflow_retry_compacted_context("task_000001", "req_000001", compacted);
+
+    assert!(!second.failed_terminal_compaction_attempt_should_run(&request));
 }
 
 fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {

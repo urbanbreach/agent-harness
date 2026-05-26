@@ -109,13 +109,11 @@ pub use self::hooks::{
 };
 
 use self::provider_context::{
-    approximate_provider_context_tokens, approximate_text_tokens,
-    build_provider_context_checkpoint, compaction_summary_model_ref,
-    model_backed_compaction_summary_for, provider_context_keep_recent_tokens,
-    provider_context_trigger_estimate, recorded_runtime_context_for_compaction,
-    restore_provider_context_from_history, serialize_provider_context_checkpoint,
-    should_compact_provider_context, CompactionSummaryDecision, ModelBackedCompactionSummary,
-    ProviderCompactionTrigger, PROVIDER_CONTEXT_COMPACTION_TURN_EXCERPT_MAX_CHARS,
+    approximate_provider_context_tokens, approximate_text_tokens, compaction_summary_model_ref,
+    model_backed_compaction_summary_for, restore_provider_context_from_history,
+    serialize_provider_context_checkpoint, CompactionSummaryDecision, ModelBackedCompactionSummary,
+    ProviderCompactionTrigger, ProviderContextCompactionRequest,
+    PROVIDER_CONTEXT_COMPACTION_TURN_EXCERPT_MAX_CHARS,
 };
 
 #[cfg(test)]
@@ -2832,10 +2830,7 @@ impl Coordinator {
                     &digest,
                 );
 
-                if run_state
-                    .active_permission_grants
-                    .authorizes(&grant_request)
-                {
+                if run_state.permission_grant_authorizes(&grant_request) {
                     tool_execution::start_tool_call_execution(
                         clock.as_ref(),
                         redactor.as_ref(),
@@ -3001,9 +2996,7 @@ impl Coordinator {
                     return Err(CoordinatorError::LifecycleHookFailed(final_reason));
                 }
 
-                run_state
-                    .pending_permissions
-                    .insert(permission_id.clone(), pending);
+                run_state.insert_pending_permission(permission_id.clone(), pending);
 
                 if timeout_ms > 0 {
                     tokio::spawn(async move {
@@ -3057,7 +3050,7 @@ impl Coordinator {
             .as_mut()
             .ok_or(CoordinatorError::RunNotStarted)?;
 
-        let Some(existing) = run_state.pending_permissions.get(&permission_id) else {
+        let Some(existing) = run_state.pending_permission(&permission_id) else {
             return Err(CoordinatorError::UnknownPermission(permission_id));
         };
 
@@ -3074,8 +3067,7 @@ impl Coordinator {
         };
 
         let pending = run_state
-            .pending_permissions
-            .remove(&permission_id)
+            .take_pending_permission(&permission_id)
             .expect("pending permission exists after validation");
 
         let hook_request_id = pending
@@ -3181,7 +3173,7 @@ impl Coordinator {
                             request_correlation_id.as_deref(),
                             grant.clone(),
                         )?;
-                        run_state.active_permission_grants.record(grant);
+                        run_state.record_permission_grant(grant);
                     }
 
                     tool_execution::start_tool_call_execution(
@@ -3279,7 +3271,7 @@ impl Coordinator {
             return;
         };
 
-        let Some(pending) = run_state.pending_permissions.remove(&permission_id) else {
+        let Some(pending) = run_state.take_pending_permission(&permission_id) else {
             return;
         };
 
@@ -3552,9 +3544,7 @@ impl Coordinator {
                 return Err(CoordinatorError::LifecycleHookFailed(final_reason));
             }
 
-            run_state
-                .pending_permissions
-                .insert(permission_id.clone(), pending);
+            run_state.insert_pending_permission(permission_id.clone(), pending);
 
             let job_tx = self.job_tx.clone();
             if timeout_ms > 0 {
@@ -5290,17 +5280,16 @@ impl Coordinator {
             }
         };
 
-        if trigger.trigger_reason == "overflow_retry" {
-            if let (Some(task_id), Some(request_id)) =
-                (task_id, trigger.through_request_id.as_ref())
-            {
-                run_state
-                    .overflow_retry_compacted_context_by_attempt
-                    .insert(
-                        (task_id.to_string(), request_id.clone()),
-                        updated_context.updated_context.clone(),
-                    );
-            }
+        if let ("overflow_retry", Some(task_id), Some(request_id)) = (
+            trigger.trigger_reason.as_str(),
+            task_id,
+            trigger.through_request_id.as_deref(),
+        ) {
+            run_state.record_overflow_retry_compacted_context(
+                task_id,
+                request_id,
+                updated_context.updated_context.clone(),
+            );
         }
 
         Ok(CompactAgentContextResult::CheckpointWritten {
@@ -5319,7 +5308,7 @@ impl Coordinator {
             let Some(run_state) = self.run_state.as_mut() else {
                 return;
             };
-            mark_failed_terminal_compaction_attempt(run_state, &request)
+            run_state.failed_terminal_compaction_attempt_should_run(&request)
         };
         if !should_attempt {
             return;
@@ -5375,15 +5364,11 @@ impl Coordinator {
         let Some(run_state) = self.run_state.as_mut() else {
             return Ok(());
         };
-        if run_state
-            .running_agent_turns
-            .values()
-            .any(|running| running.agent_id == agent_id)
-        {
+        if run_state.agent_has_running_turn(agent_id) {
             return Ok(());
         }
 
-        let Some(blocked_task_id) = next_agent_blocked_turn_id(run_state, agent_id) else {
+        let Some(blocked_task_id) = run_state.next_agent_blocked_turn_id(agent_id) else {
             return Ok(());
         };
         let Some(queued) = run_state.queued_agent_turns.get(&blocked_task_id).cloned() else {
@@ -5426,9 +5411,7 @@ impl Coordinator {
                 .await?;
             }
             ScheduleDecision::Queued(_) => {
-                if let Some(queued) = run_state.queued_agent_turns.get_mut(&blocked_task_id) {
-                    queued.scheduler_queued = true;
-                }
+                run_state.mark_queued_agent_turn_scheduler_queued(&blocked_task_id);
             }
         }
 
@@ -5899,6 +5882,133 @@ struct RunState {
     tool_state: ToolRunState,
 }
 
+impl RunState {
+    fn agent_has_active_or_queued_turn(&self, agent_id: &str) -> bool {
+        self.running_agent_turns
+            .values()
+            .any(|running| running.agent_id == agent_id)
+            || self
+                .queued_agent_turns
+                .values()
+                .any(|queued| queued.agent_id == agent_id)
+    }
+
+    fn agent_has_running_turn(&self, agent_id: &str) -> bool {
+        self.running_agent_turns
+            .values()
+            .any(|running| running.agent_id == agent_id)
+    }
+
+    fn next_agent_blocked_turn_id(&self, agent_id: &str) -> Option<String> {
+        self.queued_agent_turns
+            .values()
+            .filter(|queued| queued.agent_id == agent_id && !queued.scheduler_queued)
+            .min_by(|left, right| left.task_id.cmp(&right.task_id))
+            .map(|queued| queued.task_id.clone())
+    }
+
+    fn queue_agent_turn(&mut self, queued: QueuedAgentTurn) {
+        self.queued_agent_turns
+            .insert(queued.task_id.clone(), queued);
+    }
+
+    fn mark_queued_agent_turn_scheduler_queued(&mut self, task_id: &str) {
+        if let Some(queued) = self.queued_agent_turns.get_mut(task_id) {
+            queued.scheduler_queued = true;
+        }
+    }
+
+    fn begin_running_agent_turn<C>(
+        &mut self,
+        clock: &C,
+        task: &QueuedAgentTurn,
+        hook_executions: Vec<HookExecutionMetadata>,
+        cancellation_token: CancellationToken,
+    ) where
+        C: Clock + ?Sized,
+    {
+        self.running_agent_turns.insert(
+            task.task_id.clone(),
+            RunningAgentTurn {
+                agent_id: task.agent_id.clone(),
+                request_id: task.request_id.clone(),
+                request_prompt: task.request.prompt.clone(),
+                profile_name: task.profile.name.clone(),
+                model_ref: task.request.model_ref.clone(),
+                model_settings: task.request.model_settings.clone(),
+                category: Some(task.profile.category.clone()),
+                queue_key: task.queue_key.clone(),
+                cancellation_token,
+                started_mono_ms: clock.mono_ms(),
+                hook_executions,
+                latest_provider_usage: None,
+                latest_provider_request_id: None,
+                latest_assistant_output: None,
+                latest_provider_id: None,
+                latest_model_id: None,
+                child_task: task.child_task.clone(),
+            },
+        );
+    }
+
+    fn pending_permission(&self, permission_id: &str) -> Option<&PendingPermissionState> {
+        self.pending_permissions.get(permission_id)
+    }
+
+    fn insert_pending_permission(
+        &mut self,
+        permission_id: String,
+        pending: PendingPermissionState,
+    ) {
+        self.pending_permissions.insert(permission_id, pending);
+    }
+
+    fn take_pending_permission(&mut self, permission_id: &str) -> Option<PendingPermissionState> {
+        self.pending_permissions.remove(permission_id)
+    }
+
+    fn record_permission_grant(&mut self, grant: PermissionGrant) {
+        self.active_permission_grants.record(grant);
+    }
+
+    fn permission_grant_authorizes(&self, grant_request: &PermissionGrantRequest) -> bool {
+        self.active_permission_grants.authorizes(grant_request)
+    }
+
+    fn record_overflow_retry_compacted_context(
+        &mut self,
+        task_id: &str,
+        request_id: &str,
+        context: ProviderContext,
+    ) {
+        self.overflow_retry_compacted_context_by_attempt
+            .insert((task_id.to_string(), request_id.to_string()), context);
+    }
+
+    fn failed_terminal_compaction_attempt_should_run(
+        &mut self,
+        request: &FailedTerminalCompactionRequest,
+    ) -> bool {
+        let key = request.attempt_key();
+        if !self.failed_terminal_compaction_attempts.insert(key.clone()) {
+            return false;
+        }
+
+        if let Some(overflow_context) = self.overflow_retry_compacted_context_by_attempt.get(&key) {
+            let current_context = self
+                .provider_context_by_agent
+                .get(&request.agent_id)
+                .cloned()
+                .unwrap_or_default();
+            if &current_context == overflow_context {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
 #[derive(Debug)]
 struct ChildSessionMirror {
     event_store: Arc<JsonlFileEventStore>,
@@ -6215,11 +6325,7 @@ where
         }),
     )?;
 
-    if run_state
-        .running_agent_turns
-        .values()
-        .any(|running| running.agent_id == parent_agent_id)
-    {
+    if run_state.agent_has_running_turn(&parent_agent_id) {
         run_state
             .pending_agent_wakeups
             .entry(parent_agent_id)
@@ -6280,11 +6386,7 @@ where
     C: Clock + ?Sized,
     R: Redactor + ?Sized,
 {
-    if run_state
-        .running_agent_turns
-        .values()
-        .any(|running| running.agent_id == agent_id)
-    {
+    if run_state.agent_has_running_turn(agent_id) {
         return Ok(());
     }
 
@@ -6408,55 +6510,6 @@ impl FailedTerminalCompactionRequest {
     fn attempt_key(&self) -> (String, String) {
         (self.task_id.clone(), self.request_id.clone())
     }
-}
-
-fn mark_failed_terminal_compaction_attempt(
-    run_state: &mut RunState,
-    request: &FailedTerminalCompactionRequest,
-) -> bool {
-    let key = request.attempt_key();
-    if !run_state
-        .failed_terminal_compaction_attempts
-        .insert(key.clone())
-    {
-        return false;
-    }
-
-    if let Some(overflow_context) = run_state
-        .overflow_retry_compacted_context_by_attempt
-        .get(&key)
-    {
-        let current_context = run_state
-            .provider_context_by_agent
-            .get(&request.agent_id)
-            .cloned()
-            .unwrap_or_default();
-        if &current_context == overflow_context {
-            return false;
-        }
-    }
-
-    true
-}
-
-fn agent_has_active_or_queued_turn(run_state: &RunState, agent_id: &str) -> bool {
-    run_state
-        .running_agent_turns
-        .values()
-        .any(|running| running.agent_id == agent_id)
-        || run_state
-            .queued_agent_turns
-            .values()
-            .any(|queued| queued.agent_id == agent_id)
-}
-
-fn next_agent_blocked_turn_id(run_state: &RunState, agent_id: &str) -> Option<String> {
-    run_state
-        .queued_agent_turns
-        .values()
-        .filter(|queued| queued.agent_id == agent_id && !queued.scheduler_queued)
-        .min_by(|left, right| left.task_id.cmp(&right.task_id))
-        .map(|queued| queued.task_id.clone())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -6777,7 +6830,7 @@ where
         base_queue_key,
     );
 
-    if agent_has_active_or_queued_turn(run_state, &agent_id) {
+    if run_state.agent_has_active_or_queued_turn(&agent_id) {
         append_agent_turn_task_scheduled_event(
             clock,
             redactor,
@@ -6791,19 +6844,16 @@ where
             },
         )?;
 
-        run_state.queued_agent_turns.insert(
-            task_id.clone(),
-            QueuedAgentTurn {
-                task_id,
-                agent_id,
-                request_id,
-                profile,
-                request,
-                queue_key,
-                scheduler_queued: false,
-                child_task,
-            },
-        );
+        run_state.queue_agent_turn(QueuedAgentTurn {
+            task_id,
+            agent_id,
+            request_id,
+            profile,
+            request,
+            queue_key,
+            scheduler_queued: false,
+            child_task,
+        });
 
         return Ok(());
     }
@@ -6863,19 +6913,16 @@ where
                 },
             )?;
 
-            run_state.queued_agent_turns.insert(
-                task_id.clone(),
-                QueuedAgentTurn {
-                    task_id,
-                    agent_id,
-                    request_id,
-                    profile,
-                    request,
-                    queue_key,
-                    scheduler_queued: true,
-                    child_task,
-                },
-            );
+            run_state.queue_agent_turn(QueuedAgentTurn {
+                task_id,
+                agent_id,
+                request_id,
+                profile,
+                request,
+                queue_key,
+                scheduler_queued: true,
+                child_task,
+            });
         }
     }
 
@@ -6964,7 +7011,6 @@ where
     C: Clock + ?Sized,
 {
     let cancellation_token = run_state.shutdown_token.child_token();
-    let category = Some(task.profile.category.clone());
     let mut hook_executions = run_state
         .agent_hook_state
         .remove(&task.agent_id)
@@ -6989,7 +7035,7 @@ where
             provider_id: None,
             model_id: None,
             parent_agent_id: None,
-            category: category.clone(),
+            category: Some(task.profile.category.clone()),
             outcome: Some("started".to_string()),
             output_summary: Some(task.request.prompt.clone()),
             failure_reason: None,
@@ -6998,28 +7044,7 @@ where
     .await;
     hook_executions.extend(started_hook_batch.hook_executions.clone());
 
-    run_state.running_agent_turns.insert(
-        task.task_id.clone(),
-        RunningAgentTurn {
-            agent_id: task.agent_id.clone(),
-            request_id: task.request_id.clone(),
-            request_prompt: task.request.prompt.clone(),
-            profile_name: task.profile.name.clone(),
-            model_ref: task.request.model_ref.clone(),
-            model_settings: task.request.model_settings.clone(),
-            category,
-            queue_key: task.queue_key.clone(),
-            cancellation_token: cancellation_token.clone(),
-            started_mono_ms: clock.mono_ms(),
-            hook_executions,
-            latest_provider_usage: None,
-            latest_provider_request_id: None,
-            latest_assistant_output: None,
-            latest_provider_id: None,
-            latest_model_id: None,
-            child_task: task.child_task.clone(),
-        },
-    );
+    run_state.begin_running_agent_turn(clock, task, hook_executions, cancellation_token.clone());
 
     TurnStartPhaseResult {
         cancellation_token,
@@ -8921,45 +8946,22 @@ where
     C: Clock + ?Sized,
     R: Redactor + ?Sized,
 {
-    let current_context = run_state
-        .provider_context_by_agent
-        .get(&trigger.agent_id)
-        .cloned()
-        .unwrap_or_default();
-    let current_context_tokens = approximate_provider_context_tokens(&current_context);
-
-    let metadata = recorded_runtime_context_for_compaction(run_state, trigger);
-    if !should_compact_provider_context(&current_context, &metadata, trigger, compaction_config) {
-        return Ok(None);
-    }
-
-    let trigger_estimate =
-        provider_context_trigger_estimate(&current_context, &metadata, trigger, compaction_config);
-    let tokens_before_estimate = trigger_estimate
-        .as_ref()
-        .map(|estimate| estimate.tokens_before_estimate)
-        .unwrap_or(current_context_tokens);
-    let mut trigger = trigger.clone();
-    if trigger.estimate_source.is_none() {
-        trigger.estimate_source = trigger_estimate.map(|estimate| estimate.source.to_string());
-    }
-
-    let keep_recent_budget = provider_context_keep_recent_tokens(&metadata);
-    let Some(checkpoint) = build_provider_context_checkpoint(
+    let Some(decision) = ProviderContextCompactionRequest::new(
         run_state,
-        &trigger,
-        &current_context,
-        redactor,
-        keep_recent_budget,
-        tokens_before_estimate,
+        trigger.clone(),
         compaction_config,
         summary_decision,
-    ) else {
+    )
+    .plan(redactor) else {
         return Ok(None);
     };
+    let trigger = decision.trigger;
+    let checkpoint = decision.checkpoint;
     let checkpoint_id = checkpoint.metadata.checkpoint_id.clone();
-    let updated_context = ProviderContext::from_checkpoint(checkpoint.clone());
-    let updated_tokens = approximate_provider_context_tokens(&updated_context);
+    let updated_context = decision.updated_context;
+    let tokens_before_estimate = decision.tokens_before_estimate;
+    let updated_tokens = decision.tokens_after_estimate;
+
     if trigger.trigger_reason != "manual" && updated_tokens >= tokens_before_estimate {
         if matches!(
             trigger.trigger_reason.as_str(),
