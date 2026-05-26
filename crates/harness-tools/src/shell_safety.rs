@@ -368,8 +368,21 @@ fn validate_shell_path_arguments(
         let candidate = if token.starts_with('-') {
             if let Some((_, value)) = token.split_once('=') {
                 value
-            } else {
+            } else if token.starts_with("--") {
                 continue;
+            } else {
+                let mut path_start = None;
+                for (i, c) in token.char_indices().skip(1) {
+                    if c == '/' || c == '.' || c == '~' {
+                        path_start = Some(i);
+                        break;
+                    }
+                }
+                if let Some(i) = path_start {
+                    &token[i..]
+                } else {
+                    continue;
+                }
             }
         } else {
             token
@@ -519,6 +532,30 @@ mod tests {
             err,
             ToolError::CommandBlocked(message) if message.contains(" is not in allowlist")
         ));
+    }
+
+    #[test]
+    fn validate_bash_command_rejects_short_opt_external_path_arguments() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: vec!["ls".to_string(), "grep".to_string(), "tar".to_string()],
+            cwd_roots: vec![".".to_string()],
+        });
+
+        let err = safety
+            .validate_bash_command("grep -f/tmp/outside", tempdir.path(), tempdir.path())
+            .expect_err("short option with external absolute path should be blocked");
+        assert!(matches!(err, ToolError::PathEscapesWorkspace { .. }));
+
+        let err2 = safety
+            .validate_bash_command("tar -cf/tmp/archive.tar .", tempdir.path(), tempdir.path())
+            .expect_err("short option with external absolute path combined with other short options should be blocked");
+        assert!(matches!(err2, ToolError::PathEscapesWorkspace { .. }));
+
+        let err3 = safety
+            .validate_bash_command("grep -f../../etc/passwd", tempdir.path(), tempdir.path())
+            .expect_err("short option with external relative path should be blocked");
+        assert!(matches!(err3, ToolError::PathEscapesWorkspace { .. }));
     }
 
     #[test]
