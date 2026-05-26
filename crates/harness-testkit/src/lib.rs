@@ -5,4 +5,5 @@
 
 pub mod fakes;
 pub mod secret_scanner;
+pub mod simulation;
 pub mod workspace;
