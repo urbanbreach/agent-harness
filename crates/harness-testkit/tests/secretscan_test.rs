@@ -45,6 +45,9 @@ fn explicit_artifact_roots(repo_root: &Path) -> Vec<PathBuf> {
     if let Some(path) = std::env::var_os("HARNESS_VISUAL_ARTIFACT_DIR") {
         roots.push(PathBuf::from(path));
     }
+    if let Some(path) = std::env::var_os("HARNESS_SIMULATION_ARTIFACT_DIR") {
+        roots.push(PathBuf::from(path));
+    }
     roots
 }
 

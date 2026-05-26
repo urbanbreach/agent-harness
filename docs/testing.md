@@ -10,6 +10,7 @@ scripts/test-lanes.sh fast
 scripts/test-lanes.sh integration
 scripts/test-lanes.sh perf
 scripts/test-lanes.sh coverage
+scripts/test-lanes.sh simulation
 scripts/test-lanes.sh signoff-binary
 scripts/test-lanes.sh signoff-pty
 scripts/test-lanes.sh signoff-live
@@ -134,6 +135,50 @@ at two-decimal precision against the source-controlled ratchet seed in
 `docs/test-suite-coverage-baseline.txt` by default. Override `COVERAGE_BASELINE_PATH` only for local
 experiments; a missing custom baseline records a new seed.
 
+## Deterministic simulation lane
+
+Run this lane when a change needs offline behavioral evidence that agents can diff and inspect:
+
+```bash
+scripts/test-lanes.sh simulation
+```
+
+`simulation` is offline-only. It uses the checked-in `docs/simulation-matrix.json`, runs the real
+`harness run --scenario golden_path --deterministic` path twice with the built-in mock provider,
+replays both runs with `harness replay --json`, then generates and validates a simulation evidence
+bundle through `harness-testkit`.
+
+Current stage commands:
+
+- `cargo test -p harness-testkit --test simulation_validator_test`
+- `cargo run -p harness -- --session-dir <artifact-root>/simulation/data/sessions-baseline run --scenario golden_path --deterministic --out <artifact-root>/simulation/data/baseline.events.jsonl --print-run-dir`
+- `cargo run -p harness -- --session-dir <artifact-root>/simulation/data/sessions-repeat run --scenario golden_path --deterministic --out <artifact-root>/simulation/data/repeat.events.jsonl --print-run-dir`
+- `cargo run -p harness -- replay --session <baseline-run-dir> --json`
+- `cargo run -p harness -- replay --session <repeat-run-dir> --json`
+- `cargo run -p harness-testkit --bin simulation_evidence -- --artifact-root <artifact-root>/simulation/stages/simulation_evidence/artifacts --matrix docs/simulation-matrix.json --baseline-events <baseline.events.jsonl> --baseline-replay <baseline.replay.json> --repeat-events <repeat.events.jsonl> --repeat-replay <repeat.replay.json> --seed 0`
+- `env HARNESS_SECRETS_SCAN_ARTIFACTS=1 HARNESS_SIMULATION_ARTIFACT_DIR=<simulation-artifacts> cargo test -p harness-testkit --test secretscan_test`
+
+The `simulation_evidence` stage writes the standard lane files plus these simulation artifacts under
+`<artifact-root>/simulation/stages/simulation_evidence/artifacts/`:
+
+- `simulation-matrix.json`
+- `simulation-events.jsonl` with `schema_version=simulation-event-v1`, monotonic `seq`, scenario,
+  seed, actor/component identity, invariant IDs, redaction metadata, replay command fingerprint, and
+  redacted predicate payloads.
+- `simulation-report.json` with `schema_version=simulation-report-v1`, behavior deltas, invariant
+  results, artifact index, replay commands, failure signals, redaction summary, volatile fields, and
+  raw evidence paths.
+- `artifact-index.jsonl` with `schema_version=artifact-index-v1`, relative artifact paths, clean
+  redaction status, producers, and stable content fingerprints.
+- `simulation-summary.txt`, `normalized-summary-baseline.json`, `normalized-summary-repeat.json`,
+  and `same-seed-comparison.txt`.
+
+Same-seed stability uses normalization profile `simulation-normalization-v1`; raw JSONL equality is
+not required. The normalized summaries exclude raw session paths, workspace roots, resolved paths,
+artifact roots, and lane timestamps. Provider cassette determinism is post-MVP for this lane because
+the admitted scenario uses the mock provider, not recorded cassettes. PTY/live/native signoff lanes
+remain provenance-only and must not own simulation behavioral invariants.
+
 ## Deterministic signoff PTY lane
 
 Run the PTY lane when changing TUI rendering, transcript behavior, viewport-sensitive flows, or
@@ -159,7 +204,7 @@ deterministic closeout, use:
 scripts/test-lanes.sh all-deterministic
 ```
 
-`all-deterministic` runs `quality-gates`, then `fast`, then `integration`, then `signoff-pty` only when PTY support checks
+`all-deterministic` runs `quality-gates`, then `simulation`, then `fast`, then `integration`, then `signoff-pty` only when PTY support checks
 pass. Its PTY gate requires `cargo` on `PATH`, both PTY test files to exist, and
 `HARNESS_TEST_LANES_SKIP_PTY` not set to `1`.
 
@@ -275,6 +320,7 @@ Current invariant owners:
 | Permission checks and redelegation guard | `cargo test -p harness-core --test permission_policy_supports_native_tool_permission_kinds_test`; `cargo test -p harness-tools --test native_agent_spawn_and_batch_preserve_lineage_permissions_and_order_test` |
 | Native tool parity and stable public tool IDs | `cargo test -p harness-tools --test native_tool_parity_matrix_test` |
 | Provider serialization, replay-only cassettes, redaction, and checkpoint accounting | `cargo test -p harness-providers --test openai_compatible_serializes_native_tool_schema_without_alias_dupes_test`; `cargo test -p harness-providers --test recorded_test`; `cargo test -p harness-testkit --test secretscan_test` |
+| Offline deterministic simulation matrix, semantic predicates, same-seed normalization, artifact index, and simulation redaction | `scripts/test-lanes.sh simulation`; `cargo test -p harness-testkit --test simulation_validator_test`; `cargo run -p harness-testkit --bin simulation_evidence -- --artifact-root <dir> --matrix docs/simulation-matrix.json --baseline-events <events.jsonl> --baseline-replay <replay.json> --repeat-events <events.jsonl> --repeat-replay <replay.json> --seed 0` |
 | Config/event docs drift and public schema generation | `cargo test -p harness --test config_docs_reference_test`; `cargo test -p harness --test event_docs_reference_test`; `cargo test -p harness --test config_schema_cli_test` |
 | Deterministic UI content rendering, transcript layout, and navigation | `cargo test -p harness-tui --test deterministic_render_test`; `cargo test -p harness-tui --test lineage_view_model_test`; `cargo test -p harness-tui --test model_switcher_metadata_test`; `cargo test -p harness-tui --test session_navigation_keybindings_test`; `cargo test -p harness-tui --test pty_e2e` as the fail-closed helper lane |
 | Live, PTY, native visual provenance contracts | `scripts/test-lanes.sh signoff-pty`; `scripts/test-lanes.sh signoff-live`; `scripts/test-lanes.sh signoff-native` as opt-in T5 lanes only |

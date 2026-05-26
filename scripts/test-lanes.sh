@@ -27,13 +27,14 @@ Modes:
   quality-gates        Static test-suite gates for sleeps, globals, real deps, focus, taxonomy, and cassette secrets.
   perf                 T4 performance-budget lane via cargo nextest profile perf.
   coverage             Coverage ratchet lane via scripts/coverage-ratchet.sh.
+  simulation           Offline deterministic simulation lane with matrix validation, artifacts, same-seed comparison, and secret scan.
   signoff-binary       Real-process CLI shim smoke, env-gated and ignored by default.
   signoff-pty          Deterministic PTY signoff, single-threaded.
   signoff-live         Live provider signoff. Requires live env and runs live_proxy_preflight_requires_live_env first.
   signoff-native       Native visual signoff. Requires native visual env and runs ignored native visual tests single-threaded.
   stress-offline       Delegates to scripts/stress-harness.sh --mode offline.
   stress-live          Requires live env/config and delegates to scripts/stress-harness.sh --mode live.
-  all-deterministic    Runs quality-gates, fast, integration, then signoff-pty only when PTY support checks pass.
+  all-deterministic    Runs quality-gates, simulation, fast, integration, then signoff-pty only when PTY support checks pass.
   help                 Show this help.
 
 Options:
@@ -66,6 +67,7 @@ Required environment:
     crates/harness-testkit/tests/pty_e2e.rs
     crates/harness-tui/tests/pty_e2e.rs
     HARNESS_TEST_LANES_SKIP_PTY not set to 1
+  simulation runs only local deterministic mock-provider harness runs and records artifacts under simulation/stages/simulation_evidence/artifacts.
   stress-offline and stress-live pass --harness-bin to scripts/stress-harness.sh when
     --harness-bin is supplied or an existing target/debug/harness can be reused.
 EOF
@@ -109,7 +111,7 @@ while [[ $# -gt 0 ]]; do
       usage
       exit 0
       ;;
-    fast|integration|quality-gates|perf|coverage|signoff-binary|signoff-pty|signoff-live|signoff-native|stress-offline|stress-live|all-deterministic|help)
+    fast|integration|quality-gates|perf|coverage|simulation|signoff-binary|signoff-pty|signoff-live|signoff-native|stress-offline|stress-live|all-deterministic|help)
       if [[ -n "$mode" ]]; then
         printf 'Multiple modes provided: %s and %s\n' "$mode" "$1" >&2
         usage >&2
@@ -493,6 +495,51 @@ run_coverage() {
   run_stage coverage coverage_ratchet "$repo_root" scripts/coverage-ratchet.sh || true
 }
 
+run_simulation() {
+  local simulation_dir
+  simulation_dir="$(mode_dir_for simulation)"
+  local simulation_data_dir="${simulation_dir}/data"
+  local evidence_artifacts_dir="$(stage_dir_for simulation simulation_evidence)/artifacts"
+  local baseline_out="${simulation_data_dir}/baseline.events.jsonl"
+  local repeat_out="${simulation_data_dir}/repeat.events.jsonl"
+  local baseline_run_dir_file="${simulation_data_dir}/baseline-run-dir.txt"
+  local repeat_run_dir_file="${simulation_data_dir}/repeat-run-dir.txt"
+  local baseline_replay="${simulation_data_dir}/baseline.replay.json"
+  local repeat_replay="${simulation_data_dir}/repeat.replay.json"
+
+  mkdir -p "$simulation_data_dir"
+
+  run_stage simulation matrix_and_validator_tests "$repo_root" cargo test -p harness-testkit --test simulation_validator_test || true
+
+  run_stage simulation baseline_golden_path "$repo_root" cargo run -p harness -- --session-dir "${simulation_data_dir}/sessions-baseline" run --scenario golden_path --deterministic --out "$baseline_out" --print-run-dir || true
+  if [[ "$dry_run" -eq 0 && -s "$(stage_dir_for simulation baseline_golden_path)/stdout.txt" ]]; then
+    awk 'NF { last=$0 } END { if (last) print last }' "$(stage_dir_for simulation baseline_golden_path)/stdout.txt" >"$baseline_run_dir_file"
+  fi
+
+  run_stage simulation repeat_golden_path "$repo_root" cargo run -p harness -- --session-dir "${simulation_data_dir}/sessions-repeat" run --scenario golden_path --deterministic --out "$repeat_out" --print-run-dir || true
+  if [[ "$dry_run" -eq 0 && -s "$(stage_dir_for simulation repeat_golden_path)/stdout.txt" ]]; then
+    awk 'NF { last=$0 } END { if (last) print last }' "$(stage_dir_for simulation repeat_golden_path)/stdout.txt" >"$repeat_run_dir_file"
+  fi
+
+  if [[ "$dry_run" -eq 0 && -s "$baseline_run_dir_file" ]]; then
+    run_stage simulation baseline_replay "$repo_root" cargo run -p harness -- replay --session "$(cat "$baseline_run_dir_file")" --json || true
+    cp "$(stage_dir_for simulation baseline_replay)/stdout.txt" "$baseline_replay"
+  else
+    run_stage simulation baseline_replay "$repo_root" cargo run -p harness -- replay --session "<baseline-run-dir>" --json || true
+  fi
+
+  if [[ "$dry_run" -eq 0 && -s "$repeat_run_dir_file" ]]; then
+    run_stage simulation repeat_replay "$repo_root" cargo run -p harness -- replay --session "$(cat "$repeat_run_dir_file")" --json || true
+    cp "$(stage_dir_for simulation repeat_replay)/stdout.txt" "$repeat_replay"
+  else
+    run_stage simulation repeat_replay "$repo_root" cargo run -p harness -- replay --session "<repeat-run-dir>" --json || true
+  fi
+
+  run_stage simulation simulation_evidence "$repo_root" cargo run -p harness-testkit --bin simulation_evidence -- --artifact-root "$evidence_artifacts_dir" --matrix "${repo_root}/docs/simulation-matrix.json" --baseline-events "$baseline_out" --baseline-replay "$baseline_replay" --repeat-events "$repeat_out" --repeat-replay "$repeat_replay" --seed 0 || true
+
+  run_stage simulation simulation_secret_scan "$repo_root" env HARNESS_SECRETS_SCAN_ARTIFACTS=1 HARNESS_SIMULATION_ARTIFACT_DIR="$evidence_artifacts_dir" cargo test -p harness-testkit --test secretscan_test || true
+}
+
 run_signoff_binary() {
   run_stage signoff-binary harness_binary_smoke "$repo_root" env HARNESS_BINARY_SMOKE=1 cargo test -p harness --test binary_smoke -- --ignored --exact || true
 }
@@ -557,6 +604,9 @@ run_mode() {
     coverage)
       run_coverage
       ;;
+    simulation)
+      run_simulation
+      ;;
     signoff-binary)
       run_signoff_binary
       ;;
@@ -577,6 +627,7 @@ run_mode() {
       ;;
     all-deterministic)
       run_mode quality-gates
+      run_mode simulation
       run_mode fast
       run_mode integration
       if all_deterministic_pty_supported; then
