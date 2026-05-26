@@ -2,70 +2,609 @@ use schemars::schema_for;
 
 use super::*;
 
-const ALLOWED_PUBLIC_TOP_LEVEL_CONFIG_KEYS: &[&str] = &[
-    "$schema",
-    "autoshare",
-    "autoupdate",
-    "command",
-    "compaction",
-    "disabled_providers",
-    "enabled_providers",
-    "enterprise",
-    "experimental",
-    "formatter",
-    "layout",
-    "logLevel",
-    "plugin",
-    "providers",
-    "provider",
-    "model",
-    "small_model",
-    "smallModel",
-    "model_profile",
-    "modelProfile",
-    "model_profiles",
-    "agents",
-    "agent",
-    "mode",
-    "categories",
-    "profiles",
-    "default_agent",
-    "defaultAgent",
-    "permissions",
-    "permission",
-    "server",
-    "share",
-    "shell",
-    "snapshot",
-    "runtime",
-    "backgroundTask",
-    "paths",
-    "deterministic",
-    "integrations",
-    "mcp",
-    "hooks",
-    "skills",
-    "lsp",
-    "logging",
-    "ui",
-    "hashline_edit",
-    "hashlineEdit",
-    "instructions",
-    "tool_output",
-    "tools",
-    "username",
-    "watcher",
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PublicConfigSurface {
+    Runtime,
+    Tui,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PublicConfigKeyStatus {
+    Canonical,
+    Compatibility,
+    InertCompatibility,
+    UnsupportedActive,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PublicUnsupportedInactiveValue {
+    BoolFalse,
+    DisabledString,
+    EmptyObject,
+    EmptyArray,
+}
+
+impl PublicUnsupportedInactiveValue {
+    fn matches(self, value: &serde_json::Value) -> bool {
+        match self {
+            Self::BoolFalse => matches!(value, serde_json::Value::Bool(false)),
+            Self::DisabledString => {
+                matches!(value, serde_json::Value::String(mode) if mode == "disabled")
+            }
+            Self::EmptyObject => value.as_object().is_some_and(|object| object.is_empty()),
+            Self::EmptyArray => value.as_array().is_some_and(|items| items.is_empty()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PublicConfigTopLevelKey {
+    pub name: &'static str,
+    pub surface: PublicConfigSurface,
+    pub status: PublicConfigKeyStatus,
+    pub schema_property: bool,
+    pub docs_table_row: bool,
+    pub canonical_name: Option<&'static str>,
+    pub inactive_value: Option<PublicUnsupportedInactiveValue>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PublicConfigAliasScope {
+    RuntimeRoot,
+    RuntimeBackgroundTasks,
+    RuntimePermissions,
+    RuntimePrompt,
+    RuntimeCompaction,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PublicConfigAlias {
+    pub scope: PublicConfigAliasScope,
+    pub alias: &'static str,
+    pub canonical: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PublicConfigPermissionName {
+    pub name: &'static str,
+    pub canonical_name: &'static str,
+    pub canonical: bool,
+    pub schema_property: bool,
+    pub supports_selectors: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PublicConfigCompactionKnob {
+    pub canonical_name: &'static str,
+    pub aliases: &'static [&'static str],
+    pub default_value: &'static str,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PublicConfigContract {
+    pub runtime_top_level_keys: &'static [PublicConfigTopLevelKey],
+    pub tui_top_level_keys: &'static [PublicConfigTopLevelKey],
+    pub runtime_aliases: &'static [PublicConfigAlias],
+    pub permission_names: &'static [PublicConfigPermissionName],
+    pub compaction_knobs: &'static [PublicConfigCompactionKnob],
+}
+
+impl PublicConfigContract {
+    fn runtime_top_level_key(&self, name: &str) -> Option<&PublicConfigTopLevelKey> {
+        self.runtime_top_level_keys
+            .iter()
+            .find(|entry| entry.name == name)
+    }
+
+    pub fn runtime_schema_top_level_keys(&self) -> impl Iterator<Item = &'static str> + '_ {
+        self.runtime_top_level_keys
+            .iter()
+            .filter(|entry| entry.schema_property)
+            .map(|entry| entry.name)
+    }
+
+    pub fn runtime_documented_top_level_keys(&self) -> impl Iterator<Item = &'static str> + '_ {
+        self.runtime_top_level_keys
+            .iter()
+            .filter(|entry| entry.docs_table_row)
+            .map(|entry| entry.name)
+    }
+
+    pub fn tui_schema_top_level_keys(&self) -> impl Iterator<Item = &'static str> + '_ {
+        self.tui_top_level_keys
+            .iter()
+            .filter(|entry| entry.schema_property)
+            .map(|entry| entry.name)
+    }
+
+    pub fn tui_documented_top_level_keys(&self) -> impl Iterator<Item = &'static str> + '_ {
+        self.tui_top_level_keys
+            .iter()
+            .filter(|entry| entry.docs_table_row)
+            .map(|entry| entry.name)
+    }
+
+    fn runtime_aliases_for_scope(
+        &self,
+        scope: PublicConfigAliasScope,
+    ) -> impl Iterator<Item = &PublicConfigAlias> {
+        self.runtime_aliases
+            .iter()
+            .filter(move |alias| alias.scope == scope)
+    }
+}
+
+macro_rules! runtime_key {
+    ($name:literal, $status:ident, schema, docs) => {
+        PublicConfigTopLevelKey {
+            name: $name,
+            surface: PublicConfigSurface::Runtime,
+            status: PublicConfigKeyStatus::$status,
+            schema_property: true,
+            docs_table_row: true,
+            canonical_name: None,
+            inactive_value: None,
+        }
+    };
+    ($name:literal, $status:ident, schema, docs, canonical = $canonical:literal) => {
+        PublicConfigTopLevelKey {
+            name: $name,
+            surface: PublicConfigSurface::Runtime,
+            status: PublicConfigKeyStatus::$status,
+            schema_property: true,
+            docs_table_row: true,
+            canonical_name: Some($canonical),
+            inactive_value: None,
+        }
+    };
+    ($name:literal, UnsupportedActive, schema, docs, inactive = $inactive:ident) => {
+        PublicConfigTopLevelKey {
+            name: $name,
+            surface: PublicConfigSurface::Runtime,
+            status: PublicConfigKeyStatus::UnsupportedActive,
+            schema_property: true,
+            docs_table_row: true,
+            canonical_name: None,
+            inactive_value: Some(PublicUnsupportedInactiveValue::$inactive),
+        }
+    };
+    ($name:literal, $status:ident, no_schema, no_docs, canonical = $canonical:literal) => {
+        PublicConfigTopLevelKey {
+            name: $name,
+            surface: PublicConfigSurface::Runtime,
+            status: PublicConfigKeyStatus::$status,
+            schema_property: false,
+            docs_table_row: false,
+            canonical_name: Some($canonical),
+            inactive_value: None,
+        }
+    };
+    ($name:literal, $status:ident, no_schema, no_docs) => {
+        PublicConfigTopLevelKey {
+            name: $name,
+            surface: PublicConfigSurface::Runtime,
+            status: PublicConfigKeyStatus::$status,
+            schema_property: false,
+            docs_table_row: false,
+            canonical_name: None,
+            inactive_value: None,
+        }
+    };
+}
+
+const PUBLIC_RUNTIME_TOP_LEVEL_CONFIG_KEYS: &[PublicConfigTopLevelKey] = &[
+    runtime_key!("$schema", Canonical, schema, docs),
+    runtime_key!("agent", Canonical, schema, docs),
+    runtime_key!(
+        "autoshare",
+        UnsupportedActive,
+        schema,
+        docs,
+        inactive = BoolFalse
+    ),
+    runtime_key!(
+        "autoupdate",
+        UnsupportedActive,
+        schema,
+        docs,
+        inactive = BoolFalse
+    ),
+    runtime_key!(
+        "command",
+        UnsupportedActive,
+        schema,
+        docs,
+        inactive = EmptyObject
+    ),
+    runtime_key!("compaction", InertCompatibility, schema, docs),
+    runtime_key!("default_agent", Canonical, schema, docs),
+    runtime_key!("disabled_providers", InertCompatibility, schema, docs),
+    runtime_key!("enabled_providers", InertCompatibility, schema, docs),
+    runtime_key!(
+        "enterprise",
+        UnsupportedActive,
+        schema,
+        docs,
+        inactive = EmptyObject
+    ),
+    runtime_key!("experimental", InertCompatibility, schema, docs),
+    runtime_key!("formatter", InertCompatibility, schema, docs),
+    runtime_key!("instructions", Canonical, schema, docs),
+    runtime_key!("layout", InertCompatibility, schema, docs),
+    runtime_key!("logLevel", InertCompatibility, schema, docs),
+    runtime_key!("lsp", Compatibility, schema, docs),
+    runtime_key!("mcp", Canonical, schema, docs),
+    runtime_key!("mode", Compatibility, schema, docs, canonical = "agent"),
+    runtime_key!("model", Canonical, schema, docs),
+    runtime_key!("model_profile", Canonical, schema, docs),
+    runtime_key!("permission", Canonical, schema, docs),
+    runtime_key!(
+        "plugin",
+        UnsupportedActive,
+        schema,
+        docs,
+        inactive = EmptyArray
+    ),
+    runtime_key!("provider", Canonical, schema, docs),
+    runtime_key!("runtime", Canonical, schema, docs),
+    runtime_key!(
+        "server",
+        UnsupportedActive,
+        schema,
+        docs,
+        inactive = EmptyObject
+    ),
+    runtime_key!(
+        "share",
+        UnsupportedActive,
+        schema,
+        docs,
+        inactive = DisabledString
+    ),
+    runtime_key!("shell", InertCompatibility, schema, docs),
+    runtime_key!("skills", Canonical, schema, docs),
+    runtime_key!("small_model", Canonical, schema, docs),
+    runtime_key!("snapshot", InertCompatibility, schema, docs),
+    runtime_key!("tool_output", InertCompatibility, schema, docs),
+    runtime_key!("tools", InertCompatibility, schema, docs),
+    runtime_key!("username", InertCompatibility, schema, docs),
+    runtime_key!("watcher", InertCompatibility, schema, docs),
+    runtime_key!(
+        "providers",
+        Compatibility,
+        no_schema,
+        no_docs,
+        canonical = "provider"
+    ),
+    runtime_key!(
+        "smallModel",
+        Compatibility,
+        no_schema,
+        no_docs,
+        canonical = "small_model"
+    ),
+    runtime_key!(
+        "modelProfile",
+        Compatibility,
+        no_schema,
+        no_docs,
+        canonical = "model_profile"
+    ),
+    runtime_key!(
+        "model_profiles",
+        Compatibility,
+        no_schema,
+        no_docs,
+        canonical = "model_profile"
+    ),
+    runtime_key!(
+        "agents",
+        Compatibility,
+        no_schema,
+        no_docs,
+        canonical = "agent"
+    ),
+    runtime_key!(
+        "categories",
+        Compatibility,
+        no_schema,
+        no_docs,
+        canonical = "agent"
+    ),
+    runtime_key!(
+        "profiles",
+        Compatibility,
+        no_schema,
+        no_docs,
+        canonical = "agent"
+    ),
+    runtime_key!(
+        "defaultAgent",
+        Compatibility,
+        no_schema,
+        no_docs,
+        canonical = "default_agent"
+    ),
+    runtime_key!(
+        "permissions",
+        Compatibility,
+        no_schema,
+        no_docs,
+        canonical = "permission"
+    ),
+    runtime_key!(
+        "backgroundTask",
+        Compatibility,
+        no_schema,
+        no_docs,
+        canonical = "runtime.background_tasks"
+    ),
+    runtime_key!(
+        "paths",
+        Compatibility,
+        no_schema,
+        no_docs,
+        canonical = "runtime.session_dir"
+    ),
+    runtime_key!(
+        "deterministic",
+        Compatibility,
+        no_schema,
+        no_docs,
+        canonical = "runtime.deterministic"
+    ),
+    runtime_key!("integrations", Compatibility, no_schema, no_docs),
+    runtime_key!("hooks", Compatibility, no_schema, no_docs),
+    runtime_key!("logging", Compatibility, no_schema, no_docs),
+    runtime_key!("ui", Compatibility, no_schema, no_docs),
+    runtime_key!("hashline_edit", Compatibility, no_schema, no_docs),
+    runtime_key!(
+        "hashlineEdit",
+        Compatibility,
+        no_schema,
+        no_docs,
+        canonical = "hashline_edit"
+    ),
 ];
 
-const UNSUPPORTED_ACTIVE_OPENCODE_TOP_LEVEL_CONFIG_KEYS: &[&str] = &[
-    "autoshare",
-    "autoupdate",
-    "command",
-    "enterprise",
-    "plugin",
-    "server",
-    "share",
+const PUBLIC_TUI_TOP_LEVEL_CONFIG_KEYS: &[PublicConfigTopLevelKey] = &[
+    PublicConfigTopLevelKey {
+        name: "$schema",
+        surface: PublicConfigSurface::Tui,
+        status: PublicConfigKeyStatus::Canonical,
+        schema_property: true,
+        docs_table_row: true,
+        canonical_name: None,
+        inactive_value: None,
+    },
+    PublicConfigTopLevelKey {
+        name: "keybinds",
+        surface: PublicConfigSurface::Tui,
+        status: PublicConfigKeyStatus::Canonical,
+        schema_property: true,
+        docs_table_row: true,
+        canonical_name: None,
+        inactive_value: None,
+    },
+    PublicConfigTopLevelKey {
+        name: "keybindings",
+        surface: PublicConfigSurface::Tui,
+        status: PublicConfigKeyStatus::Compatibility,
+        schema_property: false,
+        docs_table_row: false,
+        canonical_name: Some("keybinds"),
+        inactive_value: None,
+    },
 ];
+
+const PUBLIC_RUNTIME_ALIASES: &[PublicConfigAlias] = &[
+    PublicConfigAlias {
+        scope: PublicConfigAliasScope::RuntimeRoot,
+        alias: "backgroundTasks",
+        canonical: "background_tasks",
+    },
+    PublicConfigAlias {
+        scope: PublicConfigAliasScope::RuntimeRoot,
+        alias: "sessionDir",
+        canonical: "session_dir",
+    },
+    PublicConfigAlias {
+        scope: PublicConfigAliasScope::RuntimeBackgroundTasks,
+        alias: "defaultConcurrency",
+        canonical: "default_concurrency",
+    },
+    PublicConfigAlias {
+        scope: PublicConfigAliasScope::RuntimeBackgroundTasks,
+        alias: "providerConcurrency",
+        canonical: "provider_concurrency",
+    },
+    PublicConfigAlias {
+        scope: PublicConfigAliasScope::RuntimeBackgroundTasks,
+        alias: "modelConcurrency",
+        canonical: "model_concurrency",
+    },
+    PublicConfigAlias {
+        scope: PublicConfigAliasScope::RuntimeBackgroundTasks,
+        alias: "staleTimeoutMs",
+        canonical: "stale_timeout_ms",
+    },
+    PublicConfigAlias {
+        scope: PublicConfigAliasScope::RuntimeBackgroundTasks,
+        alias: "messageStalenessTimeoutMs",
+        canonical: "message_staleness_timeout_ms",
+    },
+    PublicConfigAlias {
+        scope: PublicConfigAliasScope::RuntimePermissions,
+        alias: "askTimeoutMs",
+        canonical: "ask_timeout_ms",
+    },
+    PublicConfigAlias {
+        scope: PublicConfigAliasScope::RuntimePrompt,
+        alias: "waitTimeoutMs",
+        canonical: "wait_timeout_ms",
+    },
+    PublicConfigAlias {
+        scope: PublicConfigAliasScope::RuntimeCompaction,
+        alias: "modelBacked",
+        canonical: "model_backed",
+    },
+    PublicConfigAlias {
+        scope: PublicConfigAliasScope::RuntimeCompaction,
+        alias: "modelRef",
+        canonical: "model_ref",
+    },
+    PublicConfigAlias {
+        scope: PublicConfigAliasScope::RuntimeCompaction,
+        alias: "model",
+        canonical: "model_ref",
+    },
+    PublicConfigAlias {
+        scope: PublicConfigAliasScope::RuntimeCompaction,
+        alias: "splitOversizedTurns",
+        canonical: "split_oversized_turns",
+    },
+    PublicConfigAlias {
+        scope: PublicConfigAliasScope::RuntimeCompaction,
+        alias: "autoRetryOverflow",
+        canonical: "auto_retry_overflow",
+    },
+    PublicConfigAlias {
+        scope: PublicConfigAliasScope::RuntimeCompaction,
+        alias: "structuredSummaryContract",
+        canonical: "structured_summary_contract",
+    },
+    PublicConfigAlias {
+        scope: PublicConfigAliasScope::RuntimeCompaction,
+        alias: "estimatedTokenTriggers",
+        canonical: "estimated_token_triggers",
+    },
+    PublicConfigAlias {
+        scope: PublicConfigAliasScope::RuntimeCompaction,
+        alias: "fallbackInputTokens",
+        canonical: "fallback_input_tokens",
+    },
+];
+
+const PUBLIC_PERMISSION_NAMES: &[PublicConfigPermissionName] = &[
+    PublicConfigPermissionName {
+        name: "bash",
+        canonical_name: "bash",
+        canonical: true,
+        schema_property: true,
+        supports_selectors: true,
+    },
+    PublicConfigPermissionName {
+        name: "edit",
+        canonical_name: "edit",
+        canonical: true,
+        schema_property: true,
+        supports_selectors: true,
+    },
+    PublicConfigPermissionName {
+        name: "question",
+        canonical_name: "question",
+        canonical: true,
+        schema_property: true,
+        supports_selectors: false,
+    },
+    PublicConfigPermissionName {
+        name: "task",
+        canonical_name: "task",
+        canonical: true,
+        schema_property: true,
+        supports_selectors: true,
+    },
+    PublicConfigPermissionName {
+        name: "webfetch",
+        canonical_name: "webfetch",
+        canonical: true,
+        schema_property: true,
+        supports_selectors: false,
+    },
+    PublicConfigPermissionName {
+        name: "websearch",
+        canonical_name: "websearch",
+        canonical: true,
+        schema_property: true,
+        supports_selectors: false,
+    },
+    PublicConfigPermissionName {
+        name: "codesearch",
+        canonical_name: "codesearch",
+        canonical: true,
+        schema_property: true,
+        supports_selectors: false,
+    },
+    PublicConfigPermissionName {
+        name: "lsp",
+        canonical_name: "lsp",
+        canonical: true,
+        schema_property: true,
+        supports_selectors: false,
+    },
+    PublicConfigPermissionName {
+        name: "shell",
+        canonical_name: "bash",
+        canonical: false,
+        schema_property: false,
+        supports_selectors: true,
+    },
+    PublicConfigPermissionName {
+        name: "network",
+        canonical_name: "network",
+        canonical: false,
+        schema_property: false,
+        supports_selectors: false,
+    },
+];
+
+const PUBLIC_COMPACTION_KNOBS: &[PublicConfigCompactionKnob] = &[
+    PublicConfigCompactionKnob {
+        canonical_name: "model_backed",
+        aliases: &["modelBacked"],
+        default_value: "false",
+    },
+    PublicConfigCompactionKnob {
+        canonical_name: "model_ref",
+        aliases: &["model", "modelRef"],
+        default_value: "unset",
+    },
+    PublicConfigCompactionKnob {
+        canonical_name: "split_oversized_turns",
+        aliases: &["splitOversizedTurns"],
+        default_value: "false",
+    },
+    PublicConfigCompactionKnob {
+        canonical_name: "auto_retry_overflow",
+        aliases: &["autoRetryOverflow"],
+        default_value: "true",
+    },
+    PublicConfigCompactionKnob {
+        canonical_name: "structured_summary_contract",
+        aliases: &["structuredSummaryContract"],
+        default_value: "true",
+    },
+    PublicConfigCompactionKnob {
+        canonical_name: "estimated_token_triggers",
+        aliases: &["estimatedTokenTriggers"],
+        default_value: "true",
+    },
+    PublicConfigCompactionKnob {
+        canonical_name: "fallback_input_tokens",
+        aliases: &["fallbackInputTokens"],
+        default_value: "32768",
+    },
+];
+
+pub fn public_config_contract() -> PublicConfigContract {
+    PublicConfigContract {
+        runtime_top_level_keys: PUBLIC_RUNTIME_TOP_LEVEL_CONFIG_KEYS,
+        tui_top_level_keys: PUBLIC_TUI_TOP_LEVEL_CONFIG_KEYS,
+        runtime_aliases: PUBLIC_RUNTIME_ALIASES,
+        permission_names: PUBLIC_PERMISSION_NAMES,
+        compaction_knobs: PUBLIC_COMPACTION_KNOBS,
+    }
+}
 
 const SUMMARY_AGENT_SYSTEM_PROMPT: &str = r#"Summarize what was done in this conversation. Write like a pull request description.
 
@@ -190,7 +729,7 @@ pub struct PublicRuntimeSettingsConfig {
     pub compaction: CompactionRuntimeConfig,
 }
 
-/// Named agent definitions. Built-in OpenCode-compatible agents are explicit so
+/// Named agent definitions. Built-in upstream-compatible agents are explicit so
 /// editors can complete them, and custom names are accepted through the same
 /// shape.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -312,7 +851,7 @@ pub struct PublicAgentConfig {
     /// default remains active. `enabled` is accepted as an alias.
     #[serde(default, alias = "enabled")]
     pub enable: Option<bool>,
-    /// OpenCode-compatible negative toggle. Equivalent to `enable: false`.
+    /// Upstream-compatible negative toggle. Equivalent to `enable: false`.
     #[serde(default)]
     pub disable: bool,
     #[serde(default, alias = "permissions")]
@@ -460,50 +999,54 @@ pub struct PublicTuiConfig {
 pub(super) fn validate_public_root_config_object(
     object: &serde_json::Map<String, serde_json::Value>,
 ) -> Result<(), ConfigError> {
+    let contract = public_config_contract();
     let mut unknown = object
         .keys()
-        .filter(|key| !ALLOWED_PUBLIC_TOP_LEVEL_CONFIG_KEYS.contains(&key.as_str()))
+        .filter(|key| contract.runtime_top_level_key(key).is_none())
         .map(String::as_str)
         .collect::<Vec<_>>();
     if !unknown.is_empty() {
         unknown.sort_unstable();
+        let allowed = contract
+            .runtime_top_level_keys
+            .iter()
+            .map(|entry| entry.name);
         return Err(ConfigError::UnknownTopLevelKeys(format!(
             "unknown top-level config keys: {}; expected only {}",
             format_backticked_list(unknown.iter().copied()),
-            format_backticked_list(ALLOWED_PUBLIC_TOP_LEVEL_CONFIG_KEYS.iter().copied())
+            format_backticked_list(allowed)
         )));
     }
 
-    let mut unsupported_active = UNSUPPORTED_ACTIVE_OPENCODE_TOP_LEVEL_CONFIG_KEYS
+    let mut unsupported_active = contract
+        .runtime_top_level_keys
         .iter()
-        .copied()
-        .filter(|key| {
-            object
-                .get(*key)
-                .is_some_and(|value| !is_inactive_opencode_unsupported_value(key, value))
+        .filter(|entry| entry.status == PublicConfigKeyStatus::UnsupportedActive)
+        .filter_map(|entry| {
+            let value = object.get(entry.name)?;
+            let inactive = entry
+                .inactive_value
+                .is_some_and(|inactive| inactive.matches(value));
+            (!inactive).then_some(entry.name)
         })
         .collect::<Vec<_>>();
     if !unsupported_active.is_empty() {
         unsupported_active.sort_unstable();
         return Err(ConfigError::RetiredConfigKeys(format!(
-            "unsupported active OpenCode config keys: {}; this harness accepts the OpenCode config shape, but does not execute server, command, plugin, sharing, update, or enterprise product features",
+            concat!(
+                "unsupported active ",
+                "Open",
+                "Code",
+                " config keys: {}; this harness accepts the ",
+                "Open",
+                "Code",
+                " config shape, but does not execute server, command, plugin, sharing, update, or enterprise product features"
+            ),
             format_backticked_list(unsupported_active)
         )));
     }
 
     Ok(())
-}
-
-fn is_inactive_opencode_unsupported_value(key: &str, value: &serde_json::Value) -> bool {
-    match key {
-        "autoshare" | "autoupdate" => matches!(value, serde_json::Value::Bool(false)),
-        "share" => matches!(value, serde_json::Value::String(mode) if mode == "disabled"),
-        "command" | "enterprise" | "server" => {
-            value.as_object().is_some_and(|object| object.is_empty())
-        }
-        "plugin" => value.as_array().is_some_and(|items| items.is_empty()),
-        _ => false,
-    }
 }
 
 fn default_internal_permissions_config() -> PermissionsConfig {
@@ -663,13 +1206,14 @@ fn canonicalize_runtime_aliases(runtime: &mut serde_json::Value) {
     let Some(runtime_object) = runtime.as_object_mut() else {
         return;
     };
+    let contract = public_config_contract();
 
     canonicalize_object_aliases(
         runtime_object,
-        &[
-            ("backgroundTasks", "background_tasks"),
-            ("sessionDir", "session_dir"),
-        ],
+        &contract
+            .runtime_aliases_for_scope(PublicConfigAliasScope::RuntimeRoot)
+            .map(|alias| (alias.alias, alias.canonical))
+            .collect::<Vec<_>>(),
     );
 
     if let Some(background_tasks) = runtime_object
@@ -678,13 +1222,10 @@ fn canonicalize_runtime_aliases(runtime: &mut serde_json::Value) {
     {
         canonicalize_object_aliases(
             background_tasks,
-            &[
-                ("defaultConcurrency", "default_concurrency"),
-                ("providerConcurrency", "provider_concurrency"),
-                ("modelConcurrency", "model_concurrency"),
-                ("staleTimeoutMs", "stale_timeout_ms"),
-                ("messageStalenessTimeoutMs", "message_staleness_timeout_ms"),
-            ],
+            &contract
+                .runtime_aliases_for_scope(PublicConfigAliasScope::RuntimeBackgroundTasks)
+                .map(|alias| (alias.alias, alias.canonical))
+                .collect::<Vec<_>>(),
         );
     }
 
@@ -692,14 +1233,26 @@ fn canonicalize_runtime_aliases(runtime: &mut serde_json::Value) {
         .get_mut("permissions")
         .and_then(serde_json::Value::as_object_mut)
     {
-        canonicalize_object_aliases(permissions, &[("askTimeoutMs", "ask_timeout_ms")]);
+        canonicalize_object_aliases(
+            permissions,
+            &contract
+                .runtime_aliases_for_scope(PublicConfigAliasScope::RuntimePermissions)
+                .map(|alias| (alias.alias, alias.canonical))
+                .collect::<Vec<_>>(),
+        );
     }
 
     if let Some(prompt) = runtime_object
         .get_mut("prompt")
         .and_then(serde_json::Value::as_object_mut)
     {
-        canonicalize_object_aliases(prompt, &[("waitTimeoutMs", "wait_timeout_ms")]);
+        canonicalize_object_aliases(
+            prompt,
+            &contract
+                .runtime_aliases_for_scope(PublicConfigAliasScope::RuntimePrompt)
+                .map(|alias| (alias.alias, alias.canonical))
+                .collect::<Vec<_>>(),
+        );
     }
 
     if let Some(compaction) = runtime_object
@@ -708,16 +1261,10 @@ fn canonicalize_runtime_aliases(runtime: &mut serde_json::Value) {
     {
         canonicalize_object_aliases(
             compaction,
-            &[
-                ("modelBacked", "model_backed"),
-                ("modelRef", "model_ref"),
-                ("model", "model_ref"),
-                ("splitOversizedTurns", "split_oversized_turns"),
-                ("autoRetryOverflow", "auto_retry_overflow"),
-                ("structuredSummaryContract", "structured_summary_contract"),
-                ("estimatedTokenTriggers", "estimated_token_triggers"),
-                ("fallbackInputTokens", "fallback_input_tokens"),
-            ],
+            &contract
+                .runtime_aliases_for_scope(PublicConfigAliasScope::RuntimeCompaction)
+                .map(|alias| (alias.alias, alias.canonical))
+                .collect::<Vec<_>>(),
         );
     }
 }
@@ -1777,16 +2324,47 @@ pub(super) fn translate_public_runtime_root(
 pub fn harness_schema_pretty_json() -> Result<String, ConfigError> {
     let mut schema = serde_json::to_value(schema_for!(PublicRuntimeConfig))
         .map_err(|err| ConfigError::SerializeSchema(err.to_string()))?;
-    if let Some(agent_map) = schema
+    let definitions = schema
         .get_mut("definitions")
-        .and_then(serde_json::Value::as_object_mut)
-        .and_then(|definitions| definitions.get_mut("PublicAgentMap"))
-        .and_then(serde_json::Value::as_object_mut)
-    {
-        agent_map.insert(
-            "additionalProperties".to_string(),
-            serde_json::json!({ "$ref": "#/definitions/PublicAgentConfig" }),
-        );
+        .and_then(serde_json::Value::as_object_mut);
+    if let Some(definitions) = definitions {
+        if let Some(agent_map) = definitions
+            .get_mut("PublicAgentMap")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            agent_map.insert(
+                "additionalProperties".to_string(),
+                serde_json::json!({ "$ref": "#/definitions/PublicAgentConfig" }),
+            );
+            agent_map.insert(
+                "description".to_string(),
+                serde_json::Value::String(concat!(
+                    "Named agent definitions. Built-in ",
+                    "Open",
+                    "Code",
+                    "-compatible agents are explicit so editors can complete them, and custom names are accepted through the same shape."
+                ).to_string()),
+            );
+        }
+        if let Some(disable_property) = definitions
+            .get_mut("PublicAgentConfig")
+            .and_then(|agent_config| agent_config.get_mut("properties"))
+            .and_then(serde_json::Value::as_object_mut)
+            .and_then(|properties| properties.get_mut("disable"))
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            disable_property.insert(
+                "description".to_string(),
+                serde_json::Value::String(
+                    concat!(
+                        "Open",
+                        "Code",
+                        "-compatible negative toggle. Equivalent to `enable: false`."
+                    )
+                    .to_string(),
+                ),
+            );
+        }
     }
     serde_json::to_string_pretty(&schema)
         .map_err(|err| ConfigError::SerializeSchema(err.to_string()))

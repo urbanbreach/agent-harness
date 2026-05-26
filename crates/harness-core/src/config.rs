@@ -29,9 +29,13 @@ pub use self::loader::{
     load_resolved_config, load_resolved_config_with_context, ConfigLoadContext, LoadedConfig,
 };
 pub use self::public::{
-    harness_schema_pretty_json, harness_tui_schema_pretty_json, InstructionList, PublicAgentConfig,
+    harness_schema_pretty_json, harness_tui_schema_pretty_json, public_config_contract,
+    InstructionList, PublicAgentConfig, PublicConfigAlias, PublicConfigAliasScope,
+    PublicConfigCompactionKnob, PublicConfigContract, PublicConfigKeyStatus,
+    PublicConfigPermissionName, PublicConfigSurface, PublicConfigTopLevelKey,
     PublicPermissionConfig, PublicPermissionValue, PublicProfilePermissions,
     PublicRulePermissionValue, PublicRuntimeConfig, PublicTuiConfig,
+    PublicUnsupportedInactiveValue,
 };
 
 static PROFILE_MODEL_METADATA_REGISTRY: OnceLock<

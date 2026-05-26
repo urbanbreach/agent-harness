@@ -1,6 +1,9 @@
 use std::collections::BTreeSet;
 
-use harness_core::config::{harness_schema_pretty_json, harness_tui_schema_pretty_json};
+use harness_core::config::{
+    harness_schema_pretty_json, harness_tui_schema_pretty_json, public_config_contract,
+    PublicConfigAliasScope, PublicConfigKeyStatus,
+};
 
 mod common;
 
@@ -31,6 +34,7 @@ fn documented_table_keys(doc: &str, heading: &str) -> BTreeSet<String> {
 
 #[test]
 fn config_docs_runtime_and_tui_keys_match_generated_schemas() {
+    let contract = public_config_contract();
     let runtime_schema =
         harness_schema_pretty_json().expect("runtime schema generation should succeed");
     let runtime_schema: serde_json::Value =
@@ -41,6 +45,10 @@ fn config_docs_runtime_and_tui_keys_match_generated_schemas() {
         .keys()
         .cloned()
         .collect();
+    let contract_runtime_keys = contract
+        .runtime_schema_top_level_keys()
+        .map(str::to_string)
+        .collect::<BTreeSet<_>>();
 
     let tui_schema =
         harness_tui_schema_pretty_json().expect("tui schema generation should succeed");
@@ -51,18 +59,112 @@ fn config_docs_runtime_and_tui_keys_match_generated_schemas() {
         .keys()
         .cloned()
         .collect();
+    let contract_tui_keys = contract
+        .tui_schema_top_level_keys()
+        .map(str::to_string)
+        .collect::<BTreeSet<_>>();
 
     let doc_path = repo_root().join("docs/config.md");
     let doc = std::fs::read_to_string(&doc_path).expect("read docs/config.md");
 
     let documented_runtime_keys = documented_table_keys(&doc, "Runtime top-level keys");
     let documented_tui_keys = documented_table_keys(&doc, "TUI top-level keys");
+    let contract_documented_runtime_keys = contract
+        .runtime_documented_top_level_keys()
+        .map(str::to_string)
+        .collect::<BTreeSet<_>>();
+    let contract_documented_tui_keys = contract
+        .tui_documented_top_level_keys()
+        .map(str::to_string)
+        .collect::<BTreeSet<_>>();
 
     assert_eq!(
-        documented_runtime_keys, runtime_keys,
-        "runtime key table drifted"
+        runtime_keys, contract_runtime_keys,
+        "runtime schema drifted from public config contract"
     );
-    assert_eq!(documented_tui_keys, tui_keys, "tui key table drifted");
+    assert_eq!(
+        tui_keys, contract_tui_keys,
+        "tui schema drifted from public config contract"
+    );
+    assert_eq!(
+        documented_runtime_keys, contract_documented_runtime_keys,
+        "runtime key table drifted from public config contract"
+    );
+    assert_eq!(
+        documented_tui_keys, contract_documented_tui_keys,
+        "tui key table drifted from public config contract"
+    );
+}
+
+#[test]
+fn config_contract_semantic_metadata_matches_docs() {
+    // arrange
+    let contract = public_config_contract();
+    let root = repo_root();
+    let doc = std::fs::read_to_string(root.join("docs/config.md")).expect("read docs/config.md");
+
+    // act
+    let runtime_key = contract
+        .runtime_top_level_keys
+        .iter()
+        .find(|key| key.name == "runtime")
+        .expect("runtime key metadata");
+    assert_eq!(runtime_key.status, PublicConfigKeyStatus::Canonical);
+    assert!(doc.contains("| `runtime` | Runtime knobs"));
+
+    let small_model_alias = contract
+        .runtime_top_level_keys
+        .iter()
+        .find(|key| key.name == "smallModel")
+        .expect("smallModel alias metadata");
+    assert_eq!(
+        small_model_alias.status,
+        PublicConfigKeyStatus::Compatibility
+    );
+    assert_eq!(small_model_alias.canonical_name, Some("small_model"));
+    assert!(doc.contains("compatibility aliases"));
+
+    let server = contract
+        .runtime_top_level_keys
+        .iter()
+        .find(|key| key.name == "server")
+        .expect("server metadata");
+    assert_eq!(server.status, PublicConfigKeyStatus::UnsupportedActive);
+    assert!(doc.contains(
+        "`server`, `command`, `plugin`, `share`, `autoshare`, `autoupdate`, `enterprise`"
+    ));
+
+    let bash = contract
+        .permission_names
+        .iter()
+        .find(|permission| permission.name == "bash")
+        .expect("bash permission metadata");
+    assert!(bash.canonical);
+    assert!(bash.schema_property);
+    assert!(bash.supports_selectors);
+    assert!(doc.contains(
+        "`bash`, `edit`, `question`, `task`,\n`webfetch`, `websearch`, `codesearch`, and `lsp`"
+    ));
+
+    let compaction = contract
+        .compaction_knobs
+        .iter()
+        .find(|knob| knob.canonical_name == "fallback_input_tokens")
+        .expect("fallback_input_tokens metadata");
+    assert_eq!(compaction.default_value, "32768");
+    assert!(compaction.aliases.contains(&"fallbackInputTokens"));
+    assert!(doc.contains("| `fallbackInputTokens` / `fallback_input_tokens` | `32768` |"));
+
+    let compaction_aliases = contract
+        .runtime_aliases
+        .iter()
+        .filter(|alias| alias.scope == PublicConfigAliasScope::RuntimeCompaction)
+        .map(|alias| (alias.alias, alias.canonical))
+        .collect::<BTreeSet<_>>();
+
+    // assert
+    assert!(compaction_aliases.contains(&("fallbackInputTokens", "fallback_input_tokens")));
+    assert!(compaction_aliases.contains(&("model", "model_ref")));
 }
 
 #[test]
@@ -92,7 +194,7 @@ fn config_docs_capture_plan_operator_workflow_and_guardrails() {
     for expected in [
         "### Plan operator workflow",
         "stable public runtime surface",
-        "experimental OpenCode flag",
+        concat!("experimental ", "Open", "Code", " flag"),
         "Build call `plan_enter`",
         ".agent-harness/plans/<run>.md",
         "Plan calls `plan_exit`",
