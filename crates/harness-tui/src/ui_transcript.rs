@@ -121,6 +121,7 @@ enum TranscriptRenderSurfaceKind {
     AssistantReasoning,
     AssistantBody,
     AssistantTool,
+    AssistantCommandTool,
     AssistantError,
     AssistantFooter,
     PendingPermission,
@@ -361,11 +362,21 @@ impl TranscriptSelectionSnapshot {
 }
 
 fn selection_row_content_start(row: &TranscriptSelectionRow) -> usize {
-    usize::from(
+    let mut index = usize::from(
         row.cells
             .first()
             .is_some_and(|cell| cell.as_str() == TRANSCRIPT_RAIL_GLYPH),
-    )
+    );
+    if index > 0 {
+        while row
+            .cells
+            .get(index)
+            .is_some_and(|cell| cell.as_str() == " ")
+        {
+            index += 1;
+        }
+    }
+    index
 }
 
 fn selection_row_content_end(row: &TranscriptSelectionRow, content_start: usize) -> Option<usize> {
@@ -564,6 +575,7 @@ const TRANSCRIPT_ASSISTANT_BODY_PREFIX: &str = "   ";
 const TRANSCRIPT_REASONING_BODY_PREFIX: &str = "  ";
 const TRANSCRIPT_NESTED_INDENT: &str = "  ";
 const TRANSCRIPT_OPCODE_EDIT_INDENT: &str = "    ";
+const TRANSCRIPT_COMMAND_TOOL_INDENT: &str = "";
 const TRANSCRIPT_RAIL_GLYPH: &str = "┃";
 const TRANSCRIPT_SCROLLBAR_THUMB_GLYPH: &str = "█";
 const TRANSCRIPT_SECTION_GAP_HEIGHT: usize = 1;
@@ -572,7 +584,6 @@ const HARNESS_BLOCK_TOOL_MARGIN_TOP: usize = 1;
 const HARNESS_BLOCK_TOOL_PADDING_TOP: usize = 1;
 const HARNESS_BLOCK_TOOL_PADDING_BOTTOM: usize = 1;
 const HARNESS_BLOCK_TOOL_PADDING_LEFT: usize = 2;
-const HARNESS_BLOCK_TOOL_TITLE_PADDING_LEFT: usize = 3;
 const HARNESS_BLOCK_TOOL_GAP: usize = 1;
 const HARNESS_SPLIT_RAIL_GLYPH: &str = "┃";
 const HARNESS_SPLIT_RAIL_WIDTH: usize = 1;
@@ -5020,14 +5031,14 @@ fn transcript_surface_leading_gap(
 ) -> usize {
     match previous {
         Some(previous)
-            if previous == TranscriptRenderSurfaceKind::AssistantTool
-                && current == TranscriptRenderSurfaceKind::AssistantTool =>
+            if transcript_surface_is_assistant_tool_like(previous)
+                && transcript_surface_is_assistant_tool_like(current) =>
         {
             0
         }
         Some(previous)
             if previous == TranscriptRenderSurfaceKind::AssistantBody
-                && current == TranscriptRenderSurfaceKind::AssistantTool =>
+                && transcript_surface_is_assistant_tool_like(current) =>
         {
             0
         }
@@ -5038,7 +5049,7 @@ fn transcript_surface_leading_gap(
             0
         }
         Some(previous)
-            if previous == TranscriptRenderSurfaceKind::AssistantTool
+            if transcript_surface_is_assistant_tool_like(previous)
                 && current == TranscriptRenderSurfaceKind::AssistantReasoning =>
         {
             0
@@ -5046,6 +5057,14 @@ fn transcript_surface_leading_gap(
         Some(_) => 1,
         None => 0,
     }
+}
+
+fn transcript_surface_is_assistant_tool_like(kind: TranscriptRenderSurfaceKind) -> bool {
+    matches!(
+        kind,
+        TranscriptRenderSurfaceKind::AssistantTool
+            | TranscriptRenderSurfaceKind::AssistantCommandTool
+    )
 }
 
 fn transcript_layout_lines(layout: &MeasuredTranscriptLayout, theme: &Theme) -> Vec<Line<'static>> {
@@ -5758,10 +5777,17 @@ fn build_assistant_part_render_surface(
             )
         }
         TranscriptAssistantPart::ToolCall(tool_call) => {
-            let render = append_tool_call_section_lines(tool_call, theme, width, base_surface);
+            let kind = if shell_tool_uses_harness_bash_card(tool_call) {
+                TranscriptRenderSurfaceKind::AssistantCommandTool
+            } else {
+                TranscriptRenderSurfaceKind::AssistantTool
+            };
+            let render_width = transcript_surface_render_width(width, kind);
+            let render =
+                append_tool_call_section_lines(tool_call, theme, render_width, base_surface);
             lines = render.lines;
             (
-                TranscriptRenderSurfaceKind::AssistantTool,
+                kind,
                 false,
                 transcript_nested_rail_color(theme),
                 transcript_nested_surface(theme, base_surface),
@@ -6356,11 +6382,15 @@ fn append_shell_tool_harness_card(
                     theme,
                     width,
                 );
-                let added = render.lines.len().saturating_sub(start);
-                render.interaction_rows.extend(std::iter::repeat_n(
-                    tool_header_target(tool_call).map(full_width_interaction_row),
-                    added,
-                ));
+                let target = tool_header_target(tool_call);
+                for line in &render.lines[start..] {
+                    let interaction = expand_hint
+                        .as_deref()
+                        .filter(|hint| line.spans.iter().any(|span| span.content.contains(*hint)))
+                        .and(target.clone())
+                        .and_then(|target| bounded_interaction_row(Some(target), line));
+                    render.interaction_rows.push(interaction);
+                }
             }
             TranscriptToolCallDetailBlock::Message { text, tone } => {
                 append_tool_call_message_block(
@@ -6787,7 +6817,7 @@ fn append_harness_bash_panel(
     width: u16,
 ) {
     let available_width = transcript_surface_content_width(width, false);
-    let prefix_width = surface_prefix_width(TRANSCRIPT_OPCODE_EDIT_INDENT);
+    let prefix_width = surface_prefix_width(TRANSCRIPT_COMMAND_TOOL_INDENT);
     let panel_width = usize::from(available_width)
         .saturating_sub(prefix_width)
         .max(HARNESS_SPLIT_RAIL_WIDTH + HARNESS_BLOCK_TOOL_PADDING_LEFT + 1);
@@ -6805,7 +6835,7 @@ fn append_harness_bash_panel(
     );
     append_prebuilt_surface_lines(
         lines,
-        TRANSCRIPT_OPCODE_EDIT_INDENT,
+        TRANSCRIPT_COMMAND_TOOL_INDENT,
         theme.surface.panel,
         card_lines,
         available_width,
@@ -6841,7 +6871,7 @@ fn harness_bash_card_lines(
         Style::default().fg(theme.text.secondary),
         theme,
         panel_width,
-        HARNESS_BLOCK_TOOL_PADDING_LEFT + HARNESS_BLOCK_TOOL_TITLE_PADDING_LEFT,
+        HARNESS_BLOCK_TOOL_PADDING_LEFT,
     );
 
     for _ in 0..HARNESS_BLOCK_TOOL_GAP {
@@ -8112,9 +8142,11 @@ fn transcript_surface_content_width(width: u16, show_outer_rail: bool) -> u16 {
 
 fn transcript_surface_render_width(width: u16, kind: TranscriptRenderSurfaceKind) -> u16 {
     match kind {
-        TranscriptRenderSurfaceKind::User => width
-            .saturating_sub(TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH)
-            .max(1),
+        TranscriptRenderSurfaceKind::User | TranscriptRenderSurfaceKind::AssistantCommandTool => {
+            width
+                .saturating_sub(TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH)
+                .max(1)
+        }
         _ => width.max(1),
     }
 }
@@ -13116,6 +13148,130 @@ mod tests {
         let track = transcript_scrollbar_track_rect(Rect::new(23, 2, 1, 12));
 
         assert_eq!(track, Rect::new(23, 2, 1, 12));
+    }
+
+    #[test]
+    fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
+        let mut activity = transcript_section_model_test_activity(
+            "request-shell-alignment",
+            ActivityStatus::Done,
+            "I’ll run a harmless shell command.",
+        );
+        activity.user_message = Some(UserMessageSubmittedEvent {
+            request_id: "request-shell-alignment".to_string(),
+            text: "test out some tools".to_string(),
+        });
+
+        let mut shell_call = transcript_section_model_test_tool_call("tc-shell-alignment", "bash");
+        shell_call.args_summary = r#"{"command":"printf 'bash smoke test ok\n'","description":"Run harmless shell smoke test"}"#.to_string();
+        shell_call.status = ToolCallDisplayStatus::Succeeded;
+        shell_call.output_summary = Some("bash smoke test ok".to_string());
+        activity.tool_calls.push(shell_call);
+
+        let mut app = AppState::default();
+        app.activities = std::collections::VecDeque::from(vec![activity]);
+        app.selected_activity_index = 0;
+
+        let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 80);
+        let surfaces = &layout.sections[0].surfaces;
+        let user_surface = surfaces
+            .iter()
+            .find(|surface| surface.show_outer_rail)
+            .expect("user surface");
+        let tool_surface = surfaces
+            .iter()
+            .find(|surface| {
+                transcript_test_line_texts(surface.lines.clone())
+                    .iter()
+                    .any(|line| line.contains("bash smoke test ok"))
+            })
+            .expect("assistant tool surface");
+        let tool_lines = transcript_test_line_texts(tool_surface.lines.clone());
+        let tool_interactions = tool_surface
+            .interaction_rows
+            .as_ref()
+            .expect("tool surface interaction rows");
+
+        assert_eq!(user_surface.width, 78);
+        assert_eq!(tool_surface.width, user_surface.width);
+        let title_row = tool_lines
+            .iter()
+            .position(|line| line.contains("# Run harmless shell smoke test"))
+            .expect("title line");
+        let command_row = tool_lines
+            .iter()
+            .position(|line| line.contains("$ printf 'bash smoke test ok"))
+            .expect("command line");
+        let output_row = tool_lines
+            .iter()
+            .enumerate()
+            .find_map(|(index, line)| {
+                (!line.contains("$ printf") && line.contains("bash smoke test ok")).then_some(index)
+            })
+            .expect("output line");
+        let title_column = tool_lines[title_row]
+            .find("# Run harmless shell smoke test")
+            .expect("title column");
+        let command_column = tool_lines[command_row]
+            .find("$ printf 'bash smoke test ok")
+            .expect("command column");
+        let output_column = tool_lines[output_row]
+            .find("bash smoke test ok")
+            .expect("output column");
+        assert_eq!(title_column, command_column);
+        assert_eq!(output_column, command_column);
+        assert_eq!(tool_interactions[title_row], None);
+        assert_eq!(tool_interactions[command_row], None);
+        assert_eq!(tool_interactions[output_row], None);
+        assert!(
+            tool_lines.iter().any(|line| line.starts_with(&format!(
+                "{TRANSCRIPT_COMMAND_TOOL_INDENT}{HARNESS_SPLIT_RAIL_GLYPH}"
+            )) && line.contains("bash smoke test ok")),
+            "command card rail should align with transcript text box edge\n{tool_lines:#?}"
+        );
+        assert!(
+            tool_surface
+                .lines
+                .iter()
+                .all(|line| line.width() <= usize::from(tool_surface.width)),
+            "tool card lines should be built for the same visual width as the rendered surface"
+        );
+
+        let area = Rect::new(0, 0, 100, 30);
+        let snapshot = transcript_selection_debug_snapshot(&app, area)
+            .expect("shell command card selection snapshot");
+        let title_row = snapshot
+            .rows
+            .iter()
+            .position(|line| line.contains("# Run harmless shell smoke test"))
+            .expect("selectable title row");
+        let output_row = snapshot
+            .rows
+            .iter()
+            .position(|line| line.contains("bash smoke test ok"))
+            .expect("selectable output row");
+        let copied = transcript_selection_text(
+            &app,
+            area,
+            TranscriptSelection {
+                anchor: TranscriptSelectionCell {
+                    row: title_row,
+                    column: 0,
+                },
+                focus: TranscriptSelectionCell {
+                    row: output_row,
+                    column: usize::from(snapshot.viewport.width.saturating_sub(1)),
+                },
+            },
+        )
+        .expect("shell command card selection copies text");
+        assert!(
+            copied.starts_with("# Run harmless shell smoke test"),
+            "copied shell card text should skip visual rail/padding: {copied:?}"
+        );
+        assert!(copied.contains("$ printf 'bash smoke test ok"));
+        assert!(copied.contains("bash smoke test ok"));
+        assert!(!copied.contains(HARNESS_SPLIT_RAIL_GLYPH));
     }
 
     #[test]
