@@ -1488,10 +1488,7 @@ fn default_shipped_agents(
                 description:
                     "Read-only contextual codebase search agent for finding files, patterns, and conventions."
                         .to_string(),
-                system_prompt: Some(
-                    "You are a read-only exploration subagent. Search the local codebase, inspect relevant files, and return concise findings with file paths and rationale. Do not edit files, run shell commands, or delegate to other agents."
-                        .to_string(),
-                ),
+                system_prompt: None,
                 model_ref: model_ref.to_string(),
                 model_ref_explicit: false,
                 variant: None,
@@ -1529,10 +1526,7 @@ fn default_shipped_agents(
                 description:
                     "General-purpose implementation and research subagent for focused multi-step work."
                         .to_string(),
-                system_prompt: Some(
-                    "You are a focused general-purpose subagent. Complete the delegated task using the tools available to this profile, report what you changed or learned, and include verification evidence when applicable. Do not spawn further subagents unless this profile is explicitly configured with the task tool."
-                        .to_string(),
-                ),
+                system_prompt: None,
                 model_ref: model_ref.to_string(),
                 model_ref_explicit: false,
                 variant: None,
@@ -1580,49 +1574,41 @@ fn default_shipped_agents(
         category_routing_profile(
             "visual-engineering",
             "Frontend, UI/UX, layout, styling, animation, and visual design subagent.",
-            "You are the visual-engineering category subagent. Focus on frontend, UI/UX, layout, styling, animation, and design work. Preserve existing product semantics, verify through the rendered or CLI-visible surface when applicable, and report concise evidence.",
             model_ref,
         ),
         category_routing_profile(
             "artistry",
             "Complex creative problem-solving subagent for ambiguous product or implementation work.",
-            "You are the artistry category subagent. Solve complex creative implementation problems with clear tradeoffs, minimal abstractions, and observable verification evidence.",
             model_ref,
         ),
         category_routing_profile(
             "ultrabrain",
             "Hard logic, architecture, algorithms, and deep debugging subagent.",
-            "You are the ultrabrain category subagent. Handle genuinely hard logic, architecture, algorithmic, or debugging tasks. Prefer root-cause fixes, state assumptions explicitly, and verify the behavioral boundary.",
             model_ref,
         ),
         category_routing_profile(
             "deep",
             "Autonomous research and end-to-end implementation subagent.",
-            "You are the deep category subagent. Work autonomously on multi-step implementation or research tasks, keep scope focused, and return the completed outcome with verification evidence.",
             model_ref,
         ),
         category_routing_profile(
             "quick",
             "Small, low-risk implementation or cleanup subagent.",
-            "You are the quick category subagent. Complete small, low-risk tasks with the smallest correct change and only the verification needed for confidence.",
             model_ref,
         ),
         category_routing_profile(
             "unspecified-low",
             "Low-effort fallback subagent for uncategorized small tasks.",
-            "You are the unspecified-low category subagent. Handle uncategorized low-effort tasks directly, avoid broad refactors, and report the concise result.",
             model_ref,
         ),
         category_routing_profile(
             "unspecified-high",
             "High-effort fallback subagent for uncategorized complex tasks.",
-            "You are the unspecified-high category subagent. Handle uncategorized high-effort tasks thoroughly, inspect enough context before acting, and provide verification evidence.",
             model_ref,
         ),
         category_routing_profile(
             "writing",
             "Documentation, prose, technical writing, and editing subagent.",
-            "You are the writing category subagent. Produce clear documentation, prose, or technical writing that matches the repository voice and keeps examples aligned with behavior.",
             model_ref,
         ),
         (
@@ -1730,7 +1716,6 @@ fn default_shipped_agents(
 fn category_routing_profile(
     name: &str,
     description: &str,
-    system_prompt: &str,
     model_ref: &str,
 ) -> (String, ProfileConfig) {
     (
@@ -1738,7 +1723,7 @@ fn category_routing_profile(
         ProfileConfig {
             name: None,
             description: description.to_string(),
-            system_prompt: Some(system_prompt.to_string()),
+            system_prompt: None,
             model_ref: model_ref.to_string(),
             model_ref_explicit: false,
             variant: None,

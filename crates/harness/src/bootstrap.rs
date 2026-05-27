@@ -202,14 +202,13 @@ fn compose_interactive_system_prompt(
         }));
     }
 
-    if profile_cfg.system_prompt.is_none()
-        && !matches!(
-            profile_name,
-            harness_core::plan::BUILD_AGENT_NAME
-                | harness_core::plan::PLAN_AGENT_NAME
-                | "discipline"
-        )
-    {
+    let bundled_prompt = profile_cfg
+        .system_prompt
+        .is_none()
+        .then(|| bundled_shipped_agent_prompt(profile_name))
+        .flatten();
+
+    if profile_cfg.system_prompt.is_none() && bundled_prompt.is_none() {
         return Err(format!(
             "agent `{profile_name}` is missing a system prompt; define `agents.{profile_name}.system_prompt` or ship `.agent-harness/agents/{profile_name}.md`"
         ));
@@ -217,11 +216,55 @@ fn compose_interactive_system_prompt(
 
     let instruction_prompt = cfg.instruction_prompt_prefix();
     Ok(dynamic_prompt::compose(DynamicPromptContext {
-        configured_prompt: profile_cfg.system_prompt.as_deref(),
+        configured_prompt: profile_cfg
+            .system_prompt
+            .as_deref()
+            .or(bundled_prompt.as_deref()),
         model,
         instruction_prompt: instruction_prompt.as_deref(),
         skill_tool_enabled: toolset.iter().any(|tool| tool == "skill"),
     }))
+}
+
+fn bundled_shipped_agent_prompt(profile_name: &str) -> Option<String> {
+    let markdown = match profile_name {
+        harness_core::plan::BUILD_AGENT_NAME => {
+            include_str!("../../../.agent-harness/agents/build.md")
+        }
+        harness_core::plan::PLAN_AGENT_NAME => {
+            include_str!("../../../.agent-harness/agents/plan.md")
+        }
+        "discipline" => include_str!("../../../.agent-harness/agents/discipline.md"),
+        "general" => include_str!("../../../.agent-harness/agents/general.md"),
+        "explore" => include_str!("../../../.agent-harness/agents/explore.md"),
+        "visual-engineering" => {
+            include_str!("../../../.agent-harness/agents/visual-engineering.md")
+        }
+        "artistry" => include_str!("../../../.agent-harness/agents/artistry.md"),
+        "ultrabrain" => include_str!("../../../.agent-harness/agents/ultrabrain.md"),
+        "deep" => include_str!("../../../.agent-harness/agents/deep.md"),
+        "quick" => include_str!("../../../.agent-harness/agents/quick.md"),
+        "unspecified-low" => include_str!("../../../.agent-harness/agents/unspecified-low.md"),
+        "unspecified-high" => {
+            include_str!("../../../.agent-harness/agents/unspecified-high.md")
+        }
+        "writing" => include_str!("../../../.agent-harness/agents/writing.md"),
+        _ => return None,
+    };
+    Some(markdown_prompt_body(markdown))
+}
+
+fn markdown_prompt_body(markdown: &str) -> String {
+    let mut lines = markdown.lines();
+    if lines.next() == Some("---") {
+        for line in &mut lines {
+            if line == "---" {
+                break;
+            }
+        }
+        return lines.collect::<Vec<_>>().join("\n").trim().to_string();
+    }
+    markdown.trim().to_string()
 }
 
 pub fn interactive_agent_profiles(
@@ -511,8 +554,8 @@ mod tests {
     fn interactive_agents_require_explicit_or_discovered_system_prompt() {
         let cfg = config_fixture(
             r#"
-            deep: {
-              description: "Default deep execution profile",
+            custom: {
+              description: "Custom execution profile",
               model_ref: "default:gpt-5.4-mini",
               tools: ["read"],
             },
@@ -521,7 +564,7 @@ mod tests {
 
         let err = interactive_agent_profiles(&cfg)
             .expect_err("interactive profiles should fail without a prompt");
-        assert!(err.contains("agent `deep` is missing a system prompt"));
+        assert!(err.contains("agent `custom` is missing a system prompt"));
     }
 
     #[test]
@@ -626,7 +669,7 @@ mod tests {
             .contains(&"todowrite".to_string()));
         assert!(profiles["discipline"]
             .system_prompt
-            .starts_with("You are the Disciplined workflow agent"));
+            .contains("You are the Discipline agent for Harness"));
         assert!(profiles["explore"].toolset.contains(&"read".to_string()));
         assert!(profiles["explore"].toolset.contains(&"grep".to_string()));
         assert!(!profiles["explore"].toolset.contains(&"edit".to_string()));
@@ -645,12 +688,14 @@ mod tests {
         assert!(profiles[harness_core::session_title::TITLE_AGENT_NAME]
             .toolset
             .is_empty());
+        assert!(profiles["build"].system_prompt.starts_with("## Identity"));
         assert!(profiles["build"]
             .system_prompt
-            .starts_with("You are agent-harness, You and the user"));
+            .contains("You are the Build agent for Harness"));
+        assert!(profiles["plan"].system_prompt.starts_with("## Identity"));
         assert!(profiles["plan"]
             .system_prompt
-            .starts_with("You are agent-harness, You and the user"));
+            .contains("You are the Plan agent for Harness"));
         assert!(!profiles["build"]
             .system_prompt
             .to_lowercase()

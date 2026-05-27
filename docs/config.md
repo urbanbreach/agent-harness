@@ -12,9 +12,11 @@ The generated JSON schemas are the source of truth:
 ## Minimal starter
 
 Start with `configs/harness.example.jsonc`. It keeps the happy path small: one
-OpenAI-compatible provider, one default model, explicit built-in agents you can
-toggle with `enable`, scalar permission mode, and optional MCP. The runtime still
-fills in the default details for each listed agent unless you override them.
+OpenAI-compatible provider, two local GPT-family model entries, explicit
+tool-call capability metadata, per-agent model/variant choices for the shipped
+profiles, scalar permission mode, and optional MCP. The full file is the
+canonical example; the excerpt below is intentionally abridged but keeps the
+same provider/model/agent shape and the fields that affect first-run behavior.
 
 ```jsonc
 {
@@ -25,11 +27,24 @@ fills in the default details for each listed agent unless you override them.
       "name": "Local OpenAI-Compatible Provider",
       "options": {
         "baseURL": "http://127.0.0.1:8317/v1",
-        "apiKey": "placeholder-api-key"
+        "apiKey": "placeholder-api-key",
+        "timeoutMs": 1800000
       },
       "models": {
+        "gpt-5.5": {
+          "name": "GPT 5.5",
+          "metadata": { "supportsToolCalls": true },
+          "limit": { "context": 272000, "input": 272000, "output": 128000 },
+          "variants": {
+            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
+            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
+            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } },
+            "xhigh": { "name": "XHigh", "metadata": { "reasoningEffort": "xhigh" } }
+          }
+        },
         "gpt-5.4-mini": {
           "name": "GPT 5.4 Mini",
+          "metadata": { "supportsToolCalls": true },
           "limit": { "context": 272000, "input": 272000, "output": 128000 },
           "variants": {
             "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
@@ -42,35 +57,44 @@ fills in the default details for each listed agent unless you override them.
   },
   "model": "default/gpt-5.4-mini",
   "agent": {
-    "build": { "enable": true },
-    "plan": { "enable": true },
-    "discipline": { "enable": true },
-    "general": { "enable": true },
-    "explore": { "enable": true },
-    "visual-engineering": { "enable": true },
-    "artistry": { "enable": true },
-    "ultrabrain": { "enable": true },
-    "deep": { "enable": true },
-    "quick": { "enable": true },
-    "unspecified-low": { "enable": true },
-    "unspecified-high": { "enable": true },
-    "writing": { "enable": true },
+    "build": { "enable": true, "model": "default/gpt-5.4-mini", "variant": "high" },
+    "plan": { "enable": true, "model": "default/gpt-5.5", "variant": "xhigh" },
+    "discipline": { "enable": true, "model": "default/gpt-5.5", "variant": "high" },
+    "general": { "enable": true, "model": "default/gpt-5.4-mini", "variant": "medium" },
+    "explore": { "enable": true, "model": "default/gpt-5.4-mini", "variant": "low" },
+    "visual-engineering": { "enable": true, "model": "default/gpt-5.4-mini", "variant": "high" },
+    "artistry": { "enable": true, "model": "default/gpt-5.5", "variant": "high" },
+    "ultrabrain": { "enable": true, "model": "default/gpt-5.5", "variant": "xhigh" },
+    "deep": { "enable": true, "model": "default/gpt-5.5", "variant": "high" },
+    "quick": { "enable": true, "model": "default/gpt-5.4-mini", "variant": "low" },
+    "unspecified-low": { "enable": true, "model": "default/gpt-5.4-mini", "variant": "low" },
+    "unspecified-high": { "enable": true, "model": "default/gpt-5.5", "variant": "high" },
+    "writing": { "enable": true, "model": "default/gpt-5.4-mini", "variant": "medium" },
     "title": { "enable": true, "hidden": true },
     "summary": { "enable": true, "hidden": true },
     "compaction": { "enable": true, "hidden": true }
   },
   "default_agent": "build",
-  "permission": "ask"
+  "permission": "ask",
+  "mcp": {
+    "cargo-mcp": {
+      "transport": "stdio",
+      "command": ["cargo-mcp", "serve"],
+      "enabled": false
+    }
+  }
 }
 ```
 
-Only write the settings you want to own. The example lists built-in agents for
-discoverability, but each `{ "enable": true }` entry still inherits the shipped
-description, prompt, permissions, and tools. Keep model catalog metadata, agent
-tool lists, background-task knobs, and compaction defaults out of day-to-day
-configs unless a project needs a deliberate override.
+Only write the settings you want to own. The canonical example lists built-in
+agents for discoverability and pins their model variants so doctor/TUI/task
+metadata agree. Each entry still inherits the shipped description, prompt,
+permissions, and tools unless you override those fields. Keep larger model
+catalogs, agent tool lists, background-task knobs, and compaction defaults out of
+day-to-day configs unless a project needs a deliberate override.
 
-Reasoning-effort presets use the same explicit `variants` shape as OpenCode.
+Reasoning-effort presets use the same explicit `variants` shape as the upstream
+local-coding config style.
 Each variant is a named model option preset; for OpenAI-compatible reasoning
 models, set `metadata.reasoningEffort` so the TUI can display and select variants
 like `low`, `medium`, or `high`. Use additional variant fields only for
@@ -86,7 +110,7 @@ cargo run -p harness -- --config configs/provider-catalog.reference.jsonc config
 ```
 
 You can also update the checked-in generated provider catalog from the public
-models.dev capability dataset, similar to Pi's generated model registry:
+models.dev capability dataset, similar to the reference generated model registry:
 
 ```bash
 cargo run -p harness -- models generate
@@ -97,7 +121,7 @@ discovery. By default it fetches `https://models.dev/api.json`, filters to
 non-deprecated tool-call-capable models, and writes
 `configs/provider-catalog.generated.json`. The harness binary embeds that file
 with `include_str!`, so `models generated` can print the static registry without
-network access, matching Pi's generate-then-bundle workflow. Use
+network access, matching the generate-then-bundle workflow. Use
 `--input <file>` or `--stdin` for deterministic runs from a saved API response,
 `--provider <id>` to restrict output, `--include-non-tool` /
 `--include-deprecated` to broaden the catalog. `models generate` always emits
@@ -115,7 +139,7 @@ transports.
 | --- | --- | --- |
 | Runtime config file | `harness.json` / `harness.jsonc` | Shared defaults live under the matching XDG harness directory. |
 | TUI config file | `tui.json` / `tui.jsonc` | Runtime and TUI settings are intentionally split. |
-| Core runtime keys | OpenCode-compatible `provider`, `model`, `small_model`, `agent`, `default_agent`, `permission`, `mcp`, `skills`, `instructions`, plus harness runtime extensions | Side-effectful OpenCode product areas are accepted only when inactive and rejected when active. |
+| Core runtime keys | Upstream-compatible `provider`, `model`, `small_model`, `agent`, `default_agent`, `permission`, `mcp`, `skills`, `instructions`, plus harness runtime extensions | Side-effectful upstream product areas are accepted only when inactive and rejected when active. |
 | TUI surface | `keybinds` | Unsupported TUI-only fields fail validation. |
 | Permission naming | `bash`, `edit`, `question`, `task`, `webfetch`, `websearch`, `codesearch`, `lsp` | Legacy `shell` / `network` remain compatibility-only. |
 | Prompt asset discovery | `.agent-harness/agents/*.md` | `AGENTS.md` is still auto-discovered separately. |
@@ -131,38 +155,38 @@ for those settings instead of mixing them into runtime config.
 | --- | --- |
 | `$schema` | Optional schema URI for editor integration. |
 | `agent` | Optional agent overrides or custom agent definitions. |
-| `autoshare` | OpenCode-compatible sharing flag; inactive `false` is accepted, active sharing is rejected. |
-| `autoupdate` | OpenCode-compatible update flag; inactive `false` is accepted, active updates are rejected. |
-| `command` | OpenCode command configuration; accepted only when empty because the harness does not execute configured commands. |
-| `compaction` | OpenCode-compatible compaction settings accepted as inert compatibility input; harness compaction knobs live under `runtime.compaction`. |
+| `autoshare` | Upstream-compatible sharing flag; inactive `false` is accepted, active sharing is rejected. |
+| `autoupdate` | Upstream-compatible update flag; inactive `false` is accepted, active updates are rejected. |
+| `command` | Upstream command configuration; accepted only when empty because the harness does not execute configured commands. |
+| `compaction` | Upstream-compatible compaction settings accepted as inert compatibility input; harness compaction knobs live under `runtime.compaction`. |
 | `default_agent` | Default interactive agent selected at startup; the shipped example keeps `build` as the default while `plan` remains selectable. |
-| `disabled_providers` | OpenCode-compatible provider filter accepted as inert compatibility input. |
-| `enabled_providers` | OpenCode-compatible provider filter accepted as inert compatibility input. |
-| `enterprise` | OpenCode enterprise configuration; accepted only when empty because the harness does not implement enterprise product integration. |
-| `experimental` | OpenCode-compatible experimental settings accepted as inert compatibility input. |
-| `formatter` | OpenCode-compatible formatter settings accepted as inert compatibility input. |
+| `disabled_providers` | Upstream-compatible provider filter accepted as inert compatibility input. |
+| `enabled_providers` | Upstream-compatible provider filter accepted as inert compatibility input. |
+| `enterprise` | Upstream enterprise configuration; accepted only when empty because the harness does not implement enterprise product integration. |
+| `experimental` | Upstream-compatible experimental settings accepted as inert compatibility input. |
+| `formatter` | Upstream-compatible formatter settings accepted as inert compatibility input. |
 | `instructions` | Optional inline instructions or instruction file paths prepended before agent prompts. |
-| `layout` | Deprecated OpenCode layout setting accepted as inert compatibility input. |
-| `logLevel` | OpenCode-compatible log-level setting accepted as inert compatibility input. |
-| `lsp` | OpenCode-compatible LSP setting; `false` disables harness LSP overrides, object values map to harness LSP servers when possible. |
+| `layout` | Deprecated upstream layout setting accepted as inert compatibility input. |
+| `logLevel` | Upstream-compatible log-level setting accepted as inert compatibility input. |
+| `lsp` | Upstream-compatible LSP setting; `false` disables harness LSP overrides, object values map to harness LSP servers when possible. |
 | `mcp` | MCP server definitions keyed by server name. |
-| `mode` | Deprecated OpenCode alias for `agent`; entries are translated as agent definitions. |
+| `mode` | Deprecated upstream alias for `agent`; entries are translated as agent definitions. |
 | `model` | Default full-capability model reference. |
 | `model_profile` | Named model selectors that resolve to configured provider/model targets plus optional fallback targets. |
 | `permission` | Default permission policy for the supported tool subset plus optional shell allowlist. |
-| `plugin` | OpenCode plugin list; accepted only when empty because plugins are not loaded by the harness. |
+| `plugin` | Upstream plugin list; accepted only when empty because plugins are not loaded by the harness. |
 | `provider` | Provider definitions keyed by provider id. |
 | `runtime` | Runtime knobs that are not provider/model/agent definitions, currently including provider-context compaction settings. |
-| `server` | OpenCode server configuration; accepted only when empty because server commands are outside this runtime config. |
-| `share` | OpenCode sharing mode; only `disabled` is accepted. |
-| `shell` | OpenCode-compatible default-shell setting accepted as inert compatibility input. |
+| `server` | Upstream server configuration; accepted only when empty because server commands are outside this runtime config. |
+| `share` | Upstream sharing mode; only `disabled` is accepted. |
+| `shell` | Upstream-compatible default-shell setting accepted as inert compatibility input. |
 | `small_model` | Optional smaller model reference for custom secondary profiles. |
-| `snapshot` | OpenCode-compatible snapshot setting accepted as inert compatibility input. |
+| `snapshot` | Upstream-compatible snapshot setting accepted as inert compatibility input. |
 | `skills` | Shared skill discovery roots and permission overrides for skill loading. |
-| `tool_output` | OpenCode-compatible tool-output truncation setting accepted as inert compatibility input. |
-| `tools` | OpenCode-compatible top-level tool map accepted as inert compatibility input. |
-| `username` | OpenCode-compatible username setting accepted as inert compatibility input. |
-| `watcher` | OpenCode-compatible watcher settings accepted as inert compatibility input. |
+| `tool_output` | Upstream-compatible tool-output truncation setting accepted as inert compatibility input. |
+| `tools` | Upstream-compatible top-level tool map accepted as inert compatibility input. |
+| `username` | Upstream-compatible username setting accepted as inert compatibility input. |
+| `watcher` | Upstream-compatible watcher settings accepted as inert compatibility input. |
 
 ## TUI top-level keys
 
@@ -211,6 +235,21 @@ Project instructions are still auto-discovered from `AGENTS.md`. If
 `instructions` is set in the runtime config, those entries are prepended ahead
 of the discovered `AGENTS.md` content.
 
+Provider requests keep the normal role boundary: the composed system prompt is
+sent before the live user message, and child-task delegation context is embedded
+inside the child user prompt before the task body. Within the composed Harness
+system prompt, V1 precedence is fixed and tested as:
+
+1. runtime agent prompt from config or `.agent-harness/agents/<name>.md`
+2. generated environment/model context
+3. task-delegation reminder
+4. configured `instructions` entries, followed by discovered `AGENTS.md`
+5. skill-tool guidance when the profile exposes `skill`
+
+When `task` loads skills for a child session, the child user prompt starts with
+delegation context, then loaded skill content, then optional command context, and
+finally the requested task body.
+
 The shipped `plan` agent provides a stable planning mode, not an experimental
 feature flag. It can read/search, ask questions, write only the active
 workspace-relative `.agent-harness/plans/<run>.md` plan file, and call
@@ -251,16 +290,16 @@ background scheduler loops, plugin loading, or hidden continuation semantics.
 making provider or MCP network calls. It checks provider/model metadata,
 provider credential availability without printing key values, configured agent
 and model-profile references, shipped workflow profile availability, category
-route coverage, profile tool ids, permissions, session-directory readiness, and
-configured MCP server state.
+route coverage, profile tool ids, permissions, skill roots and permission
+posture, session-directory readiness, and configured MCP server state.
 Use `--json` for machine-readable output.
 
 ### Plan operator workflow
 
 Use Plan when the operator wants a reviewed implementation plan before changing
 project files. Harness ships Plan as a stable public runtime surface, not an
-experimental OpenCode flag, and the safety boundary is enforced by coordinator
-permissions as well as prompt instructions.
+experimental compatibility flag, and the safety boundary is enforced by
+coordinator permissions as well as prompt instructions.
 
 1. Start in the primary `build` agent for normal implementation work.
 2. Switch to the primary `plan` agent with the TUI primary-agent switcher, or let
@@ -279,10 +318,10 @@ permissions as well as prompt instructions.
    back to Build with the approved plan-file path in the continuation prompt;
    declining leaves the session in Plan so the plan can be revised further.
 
-This differs intentionally from OpenCode's broader experimental Plan behavior:
+This differs intentionally from broader experimental Plan-style behavior:
 Harness keeps `plan_exit` available in the shipped `plan` profile and keeps
-Plan-spawned child work restricted to `explore` unless a future policy adds tested
-parent-permission inheritance for write-capable subagents.
+Plan-spawned child work restricted to `explore` unless a future policy adds
+tested parent-permission inheritance for write-capable subagents.
 
 The shipped agent names are available without extra config: primary
 `build`, `plan`, and `discipline`, subagents `general`, `explore`,
@@ -410,8 +449,8 @@ values, config loading rejects the file instead of silently choosing one.
 
 ## Validation behavior
 
-- Unsupported top-level areas are limited to active OpenCode product features and unknown keys.
-- OpenCode top-level areas that would trigger product side effects (`server`, `command`, `plugin`, `share`, `autoshare`, `autoupdate`, `enterprise`) are rejected when active; inactive forms such as empty maps/lists, `share: "disabled"`, or `autoupdate: false` are accepted.
+- Unsupported top-level areas are limited to active unsupported product features and unknown keys.
+- Unsupported compatibility top-level areas that would trigger product side effects (`server`, `command`, `plugin`, `share`, `autoshare`, `autoupdate`, `enterprise`) are rejected when active; inactive forms such as empty maps/lists, `share: "disabled"`, or `autoupdate: false` are accepted.
 - Unsupported TUI fields are rejected explicitly.
 - `{env:VAR}` resolves to an empty string when `VAR` is unset.
 - `{file:path}` is supported for string references and resolves relative to the config file when the config comes from disk.
