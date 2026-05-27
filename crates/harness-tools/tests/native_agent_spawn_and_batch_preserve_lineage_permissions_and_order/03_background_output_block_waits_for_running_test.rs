@@ -60,6 +60,7 @@ async fn background_output_block_waits_for_running_child_completion() {
     assert_eq!(output["terminal"], json!(true));
     assert_eq!(output["timed_out"], json!(false));
     assert_eq!(output["result_summary"], json!("delayed child result"));
+    assert_eq!(output["route"], task_output["route"]);
 }
 #[tokio::test]
 async fn background_output_retrieves_child_result_after_coordinator_resume() {
@@ -150,6 +151,7 @@ async fn background_output_retrieves_child_result_after_coordinator_resume() {
     assert_eq!(output["result_summary"], json!("static child result"));
     assert_eq!(output["source"], json!("event_replay"));
     assert_eq!(output["runtime"]["profile"], json!("deep"));
+    assert_eq!(output["route"], task_output["route"]);
 }
 #[tokio::test]
 async fn background_output_can_cancel_authorized_child_request() {

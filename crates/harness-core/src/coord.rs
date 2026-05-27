@@ -43,15 +43,15 @@ use crate::event::{
     PermissionDecision as EventPermissionDecision, PermissionGrantRecordedEvent,
     PermissionRequestedArgs, PermissionResolvedEvent, PolicyViolationDetectedEvent,
     ProviderAssistantMessageMetadata, ProviderReasoningDeltaEvent, ProviderRequestFinishedMetadata,
-    ProviderRequestStartedMetadata, RunFinishedEvent, RunStartedEvent, StaleDetectedEvent,
-    TaskCancelledEvent, TaskCompletedEvent, TaskCompletionMetadata, TaskLineageMetadata,
-    TaskResultLateEvent, TaskScheduleState, TaskScheduledEvent, TaskTerminalScope, TeamBounds,
-    TeamCreatedEvent, TeamDeletedEvent, TeamMemberRole, TeamMemberSelector, TeamMemberSpawnedEvent,
-    TeamMemberSpec, TeamMessage, TeamMessageKind, TeamMessageSentEvent, TeamShutdownApprovedEvent,
-    TeamShutdownRejectedEvent, TeamShutdownRequestedEvent, TeamSpec, TeamTask,
-    TeamTaskCreatedEvent, TeamTaskStatus, TeamTaskUpdatedEvent, ToolCallFinishedEvent,
-    ToolCallMetadata, ToolCallStartedEvent, ToolCallStatus, ToolIdentityMetadata,
-    UserMessageSubmittedEvent,
+    ProviderRequestStartedMetadata, RunFailedEvent, RunFinishedEvent, RunStartedEvent,
+    StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskCompletionMetadata,
+    TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState, TaskScheduledEvent,
+    TaskTerminalScope, TeamBounds, TeamCreatedEvent, TeamDeletedEvent, TeamMemberRole,
+    TeamMemberSelector, TeamMemberSpawnedEvent, TeamMemberSpec, TeamMessage, TeamMessageKind,
+    TeamMessageSentEvent, TeamShutdownApprovedEvent, TeamShutdownRejectedEvent,
+    TeamShutdownRequestedEvent, TeamSpec, TeamTask, TeamTaskCreatedEvent, TeamTaskStatus,
+    TeamTaskUpdatedEvent, ToolCallFinishedEvent, ToolCallMetadata, ToolCallStartedEvent,
+    ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent,
 };
 use crate::path_selector::workspace_relative_path_from_maybe_absolute;
 use crate::perm::{
@@ -128,6 +128,33 @@ const DEFAULT_TOOL_CONCURRENCY: usize = 1;
 const DEFAULT_PROVIDER_MODEL_CONCURRENCY: usize = 1;
 const DEFAULT_STALE_TIMEOUT_MS: u64 = 15_000;
 const DEFAULT_WATCHDOG_TICK_MS: u64 = 100;
+pub const TASK_CATEGORY_FALLBACK_PROFILE: &str = "general";
+pub const TASK_CATEGORY_FALLBACK_DISABLED_PARENT_PROFILES: &[&str] = &["plan"];
+
+pub fn task_category_fallback_profile(category: &str) -> Option<&'static str> {
+    let category = category.trim();
+    (!category.is_empty() && !category.eq_ignore_ascii_case(TASK_CATEGORY_FALLBACK_PROFILE))
+        .then_some(TASK_CATEGORY_FALLBACK_PROFILE)
+}
+
+pub fn task_category_fallback_chain(category: Option<&str>) -> Vec<String> {
+    let Some(category) = category.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Vec::new();
+    };
+    let mut chain = vec![category.to_string()];
+    if let Some(fallback) = task_category_fallback_profile(category) {
+        chain.push(fallback.to_string());
+    }
+    chain
+}
+
+pub fn task_category_fallback_disabled_for_parent(parent_profile: Option<&str>) -> bool {
+    parent_profile.is_some_and(|profile| {
+        TASK_CATEGORY_FALLBACK_DISABLED_PARENT_PROFILES
+            .iter()
+            .any(|disabled| profile.eq_ignore_ascii_case(disabled))
+    })
+}
 const DEFAULT_SIMULATED_JOB_DURATION_MS: u64 = 10;
 const DEFAULT_QUESTION_TIMEOUT_MS: u64 = 0;
 const COORDINATOR_AGENT_ID: &str = "coordinator";
@@ -255,6 +282,10 @@ pub enum Command {
         respond_to: oneshot::Sender<Result<RunInfo, CoordinatorError>>,
     },
     StopRun {
+        respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
+    },
+    FailRun {
+        error: String,
         respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
     },
     GetEventStore {
@@ -703,6 +734,12 @@ impl CoordinatorHandle {
 
     pub async fn stop_run(&self) -> Result<(), CoordinatorError> {
         self.request(|respond_to| Command::StopRun { respond_to })
+            .await
+    }
+
+    pub async fn fail_run(&self, error: impl Into<String>) -> Result<(), CoordinatorError> {
+        let error = error.into();
+        self.request(|respond_to| Command::FailRun { error, respond_to })
             .await
     }
 
@@ -1323,6 +1360,10 @@ impl Coordinator {
             Command::StopRun { respond_to } => {
                 let result = self.stop_run_internal("run stopped".to_string()).await;
                 warn_oneshot_send_failure(respond_to.send(result), "stop_run");
+            }
+            Command::FailRun { error, respond_to } => {
+                let result = self.fail_run_internal(error).await;
+                warn_oneshot_send_failure(respond_to.send(result), "fail_run");
             }
             Command::GetEventStore { respond_to } => {
                 let result = self.get_event_store_internal();
@@ -2154,6 +2195,66 @@ impl Coordinator {
                 outcome: Some("finished".to_string()),
                 output_summary: Some(summary),
                 failure_reason: None,
+            },
+        )
+        .await;
+        if let Some(reason) = hook_batch.critical_failure {
+            return Err(CoordinatorError::LifecycleHookFailed(reason));
+        }
+
+        Ok(())
+    }
+
+    async fn fail_run_internal(&mut self, error: String) -> Result<(), CoordinatorError> {
+        let mut run_state = self
+            .run_state
+            .take()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+
+        run_state.shutdown_token.cancel();
+        for task in run_state.tasks.values() {
+            task.cancellation_token.cancel();
+        }
+        for task in run_state.running_agent_turns.values() {
+            task.cancellation_token.cancel();
+        }
+
+        let run_stream_key = format!("run:{}", run_state.info.run_id);
+
+        append_payload_event(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            &mut run_state,
+            system_actor(),
+            Some(run_stream_key),
+            EventV1::RunFailed(RunFailedEvent {
+                error: error.clone(),
+            }),
+        )?;
+
+        let hook_batch = hooks::run_lifecycle_hooks(
+            self.clock.as_ref(),
+            self.config.hook_command_executor.as_ref(),
+            &self.config.hook_runtime_config,
+            HookInvocationContext {
+                event: HookLifecycleEvent::RunFailed,
+                run_id: run_state.info.run_id.clone(),
+                workspace_root: run_state.info.workspace_root.clone(),
+                artifacts_dir: run_state.info.artifacts_dir.clone(),
+                actor: Some(system_actor()),
+                agent_id: None,
+                request_id: None,
+                permission_id: None,
+                task_id: None,
+                tool_call_id: None,
+                tool_id: None,
+                provider_id: None,
+                model_id: None,
+                parent_agent_id: None,
+                category: None,
+                outcome: Some("failed".to_string()),
+                output_summary: None,
+                failure_reason: Some(error),
             },
         )
         .await;
@@ -9496,8 +9597,6 @@ fn active_plan_symlink_denial(workspace_root: &Path, active_plan: &str) -> Optio
 }
 
 fn task_agent_rule_selectors(args_json: &Value) -> Vec<PermissionRuleRequest> {
-    const CATEGORY_FALLBACK_PROFILE: &str = "general";
-
     let mut team_selectors = Vec::new();
     if let Some(members) = args_json.get("members").and_then(Value::as_array) {
         for member in members {
@@ -9529,10 +9628,8 @@ fn task_agent_rule_selectors(args_json: &Value) -> Vec<PermissionRuleRequest> {
         }
         (Some(category), None) => {
             let mut selectors = vec![PermissionRuleRequest::TaskAgent(category.clone())];
-            if category != CATEGORY_FALLBACK_PROFILE {
-                selectors.push(PermissionRuleRequest::TaskAgent(
-                    CATEGORY_FALLBACK_PROFILE.to_string(),
-                ));
+            if let Some(fallback) = task_category_fallback_profile(&category) {
+                selectors.push(PermissionRuleRequest::TaskAgent(fallback.to_string()));
             }
             selectors
         }

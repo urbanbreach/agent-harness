@@ -1,7 +1,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use harness_core::coord::{AgentRuntimeInfo, ChildTaskRequestMetadata, CoordinatorError};
+use harness_core::config::registered_profile_model_metadata;
+use harness_core::coord::{
+    task_category_fallback_chain, task_category_fallback_disabled_for_parent,
+    task_category_fallback_profile, AgentRuntimeInfo, ChildTaskRequestMetadata, CoordinatorError,
+    TASK_CATEGORY_FALLBACK_DISABLED_PARENT_PROFILES,
+};
 use harness_core::event::{
     ActorKind, EventActor, EventV1, TaskCancelledEvent, TaskCompletedEvent, TaskScheduleState,
     TaskTerminalScope, ToolCallStatus,
@@ -27,7 +32,6 @@ const MAX_BACKGROUND_OUTPUT_TIMEOUT_MS: u64 = 300_000;
 const MAX_BATCH_CALLS: usize = 25;
 const BATCH_NESTED_ERROR: &str = "batch cannot be nested inside batch";
 const BATCH_MAX_CALLS_ERROR: &str = "Maximum of 25 tools allowed in batch";
-const CATEGORY_FALLBACK_PROFILE: &str = "general";
 
 pub(crate) struct AgentOpsExecutor {
     question_answer_source: Arc<dyn QuestionAnswerSource>,
@@ -371,6 +375,7 @@ impl AgentOpsExecutor {
             timed_out = !observed_terminal && !summary.terminal;
         }
         let child_runtime = background_child_runtime_metadata(ctx, &summary).await?;
+        let route = background_route_metadata(ctx, &summary.request_id).await?;
 
         Ok(text_json_tool_result(
             format_background_output(&summary, timed_out),
@@ -393,6 +398,7 @@ impl AgentOpsExecutor {
                 "cancel_requested": summary.cancel_requested,
                 "cancel_performed": summary.cancel_performed,
                 "cancel_reason": summary.cancel_reason,
+                "route": route,
                 "runtime": child_runtime,
                 "child_runtime": child_runtime,
                 "next_actions": background_next_actions(&summary),
@@ -425,8 +431,7 @@ impl AgentSpawnRequest {
     fn category_fallback_profile(&self) -> Option<&'static str> {
         self.category_selector
             .as_deref()
-            .filter(|category| !category.eq_ignore_ascii_case(CATEGORY_FALLBACK_PROFILE))
-            .map(|_| CATEGORY_FALLBACK_PROFILE)
+            .and_then(task_category_fallback_profile)
     }
 }
 
@@ -478,12 +483,47 @@ struct ChildPermissionMetadata {
 struct ChildRuntimeMetadata {
     profile: String,
     category: String,
+    role: &'static str,
     model_ref: String,
+    model: ChildModelMetadata,
     toolset: Vec<String>,
+    permission_posture: ChildPermissionPosture,
     can_redelegate: bool,
     has_background_output: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     parent_agent_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ChildModelMetadata {
+    model_ref: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    provider: Option<String>,
+    model: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    variant: Option<String>,
+    fallback_chain: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ChildPromptMetadata {
+    source: &'static str,
+    status: &'static str,
+    profile: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ChildPermissionPosture {
+    spawn: &'static str,
+    edit: &'static str,
+    bash: &'static str,
+    question: &'static str,
+    task: &'static str,
+    webfetch: &'static str,
+    websearch: &'static str,
+    codesearch: &'static str,
+    lsp: &'static str,
+    background_output: &'static str,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -712,7 +752,7 @@ fn inherited_model_override(
 }
 
 fn category_fallback_disabled(ctx: &ToolContext) -> bool {
-    ctx.category.as_deref() == Some(harness_core::plan::PLAN_AGENT_NAME)
+    task_category_fallback_disabled_for_parent(ctx.category.as_deref())
 }
 
 pub(crate) fn select_agent_selection(
@@ -847,6 +887,41 @@ async fn background_child_runtime_metadata(
         .await
         .map_err(|err| ToolError::Execution(format!("failed to inspect child runtime: {err}")))?;
     Ok(Some(child_runtime_metadata(&runtime)))
+}
+
+async fn background_route_metadata(
+    ctx: &ToolContext,
+    request_id: &str,
+) -> Result<Option<Value>, ToolError> {
+    let mut replay = replay_events(ctx).await?;
+    while let Some(next) = replay.next().await {
+        let event = next.map_err(map_replay_stream_error)?;
+        let EventV1::ToolCallFinished(data) = &event.payload else {
+            continue;
+        };
+        let Some(output_json) = data.output_json.as_ref() else {
+            continue;
+        };
+        if output_child_request_id(output_json).as_deref() == Some(request_id) {
+            return Ok(output_json.get("route").cloned());
+        }
+    }
+    Ok(None)
+}
+
+fn output_child_request_id(output_json: &Value) -> Option<String> {
+    ["child_request_id", "request_id"]
+        .into_iter()
+        .find_map(|key| output_json.get(key).and_then(Value::as_str))
+        .map(str::to_string)
+        .or_else(|| {
+            output_json
+                .get("_harness")
+                .and_then(|harness| harness.get("lineage"))
+                .and_then(|lineage| lineage.get("child_request_id"))
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
 }
 
 fn trimmed_selector(selector: Option<&str>) -> Option<&str> {
@@ -1042,6 +1117,9 @@ fn child_runtime_metadata(runtime: &AgentRuntimeInfo) -> ChildRuntimeMetadata {
         profile: runtime.profile_name.clone(),
         category: runtime.profile_category.clone(),
         model_ref: runtime.model_ref.clone(),
+        role: child_route_role(runtime),
+        model: child_model_metadata(&runtime.profile_name, &runtime.model_ref),
+        permission_posture: child_permission_posture(&runtime.toolset),
         can_redelegate: runtime.toolset.iter().any(|tool| tool == "task"),
         has_background_output: runtime
             .toolset
@@ -1049,6 +1127,81 @@ fn child_runtime_metadata(runtime: &AgentRuntimeInfo) -> ChildRuntimeMetadata {
             .any(|tool| tool == "background_output"),
         toolset: runtime.toolset.clone(),
         parent_agent_id: runtime.parent_agent_id.clone(),
+    }
+}
+
+fn child_model_metadata(profile_name: &str, model_ref: &str) -> ChildModelMetadata {
+    if let Some(metadata) = registered_profile_model_metadata(profile_name) {
+        return ChildModelMetadata {
+            model_ref: model_ref.to_string(),
+            provider: Some(metadata.provider),
+            model: metadata.model,
+            variant: metadata.variant,
+            fallback_chain: Vec::new(),
+        };
+    }
+
+    let (provider, model, variant) = split_model_ref(model_ref);
+    ChildModelMetadata {
+        model_ref: model_ref.to_string(),
+        provider,
+        model,
+        variant,
+        fallback_chain: Vec::new(),
+    }
+}
+
+fn split_model_ref(model_ref: &str) -> (Option<String>, String, Option<String>) {
+    let mut slash_parts = model_ref.split('/');
+    let first = slash_parts.next();
+    let second = slash_parts.next();
+    let third = slash_parts.next();
+    if let (Some(provider), Some(model)) = (first, second) {
+        return (
+            Some(provider.to_string()),
+            model.to_string(),
+            third.map(str::to_string),
+        );
+    }
+
+    let mut colon_parts = model_ref.splitn(2, ':');
+    match (colon_parts.next(), colon_parts.next()) {
+        (Some(provider), Some(model)) => (Some(provider.to_string()), model.to_string(), None),
+        _ => (None, model_ref.to_string(), None),
+    }
+}
+
+fn child_route_role(runtime: &AgentRuntimeInfo) -> &'static str {
+    match runtime.profile_name.as_str() {
+        "build" | "plan" | "discipline" => "primary",
+        "general" | "explore" => "subagent",
+        "visual-engineering" | "artistry" | "ultrabrain" | "deep" | "quick" | "unspecified-low"
+        | "unspecified-high" | "writing" => "category",
+        _ if runtime.parent_agent_id.is_some() => "subagent",
+        _ => "profile",
+    }
+}
+
+fn child_permission_posture(toolset: &[String]) -> ChildPermissionPosture {
+    ChildPermissionPosture {
+        spawn: "checked_before_child_turn",
+        edit: tool_permission_posture(toolset, "edit"),
+        bash: tool_permission_posture(toolset, "bash"),
+        question: tool_permission_posture(toolset, "question"),
+        task: tool_permission_posture(toolset, "task"),
+        webfetch: tool_permission_posture(toolset, "webfetch"),
+        websearch: tool_permission_posture(toolset, "websearch"),
+        codesearch: tool_permission_posture(toolset, "codesearch"),
+        lsp: tool_permission_posture(toolset, "lsp"),
+        background_output: tool_permission_posture(toolset, "background_output"),
+    }
+}
+
+fn tool_permission_posture(toolset: &[String], tool_id: &str) -> &'static str {
+    if toolset.iter().any(|tool| tool == tool_id) {
+        "available_subject_to_runtime_permission"
+    } else {
+        "deny_by_toolset"
     }
 }
 
@@ -1163,6 +1316,12 @@ fn spawn_result_json(
         "child_session_id": agent_id,
         "child_request_id": request_id,
         "lineage": lineage,
+        "route": route_metadata(
+            request,
+            loaded_skills,
+            &child_session.runtime,
+            &child_session.permissions
+        ),
         "load_skills": request.load_skills,
         "skills": request.load_skills,
         "loaded_skills": loaded_skill_metadata(loaded_skills),
@@ -1185,6 +1344,42 @@ fn spawn_result_json(
         "has_background_output": child_session.runtime.has_background_output,
         "next_actions": child_next_actions(request, agent_id, request_id),
         "child_session": child_session,
+    })
+}
+
+fn route_metadata(
+    request: &AgentSpawnRequest,
+    loaded_skills: &[TaskSkillContext],
+    runtime: &ChildRuntimeMetadata,
+    permissions: &ChildPermissionMetadata,
+) -> Value {
+    let fallback_profile = request.category_fallback_profile();
+    json!({
+        "requested_category": request.category_selector.clone(),
+        "requested_profile": request.category_selector.as_deref().unwrap_or(request.profile_name.as_str()),
+        "resolved_profile": request.profile_name.clone(),
+        "profile_id": runtime.profile.clone(),
+        "role": runtime.role,
+        "hidden": false,
+        "prompt": ChildPromptMetadata {
+            source: "runtime_profile",
+            status: "resolved_by_coordinator",
+            profile: runtime.profile.clone(),
+        },
+        "model": runtime.model.clone(),
+        "toolset": runtime.toolset.clone(),
+        "permission_posture": runtime.permission_posture.clone(),
+        "permissions": permissions,
+        "loaded_skills": loaded_skill_metadata(loaded_skills),
+        "fallback_chain": task_category_fallback_chain(request.category_selector.as_deref()),
+        "category_fallback_chain": task_category_fallback_chain(request.category_selector.as_deref()),
+        "fallback": {
+            "applied": request.category_selector.is_some()
+                && fallback_profile == Some(request.profile_name.as_str()),
+            "fallback_profile": fallback_profile,
+            "policy_source": "harness_core::coord::task_category_fallback_profile",
+            "disabled_parent_profiles": TASK_CATEGORY_FALLBACK_DISABLED_PARENT_PROFILES,
+        },
     })
 }
 
@@ -1291,11 +1486,14 @@ fn parameter_keys(parameters: &Value) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        map_request_agent_turn_error, map_spawn_agent_error, select_agent_selection,
-        AgentSelection, AgentSpawnRequest,
+        build_child_prompt, map_request_agent_turn_error, map_spawn_agent_error,
+        select_agent_selection, AgentSelection, AgentSpawnRequest,
     };
     use harness_core::coord::CoordinatorError;
     use harness_core::tool::ToolError;
+    use std::path::PathBuf;
+
+    use crate::control_plane::TaskSkillContext;
 
     #[test]
     fn select_agent_selection_accepts_matching_category_and_subagent_type() {
@@ -1354,6 +1552,53 @@ mod tests {
     }
 
     #[test]
+    fn child_prompt_preserves_v1_delegation_skill_command_task_precedence() {
+        // arrange
+        let request = AgentSpawnRequest {
+            description: "spawn child".to_string(),
+            profile_name: "deep".to_string(),
+            category_selector: None,
+            prompt: "Task body.".to_string(),
+            task_id: None,
+            session_id: None,
+            run_in_background: false,
+            load_skills: vec!["rust-best-practices".to_string()],
+            command: Some("/issue-delivery".to_string()),
+        };
+        let loaded_skills = vec![TaskSkillContext {
+            name: "rust-best-practices".to_string(),
+            description: "Rust guidance".to_string(),
+            content: "Use focused diffs.".to_string(),
+            location: PathBuf::from(".agents/skills/rust-best-practices/SKILL.md"),
+        }];
+
+        // act
+        let prompt = build_child_prompt(&request, &loaded_skills);
+
+        // assert
+        assert_prompt_order(
+            &prompt,
+            "Delegation context from parent:",
+            "- Loaded skills:",
+        );
+        assert_prompt_order(
+            &prompt,
+            "- Loaded skills:",
+            "<skill_content name=\"rust-best-practices\">",
+        );
+        assert_prompt_order(
+            &prompt,
+            "<skill_content name=\"rust-best-practices\">",
+            "- Treat this command as required execution context: /issue-delivery",
+        );
+        assert_prompt_order(
+            &prompt,
+            "- Treat this command as required execution context: /issue-delivery",
+            "\nTask:\nTask body.",
+        );
+    }
+
+    #[test]
     fn unknown_existing_session_returns_guidance() {
         let err = map_request_agent_turn_error(
             CoordinatorError::UnknownAgent("missing-session".to_string()),
@@ -1392,6 +1637,19 @@ mod tests {
         );
         assert!(
             matches!(err, ToolError::InvalidArguments(message) if message.contains("Unknown child profile `missing_profile`") && message.contains("category/subagent_type `missing_profile`"))
+        );
+    }
+
+    fn assert_prompt_order(prompt: &str, before: &str, after: &str) {
+        let before_index = prompt
+            .find(before)
+            .unwrap_or_else(|| panic!("child prompt missing {before:?}"));
+        let after_index = prompt
+            .find(after)
+            .unwrap_or_else(|| panic!("child prompt missing {after:?}"));
+        assert!(
+            before_index < after_index,
+            "expected {before:?} before {after:?} in child prompt"
         );
     }
 }

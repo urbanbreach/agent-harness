@@ -369,6 +369,43 @@ async fn task_category_without_matching_profile_falls_back_to_general() {
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
     let output = finished.output_json.expect("task structured output");
     assert_eq!(output["profile"], json!("general"));
+    assert_eq!(output["route"]["requested_category"], json!("quick"));
+    assert_eq!(output["route"]["resolved_profile"], json!("general"));
+    assert_eq!(output["route"]["profile_id"], json!("general"));
+    assert_eq!(output["route"]["role"], json!("subagent"));
+    assert_eq!(output["route"]["hidden"], json!(false));
+    assert_eq!(
+        output["route"]["prompt"],
+        json!({
+            "source": "runtime_profile",
+            "status": "resolved_by_coordinator",
+            "profile": "general"
+        })
+    );
+    assert_eq!(
+        output["route"]["model"]["model_ref"],
+        output["runtime"]["model_ref"]
+    );
+    assert_eq!(output["route"]["toolset"], output["runtime"]["toolset"]);
+    assert_eq!(
+        output["route"]["permission_posture"]["task"],
+        json!("deny_by_toolset")
+    );
+    assert_eq!(output["route"]["loaded_skills"], json!([]));
+    assert_eq!(output["route"]["fallback_chain"], json!(["quick", "general"]));
+    assert_eq!(
+        output["route"]["category_fallback_chain"],
+        json!(["quick", "general"])
+    );
+    assert_eq!(output["route"]["fallback"]["applied"], json!(true));
+    assert_eq!(
+        output["route"]["fallback"]["fallback_profile"],
+        json!("general")
+    );
+    assert_eq!(
+        output["route"]["fallback"]["policy_source"],
+        json!("harness_core::coord::task_category_fallback_profile")
+    );
     let child_session_id = output["child_session_id"]
         .as_str()
         .expect("child session id");
