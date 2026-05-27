@@ -8,7 +8,7 @@ Read the workspace root `AGENTS.md` first; runtime policy lives in `harness-core
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |------|----------|-------|
-| Registry composition | `src/lib.rs` | `coordinator_registry*`, `worker_registry*`, MCP/editing feature wiring. |
+| Registry composition | `src/lib.rs` | Coordinator/worker registry builders, MCP/editing feature wiring. |
 | Native wrappers | `src/native_tools.rs` | User-facing tool ids, aliases, blocked-command recovery hints. |
 | Filesystem search | `src/fs_glob.rs`, `src/fs_grep.rs`, `src/fs_ls.rs`, `src/fs_walk.rs` | Workspace-safe discovery; limits and output modes. |
 | Workspace edits | `src/workspace_edit.rs`, `src/hashline_*` | Read/write/edit routing, hashline anchors, apply artifacts. |

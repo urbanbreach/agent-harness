@@ -9,7 +9,7 @@ Read the workspace root `AGENTS.md` first for search scope and cross-crate verif
 | Task | Location | Notes |
 |------|----------|-------|
 | Runtime entrypoints | `src/lib.rs`, `src/runtime.rs` | Startup/live/replay wiring and exact-name shell contract tests. |
-| App state | `src/app.rs`, `src/app/` | Event ingestion and UI state; prefer submodule extraction over widening `app.rs`. |
+| App state | `src/app.rs`, `src/app/` | Event ingestion and UI state; prefer submodule extraction over widening `src/app.rs`. |
 | Rendering | `src/ui.rs`, `src/ui_*.rs`, `src/ui_transcript.rs` | Main surface, chrome, overlays, transcript, secondary views. |
 | View models | `src/view_model.rs` | Presentation shaping before rendering. |
 | Geometry | `src/layout.rs` | Breakpoints and pane sizing. |
@@ -30,7 +30,7 @@ Approved rendering stack; do not add alternatives without explicit signoff:
 - `imara-diff` for diff visualization.
 
 ## CONVENTIONS
-- Keep layout math in `layout.rs` / `theme.rs`, not scattered through rendering code.
+- Keep layout math in `src/layout.rs` / `src/theme.rs`, not scattered through rendering code.
 - Preserve replay read-only behavior and live-mode event-driven updates.
 - Keep tool/transcript/orchestration states structured; do not render opaque text dumps as the canonical state.
 - When reducing oversized files, move `#[cfg(test)]` blocks and focused helpers into sibling modules before redesigning runtime behavior.
