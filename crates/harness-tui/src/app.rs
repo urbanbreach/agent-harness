@@ -81,7 +81,7 @@ const TOOL_OUTPUT_DISPLAY_MAX_CHARS: usize = 100;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_CHARS: usize = 72;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_FIELDS: usize = 3;
 const INTERRUPT_CONFIRM_TIMEOUT: Duration = Duration::from_secs(5);
-pub(crate) const SLASH_COMMANDS: [(&str, &str); 15] = [
+pub(crate) const SLASH_COMMANDS: [(&str, &str); 16] = [
     ("new", "Return to the home shell"),
     ("sessions", "Switch session"),
     ("resume", "Continue a saved session"),
@@ -93,6 +93,7 @@ pub(crate) const SLASH_COMMANDS: [(&str, &str); 15] = [
     ("status", "View status"),
     ("toggles", "Open toggles"),
     ("events", "Open the event log review"),
+    ("help", "Show shortcuts and TUI controls"),
     ("shell", "Return to the session shell"),
     ("follow", "Toggle follow mode"),
     ("compact", "Write a manual context checkpoint"),
@@ -4204,6 +4205,7 @@ pub(crate) fn exact_test_startup_slash_commands_execute_without_menu() {
         app.slash_filtered,
         vec![
             "exit".to_string(),
+            "help".to_string(),
             "new".to_string(),
             "replay".to_string(),
             "resume".to_string(),

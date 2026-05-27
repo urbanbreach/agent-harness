@@ -1297,7 +1297,7 @@ impl AppState {
 
     fn slash_command_available(&self, command: &str) -> bool {
         match command {
-            "new" | "status" | "toggles" | "exit" => true,
+            "new" | "status" | "toggles" | "help" | "exit" => true,
             "resume" | "replay" => !self.replay_mode,
             "fork" => !self.startup_mode && !self.replay_mode,
             "clone" => !self.startup_mode && self.lineage_write_blocked_reason().is_none(),
@@ -1408,6 +1408,10 @@ impl AppState {
             "events" => {
                 self.restore_slash_draft(preserved_draft);
                 self.open_review_surface(ReviewSurface::Events);
+            }
+            "help" => {
+                self.restore_slash_draft(preserved_draft);
+                self.execute_action(Action::Help);
             }
             "shell" => {
                 self.restore_slash_draft(preserved_draft);
@@ -1845,6 +1849,7 @@ impl AppState {
             }
             "stack_transcript_diffs" => self.stacked_transcript_diffs = true,
             "split_transcript_diffs" => self.stacked_transcript_diffs = false,
+            "help" => self.execute_action(Action::Help),
             "quit" => self.execute_action(Action::Quit),
             _ => {}
         }
@@ -1923,7 +1928,7 @@ impl AppState {
         if self.startup_shell_visible() {
             matches!(
                 command_id,
-                "new_session" | "resume_session" | "replay_session" | "toggles" | "quit"
+                "new_session" | "resume_session" | "replay_session" | "toggles" | "help" | "quit"
             )
         } else if matches!(command_id, "show_timestamps" | "hide_timestamps") {
             self.active_review_surface.is_none()

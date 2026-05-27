@@ -269,6 +269,13 @@ impl Action {
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
+                id: "help",
+                label: "Help",
+                description: "Show shortcuts and TUI controls",
+                shortcut: "?",
+                section: PaletteCommandSection::System,
+            },
+            PaletteCommand {
                 id: "quit",
                 label: "Quit",
                 description: "Quit the application",
@@ -391,6 +398,7 @@ impl Action {
                 "split_transcript_diffs",
                 "Allow side-by-side transcript diffs when wide",
             ),
+            ("help", "Show shortcuts and TUI controls"),
             ("quit", "Quit the application"),
         ]
     }
@@ -592,7 +600,6 @@ impl KeyMap {
             Action::MoveUp,
         );
 
-        // Agent cycling (Opencode-compatible primary-agent switching)
         keymap.bind(
             KeyBinding::new(KeyCode::Tab, KeyModifiers::NONE),
             Action::AgentCycle,

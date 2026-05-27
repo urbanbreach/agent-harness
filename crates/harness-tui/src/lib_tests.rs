@@ -961,6 +961,18 @@ fn command_palette_groups_commands_for_shell() {
     let system_render = render_live_lines(&system_app, 120, 30);
     assert!(system_render.contains("Commands"));
     assert!(system_render.contains("Quit"));
+
+    let mut help_app = app::AppState::new_startup(Vec::new(), None);
+    help_app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    for ch in "help".chars() {
+        help_app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    let help_render = render_live_lines(&help_app, 120, 30);
+    assert!(help_render.contains("Commands"));
+    assert!(help_render.contains("Help"));
 }
 
 #[cfg(test)]
@@ -6491,6 +6503,7 @@ fn command_palette_renders_and_filters() {
             "hide_tool_details".to_string(),
             "show_generic_tool_output".to_string(),
             "stack_transcript_diffs".to_string(),
+            "help".to_string(),
             "quit".to_string(),
         ]
     );
