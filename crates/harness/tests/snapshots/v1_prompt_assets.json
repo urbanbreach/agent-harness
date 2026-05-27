@@ -1,0 +1,239 @@
+{
+  "profiles": {
+    "artistry": {
+      "digest12": "7e3554a7b1c4",
+      "line_count": 47,
+      "sections": [
+        "Identity",
+        "Goal",
+        "Use When",
+        "Do Not Use When",
+        "Scope Guard",
+        "Runtime-Enforced Permissions",
+        "Behavioral Guidance",
+        "Operating Loop",
+        "Ask Gate",
+        "Failure Recovery",
+        "Output Contract",
+        "Verification Gate"
+      ]
+    },
+    "build": {
+      "digest12": "247d9b0469f5",
+      "line_count": 47,
+      "sections": [
+        "Identity",
+        "Goal",
+        "Use When",
+        "Do Not Use When",
+        "Scope Guard",
+        "Runtime-Enforced Permissions",
+        "Behavioral Guidance",
+        "Operating Loop",
+        "Ask Gate",
+        "Failure Recovery",
+        "Output Contract",
+        "Verification Gate"
+      ]
+    },
+    "deep": {
+      "digest12": "f2e22e2d1117",
+      "line_count": 47,
+      "sections": [
+        "Identity",
+        "Goal",
+        "Use When",
+        "Do Not Use When",
+        "Scope Guard",
+        "Runtime-Enforced Permissions",
+        "Behavioral Guidance",
+        "Operating Loop",
+        "Ask Gate",
+        "Failure Recovery",
+        "Output Contract",
+        "Verification Gate"
+      ]
+    },
+    "discipline": {
+      "digest12": "c06dc8f7a072",
+      "line_count": 47,
+      "sections": [
+        "Identity",
+        "Goal",
+        "Use When",
+        "Do Not Use When",
+        "Scope Guard",
+        "Runtime-Enforced Permissions",
+        "Behavioral Guidance",
+        "Operating Loop",
+        "Ask Gate",
+        "Failure Recovery",
+        "Output Contract",
+        "Verification Gate"
+      ]
+    },
+    "explore": {
+      "digest12": "56aa328196ff",
+      "line_count": 47,
+      "sections": [
+        "Identity",
+        "Goal",
+        "Use When",
+        "Do Not Use When",
+        "Scope Guard",
+        "Runtime-Enforced Permissions",
+        "Behavioral Guidance",
+        "Operating Loop",
+        "Ask Gate",
+        "Failure Recovery",
+        "Output Contract",
+        "Verification Gate"
+      ]
+    },
+    "general": {
+      "digest12": "216a9b323740",
+      "line_count": 47,
+      "sections": [
+        "Identity",
+        "Goal",
+        "Use When",
+        "Do Not Use When",
+        "Scope Guard",
+        "Runtime-Enforced Permissions",
+        "Behavioral Guidance",
+        "Operating Loop",
+        "Ask Gate",
+        "Failure Recovery",
+        "Output Contract",
+        "Verification Gate"
+      ]
+    },
+    "plan": {
+      "digest12": "8499a46ea938",
+      "line_count": 47,
+      "sections": [
+        "Identity",
+        "Goal",
+        "Use When",
+        "Do Not Use When",
+        "Scope Guard",
+        "Runtime-Enforced Permissions",
+        "Behavioral Guidance",
+        "Operating Loop",
+        "Ask Gate",
+        "Failure Recovery",
+        "Output Contract",
+        "Verification Gate"
+      ]
+    },
+    "quick": {
+      "digest12": "527c494b7c4a",
+      "line_count": 47,
+      "sections": [
+        "Identity",
+        "Goal",
+        "Use When",
+        "Do Not Use When",
+        "Scope Guard",
+        "Runtime-Enforced Permissions",
+        "Behavioral Guidance",
+        "Operating Loop",
+        "Ask Gate",
+        "Failure Recovery",
+        "Output Contract",
+        "Verification Gate"
+      ]
+    },
+    "ultrabrain": {
+      "digest12": "e24136412645",
+      "line_count": 47,
+      "sections": [
+        "Identity",
+        "Goal",
+        "Use When",
+        "Do Not Use When",
+        "Scope Guard",
+        "Runtime-Enforced Permissions",
+        "Behavioral Guidance",
+        "Operating Loop",
+        "Ask Gate",
+        "Failure Recovery",
+        "Output Contract",
+        "Verification Gate"
+      ]
+    },
+    "unspecified-high": {
+      "digest12": "33578ede5dff",
+      "line_count": 47,
+      "sections": [
+        "Identity",
+        "Goal",
+        "Use When",
+        "Do Not Use When",
+        "Scope Guard",
+        "Runtime-Enforced Permissions",
+        "Behavioral Guidance",
+        "Operating Loop",
+        "Ask Gate",
+        "Failure Recovery",
+        "Output Contract",
+        "Verification Gate"
+      ]
+    },
+    "unspecified-low": {
+      "digest12": "60b107a4b7a2",
+      "line_count": 47,
+      "sections": [
+        "Identity",
+        "Goal",
+        "Use When",
+        "Do Not Use When",
+        "Scope Guard",
+        "Runtime-Enforced Permissions",
+        "Behavioral Guidance",
+        "Operating Loop",
+        "Ask Gate",
+        "Failure Recovery",
+        "Output Contract",
+        "Verification Gate"
+      ]
+    },
+    "visual-engineering": {
+      "digest12": "a655825b8883",
+      "line_count": 47,
+      "sections": [
+        "Identity",
+        "Goal",
+        "Use When",
+        "Do Not Use When",
+        "Scope Guard",
+        "Runtime-Enforced Permissions",
+        "Behavioral Guidance",
+        "Operating Loop",
+        "Ask Gate",
+        "Failure Recovery",
+        "Output Contract",
+        "Verification Gate"
+      ]
+    },
+    "writing": {
+      "digest12": "893097eb25f4",
+      "line_count": 47,
+      "sections": [
+        "Identity",
+        "Goal",
+        "Use When",
+        "Do Not Use When",
+        "Scope Guard",
+        "Runtime-Enforced Permissions",
+        "Behavioral Guidance",
+        "Operating Loop",
+        "Ask Gate",
+        "Failure Recovery",
+        "Output Contract",
+        "Verification Gate"
+      ]
+    }
+  },
+  "schema_version": "v1-prompt-assets-snapshot-v1"
+}

@@ -699,6 +699,41 @@ mod tests {
     }
 
     #[test]
+    fn dynamic_prompt_preserves_v1_section_precedence() {
+        // arrange
+        let context = DynamicPromptContext {
+            configured_prompt: Some("Runtime agent prompt."),
+            model: &model("gpt-5.4-mini"),
+            instruction_prompt: Some(
+                "Instructions from: configured instruction\nConfig rules.\n\nInstructions from: AGENTS.md\nProject rules.",
+            ),
+            skill_tool_enabled: true,
+        };
+
+        // act
+        let prompt = compose(context);
+
+        // assert
+        assert_section_order(&prompt, "Runtime agent prompt.", "The exact model ID");
+        assert_section_order(&prompt, "The exact model ID", "Task delegation reminder");
+        assert_section_order(
+            &prompt,
+            "Task delegation reminder",
+            "Instructions from: configured instruction",
+        );
+        assert_section_order(
+            &prompt,
+            "Instructions from: configured instruction",
+            "Instructions from: AGENTS.md",
+        );
+        assert_section_order(
+            &prompt,
+            "Instructions from: AGENTS.md",
+            "Skills provide specialized instructions",
+        );
+    }
+
+    #[test]
     fn dynamic_prompt_uses_harness_tool_names() {
         for model_name in [
             "gpt-5.4-mini",
@@ -732,5 +767,18 @@ mod tests {
                 );
             }
         }
+    }
+
+    fn assert_section_order(prompt: &str, before: &str, after: &str) {
+        let before_index = prompt
+            .find(before)
+            .unwrap_or_else(|| panic!("prompt missing {before:?}"));
+        let after_index = prompt
+            .find(after)
+            .unwrap_or_else(|| panic!("prompt missing {after:?}"));
+        assert!(
+            before_index < after_index,
+            "expected {before:?} before {after:?} in prompt"
+        );
     }
 }
