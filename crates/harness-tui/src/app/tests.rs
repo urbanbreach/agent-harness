@@ -1518,6 +1518,62 @@ fn transcript_selection_test_app() -> AppState {
     transcript_selection_test_app_with_text("Copy this exact reply")
 }
 
+fn shell_card_selection_test_app() -> AppState {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        "req_shell_card_copy",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_shell_card_copy".to_string(),
+            provider_id: "default".to_string(),
+            model_id: "model-shell".to_string(),
+            prompt_summary: "shell card copy".to_string(),
+            request_digest: "digest-shell-card-copy".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_shell_card_copy",
+        EventV1::ToolCallRequested(ToolCallRequestedEvent {
+            tool_call_id: "tc_shell_card_copy".to_string(),
+            tool_id: "bash".to_string(),
+            args_summary:
+                r#"{"command":"run-copy-command","description":"Run copy-safe shell card"}"#
+                    .to_string(),
+            args_digest: "digest-shell-card-copy-args".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        3,
+        "req_shell_card_copy",
+        EventV1::ToolCallStarted(ToolCallStartedEvent {
+            tool_call_id: "tc_shell_card_copy".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        4,
+        "req_shell_card_copy",
+        EventV1::ToolCallFinished(ToolCallFinishedEvent {
+            tool_call_id: "tc_shell_card_copy".to_string(),
+            status: ToolCallStatus::Succeeded,
+            output_summary: Some("copy target output".to_string()),
+            output_digest: None,
+            output_json: Some(serde_json::json!({
+                "command": "run-copy-command",
+                "stdout": "copy target output\n",
+                "stderr": "",
+                "status": 0,
+                "success": true,
+            })),
+            metadata: None,
+        }),
+    ));
+    app.selected_activity_index = 0;
+    app
+}
+
 fn operator_sidebar_selection_test_app() -> AppState {
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(envelope(
@@ -2421,6 +2477,58 @@ fn permission_modal_escape_rejects_without_hiding_pending_permission() {
 }
 
 #[test]
+fn permission_modal_ctrl_n_emits_deny_intent_without_hiding_pending_permission() {
+    // arrange
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let intent_sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(None, false, Some(intent_sink));
+    app.prompt_buffer = "keep this draft".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.ingest_event(envelope(
+        1,
+        "req_modal_ctrl_n",
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_modal_ctrl_n".to_string(),
+            kind: "edit_fs".to_string(),
+            tool_call_id: Some("tc_modal_ctrl_n".to_string()),
+            summary: "permission summary".to_string(),
+            request_digest: "digest-modal-ctrl-n".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    ));
+
+    // act
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('n'),
+        KeyModifiers::CONTROL,
+    ));
+
+    // assert
+    assert_eq!(app.prompt_buffer, "keep this draft");
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[UiIntent::ResolvePermission {
+            permission_id: "perm_modal_ctrl_n".to_string(),
+            decision: PermissionDecision::Deny,
+            reason: None,
+            grant_scope: None,
+        }]
+    );
+    assert!(app.active_permission().is_some());
+    assert_eq!(
+        app.overlay_stack().top(),
+        Some(OverlayKind::PermissionModal)
+    );
+}
+
+#[test]
 fn question_permission_modal_collects_answers_and_emits_reason_payload() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let intent_sink = {
@@ -3221,6 +3329,38 @@ fn mouse_drag_copy_on_select_copies_transcript_text_and_clears_selection() {
 
 #[cfg(not(windows))]
 #[test]
+fn mouse_drag_copy_on_select_copies_shell_card_text() {
+    let copied = Arc::new(Mutex::new(None::<String>));
+    let sink = Arc::clone(&copied);
+    crate::clipboard::set_copy_override(Some(Box::new(move |text| {
+        *sink.lock().expect("lock copied text") = Some(text.to_string());
+        Ok(())
+    })));
+
+    let mut app = shell_card_selection_test_app();
+    let (column, row, width) = transcript_selection_text_bounds(&app, "copy target output");
+    drag_transcript_selection_range(
+        &mut app,
+        (column.saturating_sub(2), row),
+        (column + width.saturating_sub(1), row),
+    );
+
+    assert_eq!(
+        copied.lock().expect("lock copied text").clone(),
+        Some("copy target output".to_string())
+    );
+    assert!(app.transcript_selection().is_none());
+    assert_eq!(
+        app.toast()
+            .map(|toast| (toast.message.as_str(), toast.variant)),
+        Some(("Copied to clipboard", ToastVariant::Info))
+    );
+
+    crate::clipboard::set_copy_override(None);
+}
+
+#[cfg(not(windows))]
+#[test]
 fn mouse_drag_copy_on_select_copies_operator_sidebar_text() {
     let copied = Arc::new(Mutex::new(None::<String>));
     let sink = Arc::clone(&copied);
@@ -3322,7 +3462,7 @@ fn mouse_drag_copy_on_select_preserves_multiline_text_without_render_padding() {
         "Done.",
         "",
         "Changed:",
-        "• docs/rust-language.md",
+        "• docs/config.md",
         "",
         "What I changed:",
         "• Tightened the opening description to mention reliable software and compile-time guarantees.",
@@ -5501,6 +5641,21 @@ fn slash_alias_executes_matching_command_without_menu() {
         intents.lock().expect("lock intents").as_slice(),
         &[UiIntent::QuitRequested]
     );
+}
+
+#[test]
+fn slash_help_opens_help_surface_and_preserves_draft() {
+    // arrange
+    let mut app = AppState::new_startup(Vec::new(), None);
+
+    // act
+    app.execute_slash_command("help", Some("preserved draft".to_string()));
+
+    // assert
+    assert_eq!(app.review_surface(), Some(ReviewSurface::Help));
+    assert_eq!(app.prompt_buffer, "preserved draft");
+    assert_eq!(app.prompt_cursor, "preserved draft".chars().count());
+    assert!(!app.should_quit);
 }
 
 #[test]
