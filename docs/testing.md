@@ -46,7 +46,7 @@ signoff tests remain opt-in through explicit signoff lanes.
 ## Test-suite overhaul gates
 
 `scripts/check-test-suite-gates.py` is the static gate runner for the test-suite overhaul tracked
-in `docs/test-suite-progress.md`:
+by `docs/test-suite-prd.md` and this testing map:
 
 ```bash
 python3 scripts/check-test-suite-gates.py
@@ -255,8 +255,10 @@ scripts/test-lanes.sh signoff-binary
 
 `signoff-binary` sets `HARNESS_BINARY_SMOKE=1` and runs the ignored
 `cargo test -p harness --test binary_smoke -- --ignored --exact` stage through the canonical
-artifact-recording lane runner. The smoke runs `harness --help` through `CARGO_BIN_EXE_harness`;
-in-process CLI tests remain the default proof for command behavior.
+artifact-recording lane runner. The smoke runs `harness --help`, `harness --version`, outside-repository
+`harness config validate`, text/JSON `harness doctor`, and a deterministic `harness prompt --mock`
+first prompt against a copied canonical config through `CARGO_BIN_EXE_harness`; in-process CLI tests
+remain the default proof for command behavior.
 
 ## Native visual lane
 
@@ -356,5 +358,5 @@ Retired harness-testkit T5 scenario owners:
 | Shared T5 fixture/rendering helpers (`harness_bin`, session fixtures, temp paths, visual renderer, manifest writers, markers) | `cargo test -p harness-testkit --lib`; `cargo test -p harness-testkit --test secretscan_test`; deterministic fixture ownership moved to crate-local test helpers and harness-tui render fixtures rather than uncompiled T5 support. |
 
 The acceptance dossier for the test-suite overhaul is recorded in
-`docs/test-suite-progress.md` under the G008 checkpoint. It maps the Section 12 A1–A15 gates to
+`docs/test-suite-prd.md` and this owner map. It maps the Section 12 A1–A15 gates to
 the concrete artifacts under `target/test-suite-overhaul/`.
