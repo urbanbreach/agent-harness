@@ -251,7 +251,12 @@ async fn run_once(
     )
     .await?;
     if tool_status != ToolCallStatus::Succeeded {
-        return Err(format!("tool call did not succeed: {tool_status:?}"));
+        let failure = format!("tool call did not succeed: {tool_status:?}");
+        coordinator
+            .fail_run(failure.clone())
+            .await
+            .map_err(|err| err.to_string())?;
+        return Err(failure);
     }
 
     coordinator
@@ -295,7 +300,8 @@ mod tests {
     use crate::scenarios::{deterministic_run_id, ScenarioName};
     use crate::CliIo;
     use harness_core::config::ShellAllowlist;
-    use harness_core::event::EventV1;
+    use harness_core::event::ToolCallStatus as EventToolCallStatus;
+    use harness_core::event::{EventV1, PermissionDecision as EventPermissionDecision};
     use harness_core::proj::RunStatus;
     use sha2::{Digest, Sha256};
     use std::io::Cursor;
@@ -476,6 +482,110 @@ mod tests {
             .expect("artifact_written for diff path");
 
         assert_eq!(artifact_digest, diff_digest);
+    }
+
+    #[tokio::test]
+    async fn interactive_golden_path_deny_emits_edit_rejected_without_applying_file() {
+        // arrange
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let session_dir = temp_dir.path().join("sessions");
+        let settings = RunSettings {
+            config: None,
+            session_dir: session_dir.clone(),
+            shell_allowlist: ShellAllowlist::default(),
+            deterministic: true,
+            seed: 2028,
+            config_digest: "none".to_string(),
+        };
+        let command = RunCommand {
+            scenario: ScenarioName::GoldenPathInteractive,
+            deterministic: true,
+            session_dir: None,
+            out: None,
+            print_run_dir: false,
+        };
+
+        let mut stdin = Cursor::new(b"deny\n".to_vec());
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let mut io = CliIo::new(&mut stdin, &mut stdout, &mut stderr);
+
+        // act
+        let err = match run_once(&command, &settings, &mut io, &crate::CliDeps::real()).await {
+            Ok(_) => panic!("denied edit should fail the interactive scenario"),
+            Err(err) => err,
+        };
+
+        // assert
+        assert!(err.contains("tool call did not succeed: Failed"));
+
+        let run_id = deterministic_run_id(2028, ScenarioName::GoldenPathInteractive);
+        let run_dir = session_dir.join(&run_id);
+        let events = load_events_file(&run_dir.join("events.jsonl")).expect("load events");
+        let tool_call_id = events
+            .iter()
+            .find_map(|event| match &event.payload {
+                EventV1::ToolCallRequested(data) if data.tool_id == "edit" => {
+                    Some(data.tool_call_id.clone())
+                }
+                _ => None,
+            })
+            .expect("edit tool call request");
+        let permission_id = events
+            .iter()
+            .find_map(|event| match &event.payload {
+                EventV1::PermissionRequested(data)
+                    if data.tool_call_id.as_deref() == Some(tool_call_id.as_str()) =>
+                {
+                    Some(data.permission_id.clone())
+                }
+                _ => None,
+            })
+            .expect("edit permission request");
+
+        assert!(events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::PermissionResolved(data)
+                    if data.permission_id == permission_id
+                        && data.decision == EventPermissionDecision::Deny
+            )
+        }));
+        assert!(events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::EditRejected(data) if data.edit_id == "edit-golden-path"
+            )
+        }));
+        assert!(events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::ToolCallFinished(data)
+                    if data.tool_call_id == tool_call_id
+                        && data.status == EventToolCallStatus::Failed
+            )
+        }));
+        assert!(!events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::EditApplied(data) if data.edit_id == "edit-golden-path"
+            )
+        }));
+        assert!(events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::RunFailed(data) if data.error.contains("tool call did not succeed: Failed")
+            )
+        }));
+        let summary = summarize_session(&run_dir).expect("replay summary");
+        assert_eq!(summary.status, RunStatus::Failed);
+        assert_eq!(summary.counts_by_type.get("run_failed"), Some(&1));
+
+        let workspace = session_dir
+            .join("workspaces")
+            .join(format!("golden_path_interactive-{run_id}"));
+        let demo = std::fs::read_to_string(workspace.join("demo.txt")).expect("read demo file");
+        assert_eq!(demo, "alpha\nbeta\ngamma\n");
     }
 
     fn sha256_hex(bytes: &[u8]) -> String {
