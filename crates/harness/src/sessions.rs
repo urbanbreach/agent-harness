@@ -1,26 +1,32 @@
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Args, Subcommand, ValueEnum};
+use harness_core::config::{
+    HarnessConfig, McpServerConfig, OpenAiCompatibleProviderConfig, ProviderConfig,
+};
 use harness_core::proj::{RunMetadata, RunStatus, SessionCatalogEntry, SessionModeSource};
+use harness_core::redact::{redact_value, DefaultRedactor, Redactor};
 use harness_core::session_lineage::{
     latest_clone_stable_prefix, materialize_child_session, project_lineage_tree,
     validate_fork_stable_prefix, ChildSessionMaterializationRequest,
     ChildSessionMaterializationSourceKind, SessionLineageNode, StableSessionPrefix,
 };
 use serde::Serialize;
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::cli_io::{load_events_from_run_dir, load_run_metadata};
 use crate::defaults::DEFAULT_SESSION_DIR;
 use crate::recovery::{inspect_session_recovery, resolve_session_run_dir, SessionRecoverySummary};
 use crate::replay::{
-    inspect_session_catalog, print_human_summary, summarize_session, ReplayCommand, ReplaySummary,
-    SessionInspectionEntry,
+    inspect_session_catalog, print_human_summary, summarize_session, ReplayArtifactSummary,
+    ReplayCommand, ReplaySummary, SessionInspectionEntry,
 };
 use crate::tui::TuiCommand;
+use crate::CliDeps;
 
 #[derive(Debug, Subcommand, Clone)]
 pub enum SessionsCommand {
@@ -244,7 +250,37 @@ struct SessionExportBundle {
     catalog: SessionCatalogEntry,
     metadata: Option<RunMetadata>,
     replay: ReplaySummary,
+    support: SessionExportSupport,
     events: Vec<harness_core::event::EventEnvelopeV1>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct SessionExportSupport {
+    doctor_json: Value,
+    config_summary: Value,
+    provider_summary: Value,
+    route_metadata: Vec<SessionExportRouteMetadata>,
+    artifact_index: Vec<ReplayArtifactSummary>,
+}
+
+#[derive(Debug, Clone)]
+struct SessionExportReadiness {
+    doctor_json: Value,
+    config_summary: Value,
+    provider_summary: Value,
+    credential_values: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct SessionExportRouteMetadata {
+    source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_call_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    child_session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    child_request_id: Option<String>,
+    route: Value,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -292,6 +328,7 @@ pub fn execute_with_io(
     global_session_dir: Option<PathBuf>,
     stdout: &mut dyn std::io::Write,
     stderr: &mut dyn std::io::Write,
+    deps: &CliDeps,
 ) -> i32 {
     match command {
         SessionsCommand::List(command) => {
@@ -309,9 +346,14 @@ pub fn execute_with_io(
         SessionsCommand::Continue(command) => {
             continue_session(command, config_path, global_session_dir, stderr)
         }
-        SessionsCommand::Export(command) => {
-            export_session(command, global_session_dir, stdout, stderr)
-        }
+        SessionsCommand::Export(command) => export_session(
+            command,
+            config_path,
+            global_session_dir,
+            stdout,
+            stderr,
+            deps,
+        ),
         SessionsCommand::Tree(command) => {
             tree_sessions(command, global_session_dir, stdout, stderr)
         }
@@ -626,10 +668,13 @@ fn continue_session(
 
 fn export_session(
     command: ExportSessionCommand,
+    config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
     stdout: &mut dyn std::io::Write,
     stderr: &mut dyn std::io::Write,
+    deps: &CliDeps,
 ) -> i32 {
+    let session_dir_override = global_session_dir.clone();
     let session_dir = session_dir(global_session_dir);
     if let Err(code) = ensure_session_dir_exists(&session_dir, stderr) {
         return code;
@@ -668,15 +713,464 @@ fn export_session(
 
     let run_dir = session.run_dir;
     let metadata = load_run_metadata(&run_dir);
+    let session_workspace_root = replay.workspace_root.as_deref().map(PathBuf::from);
+    let readiness = session_export_readiness(
+        config_path.as_deref(),
+        session_dir_override,
+        session_workspace_root,
+        deps,
+    );
+    let mut credential_values = deps.credential_env_values();
+    credential_values.extend(readiness.credential_values.clone());
+    let credential_values = dedupe_credential_values(credential_values);
     let export = SessionExportBundle {
         run_dir,
+        support: session_export_support(&events, &replay, &session.catalog, readiness),
         catalog: session.catalog,
         metadata,
         replay,
         events,
     };
 
-    write_json_output(&export, command.output, stdout, stderr)
+    write_redacted_export_output(&export, command.output, stdout, stderr, &credential_values)
+}
+
+fn session_export_support(
+    events: &[harness_core::event::EventEnvelopeV1],
+    replay: &ReplaySummary,
+    catalog: &SessionCatalogEntry,
+    readiness: SessionExportReadiness,
+) -> SessionExportSupport {
+    SessionExportSupport {
+        doctor_json: readiness.doctor_json,
+        config_summary: readiness.config_summary,
+        provider_summary: readiness.provider_summary,
+        route_metadata: session_export_route_metadata(events, replay, catalog),
+        artifact_index: replay.artifacts.clone(),
+    }
+}
+
+fn session_export_readiness(
+    config_path: Option<&Path>,
+    session_dir_override: Option<PathBuf>,
+    session_workspace_root: Option<PathBuf>,
+    deps: &CliDeps,
+) -> SessionExportReadiness {
+    let mut context = match deps.config_load_context() {
+        Ok(context) => context,
+        Err(err) => {
+            return unavailable_session_export_readiness(format!(
+                "failed to resolve config context: {err}"
+            ));
+        }
+    };
+    if config_path.is_none() {
+        if let Some(workspace_root) = session_workspace_root {
+            context = context.with_current_dir(workspace_root);
+        }
+    }
+
+    let loaded =
+        match harness_core::config::load_resolved_config_with_context(config_path, &context) {
+            Ok(Some(loaded)) => loaded,
+            Ok(None) => {
+                return unavailable_session_export_readiness(
+                    "no config file found; support export includes replay-only evidence",
+                );
+            }
+            Err(err) => {
+                return unavailable_session_export_readiness(format!(
+                    "failed to load config: {err}"
+                ));
+            }
+        };
+
+    let config_display = loaded.path_display();
+    let paths = loaded.paths;
+    let mut config = loaded.config;
+    config.apply_session_dir_override(session_dir_override);
+    let credential_values = session_export_config_credential_values(&config, deps);
+
+    SessionExportReadiness {
+        doctor_json: crate::doctor::support_report_json(config_display.clone(), &config, &|name| {
+            deps.env_var_is_set(name)
+        }),
+        config_summary: session_export_config_summary(&config_display, &paths, &config),
+        provider_summary: session_export_provider_summary(&config),
+        credential_values,
+    }
+}
+
+fn unavailable_session_export_readiness(reason: impl Into<String>) -> SessionExportReadiness {
+    let reason = reason.into();
+    SessionExportReadiness {
+        doctor_json: json!({
+            "available": false,
+            "no_network_probes": true,
+            "reason": reason,
+        }),
+        config_summary: json!({
+            "loaded": false,
+            "no_network_probes": true,
+            "reason": reason,
+        }),
+        provider_summary: json!({
+            "loaded": false,
+            "provider_count": 0,
+            "providers": [],
+            "no_network_probes": true,
+            "reason": reason,
+        }),
+        credential_values: Vec::new(),
+    }
+}
+
+fn session_export_config_credential_values(config: &HarnessConfig, deps: &CliDeps) -> Vec<String> {
+    let mut values = Vec::new();
+    if let Some(token) = config.integrations.remote_search.auth_token.as_deref() {
+        push_credential_value(&mut values, token);
+    }
+    for instruction in &config.instruction_files {
+        push_credential_value(&mut values, &instruction.content);
+    }
+    for agent in config.agents.values() {
+        if let Some(prompt) = agent.system_prompt.as_deref() {
+            push_credential_value(&mut values, prompt);
+        }
+    }
+    for provider in config.providers.values() {
+        let ProviderConfig::OpenAiCompatible(provider) = provider;
+        push_credential_value(&mut values, &provider.api_key);
+        for env_name in &provider.api_key_env {
+            if let Some(value) = deps.env_var_value(env_name) {
+                push_credential_value(&mut values, &value);
+            }
+        }
+        for (name, value) in &provider.headers {
+            if is_credential_name(name) {
+                push_credential_value(&mut values, value);
+            }
+        }
+    }
+    for server in config.integrations.mcp.servers.values() {
+        match server {
+            McpServerConfig::Stdio { env, .. } => {
+                for (name, value) in env {
+                    if is_credential_name(name) {
+                        push_credential_value(&mut values, value);
+                    }
+                }
+            }
+            McpServerConfig::Http { headers, .. } => {
+                for (name, value) in headers {
+                    if is_credential_name(name) {
+                        push_credential_value(&mut values, value);
+                    }
+                }
+            }
+        }
+    }
+    dedupe_credential_values(values)
+}
+
+fn push_credential_value(values: &mut Vec<String>, value: &str) {
+    let value = value.trim();
+    if value.len() >= 8 && !value.contains("[REDACTED") {
+        values.push(value.to_string());
+    }
+}
+
+fn dedupe_credential_values(values: Vec<String>) -> Vec<String> {
+    values
+        .into_iter()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn is_credential_name(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    [
+        "KEY",
+        "TOKEN",
+        "SECRET",
+        "PASSWORD",
+        "CREDENTIAL",
+        "AUTHORIZATION",
+        "COOKIE",
+    ]
+    .iter()
+    .any(|needle| upper.contains(needle))
+}
+
+fn session_export_config_summary(
+    config_display: &str,
+    paths: &[PathBuf],
+    config: &HarnessConfig,
+) -> Value {
+    json!({
+        "loaded": true,
+        "config": config_display,
+        "paths": paths
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>(),
+        "default_agent": config.default_agent.as_deref(),
+        "agent_count": config.agents.len(),
+        "provider_count": config.providers.len(),
+        "model_profile_count": config.model_profiles.len(),
+        "session_dir": config.paths.session_dir.display().to_string(),
+        "no_network_probes": true,
+    })
+}
+
+fn session_export_provider_summary(config: &HarnessConfig) -> Value {
+    let providers = config
+        .providers
+        .iter()
+        .map(|(id, provider)| match provider {
+            ProviderConfig::OpenAiCompatible(provider) => {
+                openai_compatible_provider_summary(id, provider)
+            }
+        })
+        .collect::<Vec<_>>();
+
+    json!({
+        "loaded": true,
+        "provider_count": providers.len(),
+        "providers": providers,
+        "no_network_probes": true,
+    })
+}
+
+fn openai_compatible_provider_summary(
+    id: &str,
+    provider: &OpenAiCompatibleProviderConfig,
+) -> Value {
+    json!({
+        "id": id,
+        "type": "openai_compatible",
+        "name": provider.name.as_deref(),
+        "base_url": provider.base_url.as_str(),
+        "model_count": provider.models.len(),
+        "models": provider.models.keys().cloned().collect::<Vec<_>>(),
+        "credentials": provider_credentials_summary(provider),
+        "api_key_env": provider.api_key_env.clone(),
+        "timeout_ms": provider.timeout_ms,
+        "header_count": provider.headers.len(),
+    })
+}
+
+fn provider_credentials_summary(provider: &OpenAiCompatibleProviderConfig) -> &'static str {
+    if !provider.api_key.trim().is_empty() {
+        "inline_redacted"
+    } else if !provider.api_key_env.is_empty() {
+        "env_reference"
+    } else {
+        "missing"
+    }
+}
+
+fn session_export_route_metadata(
+    events: &[harness_core::event::EventEnvelopeV1],
+    replay: &ReplaySummary,
+    catalog: &SessionCatalogEntry,
+) -> Vec<SessionExportRouteMetadata> {
+    let mut metadata = vec![session_replay_route_metadata(events, replay, catalog)];
+    metadata.extend(events.iter().filter_map(|event| {
+        let harness_core::event::EventV1::ToolCallFinished(payload) = &event.payload else {
+            return None;
+        };
+        let output_json = payload.output_json.as_ref()?;
+        let route = output_json.get("route")?.clone();
+        Some(SessionExportRouteMetadata {
+            source: "task_output".to_string(),
+            tool_call_id: Some(payload.tool_call_id.clone()),
+            child_session_id: output_string_field(output_json, "child_session_id")
+                .or_else(|| output_string_field(output_json, "session_id"))
+                .or_else(|| output_string_field(output_json, "task_id")),
+            child_request_id: output_string_field(output_json, "child_request_id")
+                .or_else(|| output_string_field(output_json, "request_id")),
+            route,
+        })
+    }));
+    metadata
+}
+
+fn session_replay_route_metadata(
+    events: &[harness_core::event::EventEnvelopeV1],
+    replay: &ReplaySummary,
+    catalog: &SessionCatalogEntry,
+) -> SessionExportRouteMetadata {
+    let mut profiles = BTreeSet::new();
+    let mut provider_models = BTreeSet::new();
+    let mut tools = Vec::new();
+    let mut permissions = Vec::new();
+
+    for event in events {
+        match &event.payload {
+            harness_core::event::EventV1::AgentSpawned(payload) => {
+                profiles.insert(payload.profile.clone());
+            }
+            harness_core::event::EventV1::ProviderRequestStarted(payload) => {
+                if let Some(label) = crate::cli_labels::provider_model_label(
+                    Some(&payload.provider_id),
+                    Some(&payload.model_id),
+                ) {
+                    provider_models.insert(label);
+                }
+            }
+            harness_core::event::EventV1::ToolCallRequested(payload) => {
+                tools.push(json!({
+                    "tool_call_id": payload.tool_call_id,
+                    "tool_id": payload.tool_id,
+                    "seq": event.seq,
+                }));
+            }
+            harness_core::event::EventV1::PermissionRequested(payload) => {
+                permissions.push(json!({
+                    "permission_id": payload.permission_id,
+                    "kind": payload.kind,
+                    "tool_call_id": payload.tool_call_id,
+                    "default_decision": payload.default_decision,
+                    "seq": event.seq,
+                }));
+            }
+            harness_core::event::EventV1::PermissionResolved(payload) => {
+                permissions.push(json!({
+                    "permission_id": payload.permission_id,
+                    "decision": payload.decision,
+                    "reason": payload.reason,
+                    "seq": event.seq,
+                }));
+            }
+            _ => {}
+        }
+    }
+
+    SessionExportRouteMetadata {
+        source: "session_replay".to_string(),
+        tool_call_id: None,
+        child_session_id: None,
+        child_request_id: None,
+        route: json!({
+            "run_id": replay.run_id,
+            "run_name": replay.run_name,
+            "status": replay.status,
+            "mode_source": catalog.mode_source,
+            "profile_preset": catalog.profile_preset,
+            "provider_model": catalog.provider_model,
+            "profiles": profiles.into_iter().collect::<Vec<_>>(),
+            "provider_models": provider_models.into_iter().collect::<Vec<_>>(),
+            "tools": tools,
+            "permissions": permissions,
+            "artifact_count": replay.artifact_count,
+            "child_session_count": replay.child_session_count,
+            "is_resumable": replay.is_resumable,
+            "resume_disabled_reason": replay.resume_disabled_reason,
+        }),
+    }
+}
+
+fn output_string_field(output_json: &Value, key: &str) -> Option<String> {
+    output_json
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+fn write_redacted_export_output(
+    export: &SessionExportBundle,
+    output: Option<PathBuf>,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+    credential_values: &[String],
+) -> i32 {
+    let redactor = DefaultRedactor::default();
+    write_redacted_export_output_with_redactor(
+        export,
+        output,
+        stdout,
+        stderr,
+        &redactor,
+        &redactor,
+        credential_values,
+    )
+}
+
+fn write_redacted_export_output_with_redactor<R: Redactor + ?Sized>(
+    export: &SessionExportBundle,
+    output: Option<PathBuf>,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+    redactor: &R,
+    scanner: &DefaultRedactor,
+    credential_values: &[String],
+) -> i32 {
+    let value = match serde_json::to_value(export) {
+        Ok(value) => value,
+        Err(err) => {
+            let _ = writeln!(stderr, "failed to serialize session export: {err}");
+            return 1;
+        }
+    };
+    let mut redacted = redact_value(redactor, &value);
+    let redacted_body = serde_json::to_string(&redacted).unwrap_or_default();
+    let secret_finding_count = scanner.secret_finding_count(&redacted_body)
+        + credential_value_secret_finding_count(&redacted, credential_values);
+    if secret_finding_count > 0 {
+        let _ = writeln!(
+            stderr,
+            "failed to export session: redaction scanner found {secret_finding_count} unredacted secret marker(s)"
+        );
+        return 1;
+    }
+    let redacted_marker_count = redacted_body.matches("[REDACTED").count();
+    if let Some(support) = redacted.get_mut("support").and_then(Value::as_object_mut) {
+        support.insert(
+            "redaction_manifest".to_string(),
+            json!({
+                "status": if secret_finding_count == 0 { "clean" } else { "failed" },
+                "redactor": "harness-default-redactor",
+                "redacted_marker_count": redacted_marker_count,
+            }),
+        );
+        support.insert(
+            "secret_scan_status".to_string(),
+            json!({
+                "status": if secret_finding_count == 0 { "clean" } else { "failed" },
+                "scanner": "harness-session-export-secret-scan",
+                "secret_finding_count": secret_finding_count,
+            }),
+        );
+    }
+
+    write_json_output(&redacted, output, stdout, stderr)
+}
+
+fn credential_value_secret_finding_count(value: &Value, values: &[String]) -> usize {
+    match value {
+        Value::Null | Value::Bool(_) | Value::Number(_) => 0,
+        Value::String(text) => text_credential_finding_count(text, values),
+        Value::Array(items) => items
+            .iter()
+            .map(|item| credential_value_secret_finding_count(item, values))
+            .sum(),
+        Value::Object(object) => object
+            .iter()
+            .map(|(key, value)| {
+                text_credential_finding_count(key, values)
+                    + credential_value_secret_finding_count(value, values)
+            })
+            .sum(),
+    }
+}
+
+fn text_credential_finding_count(text: &str, values: &[String]) -> usize {
+    values
+        .iter()
+        .filter(|value| value.len() >= 8 && !value.contains("[REDACTED") && text.contains(*value))
+        .count()
 }
 
 fn tree_sessions(
@@ -1274,6 +1768,128 @@ mod tests {
             artifact_count,
             child_session_count,
         }
+    }
+
+    fn minimal_export_bundle_with_secret(secret: &str) -> SessionExportBundle {
+        let catalog = sample_entry(
+            "run-secret-export",
+            1,
+            Some(RunStatus::Finished),
+            Some("build"),
+            SessionModeSource::Prompt,
+            false,
+            0,
+            0,
+            None,
+        )
+        .catalog;
+        let mut bundle = SessionExportBundle {
+            run_dir: PathBuf::from("/tmp/run-secret-export"),
+            catalog,
+            metadata: None,
+            replay: ReplaySummary {
+                run_id: "run-secret-export".to_string(),
+                run_name: Some("secret-export".to_string()),
+                session_path: PathBuf::from("/tmp/run-secret-export"),
+                status: RunStatus::Finished,
+                workspace_root: Some("/tmp/workspace".to_string()),
+                mode_source: SessionModeSource::Prompt,
+                is_resumable: false,
+                resume_disabled_reason: None,
+                artifact_count: 0,
+                child_session_count: 0,
+                parent_session_id: None,
+                total_events: 0,
+                counts_by_type: std::collections::BTreeMap::new(),
+                pending_permissions: Vec::new(),
+                tasks_in_flight: Vec::new(),
+                last_error: None,
+                artifacts: Vec::new(),
+                child_sessions: Vec::new(),
+                teams: Vec::new(),
+            },
+            support: SessionExportSupport {
+                doctor_json: json!({}),
+                config_summary: json!({}),
+                provider_summary: json!({}),
+                route_metadata: Vec::new(),
+                artifact_index: Vec::new(),
+            },
+            events: Vec::new(),
+        };
+        bundle.support.doctor_json = json!({ "leaked": secret });
+        bundle
+    }
+
+    struct NoopRedactor;
+
+    impl Redactor for NoopRedactor {
+        fn redact_text(&self, s: &str) -> String {
+            s.to_string()
+        }
+    }
+
+    #[test]
+    fn support_export_fails_closed_when_redaction_scan_finds_secret() {
+        // arrange
+        let export = minimal_export_bundle_with_secret("sk-proj-leaked_0123456789abcdef");
+        let output_dir = tempfile::tempdir().expect("tempdir");
+        let output_path = output_dir.path().join("support.json");
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        // act
+        let code = write_redacted_export_output_with_redactor(
+            &export,
+            Some(output_path.clone()),
+            &mut stdout,
+            &mut stderr,
+            &NoopRedactor,
+            &DefaultRedactor::default(),
+            &[],
+        );
+
+        // assert
+        assert_eq!(code, 1);
+        assert!(!output_path.exists());
+        assert!(stdout.is_empty());
+        assert!(
+            String::from_utf8_lossy(&stderr).contains("redaction scanner found"),
+            "stderr should explain fail-closed redaction: {}",
+            String::from_utf8_lossy(&stderr)
+        );
+    }
+
+    #[test]
+    fn support_export_fails_closed_when_env_credential_value_survives_redaction() {
+        // arrange
+        let export = minimal_export_bundle_with_secret("plain-env-secret-value");
+        let output_dir = tempfile::tempdir().expect("tempdir");
+        let output_path = output_dir.path().join("support.json");
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let env_values = vec!["plain-env-secret-value".to_string()];
+
+        // act
+        let code = write_redacted_export_output_with_redactor(
+            &export,
+            Some(output_path.clone()),
+            &mut stdout,
+            &mut stderr,
+            &NoopRedactor,
+            &DefaultRedactor::default(),
+            &env_values,
+        );
+
+        // assert
+        assert_eq!(code, 1);
+        assert!(!output_path.exists());
+        assert!(stdout.is_empty());
+        assert!(
+            String::from_utf8_lossy(&stderr).contains("redaction scanner found"),
+            "stderr should explain env credential fail-closed scan: {}",
+            String::from_utf8_lossy(&stderr)
+        );
     }
 
     #[test]

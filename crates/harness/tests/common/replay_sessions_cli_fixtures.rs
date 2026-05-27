@@ -5,7 +5,7 @@ use std::time::SystemTime;
 use harness_core::event::{
     ActorKind, AgentSpawnedEvent, ArtifactWrittenEvent, BackgroundTaskNotificationEvent,
     BackgroundTaskNotificationStatus, EventActor, EventArtifactRef, EventEnvelopeV1, EventV1,
-    ExecutionTimingMetadata, PermissionDecision, PermissionRequestedEvent,
+    ExecutionTimingMetadata, PermissionDecision, PermissionRequestedEvent, PermissionResolvedEvent,
     ProviderRequestFinishedEvent, ProviderRequestStartedEvent, RunFailedEvent, RunFinishedEvent,
     RunStartedEvent, TaskCompletedEvent, TaskCompletionMetadata, TaskLineageMetadata,
     TaskScheduleState, TaskScheduledEvent, ToolCallFinishedEvent, ToolCallMetadata,
@@ -304,7 +304,57 @@ fn delegated_recovery_events(run_id: &str) -> Vec<EventEnvelopeV1> {
                 status: ToolCallStatus::Succeeded,
                 output_summary: Some("delegated".to_string()),
                 output_digest: Some("output-digest-001".to_string()),
-                output_json: None,
+                output_json: Some(serde_json::json!({
+                    "child_session_id": "child-run-001",
+                    "child_request_id": "child-req-001",
+                    "route": {
+                        "requested_category": "quick",
+                        "requested_profile": "quick",
+                        "resolved_profile": "general",
+                        "profile_id": "general",
+                        "role": "subagent",
+                        "hidden": false,
+                        "prompt": {
+                            "source": "runtime_profile",
+                            "status": "resolved_by_coordinator",
+                            "profile": "general"
+                        },
+                        "model": {
+                            "model_ref": "openai/gpt-5.4-mini",
+                            "provider": "openai",
+                            "model": "gpt-5.4-mini",
+                            "fallback_chain": []
+                        },
+                        "toolset": ["read", "edit"],
+                        "permission_posture": {
+                            "spawn": "checked_before_child_turn",
+                            "edit": "available_subject_to_runtime_permission",
+                            "bash": "deny_by_toolset",
+                            "question": "deny_by_toolset",
+                            "task": "deny_by_toolset",
+                            "webfetch": "deny_by_toolset",
+                            "websearch": "deny_by_toolset",
+                            "codesearch": "deny_by_toolset",
+                            "lsp": "deny_by_toolset",
+                            "background_output": "deny_by_toolset"
+                        },
+                        "permissions": {
+                            "spawn_permission_kind": "task",
+                            "parent_scope": "build",
+                            "child_scope": "general",
+                            "scope_relation": "isolated_by_requested_profile"
+                        },
+                        "loaded_skills": [],
+                        "fallback_chain": ["quick", "general"],
+                        "category_fallback_chain": ["quick", "general"],
+                        "fallback": {
+                            "applied": true,
+                            "fallback_profile": "general",
+                            "policy_source": "harness_core::coord::task_category_fallback_profile",
+                            "disabled_parent_profiles": ["plan"]
+                        }
+                    }
+                })),
                 metadata: Some(tool_metadata),
             }),
         ),

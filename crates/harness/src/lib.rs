@@ -4,7 +4,7 @@
 //! CLI behavior in-process with explicit stdin/stdout/stderr instead of spawning
 //! the compiled executable for every assertion.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
@@ -47,6 +47,7 @@ use sessions::SessionsCommand;
 
 #[derive(Debug, Parser)]
 #[command(name = "harness")]
+#[command(version)]
 #[command(about = "Launch the interactive harness UI or run subcommands", long_about = None)]
 struct Cli {
     #[arg(long, global = true)]
@@ -319,11 +320,38 @@ impl CliDeps {
     }
 
     pub(crate) fn env_var_is_set(&self, name: &str) -> bool {
+        self.env_var_value(name).is_some()
+    }
+
+    pub(crate) fn env_var_value(&self, name: &str) -> Option<String> {
         match self.env.get(name) {
-            Some(Some(value)) => !value.trim().is_empty(),
-            Some(None) => false,
-            None => std::env::var(name).is_ok_and(|value| !value.trim().is_empty()),
+            Some(Some(value)) => (!value.trim().is_empty()).then(|| value.clone()),
+            Some(None) => None,
+            None => std::env::var(name)
+                .ok()
+                .filter(|value| !value.trim().is_empty()),
         }
+    }
+
+    pub(crate) fn credential_env_values(&self) -> Vec<String> {
+        let mut env = std::env::vars().collect::<BTreeMap<_, _>>();
+        for (name, value) in &self.env {
+            match value {
+                Some(value) => {
+                    env.insert(name.clone(), value.clone());
+                }
+                None => {
+                    env.remove(name);
+                }
+            }
+        }
+
+        env.into_iter()
+            .filter(|(name, value)| is_credential_env_name(name) && value.len() >= 8)
+            .map(|(_, value)| value)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
     }
 
     pub(crate) fn provider_override(&self) -> Option<Arc<dyn harness_providers::Provider>> {
@@ -363,6 +391,21 @@ impl std::fmt::Debug for CliDeps {
             .field("command_runner", &"<runner>")
             .finish()
     }
+}
+
+fn is_credential_env_name(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    [
+        "KEY",
+        "TOKEN",
+        "SECRET",
+        "PASSWORD",
+        "CREDENTIAL",
+        "API_KEY",
+        "ACCESS_KEY",
+    ]
+    .iter()
+    .any(|needle| upper.contains(needle))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -501,7 +544,7 @@ fn execute_cli(cli: Cli, io: &mut CliIo<'_>, deps: CliDeps) -> i32 {
         }
         Commands::Replay(command) => replay::execute_with_io(command, io.stdout, io.stderr),
         Commands::Sessions { command } => {
-            sessions::execute_with_io(command, config, session_dir, io.stdout, io.stderr)
+            sessions::execute_with_io(command, config, session_dir, io.stdout, io.stderr, &deps)
         }
         Commands::Schema(command) => match if command.tui {
             harness_tui_schema_pretty_json()
@@ -694,6 +737,25 @@ mod tests {
         let injected = deps.provider_override().expect("provider override");
 
         assert!(Arc::ptr_eq(&provider, &injected));
+    }
+
+    #[test]
+    fn cli_deps_collects_injected_credential_env_values() {
+        // arrange
+        let deps = CliDeps::real()
+            .with_env("OPENAI_API_KEY", "env-secret-value")
+            .with_env("OPENAI_KEY", "generic-key-secret-value")
+            .with_env("ORDINARY_VALUE", "ordinary-secret-value")
+            .with_env("SHORT_TOKEN", "short");
+
+        // act
+        let values = deps.credential_env_values();
+
+        // assert
+        assert!(values.contains(&"env-secret-value".to_string()));
+        assert!(values.contains(&"generic-key-secret-value".to_string()));
+        assert!(!values.contains(&"ordinary-secret-value".to_string()));
+        assert!(!values.contains(&"short".to_string()));
     }
 
     #[derive(Debug)]
