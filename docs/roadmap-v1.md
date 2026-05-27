@@ -1,0 +1,704 @@
+# V1 release roadmap
+
+This roadmap defines the first public release target for Agent Harness.
+
+V1 should be a vanilla local-coding harness first: a complete,
+trustworthy CLI/TUI runtime with safe native tools, durable sessions, clear
+permissions, simple subagents, and stable extension seams. Advanced orchestration
+features are welcome only where they strengthen that baseline without turning V1
+into a full agent-OS or arbitrary plugin host.
+
+Use this document as the shared direction for maintainers and agents working in
+this workspace. Checked items are included only when the current tree already
+documents and implements the behavior through first-party files that were
+reviewed for this roadmap. Unchecked items are release work or post-V1 work.
+
+Agents working from this roadmap should use the checked-in reference material
+under `inspirations/` when comparing upstream behavior or orchestration-style features.
+Do not rely on memory or external summaries when deciding whether a roadmap item
+matches the intended user experience; inspect the local reference files first,
+then adapt the idea to Harness's Rust-native, event-sourced architecture.
+
+## V1 end state
+
+V1 ends when the local CLI/TUI coding workflow is complete and reliable. That
+means Harness should feel like a vanilla local coding agent for the
+core loop, not that it must match every feature in every inspiration harness. A
+user should be able to install it, configure one provider, launch the TUI, ask
+for a code change, approve/deny tool use, inspect the diff, resume the session
+later, replay what happened, and understand failures through doctor and docs.
+
+The V1 product promise is:
+
+> Local coding UX on a Harness-native Rust runtime, with event-sourced
+> sessions, replay-safe tools, hashline editing, simple subagents with their own
+> system prompts, markdown skills, and clear extension seams.
+
+V1 should differ from the vanilla reference only where the difference is a deliberate
+Harness strength:
+
+- [x] Rust-native runtime and crate seams instead of copying the upstream app
+  architecture.
+- [x] Event log and replay invariants are core product behavior.
+- [x] Hashline editing is first-class rather than an optional editing style.
+- [x] Simple task subagents are part of the core workflow.
+- [x] Category routes exist only for delegation, not as main engine modes.
+- [x] Doctor/readiness/evidence-gate foundations exist as product surfaces; V1
+  hardening remains tracked below rather than treated as maintainer-only scripts.
+- [x] Extension seams are designed before arbitrary plugin compatibility is
+  promised.
+
+Orchestration-inspired V1 inclusions are intentionally narrow. Checked items in this list
+mean the current mechanism exists; unchecked items are V1 hardening work that
+must still land before the roadmap can treat the surface as release-ready:
+
+- [x] Intent-gate and prompt-discipline ideas.
+- [x] Read-only `explore` as a subagent.
+- [x] Category delegation names and routing concepts.
+- [x] Markdown skill loading as a runtime mechanism.
+- [ ] Skill progressive-disclosure behavior is documented and tested.
+- [ ] Candidate built-in skills such as `git-master`, `review-work`, and
+  `frontend-ui-ux` ship with V1-quality bodies, docs, disablement, and tests.
+- [ ] Stronger doctor checks, prompt snapshots, and evidence gates cover prompt,
+  skill, task-route, and asset readiness.
+- [ ] AST-grep, model-visible session tools, and a dedicated `background_cancel`
+  land as practical tool-surface improvements with docs and parity tests.
+
+Everything else from the heavy-orchestration references is post-V1 by default unless this document explicitly
+moves it into the release scope. That includes full specialist-agent catalogs,
+autonomous continuation loops, Team Mode, skill-embedded MCP/OAuth, browser or
+media automation, remote collaboration bots, and broad plugin compatibility.
+
+## Post-V1 direction
+
+Post-V1 work should build optional layers on top of the stable Harness core, not
+reshape V1 around orchestration features. The expected order is:
+
+- [ ] Harden the extension manifest and built-in capability system.
+- [ ] Add richer built-in skills and skill bundles beyond the small V1 candidate
+  set.
+- [ ] Expand subagents only after the `AgentCatalog`, prompt snapshots, and
+  permission fixtures are stable.
+- [ ] Turn Team Mode from primitive event tools into an optional orchestrated
+  layer if it proves useful.
+- [ ] Add skill-embedded MCP and OAuth only after ordinary MCP, skills, and
+  extension-state contracts are boring.
+- [ ] Add browser/media/desktop automation as installable capabilities, not core
+  release blockers.
+- [ ] Revisit upstream plugin compatibility only after Harness-native extension
+  seams have their own conformance suite.
+
+## Local inspiration map
+
+- [x] The vanilla CLI/TUI reference material under `inspirations/` is the primary source for
+  CLI, TUI, sessions, MCP, plugins, permissions, providers, and app-level product
+  expectations.
+- [x] The visual reference image directories under `inspirations/` are signoff references,
+  not runtime authority.
+- [x] `inspirations/codex/` is the Codex CLI reference for install simplicity,
+  sandbox-conscious Rust architecture, TUI snapshot discipline, and provider/tool
+  execution ergonomics.
+- [x] The heavy-orchestration reference under `inspirations/` is available. Use it
+  for candidate skills, agents, hooks, task/team workflows, and MCP ideas, but do
+  not treat complete agent-OS parity as a V1 goal.
+- [x] `inspirations/oh-my-codex/` is the workflow-layer reference for pairing a
+  base harness with setup, doctor, real execution smoke tests, durable plans, and
+  optional tmux/team runtime.
+- [x] The TypeScript baseline under `inspirations/` is available for package seams,
+  provider abstraction, configurable keybindings, interactive testing practice,
+  and supply-chain hardening.
+- [x] `inspirations/pi_agent_rust/` is the Rust performance/security reference:
+  single-binary release posture, structured concurrency, capability-gated
+  extensions, session indexing, evidence-gated claims, and crash-resilient
+  persistence.
+- [x] The extension-first reference under `inspirations/` is available: keep core
+  changes small, ship useful builtin extensions, and leave heavier features as
+  installable packages.
+- [x] `inspirations/shuvcode/` is the product-polish reference for review diffs,
+  session sidebars, search, status surfaces, mobile/desktop clients, and user
+  interface experiments pending upstream.
+
+## Product stance
+
+- [x] V1 targets a vanilla local-coding operator experience rather than full
+  orchestration parity.
+- [x] The runtime remains Rust-native and event-sourced; replay must stay
+  side-effect free.
+- [x] Hashline editing stays the normal file-changing path.
+- [x] `build` is the default implementation agent.
+- [x] `plan` and `discipline` are selectable primary agents.
+- [x] `explore` is a read-only subagent profile used through
+  `task(subagent_type = "explore")`, not a main engine view.
+- [x] Public docs describe the V1 stance clearly from the README and config
+  guide.
+- [x] Docs remove or update stale references to missing runtime assets such as
+  `.agent-harness/native-agents/*.toml` and `.agent-harness/agents/operator.md`.
+
+## Deepening criteria for checked foundations
+
+Checked foundation items in this roadmap mean the runtime mechanism exists. They
+do not automatically mean the surface is V1-quality. The boxes below define what
+turns those working mechanisms into well-specified release behavior.
+
+### Reference prompt-system lessons
+
+- [x] Use the vanilla reference's agent, skill, project-instruction, and command
+  directory layouts as references for markdown-defined agents,
+  skills, and commands.
+- [x] Use Codex's base-instruction and core-skill design as the reference for
+  instruction precedence, preamble discipline, and progressive disclosure.
+- [x] Use orchestration prompt libraries as references for explicit scope guards, output
+  contracts, role-specific tool restrictions, and lifecycle hook maps.
+- [x] Use the extension-first and TypeScript baselines as references for extension-first design, disableable builtin
+  capabilities, compaction safety, prompt presets, and release evidence gates.
+- [ ] Each adopted reference pattern names the Harness seam that owns it before
+  implementation starts.
+- [ ] Reference behavior is copied as user-observable behavior, not as source
+  architecture, package layout, or brand-specific terminology.
+
+### Agent prompt depth
+
+- [x] Runtime profiles resolve from `configs/harness.example.jsonc` into
+  coordinator `AgentProfile` values.
+- [x] The dynamic prompt builder composes base/model prompt, environment,
+  delegation reminder, project instructions, and skill guidance.
+- [x] `build`, `plan`, and `discipline` prompt asset files exist under
+  `.agent-harness/agents/`.
+- [x] `discipline` has a real prompt body describing its stricter workflow lane.
+- [x] `build.md` has a source-controlled prompt body, not only frontmatter.
+- [x] `plan.md` has a source-controlled prompt body, not only frontmatter.
+- [x] Every primary prompt uses a shared skeleton: identity, goal, use when, do
+  not use when, scope guard, tool/permission posture, operating loop, ask gate,
+  failure recovery, output contract, and verification gate.
+- [x] Every subagent prompt uses the same skeleton, with stronger output
+  contracts and clearer stop conditions than primary agents.
+- [x] Prompt bodies declare what is enforced by permissions versus what is only
+  behavioral guidance.
+- [x] Prompt precedence is documented and tested: system/developer/user,
+  AGENTS.md, runtime agent prompt, config instructions, loaded skills, and task
+  delegation context.
+- [ ] Prompt bodies for primary agents, subagents, and category routes are
+  near-exact adaptations of the relevant OMO prompt bodies, with only branding,
+  unsupported agent-OS workflows, and features not present or not planned for
+  Harness removed. Any retained OMO behavior must map to an explicit Harness
+  runtime seam, permission policy, tool, documentation contract, or roadmap item.
+- [ ] Primary prompts include an intent-gate pattern before tool use for ambiguous
+  requests: state the interpreted intent, then route to explain, investigate,
+  implement, plan, or ask exactly one blocking question.
+- [ ] Dynamic prompt sections are named modules with golden tests for each section
+  and for full composed prompts.
+- [ ] Model-specific prompt tuning is either intentionally absent for V1 or
+  represented as explicit prompt presets with tests; substring heuristics do not
+  become the only long-term seam.
+- [ ] Prompt golden tests cover `build`, `plan`, `discipline`, `general`,
+  `explore`, all category routes, and hidden title/summary/compaction profiles.
+
+### Subagent and category depth
+
+- [x] `task(subagent_type = ...)` can spawn named subagent profiles.
+- [x] `task(category = ...)` maps category names to ordinary non-primary profiles.
+- [x] `task(run_in_background = true)` schedules background child sessions and
+  `background_output` retrieves results.
+- [x] Plan can delegate only to `explore` through profile-aware task description
+  filtering and parent-child policy enforcement.
+- [x] `general` has a real prompt body defining when it should handle multistep
+  work, how much context to return, and when to refuse work that belongs to
+  primary Build.
+- [x] `explore` has a real prompt body defining read-only behavior, search
+  strategy, output contract, and stop condition.
+- [x] `explore` returns structured findings such as files, relationships, answer,
+  and next steps, rather than freeform summaries.
+- [x] Category routes have category-specific prompt appends for their domains,
+  especially `visual-engineering`, `ultrabrain`, `deep`, `quick`, and `writing`.
+- [x] Category route descriptions include use-when and do-not-use-when guidance so
+  parent agents can choose correctly.
+- [ ] The task tool contract recommends or enforces a structured delegation body:
+  context, goal, downstream use, request, required tools, must-do, and must-not-do.
+- [ ] Child task summaries are capped and structured so parent context stays lean.
+- [ ] Category route model, variant, prompt append, tools, permissions, hidden
+  status, and fallback are centralized behind an `AgentCatalog`-style seam.
+- [x] Fallback from an unknown category to `general` is visible in task output and
+  doctor/readiness diagnostics.
+
+### Skill depth
+
+- [x] Skills are discovered from configured project/global roots.
+- [x] `skill` can load a discovered skill into the current turn.
+- [x] `task(load_skills = [...])` injects loaded skill content into child prompts.
+- [x] Skill loading supports allow, ask, and deny permission modes.
+- [ ] Skill discovery documents precedence across project, workspace/config, user,
+  and built-in scopes.
+- [ ] Skill frontmatter has a V1 schema for name, description, argument hint,
+  permission, allowed tools, target agent/category, and deferred MCP metadata.
+- [ ] Skill content follows a quality template: purpose, use when, do not use when,
+  execution policy, steps, tool usage, escalation/stop conditions, final
+  checklist, and advanced notes.
+- [ ] Skill loading follows progressive disclosure: metadata in catalog, SKILL.md
+  on activation, bundled references/assets only when needed.
+- [ ] Skill prompt injection order and conflict resolution with agent prompts and
+  AGENTS.md is documented.
+- [ ] Built-in skills are disableable by stable ids before V1 adds more of them.
+- [ ] Built-in skill candidates are reviewed against the V1 stance before being
+  checked: `git-master`, `review-work`, and `frontend-ui-ux` are useful; browser,
+  Team Mode, and skill-embedded MCP bundles remain post-V1 unless re-scoped.
+
+### Built-in extension and state depth
+
+- [ ] V1 names which shipped behaviors are core runtime behavior and which are
+  disableable built-in capabilities.
+- [ ] Disableable built-ins have stable ids, default states, config shape, doctor
+  visibility, and tests.
+- [ ] Built-in capability order is intentional and tested when ordering affects
+  prompt assembly, tool registration, permission checks, or compaction.
+- [ ] New built-in capabilities use the public Harness interfaces; they do not
+  reach around coordinator permissions, event storage, or tool registry seams.
+- [ ] Any JSONL or artifact state written by built-ins has a documented schema,
+  migration policy, and replay behavior before it is release-blocking.
+- [ ] Compaction has explicit V1 contracts for threshold policy, retained recent
+  turns, file/tool context preservation, todo/plan bridging, and post-compaction
+  restoration hints.
+- [ ] Compaction failures have a bounded fallback policy with user-visible status;
+  repeated failures do not silently erase context or loop forever.
+- [ ] Provider/model prompt presets, if added, are thin tuning layers over the base
+  prompt skeleton, not duplicate full system prompts.
+
+### Command and hook depth
+
+- [ ] V1 decides whether markdown-defined slash commands, distinct from the
+  unsupported upstream config `command` area, are first-class; if so, it defines
+  the command file schema, `$ARGUMENTS` substitution, and safe command
+  interpolation policy.
+- [ ] If command interpolation is supported, it is permission-checked and replay
+  safe; command rendering never executes during replay.
+- [ ] Hook phases have a lifecycle map with status labels: native, fallback,
+  intentionally unsupported, and post-V1.
+- [ ] Minimal V1 hook seams are limited to message received, context transform,
+  provider params, tool preflight, tool result, agent turn finish, session idle,
+  and compaction request.
+- [ ] Rules/context injection uses explicit source files, glob matching,
+  provenance text, and session-scoped priority/consume semantics.
+- [ ] Hooks cannot bypass coordinator-owned permissions, event append authority,
+  or replay side-effect boundaries.
+
+### Tool and permission depth
+
+- [x] Permission policy supports profile overrides, defaults, and selector rules.
+- [x] Plan's codebase-edit restrictions and category recursion limits are
+  enforced by configuration and permission checks, not prompt text alone.
+- [x] Tool allow/deny posture is visible for every resolved profile in doctor JSON.
+- [ ] Read-only subagent restrictions are covered by tests that attempt edit, bash,
+  task, and MCP calls where relevant.
+- [ ] Tool schemas and prompt descriptions agree on exact ids, aliases,
+  permissions, and replay behavior.
+- [ ] Bash timeout, output cap, and blocked-command guidance are stated in both
+  tool docs and agent prompt guidance.
+- [ ] Permission docs state the V1 threat model clearly: permissions are an
+  operator approval layer, not a sandbox, and dangerous approvals can still affect
+  the local workspace.
+
+### Prompt-system evidence
+
+- [x] A drift test fails when `.agent-harness/agents/*.md` assets referenced by
+  docs/config are missing, empty, or frontmatter-only where a body is required.
+- [x] A generated prompt snapshot exists for every shipped profile and category.
+- [x] Prompt skeleton adherence is checked by a fixture that asserts every shipped
+  profile includes identity, goal, use-when, do-not-use-when, scope guard,
+  tool/permission posture, operating loop, ask gate, failure recovery, output
+  contract, and verification gate sections.
+- [ ] A task delegation fixture proves skill content, category prompt append,
+  parent/child lineage, sync/background behavior, and summary capping.
+- [ ] A permission fixture proves prompt promises match runtime enforcement for
+  plan, explore, general, and category routes.
+- [x] Doctor reports prompt asset status, skill catalog status, task route status,
+  and profile tool/permission posture separately from provider health.
+
+## V1 release blockers
+
+First-slice closeout evidence lives in
+`docs/v1-first-slice-prd.md#11-final-evidence-report`. Remaining unchecked items
+below are still broader V1 or post-slice work; checked items are only checked
+when the current tree has command output or artifact roots cited there.
+
+- [x] The README has one clear install, configure, and run path for a new user.
+- [x] `docs/config.md` and checked-in schemas/examples agree on every public key.
+- [ ] `docs/architecture.md` describes all V1 runtime invariants and public
+  events accurately.
+- [x] `docs/testing.md` names the required V1 verification lanes and artifact
+  expectations.
+- [x] `cargo fmt --all -- --check` passes.
+- [x] `cargo check --workspace` passes.
+- [x] `cargo test --workspace --all-features` passes, or any live-only exclusions
+  are explicitly documented.
+- [x] `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+  passes.
+- [x] `cargo run -p harness -- --config configs/harness.example.jsonc config validate`
+  passes.
+- [x] `cargo run -p harness -- --config configs/harness.example.jsonc doctor`
+  gives actionable output for missing provider, model, MCP, tool, and agent
+  setup.
+- [x] A manual TUI happy path has been recorded for start, prompt, permission,
+  tool call, edit, resume, and quit.
+- [ ] Release-facing speed, provider breadth, compatibility, or parity claims are
+  backed by current evidence artifacts, not README assertions or inspiration
+  claims.
+- [x] The V1 closeout bundle includes artifact roots for the release-blocking
+  lanes, with `summary.txt`, `env.txt`, per-stage `command.txt`, `stdout.txt`,
+  `stderr.txt`, `status.txt`, and `verification.txt` where the lane runner emits
+  them.
+
+## Verification and evidence posture
+
+- [x] A canonical lane runner exists for deterministic, integration, signoff, and
+  stress evidence.
+- [x] The testing guide documents PTY, live, native visual, simulation, and stress
+  lanes as separate provenance classes.
+- [ ] Every V1 user-visible TUI change has deterministic PTY or snapshot coverage,
+  plus native visual signoff when terminal rendering fidelity matters.
+- [x] V1 defines release smoke tests for `harness --help`, `harness --version`,
+  config validation, doctor, and one real or explicitly mocked provider call from
+  outside the repository.
+- [ ] Release smoke includes one outside-repository TUI startup and one
+  tool-enabled prompt path, so V1 evidence proves more than config preflight or
+  `doctor` success.
+- [ ] V1 defines which checks are release blockers and which are local development
+  aids.
+- [ ] V1 defines startup/readiness, TUI render, session resume, and binary size
+  budgets before making performance claims.
+- [ ] Performance claims cite current artifacts with run provenance; stale or
+  partial artifacts do not support release-facing claims.
+- [ ] Provider/model compatibility claims are backed by fixture or live-gated
+  evidence for the named transport, not by provider catalog metadata alone.
+- [ ] Prompt, permission, compaction, and built-in-capability tests use faux/mock
+  providers by default; real-provider tests are live-gated and never required for
+  deterministic lanes.
+- [ ] Feature-specific fixtures exist for prompt assembly, task delegation,
+  permission decisions, compaction summaries, and extension/built-in state.
+
+## Distribution and first-run onboarding
+
+- [x] V1 has one recommended install path for normal users.
+- [x] V1 has one source-build path for contributors.
+- [x] The released artifact supports `harness --help` and `harness --version` from
+  outside the repository.
+- [x] The first-run path explains how to create or copy a minimal `harness.jsonc`.
+- [ ] The first-run path explains provider/auth setup without assuming the local
+  loopback provider already exists.
+- [x] The first-run path ends with an exact first prompt and visible success
+  signal, so a new user can tell the provider, tools, and session store worked.
+- [x] `doctor` is documented as an install/config readiness check.
+- [x] A real execution smoke test is documented separately from `doctor`, because
+  a green readiness report does not prove the selected provider can complete a
+  model call.
+- [x] V1 install docs explain where sessions, config, skills, and artifacts live.
+- [x] V1 has a troubleshooting page for auth, provider base URL, missing tools,
+  session resume, terminal rendering, and permission prompts.
+
+## Vanilla local-coding baseline
+
+### CLI
+
+- [x] The CLI entrypoint exists.
+- [x] The interactive TUI can be launched from the CLI.
+- [x] Headless prompt execution exists.
+- [x] Scenario/headless run flows exist.
+- [x] Config validation exists.
+- [x] JSON schema output exists.
+- [x] Doctor diagnostics exist.
+- [x] Session list, inspect, replay, continue, export, tree, fork, and clone
+  commands exist.
+- [x] Model catalog generation/probing commands exist.
+- [ ] CLI help text has been reviewed as a complete V1 user surface.
+- [ ] CLI command names and docs are audited against the README quick start.
+
+### TUI
+
+- [x] Ratatui startup/live/replay/scenario modes exist.
+- [x] Live sessions render a transcript-first shell.
+- [x] Replay mode is read-only.
+- [x] Permission and question overlays exist.
+- [x] Diff rendering exists for edit review.
+- [x] Operator sidebar and secondary surfaces exist.
+- [x] Keybinding override plumbing exists.
+- [x] Slash commands exist for model/status/toggles/resume/new/tree/fork/clone.
+- [x] Prompt `@` mentions can suggest workspace files, agents, and MCP resources.
+- [x] Startup is prompt-first by default, with session browsing secondary rather
+  than the initial focus.
+- [ ] Prompt history is durable across sessions.
+- [ ] Prompt history navigation preserves drafts and cursor intent.
+- [ ] Command palette metadata is centralized and reused by slash commands,
+  help, and keybinding surfaces.
+- [ ] Permission overlays show shortcuts, scope, and timeout/countdown state
+  clearly.
+- [ ] Model switching shows provider-grouped search and visible fallback/error
+  status.
+- [ ] Session search supports visible fielded or fuzzy filtering.
+- [ ] Subagent/background work is keyboard-navigable from the operator surface.
+- [ ] Diff review supports next/previous hunk navigation.
+- [ ] Approve/deny, diff review, resume, and replay failure states have visible
+  operator flows covered by deterministic PTY or snapshot evidence.
+- [ ] UI signoff compares the startup screen, command palette, session picker,
+  and diff review against the checked-in visual references under
+  `inspirations/`.
+- [ ] New keybindings are registered through configurable keybinding defaults,
+  not hardcoded checks scattered through TUI code.
+- [ ] Session tree/sidebar navigation has keyboard-first controls before any
+  pointer-only polish is considered complete.
+
+### Sessions and replay
+
+- [x] Events are the source of truth.
+- [x] Replay derives state from event logs without executing tools or providers.
+- [x] Session lineage, tree, fork, and clone surfaces exist.
+- [x] Background child-task wakeup events are modeled.
+- [x] Tool summaries and artifacts are persisted with redaction/capping policy.
+- [ ] Model-visible session tools exist: `session_list`, `session_read`,
+  `session_search`, and `session_info`.
+- [ ] Resume behavior has a documented V1 acceptance test covering a realistic
+  interrupted session.
+- [ ] Session resume/list performance is measured against a large enough local
+  session corpus before V1 claims fast long-session behavior.
+- [ ] Crash-resilient session write behavior is documented and tested at the
+  event-store boundary.
+- [ ] Compaction summaries preserve enough file, tool, skill, todo, and plan
+  context for a resumed session to continue without guessing.
+- [ ] Branch/fork/clone session flows document how summaries, artifacts, and
+  restored context behave across lineage.
+- [ ] Session list/resume surfaces show meaningful generated or editable titles,
+  not only paths or opaque run ids.
+- [x] A redacted support export or bug-report bundle captures enough session
+  events, artifacts, doctor output, and provider/config summary to debug V1 user
+  failures without leaking secrets.
+
+### Providers and models
+
+- [x] Mock provider support exists for deterministic runs.
+- [x] OpenAI-compatible provider transport exists.
+- [x] Config supports provider/model definitions.
+- [x] Model variants are supported in config examples.
+- [x] Generated provider catalog maintenance exists.
+- [ ] Provider errors are surfaced with enough context for non-expert users.
+- [ ] Runtime model fallback policy is defined for V1.
+- [ ] The V1 provider support statement is explicit: OpenAI-compatible execution
+  first, broader catalog metadata as reference unless implemented.
+- [ ] Provider errors use stable, user-actionable categories such as missing
+  credentials, invalid credentials, rate limit, context-window overflow,
+  unsupported tool call, malformed stream, and transport failure.
+
+### Config and doctor
+
+- [x] Runtime config uses `harness.json` / `harness.jsonc` as the canonical
+  public shape.
+- [x] TUI config uses `tui.json` / `tui.jsonc` as the canonical public shape.
+- [x] Generated runtime and TUI schemas are checked in.
+- [x] `configs/harness.example.jsonc` is the canonical runtime example.
+- [x] `configs/tui.example.jsonc` is the canonical TUI example.
+- [x] Unsupported upstream product areas are rejected or accepted only when
+  inactive: `server`, `command`, `plugin`, `share`, `autoupdate`, and
+  `enterprise`.
+- [x] Config-backed MCP servers are part of the runtime tool registry.
+- [ ] Doctor reports the complete resolved agent list, including primary agents,
+  subagents, hidden profiles, and category routes.
+- [ ] Doctor reports stale/missing built-in asset references.
+- [ ] Doctor reports extension/roadmap readiness separately from runtime health.
+
+## Native tool baseline
+
+- [x] Workspace read/list/glob/grep tools exist.
+- [x] Hashline edit tooling exists.
+- [x] Bash/shell execution exists behind permission and safety controls.
+- [x] Web fetch/search/code search tools exist.
+- [x] LSP diagnostics/symbol/reference/rename tools exist.
+- [x] `question` exists.
+- [x] `skill` exists.
+- [x] `todo_read` and `todo_write` exist.
+- [x] `task` exists as the canonical child-delegation tool.
+- [x] `background_output` exists.
+- [x] `batch` exists.
+- [x] Config-backed MCP tools exist.
+- [ ] `background_cancel` exists as a dedicated user-facing tool instead of only
+  cancellation through `background_output` arguments.
+- [ ] AST-grep search and replace are first-class native tools.
+- [ ] Model-visible session tools are first-class native tools.
+- [ ] Native tool docs include a concise V1 tool catalog.
+- [ ] Native tool parity tests cover the full V1 tool catalog.
+
+## Agents and subagents
+
+### Primary agents
+
+- [x] `build` exists as the default implementation lane.
+- [x] `plan` exists as a planning lane with codebase-edit restrictions and a
+  controlled handoff back to Build.
+- [x] `discipline` exists as a stricter delivery lane without changing scheduler
+  semantics.
+- [x] Primary-agent picker/docs make clear that primary agents are operator modes,
+  not search helpers.
+- [x] Primary-agent prompt bodies are reviewed for V1 quality rather than only
+  frontmatter/runtime synthesis.
+
+### Subagents
+
+- [x] `general` exists as a subagent profile.
+- [x] `explore` exists as a read-only local code-search subagent profile.
+- [x] Category routes exist for `visual-engineering`, `artistry`, `ultrabrain`,
+  `deep`, `quick`, `unspecified-low`, `unspecified-high`, and `writing`.
+- [x] Category profiles are intended for `task(category = "...")` delegation and
+  deny recursive task delegation by default.
+- [x] `task(subagent_type = ...)` and `task(category = ...)` behavior is documented
+  in a user-facing V1 guide.
+- [x] `task` has a clear contract for sync vs background execution, cancellation,
+  continuation, and skill loading.
+- [ ] Subagent output is summarized in a way that keeps parent context lean.
+- [ ] Category route model/variant/fallback resolution is centralized in an
+  `AgentCatalog`-style seam.
+
+## Orchestration-inspired V1 release work
+
+These are useful without forcing a full orchestration-style agent OS. The detailed
+acceptance criteria live in the sections above; this section is a compact
+cross-reference for agents choosing the next implementation slice.
+
+- [x] Hashline editing.
+- [x] Simple subagents through `task`.
+- [x] Category routing through `task(category = ...)`.
+- [x] Markdown skill loading.
+- [x] Config-backed MCP registration.
+- [x] Discipline-style stricter delivery as an optional primary agent.
+- [ ] Built-in `git-master` skill; see Skill depth.
+- [ ] Built-in `review-work` skill; see Skill depth.
+- [ ] Built-in `frontend-ui-ux` or equivalent visual-engineering skill; see Skill
+  depth.
+- [ ] AST-grep tools; see Native tool baseline.
+- [ ] Model-visible session tools; see Sessions and replay plus Native tool
+  baseline.
+- [ ] Dedicated `background_cancel` tool; see Native tool baseline.
+- [ ] Doctor checks for built-in skills, category routes, and missing assets; see
+  Prompt-system evidence plus Config and doctor.
+- [ ] A small slash-command/hook seam for built-in lifecycle behavior, distinct
+  from arbitrary executable plugins; see Command and hook depth plus Extension
+  and plugin strategy.
+
+## Extension and plugin strategy
+
+V1 should be plugin-ready, not a broad arbitrary plugin host.
+
+- [x] Config-backed MCP gives a safe external-tool integration path today.
+- [x] Skills provide a markdown-based instruction extension path today.
+- [ ] A typed extension manifest seam exists for optional tools, hooks, commands,
+  prompts, MCP bundles, diagnostics, and provider decorators.
+- [ ] Extension-provided tools go through the same permission checks as native
+  tools.
+- [ ] Replay can render old extension events without loading extension code.
+- [ ] Built-in lifecycle command hooks are migrated onto the same hook seam planned
+  for future extensions.
+- [ ] Hook phases are explicitly modeled for message received, provider params,
+  context transform, tool preflight, tool result, agent turn finish, session idle,
+  and compaction request.
+- [ ] External executable/script plugins are deferred until command mediation,
+  sandboxing, and replay-safe manifests are proven.
+- [ ] Active upstream plugin compatibility is explicitly post-V1.
+- [ ] Built-in extension-like features are disableable by stable ids before any
+  external plugin runtime is introduced.
+- [ ] Extension strategy follows the extension-first and TypeScript baselines:
+  keep core changes small, keep authority explicit, and require conformance
+  evidence for every new extension surface.
+
+## Team and orchestration scope
+
+- [x] Event-sourced team primitives exist for
+  create/status/message/task/shutdown/delete as primitive event tools, not as
+  full Team Mode.
+- [ ] `team_list` exists.
+- [ ] Team doctor checks exist.
+- [ ] Team docs clearly label the current scope as a V1 primitive or post-V1
+  optional layer.
+- [ ] Declared team registry support exists.
+- [ ] Team worktree support exists.
+- [ ] Team tmux visualization exists.
+- [ ] Team mailbox artifacts and resume semantics are documented and tested.
+- [ ] Full Team Mode is treated as post-V1 unless deliberately pulled into the
+  release scope.
+
+## Explicitly post-V1 unless re-scoped
+
+- [ ] Ralph loop / ultrawork loop.
+- [ ] Todo enforcer or autonomous idle continuation loop.
+- [ ] Prometheus / Metis / Momus / Atlas orchestration stack.
+- [ ] Full specialist persona catalog.
+- [ ] Skill-embedded MCP lifecycle.
+- [ ] MCP OAuth lifecycle.
+- [ ] Browser automation / Playwright skill bundle.
+- [ ] Media analysis / `look_at` / multimodal-looker.
+- [ ] Interactive tmux terminal tool.
+- [ ] Arbitrary upstream plugin loading.
+- [ ] Upstream server/share/auth/account product surfaces.
+- [ ] Desktop, web, mobile, or PWA clients.
+- [ ] IDE integration, editor-selection sync, or editor-side diff control.
+- [ ] GitHub Action, Slack, Discord, Telegram, OpenClaw, or other remote
+  collaboration bots.
+- [ ] Cloud, enterprise, billing, analytics, telemetry, or hosted API surfaces.
+- [ ] JS/QuickJS/WASM extension marketplace or broad extension runtime.
+- [ ] Beads, Agent Mail, RCH, swarm, or external issue/validation-broker
+  coordination systems.
+- [ ] Math-heavy adaptive optimization controllers, shadow dual execution,
+  online policy evaluation, or VOI planners.
+- [ ] Broad non-OpenAI-compatible provider transports beyond the implemented execution path.
+
+## Explicit V1 non-goals from the inspiration review
+
+- [x] Do not add a second build system such as Bazel beside the Cargo workspace.
+- [x] Do not copy another harness architecture mechanically; extract behavior and
+  reimplement it through Harness modules and event contracts.
+- [x] Do not use desktop/cloud/team features as V1 release blockers.
+- [x] Do not use source-brand parity claims as release claims without current
+  Harness evidence.
+- [x] Do not add broad compatibility shims that bypass canonical Harness tool ids,
+  permissions, or replay safety.
+
+## Documentation deliverables
+
+- [x] README quick start is accurate and minimal.
+- [x] Config guide is accurate for V1.
+- [ ] Architecture guide is accurate for V1.
+- [x] Testing guide is accurate for V1.
+- [ ] Native tool catalog exists.
+- [ ] Agent and subagent guide exists.
+- [ ] Permissions guide exists.
+- [ ] Sessions and replay guide exists.
+- [ ] Extension strategy guide exists, clearly marking post-V1 plugin work.
+- [ ] Privacy and local-data notes explain what leaves the machine, where sessions
+  and artifacts are stored, how redaction works, and that telemetry/cloud features
+  are absent unless explicitly introduced later.
+- [ ] Migration notes explain which source-inspiration areas are unsupported by design.
+
+## Suggested implementation order
+
+- [ ] Clean documentation and asset drift first, because stale prompt/agent
+  references make every later checklist item ambiguous.
+- [ ] Lock install, config, provider, `doctor`, and one prompt smoke from outside
+  the repository, because V1 starts with a user being able to run the binary.
+- [ ] Make startup prompt-first and improve prompt history, because this is the
+  highest-frequency vanilla local-coding interaction.
+- [ ] Centralize command/keybinding metadata before expanding keybindings, slash
+  commands, or help text.
+- [ ] Improve permission modal clarity before adding more powerful tools, so new
+  capabilities inherit a clear approval surface.
+- [ ] Add prompt bodies, prompt snapshots, and task/permission fixtures before
+  expanding subagent or skill catalogs.
+- [ ] Add an `AgentCatalog`-style resolution seam before relying on category
+  fallbacks, hidden profiles, or category-specific prompt appends.
+- [ ] Add model-visible session tools after session/replay acceptance tests are
+  documented.
+- [ ] Add dedicated `background_cancel` after sync/background task contracts are
+  documented.
+- [ ] Add AST-grep native tools after the native tool catalog shape and
+  parity-test harness are stable, then update the catalog and matrix for
+  AST-grep.
+- [ ] Add V1 built-in skills after skill schema, precedence, disablement, and
+  progressive disclosure are documented.
+- [ ] Define the typed extension manifest seam before migrating lifecycle command
+  hooks onto it or marking the extension strategy guide complete.
+- [ ] Add doctor readiness checks once the prompt, skill, tool, and agent catalog
+  contracts are stable enough for diagnostics to enforce.
+- [ ] Keep Team Mode primitive-only for V1 unless the V1 release scope is
+  deliberately re-opened; otherwise document it as a post-V1 optional layer.

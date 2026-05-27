@@ -37,11 +37,34 @@ This Rust workspace provides:
 
 ## Quick start
 
+For a first source build from outside this repository, clone the workspace,
+build the binary, and copy the canonical runtime config into the directory where
+you want to run Harness:
+
+```bash
+git clone <repo-url> agent-harness
+cd agent-harness
+cargo build -p harness
+mkdir -p /tmp/harness-first-run/.agent-harness
+cp configs/harness.example.jsonc /tmp/harness-first-run/harness.jsonc
+cd /tmp/harness-first-run
+/path/to/agent-harness/target/debug/harness --help
+/path/to/agent-harness/target/debug/harness --version
+/path/to/agent-harness/target/debug/harness config validate
+/path/to/agent-harness/target/debug/harness doctor
+/path/to/agent-harness/target/debug/harness prompt --mock --text "Hello from PTY" \
+  --out prompt.events.jsonl --print-run-dir
+```
+
+That prompt command is deterministic mocked execution. It proves the first prompt
+path separately from `doctor`; it does not prove live provider authentication or
+transport health.
+
 The default path is:
 
 - provider: `default` (`openai_compatible`) via the local CLIProxy-compatible loopback endpoint
 - default agent: `build`
-- default model: `default/gpt-5.4`
+- default model: `default/gpt-5.4-mini`
 - interactive model: `default/gpt-5.4-mini` (`high` reasoning preset)
 
 Primary agents are discovered from `.agent-harness/agents/*.md` and use the
@@ -60,6 +83,51 @@ Validate the shipped example config:
 cargo run -p harness -- --config configs/harness.example.jsonc config validate
 cargo run -p harness -- --config configs/harness.example.jsonc doctor
 ```
+
+`doctor` proves local readiness only: config shape, provider/model metadata,
+credential presence, route metadata, prompt asset status, permissions, session
+directory readiness, and MCP registration without making provider or MCP network
+calls. Use `prompt`, `signoff-live`, or a live stress lane when you need real
+provider execution proof, and keep README/release claims scoped to the lane you
+actually ran.
+
+For support evidence, export a completed or failed session instead of sharing raw
+event logs directly:
+
+```bash
+/path/to/agent-harness/target/debug/harness sessions export \
+  --session-dir <session-dir> \
+  --output support-bundle.json \
+  <run-id-or-directory-name>
+```
+
+The support export includes replay-derived session metadata, offline doctor JSON,
+non-secret config/provider summaries, route metadata, artifact indexes, a
+redaction manifest, and secret-scan status so a failure can be debugged without
+exposing API keys, bearer tokens, cookies, PEM blocks, raw provider credentials,
+or hidden prompt/config instruction secrets.
+
+Troubleshooting starts with the local checks before live provider execution:
+
+- Missing credentials: run `harness doctor`; it reports missing `apiKey` or
+  unresolved `apiKeyEnv` names without printing secret values.
+- Invalid credentials or rate limits: run a live `prompt`/stress lane; `doctor`
+  does not make provider calls and cannot prove authentication.
+- Base URL or local proxy mismatch: compare the provider `baseURL` in
+  `harness.jsonc` with the local proxy endpoint and use the live prompt lane for
+  transport proof.
+- Missing MCP/LSP/tool prerequisites: `doctor` reports configured MCP readiness;
+  tool failures are persisted as tool messages, and unsupported LSP probes stay
+  recoverable in the prompt path.
+- Unsupported tool calls or malformed provider streams: inspect `events.jsonl`,
+  replay the session read-only, then export a support bundle.
+- Session resume or replay failure: use `harness sessions inspect`,
+  `harness sessions replay`, and the support export artifact index to locate the
+  corrupt or missing session/artifact.
+- Permission denial or timeout: the event log records `permission_resolved`,
+  `edit_rejected`, and failed tool output while leaving the workspace unchanged.
+- Terminal rendering issues: retry with `--mock`, use `/help` or `Ctrl+p` for the
+  command palette, and attach the redacted support bundle plus terminal details.
 
 Shared runtime defaults can live at `$XDG_CONFIG_HOME/harness/harness.jsonc`
 (fallback: `~/.config/harness/harness.jsonc`) or `$XDG_CONFIG_HOME/harness/harness.json`.
