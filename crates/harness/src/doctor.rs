@@ -5,10 +5,14 @@ use std::path::{Path, PathBuf};
 use clap::Args;
 use harness_core::config::{
     resolve_model_selection, AgentMode, HarnessConfig, McpServerConfig, PermissionMode,
-    ProviderConfig,
+    ProviderConfig, ResolvedModelTarget,
+};
+use harness_core::coord::{
+    TASK_CATEGORY_FALLBACK_DISABLED_PARENT_PROFILES, TASK_CATEGORY_FALLBACK_PROFILE,
 };
 use harness_tools::{coordinator_registry_with_mcp_and_editing, EditingToolSurfaceConfig};
 use serde::Serialize;
+use serde_json::{json, Value};
 
 use crate::{CliDeps, CliIo};
 
@@ -71,11 +75,16 @@ struct DoctorCheck {
     name: String,
     status: CheckStatus,
     message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    details: Option<Value>,
 }
 
 #[derive(Debug, Serialize)]
 struct DoctorReport {
     config: String,
+    no_network_probes: bool,
+    provider_execution_proof: bool,
+    readiness_scope: &'static str,
     checks: Vec<DoctorCheck>,
 }
 
@@ -162,6 +171,25 @@ pub(crate) fn execute_with_io(
     }
 }
 
+pub(crate) fn support_report_json(
+    config_display: String,
+    config: &HarnessConfig,
+    env_var_is_set: &dyn Fn(&str) -> bool,
+) -> Value {
+    let report = build_report(config_display.clone(), config, env_var_is_set);
+    let mut value = serde_json::to_value(report).unwrap_or_else(|err| {
+        json!({
+            "config": config_display,
+            "checks": [],
+            "serialization_error": err.to_string(),
+        })
+    });
+    if let Some(object) = value.as_object_mut() {
+        object.insert("no_network_probes".to_string(), json!(true));
+    }
+    value
+}
+
 fn build_report(
     config_display: String,
     config: &HarnessConfig,
@@ -173,6 +201,7 @@ fn build_report(
         check_model_references(config),
         check_shipped_profiles(config),
         check_category_routes(config),
+        check_resolved_routes(config),
         check_profile_tools(config),
         check_permissions(config),
         check_session_dir(&config.paths.session_dir),
@@ -181,7 +210,241 @@ fn build_report(
 
     DoctorReport {
         config: config_display,
+        no_network_probes: true,
+        provider_execution_proof: false,
+        readiness_scope: "local_readiness_only",
         checks,
+    }
+}
+
+fn check_resolved_routes(config: &HarnessConfig) -> DoctorCheck {
+    let mut routes = serde_json::Map::new();
+    let mut missing = Vec::new();
+
+    for profile in REQUIRED_PRIMARY_AGENTS
+        .into_iter()
+        .chain(REQUIRED_SUBAGENTS)
+        .chain(REQUIRED_CATEGORY_ROUTES)
+    {
+        let Some(agent) = config.agents.get(profile) else {
+            missing.push(profile);
+            continue;
+        };
+        routes.insert(profile.to_string(), route_metadata(config, profile, agent));
+    }
+
+    let route_count = routes.len();
+    let details = json!({
+        "routes": routes,
+        "skills": skill_readiness_metadata(config),
+        "category_fallback": {
+            "unknown_category_profile": TASK_CATEGORY_FALLBACK_PROFILE,
+            "disabled_for_parent": TASK_CATEGORY_FALLBACK_DISABLED_PARENT_PROFILES,
+            "policy_source": "harness_core::coord::task_category_fallback_profile",
+            "visibility": "task output reports requested category, resolved route, runtime metadata, and fallback policy; doctor reports the same policy without provider or MCP network calls"
+        },
+        "no_network_probes": true,
+    });
+
+    if !missing.is_empty() {
+        return warn_with_details(
+            "resolved_routes",
+            format!(
+                "resolved metadata omitted missing shipped route(s): {}",
+                missing.join(", ")
+            ),
+            details,
+        );
+    }
+
+    pass_with_details(
+        "resolved_routes",
+        format!("{route_count} shipped route(s) resolved with prompt, tool, model, and permission metadata"),
+        details,
+    )
+}
+
+fn route_metadata(
+    config: &HarnessConfig,
+    profile: &str,
+    agent: &harness_core::config::ProfileConfig,
+) -> Value {
+    let model = resolve_model_selection(config, &agent.model_ref, agent.variant.as_deref())
+        .map(|selection| {
+            json!({
+                "model_ref": selection.primary.model_ref,
+                "provider": selection.primary.provider,
+                "model": selection.primary.model,
+                "variant": selection.primary.variant,
+                "tool_call_support": tool_call_support_metadata(config, &selection.primary),
+                "fallback_chain": selection
+                    .fallback
+                    .into_iter()
+                    .map(|target| target.model_ref)
+                    .collect::<Vec<_>>(),
+            })
+        })
+        .unwrap_or_else(|err| {
+            json!({
+                "model_ref": agent.model_ref,
+                "variant": agent.variant,
+                "tool_call_support": unknown_tool_call_support_metadata("model_resolution_failed"),
+                "resolution_error": err.to_string(),
+            })
+        });
+
+    json!({
+        "profile_id": profile,
+        "role": route_role(profile, agent),
+        "hidden": agent.hidden,
+        "prompt": prompt_status(profile, agent),
+        "model": model,
+        "toolset": agent.tools,
+        "skills": route_skill_metadata(config, agent),
+        "permission_posture": permission_posture(config, agent),
+    })
+}
+
+fn skill_readiness_metadata(config: &HarnessConfig) -> Value {
+    let configured_permission_patterns = config
+        .skills
+        .permissions
+        .iter()
+        .map(|(pattern, mode)| {
+            json!({
+                "pattern": pattern,
+                "permission": permission_mode_label(Some(mode)),
+            })
+        })
+        .collect::<Vec<_>>();
+    let skill_tool_profiles = config
+        .agents
+        .iter()
+        .filter_map(|(profile, agent)| {
+            agent
+                .tools
+                .iter()
+                .any(|tool| tool == "skill")
+                .then_some(profile.as_str())
+        })
+        .collect::<Vec<_>>();
+    let root_count = config.skills.project_roots.len() + config.skills.global_roots.len();
+
+    json!({
+        "status": if root_count == 0 { "no_roots_configured" } else { "configured" },
+        "project_roots": config.skills.project_roots.iter().map(|path| path.display().to_string()).collect::<Vec<_>>(),
+        "global_roots": config.skills.global_roots.iter().map(|path| path.display().to_string()).collect::<Vec<_>>(),
+        "walk_to_git_root": config.skills.walk_to_git_root,
+        "permission_rules": configured_permission_patterns,
+        "skill_tool_profiles": skill_tool_profiles,
+        "no_network_probes": true,
+    })
+}
+
+fn route_skill_metadata(
+    config: &HarnessConfig,
+    agent: &harness_core::config::ProfileConfig,
+) -> Value {
+    json!({
+        "tool_enabled": agent.tools.iter().any(|tool| tool == "skill"),
+        "configured_permission_patterns": config.skills.permissions.keys().cloned().collect::<Vec<_>>(),
+    })
+}
+
+fn tool_call_support_metadata(config: &HarnessConfig, target: &ResolvedModelTarget) -> Value {
+    let Some(provider) = config.providers.get(&target.provider) else {
+        return unknown_tool_call_support_metadata("provider_metadata_missing");
+    };
+    let ProviderConfig::OpenAiCompatible(provider) = provider;
+    let Some(model) = provider.models.get(&target.model) else {
+        return unknown_tool_call_support_metadata("model_metadata_missing");
+    };
+
+    match model.metadata.supports_tool_calls {
+        Some(supports_tool_calls) => json!({
+            "status": if supports_tool_calls { "supported" } else { "unsupported" },
+            "supports_tool_calls": supports_tool_calls,
+            "source": "provider_model_metadata",
+            "no_network_probes": true,
+        }),
+        None => unknown_tool_call_support_metadata("unknown_not_declared"),
+    }
+}
+
+fn unknown_tool_call_support_metadata(reason: &str) -> Value {
+    json!({
+        "status": "unknown_not_probed",
+        "supports_tool_calls": null,
+        "source": reason,
+        "no_network_probes": true,
+    })
+}
+
+fn route_role(profile: &str, agent: &harness_core::config::ProfileConfig) -> &'static str {
+    if agent.hidden {
+        return "hidden";
+    }
+    if REQUIRED_CATEGORY_ROUTES.contains(&profile) {
+        return "category";
+    }
+    if REQUIRED_PRIMARY_AGENTS.contains(&profile) || agent.mode == AgentMode::Primary {
+        return "primary";
+    }
+    if agent.mode == AgentMode::Subagent {
+        return "subagent";
+    }
+    "all"
+}
+
+fn prompt_status(profile: &str, agent: &harness_core::config::ProfileConfig) -> Value {
+    if agent.system_prompt.as_deref().is_some_and(non_empty) {
+        return json!({
+            "status": "available",
+            "source": "configured_or_discovered",
+        });
+    }
+    if bundled_prompt_available(profile) {
+        return json!({
+            "status": "available",
+            "source": "bundled_shipped_asset",
+        });
+    }
+    json!({
+        "status": "missing",
+        "source": null,
+    })
+}
+
+fn bundled_prompt_available(profile: &str) -> bool {
+    REQUIRED_PRIMARY_AGENTS.contains(&profile)
+        || REQUIRED_SUBAGENTS.contains(&profile)
+        || REQUIRED_CATEGORY_ROUTES.contains(&profile)
+}
+
+fn permission_posture(
+    config: &HarnessConfig,
+    agent: &harness_core::config::ProfileConfig,
+) -> Value {
+    let permissions = agent.permissions.as_ref();
+    json!({
+        "fallback": permission_mode_label(permissions.and_then(|value| value.fallback.as_ref()).or(config.permissions.fallback.as_ref())),
+        "edit": permission_mode_label(permissions.and_then(|value| value.edit.as_ref()).or(permissions.and_then(|value| value.fallback.as_ref())).or(Some(&config.permissions.defaults.edit))),
+        "bash": permission_mode_label(permissions.and_then(|value| value.shell.as_ref()).or(permissions.and_then(|value| value.fallback.as_ref())).or(Some(&config.permissions.defaults.shell))),
+        "question": permission_mode_label(permissions.and_then(|value| value.question.as_ref()).or(permissions.and_then(|value| value.fallback.as_ref())).or(config.permissions.defaults.question.as_ref()).or(config.permissions.fallback.as_ref())),
+        "task": permission_mode_label(permissions.and_then(|value| value.task.as_ref()).or(permissions.and_then(|value| value.fallback.as_ref())).or(config.permissions.defaults.task.as_ref()).or(config.permissions.fallback.as_ref())),
+        "webfetch": permission_mode_label(permissions.and_then(|value| value.webfetch.as_ref()).or(permissions.and_then(|value| value.network.as_ref())).or(permissions.and_then(|value| value.fallback.as_ref())).or(config.permissions.defaults.webfetch.as_ref()).or(Some(&config.permissions.defaults.network))),
+        "websearch": permission_mode_label(permissions.and_then(|value| value.websearch.as_ref()).or(permissions.and_then(|value| value.network.as_ref())).or(permissions.and_then(|value| value.fallback.as_ref())).or(config.permissions.defaults.websearch.as_ref()).or(Some(&config.permissions.defaults.network))),
+        "codesearch": permission_mode_label(permissions.and_then(|value| value.codesearch.as_ref()).or(permissions.and_then(|value| value.network.as_ref())).or(permissions.and_then(|value| value.fallback.as_ref())).or(config.permissions.defaults.codesearch.as_ref()).or(Some(&config.permissions.defaults.network))),
+        "lsp": permission_mode_label(permissions.and_then(|value| value.lsp.as_ref()).or(permissions.and_then(|value| value.fallback.as_ref())).or(config.permissions.defaults.lsp.as_ref()).or(config.permissions.fallback.as_ref())),
+    })
+}
+
+fn permission_mode_label(mode: Option<&PermissionMode>) -> Value {
+    match mode {
+        Some(PermissionMode::Allow) => json!("allow"),
+        Some(PermissionMode::Ask) => json!("ask"),
+        Some(PermissionMode::Deny) => json!("deny"),
+        None => Value::Null,
     }
 }
 
@@ -198,6 +461,10 @@ fn print_text_report(report: &DoctorReport, out: &mut dyn Write) {
     let _ = writeln!(
         out,
         "checks: {passes} passed, {warnings} warnings, {failures} failures"
+    );
+    let _ = writeln!(
+        out,
+        "scope: local readiness only; no provider or MCP network probes; not provider execution proof"
     );
     for check in &report.checks {
         let _ = writeln!(
@@ -363,7 +630,7 @@ fn check_shipped_profiles(config: &HarnessConfig) -> DoctorCheck {
         return warn(
             "workflow_profiles",
             format!(
-                "missing recommended shipped profile(s): {}; enable them under `agent` for full orchestration parity",
+                "missing recommended shipped profile(s): {}; enable them under `agent` for the complete V1 local coding path",
                 missing.join(", ")
             ),
         );
@@ -648,6 +915,20 @@ fn pass(name: impl Into<String>, message: impl Into<String>) -> DoctorCheck {
         name: name.into(),
         status: CheckStatus::Pass,
         message: message.into(),
+        details: None,
+    }
+}
+
+fn pass_with_details(
+    name: impl Into<String>,
+    message: impl Into<String>,
+    details: Value,
+) -> DoctorCheck {
+    DoctorCheck {
+        name: name.into(),
+        status: CheckStatus::Pass,
+        message: message.into(),
+        details: Some(details),
     }
 }
 
@@ -656,6 +937,20 @@ fn warn(name: impl Into<String>, message: impl Into<String>) -> DoctorCheck {
         name: name.into(),
         status: CheckStatus::Warn,
         message: message.into(),
+        details: None,
+    }
+}
+
+fn warn_with_details(
+    name: impl Into<String>,
+    message: impl Into<String>,
+    details: Value,
+) -> DoctorCheck {
+    DoctorCheck {
+        name: name.into(),
+        status: CheckStatus::Warn,
+        message: message.into(),
+        details: Some(details),
     }
 }
 
@@ -664,5 +959,6 @@ fn fail(name: impl Into<String>, message: impl Into<String>) -> DoctorCheck {
         name: name.into(),
         status: CheckStatus::Fail,
         message: message.into(),
+        details: None,
     }
 }

@@ -21,6 +21,8 @@ fn doctor_cli_reports_shipped_orchestration_health() {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("doctor ok:"));
+    assert!(stdout.contains("local readiness only"));
+    assert!(stdout.contains("not provider execution proof"));
     assert!(stdout.contains("provider_credentials"));
     assert!(stdout.contains("model_references"));
     assert!(stdout.contains("workflow_profiles"));
@@ -55,6 +57,9 @@ fn doctor_cli_emits_json_report() {
         .as_str()
         .expect("config display")
         .contains("configs/harness.example.jsonc"));
+    assert_eq!(report["no_network_probes"], true);
+    assert_eq!(report["provider_execution_proof"], false);
+    assert_eq!(report["readiness_scope"], "local_readiness_only");
     assert!(report["checks"]
         .as_array()
         .expect("checks array")
@@ -75,6 +80,107 @@ fn doctor_cli_emits_json_report() {
         .expect("checks array")
         .iter()
         .any(|check| { check["name"] == "model_references" && check["status"] == "pass" }));
+}
+
+#[test]
+fn doctor_cli_json_reports_resolved_route_metadata() {
+    // arrange
+    let repo_root = repo_root();
+    let config_path = repo_root.join("configs").join("harness.example.jsonc");
+
+    // act
+    let output = harness_command()
+        .current_dir(&repo_root)
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "doctor",
+            "--json",
+        ])
+        .output()
+        .expect("run harness doctor --json with shipped example config");
+
+    // assert
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).expect("doctor json report");
+    let route_check = report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .find(|check| check["name"] == "resolved_routes")
+        .expect("resolved route metadata check");
+
+    assert_eq!(route_check["status"], "pass");
+    assert_eq!(route_check["details"]["routes"]["build"]["role"], "primary");
+    assert_eq!(
+        route_check["details"]["routes"]["build"]["model"]["tool_call_support"]["status"],
+        "supported"
+    );
+    assert_eq!(
+        route_check["details"]["routes"]["build"]["model"]["tool_call_support"]
+            ["supports_tool_calls"],
+        true
+    );
+    assert_eq!(
+        route_check["details"]["routes"]["build"]["model"]["tool_call_support"]["source"],
+        "provider_model_metadata"
+    );
+    assert_eq!(
+        route_check["details"]["routes"]["build"]["model"]["tool_call_support"]
+            ["no_network_probes"],
+        true
+    );
+    assert_eq!(
+        route_check["details"]["routes"]["build"]["prompt"]["status"],
+        "available"
+    );
+    assert_eq!(route_check["details"]["skills"]["status"], "configured");
+    assert_eq!(
+        route_check["details"]["skills"]["no_network_probes"],
+        true
+    );
+    assert!(route_check["details"]["skills"]["project_roots"]
+        .as_array()
+        .expect("project roots array")
+        .iter()
+        .any(|root| root == ".agent-harness/skills"));
+    assert_eq!(
+        route_check["details"]["routes"]["discipline"]["skills"]["tool_enabled"],
+        true
+    );
+    assert_eq!(
+        route_check["details"]["routes"]["general"]["role"],
+        "subagent"
+    );
+    assert_eq!(
+        route_check["details"]["routes"]["explore"]["permission_posture"]["edit"],
+        "deny"
+    );
+    assert_eq!(
+        route_check["details"]["routes"]["visual-engineering"]["role"],
+        "category"
+    );
+    assert_eq!(
+        route_check["details"]["routes"]["visual-engineering"]["permission_posture"]["task"],
+        "deny"
+    );
+    assert_eq!(
+        route_check["details"]["category_fallback"]["unknown_category_profile"],
+        "general"
+    );
+    assert_eq!(
+        route_check["details"]["category_fallback"]["disabled_for_parent"],
+        serde_json::json!(["plan"])
+    );
+    assert_eq!(
+        route_check["details"]["category_fallback"]["policy_source"],
+        "harness_core::coord::task_category_fallback_profile"
+    );
 }
 #[test]
 fn doctor_cli_fails_invalid_category_routes_even_when_some_are_missing() {
