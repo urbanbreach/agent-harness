@@ -7,7 +7,7 @@ async fn completed_tool_turn_preserves_tool_messages_for_followup_context() {
             ProviderStreamEvent::ToolCallComplete {
                 tool_call_id: "call_edit".to_string(),
                 function_name: "shell_run".to_string(),
-                arguments_json: r#"{"command":"touch docs/rust-language.md"}"#.to_string(),
+                arguments_json: r#"{"command":"touch docs/config.md"}"#.to_string(),
             },
             ProviderStreamEvent::Done {
                 usage: CompletionUsage {
@@ -19,7 +19,7 @@ async fn completed_tool_turn_preserves_tool_messages_for_followup_context() {
         ],
         vec![
             ProviderStreamEvent::Start,
-            ProviderStreamEvent::TextDelta("I edited docs/rust-language.md.".to_string()),
+            ProviderStreamEvent::TextDelta("I edited docs/config.md.".to_string()),
             ProviderStreamEvent::Done {
                 usage: CompletionUsage {
                     prompt_tokens: 3,
@@ -65,7 +65,7 @@ async fn completed_tool_turn_preserves_tool_messages_for_followup_context() {
         .request_agent_turn(
             supervisor_actor(),
             "agent_000001",
-            "edit docs/rust-language.md",
+            "edit docs/config.md",
         )
         .await
         .expect("first turn");
@@ -75,7 +75,7 @@ async fn completed_tool_turn_preserves_tool_messages_for_followup_context() {
                 &event.payload,
                 EventV1::TaskCompleted(data)
                     if event.correlation_id.as_deref() == Some(first_request_id.as_str())
-                        && data.result_summary == "I edited docs/rust-language.md."
+                        && data.result_summary == "I edited docs/config.md."
             )
         })
     })
@@ -119,7 +119,7 @@ async fn completed_tool_turn_preserves_tool_messages_for_followup_context() {
     assert_eq!(calls[0].function_name, "shell_run");
     assert_eq!(
         calls[0].arguments_json,
-        r#"{"command":"touch docs/rust-language.md"}"#
+        r#"{"command":"touch docs/config.md"}"#
     );
 
     let tool_result_message = followup_messages
@@ -132,10 +132,10 @@ async fn completed_tool_turn_preserves_tool_messages_for_followup_context() {
     assert_eq!(tool_result_message.name.as_deref(), Some("shell_run"));
     assert!(tool_result_message
         .content
-        .contains("touch docs/rust-language.md"));
+        .contains("touch docs/config.md"));
     assert!(followup_messages.iter().any(|message| {
         message.role == MessageRole::Assistant
-            && message.content == "I edited docs/rust-language.md."
+            && message.content == "I edited docs/config.md."
             && message.assistant_tool_calls.is_none()
     }));
 }
@@ -148,7 +148,7 @@ async fn resumed_tool_turn_preserves_tool_messages_for_followup_context() {
             ProviderStreamEvent::ToolCallComplete {
                 tool_call_id: "call_edit".to_string(),
                 function_name: "shell_run".to_string(),
-                arguments_json: r#"{"command":"touch docs/rust-language.md"}"#.to_string(),
+                arguments_json: r#"{"command":"touch docs/config.md"}"#.to_string(),
             },
             ProviderStreamEvent::Done {
                 usage: CompletionUsage {
@@ -160,7 +160,7 @@ async fn resumed_tool_turn_preserves_tool_messages_for_followup_context() {
         ],
         vec![
             ProviderStreamEvent::Start,
-            ProviderStreamEvent::TextDelta("I edited docs/rust-language.md.".to_string()),
+            ProviderStreamEvent::TextDelta("I edited docs/config.md.".to_string()),
             ProviderStreamEvent::Done {
                 usage: CompletionUsage {
                     prompt_tokens: 3,
@@ -194,7 +194,7 @@ async fn resumed_tool_turn_preserves_tool_messages_for_followup_context() {
         .request_agent_turn(
             supervisor_actor(),
             "agent_000001",
-            "edit docs/rust-language.md",
+            "edit docs/config.md",
         )
         .await
         .expect("first turn");
@@ -204,7 +204,7 @@ async fn resumed_tool_turn_preserves_tool_messages_for_followup_context() {
                 &event.payload,
                 EventV1::TaskCompleted(data)
                     if event.correlation_id.as_deref() == Some(first_request_id.as_str())
-                        && data.result_summary == "I edited docs/rust-language.md."
+                        && data.result_summary == "I edited docs/config.md."
             )
         })
     })
@@ -244,7 +244,7 @@ async fn resumed_tool_turn_preserves_tool_messages_for_followup_context() {
     assert_eq!(calls[0].function_name, "shell_run");
     assert_eq!(
         calls[0].arguments_json,
-        r#"{"command":"touch docs/rust-language.md"}"#
+        r#"{"command":"touch docs/config.md"}"#
     );
     let reconstructed_tool_call_id = calls[0].tool_call_id.as_str();
 
@@ -258,7 +258,7 @@ async fn resumed_tool_turn_preserves_tool_messages_for_followup_context() {
     assert_eq!(tool_result_message.name.as_deref(), Some("shell_run"));
     assert!(tool_result_message
         .content
-        .contains("touch docs/rust-language.md"));
+        .contains("touch docs/config.md"));
 }
 #[tokio::test]
 async fn provider_stream_metadata_persists_to_jsonl_events() {
