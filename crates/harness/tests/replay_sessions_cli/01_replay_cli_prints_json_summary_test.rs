@@ -51,6 +51,51 @@ fn replay_cli_prints_json_summary() {
     assert_eq!(summary["last_error"], "boom");
     assert_eq!(summary["tasks_in_flight"], serde_json::json!(["task_123"]));
 }
+
+#[test]
+fn replay_cli_uses_meta_mode_source_for_resumability() {
+    // arrange
+    let run_dir = tempdir().expect("tempdir");
+    write_events_jsonl(
+        run_dir.path(),
+        &resumable_finished_events("run_replay_meta_resumable"),
+    );
+    std::fs::write(
+        run_dir.path().join("meta.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "run_id": "run_replay_meta_resumable",
+            "run_name": "interactive",
+            "workspace_root": "/tmp/workspace",
+            "created_at": "1710000000000",
+            "config_digest": "test-digest",
+            "harness_version": "test",
+            "mode_source": "interactive_mock"
+        }))
+        .expect("serialize metadata"),
+    )
+    .expect("write metadata");
+
+    // act
+    let output = run_harness([
+        "replay",
+        "--session",
+        run_dir.path().to_str().expect("run dir utf-8"),
+        "--json",
+    ]);
+
+    // assert
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let summary: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("replay json output should parse");
+    assert_eq!(summary["mode_source"], "interactive_mock");
+    assert_eq!(summary["is_resumable"], true);
+    assert_eq!(summary["resume_disabled_reason"], serde_json::Value::Null);
+}
+
 #[test]
 fn replay_cli_prints_human_summary() {
     let run_dir = tempdir().expect("tempdir");
@@ -169,6 +214,29 @@ fn replay_cli_surfaces_recovery_story_details_from_resume_metadata() {
         summary["child_sessions"][0]["provider_model"],
         "openai/gpt-5.4-mini"
     );
+    assert_eq!(summary["child_sessions"][0]["route"]["requested_category"], "quick");
+    assert_eq!(summary["child_sessions"][0]["route"]["resolved_profile"], "general");
+    assert_eq!(
+        summary["child_sessions"][0]["route"]["prompt"]["status"],
+        "resolved_by_coordinator"
+    );
+    assert_eq!(
+        summary["child_sessions"][0]["route"]["model"]["model_ref"],
+        "openai/gpt-5.4-mini"
+    );
+    assert_eq!(
+        summary["child_sessions"][0]["route"]["permission_posture"]["task"],
+        "deny_by_toolset"
+    );
+    assert_eq!(
+        summary["child_sessions"][0]["route"]["fallback_chain"],
+        serde_json::json!(["quick", "general"])
+    );
+    assert_eq!(
+        summary["child_sessions"][0]["route"]["category_fallback_chain"],
+        serde_json::json!(["quick", "general"])
+    );
+    assert_eq!(summary["child_sessions"][0]["route"]["fallback"]["applied"], true);
     assert_eq!(
         summary["child_sessions"][0]["artifact_paths"][0],
         "artifacts/delegated/task-output.json"

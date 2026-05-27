@@ -12,6 +12,7 @@ use harness_core::proj::{
     ChildSessionTerminalState, RunStatus, SessionCatalogEntry, SessionCatalogMetadata,
 };
 use serde::Serialize;
+use serde_json::Value;
 
 use crate::cli_io::{load_events_from_run_dir, EVENTS_FILE_NAME, META_FILE_NAME};
 use crate::cli_labels::provider_model_label;
@@ -58,6 +59,8 @@ pub struct ReplayChildSessionSummary {
     pub provider_model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub latest_child_request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_session_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -205,8 +208,15 @@ pub fn summarize_session(run_dir: &Path) -> Result<ReplaySummary, String> {
 
     let projection = project_run_summary(events.iter()).map_err(|err| err.to_string())?;
     let run_id = events[0].run_id.clone();
-    let catalog = project_session_catalog_entry(events.iter(), &run_id, None, None, None)
-        .map_err(|err| err.to_string())?;
+    let (meta, _meta_error) = load_meta_lossy(run_dir);
+    let catalog = project_session_catalog_entry(
+        events.iter(),
+        &run_id,
+        meta.as_ref().map(|it| &it.catalog),
+        None,
+        None,
+    )
+    .map_err(|err| err.to_string())?;
     let run_name = run_started_event(&events).map(|data| data.run_name.clone());
     let (artifacts, child_sessions) = summarize_recovery_story(run_dir, &events, &run_id);
     let teams = summarize_teams(&events);
@@ -396,6 +406,7 @@ fn summarize_recovery_story(
 
     let mut child_artifact_paths: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut child_tool_call_ids: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut child_routes: BTreeMap<String, Value> = BTreeMap::new();
     if let Some(resume_plan) = resume_plan.as_ref() {
         for (tool_call_id, tool_call) in &resume_plan.tool_calls {
             let Some(metadata) = tool_call.metadata.as_ref() else {
@@ -412,6 +423,17 @@ fn summarize_recovery_story(
                 .entry(child_session_id.clone())
                 .or_default()
                 .insert(tool_call_id.clone());
+            if let Some(route) = tool_call.output_json.as_ref().and_then(|output_json| {
+                task_output_route_for_child(
+                    output_json,
+                    child_session_id,
+                    lineage.child_request_id.as_deref(),
+                )
+            }) {
+                child_routes
+                    .entry(child_session_id.clone())
+                    .or_insert(route);
+            }
             for artifact_ref in &metadata.artifact_refs {
                 child_artifact_paths
                     .entry(child_session_id.clone())
@@ -441,6 +463,7 @@ fn summarize_recovery_story(
                         child.model_id.as_deref(),
                     ),
                     latest_child_request_id: child.latest_child_request_id.clone(),
+                    route: child_routes.remove(child_session_id),
                     parent_session_id: child.parent_session_id.clone(),
                     parent_tool_call_id: child.parent_tool_call_id.clone(),
                     parent_task_id: child.parent_task_id.clone(),
@@ -490,6 +513,38 @@ fn summarize_recovery_story(
     child_sessions.sort_by(|left, right| left.child_session_id.cmp(&right.child_session_id));
 
     (artifacts, child_sessions)
+}
+
+fn task_output_route_for_child(
+    output_json: &Value,
+    child_session_id: &str,
+    child_request_id: Option<&str>,
+) -> Option<Value> {
+    let route = output_json.get("route")?.clone();
+    let output_child_session_id = output_string_field(output_json, "child_session_id")
+        .or_else(|| output_string_field(output_json, "session_id"))
+        .or_else(|| output_string_field(output_json, "task_id"));
+    let output_child_request_id = output_string_field(output_json, "child_request_id")
+        .or_else(|| output_string_field(output_json, "request_id"));
+
+    let session_matches = output_child_session_id
+        .as_deref()
+        .is_some_and(|value| value == child_session_id);
+    let request_matches = child_request_id.is_some_and(|request_id| {
+        output_child_request_id
+            .as_deref()
+            .is_some_and(|value| value == request_id)
+    });
+    let output_has_no_child_selector =
+        output_child_session_id.is_none() && output_child_request_id.is_none();
+    (session_matches || request_matches || output_has_no_child_selector).then_some(route)
+}
+
+fn output_string_field(output_json: &Value, key: &str) -> Option<String> {
+    output_json
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::to_string)
 }
 
 fn child_session_next_actions(
