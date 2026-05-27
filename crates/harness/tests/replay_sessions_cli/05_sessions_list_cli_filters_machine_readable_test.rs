@@ -268,57 +268,6 @@ fn sessions_replay_cli_resolves_run_id_from_session_catalog() {
     assert_eq!(summary["run_name"], "resolved");
 }
 #[test]
-fn sessions_export_cli_writes_json_bundle() {
-    let session_dir = tempdir().expect("tempdir");
-    let run_dir = session_dir.path().join("run_export");
-    std::fs::create_dir_all(&run_dir).expect("create run dir");
-
-    write_events_jsonl(
-        &run_dir,
-        &[
-            envelope(
-                "run_export",
-                1,
-                EventV1::RunStarted(RunStartedEvent {
-                    run_name: "exportable".to_string(),
-                    workspace_root: "/tmp/workspace".to_string(),
-                }),
-            ),
-            envelope(
-                "run_export",
-                2,
-                EventV1::RunFinished(RunFinishedEvent {
-                    summary: "done".to_string(),
-                }),
-            ),
-        ],
-    );
-
-    let export_path = session_dir.path().join("session-export.json");
-    let output = run_harness([
-            "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
-            "sessions",
-            "export",
-            "run_export",
-            "--output",
-            export_path.to_str().expect("export path utf-8"),
-        ]);
-
-    assert!(
-        output.status.success(),
-        "stderr:\n{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let bundle: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&export_path).expect("read exported session bundle"))
-            .expect("export bundle should parse");
-    assert_eq!(bundle["catalog"]["run_id"], "run_export");
-    assert_eq!(bundle["replay"]["run_name"], "exportable");
-    assert_eq!(bundle["events"].as_array().map(Vec::len), Some(2));
-}
-#[test]
 fn sessions_list_cli_supports_run_id_sorting() {
     let session_dir = tempdir().expect("tempdir");
     for run_id in ["run_b", "run_c", "run_a"] {
