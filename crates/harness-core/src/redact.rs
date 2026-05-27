@@ -8,23 +8,112 @@ pub trait Redactor {
 #[derive(Debug)]
 pub struct DefaultRedactor {
     api_key_re: Regex,
+    google_api_key_re: Regex,
+    aws_access_key_re: Regex,
+    github_pat_re: Regex,
+    github_token_re: Regex,
     bearer_re: Regex,
+    cookie_header_re: Regex,
+    pem_private_key_re: Regex,
+    url_userinfo_re: Regex,
+    sensitive_query_re: Regex,
 }
 
 impl Default for DefaultRedactor {
     fn default() -> Self {
         Self {
-            api_key_re: Regex::new(r"sk-[A-Za-z0-9]{10,}").expect("valid api key regex"),
-            bearer_re: Regex::new(r"Bearer\s+[A-Za-z0-9._\-]+").expect("valid bearer regex"),
+            api_key_re: Regex::new(r"(^|[^A-Za-z0-9])(sk-[A-Za-z0-9._-]{10,})")
+                .expect("valid api key regex"),
+            google_api_key_re: Regex::new(r"AIza[0-9A-Za-z_-]{20,}")
+                .expect("valid google api key regex"),
+            aws_access_key_re: Regex::new(r"AKIA[0-9A-Z]{16}")
+                .expect("valid aws access key regex"),
+            github_pat_re: Regex::new(r"github_pat_[A-Za-z0-9_]{20,}")
+                .expect("valid github pat regex"),
+            github_token_re: Regex::new(r"ghp_[A-Za-z0-9]{20,}")
+                .expect("valid github token regex"),
+            bearer_re: Regex::new(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+")
+                .expect("valid bearer regex"),
+            cookie_header_re: Regex::new(r"(?i)\b(?:Set-Cookie|Cookie):\s*[^\r\n]+")
+                .expect("valid cookie header regex"),
+            pem_private_key_re: Regex::new(
+                r"(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
+            )
+            .expect("valid pem private key regex"),
+            url_userinfo_re: Regex::new(r"(?i)(https?://)[^/@\s]+@")
+                .expect("valid url userinfo regex"),
+            sensitive_query_re: Regex::new(
+                r"(?i)([?&](?:api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|token|password|secret)=)[^&\s]+",
+            )
+            .expect("valid sensitive query regex"),
         }
     }
 }
 
+impl DefaultRedactor {
+    pub fn secret_finding_count(&self, s: &str) -> usize {
+        non_redacted_match_count(&self.api_key_re, s)
+            + non_redacted_match_count(&self.google_api_key_re, s)
+            + non_redacted_match_count(&self.aws_access_key_re, s)
+            + non_redacted_match_count(&self.github_pat_re, s)
+            + non_redacted_match_count(&self.github_token_re, s)
+            + non_redacted_match_count(&self.bearer_re, s)
+            + non_redacted_match_count(&self.cookie_header_re, s)
+            + non_redacted_match_count(&self.pem_private_key_re, s)
+            + non_redacted_match_count(&self.url_userinfo_re, s)
+            + non_redacted_match_count(&self.sensitive_query_re, s)
+    }
+}
+
+fn non_redacted_match_count(regex: &Regex, s: &str) -> usize {
+    regex
+        .find_iter(s)
+        .filter(|matched| !is_redacted_match_without_raw_prefix(matched.as_str()))
+        .count()
+}
+
+fn is_redacted_match_without_raw_prefix(text: &str) -> bool {
+    let Some(marker_start) = text.find("[REDACTED") else {
+        return false;
+    };
+    let prefix = text[..marker_start].trim_end().to_ascii_lowercase();
+    if prefix.ends_with('=') || prefix.ends_with("://") {
+        return true;
+    }
+    prefix.ends_with("cookie:") || prefix.ends_with("set-cookie:")
+}
+
 impl Redactor for DefaultRedactor {
     fn redact_text(&self, s: &str) -> String {
-        let without_keys = self.api_key_re.replace_all(s, "[REDACTED_API_KEY]");
-        self.bearer_re
-            .replace_all(without_keys.as_ref(), "Bearer [REDACTED]")
+        let without_pems = self
+            .pem_private_key_re
+            .replace_all(s, "[REDACTED_PRIVATE_KEY]");
+        let without_cookies = self
+            .cookie_header_re
+            .replace_all(without_pems.as_ref(), "Cookie: [REDACTED_COOKIE]");
+        let without_bearers = self
+            .bearer_re
+            .replace_all(without_cookies.as_ref(), "Bearer [REDACTED]");
+        let without_keys = self
+            .api_key_re
+            .replace_all(without_bearers.as_ref(), "${1}[REDACTED_API_KEY]");
+        let without_google_keys = self
+            .google_api_key_re
+            .replace_all(without_keys.as_ref(), "[REDACTED_API_KEY]");
+        let without_aws_keys = self
+            .aws_access_key_re
+            .replace_all(without_google_keys.as_ref(), "[REDACTED_AWS_ACCESS_KEY]");
+        let without_github_pats = self
+            .github_pat_re
+            .replace_all(without_aws_keys.as_ref(), "[REDACTED_GITHUB_TOKEN]");
+        let without_github_tokens = self
+            .github_token_re
+            .replace_all(without_github_pats.as_ref(), "[REDACTED_GITHUB_TOKEN]");
+        let without_userinfo = self
+            .url_userinfo_re
+            .replace_all(without_github_tokens.as_ref(), "${1}[REDACTED]@");
+        self.sensitive_query_re
+            .replace_all(without_userinfo.as_ref(), "${1}[REDACTED]")
             .into_owned()
     }
 }
@@ -45,8 +134,97 @@ pub fn redact_map<R: Redactor + ?Sized>(
     map: &Map<String, Value>,
 ) -> Map<String, Value> {
     map.iter()
-        .map(|(k, v)| (k.clone(), redact_value(redactor, v)))
+        .map(|(k, v)| {
+            let key = redactor.redact_text(k);
+            let value = if let Some(marker) = redaction_marker_for_sensitive_key(k) {
+                match v {
+                    Value::String(_) => Value::String(marker.to_string()),
+                    _ => redact_value(redactor, v),
+                }
+            } else {
+                redact_value(redactor, v)
+            };
+            (key, value)
+        })
         .collect()
+}
+
+fn redaction_marker_for_sensitive_key(key: &str) -> Option<&'static str> {
+    let normalized = key
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(|character| character.to_lowercase())
+        .collect::<String>();
+    if normalized == "credentials" {
+        return None;
+    }
+    let segments = key
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .filter(|segment| !segment.is_empty())
+        .map(|segment| segment.to_ascii_lowercase())
+        .collect::<Vec<_>>();
+
+    if normalized == "apikey"
+        || normalized.ends_with("apikey")
+        || adjacent_segments(&segments, "api", "key")
+    {
+        return Some("[REDACTED_API_KEY]");
+    }
+    if normalized == "auth" || normalized.contains("authorization") {
+        return Some("Bearer [REDACTED]");
+    }
+    if normalized.contains("cookie") {
+        return Some("[REDACTED_COOKIE]");
+    }
+    if normalized.contains("privatekey") || adjacent_segments(&segments, "private", "key") {
+        return Some("[REDACTED_PRIVATE_KEY]");
+    }
+    if normalized.contains("password")
+        || normalized.contains("passwd")
+        || normalized.contains("secret")
+        || normalized.contains("token")
+        || normalized.contains("credential")
+        || credential_key_segments(&segments)
+    {
+        return Some("[REDACTED_SECRET]");
+    }
+
+    None
+}
+
+fn adjacent_segments(segments: &[String], left: &str, right: &str) -> bool {
+    segments
+        .windows(2)
+        .any(|window| window[0] == left && window[1] == right)
+}
+
+fn key_segments_contain(segments: &[String], needle: &str) -> bool {
+    segments.iter().any(|segment| segment == needle)
+}
+
+fn credential_key_segments(segments: &[String]) -> bool {
+    if !key_segments_contain(segments, "key") {
+        return false;
+    }
+    segments.iter().any(|segment| {
+        matches!(
+            segment.as_str(),
+            "access"
+                | "api"
+                | "auth"
+                | "bearer"
+                | "client"
+                | "credential"
+                | "github"
+                | "google"
+                | "openai"
+                | "private"
+                | "provider"
+                | "secret"
+                | "token"
+                | "aws"
+        )
+    })
 }
 
 #[cfg(test)]
@@ -101,6 +279,123 @@ mod tests {
         let redacted_map = redact_map(&redactor, map);
         let as_map_text = serde_json::Value::Object(redacted_map).to_string();
         assert!(!as_map_text.contains("sk-ABCDE12345ABCDE"));
+    }
+
+    #[test]
+    fn redacts_support_bundle_secret_shapes() {
+        // arrange
+        let redactor = DefaultRedactor::default();
+        let value = json!({
+            "base_url": "https://user:pass@example.test/v1?api_key=AIzaSyA1234567890abcdefghi",
+            "summary": "sk-proj-output_secret_0123456789abcdef Cookie: sid=sessionid-abc123\n-----BEGIN PRIVATE KEY-----\nprivate-key-material\n-----END PRIVATE KEY-----\nAKIA1234567890ABCDEF",
+            "authorization": "Bearer abc.def-ghi_123",
+            "mixed_header": "Authorization: bearer abc+/def==~ ghp_1234567890ABCDEFGHIJ github_pat_1234567890ABCDEFGHIJ",
+            "token": "plain-token-value",
+            "password": "hunter2",
+            "sk-proj-key_name_0123456789abcdef": "secret in key name"
+        });
+
+        // act
+        let redacted = redact_value(&redactor, &value);
+        let text = redacted.to_string();
+
+        // assert
+        for forbidden in [
+            "user:pass@",
+            "api_key=AIzaSyA1234567890abcdefghi",
+            "sk-proj-output_secret_0123456789abcdef",
+            "sessionid-abc123",
+            "BEGIN PRIVATE KEY",
+            "private-key-material",
+            "AKIA1234567890ABCDEF",
+            "Bearer abc.def-ghi_123",
+            "bearer abc+/def==~",
+            "abc+/def==~",
+            "ghp_1234567890ABCDEFGHIJ",
+            "github_pat_1234567890ABCDEFGHIJ",
+            "plain-token-value",
+            "hunter2",
+            "sk-proj-key_name_0123456789abcdef",
+        ] {
+            assert!(
+                !text.contains(forbidden),
+                "redacted value leaked {forbidden}"
+            );
+        }
+        assert_eq!(redactor.secret_finding_count(&text), 0);
+        assert!(text.contains("[REDACTED_API_KEY]"));
+        assert!(text.contains("[REDACTED_PRIVATE_KEY]"));
+        assert!(text.contains("[REDACTED_GITHUB_TOKEN]"));
+        assert!(text.contains("[REDACTED_SECRET]"));
+    }
+
+    #[test]
+    fn redacts_composite_sensitive_key_names() {
+        // arrange
+        let redactor = DefaultRedactor::default();
+        let value = json!({
+            "client_secret": "plain-client-secret-value",
+            "github_token": "plain-github-token-value",
+            "x-api-key": "plain-api-key-value",
+            "openai_api_key": "plain-openai-key-value",
+            "secret_access_key": "plain-access-key-value",
+            "password_hash": "plain-password-hash-value",
+            "metadata": "keep me"
+        });
+
+        // act
+        let redacted = redact_value(&redactor, &value);
+        let text = redacted.to_string();
+
+        // assert
+        for forbidden in [
+            "plain-client-secret-value",
+            "plain-github-token-value",
+            "plain-api-key-value",
+            "plain-openai-key-value",
+            "plain-access-key-value",
+            "plain-password-hash-value",
+        ] {
+            assert!(
+                !text.contains(forbidden),
+                "redacted value leaked {forbidden}"
+            );
+        }
+        assert!(text.contains("keep me"));
+    }
+
+    #[test]
+    fn preserves_typed_token_count_fields() {
+        // arrange
+        let redactor = DefaultRedactor::default();
+        let value = json!({
+            "usage": {
+                "input_tokens": 123,
+                "output_tokens": 45,
+                "token": "plain-token-secret"
+            }
+        });
+
+        // act
+        let redacted = redact_value(&redactor, &value);
+
+        // assert
+        assert_eq!(redacted["usage"]["input_tokens"], 123);
+        assert_eq!(redacted["usage"]["output_tokens"], 45);
+        assert_eq!(redacted["usage"]["token"], "[REDACTED_SECRET]");
+    }
+
+    #[test]
+    fn scanner_counts_raw_cookie_even_when_later_marker_exists() {
+        // arrange
+        let redactor = DefaultRedactor::default();
+        let text = r#"{"summary":"Cookie: sid=raw-session","other":"[REDACTED_API_KEY]"}"#;
+
+        // act
+        let finding_count = redactor.secret_finding_count(text);
+
+        // assert
+        assert_eq!(finding_count, 1);
     }
 
     struct SecretScan;

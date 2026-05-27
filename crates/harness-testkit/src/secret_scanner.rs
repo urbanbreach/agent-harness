@@ -183,6 +183,7 @@ fn read_dir_sorted(dir: &Path) -> io::Result<Vec<PathBuf>> {
 fn looks_like_credential_name(name: &str) -> bool {
     let upper = name.to_ascii_uppercase();
     [
+        "KEY",
         "TOKEN",
         "SECRET",
         "PASSWORD",
@@ -225,11 +226,12 @@ mod tests {
     fn env_credential_patterns_only_use_credential_named_values() {
         let patterns = env_credential_patterns([
             ("OPENAI_API_KEY", "sk-live-secret"),
+            ("OPENAI_KEY", "plain-env-secret-value"),
             ("ORDINARY_VALUE", "sk-live-secret"),
             ("SHORT_TOKEN", "short"),
         ]);
 
-        assert_eq!(patterns.len(), 1);
+        assert_eq!(patterns.len(), 2);
         let temp = tempfile::tempdir().expect("tempdir");
         let cassette = temp.path().join("cassette.json");
         std::fs::write(&cassette, "sk-live-secret").expect("write cassette");
@@ -237,5 +239,10 @@ mod tests {
         let findings = scan_directory_tree_for_secrets(temp.path(), &patterns).expect("scan");
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].pattern, "env:OPENAI_API_KEY");
+
+        std::fs::write(&cassette, "plain-env-secret-value").expect("write generic key cassette");
+        let findings = scan_directory_tree_for_secrets(temp.path(), &patterns).expect("scan");
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].pattern, "env:OPENAI_KEY");
     }
 }
