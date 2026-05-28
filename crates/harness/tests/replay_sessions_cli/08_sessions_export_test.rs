@@ -229,11 +229,30 @@ fn sessions_export_cli_support_includes_readiness_and_config_summaries() {
       "enable": true,
       "model": "test/gpt-5.4-mini"
     }
+  },
+  "skills": {
+    "disabled": ["skill:project:disabled-support"]
   }
 }
 "#,
     )
     .expect("write config");
+    let skill_dir = workspace.path().join(".agent-harness/skills/support-skill");
+    std::fs::create_dir_all(&skill_dir).expect("create support skill dir");
+    std::fs::write(
+        skill_dir.join("SKILL.md"),
+        "---\nname: support-skill\ndescription: Support export compact metadata\n---\n\nSUPPORT SKILL BODY SENTINEL\n",
+    )
+    .expect("write support skill");
+    let disabled_skill_dir = workspace
+        .path()
+        .join(".agent-harness/skills/disabled-support");
+    std::fs::create_dir_all(&disabled_skill_dir).expect("create disabled support skill dir");
+    std::fs::write(
+        disabled_skill_dir.join("SKILL.md"),
+        "---\nname: disabled-support\ndescription: Disabled support export metadata\n---\n\nDISABLED SUPPORT BODY SENTINEL\n",
+    )
+    .expect("write disabled support skill");
 
     let session_dir = workspace.path().join(".agent-harness/sessions");
     let run_dir = session_dir.join("run_export_support_readiness");
@@ -286,6 +305,8 @@ fn sessions_export_cli_support_includes_readiness_and_config_summaries() {
 
     let export_text = std::fs::read_to_string(&export_path).expect("read support export");
     assert!(!export_text.contains("sk-AbCdEf0123456789"));
+    assert!(!export_text.contains("SUPPORT SKILL BODY SENTINEL"));
+    assert!(!export_text.contains("DISABLED SUPPORT BODY SENTINEL"));
     let bundle: serde_json::Value =
         serde_json::from_str(&export_text).expect("support export bundle should parse");
 
@@ -304,6 +325,62 @@ fn sessions_export_cli_support_includes_readiness_and_config_summaries() {
         resolved_routes["details"]["skills"]["no_network_probes"],
         true
     );
+    assert_eq!(
+        resolved_routes["details"]["skills"]["catalog_source"],
+        "harness_tools::skill_catalog"
+    );
+    assert_eq!(
+        resolved_routes["details"]["skills"]["readiness"]["disabled_count"],
+        1
+    );
+    assert!(resolved_routes["details"]["skills"]["catalog"]["entries"]
+        .as_array()
+        .expect("doctor skill catalog entries")
+        .iter()
+        .any(|entry| entry["name"] == "support-skill" && entry["body_loaded"] == false));
+    assert!(resolved_routes["details"]["skills"]["catalog"]["entries"]
+        .as_array()
+        .expect("doctor skill catalog entries")
+        .iter()
+        .any(|entry| {
+            entry["name"] == "disabled-support"
+                && entry["stable_id"] == "skill:project:disabled-support"
+                && entry["status"] == "disabled"
+                && entry["body_loaded"] == false
+        }));
+    assert_eq!(
+        bundle["support"]["skill_catalog_summary"]["source"],
+        "harness_tools::skill_catalog"
+    );
+    assert_eq!(
+        bundle["support"]["skill_catalog_summary"]["entry_count"],
+        2
+    );
+    assert_eq!(
+        bundle["support"]["skill_catalog_summary"]["disabled_count"],
+        1
+    );
+    assert!(bundle["support"]["skill_catalog_summary"]["entries"]
+        .as_array()
+        .expect("support skill catalog entries")
+        .iter()
+        .any(|entry| {
+            entry["name"] == "support-skill"
+                && entry["stable_id"] == "skill:project:support-skill"
+                && entry["status"] == "loadable"
+                && entry["body_loaded"] == false
+        }));
+    assert!(bundle["support"]["skill_catalog_summary"]["entries"]
+        .as_array()
+        .expect("support skill catalog entries")
+        .iter()
+        .any(|entry| {
+            entry["name"] == "disabled-support"
+                && entry["stable_id"] == "skill:project:disabled-support"
+                && entry["status"] == "disabled"
+                && entry["source_scope"] == "project"
+                && entry["body_loaded"] == false
+        }));
     assert_eq!(bundle["support"]["config_summary"]["loaded"], true);
     assert_eq!(bundle["support"]["config_summary"]["default_agent"], "build");
     assert_eq!(

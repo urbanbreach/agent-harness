@@ -17,8 +17,8 @@ use harness_core::session_lineage::{
     ChildSessionMaterializationSourceKind, SessionLineageNode, StableSessionPrefix,
 };
 use harness_tools::{
-    coordinator_registry_with_mcp_and_editing, native_tool_catalog_entries,
-    EditingToolSurfaceConfig,
+    coordinator_registry_with_mcp_and_editing, discover_skill_catalog_with_config,
+    native_tool_catalog_entries, EditingToolSurfaceConfig, SkillCatalogStatus,
 };
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -266,6 +266,7 @@ struct SessionExportSupport {
     config_summary: Value,
     provider_summary: Value,
     agent_catalog_summary: Value,
+    skill_catalog_summary: Value,
     native_tool_catalog_summary: Value,
     session_tool_readiness: Value,
     route_metadata: Vec<SessionExportRouteMetadata>,
@@ -278,6 +279,7 @@ struct SessionExportReadiness {
     config_summary: Value,
     provider_summary: Value,
     agent_catalog_summary: Value,
+    skill_catalog_summary: Value,
     native_tool_catalog_summary: Value,
     session_tool_readiness: Value,
     credential_values: Vec<String>,
@@ -758,6 +760,7 @@ fn session_export_support(
         config_summary: readiness.config_summary,
         provider_summary: readiness.provider_summary,
         agent_catalog_summary: readiness.agent_catalog_summary,
+        skill_catalog_summary: readiness.skill_catalog_summary,
         native_tool_catalog_summary: readiness.native_tool_catalog_summary,
         session_tool_readiness: readiness.session_tool_readiness,
         route_metadata: session_export_route_metadata(events, replay, catalog),
@@ -780,10 +783,14 @@ fn session_export_readiness(
         }
     };
     if config_path.is_none() {
-        if let Some(workspace_root) = session_workspace_root {
-            context = context.with_current_dir(workspace_root);
+        if let Some(workspace_root) = session_workspace_root.as_ref() {
+            context = context.with_current_dir(workspace_root.clone());
         }
     }
+    let skill_workspace_root = session_workspace_root
+        .as_deref()
+        .unwrap_or(context.discovery.current_dir.as_path())
+        .to_path_buf();
 
     let loaded =
         match harness_core::config::load_resolved_config_with_context(config_path, &context) {
@@ -807,12 +814,16 @@ fn session_export_readiness(
     let credential_values = session_export_config_credential_values(&config, deps);
 
     SessionExportReadiness {
-        doctor_json: crate::doctor::support_report_json(config_display.clone(), &config, &|name| {
-            deps.env_var_is_set(name)
-        }),
+        doctor_json: crate::doctor::support_report_json(
+            config_display.clone(),
+            &config,
+            &skill_workspace_root,
+            &|name| deps.env_var_is_set(name),
+        ),
         config_summary: session_export_config_summary(&config_display, &paths, &config),
         provider_summary: session_export_provider_summary(&config),
         agent_catalog_summary: session_export_agent_catalog_summary(&config),
+        skill_catalog_summary: session_export_skill_catalog_summary(&skill_workspace_root, &config),
         native_tool_catalog_summary: session_export_native_tool_catalog_summary(&config),
         session_tool_readiness: session_export_session_tool_readiness(&config),
         credential_values,
@@ -842,6 +853,12 @@ fn unavailable_session_export_readiness(reason: impl Into<String>) -> SessionExp
         agent_catalog_summary: json!({
             "loaded": false,
             "source": "harness_core::agent_catalog",
+            "no_network_probes": true,
+            "reason": reason,
+        }),
+        skill_catalog_summary: json!({
+            "loaded": false,
+            "source": "harness_tools::skill_catalog",
             "no_network_probes": true,
             "reason": reason,
         }),
@@ -990,6 +1007,65 @@ fn session_export_agent_catalog_summary(config: &HarnessConfig) -> Value {
         "entries": catalog.entries,
         "no_network_probes": true,
     })
+}
+
+fn session_export_skill_catalog_summary(workspace_root: &Path, config: &HarnessConfig) -> Value {
+    match discover_skill_catalog_with_config(workspace_root, &config.skills) {
+        Ok(catalog) => {
+            let loadable_count = catalog
+                .entries
+                .iter()
+                .filter(|entry| entry.status == SkillCatalogStatus::Loadable)
+                .count();
+            let denied_count = catalog
+                .entries
+                .iter()
+                .filter(|entry| entry.status == SkillCatalogStatus::Denied)
+                .count();
+            let disabled_count = catalog
+                .entries
+                .iter()
+                .filter(|entry| entry.status == SkillCatalogStatus::Disabled)
+                .count();
+            let malformed_count = catalog
+                .entries
+                .iter()
+                .filter(|entry| entry.status == SkillCatalogStatus::Malformed)
+                .count();
+            let shadowed_count = catalog
+                .entries
+                .iter()
+                .filter(|entry| entry.status == SkillCatalogStatus::Shadowed)
+                .count();
+            json!({
+                "loaded": true,
+                "source": "harness_tools::skill_catalog",
+                "workspace_root": workspace_root.display().to_string(),
+                "entry_count": catalog.entries.len(),
+                "loadable_count": loadable_count,
+                "denied_count": denied_count,
+                "disabled_count": disabled_count,
+                "malformed_count": malformed_count,
+                "shadowed_count": shadowed_count,
+                "entries": catalog.entries,
+                "no_network_probes": true,
+            })
+        }
+        Err(err) => json!({
+            "loaded": false,
+            "source": "harness_tools::skill_catalog",
+            "workspace_root": workspace_root.display().to_string(),
+            "entry_count": 0,
+            "loadable_count": 0,
+            "denied_count": 0,
+            "disabled_count": 0,
+            "malformed_count": 0,
+            "shadowed_count": 0,
+            "entries": [],
+            "reason": err.to_string(),
+            "no_network_probes": true,
+        }),
+    }
 }
 
 fn session_export_native_tool_catalog_summary(config: &HarnessConfig) -> Value {
@@ -1924,6 +2000,7 @@ mod tests {
                 config_summary: json!({}),
                 provider_summary: json!({}),
                 agent_catalog_summary: json!({}),
+                skill_catalog_summary: json!({}),
                 native_tool_catalog_summary: json!({}),
                 session_tool_readiness: json!({}),
                 route_metadata: Vec::new(),
