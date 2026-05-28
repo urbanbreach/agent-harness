@@ -80,6 +80,11 @@ fn doctor_cli_emits_json_report() {
         .expect("checks array")
         .iter()
         .any(|check| { check["name"] == "model_references" && check["status"] == "pass" }));
+    assert!(report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .any(|check| { check["name"] == "native_tool_catalog" && check["status"] == "pass" }));
 }
 
 #[test]
@@ -182,6 +187,7 @@ fn doctor_cli_json_reports_resolved_route_metadata() {
         "harness_core::coord::task_category_fallback_profile"
     );
 }
+
 #[test]
 fn doctor_cli_fails_invalid_category_routes_even_when_some_are_missing() {
     let temp = tempdir().expect("tempdir");

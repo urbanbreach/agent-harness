@@ -10,6 +10,11 @@ mod part_02_doctor_cli_reports_shipped_orchestration_health_test {
     include!("config_schema_cli/02_doctor_cli_reports_shipped_orchestration_health_test.rs");
 }
 
+mod part_02b_doctor_cli_reports_native_tool_catalog_readiness_test {
+    use super::*;
+    include!("config_schema_cli/02b_doctor_cli_reports_native_tool_catalog_readiness_test.rs");
+}
+
 mod part_03_config_validate_cli_loads_separate_tui_test {
     use super::*;
     include!("config_schema_cli/03_config_validate_cli_loads_separate_tui_test.rs");
