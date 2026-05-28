@@ -31,7 +31,7 @@ use harness_core::session_lineage::{
 };
 use harness_core::session_title::create_default_title;
 use harness_core::store::{EventStore, EventStoreError};
-use harness_tools::coordinator_registry;
+use harness_tools::{coordinator_registry, discover_skill_catalog, SkillCatalogEntry};
 use harness_tui::app::{
     set_pending_live_launch_metadata, set_pending_live_prompt_auto_submit, LaunchMetadata,
     ModelOption, SessionHistoryEntry, ToggleEntryConfig, ToggleEntryKind, TogglesConfig,
@@ -504,7 +504,7 @@ fn resolve_live_settings(
     } else {
         launch_metadata
     };
-    let toggles = runtime_toggles_config(live_config.as_ref());
+    let toggles = runtime_toggles_config(live_config.as_ref(), &workspace_root);
 
     Ok(LiveSettings {
         config: live_config,
@@ -520,11 +520,16 @@ fn resolve_live_settings(
     })
 }
 
-fn runtime_toggles_config(config: Option<&HarnessConfig>) -> TogglesConfig {
+fn runtime_toggles_config(config: Option<&HarnessConfig>, workspace_root: &Path) -> TogglesConfig {
     let mut toggles = TogglesConfig::default();
     let Some(config) = config else {
         return toggles;
     };
+
+    let skill_catalog_entries = discover_skill_catalog(workspace_root)
+        .ok()
+        .map(|catalog| catalog.entries)
+        .unwrap_or_default();
 
     for (name, profile) in &config.agents {
         if profile.hidden {
@@ -558,20 +563,23 @@ fn runtime_toggles_config(config: Option<&HarnessConfig>) -> TogglesConfig {
             });
         }
         if profile.tools.iter().any(|tool| tool == "skill") {
-            let skills = if config.skills.permissions.is_empty() {
-                vec!["skill loading".to_string()]
+            let skill_entries = if skill_catalog_entries.is_empty() {
+                fallback_skill_toggle_entries(config)
             } else {
-                config.skills.permissions.keys().cloned().collect()
+                skill_catalog_entries
+                    .iter()
+                    .map(skill_catalog_toggle_entry)
+                    .collect()
             };
-            for skill in skills {
+            for skill in skill_entries {
                 toggles.entries.push(ToggleEntryConfig {
                     kind: ToggleEntryKind::AgentSkill {
                         agent: name.clone(),
-                        skill: skill.clone(),
+                        skill: skill.id,
                     },
-                    label: format!("{name}: {skill}"),
-                    description: format!("Configured skill `{skill}` for `{name}`"),
-                    enabled: true,
+                    label: format!("{name}: {}", skill.label),
+                    description: skill.description,
+                    enabled: skill.enabled,
                 });
             }
         }
@@ -600,6 +608,58 @@ fn runtime_toggles_config(config: Option<&HarnessConfig>) -> TogglesConfig {
     }
 
     toggles
+}
+
+struct SkillToggleEntry {
+    id: String,
+    label: String,
+    description: String,
+    enabled: bool,
+}
+
+fn skill_catalog_toggle_entry(entry: &SkillCatalogEntry) -> SkillToggleEntry {
+    let mut description = format!(
+        "{} skill `{}` from {} root {}",
+        entry.status.as_str(),
+        entry.name,
+        entry.source_scope,
+        entry.root_path.display()
+    );
+    if let Some(reason) = entry.reason.as_deref() {
+        description.push_str(&format!(" ({reason})"));
+    } else if !entry.description.is_empty() {
+        description.push_str(&format!(": {}", entry.description));
+    }
+
+    SkillToggleEntry {
+        id: entry.stable_id.clone(),
+        label: entry.name.clone(),
+        description,
+        enabled: entry.loadable,
+    }
+}
+
+fn fallback_skill_toggle_entries(config: &HarnessConfig) -> Vec<SkillToggleEntry> {
+    if config.skills.permissions.is_empty() {
+        return vec![SkillToggleEntry {
+            id: "skill-loading".to_string(),
+            label: "skill loading".to_string(),
+            description: "Configured skill loading surface".to_string(),
+            enabled: true,
+        }];
+    }
+
+    config
+        .skills
+        .permissions
+        .keys()
+        .map(|pattern| SkillToggleEntry {
+            id: format!("permission:{pattern}"),
+            label: pattern.clone(),
+            description: format!("Configured skill permission pattern `{pattern}`"),
+            enabled: true,
+        })
+        .collect()
 }
 
 fn model_selection_state_path() -> Option<PathBuf> {
@@ -4110,6 +4170,89 @@ mod tests {
         assert_eq!(selection.provider, "default");
         assert_eq!(selection.model, "gpt-5.4-mini");
         assert_eq!(selection.variant.as_deref(), Some("xhigh"));
+    }
+
+    #[test]
+    fn runtime_toggles_report_compact_skill_catalog_states() {
+        let workspace = tempfile::tempdir().expect("workspace tempdir");
+        fs::create_dir_all(workspace.path().join(".git")).expect("git dir");
+        for (name, body) in [
+            ("ready-skill", "READY SKILL BODY SENTINEL"),
+            ("disabled-skill", "DISABLED SKILL BODY SENTINEL"),
+        ] {
+            let skill_dir = workspace.path().join(".agent-harness/skills").join(name);
+            fs::create_dir_all(&skill_dir).expect("skill dir");
+            fs::write(
+                skill_dir.join("SKILL.md"),
+                format!("---\nname: {name}\ndescription: {name} description\n---\n\n{body}\n"),
+            )
+            .expect("skill file");
+        }
+        let config = load_config_from_str(
+            r#"
+            {
+              providers: {
+                default: {
+                  type: "openai_compatible",
+                  base_url: "http://127.0.0.1:8317/v1",
+                  api_key: "test-key",
+                  models: { "gpt-5.4-mini": { display_name: "GPT-5.4 Mini" } }
+                }
+              },
+              agents: {
+                build: {
+                  description: "Implementation",
+                  system_prompt: "Implement carefully.",
+                  model_ref: "default:gpt-5.4-mini",
+                  tools: ["skill"]
+                }
+              },
+              default_agent: "build",
+              permissions: { defaults: { edit: "allow", shell: "allow", network: "allow" } },
+              runtime: { session_dir: ".agent-harness/sessions" },
+              integrations: { remote_search: { endpoint: "https://mcp.exa.ai/mcp" } },
+              skills: {
+                project_roots: [".agent-harness/skills"],
+                global_roots: [],
+                disabled: ["disabled-skill"]
+              }
+            }
+            "#,
+        )
+        .expect("config should parse");
+
+        let toggles = runtime_toggles_config(Some(&config), workspace.path());
+        let ready = toggles
+            .entries
+            .iter()
+            .find(|entry| {
+                matches!(&entry.kind, ToggleEntryKind::AgentSkill { agent, skill }
+                    if agent == "build" && skill == "skill:project:ready-skill")
+            })
+            .expect("ready skill toggle");
+        assert_eq!(ready.label, "build: ready-skill");
+        assert!(ready.description.contains("loadable skill `ready-skill`"));
+        assert!(ready.description.contains("project root"));
+        assert!(ready.enabled);
+
+        let disabled = toggles
+            .entries
+            .iter()
+            .find(|entry| {
+                matches!(&entry.kind, ToggleEntryKind::AgentSkill { agent, skill }
+                    if agent == "build" && skill == "skill:project:disabled-skill")
+            })
+            .expect("disabled skill toggle");
+        assert_eq!(disabled.label, "build: disabled-skill");
+        assert!(disabled
+            .description
+            .contains("disabled skill `disabled-skill`"));
+        assert!(disabled.description.contains("disabled by skills.disabled"));
+        assert!(!disabled.enabled);
+
+        let rendered = format!("{toggles:?}");
+        assert!(!rendered.contains("READY SKILL BODY SENTINEL"));
+        assert!(!rendered.contains("DISABLED SKILL BODY SENTINEL"));
     }
 
     #[test]
