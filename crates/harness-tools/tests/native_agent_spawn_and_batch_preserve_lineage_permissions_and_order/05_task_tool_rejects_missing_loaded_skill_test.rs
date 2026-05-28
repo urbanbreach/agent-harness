@@ -37,6 +37,65 @@ async fn task_tool_rejects_missing_loaded_skill_before_child_spawn() {
         EventV1::AgentSpawned(payload) if payload.profile == "general"
     )));
 }
+#[tokio::test]
+async fn task_tool_rejects_unloadable_loaded_skills_before_child_spawn() {
+    let _registry_lock = skills_registry_test_lock().lock().await;
+    let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
+        disabled: vec!["skill:project:disabled-child".to_string()],
+        ..SkillsConfig::default()
+    });
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    write_skill_fixture(&workspace, "internal-secret");
+    write_skill_fixture(&workspace, "disabled-child");
+    write_skill_fixture_with_frontmatter(
+        &workspace,
+        "malformed-child",
+        "name: malformed-child\ndescription: Malformed child\ntool_permissions: edit",
+        "Malformed body.",
+    );
+
+    let (handle, run, worker_id) = spawn_run(&workspace).await;
+
+    for (name, expected_status) in [
+        ("internal-secret", "denied"),
+        ("disabled-child", "disabled"),
+        ("malformed-child", "malformed"),
+    ] {
+        let task_tool_call_id = handle
+            .request_tool_call(
+                worker_actor(&worker_id),
+                Some("deep".to_string()),
+                "task",
+                json!({
+                    "description": format!("Unloadable child skill {name}"),
+                    "prompt": "Try to inspect the repo",
+                    "subagent_type": "general",
+                    "run_in_background": false,
+                    "load_skills": [name]
+                }),
+            )
+            .await
+            .expect("request task tool");
+        wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
+
+        let events = read_events(&run.events_path);
+        let finished = find_finished(&events, &task_tool_call_id);
+        assert_eq!(finished.status, ToolCallStatus::Failed);
+        let summary = finished.output_summary.as_deref().expect("output summary");
+        assert!(summary.contains(name), "summary should name {name}: {summary}");
+        assert!(
+            summary.contains(expected_status),
+            "summary should include {expected_status}: {summary}"
+        );
+        assert!(!events.iter().any(|event| matches!(
+            &event.payload,
+            EventV1::AgentSpawned(payload) if payload.profile == "general"
+        )));
+    }
+
+    handle.stop_run().await.expect("stop run");
+}
 #[cfg(unix)]
 #[tokio::test]
 async fn task_tool_rejects_symlinked_loaded_skill_before_child_spawn() {
@@ -124,6 +183,18 @@ async fn task_tool_injects_loaded_skill_content_into_child_prompt() {
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
     let output = finished.output_json.expect("task structured output");
     assert_eq!(output["loaded_skills"][0]["name"], json!("task-skill"));
+    assert_eq!(
+        output["loaded_skills"][0]["stable_id"],
+        json!("skill:project:task-skill")
+    );
+    assert_eq!(output["loaded_skills"][0]["status"], json!("loadable"));
+    assert_eq!(output["loaded_skills"][0]["source_scope"], json!("project"));
+    assert_eq!(output["loaded_skills"][0]["body_loaded"], json!(false));
+    assert_eq!(
+        output["route"]["loaded_skills"][0]["stable_id"],
+        json!("skill:project:task-skill")
+    );
+    assert!(!output.to_string().contains("Task skill body marker."));
     assert_eq!(output["load_skills"], json!(["task-skill"]));
     assert!(output["next_actions"]
         .as_array()
@@ -151,6 +222,81 @@ async fn task_tool_injects_loaded_skill_content_into_child_prompt() {
     assert!(prompt.contains("Task skill body marker."));
     assert!(prompt.contains("Base directory for this skill: file://"));
     assert!(prompt.contains("Use the injected skill"));
+}
+
+#[tokio::test]
+async fn task_tool_preserves_requested_skill_order_and_deduplicates_loaded_context() {
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    write_skill_fixture_with_frontmatter(
+        &workspace,
+        "alpha-skill",
+        "name: alpha-skill\ndescription: Alpha skill description",
+        "Alpha body marker.",
+    );
+    write_skill_fixture_with_frontmatter(
+        &workspace,
+        "beta-skill",
+        "name: beta-skill\ndescription: Beta skill description",
+        "Beta body marker.",
+    );
+    let provider = Arc::new(TaskCallingProvider::default());
+    let (handle, run, worker_id) = spawn_run_with_provider(&workspace, provider.clone()).await;
+
+    let task_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "task",
+            json!({
+                "description": "Ordered skill child",
+                "prompt": "Use ordered skills",
+                "subagent_type": "general",
+                "run_in_background": false,
+                "load_skills": ["alpha-skill", "beta-skill", "alpha-skill"]
+            }),
+        )
+        .await
+        .expect("request task tool");
+    wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
+
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &task_tool_call_id);
+    assert_eq!(finished.status, ToolCallStatus::Succeeded);
+    let output = finished.output_json.expect("task structured output");
+    assert_eq!(
+        output["load_skills"],
+        json!(["alpha-skill", "beta-skill", "alpha-skill"])
+    );
+    assert_eq!(output["loaded_skills"].as_array().map(Vec::len), Some(2));
+    assert_eq!(output["loaded_skills"][0]["name"], json!("alpha-skill"));
+    assert_eq!(output["loaded_skills"][1]["name"], json!("beta-skill"));
+    assert_eq!(output["route"]["loaded_skills"][0]["name"], json!("alpha-skill"));
+    assert_eq!(output["route"]["loaded_skills"][1]["name"], json!("beta-skill"));
+    assert!(!output.to_string().contains("Alpha body marker."));
+    assert!(!output.to_string().contains("Beta body marker."));
+
+    let requests = provider.requests().await;
+    assert_eq!(requests.len(), 1, "expected only the child provider request");
+    let prompt = requests[0]
+        .messages
+        .iter()
+        .map(|message| message.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let alpha_position = prompt
+        .find("<skill_content name=\"alpha-skill\">")
+        .expect("alpha skill content");
+    let beta_position = prompt
+        .find("<skill_content name=\"beta-skill\">")
+        .expect("beta skill content");
+    let task_position = prompt.find("Use ordered skills").expect("task body");
+    assert!(alpha_position < beta_position);
+    assert!(beta_position < task_position);
+    assert_eq!(
+        prompt.matches("<skill_content name=\"alpha-skill\">").count(),
+        1
+    );
 }
 #[tokio::test]
 async fn batch_tool_accepts_args_alias_on_real_tool_path() {

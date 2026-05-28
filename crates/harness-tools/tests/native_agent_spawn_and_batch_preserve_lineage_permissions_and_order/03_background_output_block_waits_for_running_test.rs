@@ -2,6 +2,12 @@
 async fn background_output_block_waits_for_running_child_completion() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
+    write_skill_fixture_with_frontmatter(
+        &workspace,
+        "background-skill",
+        "name: background-skill\ndescription: Background skill description",
+        "BACKGROUND SKILL BODY SENTINEL",
+    );
 
     let (handle, run, worker_id) = spawn_run_with_provider(
         &workspace,
@@ -19,7 +25,7 @@ async fn background_output_block_waits_for_running_child_completion() {
                 "description": "Delayed background child",
                 "prompt": "Return a delayed completed result",
                 "run_in_background": true,
-                "load_skills": []
+                "load_skills": ["background-skill"]
             }),
         )
         .await
@@ -29,6 +35,14 @@ async fn background_output_block_waits_for_running_child_completion() {
     let task_events = read_events(&run.events_path);
     let task_finished = find_finished(&task_events, &task_tool_call_id);
     let task_output = task_finished.output_json.expect("task structured output");
+    assert_eq!(
+        task_output["loaded_skills"][0]["stable_id"],
+        json!("skill:project:background-skill")
+    );
+    assert_eq!(task_output["loaded_skills"][0]["body_loaded"], json!(false));
+    assert!(!task_output
+        .to_string()
+        .contains("BACKGROUND SKILL BODY SENTINEL"));
     let request_id = task_output["child_request_id"]
         .as_str()
         .expect("child request id")
@@ -61,6 +75,17 @@ async fn background_output_block_waits_for_running_child_completion() {
     assert_eq!(output["timed_out"], json!(false));
     assert_eq!(output["result_summary"], json!("delayed child result"));
     assert_eq!(output["route"], task_output["route"]);
+    assert_eq!(
+        output["route"]["loaded_skills"][0]["stable_id"],
+        json!("skill:project:background-skill")
+    );
+    assert_eq!(
+        output["route"]["loaded_skills"][0]["body_loaded"],
+        json!(false)
+    );
+    assert!(!output
+        .to_string()
+        .contains("BACKGROUND SKILL BODY SENTINEL"));
 }
 #[tokio::test]
 async fn background_output_retrieves_child_result_after_coordinator_resume() {
@@ -551,6 +576,12 @@ async fn background_output_rejects_excessive_block_timeout() {
 async fn child_agent_toolset_boundary_is_enforced() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
+    write_skill_fixture_with_frontmatter(
+        &workspace,
+        "tool-claim-skill",
+        "name: tool-claim-skill\ndescription: Claims tools but cannot grant them\nallowed_tools: bash, edit",
+        "Tool claim body.",
+    );
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
 
@@ -564,7 +595,7 @@ async fn child_agent_toolset_boundary_is_enforced() {
                 "description": "Restricted child",
                 "prompt": "Stay read-only",
                 "run_in_background": true,
-                "load_skills": []
+                "load_skills": ["tool-claim-skill"]
             }),
         )
         .await
@@ -574,6 +605,17 @@ async fn child_agent_toolset_boundary_is_enforced() {
     let events = read_events(&run.events_path);
     let finished = find_finished(&events, &task_tool_call_id);
     let output = finished.output_json.expect("task structured output");
+    assert_eq!(
+        output["route"]["loaded_skills"][0]["allowed_tools"],
+        json!(["bash", "edit"])
+    );
+    assert_eq!(output["route"]["permission_posture"]["bash"], json!("deny_by_toolset"));
+    assert_eq!(output["route"]["permission_posture"]["edit"], json!("deny_by_toolset"));
+    assert!(!output["route"]["toolset"]
+        .as_array()
+        .expect("child toolset")
+        .iter()
+        .any(|tool| tool == "bash" || tool == "edit"));
     let child_session_id = output["child_session_id"]
         .as_str()
         .expect("child session id");

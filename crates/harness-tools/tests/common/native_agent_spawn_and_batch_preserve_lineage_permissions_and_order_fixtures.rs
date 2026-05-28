@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use async_trait::async_trait;
 #[path = "mod.rs"]
@@ -13,7 +13,10 @@ use common::{
 };
 use harness_core::agent::{AgentModelSettings, AgentProfile};
 use harness_core::clock::RealClock;
-use harness_core::config::{PermissionMode, ShellAllowlist};
+use harness_core::config::{
+    refresh_skills_config_registry, registered_skills_config, HarnessConfig, PermissionMode,
+    ShellAllowlist, SkillsConfig,
+};
 use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle, RunInfo,
 };
@@ -255,6 +258,88 @@ fn write_skill_fixture(workspace: &Path, name: &str) {
         format!("---\nname: {name}\ndescription: {name} description\n---\n\n{name} body.\n"),
     )
     .expect("skill file");
+}
+
+fn write_skill_fixture_with_frontmatter(workspace: &Path, name: &str, frontmatter: &str, body: &str) {
+    let skill_dir = workspace.join(".agent-harness/skills").join(name);
+    fs::create_dir_all(&skill_dir).expect("skill dir");
+    fs::write(
+        skill_dir.join("SKILL.md"),
+        format!("---\n{frontmatter}\n---\n\n{body}\n"),
+    )
+    .expect("skill file");
+}
+
+fn skills_registry_test_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+struct SkillsConfigGuard {
+    previous: SkillsConfig,
+}
+
+impl SkillsConfigGuard {
+    fn install(skills: SkillsConfig) -> Self {
+        let previous = registered_skills_config();
+        refresh_skills_config_registry(&harness_config_with_skills(skills));
+        Self { previous }
+    }
+}
+
+impl Drop for SkillsConfigGuard {
+    fn drop(&mut self) {
+        refresh_skills_config_registry(&harness_config_with_skills(self.previous.clone()));
+    }
+}
+
+fn harness_config_with_skills(skills: SkillsConfig) -> HarnessConfig {
+    serde_json::from_value(json!({
+        "providers": {
+            "default": {
+                "type": "openai_compatible",
+                "base_url": "http://127.0.0.1:1/v1",
+                "api_key": "DUMMY",
+                "api_mode": "responses",
+                "models": {
+                    "deep": {
+                        "display_name": "Deep model"
+                    }
+                }
+            }
+        },
+        "agents": {
+            "deep": {
+                "description": "Deep profile",
+                "model_ref": "default:deep",
+                "tools": []
+            }
+        },
+        "permissions": {
+            "defaults": {
+                "edit": "allow",
+                "shell": "allow",
+                "network": "allow"
+            }
+        },
+        "runtime": {
+            "background_tasks": {
+                "default_concurrency": 2,
+                "provider_concurrency": 2,
+                "model_concurrency": 2,
+                "stale_timeout_ms": 30000,
+                "message_staleness_timeout_ms": 10000
+            },
+            "session_dir": ".agent-harness/sessions"
+        },
+        "integrations": {
+            "remote_search": {
+                "endpoint": "https://mcp.exa.ai/mcp"
+            }
+        },
+        "skills": serde_json::to_value(skills).expect("serialize skills config")
+    }))
+    .expect("config shape should deserialize")
 }
 
 fn plan_mode_permission_policy() -> PermissionPolicy {
