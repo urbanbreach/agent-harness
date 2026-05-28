@@ -1,37 +1,28 @@
-use std::collections::BTreeMap;
-use std::sync::Arc;
-
-use harness_core::agent::AgentProfile;
-use harness_core::clock::FakeClock;
-use harness_core::config::{ShellAllowlist, ToolFailureMode};
-use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
 use harness_core::event::EventV1;
 use harness_core::proj::{TeamMemberStatus, TeamRunStatus};
-use harness_core::redact::DefaultRedactor;
-use harness_tools::coordinator_registry;
 use serde_json::json;
 
 mod common;
 
-use common::{anonymous_supervisor_actor, read_events};
+use common::{anonymous_supervisor_actor, read_events, team_coordinator};
 
 #[tokio::test]
 async fn native_team_tools_append_events_and_return_projected_state() {
     let tempdir = tempfile::tempdir().expect("tempdir");
-    let mut config = CoordinatorConfig::new(tempdir.path());
-    config.run_id_override = Some("run_tool_team".to_string());
-    config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
-    config.agent_profiles = BTreeMap::from([("alpha".to_string(), profile("alpha"))]);
-    let handle = spawn_coordinator(
-        config,
-        Arc::new(FakeClock::new()),
-        Arc::new(DefaultRedactor::default()),
-    );
+    let handle = team_coordinator(tempdir.path(), "run_tool_team", &["alpha"]);
     let run = handle
         .start_run("tool-team", tempdir.path())
         .await
         .expect("start run");
     let actor = anonymous_supervisor_actor();
+
+    let empty_list = handle
+        .execute_agent_tool_call(actor.clone(), None, "team_list", json!({}))
+        .await
+        .expect("empty team_list tool");
+    let empty_list_json = empty_list.structured_json.expect("empty team_list json");
+    assert_eq!(empty_list_json["returned_count"], json!(0));
+    assert_eq!(empty_list_json["mutates"], json!(false));
 
     let created = handle
         .execute_agent_tool_call(
@@ -112,6 +103,35 @@ async fn native_team_tools_append_events_and_return_projected_state() {
         .expect("team_task_list tool");
     assert!(listed.display_text.contains("1 task(s)"));
 
+    let team_list = handle
+        .execute_agent_tool_call(actor.clone(), None, "team_list", json!({"limit": 10}))
+        .await
+        .expect("team_list tool");
+    let team_list_json = team_list.structured_json.expect("team_list json");
+    assert_eq!(
+        team_list_json["scope"],
+        json!("primitive_projection_reader")
+    );
+    assert_eq!(
+        team_list_json
+            .get("teams")
+            .and_then(serde_json::Value::as_array)
+            .map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(team_list_json["mutates"], json!(false));
+    let capped_team_list = handle
+        .execute_agent_tool_call(actor.clone(), None, "team_list", json!({"limit": 999}))
+        .await
+        .expect("team_list capped");
+    let capped_team_list_json = capped_team_list
+        .structured_json
+        .expect("team_list capped json");
+    assert_eq!(capped_team_list_json["requested_limit"], json!(999));
+    assert_eq!(capped_team_list_json["effective_limit"], json!(200));
+    assert_eq!(capped_team_list_json["max_limit"], json!(200));
+    assert_eq!(capped_team_list_json["limit_clamped"], json!(true));
+
     let fetched = handle
         .execute_agent_tool_call(
             actor.clone(),
@@ -153,6 +173,24 @@ async fn native_team_tools_append_events_and_return_projected_state() {
         .await
         .expect("team_shutdown_request tool");
 
+    let shutdown_requested_list = handle
+        .execute_agent_tool_call(
+            actor.clone(),
+            None,
+            "team_list",
+            json!({"status": "shutdown_requested"}),
+        )
+        .await
+        .expect("team_list shutdown requested");
+    let shutdown_requested_json = shutdown_requested_list
+        .structured_json
+        .expect("team_list shutdown requested json");
+    assert_eq!(shutdown_requested_json["returned_count"], json!(1));
+    assert_eq!(
+        shutdown_requested_json["teams"][0]["shutdown_state"],
+        json!("shutdown_requested")
+    );
+
     let approved = handle
         .execute_agent_tool_call(
             actor.clone(),
@@ -170,7 +208,7 @@ async fn native_team_tools_append_events_and_return_projected_state() {
 
     let deleted = handle
         .execute_agent_tool_call(
-            actor,
+            actor.clone(),
             None,
             "team_delete",
             json!({ "teamRunId": "team_tool" }),
@@ -178,6 +216,16 @@ async fn native_team_tools_append_events_and_return_projected_state() {
         .await
         .expect("team_delete tool");
     assert!(deleted.display_text.contains("team deleted"));
+
+    let deleted_list = handle
+        .execute_agent_tool_call(actor, None, "team_list", json!({"status": "deleted"}))
+        .await
+        .expect("team_list deleted");
+    let deleted_list_json = deleted_list
+        .structured_json
+        .expect("team_list deleted json");
+    assert_eq!(deleted_list_json["returned_count"], json!(1));
+    assert_eq!(deleted_list_json["teams"][0]["deleted"], json!(true));
 
     let events = read_events(&run.events_path);
     assert!(events
@@ -197,18 +245,7 @@ async fn native_team_tools_append_events_and_return_projected_state() {
 #[tokio::test]
 async fn native_team_tools_enforce_task_and_shutdown_ordering() {
     let tempdir = tempfile::tempdir().expect("tempdir");
-    let mut config = CoordinatorConfig::new(tempdir.path());
-    config.run_id_override = Some("run_tool_team_ordering".to_string());
-    config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
-    config.agent_profiles = BTreeMap::from([
-        ("alpha".to_string(), profile("alpha")),
-        ("beta".to_string(), profile("beta")),
-    ]);
-    let handle = spawn_coordinator(
-        config,
-        Arc::new(FakeClock::new()),
-        Arc::new(DefaultRedactor::default()),
-    );
+    let handle = team_coordinator(tempdir.path(), "run_tool_team_ordering", &["alpha", "beta"]);
     handle
         .start_run("tool-team-ordering", tempdir.path())
         .await
@@ -512,15 +549,7 @@ async fn native_team_tools_enforce_task_and_shutdown_ordering() {
 #[tokio::test]
 async fn native_team_create_accepts_research_role_but_mutations_stay_coordinator_gated() {
     let tempdir = tempfile::tempdir().expect("tempdir");
-    let mut config = CoordinatorConfig::new(tempdir.path());
-    config.run_id_override = Some("run_tool_team_research".to_string());
-    config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
-    config.agent_profiles = BTreeMap::from([("explore".to_string(), profile("explore"))]);
-    let handle = spawn_coordinator(
-        config,
-        Arc::new(FakeClock::new()),
-        Arc::new(DefaultRedactor::default()),
-    );
+    let handle = team_coordinator(tempdir.path(), "run_tool_team_research", &["explore"]);
     handle
         .start_run("tool-team-research", tempdir.path())
         .await
@@ -565,18 +594,4 @@ async fn native_team_create_accepts_research_role_but_mutations_stay_coordinator
         .await
         .expect_err("research member cannot mutate team mailbox");
     assert!(denied.to_string().contains("research team member"));
-}
-
-fn profile(name: &str) -> AgentProfile {
-    AgentProfile {
-        name: name.to_string(),
-        category: "deep".to_string(),
-        model_ref: "mock:model-1".to_string(),
-        model_ref_explicit: true,
-        system_prompt: format!("{name}-prompt"),
-        max_iters: Some(1),
-        temperature: Some(0.0),
-        tool_failure_mode: ToolFailureMode::FailTurn,
-        toolset: vec!["team_status".to_string()],
-    }
 }

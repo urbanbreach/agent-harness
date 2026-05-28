@@ -5,6 +5,7 @@ use harness_core::event::{
     TeamBounds, TeamMemberRole, TeamMemberSelector, TeamMemberSpec, TeamMessage, TeamMessageKind,
     TeamReference, TeamSpec, TeamTask, TeamTaskStatus,
 };
+use harness_core::proj::{TeamRunProjection, TeamRunStatus};
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResult};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -12,7 +13,11 @@ use serde_json::json;
 
 use crate::{parse_tool_args, text_json_tool_result};
 
+const DEFAULT_TEAM_LIST_LIMIT: usize = 50;
+const MAX_TEAM_LIST_LIMIT: usize = 200;
+
 pub(crate) struct TeamCreateTool;
+pub(crate) struct TeamListTool;
 pub(crate) struct TeamStatusTool;
 pub(crate) struct TeamSendMessageTool;
 pub(crate) struct TeamTaskCreateTool;
@@ -85,6 +90,15 @@ struct TeamBoundsArgs {
 struct TeamStatusArgs {
     #[serde(default, rename = "teamRunId", alias = "team_run_id")]
     team_run_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct TeamListArgs {
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(default)]
+    limit: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -250,6 +264,67 @@ fn team_result(label: &str, team: harness_core::proj::TeamRunProjection) -> Tool
     )
 }
 
+fn parse_team_run_status(status: &str) -> Result<TeamRunStatus, ToolError> {
+    match status.trim().to_ascii_lowercase().as_str() {
+        "active" => Ok(TeamRunStatus::Active),
+        "shutdown_requested" | "shutdown-requested" => Ok(TeamRunStatus::ShutdownRequested),
+        "deleted" => Ok(TeamRunStatus::Deleted),
+        other => Err(ToolError::InvalidArguments(format!(
+            "unsupported team status `{other}`; expected active, shutdown_requested, or deleted"
+        ))),
+    }
+}
+
+fn team_list_entry_json(team: &TeamRunProjection) -> serde_json::Value {
+    json!({
+        "team_run_id": team.team_run_id,
+        "name": team.name,
+        "description": team.description,
+        "status": team.status,
+        "lead": team.lead.as_ref().map(|lead| {
+            json!({
+                "status": lead.status,
+                "profile": lead.profile,
+                "agent_id": lead.agent_id,
+                "selector": lead.selector,
+            })
+        }),
+        "lead_summary": team.lead.as_ref().map(|lead| {
+            let profile = lead.profile.as_deref().unwrap_or("<pending>");
+            format!("{profile} ({:?})", lead.status)
+        }),
+        "member_count": team.members.len(),
+        "member_counts": {
+            "pending": team.members.values().filter(|member| matches!(member.status, harness_core::proj::TeamMemberStatus::Pending)).count(),
+            "running": team.members.values().filter(|member| matches!(member.status, harness_core::proj::TeamMemberStatus::Running)).count(),
+            "shutdown_requested": team.members.values().filter(|member| matches!(member.status, harness_core::proj::TeamMemberStatus::ShutdownRequested)).count(),
+            "shutdown_approved": team.members.values().filter(|member| matches!(member.status, harness_core::proj::TeamMemberStatus::ShutdownApproved)).count(),
+        },
+        "task_count": team.tasks.len(),
+        "task_counts": {
+            "pending": team.tasks.values().filter(|task| matches!(task.status, TeamTaskStatus::Pending)).count(),
+            "claimed": team.tasks.values().filter(|task| matches!(task.status, TeamTaskStatus::Claimed)).count(),
+            "in_progress": team.tasks.values().filter(|task| matches!(task.status, TeamTaskStatus::InProgress)).count(),
+            "completed": team.tasks.values().filter(|task| matches!(task.status, TeamTaskStatus::Completed)).count(),
+            "deleted": team.tasks.values().filter(|task| matches!(task.status, TeamTaskStatus::Deleted)).count(),
+        },
+        "message_count": team.messages.len(),
+        "bounds": team.bounds,
+        "bounds_consumption": team.bounds_consumption,
+        "created_mono_ms": team.created_mono_ms,
+        "last_mono_ms": team.last_mono_ms,
+        "shutdown_request_count": team.shutdown_requests.len(),
+        "deleted": team.status == TeamRunStatus::Deleted,
+        "shutdown_state": if team.status == TeamRunStatus::Deleted {
+            "deleted"
+        } else if team.status == TeamRunStatus::ShutdownRequested {
+            "shutdown_requested"
+        } else {
+            "active"
+        },
+    })
+}
+
 #[async_trait]
 impl Tool for TeamCreateTool {
     fn id(&self) -> &str {
@@ -294,6 +369,91 @@ impl Tool for TeamCreateTool {
             .await
             .map_err(map_coord_err)?;
         Ok(team_result("team created", team))
+    }
+}
+
+#[async_trait]
+impl Tool for TeamListTool {
+    fn id(&self) -> &str {
+        "team_list"
+    }
+
+    fn description(&self) -> &str {
+        "Lists event-sourced team runs from the coordinator projection. This is read-only and does not create worktrees, tmux panes, mailboxes, file claims, or declared team registries."
+    }
+
+    fn parameters_json_schema(&self) -> serde_json::Value {
+        crate::json_schema_for::<TeamListArgs>()
+    }
+
+    fn capability(&self) -> ToolCapability {
+        ToolCapability::SpawnAgent
+    }
+
+    async fn call(
+        &self,
+        ctx: ToolContext,
+        args_json: serde_json::Value,
+    ) -> Result<ToolResult, ToolError> {
+        let args: TeamListArgs = parse_tool_args(args_json)?;
+        let status_filter = args
+            .status
+            .as_deref()
+            .map(parse_team_run_status)
+            .transpose()?;
+        let requested_limit = args.limit.map(|limit| limit as usize);
+        let raw_limit = requested_limit.unwrap_or(DEFAULT_TEAM_LIST_LIMIT);
+        let limit = raw_limit.clamp(1, MAX_TEAM_LIST_LIMIT);
+        let limit_clamped = raw_limit != limit;
+        let projection = ctx
+            .coordinator
+            .team_projection()
+            .await
+            .map_err(map_coord_err)?;
+        let total_count = projection.teams.len();
+        let mut teams = projection
+            .teams
+            .values()
+            .filter(|team| status_filter.is_none_or(|status| team.status == status))
+            .map(team_list_entry_json)
+            .collect::<Vec<_>>();
+        teams.sort_by(|left, right| {
+            left.get("team_run_id")
+                .and_then(serde_json::Value::as_str)
+                .cmp(&right.get("team_run_id").and_then(serde_json::Value::as_str))
+        });
+        let filtered_count = teams.len();
+        let truncated_count = filtered_count.saturating_sub(limit);
+        teams.truncate(limit);
+
+        Ok(text_json_tool_result(
+            format!("{} team run(s)", teams.len()),
+            json!({
+                "source": "event_replay",
+                "scope": "primitive_projection_reader",
+                "mutates": false,
+                "excludes": [
+                    "declared_team_registries",
+                    "worktrees",
+                    "tmux_visualization",
+                    "mailbox_artifacts",
+                    "team_file_claims",
+                    "spawn_resume_shutdown_mutation"
+                ],
+                "status": args.status,
+                "limit": limit,
+                "requested_limit": requested_limit,
+                "effective_limit": limit,
+                "max_limit": MAX_TEAM_LIST_LIMIT,
+                "limit_clamped": limit_clamped,
+                "total_count": total_count,
+                "filtered_count": filtered_count,
+                "returned_count": teams.len(),
+                "truncated_count": truncated_count,
+                "truncated": truncated_count > 0,
+                "teams": teams,
+            }),
+        ))
     }
 }
 
