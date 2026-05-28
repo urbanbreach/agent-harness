@@ -2655,8 +2655,12 @@ fn operator_rail_test_event_with_correlation(
     event
 }
 
-fn help_row(app: &AppState, action: Action, label: &str) -> String {
-    format!("  {:<12} {label}", app.keymap.get_binding_str(action))
+fn help_row(app: &AppState, action: Action) -> String {
+    format!(
+        "  {:<12} {}",
+        app.keymap.get_binding_str(action),
+        action.metadata_description()
+    )
 }
 
 fn newline_help_row(app: &AppState) -> String {
@@ -2669,7 +2673,11 @@ fn newline_help_row(app: &AppState) -> String {
         [binding] => binding.clone(),
         [first, second, ..] => format!("{first}/{second}"),
     };
-    format!("  {:<20} Insert newline", binding)
+    format!(
+        "  {:<20} {}",
+        binding,
+        Action::InsertNewline.metadata_description()
+    )
 }
 
 fn help_text(app: &AppState) -> String {
@@ -2677,11 +2685,11 @@ fn help_text(app: &AppState) -> String {
         "Keyboard Shortcuts:".to_string(),
         String::new(),
         "Navigation:".to_string(),
-        help_row(app, Action::MoveDown, "Move down in list"),
-        help_row(app, Action::MoveUp, "Move up in list"),
-        help_row(app, Action::FocusNext, "Cycle focus forward"),
-        help_row(app, Action::FocusPrev, "Cycle focus backward"),
-        help_row(app, Action::ToggleFollow, "Toggle follow mode"),
+        help_row(app, Action::MoveDown),
+        help_row(app, Action::MoveUp),
+        help_row(app, Action::FocusNext),
+        help_row(app, Action::FocusPrev),
+        help_row(app, Action::ToggleFollow),
     ];
 
     if app.replay_mode {
@@ -2689,36 +2697,36 @@ fn help_text(app: &AppState) -> String {
             String::new(),
             "Replay shell:".to_string(),
             "  Read-only transcript and review surfaces.".to_string(),
-            help_row(app, Action::Reload, "Reload session"),
+            help_row(app, Action::Reload),
         ]);
     } else {
         lines.extend([
             String::new(),
             "Live shell:".to_string(),
-            help_row(app, Action::CloseReviewSurface, "Return to session shell"),
-            help_row(app, Action::ToggleTerminalPanel, "Toggle terminal panel"),
+            help_row(app, Action::CloseReviewSurface),
+            help_row(app, Action::ToggleTerminalPanel),
             String::new(),
             "Prompt (when focused):".to_string(),
-            help_row(app, Action::SubmitPrompt, "Submit prompt"),
+            help_row(app, Action::SubmitPrompt),
             newline_help_row(app),
-            help_row(app, Action::ClearPrompt, "Clear prompt"),
-            help_row(app, Action::HistoryUp, "History up"),
-            help_row(app, Action::HistoryDown, "History down"),
+            help_row(app, Action::ClearPrompt),
+            help_row(app, Action::HistoryUp),
+            help_row(app, Action::HistoryDown),
         ]);
     }
 
     lines.extend([
         String::new(),
         "Permission modal:".to_string(),
-        help_row(app, Action::AllowPermission, "Allow permission"),
-        help_row(app, Action::DenyPermission, "Deny permission"),
-        help_row(app, Action::DismissModal, "Reject permission"),
+        help_row(app, Action::AllowPermission),
+        help_row(app, Action::DenyPermission),
+        help_row(app, Action::DismissModal),
         String::new(),
         "General:".to_string(),
-        help_row(app, Action::Help, "Show this help"),
+        help_row(app, Action::Help),
     ]);
 
-    lines.push(help_row(app, Action::Quit, "Quit"));
+    lines.push(help_row(app, Action::Quit));
     lines.join("\n")
 }
 

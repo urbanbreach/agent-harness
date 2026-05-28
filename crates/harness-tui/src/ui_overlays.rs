@@ -738,7 +738,7 @@ fn render_slash_commands_list(frame: &mut Frame, app: &AppState, theme: &Theme, 
         frame.render_widget(
             Paragraph::new(slash_command_row(
                 command,
-                crate::app::slash_command_description(command),
+                crate::keybindings::slash_command_description(command),
                 is_selected,
                 theme,
                 row_area.width,
@@ -2350,10 +2350,7 @@ fn render_session_history_actions(frame: &mut Frame, theme: &Theme, area: Rect) 
 }
 
 fn palette_command_description(command: &str) -> &'static str {
-    Action::palette_commands()
-        .iter()
-        .find_map(|(candidate, description)| (*candidate == command).then_some(*description))
-        .unwrap_or("")
+    Action::palette_command_description(command)
 }
 
 pub(super) fn permission_modal_metadata_line(
