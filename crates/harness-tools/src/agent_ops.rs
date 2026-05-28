@@ -12,6 +12,7 @@ use harness_core::event::{
     TaskTerminalScope, ToolCallStatus,
 };
 use harness_core::proj::{BackgroundRequestProjection, BackgroundToolCallCounts};
+use harness_core::redact::{DefaultRedactor, Redactor};
 use harness_core::store::{EventStoreError, EventStream};
 use harness_core::tool::{canonical_tool_id_for, ToolContext, ToolError, ToolResult};
 use schemars::JsonSchema;
@@ -320,12 +321,13 @@ impl AgentOpsExecutor {
         );
         let mut cancel_requested_before_terminal = false;
         if request.cancel && !summary.terminal {
-            let reason = request
-                .reason
-                .as_deref()
-                .and_then(|reason| trimmed_selector(Some(reason)))
-                .unwrap_or("cancelled by background_output")
-                .to_string();
+            let reason = sanitize_cancel_reason(
+                request
+                    .reason
+                    .as_deref()
+                    .and_then(|reason| trimmed_selector(Some(reason)))
+                    .unwrap_or("cancelled by background_output"),
+            );
             summary = background_summary_from_projection(
                 ctx.coordinator
                     .cancel_background_request(
@@ -406,6 +408,88 @@ impl AgentOpsExecutor {
             }),
         ))
     }
+
+    pub(crate) async fn background_cancel(
+        &self,
+        ctx: &ToolContext,
+        request: BackgroundCancelRequest,
+    ) -> Result<ToolResult, ToolError> {
+        let request_id = trimmed_selector(Some(&request.request_id))
+            .ok_or_else(|| ToolError::InvalidArguments("request_id is required".to_string()))?
+            .to_string();
+        let mut summary = background_summary_from_projection(
+            ctx.coordinator
+                .background_request_projection(ctx.actor.clone(), Some(request_id.clone()), None)
+                .await
+                .map_err(map_background_request_error)?,
+        );
+        let previous_status = summary.status.clone();
+        let previous_terminal = summary.terminal;
+        let reason = sanitize_cancel_reason(
+            request
+                .reason
+                .as_deref()
+                .and_then(|reason| trimmed_selector(Some(reason)))
+                .unwrap_or("cancelled by background_cancel"),
+        );
+
+        if !summary.terminal {
+            summary = background_summary_from_projection(
+                ctx.coordinator
+                    .cancel_background_request(
+                        ctx.actor.clone(),
+                        Some(request_id.clone()),
+                        None,
+                        reason.clone(),
+                    )
+                    .await
+                    .map_err(map_background_request_error)?,
+            );
+            summary.cancel_requested = true;
+            summary.cancel_performed = summary.status == "cancelled";
+            if summary.status == "cancelled" {
+                summary.cancel_reason = summary.failure_summary.clone().or(Some(reason.clone()));
+            }
+        } else {
+            summary.cancel_requested = true;
+            summary.cancel_performed = false;
+        }
+
+        let child_runtime = background_child_runtime_metadata(ctx, &summary).await?;
+        let route = background_route_metadata(ctx, &summary.request_id).await?;
+        let output_cancel_reason = if summary.cancel_performed {
+            summary.cancel_reason.clone().or(Some(reason))
+        } else {
+            summary.cancel_reason.clone()
+        };
+
+        Ok(text_json_tool_result(
+            format_background_cancel(&summary, &previous_status),
+            json!({
+                "request_id": summary.request_id,
+                "task_id": summary.session_id,
+                "session_id": summary.session_id,
+                "scheduler_task_id": summary.scheduler_task_id,
+                "previous_status": previous_status,
+                "previous_terminal": previous_terminal,
+                "final_status": summary.status,
+                "status": summary.status,
+                "terminal": summary.terminal,
+                "cancel_requested": summary.cancel_requested,
+                "cancel_performed": summary.cancel_performed,
+                "cancel_reason": output_cancel_reason,
+                "duration_ms": summary.duration_ms,
+                "result_summary": summary.result_summary,
+                "failure_summary": summary.failure_summary,
+                "late_result": summary.late_result,
+                "route": route,
+                "runtime": child_runtime,
+                "child_runtime": child_runtime,
+                "next_actions": background_next_actions(&summary),
+                "source": "event_replay",
+            }),
+        ))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -443,6 +527,12 @@ pub(crate) struct BackgroundOutputRequest {
     pub(crate) block: bool,
     pub(crate) timeout_ms: u64,
     pub(crate) cancel: bool,
+    pub(crate) reason: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct BackgroundCancelRequest {
+    pub(crate) request_id: String,
     pub(crate) reason: Option<String>,
 }
 
@@ -970,6 +1060,25 @@ fn format_background_output(summary: &BackgroundRequestSummary, timed_out: bool)
     )
 }
 
+fn format_background_cancel(summary: &BackgroundRequestSummary, previous_status: &str) -> String {
+    if summary.cancel_performed {
+        format!(
+            "Cancellation requested through the coordinator for request {} ({} -> {}).",
+            summary.request_id, previous_status, summary.status
+        )
+    } else if summary.terminal {
+        format!(
+            "No cancellation performed for request {} because it is already terminal (status: {}).",
+            summary.request_id, summary.status
+        )
+    } else {
+        format!(
+            "Cancellation requested for request {}, but the projected status is {}.",
+            summary.request_id, summary.status
+        )
+    }
+}
+
 async fn summarize_child_request(
     ctx: &ToolContext,
     request_id: &str,
@@ -1220,6 +1329,14 @@ fn background_next_actions(summary: &BackgroundRequestSummary) -> Value {
         }));
         actions.push(json!({
             "action": "cancel",
+            "tool": "background_cancel",
+            "parameters": {
+                "request_id": summary.request_id,
+                "reason": "cancelled by parent request"
+            },
+        }));
+        actions.push(json!({
+            "action": "cancel_compat",
             "tool": "background_output",
             "parameters": {
                 "request_id": summary.request_id,
@@ -1246,6 +1363,14 @@ fn child_next_actions(request: &AgentSpawnRequest, agent_id: &str, request_id: &
         }));
         actions.push(json!({
             "action": "cancel",
+            "tool": "background_cancel",
+            "parameters": {
+                "request_id": request_id,
+                "reason": "cancelled by parent request"
+            },
+        }));
+        actions.push(json!({
+            "action": "cancel_compat",
             "tool": "background_output",
             "parameters": {
                 "request_id": request_id,
@@ -1267,6 +1392,23 @@ fn child_next_actions(request: &AgentSpawnRequest, agent_id: &str, request_id: &
         },
     }));
     Value::Array(actions)
+}
+
+fn sanitize_cancel_reason(reason: &str) -> String {
+    const MAX_CANCEL_REASON_CHARS: usize = 512;
+    let redacted = DefaultRedactor::default().redact_text(reason.trim());
+    let mut capped = redacted
+        .chars()
+        .take(MAX_CANCEL_REASON_CHARS)
+        .collect::<String>();
+    if redacted.chars().count() > MAX_CANCEL_REASON_CHARS {
+        capped.push('…');
+    }
+    if capped.is_empty() {
+        "cancelled by background_cancel".to_string()
+    } else {
+        capped
+    }
 }
 
 fn child_session_observability(

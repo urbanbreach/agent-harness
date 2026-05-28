@@ -244,6 +244,12 @@ async fn task_subagent_type_selects_explore_and_general_profiles() {
             .expect("next actions")
             .iter()
             .any(|action| action["action"] == json!("cancel")
+                && action["tool"] == json!("background_cancel")));
+        assert!(output["next_actions"]
+            .as_array()
+            .expect("next actions")
+            .iter()
+            .any(|action| action["action"] == json!("cancel_compat")
                 && action["tool"] == json!("background_output")));
         let child_session_id = output["child_session_id"]
             .as_str()

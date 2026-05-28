@@ -308,7 +308,14 @@ async fn spawn_run_with_provider(
     config.agent_profiles = BTreeMap::from([
         (
             "deep".to_string(),
-            worker_profile(&["task", "background_output", "batch", "read", "bash"]),
+            worker_profile(&[
+                "task",
+                "background_output",
+                "background_cancel",
+                "batch",
+                "read",
+                "bash",
+            ]),
         ),
         (
             "explore".to_string(),
