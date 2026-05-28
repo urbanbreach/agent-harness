@@ -14,8 +14,9 @@
   fail the task call, and loaded skill content is injected before the original task body.
 - Task results include child runtime metadata and `next_actions` for status checks,
   waiting, cancellation, and continuation.
-- `background_output(cancel: true, request_id: ...)` requests coordinator-owned
-  cancellation for an authorized non-terminal background child task.
+- `background_cancel(request_id: ...)` is the canonical coordinator-owned
+  cancellation tool for an authorized non-terminal background child task.
+  `background_output(cancel: true, request_id: ...)` remains compatibility.
 
 ## Configuration
 
@@ -85,11 +86,11 @@ cargo run -p harness -- --config configs/harness.example.jsonc doctor
 ```
 
 `doctor` proves local readiness only: config shape, provider/model metadata,
-credential presence, route metadata, prompt asset status, permissions, session
-directory readiness, and MCP registration without making provider or MCP network
-calls. Use `prompt`, `signoff-live`, or a live stress lane when you need real
-provider execution proof, and keep README/release claims scoped to the lane you
-actually ran.
+credential presence, resolved agent catalog metadata, native tool catalog
+metadata, prompt asset status, permissions, session directory readiness, and MCP
+registration without making provider or MCP network calls. Use `prompt`,
+`signoff-live`, or a live stress lane when you need real provider execution
+proof, and keep README/release claims scoped to the lane you actually ran.
 
 For support evidence, export a completed or failed session instead of sharing raw
 event logs directly:
@@ -102,10 +103,17 @@ event logs directly:
 ```
 
 The support export includes replay-derived session metadata, offline doctor JSON,
-non-secret config/provider summaries, route metadata, artifact indexes, a
-redaction manifest, and secret-scan status so a failure can be debugged without
-exposing API keys, bearer tokens, cookies, PEM blocks, raw provider credentials,
-or hidden prompt/config instruction secrets.
+non-secret config/provider summaries, agent catalog summary, native tool catalog
+summary, session-tool readiness, route metadata, artifact indexes, a redaction
+manifest, and secret-scan status so a failure can be debugged without exposing
+API keys, bearer tokens, cookies, PEM blocks, raw provider credentials, or hidden
+prompt/config instruction secrets.
+
+Model-visible session inspection is available through `session_list`,
+`session_read`, `session_search`, and `session_info`; these tools read stored
+event logs with `source: "event_replay"` and do not execute providers, tools,
+hooks, MCP servers, network calls, or the `harness sessions` CLI. The V1 native
+tool catalog is summarized in [`docs/native-tool-catalog.md`](docs/native-tool-catalog.md).
 
 Troubleshooting starts with the local checks before live provider execution:
 

@@ -351,8 +351,9 @@ skill content is injected into the child prompt before the original task body.
 `background_output` tool with that `request_id` to inspect completion status or
 the terminal result. Retrieval is event-replay based and does not advance the
 child task. To stop an authorized non-terminal child request, call
-`background_output` with the same `request_id`, `cancel: true`, and an optional
-`reason`; the coordinator records cancellation through the normal task lifecycle.
+`background_cancel` with the same `request_id` and an optional `reason`; the
+coordinator records cancellation through the normal task lifecycle.
+`background_output(cancel: true)` remains supported as compatibility.
 Task and background-output results also include child runtime metadata such as
 profile, category, model ref, toolset, redelegation capability, and exact
 follow-up tool actions for status checks, waiting, cancellation, or continuation.
@@ -381,6 +382,16 @@ The canonical scalar form is:
 `permission` accepts exactly `"ask"`, `"allow"`, or `"deny"`. A scalar applies to
 all canonical public permission kinds: `bash`, `edit`, `question`, `task`,
 `webfetch`, `websearch`, `codesearch`, and `lsp`.
+
+The V1 native tool catalog is documented in
+[`docs/native-tool-catalog.md`](native-tool-catalog.md). New control-plane tools
+map to the existing permission buckets: `background_cancel` and `team_list` use
+`task`; `ast_grep_search` uses `codesearch`; `session_list`, `session_read`,
+`session_search`, and `session_info` are read-only replay/session inspectors with
+no additional public permission bucket. Legacy broad `network` remains a
+compatibility input for older network-capability tools; new docs and examples
+should use `webfetch`, `websearch`, or `codesearch` when a specific public bucket
+exists.
 
 Per-tool scalar modes use the same values:
 
