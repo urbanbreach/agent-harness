@@ -142,6 +142,14 @@ fn permission_policy_supports_native_tool_permission_kinds() {
     );
     assert_eq!(permission_kind_for_tool("lsp"), Some(PermissionKind::Lsp));
     assert_eq!(
+        permission_kind_for_tool("todoread"),
+        Some(PermissionKind::Task)
+    );
+    assert_eq!(
+        permission_kind_for_tool("todowrite"),
+        Some(PermissionKind::Task)
+    );
+    assert_eq!(
         permission_kind_for_tool("lsp.rename"),
         Some(PermissionKind::EditFs)
     );

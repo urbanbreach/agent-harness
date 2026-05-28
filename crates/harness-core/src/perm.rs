@@ -496,9 +496,13 @@ pub fn permission_kind_for_tool(tool_id: &str) -> Option<PermissionKind> {
     match canonical_tool_id {
         "question" => Some(PermissionKind::Question),
         "task" => Some(PermissionKind::Task),
+        "background_cancel" => Some(PermissionKind::Task),
+        "team_list" => Some(PermissionKind::Task),
+        "todoread" | "todowrite" => Some(PermissionKind::Task),
         "webfetch" => Some(PermissionKind::WebFetch),
         "websearch" => Some(PermissionKind::WebSearch),
         "codesearch" => Some(PermissionKind::CodeSearch),
+        "ast_grep_search" => Some(PermissionKind::CodeSearch),
         "lsp" => Some(PermissionKind::Lsp),
         "lsp.rename" => Some(PermissionKind::EditFs),
         "bash" => Some(PermissionKind::Shell),
@@ -1051,6 +1055,14 @@ mod tests {
             Some(PermissionKind::CodeSearch)
         );
         assert_eq!(permission_kind_for_tool("lsp"), Some(PermissionKind::Lsp));
+        assert_eq!(
+            permission_kind_for_tool("todoread"),
+            Some(PermissionKind::Task)
+        );
+        assert_eq!(
+            permission_kind_for_tool("todowrite"),
+            Some(PermissionKind::Task)
+        );
         assert_eq!(
             permission_kind_for_tool("lsp.rename"),
             Some(PermissionKind::EditFs)
