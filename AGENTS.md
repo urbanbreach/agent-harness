@@ -1,115 +1,106 @@
-<!-- AUTONOMY DIRECTIVE — DO NOT REMOVE -->
-YOU ARE AN AUTONOMOUS CODING AGENT. EXECUTE TASKS TO COMPLETION WITHOUT ASKING FOR PERMISSION.
-DO NOT STOP TO ASK "SHOULD I PROCEED?" — PROCEED. DO NOT WAIT FOR CONFIRMATION ON OBVIOUS NEXT STEPS.
-IF BLOCKED, TRY AN ALTERNATIVE APPROACH. ONLY ASK WHEN TRULY AMBIGUOUS OR DESTRUCTIVE.
-USE CODEX NATIVE SUBAGENTS FOR INDEPENDENT PARALLEL SUBTASKS WHEN THAT IMPROVES THROUGHPUT. THIS IS COMPLEMENTARY TO OMX TEAM MODE.
-<!-- END AUTONOMY DIRECTIVE -->
-
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-04-24
-**Commit:** `66c6d8ae`
+**Generated:** 2026-05-29
+**Commit:** `974b473`
 **Branch:** `dev`
 
 ## OVERVIEW
-Rust workspace for an event-sourced agent harness: CLI entrypoint, coordinator/runtime core, provider adapters, built-in native tools, Ratatui TUI, and deterministic PTY/live visual signoff lanes.
+Rust workspace for an event-sourced agent harness: CLI entrypoint, coordinator/runtime core, provider adapters, built-in native tools, Ratatui TUI, and deterministic PTY/live/native verification lanes.
 
 ## STRUCTURE
 ```text
 agent-harness/
-├── crates/harness/          # CLI: tui/run/prompt/replay/sessions/schema/config
-├── crates/harness-core/     # event store, coordinator, permissions, config, projections
-├── crates/harness-tools/    # native tool registry: fs/edit/bash/task/web/lsp/mcp
-├── crates/harness-tui/      # Ratatui shell, layout, transcript, overlays
-├── crates/harness-testkit/  # fixtures, secret scanner, PTY/live/native signoff tests
-├── configs/                 # canonical runtime/TUI examples + generated schemas
-├── docs/                    # architecture, config, testing, roadmap
-├── scripts/                 # stress harness
-├── .agent-harness/          # shipped agent/skill assets discovered by runtime
-├── .agents/                 # maintainer skills used by coding agents
-└── inspirations/            # reference/vendor material; do not treat as first-party code
+├── crates/harness/           # CLI binary/library: tui, prompt, run, replay, sessions, config, models
+├── crates/harness-core/      # event store, coordinator, permissions, config, projections, hashline edits
+├── crates/harness-providers/ # Provider trait, OpenAI-compatible transport, mock/cassette replay
+├── crates/harness-tools/     # native tool registry: fs/edit/bash/task/web/lsp/mcp/session/team
+├── crates/harness-tui/       # Ratatui startup/live/replay shell and transcript renderer
+├── crates/harness-testkit/   # fakes, workspaces, simulation, PTY/live/native signoff helpers
+├── configs/                  # generated schemas, canonical examples, provider catalogs
+├── docs/                     # architecture, config, testing, tool catalog, skills, PRDs
+├── scripts/                  # lane runner, stress harness, static gates, coverage ratchet
+└── .agent-harness/           # runtime-discovered agent profiles and skills
 ```
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |------|----------|-------|
-| CLI behavior | `crates/harness/src/main.rs`, `crates/harness/src/*.rs` | Bare `harness` launches TUI; subcommands own headless/replay flows. |
-| Runtime invariants | `crates/harness-core/AGENTS.md` | Read before changing events, coordinator, permissions, config, replay. |
-| Native tools | `crates/harness-tools/AGENTS.md` | Read before changing schemas, filesystem safety, bash, MCP, LSP, delegation tools. |
-| TUI shell | `crates/harness-tui/AGENTS.md` | Compose-first/transcript-first/operator-sidebar contracts. |
-| Visual/live signoff | `crates/harness-testkit/tests/AGENTS.md` | PTY, native screenshot, live proxy ordering and env guards. |
-| Public config contract | `docs/config.md`, `configs/*.json`, `configs/*.jsonc` | Generated schemas are source of truth; docs must stay aligned. |
-| Architecture docs | `docs/architecture.md` | Event schema and crate-boundary reference. |
-| Test map | `docs/testing.md` | Drift checks and signoff lanes. |
+| CLI behavior | `crates/harness/src/lib.rs`, `crates/harness/src/*.rs` | `main.rs` is a thin shim; in-process CLI tests use `CliIo`/`CliDeps`. |
+| Runtime invariants | `crates/harness-core/AGENTS.md` | Read before changing events, coordinator, permissions, config, replay, lineage. |
+| Provider protocol | `crates/harness-providers/AGENTS.md` | Read before changing `ProviderStreamEvent`, request metadata, cassettes, transports. |
+| Native tools | `crates/harness-tools/AGENTS.md` | Read before changing schemas, path safety, bash, MCP, LSP, task/session/team tools. |
+| TUI shell | `crates/harness-tui/AGENTS.md` | Read before touching transcript layout, app state, overlays, keybindings, snapshots. |
+| E2E signoff tests | `crates/harness-testkit/tests/AGENTS.md` | PTY, live proxy, native visual, artifact provenance, env gates. |
+| Runtime assets | `.agent-harness/AGENTS.md` | Agent profile markdown and skill packages loaded by the runtime. |
+| Public config | `docs/config.md`, `configs/*.json`, `configs/*.jsonc` | Generated schemas are source of truth; examples and README must agree. |
+| Test lanes | `docs/testing.md`, `scripts/test-lanes.sh` | Lane runner writes evidence artifacts; use the narrowest lane that proves the change. |
 
 ## CODE MAP
-| Crate / module | Role | Local guidance |
-|----------------|------|----------------|
-| `harness` | CLI binary and session/replay/prompt commands | Keep domain logic in `harness-core`; keep UI rendering in `harness-tui`. |
-| `harness-core::coord` | Single scheduling authority | Only coordinator appends events and owns permission/task state transitions. |
-| `harness-core::event` | Event schema v1 | Append-only source of truth; update `docs/architecture.md` + drift tests for variants. |
-| `harness-core::config` | Runtime/TUI config loading + schemas | New public keys require schema/docs/tests. |
-| `harness-tools` | Native provider tool surface | Stable schemas, workspace path safety, role-separated tools. |
-| `harness-providers` | Mock + OpenAI-compatible streaming | Keep transport normalization provider-local. |
-| `harness-tui` | Ratatui presentation | Structured state in app/view-models; layout/theme own geometry. |
-| `harness-testkit` | Test-only helpers and E2E suites | Runtime-independent helpers in `src/`; workflow-heavy PTY/live code under `tests/`. |
+| Area | Role | High-value tests |
+|------|------|------------------|
+| `harness-core::coord` | Single scheduling/event/permission authority | `cargo test -p harness-core --test coord_test` |
+| `harness-core::event` | Event schema v1 and append-only envelope | `cargo test -p harness --test event_docs_reference_test` |
+| `harness-core::config` | Runtime/TUI config loading, public contract, schemas | `cargo test -p harness --test config_schema_cli_test` |
+| `harness-tools` | Built-in native provider tool surface | `cargo test -p harness-tools --test native_tool_parity_matrix_test` |
+| `harness-providers` | Streaming provider boundary and cassette replay | `cargo test -p harness-providers` |
+| `harness-tui` | Presentation, view models, renderer, shell geometry | `cargo test -p harness-tui` |
+| `harness-testkit` | Deterministic fakes, simulation, visual evidence | `cargo test -p harness-testkit --test simulation_validator_test` |
 
 ## FIRST-PARTY SEARCH SCOPE
-- Include: `crates/`, `configs/`, `docs/`, `scripts/`, `.agent-harness/`, `.agents/`, root manifests.
-- Exclude by default: `target/`, `.git/`, `.omx/`, `.codex/.tmp/`, `sessions/`, `artifacts/`, `inspirations/`.
+- Include by default: `crates/`, `configs/`, `docs/`, `scripts/`, `.agent-harness/agents/`, `.agent-harness/skills/`, root manifests.
+- Exclude by default: `target/`, `.git/`, `sessions/`, `artifacts/`, `.harness/`, `.omo/`, `.gnhf/`, `.sisyphus/`, `.omx/`, `.codex/`, `inspirations/`.
 - Search `inspirations/` only when explicitly comparing reference implementations.
 
 ## COMMANDS
 ```bash
-cargo fmt --all -- --check
-cargo check --workspace
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-features
+scripts/test-lanes.sh fast
+scripts/test-lanes.sh quality-gates
+scripts/test-lanes.sh integration
 cargo run -p harness -- --config configs/harness.example.jsonc config validate
-scripts/stress-harness.sh --mode offline
+cargo run -p harness -- --config configs/harness.example.jsonc doctor
 ```
-
-Targeted checks:
+Targeted signoff:
 ```bash
-cargo test -p harness --test config_schema_cli_test
-cargo test -p harness --test config_docs_reference_test
-cargo test -p harness --test event_docs_reference_test
-cargo test -p harness-core
-cargo test -p harness-tools --test native_tool_parity_matrix_test
-cargo test -p harness-tui
+scripts/test-lanes.sh simulation
+scripts/test-lanes.sh signoff-binary
 RUST_TEST_THREADS=1 cargo test -p harness-testkit --test pty_e2e
 ```
 
 ## CONVENTIONS
-- Workspace lints deny `unsafe_code`, `dbg_macro`, and `todo`; keep warnings at zero with clippy `-D warnings`.
-- Config uses harness-centered names: runtime `harness.json{,c}`, TUI `tui.json{,c}`; legacy broad shapes are compatibility-only.
-- Runtime prompt assets live in `.agent-harness/agents/*.md`; `AGENTS.md` is a separate project-instruction layer.
-- Public permission names are `bash`, `edit`, `question`, `task`, `webfetch`, `websearch`, `codesearch`, `lsp`; `shell`/`network` are migration aliases only.
-- Prefer small diffs and extraction over redesign; reuse existing helpers before adding abstractions.
-- No new dependencies without explicit request.
-- For cleanup/refactor/deslop work: write a cleanup plan, lock behavior with tests first when not already protected, prefer deletion over addition.
+- Workspace lints deny `unsafe_code`, `dbg_macro`, and `todo`; clippy runs with `-D warnings`.
+- Cargo workspace commands should be explicit: `--workspace` for all members, `-p <crate>` for scoped checks.
+- `rust-toolchain.toml` pins stable plus `rustfmt` and `clippy`; CI also installs `cargo-nextest` and `cargo-llvm-cov`.
+- Runtime config is `harness.json{,c}`; TUI config is `tui.json{,c}`. Keep them separate.
+- Public permission names: `bash`, `edit`, `question`, `task`, `webfetch`, `websearch`, `codesearch`, `lsp`.
+- `task` calls require `prompt`, `run_in_background`, and `load_skills`; skills resolve before child spawn.
+- `AGENTS.md` is project guidance; `.agent-harness/agents/*.md` are runtime profile assets. Do not mix those layers.
+
+## MANDATORY CODING SKILLS
+- For any coding work in this repository, load `karpathy-guidelines` before the first edit. Coding work includes implementation, bug fixes, refactors, tests, build scripts, schemas, and generated-code maintenance.
+- Delegated coding tasks must include the skill in `load_skills`; omit it only for pure read-only exploration, documentation-only lookup, or non-coding QA.
+
+## UPDATE TOGETHER
+| Change | Also update |
+|--------|-------------|
+| Public config keys | `docs/config.md`, `configs/config.json`, `configs/tui.json`, config schema tests |
+| Event variants or replay semantics | `docs/architecture.md`, event/replay docs tests |
+| Native tool ids/schema/capability | `docs/native-tool-catalog.md`, `native_tool_parity_matrix_test` |
+| Test lane behavior | `docs/testing.md`, `scripts/test-lanes.sh`, owner tests |
+| Simulation invariants | `docs/simulation-matrix.json`, `simulation_validator_test`, secrets scan |
+| Provider model catalog | `configs/provider-catalog.generated.json`, generated catalog docs/tests |
+| Starter config defaults | `configs/harness.example.jsonc`, `configs/tui.example.jsonc`, README quick start |
 
 ## INVARIANTS
-- Events are the source of truth; replay must stay side-effect free and derive state from JSONL events in `seq` order.
-- Coordinator is the only event append / task scheduling / permission resolution authority.
-- Permission checks happen before tool execution; worker redelegation bypasses must remain blocked.
+- Events are the source of truth; replay is side-effect free and derives from JSONL in `seq` order.
+- Coordinator is the only event append, task scheduling, permission resolution, hook, and lifecycle authority.
+- Permission checks precede tool execution; worker redelegation bypasses must remain blocked.
 - Hashline edits validate anchors, reject overlaps, apply bottom-up, and write atomically.
-- Tool outputs persist as capped event summaries plus redacted artifacts under `artifacts/toolcalls/`.
-- Provider-context compaction writes checkpoint artifacts/events; it does not rewrite `events.jsonl` and is distinct from TUI memory caps.
-- Unsupported config areas such as `server`, `command`, `plugin`, `share`, and `autoupdate` are rejected explicitly.
+- Provider-context compaction writes checkpoint artifacts/events; it must not rewrite `events.jsonl`.
+- Session inspection tools read replay-derived data only; they must not execute providers, hooks, MCP, network, or the CLI.
 
 ## ANTI-PATTERNS
-- Do not move coordinator/runtime invariants into CLI, tools, or TUI crates.
-- Do not make replay execute tools, network calls, or other side effects.
-- Do not broaden config compatibility and call it the canonical public contract.
-- Do not use `bash` for file reads/search/edits when native tools cover the operation.
-- Do not hardcode paths outside config discovery and workspace-relative resolution helpers.
-- Do not treat PTY/native/live visual artifacts as interchangeable; each lane has its own provenance contract.
-
-## COMMIT MESSAGES
-Use the Lore protocol when committing: first line explains why, body captures context, and trailers record useful constraints. Valuable trailers: `Constraint:`, `Rejected:`, `Confidence:`, `Scope-risk:`, `Directive:`, `Tested:`, `Not-tested:`.
-
-## OMX / AGENT RUNTIME NOTES
-- This file is the top-level operating contract for workspace agents; subdirectory `AGENTS.md` files narrow it and must not repeat it.
-- Runtime-only workflows (`ralph`, `team`, `ultrawork`, `ecomode`) require an actual OMX runtime session; otherwise use direct execution or native subagents.
-- Preserve marker-bounded runtime overlays if OMX setup regenerates them; do not hand-edit generated runtime state under `.omx/` as project source.
+- Do not move runtime invariants into CLI, tools, providers, or TUI crates.
+- Do not make replay execute tools, network calls, hooks, or provider work.
+- Do not broaden compatibility aliases into the canonical public config contract.
+- Do not treat runtime session/artifact directories as source.
+- Do not claim PTY/live/native visual evidence without the matching lane or artifact provenance.
