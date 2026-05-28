@@ -1307,10 +1307,10 @@ fn slash_overlay_uses_input_width_aligned_rows_and_accent_selection() {
 
     let rendered = render_live_lines(&app, 100, 24);
     let lines = rendered.lines().collect::<Vec<_>>();
-    let row = find_line_containing_all(&lines, &["/events", "Open the event log review"])
+    let row = find_line_containing_all(&lines, &["/events", "Open the review event log surface"])
         .unwrap_or_else(|| panic!("slash /events row\n{rendered}"));
     let events_description = lines[row]
-        .find("Open the event log review")
+        .find("Open the review event log surface")
         .expect("events description column");
     let new_row = find_line_containing_all(&lines, &["/new", "Return to the home shell"])
         .unwrap_or_else(|| panic!("slash /new row\n{rendered}"));
@@ -1333,7 +1333,7 @@ fn slash_overlay_uses_input_width_aligned_rows_and_accent_selection() {
         .find(&selected_command)
         .expect("selected command start");
     let description_start = selected_row
-        .find(crate::app::slash_command_description(
+        .find(crate::keybindings::slash_command_description(
             selected_command.trim_start_matches('/'),
         ))
         .expect("selected description start");
@@ -2114,7 +2114,7 @@ fn command_palette_state_filters_existing_commands() {
     assert!(app.palette_filtered.iter().all(|command| {
         Action::palette_commands()
             .iter()
-            .any(|(existing, _)| existing == command)
+            .any(|existing| existing.id == command)
     }));
 }
 

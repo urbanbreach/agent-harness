@@ -28,10 +28,373 @@ impl PaletteCommandSection {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PaletteCommand {
     pub id: &'static str,
-    pub label: &'static str,
-    pub description: &'static str,
+    pub metadata_id: &'static str,
     pub shortcut: &'static str,
     pub section: PaletteCommandSection,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SlashCommand {
+    pub id: &'static str,
+    pub metadata_id: &'static str,
+    pub aliases: &'static [&'static str],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CommandMetadata {
+    id: &'static str,
+    label: &'static str,
+    description: &'static str,
+}
+
+const COMMAND_METADATA: &[CommandMetadata] = &[
+    CommandMetadata {
+        id: "new_session",
+        label: "New session",
+        description: "Start a fresh live session",
+    },
+    CommandMetadata {
+        id: "resume_session",
+        label: "Continue session",
+        description: "Continue a prior session when resumable",
+    },
+    CommandMetadata {
+        id: "replay_session",
+        label: "Replay session",
+        description: "Replay a previous session as read-only",
+    },
+    CommandMetadata {
+        id: "switch_model",
+        label: "Switch model",
+        description: "Browse available provider/model options",
+    },
+    CommandMetadata {
+        id: "agent_cycle",
+        label: "Next agent",
+        description: "Cycle to the next primary agent",
+    },
+    CommandMetadata {
+        id: "agent_cycle_reverse",
+        label: "Previous agent",
+        description: "Cycle to the previous primary agent",
+    },
+    CommandMetadata {
+        id: "cycle_variant",
+        label: "Cycle reasoning preset",
+        description: "Cycle the configured model variant/reasoning preset",
+    },
+    CommandMetadata {
+        id: "toggles",
+        label: "Toggles",
+        description: "Toggle profiles, tools, hooks, MCP, YOLO",
+    },
+    CommandMetadata {
+        id: "close_review_surface",
+        label: "Session shell",
+        description: "Return to the transcript-first session shell",
+    },
+    CommandMetadata {
+        id: "open_event_log",
+        label: "Event log",
+        description: "Open the review event log surface",
+    },
+    CommandMetadata {
+        id: "toggle_terminal_panel",
+        label: "Toggle terminal panel",
+        description: "Show or hide shell command output below the transcript",
+    },
+    CommandMetadata {
+        id: "toggle_follow",
+        label: "Toggle follow",
+        description: "Toggle follow mode",
+    },
+    CommandMetadata {
+        id: "show_thinking",
+        label: "Show thinking",
+        description: "Restore inline thinking rows in the transcript",
+    },
+    CommandMetadata {
+        id: "hide_thinking",
+        label: "Hide thinking",
+        description: "Hide inline thinking rows in the transcript",
+    },
+    CommandMetadata {
+        id: "show_timestamps",
+        label: "Show timestamps",
+        description: "Reveal user message timestamps in the transcript",
+    },
+    CommandMetadata {
+        id: "hide_timestamps",
+        label: "Hide timestamps",
+        description: "Hide user message timestamps in the transcript",
+    },
+    CommandMetadata {
+        id: "show_tool_details",
+        label: "Show tool details",
+        description: "Show completed successful tools in the transcript",
+    },
+    CommandMetadata {
+        id: "hide_tool_details",
+        label: "Hide tool details",
+        description: "Hide completed successful tools in the transcript",
+    },
+    CommandMetadata {
+        id: "show_generic_tool_output",
+        label: "Show generic tool output",
+        description: "Expand generic tool payload blocks in the transcript",
+    },
+    CommandMetadata {
+        id: "hide_generic_tool_output",
+        label: "Hide generic tool output",
+        description: "Collapse generic tool payload blocks in the transcript",
+    },
+    CommandMetadata {
+        id: "expand_selected_turn_results",
+        label: "Expand turn results",
+        description: "Expand overflow tool output in the selected turn",
+    },
+    CommandMetadata {
+        id: "collapse_selected_turn_results",
+        label: "Collapse turn results",
+        description: "Collapse overflow tool output in the selected turn",
+    },
+    CommandMetadata {
+        id: "stack_transcript_diffs",
+        label: "Use stacked diffs",
+        description: "Force unified stacked transcript diffs",
+    },
+    CommandMetadata {
+        id: "split_transcript_diffs",
+        label: "Use split diffs",
+        description: "Allow side-by-side transcript diffs when wide",
+    },
+    CommandMetadata {
+        id: "focus_next",
+        label: "Next focus",
+        description: "Cycle focus forward",
+    },
+    CommandMetadata {
+        id: "focus_prev",
+        label: "Previous focus",
+        description: "Cycle focus backward",
+    },
+    CommandMetadata {
+        id: "submit_prompt",
+        label: "Submit prompt",
+        description: "Submit prompt",
+    },
+    CommandMetadata {
+        id: "insert_newline",
+        label: "Insert newline",
+        description: "Insert newline",
+    },
+    CommandMetadata {
+        id: "clear_prompt",
+        label: "Clear prompt",
+        description: "Clear prompt",
+    },
+    CommandMetadata {
+        id: "move_down",
+        label: "Move down",
+        description: "Move down in list",
+    },
+    CommandMetadata {
+        id: "move_up",
+        label: "Move up",
+        description: "Move up in list",
+    },
+    CommandMetadata {
+        id: "reload",
+        label: "Reload",
+        description: "Reload session",
+    },
+    CommandMetadata {
+        id: "allow_permission",
+        label: "Allow permission",
+        description: "Allow permission",
+    },
+    CommandMetadata {
+        id: "deny_permission",
+        label: "Deny permission",
+        description: "Deny permission",
+    },
+    CommandMetadata {
+        id: "dismiss_modal",
+        label: "Reject permission",
+        description: "Reject permission",
+    },
+    CommandMetadata {
+        id: "history_up",
+        label: "History up",
+        description: "History up",
+    },
+    CommandMetadata {
+        id: "history_down",
+        label: "History down",
+        description: "History down",
+    },
+    CommandMetadata {
+        id: "help",
+        label: "Help",
+        description: "Show shortcuts and TUI controls",
+    },
+    CommandMetadata {
+        id: "quit",
+        label: "Quit",
+        description: "Quit the application",
+    },
+    CommandMetadata {
+        id: "slash_new",
+        label: "New",
+        description: "Return to the home shell",
+    },
+    CommandMetadata {
+        id: "slash_sessions",
+        label: "Sessions",
+        description: "Switch session",
+    },
+    CommandMetadata {
+        id: "slash_resume",
+        label: "Resume",
+        description: "Continue a saved session",
+    },
+    CommandMetadata {
+        id: "slash_replay",
+        label: "Replay",
+        description: "Replay a saved session",
+    },
+    CommandMetadata {
+        id: "slash_fork",
+        label: "Fork",
+        description: "Fork session",
+    },
+    CommandMetadata {
+        id: "slash_tree",
+        label: "Tree",
+        description: "View the Harness session tree",
+    },
+    CommandMetadata {
+        id: "slash_clone",
+        label: "Clone",
+        description: "Prepare a Harness session clone",
+    },
+    CommandMetadata {
+        id: "slash_status",
+        label: "Status",
+        description: "View status",
+    },
+    CommandMetadata {
+        id: "slash_compact",
+        label: "Compact",
+        description: "Write a manual context checkpoint",
+    },
+];
+
+fn command_metadata(id: &str) -> Option<&'static CommandMetadata> {
+    COMMAND_METADATA.iter().find(|entry| entry.id == id)
+}
+
+const SLASH_COMMANDS: [SlashCommand; 16] = [
+    SlashCommand {
+        id: "new",
+        metadata_id: "slash_new",
+        aliases: &["new-session", "session"],
+    },
+    SlashCommand {
+        id: "sessions",
+        metadata_id: "slash_sessions",
+        aliases: &[],
+    },
+    SlashCommand {
+        id: "resume",
+        metadata_id: "slash_resume",
+        aliases: &["continue"],
+    },
+    SlashCommand {
+        id: "replay",
+        metadata_id: "slash_replay",
+        aliases: &[],
+    },
+    SlashCommand {
+        id: "fork",
+        metadata_id: "slash_fork",
+        aliases: &[],
+    },
+    SlashCommand {
+        id: "tree",
+        metadata_id: "slash_tree",
+        aliases: &[],
+    },
+    SlashCommand {
+        id: "clone",
+        metadata_id: "slash_clone",
+        aliases: &[],
+    },
+    SlashCommand {
+        id: "model",
+        metadata_id: "switch_model",
+        aliases: &["models"],
+    },
+    SlashCommand {
+        id: "status",
+        metadata_id: "slash_status",
+        aliases: &["system-status"],
+    },
+    SlashCommand {
+        id: "toggles",
+        metadata_id: "toggles",
+        aliases: &[],
+    },
+    SlashCommand {
+        id: "events",
+        metadata_id: "open_event_log",
+        aliases: &["event-log"],
+    },
+    SlashCommand {
+        id: "help",
+        metadata_id: "help",
+        aliases: &[],
+    },
+    SlashCommand {
+        id: "shell",
+        metadata_id: "close_review_surface",
+        aliases: &["session-shell"],
+    },
+    SlashCommand {
+        id: "follow",
+        metadata_id: "toggle_follow",
+        aliases: &[],
+    },
+    SlashCommand {
+        id: "compact",
+        metadata_id: "slash_compact",
+        aliases: &["summarize", "summary"],
+    },
+    SlashCommand {
+        id: "exit",
+        metadata_id: "quit",
+        aliases: &["quit", "q"],
+    },
+];
+
+pub fn slash_commands() -> &'static [SlashCommand] {
+    &SLASH_COMMANDS
+}
+
+pub fn slash_command_description(command: &str) -> &'static str {
+    slash_commands()
+        .iter()
+        .find(|entry| entry.id == command)
+        .and_then(|entry| command_metadata(entry.metadata_id))
+        .map(|metadata| metadata.description)
+        .unwrap_or("")
+}
+
+pub fn slash_command_aliases(command: &str) -> &'static [&'static str] {
+    slash_commands()
+        .iter()
+        .find_map(|entry| (entry.id == command).then_some(entry.aliases))
+        .unwrap_or(&[])
 }
 
 /// Actions that can be triggered via keybindings.
@@ -98,187 +461,215 @@ pub enum Action {
 }
 
 impl Action {
+    fn metadata_id(self) -> Option<&'static str> {
+        match self {
+            Action::Quit => Some("quit"),
+            Action::FocusNext => Some("focus_next"),
+            Action::FocusPrev => Some("focus_prev"),
+            Action::Palette => None,
+            Action::Help => Some("help"),
+            Action::ToggleOperatorSidebar => None,
+            Action::ToggleTerminalPanel => Some("toggle_terminal_panel"),
+            Action::ToggleFollow => Some("toggle_follow"),
+            Action::SubmitPrompt => Some("submit_prompt"),
+            Action::InsertNewline => Some("insert_newline"),
+            Action::ClearPrompt => Some("clear_prompt"),
+            Action::ScrollUp => None,
+            Action::ScrollDown => None,
+            Action::CloseReviewSurface => Some("close_review_surface"),
+            Action::OpenEventLog => Some("open_event_log"),
+            Action::MoveDown => Some("move_down"),
+            Action::MoveUp => Some("move_up"),
+            Action::Reload => Some("reload"),
+            Action::SessionChildFirst => None,
+            Action::SessionChildCycle => None,
+            Action::SessionChildCycleReverse => None,
+            Action::SessionParent => None,
+            Action::AgentCycle => Some("agent_cycle"),
+            Action::AgentCycleReverse => Some("agent_cycle_reverse"),
+            Action::VariantCycle => Some("cycle_variant"),
+            Action::AllowPermission => Some("allow_permission"),
+            Action::DenyPermission => Some("deny_permission"),
+            Action::DismissModal => Some("dismiss_modal"),
+            Action::HistoryUp => Some("history_up"),
+            Action::HistoryDown => Some("history_down"),
+            Action::CursorLeft => None,
+            Action::CursorRight => None,
+            Action::Backspace => None,
+            Action::Delete => None,
+            Action::Char(_) => None,
+        }
+    }
+
+    pub fn metadata_label(self) -> &'static str {
+        self.metadata_id()
+            .and_then(command_metadata)
+            .map(|metadata| metadata.label)
+            .unwrap_or("")
+    }
+
+    pub fn metadata_description(self) -> &'static str {
+        self.metadata_id()
+            .and_then(command_metadata)
+            .map(|metadata| metadata.description)
+            .unwrap_or("")
+    }
+
     fn grouped_palette_commands() -> &'static [PaletteCommand] {
         &[
             PaletteCommand {
                 id: "new_session",
-                label: "New session",
-                description: "Start a fresh live session",
+                metadata_id: "new_session",
                 shortcut: "new",
                 section: PaletteCommandSection::Suggested,
             },
             PaletteCommand {
                 id: "resume_session",
-                label: "Continue session",
-                description: "Continue a prior session when resumable",
+                metadata_id: "resume_session",
                 shortcut: "resume",
                 section: PaletteCommandSection::Session,
             },
             PaletteCommand {
                 id: "replay_session",
-                label: "Replay session",
-                description: "Replay a previous session as read-only",
+                metadata_id: "replay_session",
                 shortcut: "replay",
                 section: PaletteCommandSection::Session,
             },
             PaletteCommand {
                 id: "switch_model",
-                label: "Switch model",
-                description: "Browse available provider/model options",
+                metadata_id: "switch_model",
                 shortcut: "model",
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
                 id: "agent_cycle",
-                label: "Next agent",
-                description: "Cycle to the next primary agent",
+                metadata_id: "agent_cycle",
                 shortcut: "tab",
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
                 id: "agent_cycle_reverse",
-                label: "Previous agent",
-                description: "Cycle to the previous primary agent",
+                metadata_id: "agent_cycle_reverse",
                 shortcut: "shift+tab",
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
                 id: "cycle_variant",
-                label: "Cycle reasoning preset",
-                description: "Cycle the configured model variant/reasoning preset",
+                metadata_id: "cycle_variant",
                 shortcut: "ctrl+t",
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
                 id: "toggles",
-                label: "Toggles",
-                description: "Toggle profiles, tools, hooks, MCP, YOLO",
+                metadata_id: "toggles",
                 shortcut: "toggles",
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
                 id: "close_review_surface",
-                label: "Session shell",
-                description: "Return to the transcript-first session shell",
+                metadata_id: "close_review_surface",
                 shortcut: "esc",
                 section: PaletteCommandSection::Session,
             },
             PaletteCommand {
                 id: "open_event_log",
-                label: "Event log",
-                description: "Open the review event log surface",
+                metadata_id: "open_event_log",
                 shortcut: "",
                 section: PaletteCommandSection::Session,
             },
             PaletteCommand {
                 id: "toggle_terminal_panel",
-                label: "Toggle terminal panel",
-                description: "Show or hide shell command output below the transcript",
+                metadata_id: "toggle_terminal_panel",
                 shortcut: "4",
                 section: PaletteCommandSection::Session,
             },
             PaletteCommand {
                 id: "toggle_follow",
-                label: "Toggle follow",
-                description: "Toggle follow mode",
+                metadata_id: "toggle_follow",
                 shortcut: "space",
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
                 id: "show_thinking",
-                label: "Show thinking",
-                description: "Restore inline thinking rows in the transcript",
+                metadata_id: "show_thinking",
                 shortcut: "",
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
                 id: "hide_thinking",
-                label: "Hide thinking",
-                description: "Hide inline thinking rows in the transcript",
+                metadata_id: "hide_thinking",
                 shortcut: "",
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
                 id: "show_timestamps",
-                label: "Show timestamps",
-                description: "Reveal user message timestamps in the transcript",
+                metadata_id: "show_timestamps",
                 shortcut: "",
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
                 id: "hide_timestamps",
-                label: "Hide timestamps",
-                description: "Hide user message timestamps in the transcript",
+                metadata_id: "hide_timestamps",
                 shortcut: "",
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
                 id: "show_tool_details",
-                label: "Show tool details",
-                description: "Show completed successful tools in the transcript",
+                metadata_id: "show_tool_details",
                 shortcut: "",
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
                 id: "hide_tool_details",
-                label: "Hide tool details",
-                description: "Hide completed successful tools in the transcript",
+                metadata_id: "hide_tool_details",
                 shortcut: "",
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
                 id: "show_generic_tool_output",
-                label: "Show generic tool output",
-                description: "Expand generic tool payload blocks in the transcript",
+                metadata_id: "show_generic_tool_output",
                 shortcut: "",
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
                 id: "hide_generic_tool_output",
-                label: "Hide generic tool output",
-                description: "Collapse generic tool payload blocks in the transcript",
+                metadata_id: "hide_generic_tool_output",
                 shortcut: "",
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
                 id: "expand_selected_turn_results",
-                label: "Expand turn results",
-                description: "Expand overflow tool output in the selected turn",
+                metadata_id: "expand_selected_turn_results",
                 shortcut: "",
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
                 id: "collapse_selected_turn_results",
-                label: "Collapse turn results",
-                description: "Collapse overflow tool output in the selected turn",
+                metadata_id: "collapse_selected_turn_results",
                 shortcut: "",
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
                 id: "stack_transcript_diffs",
-                label: "Use stacked diffs",
-                description: "Force unified stacked transcript diffs",
+                metadata_id: "stack_transcript_diffs",
                 shortcut: "",
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
                 id: "split_transcript_diffs",
-                label: "Use split diffs",
-                description: "Allow side-by-side transcript diffs when wide",
+                metadata_id: "split_transcript_diffs",
                 shortcut: "",
                 section: PaletteCommandSection::Agent,
             },
             PaletteCommand {
                 id: "help",
-                label: "Help",
-                description: "Show shortcuts and TUI controls",
+                metadata_id: "help",
                 shortcut: "?",
                 section: PaletteCommandSection::System,
             },
             PaletteCommand {
                 id: "quit",
-                label: "Quit",
-                description: "Quit the application",
+                metadata_id: "quit",
                 shortcut: "q",
                 section: PaletteCommandSection::System,
             },
@@ -327,91 +718,21 @@ impl Action {
     }
 
     /// Get the list of all palette-executable actions.
-    pub fn palette_commands() -> &'static [(&'static str, &'static str)] {
-        &[
-            ("new_session", "Start a fresh live session"),
-            ("resume_session", "Continue a prior session when resumable"),
-            ("replay_session", "Replay a previous session as read-only"),
-            ("switch_model", "Browse available provider/model options"),
-            ("agent_cycle", "Cycle to the next primary agent"),
-            ("agent_cycle_reverse", "Cycle to the previous primary agent"),
-            (
-                "cycle_variant",
-                "Cycle the configured model variant/reasoning preset",
-            ),
-            ("toggles", "Toggle profiles, tools, hooks, MCP, YOLO"),
-            (
-                "close_review_surface",
-                "Return to the transcript-first session shell",
-            ),
-            ("open_event_log", "Open the review event log surface"),
-            (
-                "toggle_terminal_panel",
-                "Show or hide shell command output below the transcript",
-            ),
-            ("toggle_follow", "Toggle follow mode"),
-            (
-                "show_thinking",
-                "Restore inline thinking rows in the transcript",
-            ),
-            (
-                "hide_thinking",
-                "Hide inline thinking rows in the transcript",
-            ),
-            (
-                "show_timestamps",
-                "Reveal user message timestamps in the transcript",
-            ),
-            (
-                "hide_timestamps",
-                "Hide user message timestamps in the transcript",
-            ),
-            (
-                "show_tool_details",
-                "Show completed successful tools in the transcript",
-            ),
-            (
-                "hide_tool_details",
-                "Hide completed successful tools in the transcript",
-            ),
-            (
-                "show_generic_tool_output",
-                "Expand generic tool payload blocks in the transcript",
-            ),
-            (
-                "hide_generic_tool_output",
-                "Collapse generic tool payload blocks in the transcript",
-            ),
-            (
-                "expand_selected_turn_results",
-                "Expand overflow tool output in the selected turn",
-            ),
-            (
-                "collapse_selected_turn_results",
-                "Collapse overflow tool output in the selected turn",
-            ),
-            (
-                "stack_transcript_diffs",
-                "Force unified stacked transcript diffs",
-            ),
-            (
-                "split_transcript_diffs",
-                "Allow side-by-side transcript diffs when wide",
-            ),
-            ("help", "Show shortcuts and TUI controls"),
-            ("quit", "Quit the application"),
-        ]
+    pub fn palette_commands() -> &'static [PaletteCommand] {
+        Self::grouped_palette_commands()
     }
 
     pub fn palette_command_label(command: &str) -> &'static str {
         Self::palette_command(command)
-            .map(|palette_command| palette_command.label)
+            .and_then(|palette_command| command_metadata(palette_command.metadata_id))
+            .map(|metadata| metadata.label)
             .unwrap_or("")
     }
 
     pub fn palette_command_description(command: &str) -> &'static str {
         Self::palette_command(command)
-            .map(|palette_command| palette_command.description)
+            .and_then(|palette_command| command_metadata(palette_command.metadata_id))
+            .map(|metadata| metadata.description)
             .unwrap_or("")
     }
 
@@ -892,6 +1213,113 @@ mod tests {
         let s = action.as_str();
         let parsed = Action::from_str(s).unwrap();
         assert_eq!(action, parsed);
+    }
+
+    #[test]
+    fn command_metadata_covers_palette_and_slash_commands() {
+        // arrange
+        let palette_commands = Action::palette_commands();
+        let slash_commands = slash_commands();
+
+        // act
+        for command in palette_commands {
+            let metadata = command_metadata(command.metadata_id)
+                .unwrap_or_else(|| panic!("missing palette metadata for {}", command.id));
+
+            // assert
+            assert!(!metadata.label.trim().is_empty(), "{} label", command.id);
+            assert!(
+                !metadata.description.trim().is_empty(),
+                "{} description",
+                command.id
+            );
+            assert_eq!(Action::palette_command_label(command.id), metadata.label);
+            assert_eq!(
+                Action::palette_command_description(command.id),
+                metadata.description
+            );
+        }
+
+        for command in slash_commands {
+            let metadata = command_metadata(command.metadata_id)
+                .unwrap_or_else(|| panic!("missing slash metadata for {}", command.id));
+
+            assert!(
+                !metadata.description.trim().is_empty(),
+                "{} description",
+                command.id
+            );
+            assert_eq!(slash_command_description(command.id), metadata.description);
+        }
+    }
+
+    #[test]
+    fn slash_and_palette_shared_commands_use_same_metadata() {
+        // arrange
+        let shared_commands = [
+            ("model", "switch_model"),
+            ("toggles", "toggles"),
+            ("events", "open_event_log"),
+            ("help", "help"),
+            ("shell", "close_review_surface"),
+            ("follow", "toggle_follow"),
+            ("exit", "quit"),
+        ];
+
+        // act
+        for (slash_command, palette_command) in shared_commands {
+            let slash_description = slash_command_description(slash_command);
+            let palette_description = Action::palette_command_description(palette_command);
+
+            // assert
+            assert_eq!(
+                slash_description, palette_description,
+                "{slash_command} should reuse {palette_command} metadata"
+            );
+        }
+    }
+
+    #[test]
+    fn help_actions_use_shared_command_metadata() {
+        // arrange
+        let help_actions = [
+            Action::MoveDown,
+            Action::MoveUp,
+            Action::FocusNext,
+            Action::FocusPrev,
+            Action::ToggleFollow,
+            Action::Reload,
+            Action::CloseReviewSurface,
+            Action::ToggleTerminalPanel,
+            Action::SubmitPrompt,
+            Action::InsertNewline,
+            Action::ClearPrompt,
+            Action::HistoryUp,
+            Action::HistoryDown,
+            Action::AllowPermission,
+            Action::DenyPermission,
+            Action::DismissModal,
+            Action::Help,
+            Action::Quit,
+        ];
+
+        // act
+        for action in help_actions {
+            let metadata_label = action.metadata_label();
+            let metadata_description = action.metadata_description();
+
+            // assert
+            assert!(
+                !metadata_label.trim().is_empty(),
+                "{} label",
+                action.as_str()
+            );
+            assert!(
+                !metadata_description.trim().is_empty(),
+                "{} description",
+                action.as_str()
+            );
+        }
     }
 
     #[test]
