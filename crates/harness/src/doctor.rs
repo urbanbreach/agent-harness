@@ -13,8 +13,8 @@ use harness_core::config::{
 use harness_core::event::EventEnvelopeV1;
 use harness_core::proj::{project_team_state, TeamRunStatus};
 use harness_tools::{
-    coordinator_registry_with_mcp_and_editing, native_tool_catalog_entries,
-    EditingToolSurfaceConfig,
+    coordinator_registry_with_mcp_and_editing, discover_skill_catalog_with_config,
+    native_tool_catalog_entries, EditingToolSurfaceConfig, SkillCatalogStatus,
 };
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -155,7 +155,12 @@ pub(crate) fn execute_with_io(
     let mut config = loaded.config;
     config.apply_session_dir_override(session_dir);
 
-    let report = build_report(config_display, &config, &|name| deps.env_var_is_set(name));
+    let report = build_report(
+        config_display,
+        &config,
+        &config_context.discovery.current_dir,
+        &|name| deps.env_var_is_set(name),
+    );
     if command.json {
         match serde_json::to_string_pretty(&report) {
             Ok(json) => {
@@ -180,9 +185,15 @@ pub(crate) fn execute_with_io(
 pub(crate) fn support_report_json(
     config_display: String,
     config: &HarnessConfig,
+    workspace_root: &Path,
     env_var_is_set: &dyn Fn(&str) -> bool,
 ) -> Value {
-    let report = build_report(config_display.clone(), config, env_var_is_set);
+    let report = build_report(
+        config_display.clone(),
+        config,
+        workspace_root,
+        env_var_is_set,
+    );
     let mut value = serde_json::to_value(report).unwrap_or_else(|err| {
         json!({
             "config": config_display,
@@ -199,6 +210,7 @@ pub(crate) fn support_report_json(
 fn build_report(
     config_display: String,
     config: &HarnessConfig,
+    workspace_root: &Path,
     env_var_is_set: &dyn Fn(&str) -> bool,
 ) -> DoctorReport {
     let checks = vec![
@@ -207,7 +219,7 @@ fn build_report(
         check_model_references(config),
         check_shipped_profiles(config),
         check_category_routes(config),
-        check_resolved_routes(config),
+        check_resolved_routes(config, workspace_root),
         check_profile_tools(config),
         check_native_tool_catalog(config),
         check_permissions(config),
@@ -224,7 +236,7 @@ fn build_report(
     }
 }
 
-fn check_resolved_routes(config: &HarnessConfig) -> DoctorCheck {
+fn check_resolved_routes(config: &HarnessConfig, workspace_root: &Path) -> DoctorCheck {
     let catalog = resolve_agent_catalog(config);
     let mut missing = Vec::new();
 
@@ -251,7 +263,7 @@ fn check_resolved_routes(config: &HarnessConfig) -> DoctorCheck {
     let route_count = routes.len();
     let details = json!({
         "routes": routes,
-        "skills": skill_readiness_metadata(config),
+        "skills": skill_readiness_metadata(config, workspace_root),
         "category_fallback": {
             "unknown_category_profile": catalog.category_fallback.unknown_category_profile,
             "disabled_parent_profiles": catalog.category_fallback.disabled_parent_profiles.clone(),
@@ -469,7 +481,7 @@ fn tool_call_support_metadata(
     }
 }
 
-fn skill_readiness_metadata(config: &HarnessConfig) -> Value {
+fn skill_readiness_metadata(config: &HarnessConfig, workspace_root: &Path) -> Value {
     let configured_permission_patterns = config
         .skills
         .permissions
@@ -494,13 +506,74 @@ fn skill_readiness_metadata(config: &HarnessConfig) -> Value {
         .collect::<Vec<_>>();
     let root_count = config.skills.project_roots.len() + config.skills.global_roots.len();
 
+    let catalog = discover_skill_catalog_with_config(workspace_root, &config.skills);
+    let (catalog, readiness, catalog_status) = match catalog {
+        Ok(catalog) => {
+            let loadable_count = catalog
+                .entries
+                .iter()
+                .filter(|entry| entry.status == SkillCatalogStatus::Loadable)
+                .count();
+            let denied_count = catalog
+                .entries
+                .iter()
+                .filter(|entry| entry.status == SkillCatalogStatus::Denied)
+                .count();
+            let disabled_count = catalog
+                .entries
+                .iter()
+                .filter(|entry| entry.status == SkillCatalogStatus::Disabled)
+                .count();
+            let malformed_count = catalog
+                .entries
+                .iter()
+                .filter(|entry| entry.status == SkillCatalogStatus::Malformed)
+                .count();
+            let shadowed_count = catalog
+                .entries
+                .iter()
+                .filter(|entry| entry.status == SkillCatalogStatus::Shadowed)
+                .count();
+            (
+                json!(catalog),
+                json!({
+                    "entry_count": catalog.entries.len(),
+                    "loadable_count": loadable_count,
+                    "denied_count": denied_count,
+                    "disabled_count": disabled_count,
+                    "malformed_count": malformed_count,
+                    "shadowed_count": shadowed_count,
+                }),
+                "available",
+            )
+        }
+        Err(err) => (
+            json!({ "entries": [] }),
+            json!({
+                "entry_count": 0,
+                "loadable_count": 0,
+                "denied_count": 0,
+                "disabled_count": 0,
+                "malformed_count": 0,
+                "shadowed_count": 0,
+                "error": err.to_string(),
+            }),
+            "unavailable",
+        ),
+    };
+
     json!({
         "status": if root_count == 0 { "no_roots_configured" } else { "configured" },
+        "catalog_status": catalog_status,
+        "catalog_source": "harness_tools::skill_catalog",
         "project_roots": config.skills.project_roots.iter().map(|path| path.display().to_string()).collect::<Vec<_>>(),
         "global_roots": config.skills.global_roots.iter().map(|path| path.display().to_string()).collect::<Vec<_>>(),
         "walk_to_git_root": config.skills.walk_to_git_root,
         "permission_rules": configured_permission_patterns,
         "skill_tool_profiles": skill_tool_profiles,
+        "workspace_root": workspace_root.display().to_string(),
+        "catalog": catalog,
+        "readiness": readiness,
         "no_network_probes": true,
     })
 }

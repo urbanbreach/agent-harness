@@ -155,6 +155,27 @@ fn doctor_cli_json_reports_resolved_route_metadata() {
         .iter()
         .any(|root| root == ".agent-harness/skills"));
     assert_eq!(
+        route_check["details"]["skills"]["catalog_source"],
+        "harness_tools::skill_catalog"
+    );
+    assert_eq!(
+        route_check["details"]["skills"]["readiness"]["loadable_count"],
+        2
+    );
+    let skill_entries = route_check["details"]["skills"]["catalog"]["entries"]
+        .as_array()
+        .expect("skill catalog entries");
+    assert!(skill_entries.iter().any(|entry| {
+        entry["name"] == "rust-best-practices"
+            && entry["stable_id"] == "skill:project:rust-best-practices"
+            && entry["status"] == "loadable"
+            && entry["source_scope"] == "project"
+            && entry["body_loaded"] == false
+    }));
+    assert!(!serde_json::to_string(&route_check["details"]["skills"])
+        .expect("serialize compact skill readiness")
+        .contains("Use focused diffs."));
+    assert_eq!(
         route_check["details"]["routes"]["discipline"]["skills"]["tool_enabled"],
         true
     );
@@ -186,6 +207,89 @@ fn doctor_cli_json_reports_resolved_route_metadata() {
         route_check["details"]["category_fallback"]["policy_source"],
         "harness_core::coord::task_category_fallback_profile"
     );
+}
+
+#[test]
+fn doctor_cli_json_reports_stable_id_disabled_skill_metadata() {
+    let temp = tempdir().expect("tempdir");
+    fs::create_dir_all(temp.path().join(".agent-harness/skills/disabled-doctor"))
+        .expect("create disabled skill");
+    fs::write(
+        temp.path()
+            .join(".agent-harness/skills/disabled-doctor/SKILL.md"),
+        "---\nname: disabled-doctor\ndescription: Disabled doctor skill\n---\n\nDISABLED DOCTOR BODY SENTINEL\n",
+    )
+    .expect("write disabled skill");
+    let config_path = temp.path().join("harness.jsonc");
+    fs::write(
+        &config_path,
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              baseURL: "http://127.0.0.1:8317/v1",
+              apiKey: "DUMMY",
+              models: {
+                "gpt-5.4-mini": { name: "GPT-5.4 mini" },
+              },
+            },
+          },
+          model: "default/gpt-5.4-mini",
+          default_agent: "build",
+          agent: {
+            build: { enable: true, model: "default/gpt-5.4-mini" },
+            general: { enable: true, model: "default/gpt-5.4-mini" },
+          },
+          permission: "ask",
+          skills: {
+            disabled: ["skill:project:disabled-doctor"],
+          },
+        }
+        "#,
+    )
+    .expect("write config with stable-id disabled skill");
+
+    let output = harness_command()
+        .current_dir(temp.path())
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "doctor",
+            "--json",
+        ])
+        .output()
+        .expect("run harness doctor with stable-id disabled skill");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.contains("DISABLED DOCTOR BODY SENTINEL"));
+    let report: Value = serde_json::from_slice(&output.stdout).expect("doctor json report");
+    let route_check = report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .find(|check| check["name"] == "resolved_routes")
+        .expect("resolved route metadata check");
+    assert_eq!(
+        route_check["details"]["skills"]["readiness"]["disabled_count"],
+        1
+    );
+    let skill_entries = route_check["details"]["skills"]["catalog"]["entries"]
+        .as_array()
+        .expect("skill catalog entries");
+    assert!(skill_entries.iter().any(|entry| {
+        entry["name"] == "disabled-doctor"
+            && entry["stable_id"] == "skill:project:disabled-doctor"
+            && entry["status"] == "disabled"
+            && entry["source_scope"] == "project"
+            && entry["body_loaded"] == false
+    }));
 }
 
 #[test]
