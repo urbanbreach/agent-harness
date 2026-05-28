@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::agent_ops::{
-    select_agent_selection, AgentOpsExecutor, AgentSpawnRequest, BackgroundOutputRequest, BatchCall,
+    select_agent_selection, AgentOpsExecutor, AgentSpawnRequest, BackgroundCancelRequest,
+    BackgroundOutputRequest, BatchCall,
 };
 use crate::code_lsp::{code_lsp_parameters_json_schema, parse_code_lsp_request, CodeLspExecutor};
 use crate::control_plane::{
@@ -68,6 +69,9 @@ pub(crate) struct TaskTool {
 pub(crate) struct BackgroundOutputTool {
     executor: Arc<AgentOpsExecutor>,
 }
+pub(crate) struct BackgroundCancelTool {
+    executor: Arc<AgentOpsExecutor>,
+}
 pub(crate) struct BatchTool {
     executor: Arc<AgentOpsExecutor>,
 }
@@ -123,6 +127,12 @@ impl TaskTool {
 }
 
 impl BackgroundOutputTool {
+    pub(crate) fn new(executor: Arc<AgentOpsExecutor>) -> Self {
+        Self { executor }
+    }
+}
+
+impl BackgroundCancelTool {
     pub(crate) fn new(executor: Arc<AgentOpsExecutor>) -> Self {
         Self { executor }
     }
@@ -310,6 +320,14 @@ struct BackgroundOutputArgs {
     timeout: u64,
     #[serde(default)]
     cancel: bool,
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct BackgroundCancelArgs {
+    request_id: String,
     #[serde(default)]
     reason: Option<String>,
 }
@@ -865,6 +883,38 @@ impl Tool for BackgroundOutputTool {
                     block: args.block,
                     timeout_ms: args.timeout,
                     cancel: args.cancel,
+                    reason: args.reason,
+                },
+            )
+            .await
+    }
+}
+
+#[async_trait]
+impl Tool for BackgroundCancelTool {
+    fn id(&self) -> &str {
+        "background_cancel"
+    }
+
+    fn description(&self) -> &str {
+        "Requests coordinator-owned cancellation for a non-terminal background task by request_id. This is the explicit cancellation form; background_output(cancel=true) remains available for compatibility."
+    }
+
+    fn parameters_json_schema(&self) -> Value {
+        super::json_schema_for::<BackgroundCancelArgs>()
+    }
+
+    fn capability(&self) -> ToolCapability {
+        ToolCapability::SpawnAgent
+    }
+
+    async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
+        let args: BackgroundCancelArgs = parse_tool_args(args_json)?;
+        self.executor
+            .background_cancel(
+                &ctx,
+                BackgroundCancelRequest {
+                    request_id: args.request_id,
                     reason: args.reason,
                 },
             )

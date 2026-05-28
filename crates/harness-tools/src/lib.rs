@@ -74,7 +74,7 @@ use agent_ops::AgentOpsExecutor;
 
 mod team_ops;
 use team_ops::{
-    TeamCreateTool, TeamDeleteTool, TeamSendMessageTool, TeamShutdownApproveTool,
+    TeamCreateTool, TeamDeleteTool, TeamListTool, TeamSendMessageTool, TeamShutdownApproveTool,
     TeamShutdownRejectTool, TeamShutdownRequestTool, TeamStatusTool, TeamTaskCreateTool,
     TeamTaskGetTool, TeamTaskListTool, TeamTaskUpdateTool,
 };
@@ -93,10 +93,19 @@ mod lsp_support;
 
 mod native_tools;
 use native_tools::{
-    BackgroundOutputTool, BashTool, BatchTool, CodeSearchTool, GlobTool, GrepTool, InvalidTool,
-    ListTool, LspTool, QuestionTool, ReadTool, SkillTool, TaskTool, TodoReadTool, TodoWriteTool,
-    WebFetchTool, WebSearchTool,
+    BackgroundCancelTool, BackgroundOutputTool, BashTool, BatchTool, CodeSearchTool, GlobTool,
+    GrepTool, InvalidTool, ListTool, LspTool, QuestionTool, ReadTool, SkillTool, TaskTool,
+    TodoReadTool, TodoWriteTool, WebFetchTool, WebSearchTool,
 };
+
+mod session_tools;
+use session_tools::{SessionInfoTool, SessionListTool, SessionReadTool, SessionSearchTool};
+
+mod ast_grep;
+use ast_grep::AstGrepSearchTool;
+
+pub mod tool_catalog;
+pub use tool_catalog::{native_tool_catalog_entries, NativeToolCatalogEntry};
 
 mod plan;
 use plan::{PlanEnterTool, PlanExitTool};
@@ -109,6 +118,7 @@ pub struct CoordinatorRegistryExecutors {
     github_executor: Arc<GitHubExecutor>,
     question_answer_source: Arc<dyn question_env::QuestionAnswerSource>,
     shell_command_runner: Arc<dyn ShellCommandRunner>,
+    ast_grep_command: Option<String>,
 }
 
 impl Default for CoordinatorRegistryExecutors {
@@ -118,6 +128,7 @@ impl Default for CoordinatorRegistryExecutors {
             github_executor: Arc::new(GitHubExecutor::new()),
             question_answer_source: coordinator_question_answer_source(),
             shell_command_runner: ShellRunTool::default_runner(),
+            ast_grep_command: None,
         }
     }
 }
@@ -176,6 +187,12 @@ impl CoordinatorRegistryExecutors {
         shell_command_runner: Arc<dyn ShellCommandRunner>,
     ) -> Self {
         self.shell_command_runner = shell_command_runner;
+        self
+    }
+
+    #[doc(hidden)]
+    pub fn with_ast_grep_command(mut self, command: impl Into<String>) -> Self {
+        self.ast_grep_command = Some(command.into());
         self
     }
 }
@@ -339,6 +356,19 @@ pub fn coordinator_registry_with_github_transport(
     )
 }
 
+#[doc(hidden)]
+pub fn coordinator_registry_with_ast_grep_command(
+    shell_allowlist: ShellAllowlist,
+    command: impl Into<String>,
+) -> ToolRegistry {
+    coordinator_registry_with_mcp_editing_and_executors(
+        shell_allowlist,
+        McpConfig::default(),
+        EditingToolSurfaceConfig::default(),
+        CoordinatorRegistryExecutors::default().with_ast_grep_command(command),
+    )
+}
+
 fn register_coordinator_native_tools_with_question_answer_source(
     registry: &mut ToolRegistry,
     shell_allowlist: ShellAllowlist,
@@ -373,6 +403,10 @@ fn coordinator_native_tool_surface(
     let network_executor = executors.network_executor.clone();
     let github_executor = executors.github_executor.clone();
     let shell_command_runner = executors.shell_command_runner.clone();
+    let ast_grep_tool = executors
+        .ast_grep_command
+        .map(AstGrepSearchTool::with_command)
+        .unwrap_or_else(AstGrepSearchTool::new);
     let agent_ops_executor = Arc::new(AgentOpsExecutor::with_question_answer_source(
         question_answer_source.clone(),
     ));
@@ -389,7 +423,14 @@ fn coordinator_native_tool_surface(
         boxed_tool(GrepTool),
         boxed_tool(TaskTool::new(agent_ops_executor.clone())),
         boxed_tool(BackgroundOutputTool::new(agent_ops_executor.clone())),
+        boxed_tool(BackgroundCancelTool::new(agent_ops_executor.clone())),
+        boxed_tool(SessionListTool),
+        boxed_tool(SessionReadTool),
+        boxed_tool(SessionSearchTool),
+        boxed_tool(SessionInfoTool),
+        boxed_tool(ast_grep_tool),
         boxed_tool(TeamCreateTool),
+        boxed_tool(TeamListTool),
         boxed_tool(TeamStatusTool),
         boxed_tool(TeamSendMessageTool),
         boxed_tool(TeamTaskCreateTool),
@@ -587,6 +628,8 @@ mod tests {
 
         for tool_id in [
             "bash",
+            "ast_grep_search",
+            "background_cancel",
             "background_output",
             "batch",
             "codesearch",
@@ -601,10 +644,15 @@ mod tests {
             "lsp",
             "question",
             "read",
+            "session_info",
+            "session_list",
+            "session_read",
+            "session_search",
             "skill",
             "todoread",
             "todowrite",
             "task",
+            "team_list",
             "webfetch",
             "websearch",
         ] {
