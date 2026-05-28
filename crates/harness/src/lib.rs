@@ -30,6 +30,7 @@ mod logging;
 mod model_probe;
 mod models;
 mod prompt;
+mod readiness;
 mod recovery;
 mod replay;
 mod run;

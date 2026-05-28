@@ -1,19 +1,25 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use clap::Args;
+use harness_core::agent_catalog::{
+    resolve_agent_catalog, SHIPPED_CATEGORY_ROUTES, SHIPPED_PRIMARY_PROFILES, SHIPPED_SUBAGENTS,
+};
 use harness_core::config::{
     resolve_model_selection, AgentMode, HarnessConfig, McpServerConfig, PermissionMode,
-    ProviderConfig, ResolvedModelTarget,
+    ProviderConfig,
 };
-use harness_core::coord::{
-    TASK_CATEGORY_FALLBACK_DISABLED_PARENT_PROFILES, TASK_CATEGORY_FALLBACK_PROFILE,
+use harness_core::event::EventEnvelopeV1;
+use harness_core::proj::{project_team_state, TeamRunStatus};
+use harness_tools::{
+    coordinator_registry_with_mcp_and_editing, native_tool_catalog_entries,
+    EditingToolSurfaceConfig,
 };
-use harness_tools::{coordinator_registry_with_mcp_and_editing, EditingToolSurfaceConfig};
 use serde::Serialize;
 use serde_json::{json, Value};
 
+use crate::readiness::ast_grep_adapter_readiness;
 use crate::{CliDeps, CliIo};
 
 const REQUIRED_PRIMARY_AGENTS: [&str; 3] = ["build", "plan", "discipline"];
@@ -203,6 +209,7 @@ fn build_report(
         check_category_routes(config),
         check_resolved_routes(config),
         check_profile_tools(config),
+        check_native_tool_catalog(config),
         check_permissions(config),
         check_session_dir(&config.paths.session_dir),
         check_mcp(config),
@@ -218,31 +225,40 @@ fn build_report(
 }
 
 fn check_resolved_routes(config: &HarnessConfig) -> DoctorCheck {
-    let mut routes = serde_json::Map::new();
+    let catalog = resolve_agent_catalog(config);
     let mut missing = Vec::new();
 
-    for profile in REQUIRED_PRIMARY_AGENTS
-        .into_iter()
-        .chain(REQUIRED_SUBAGENTS)
-        .chain(REQUIRED_CATEGORY_ROUTES)
+    for profile in SHIPPED_PRIMARY_PROFILES
+        .iter()
+        .copied()
+        .chain(SHIPPED_SUBAGENTS.iter().copied())
+        .chain(SHIPPED_CATEGORY_ROUTES.iter().copied())
     {
-        let Some(agent) = config.agents.get(profile) else {
+        if catalog.get(profile).is_none() {
             missing.push(profile);
-            continue;
-        };
-        routes.insert(profile.to_string(), route_metadata(config, profile, agent));
+        }
     }
 
+    let routes = catalog
+        .entries
+        .iter()
+        .map(|entry| {
+            let mut value = serde_json::to_value(entry).unwrap_or_else(|_| json!({}));
+            attach_doctor_model_metadata(config, &mut value);
+            (entry.id.clone(), value)
+        })
+        .collect::<BTreeMap<_, _>>();
     let route_count = routes.len();
     let details = json!({
         "routes": routes,
         "skills": skill_readiness_metadata(config),
         "category_fallback": {
-            "unknown_category_profile": TASK_CATEGORY_FALLBACK_PROFILE,
-            "disabled_for_parent": TASK_CATEGORY_FALLBACK_DISABLED_PARENT_PROFILES,
-            "policy_source": "harness_core::coord::task_category_fallback_profile",
-            "visibility": "task output reports requested category, resolved route, runtime metadata, and fallback policy; doctor reports the same policy without provider or MCP network calls"
+            "unknown_category_profile": catalog.category_fallback.unknown_category_profile,
+            "disabled_parent_profiles": catalog.category_fallback.disabled_parent_profiles.clone(),
+            "disabled_for_parent": catalog.category_fallback.disabled_parent_profiles,
+            "policy_source": catalog.category_fallback.policy_source,
         },
+        "catalog_source": "harness_core::agent_catalog",
         "no_network_probes": true,
     });
 
@@ -264,45 +280,193 @@ fn check_resolved_routes(config: &HarnessConfig) -> DoctorCheck {
     )
 }
 
-fn route_metadata(
-    config: &HarnessConfig,
-    profile: &str,
-    agent: &harness_core::config::ProfileConfig,
-) -> Value {
-    let model = resolve_model_selection(config, &agent.model_ref, agent.variant.as_deref())
-        .map(|selection| {
-            json!({
-                "model_ref": selection.primary.model_ref,
-                "provider": selection.primary.provider,
-                "model": selection.primary.model,
-                "variant": selection.primary.variant,
-                "tool_call_support": tool_call_support_metadata(config, &selection.primary),
-                "fallback_chain": selection
-                    .fallback
-                    .into_iter()
-                    .map(|target| target.model_ref)
-                    .collect::<Vec<_>>(),
-            })
+fn check_native_tool_catalog(config: &HarnessConfig) -> DoctorCheck {
+    let registry = coordinator_registry_with_mcp_and_editing(
+        config.permissions.shell_allowlist.clone(),
+        Default::default(),
+        EditingToolSurfaceConfig {
+            hashline_edit: config.hashline_edit,
+        },
+    );
+    let catalog = native_tool_catalog_entries(&registry);
+    let required = [
+        "session_list",
+        "session_read",
+        "session_search",
+        "session_info",
+        "background_cancel",
+        "team_list",
+        "ast_grep_search",
+    ];
+    let missing = required
+        .iter()
+        .filter_map(|tool_id| {
+            (!catalog.iter().any(|entry| entry.canonical_id == **tool_id)).then_some(*tool_id)
         })
-        .unwrap_or_else(|err| {
-            json!({
-                "model_ref": agent.model_ref,
-                "variant": agent.variant,
-                "tool_call_support": unknown_tool_call_support_metadata("model_resolution_failed"),
-                "resolution_error": err.to_string(),
-            })
+        .collect::<Vec<_>>();
+    let details = json!({
+        "catalog_source": "harness_tools::tool_catalog",
+        "tool_count": catalog.len(),
+        "required_v1_tools": required,
+        "tools": catalog,
+        "readiness": {
+            "session_tools": catalog.iter().filter(|entry| entry.canonical_id.starts_with("session_")).count(),
+            "background_cancel": catalog.iter().any(|entry| entry.canonical_id == "background_cancel"),
+            "team_list": catalog.iter().any(|entry| entry.canonical_id == "team_list"),
+            "team_projection": active_team_projection_summary(&config.paths.session_dir),
+            "ast_grep_search": catalog.iter().any(|entry| entry.canonical_id == "ast_grep_search"),
+            "ast_grep_adapter": ast_grep_adapter_readiness(),
+            "ast_grep_replace": "deferred_conditional_stretch",
+        },
+        "no_network_probes": true,
+    });
+
+    if !missing.is_empty() {
+        return fail(
+            "native_tool_catalog",
+            format!(
+                "missing required V1 tool catalog entries: {}",
+                missing.join(", ")
+            ),
+        );
+    }
+    pass_with_details(
+        "native_tool_catalog",
+        format!(
+            "{} native tool catalog entries are available",
+            catalog.len()
+        ),
+        details,
+    )
+}
+
+fn active_team_projection_summary(session_dir: &Path) -> Value {
+    if !session_dir.exists() {
+        return json!({
+            "available": false,
+            "active_team_count": 0,
+            "sessions_scanned": 0,
+            "parse_error_count": 0,
+            "reason": "session_dir_missing",
+            "source": "event_replay",
+            "no_network_probes": true,
         });
+    }
+
+    let mut active_team_count = 0usize;
+    let mut sessions_scanned = 0usize;
+    let mut parse_error_count = 0usize;
+    if let Ok(entries) = std::fs::read_dir(session_dir) {
+        for entry in entries.filter_map(Result::ok) {
+            let events_path = entry.path().join("events.jsonl");
+            if !events_path.is_file() {
+                continue;
+            }
+            let Ok(body) = std::fs::read_to_string(&events_path) else {
+                parse_error_count = parse_error_count.saturating_add(1);
+                continue;
+            };
+            let mut events = Vec::new();
+            for line in body.lines().filter(|line| !line.trim().is_empty()) {
+                match serde_json::from_str::<EventEnvelopeV1>(line) {
+                    Ok(event) => events.push(event),
+                    Err(_) => parse_error_count = parse_error_count.saturating_add(1),
+                }
+            }
+            sessions_scanned = sessions_scanned.saturating_add(1);
+            if let Ok(projection) = project_team_state(events.iter()) {
+                active_team_count = active_team_count.saturating_add(
+                    projection
+                        .teams
+                        .values()
+                        .filter(|team| team.status == TeamRunStatus::Active)
+                        .count(),
+                );
+            }
+        }
+    }
 
     json!({
-        "profile_id": profile,
-        "role": route_role(profile, agent),
-        "hidden": agent.hidden,
-        "prompt": prompt_status(profile, agent),
-        "model": model,
-        "toolset": agent.tools,
-        "skills": route_skill_metadata(config, agent),
-        "permission_posture": permission_posture(config, agent),
+        "available": true,
+        "active_team_count": active_team_count,
+        "sessions_scanned": sessions_scanned,
+        "parse_error_count": parse_error_count,
+        "source": "event_replay",
+        "no_network_probes": true,
     })
+}
+
+fn attach_doctor_model_metadata(config: &HarnessConfig, value: &mut Value) {
+    let Some(model) = value.get_mut("model").and_then(Value::as_object_mut) else {
+        return;
+    };
+    let provider_id = model.get("provider").and_then(Value::as_str);
+    let model_id = model.get("model").and_then(Value::as_str);
+    model.insert(
+        "tool_call_support".to_string(),
+        tool_call_support_metadata(config, provider_id, model_id),
+    );
+}
+
+fn tool_call_support_metadata(
+    config: &HarnessConfig,
+    provider_id: Option<&str>,
+    model_id: Option<&str>,
+) -> Value {
+    let Some(provider_id) = provider_id else {
+        return json!({
+            "status": "unknown",
+            "supports_tool_calls": Value::Null,
+            "source": "model_resolution_unavailable",
+            "no_network_probes": true,
+        });
+    };
+    let Some(model_id) = model_id else {
+        return json!({
+            "status": "unknown",
+            "supports_tool_calls": Value::Null,
+            "source": "model_resolution_unavailable",
+            "no_network_probes": true,
+        });
+    };
+    let Some(provider) = config.providers.get(provider_id) else {
+        return json!({
+            "status": "unknown",
+            "supports_tool_calls": Value::Null,
+            "source": "provider_model_metadata_missing",
+            "no_network_probes": true,
+        });
+    };
+    let ProviderConfig::OpenAiCompatible(provider) = provider;
+    let Some(model) = provider.models.get(model_id) else {
+        return json!({
+            "status": "unknown",
+            "supports_tool_calls": Value::Null,
+            "source": "provider_model_metadata_missing",
+            "no_network_probes": true,
+        });
+    };
+
+    match model.metadata.supports_tool_calls {
+        Some(true) => json!({
+            "status": "supported",
+            "supports_tool_calls": true,
+            "source": "provider_model_metadata",
+            "no_network_probes": true,
+        }),
+        Some(false) => json!({
+            "status": "unsupported",
+            "supports_tool_calls": false,
+            "source": "provider_model_metadata",
+            "no_network_probes": true,
+        }),
+        None => json!({
+            "status": "unknown",
+            "supports_tool_calls": Value::Null,
+            "source": "provider_model_metadata",
+            "no_network_probes": true,
+        }),
+    }
 }
 
 fn skill_readiness_metadata(config: &HarnessConfig) -> Value {
@@ -338,104 +502,6 @@ fn skill_readiness_metadata(config: &HarnessConfig) -> Value {
         "permission_rules": configured_permission_patterns,
         "skill_tool_profiles": skill_tool_profiles,
         "no_network_probes": true,
-    })
-}
-
-fn route_skill_metadata(
-    config: &HarnessConfig,
-    agent: &harness_core::config::ProfileConfig,
-) -> Value {
-    json!({
-        "tool_enabled": agent.tools.iter().any(|tool| tool == "skill"),
-        "configured_permission_patterns": config.skills.permissions.keys().cloned().collect::<Vec<_>>(),
-    })
-}
-
-fn tool_call_support_metadata(config: &HarnessConfig, target: &ResolvedModelTarget) -> Value {
-    let Some(provider) = config.providers.get(&target.provider) else {
-        return unknown_tool_call_support_metadata("provider_metadata_missing");
-    };
-    let ProviderConfig::OpenAiCompatible(provider) = provider;
-    let Some(model) = provider.models.get(&target.model) else {
-        return unknown_tool_call_support_metadata("model_metadata_missing");
-    };
-
-    match model.metadata.supports_tool_calls {
-        Some(supports_tool_calls) => json!({
-            "status": if supports_tool_calls { "supported" } else { "unsupported" },
-            "supports_tool_calls": supports_tool_calls,
-            "source": "provider_model_metadata",
-            "no_network_probes": true,
-        }),
-        None => unknown_tool_call_support_metadata("unknown_not_declared"),
-    }
-}
-
-fn unknown_tool_call_support_metadata(reason: &str) -> Value {
-    json!({
-        "status": "unknown_not_probed",
-        "supports_tool_calls": null,
-        "source": reason,
-        "no_network_probes": true,
-    })
-}
-
-fn route_role(profile: &str, agent: &harness_core::config::ProfileConfig) -> &'static str {
-    if agent.hidden {
-        return "hidden";
-    }
-    if REQUIRED_CATEGORY_ROUTES.contains(&profile) {
-        return "category";
-    }
-    if REQUIRED_PRIMARY_AGENTS.contains(&profile) || agent.mode == AgentMode::Primary {
-        return "primary";
-    }
-    if agent.mode == AgentMode::Subagent {
-        return "subagent";
-    }
-    "all"
-}
-
-fn prompt_status(profile: &str, agent: &harness_core::config::ProfileConfig) -> Value {
-    if agent.system_prompt.as_deref().is_some_and(non_empty) {
-        return json!({
-            "status": "available",
-            "source": "configured_or_discovered",
-        });
-    }
-    if bundled_prompt_available(profile) {
-        return json!({
-            "status": "available",
-            "source": "bundled_shipped_asset",
-        });
-    }
-    json!({
-        "status": "missing",
-        "source": null,
-    })
-}
-
-fn bundled_prompt_available(profile: &str) -> bool {
-    REQUIRED_PRIMARY_AGENTS.contains(&profile)
-        || REQUIRED_SUBAGENTS.contains(&profile)
-        || REQUIRED_CATEGORY_ROUTES.contains(&profile)
-}
-
-fn permission_posture(
-    config: &HarnessConfig,
-    agent: &harness_core::config::ProfileConfig,
-) -> Value {
-    let permissions = agent.permissions.as_ref();
-    json!({
-        "fallback": permission_mode_label(permissions.and_then(|value| value.fallback.as_ref()).or(config.permissions.fallback.as_ref())),
-        "edit": permission_mode_label(permissions.and_then(|value| value.edit.as_ref()).or(permissions.and_then(|value| value.fallback.as_ref())).or(Some(&config.permissions.defaults.edit))),
-        "bash": permission_mode_label(permissions.and_then(|value| value.shell.as_ref()).or(permissions.and_then(|value| value.fallback.as_ref())).or(Some(&config.permissions.defaults.shell))),
-        "question": permission_mode_label(permissions.and_then(|value| value.question.as_ref()).or(permissions.and_then(|value| value.fallback.as_ref())).or(config.permissions.defaults.question.as_ref()).or(config.permissions.fallback.as_ref())),
-        "task": permission_mode_label(permissions.and_then(|value| value.task.as_ref()).or(permissions.and_then(|value| value.fallback.as_ref())).or(config.permissions.defaults.task.as_ref()).or(config.permissions.fallback.as_ref())),
-        "webfetch": permission_mode_label(permissions.and_then(|value| value.webfetch.as_ref()).or(permissions.and_then(|value| value.network.as_ref())).or(permissions.and_then(|value| value.fallback.as_ref())).or(config.permissions.defaults.webfetch.as_ref()).or(Some(&config.permissions.defaults.network))),
-        "websearch": permission_mode_label(permissions.and_then(|value| value.websearch.as_ref()).or(permissions.and_then(|value| value.network.as_ref())).or(permissions.and_then(|value| value.fallback.as_ref())).or(config.permissions.defaults.websearch.as_ref()).or(Some(&config.permissions.defaults.network))),
-        "codesearch": permission_mode_label(permissions.and_then(|value| value.codesearch.as_ref()).or(permissions.and_then(|value| value.network.as_ref())).or(permissions.and_then(|value| value.fallback.as_ref())).or(config.permissions.defaults.codesearch.as_ref()).or(Some(&config.permissions.defaults.network))),
-        "lsp": permission_mode_label(permissions.and_then(|value| value.lsp.as_ref()).or(permissions.and_then(|value| value.fallback.as_ref())).or(config.permissions.defaults.lsp.as_ref()).or(config.permissions.fallback.as_ref())),
     })
 }
 
