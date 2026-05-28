@@ -9,3 +9,8 @@ mod part_02_skill_load_uses_registered_custom_roots_test {
     use super::*;
     include!("skill_load_discovery/02_skill_load_uses_registered_custom_roots_test.rs");
 }
+
+mod part_03_v1_skill_contract_test {
+    use super::*;
+    include!("skill_load_discovery/03_v1_skill_contract_test.rs");
+}
