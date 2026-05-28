@@ -19,9 +19,9 @@ use super::{
     task_child_request_id_from_output, task_child_session_id_from_output, ActivityEntry, AppState,
     Focus, PermissionConfirmSelection, PermissionModalSelection, PermissionModalStage,
     PostRunHandoffAction, ReviewSurface, StartupLauncherAction, SubagentSessionInfo, Tab,
-    ToolCallEntry, UiIntent, SLASH_COMMANDS,
+    ToolCallEntry, UiIntent,
 };
-use crate::keybindings::Action;
+use crate::keybindings::{self, Action};
 use crate::text::{has_trimmed_content, non_empty_trimmed};
 use crate::time_format::short_time_or_trimmed;
 
@@ -1255,12 +1255,16 @@ impl AppState {
         let slash_query = self.active_slash_query().unwrap_or_default().to_lowercase();
 
         self.slash_visible = true;
-        let mut filtered = SLASH_COMMANDS
+        let mut filtered = keybindings::slash_commands()
             .iter()
-            .filter(|(command, _)| self.slash_command_available(command))
-            .filter_map(|(command, description)| {
-                slash_command_match_rank(command, description, &slash_query)
-                    .map(|rank| (rank, (*command).to_string()))
+            .filter(|command| self.slash_command_available(command.id))
+            .filter_map(|command| {
+                slash_command_match_rank(
+                    command.id,
+                    keybindings::slash_command_description(command.id),
+                    &slash_query,
+                )
+                .map(|rank| (rank, command.id.to_string()))
             })
             .collect::<Vec<_>>();
         filtered.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
@@ -1277,19 +1281,19 @@ impl AppState {
             .trim()
             .strip_prefix('/')
             .and_then(|command| {
-                SLASH_COMMANDS.iter().find_map(|(name, _)| {
-                    ((*name == command || slash_command_aliases(name).contains(&command))
-                        && self.slash_command_available(name))
-                    .then_some(*name)
+                keybindings::slash_commands().iter().find_map(|entry| {
+                    ((entry.id == command || entry.aliases.contains(&command))
+                        && self.slash_command_available(entry.id))
+                    .then_some(entry.id)
                 })
             })
     }
 
     pub(crate) fn slash_command_column_width(&self) -> usize {
-        SLASH_COMMANDS
+        keybindings::slash_commands()
             .iter()
-            .filter(|(command, _)| self.slash_command_available(command))
-            .map(|(command, _)| slash_command_display_width(command))
+            .filter(|command| self.slash_command_available(command.id))
+            .map(|command| slash_command_display_width(command.id))
             .max()
             .unwrap_or(0)
             .saturating_add(2)
@@ -1742,9 +1746,10 @@ impl AppState {
             .enumerate()
             .filter_map(|palette_command| {
                 let (index, palette_command) = palette_command;
-                let label = palette_command.label.to_lowercase();
+                let label = Action::palette_command_label(palette_command.id).to_lowercase();
                 let id = palette_command.id.to_lowercase();
-                let description = palette_command.description.to_lowercase();
+                let description =
+                    Action::palette_command_description(palette_command.id).to_lowercase();
                 let section = palette_command.section.label().to_lowercase();
                 let prefix_match = input.is_empty()
                     || label.starts_with(&input)
@@ -3327,7 +3332,7 @@ fn slash_command_match_rank(command: &str, description: &str, query: &str) -> Op
     let display = format!("/{command}");
     let command = command.to_lowercase();
     let description = description.to_lowercase();
-    let aliases = slash_command_aliases(command.as_str());
+    let aliases = keybindings::slash_command_aliases(command.as_str());
 
     if command == query || display == query || aliases.contains(&query) {
         return Some((0, 0));
@@ -3361,20 +3366,6 @@ fn slash_command_match_rank(command: &str, description: &str, query: &str) -> Op
     }
 
     description.find(query).map(|index| (3, index))
-}
-
-fn slash_command_aliases(command: &str) -> &'static [&'static str] {
-    match command {
-        "new" => &["new-session", "session"],
-        "resume" => &["continue"],
-        "model" => &["models"],
-        "status" => &["system-status"],
-        "events" => &["event-log"],
-        "shell" => &["session-shell"],
-        "compact" => &["summarize", "summary"],
-        "exit" => &["quit", "q"],
-        _ => &[],
-    }
 }
 
 fn slash_command_display_width(command: &str) -> usize {

@@ -81,31 +81,6 @@ const TOOL_OUTPUT_DISPLAY_MAX_CHARS: usize = 100;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_CHARS: usize = 72;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_FIELDS: usize = 3;
 const INTERRUPT_CONFIRM_TIMEOUT: Duration = Duration::from_secs(5);
-pub(crate) const SLASH_COMMANDS: [(&str, &str); 16] = [
-    ("new", "Return to the home shell"),
-    ("sessions", "Switch session"),
-    ("resume", "Continue a saved session"),
-    ("replay", "Replay a saved session"),
-    ("fork", "Fork session"),
-    ("tree", "View the Harness session tree"),
-    ("clone", "Prepare a Harness session clone"),
-    ("model", "Switch model"),
-    ("status", "View status"),
-    ("toggles", "Open toggles"),
-    ("events", "Open the event log review"),
-    ("help", "Show shortcuts and TUI controls"),
-    ("shell", "Return to the session shell"),
-    ("follow", "Toggle follow mode"),
-    ("compact", "Write a manual context checkpoint"),
-    ("exit", "Quit Harness"),
-];
-
-pub(crate) fn slash_command_description(command: &str) -> &'static str {
-    SLASH_COMMANDS
-        .iter()
-        .find_map(|(name, description)| (*name == command).then_some(*description))
-        .unwrap_or("")
-}
 
 static NEXT_TRANSCRIPT_CACHE_INSTANCE_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -4433,13 +4408,16 @@ pub(crate) fn exact_test_slash_menu_lists_lineage_commands() {
         assert_eq!(app.typed_slash_command(), Some(query));
     }
 
-    assert_eq!(slash_command_description("fork"), "Fork session");
     assert_eq!(
-        slash_command_description("tree"),
+        crate::keybindings::slash_command_description("fork"),
+        "Fork session"
+    );
+    assert_eq!(
+        crate::keybindings::slash_command_description("tree"),
         "View the Harness session tree"
     );
     assert_eq!(
-        slash_command_description("clone"),
+        crate::keybindings::slash_command_description("clone"),
         "Prepare a Harness session clone"
     );
 }
@@ -4554,7 +4532,7 @@ pub(crate) fn exact_test_slash_lineage_write_commands_blocked_when_live_unstable
 #[cfg(test)]
 pub(crate) fn exact_test_slash_lineage_descriptions_use_harness_branding() {
     for command in ["tree", "clone"] {
-        let description = slash_command_description(command);
+        let description = crate::keybindings::slash_command_description(command);
         assert!(
             description.contains("Harness"),
             "{command} should use Harness branding: {description}"
