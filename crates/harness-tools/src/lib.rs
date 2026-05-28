@@ -49,6 +49,12 @@ mod mcp;
 mod control_plane;
 use control_plane::ControlPlaneExecutor;
 
+mod skill_catalog;
+pub use skill_catalog::{
+    discover_skill_catalog, discover_skill_catalog_with_config, SkillCatalog, SkillCatalogEntry,
+    SkillCatalogStatus,
+};
+
 mod question_env;
 use question_env::coordinator_question_answer_source;
 

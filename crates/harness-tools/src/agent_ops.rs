@@ -1529,13 +1529,7 @@ fn loaded_skill_metadata(loaded_skills: &[TaskSkillContext]) -> Value {
     Value::Array(
         loaded_skills
             .iter()
-            .map(|skill| {
-                json!({
-                    "name": skill.name,
-                    "description": skill.description,
-                    "location": skill.location.display().to_string(),
-                })
-            })
+            .map(|skill| json!(skill.metadata))
             .collect(),
     )
 }
@@ -1636,6 +1630,7 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::control_plane::TaskSkillContext;
+    use crate::skill_catalog::{SkillCatalogEntry, SkillCatalogStatus};
 
     #[test]
     fn select_agent_selection_accepts_matching_category_and_subagent_type() {
@@ -1712,6 +1707,26 @@ mod tests {
             description: "Rust guidance".to_string(),
             content: "Use focused diffs.".to_string(),
             location: PathBuf::from(".agents/skills/rust-best-practices/SKILL.md"),
+            metadata: SkillCatalogEntry {
+                stable_id: "skill:project:rust-best-practices".to_string(),
+                name: "rust-best-practices".to_string(),
+                description: "Rust guidance".to_string(),
+                source_scope: "project".to_string(),
+                root_path: PathBuf::from(".agents/skills"),
+                location: PathBuf::from(".agents/skills/rust-best-practices/SKILL.md"),
+                loadable: true,
+                permission_mode: "allow".to_string(),
+                status: SkillCatalogStatus::Loadable,
+                reason: None,
+                argument_hint: None,
+                allowed_tools: Vec::new(),
+                target_agent: None,
+                target_category: None,
+                deferred_mcp: None,
+                deferred_resources: None,
+                body_loaded: false,
+                body_digest: None,
+            },
         }];
 
         // act
