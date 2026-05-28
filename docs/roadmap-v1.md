@@ -56,7 +56,7 @@ must still land before the roadmap can treat the surface as release-ready:
 - [x] Read-only `explore` as a subagent.
 - [x] Category delegation names and routing concepts.
 - [x] Markdown skill loading as a runtime mechanism.
-- [ ] Skill progressive-disclosure behavior is documented and tested.
+- [x] Skill progressive-disclosure behavior is documented and tested.
 - [ ] Candidate built-in skills such as `git-master`, `review-work`, and
   `frontend-ui-ux` ship with V1-quality bodies, docs, disablement, and tests.
 - [ ] Stronger doctor checks, prompt snapshots, and evidence gates cover prompt,
@@ -226,16 +226,26 @@ turns those working mechanisms into well-specified release behavior.
 - [x] `skill` can load a discovered skill into the current turn.
 - [x] `task(load_skills = [...])` injects loaded skill content into child prompts.
 - [x] Skill loading supports allow, ask, and deny permission modes.
-- [ ] Skill discovery documents precedence across project, workspace/config, user,
-  and built-in scopes.
-- [ ] Skill frontmatter has a V1 schema for name, description, argument hint,
-  permission, allowed tools, target agent/category, and deferred MCP metadata.
-- [ ] Skill content follows a quality template: purpose, use when, do not use when,
-  execution policy, steps, tool usage, escalation/stop conditions, final
-  checklist, and advanced notes.
-- [ ] Skill loading follows progressive disclosure: metadata in catalog, SKILL.md
-  on activation, bundled references/assets only when needed.
-- [ ] Skill prompt injection order and conflict resolution with agent prompts and
+- [x] Skill discovery documents implemented V1 precedence across configured
+  project/workspace roots, git-root walking, and user/XDG global roots.
+- [ ] Skill discovery documents and tests full compatibility/built-in precedence
+  across built-in scopes and imported OpenCode/Claude/Agents roots before those
+  adapters ship.
+- [ ] OpenCode, Claude, and Agents compatibility skill roots are tracked as adapter
+  work: `.opencode/skills/*/SKILL.md`, `.claude/skills/*/SKILL.md`,
+  `.agents/skills/*/SKILL.md`, and user-level equivalents. Harness-owned roots
+  stay first unless an explicit compatibility mode says otherwise.
+- [x] Skill frontmatter has a V1 schema for name, description, argument hint,
+  allowed/expected tools, target agent/category, and deferred MCP/resource
+  metadata; skill loading permission modes are config/catalog metadata, not
+  frontmatter.
+- [x] The skill authoring guide documents a quality template: purpose, use when,
+  do not use when, execution policy, steps, tool usage, escalation/stop
+  conditions, final checklist, and advanced notes.
+- [x] Skill loading follows progressive disclosure: metadata in catalog and
+  SKILL.md on activation; bundled references/assets remain deferred
+  metadata/follow-up, not runtime-loaded in this slice.
+- [x] Skill prompt injection order and conflict resolution with agent prompts and
   AGENTS.md is documented.
 - [ ] Built-in skills are disableable by stable ids before V1 adds more of them.
 - [ ] Built-in skill candidates are reviewed against the V1 stance before being
@@ -336,7 +346,7 @@ when the current tree has command output or artifact roots cited there.
 - [x] `cargo run -p harness -- --config configs/harness.example.jsonc doctor`
   gives actionable output for missing provider, model, MCP, tool, and agent
   setup.
-- [x] A manual TUI happy path has been recorded for start, prompt, permission,
+- [ ] A manual TUI happy path has been recorded for start, prompt, permission,
   tool call, edit, resume, and quit.
 - [ ] Release-facing speed, provider breadth, compatibility, or parity claims are
   backed by current evidence artifacts, not README assertions or inspiration
@@ -657,6 +667,100 @@ V1 should be plugin-ready, not a broad arbitrary plugin host.
 - [x] Do not add broad compatibility shims that bypass canonical Harness tool ids,
   permissions, or replay safety.
 
+## V1 polish additions from the hyperplan review
+
+These additions sharpen the release target after comparing the roadmap against
+the checked-in inspiration material. They are V1 work only where they make the
+vanilla local-coding product trustworthy and polished; broader agent-OS,
+desktop/mobile, browser/media, OAuth MCP, and arbitrary plugin work stays
+post-V1 unless this roadmap explicitly re-scopes it.
+
+### Release evidence and claim integrity
+
+- [ ] A V1 claim-to-evidence matrix maps every release-facing claim to a
+  deterministic test, manual artifact, fixture, command output, or explicit
+  documented limitation.
+- [ ] A release blocker taxonomy classifies open work as correctness, safety,
+  UX, docs, provider, performance, or evidence work so checked foundations are
+  not confused with V1-quality surfaces.
+- [ ] Release-facing performance, startup, binary-size, provider, and parity
+  claims cite current artifacts with run provenance and fail closed when
+  evidence is stale or partial.
+- [ ] The V1 closeout bundle includes an operator-readable summary that ties
+  README/config/docs claims back to the evidence matrix.
+
+### Operator happy path and TUI signoff
+
+- [ ] A scripted operator happy path covers install, config, provider readiness,
+  TUI startup, one tool-enabled prompt, permission approval/denial, edit review,
+  diff inspection, resume, replay, doctor, and support export.
+- [ ] TUI visual signoff artifacts cover at least one normal prompt flow, one
+  permission/question flow, one provider/tool failure flow, and one resume flow.
+- [ ] The TUI has release-quality operator surfaces for model/provider status,
+  permission scope, tool progress, diff review, session navigation, and
+  recoverable failure states.
+- [ ] TUI polish inspired by OpenCode/Shuvcode is scoped to terminal-first V1
+  surfaces: prompt history, session sidebar/search, diff review, model/status
+  clarity, and question/permission overlays; desktop/mobile/PWA polish remains
+  post-V1.
+
+### Provider, permission, and privacy readiness
+
+- [ ] A V1 provider support matrix states the supported execution path, known
+  limits, model fallback policy, credential expectations, and named error
+  categories.
+- [ ] Provider errors have stable user-actionable categories and TUI/headless
+  recovery text for missing credentials, invalid credentials, rate limits,
+  context overflow, unsupported tool calls, malformed streams, and transport
+  failures.
+- [ ] A permission threat model explains that permissions are an operator
+  approval layer rather than a sandbox, names the mutable surfaces, and links
+  prompt promises to runtime enforcement fixtures.
+- [ ] Privacy and local-data notes explain what can leave the machine, where
+  sessions and artifacts live, how redaction works, and which cloud/telemetry
+  features are absent unless added later.
+
+### Session, resume, and compaction trust
+
+- [ ] Resume acceptance evidence covers an interrupted realistic coding session
+  with tool artifacts, permission state, summaries, and restored context.
+- [ ] Large-session list/resume/search behavior is measured before V1 makes fast
+  long-session claims.
+- [ ] Crash-resilient session write behavior is tested at the event-store
+  boundary and documented for support/debugging.
+- [ ] Compaction preservation tests prove file, tool, skill, todo, and plan
+  context survive summary generation well enough for a resumed session to
+  continue without guessing.
+- [ ] Session list, search, tree, fork, and clone surfaces expose meaningful
+  generated or editable titles instead of only paths or opaque run ids.
+
+### Built-in skills and prompt discipline
+
+- [ ] The minimal V1 built-in skill set is named explicitly and each skill has a
+  real body, use-when/do-not-use-when guidance, docs, disablement behavior, and
+  tests before it is advertised as shipped.
+- [ ] README and docs do not advertise `git-master`, `review-work`,
+  `frontend-ui-ux`, or equivalent skills as release-ready until the evidence
+  matrix links them to V1-quality bodies and tests.
+- [ ] Prompt bodies and category profiles distinguish template scaffolding from
+  agent-specific operating guidance, with golden snapshots for the shipped
+  prompt set.
+- [ ] Intent-gate behavior is covered by prompt fixtures for ambiguous requests,
+  investigation requests, implementation requests, and planning requests.
+
+### Typed extension seam without plugin sprawl
+
+- [ ] A typed extension manifest seam defines optional tools, hooks, commands,
+  prompts, MCP bundles, diagnostics, provider decorators, capability ids,
+  disablement state, and replay-safe event rendering.
+- [ ] Extension-provided behavior cannot bypass coordinator-owned permissions,
+  event append authority, artifact redaction, or replay side-effect boundaries.
+- [ ] Built-in extension-like features use the public Harness interfaces and
+  stable ids before external plugin compatibility is considered.
+- [ ] Migration notes explain which OpenCode, Codex, OMO/OMX, Pi, Senpi,
+  Shuvcode, desktop/mobile, browser/media, and plugin surfaces are unsupported
+  by design for V1.
+
 ## Documentation deliverables
 
 - [x] README quick start is accurate and minimal.
@@ -675,16 +779,26 @@ V1 should be plugin-ready, not a broad arbitrary plugin host.
 
 ## Suggested implementation order
 
+- [ ] Freeze V1 scope and add the release blocker taxonomy plus claim-to-evidence
+  matrix before adding new user-facing release claims.
 - [ ] Clean documentation and asset drift first, because stale prompt/agent
   references make every later checklist item ambiguous.
 - [ ] Lock install, config, provider, `doctor`, and one prompt smoke from outside
   the repository, because V1 starts with a user being able to run the binary.
+- [ ] Add the scripted operator happy path and TUI visual signoff checklist before
+  treating the TUI as release-ready.
 - [ ] Make startup prompt-first and improve prompt history, because this is the
   highest-frequency vanilla local-coding interaction.
 - [x] Centralize command/keybinding metadata before expanding keybindings, slash
   commands, or help text.
 - [ ] Improve permission modal clarity before adding more powerful tools, so new
   capabilities inherit a clear approval surface.
+- [ ] Harden provider error categories, fallback policy, and support-matrix docs
+  before claiming provider breadth beyond the implemented execution path.
+- [ ] Lock resume, large-session, crash-write, and compaction preservation
+  evidence before making session durability or long-session performance claims.
+- [ ] Add the permission threat model and privacy/local-data notes before adding
+  more extension-like or externally integrated capabilities.
 - [ ] Add prompt bodies, prompt snapshots, and task/permission fixtures before
   expanding subagent or skill catalogs.
 - [x] Add an `AgentCatalog`-style resolution seam before relying on category
