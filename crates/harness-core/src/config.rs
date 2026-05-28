@@ -836,6 +836,8 @@ pub struct SkillsConfig {
     pub global_roots: Vec<PathBuf>,
     #[serde(default)]
     pub urls: Vec<String>,
+    #[serde(default, alias = "disabledIds")]
+    pub disabled: Vec<String>,
     #[serde(default = "default_skills_walk_to_git_root", alias = "walkToGitRoot")]
     pub walk_to_git_root: bool,
     #[serde(default)]
@@ -848,6 +850,7 @@ impl Default for SkillsConfig {
             project_roots: default_skills_project_roots(),
             global_roots: default_skills_global_roots(),
             urls: Vec::new(),
+            disabled: Vec::new(),
             walk_to_git_root: default_skills_walk_to_git_root(),
             permissions: default_skills_permissions(),
         }
@@ -4255,6 +4258,7 @@ mod tests {
                 }
               },
               skills: {
+                disabled: ["skill:project:disabled-doctor"],
                 walkToGitRoot: false,
                 permissions: {
                   "internal-*": "deny"
@@ -4266,6 +4270,21 @@ mod tests {
         .expect("runtime config with top-level skills should parse");
 
         assert!(!parsed.skills.walk_to_git_root);
+        assert_eq!(
+            parsed.skills.project_roots,
+            vec![
+                PathBuf::from(".agent-harness/skills"),
+                PathBuf::from(".harness/skills")
+            ]
+        );
+        assert_eq!(
+            parsed.skills.global_roots,
+            vec![PathBuf::from("~/.config/agent-harness/skills")]
+        );
+        assert_eq!(
+            parsed.skills.disabled,
+            vec!["skill:project:disabled-doctor".to_string()]
+        );
         assert_eq!(
             parsed.skills.permissions.get("internal-*"),
             Some(&PermissionMode::Deny)

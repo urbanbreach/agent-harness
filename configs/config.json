@@ -1318,6 +1318,13 @@
     "SkillsConfig": {
       "additionalProperties": false,
       "properties": {
+        "disabled": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "global_roots": {
           "default": [],
           "items": {
@@ -1587,6 +1594,7 @@
         }
       ],
       "default": {
+        "disabled": [],
         "global_roots": [
           "~/.config/agent-harness/skills"
         ],

@@ -2104,12 +2104,32 @@ fn normalize_public_lsp_config(value: &serde_json::Value) -> Option<serde_json::
 }
 
 fn normalize_public_skills_config(value: &serde_json::Value) -> serde_json::Value {
-    let mut normalized = value.clone();
-    let Some(object) = normalized.as_object_mut() else {
-        return normalized;
+    let mut overlay = value.clone();
+    let Some(object) = overlay.as_object_mut() else {
+        return overlay;
     };
     object.remove("urls");
+    canonicalize_skill_alias(object, "projectRoots", "project_roots");
+    canonicalize_skill_alias(object, "paths", "project_roots");
+    canonicalize_skill_alias(object, "globalRoots", "global_roots");
+    canonicalize_skill_alias(object, "disabledIds", "disabled");
+    canonicalize_skill_alias(object, "walkToGitRoot", "walk_to_git_root");
+
+    let mut normalized =
+        serde_json::to_value(SkillsConfig::default()).unwrap_or_else(|_| serde_json::json!({}));
+    merge_config_value(&mut normalized, overlay);
     normalized
+}
+
+fn canonicalize_skill_alias(
+    object: &mut serde_json::Map<String, serde_json::Value>,
+    alias: &str,
+    canonical: &str,
+) {
+    let Some(value) = object.remove(alias) else {
+        return;
+    };
+    object.entry(canonical.to_string()).or_insert(value);
 }
 
 pub(super) fn translate_public_runtime_root(
