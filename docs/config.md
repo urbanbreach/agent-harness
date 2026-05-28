@@ -250,6 +250,93 @@ When `task` loads skills for a child session, the child user prompt starts with
 delegation context, then loaded skill content, then optional command context, and
 finally the requested task body.
 
+## Skill discovery and V1 skill contract
+
+Markdown skills are local instruction bundles discovered from configured roots.
+They do not fetch remote URLs, start MCP servers, register tools, or change
+coordinator permissions during discovery. The V1 source scopes emitted by the
+skill catalog are `project` and `global`: configured project/workspace roots are
+reported as `project`, user/XDG roots are reported as `global`, and the starter
+skills checked into `.agent-harness/skills` are ordinary project-scope skills
+when the current workspace is this repository.
+
+The runtime config shape is:
+
+```jsonc
+{
+  "skills": {
+    "project_roots": [".agent-harness/skills", ".harness/skills"],
+    "global_roots": ["~/.config/agent-harness/skills"],
+    "disabled": ["skill:project:old-skill", "experimental-*"],
+    "walk_to_git_root": true,
+    "permissions": {
+      "*": "allow",
+      "experimental-*": "ask",
+      "internal-*": "deny"
+    },
+    "urls": []
+  }
+}
+```
+
+`project_roots` and `global_roots` accept filesystem paths. Relative project
+roots are resolved against the current workspace and, when `walk_to_git_root` is
+true, each ancestor up to the nearest `.git` directory. Relative global roots are
+resolved from the current workspace, while `~` expands to the operator home
+directory. Discovery walks project roots first, nearest workspace ancestor before
+outer ancestors, then global roots; entries inside each root are sorted by
+directory name. The first skill name wins. Later entries with the same name are
+reported as `shadowed` with an actionable reason.
+
+`permissions` is a skill-loading policy keyed by exact names or simple `*`
+patterns. `allow` loads immediately, `ask` requests operator confirmation before
+activation, and `deny` keeps the skill catalog-visible but unloadable. `disabled`
+uses the same name/pattern matching and also accepts stable ids such as
+`skill:project:rust-best-practices`; disabled skills are catalog-visible but
+cannot be activated through either `skill` or `task(load_skills = [...])`.
+`urls` is accepted as inert/deferred metadata only; V1 discovery never fetches
+remote skills.
+
+A skill directory must contain `SKILL.md` with V1 frontmatter:
+
+```markdown
+---
+name: rust-best-practices
+description: Baseline Rust guidance for this workspace.
+argument_hint: optional short usage hint
+allowed_tools: read, grep
+target_agent: build
+target_category: deep
+mcp: deferred-local-metadata
+resources: bundled-reference-not-loaded
+---
+
+# Skill body
+```
+
+Required fields are `name` and `description`. `name` must match the directory
+name and `^[a-z0-9]+(-[a-z0-9]+)*$`; `description` must be 1-1024 characters.
+Optional V1 fields are `argument_hint` / `argumentHint`, `allowed_tools` /
+`allowedTools` / `expected_tools` / `expectedTools`, `target_agent` /
+`targetAgent`, `target_category` / `targetCategory`, `mcp` / `deferred_mcp` /
+`deferredMcp`, `resources` / `deferred_resources` / `deferredResources`, and a
+string-to-string `metadata` map. `license` and `compatibility` are accepted as
+non-runtime metadata. Unsupported public fields make that skill `malformed`
+without hiding other valid skills in the same catalog.
+
+Catalog-time metadata includes stable id, name, description, source scope, root
+path, file location, loadability, permission mode, status, optional V1 metadata,
+`body_loaded: false`, and no full `SKILL.md` body. Full bodies are loaded only
+when the `skill` tool activates a loadable skill or `task(load_skills = [...])`
+resolves loadable skills before child spawn. Missing, denied, disabled,
+malformed, and symlink-unsafe skills fail before activation or child spawn.
+
+`allowed_tools` and related skill metadata are descriptive/restrictive contract
+metadata only. They never grant runtime tools, override a profile toolset, or
+bypass coordinator permission checks. Doctor JSON and support exports consume the
+same compact catalog metadata, report loadable/denied/disabled/malformed/shadowed
+counts, and keep full skill bodies out of readiness surfaces.
+
 The shipped `plan` agent provides a stable planning mode, not an experimental
 feature flag. It can read/search, ask questions, write only the active
 workspace-relative `.agent-harness/plans/<run>.md` plan file, and call
@@ -344,9 +431,12 @@ When a subagent profile does not configure its own `model`, task delegation
 inherits the invoking parent turn's active model and model settings. If the
 subagent profile has an explicit `model`, that configured model wins. The `task`
 tool requires `run_in_background` and `load_skills` on every call; pass
-`load_skills: []` when no skill context is needed. Listed skills are resolved
-before the child is spawned, missing or denied skills fail the call, and loaded
-skill content is injected into the child prompt before the original task body.
+`load_skills: []` when no skill context is needed. Listed skills are resolved in
+request order before the child is spawned; duplicate names are loaded once at the
+first occurrence. Missing, denied, disabled, malformed, or symlink-unsafe skills
+fail the call before child spawn. Loaded skill content is injected into the child
+prompt before optional command context and before the original task body, while
+task output reports compact loaded-skill metadata without the full bodies.
 `task(run_in_background: true)` returns a child `request_id`; use the
 `background_output` tool with that `request_id` to inspect completion status or
 the terminal result. Retrieval is event-replay based and does not advance the

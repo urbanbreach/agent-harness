@@ -185,6 +185,69 @@ fn config_docs_capture_harness_contract_and_migration_boundary() {
 }
 
 #[test]
+fn config_docs_capture_v1_skill_contract_and_authoring_guide() {
+    let root = repo_root();
+    let doc = std::fs::read_to_string(root.join("docs/config.md")).expect("read docs/config.md");
+    let starter = std::fs::read_to_string(root.join("docs/starter-skills.md"))
+        .expect("read docs/starter-skills.md");
+    let readme = std::fs::read_to_string(root.join("README.md")).expect("read README.md");
+    let runtime_schema =
+        harness_schema_pretty_json().expect("runtime schema generation should succeed");
+    let runtime_schema: serde_json::Value =
+        serde_json::from_str(&runtime_schema).expect("runtime schema json");
+
+    assert!(runtime_schema["definitions"]["SkillsConfig"]["properties"]
+        .as_object()
+        .expect("skills schema properties")
+        .contains_key("disabled"));
+    assert_eq!(
+        runtime_schema["properties"]["skills"]["default"]["disabled"],
+        serde_json::json!([])
+    );
+
+    for expected in [
+        "## Skill discovery and V1 skill contract",
+        "\"disabled\": [\"skill:project:old-skill\", \"experimental-*\"]",
+        "V1 discovery never fetches\nremote skills",
+        "Unsupported public fields make that skill `malformed`",
+        "`body_loaded: false`",
+        "Missing, denied, disabled,\nmalformed, and symlink-unsafe skills fail before activation or child spawn",
+        "They never grant runtime tools",
+    ] {
+        assert!(
+            doc.contains(expected),
+            "docs/config.md missing V1 skill contract anchor: {expected}"
+        );
+    }
+
+    for expected in [
+        "## V1 frontmatter",
+        "## Progressive disclosure and governance",
+        "purpose",
+        "do not use when",
+        "execution policy",
+        "final checklist",
+        "it never grants tools",
+    ] {
+        assert!(
+            starter.contains(expected),
+            "docs/starter-skills.md missing skill guide anchor: {expected}"
+        );
+    }
+
+    for expected in [
+        "duplicate names load once at their first occurrence",
+        "malformed, or symlink-unsafe skills fail the task call before child spawn",
+        "`body_loaded: false`",
+    ] {
+        assert!(
+            readme.contains(expected),
+            "README.md missing task/skill anchor: {expected}"
+        );
+    }
+}
+
+#[test]
 fn config_docs_capture_plan_operator_workflow_and_guardrails() {
     let root = repo_root();
     let doc = std::fs::read_to_string(root.join("docs/config.md")).expect("read docs/config.md");

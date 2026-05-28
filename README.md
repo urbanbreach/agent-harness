@@ -10,8 +10,13 @@
 - `load_skills` is required, even when empty.
 - `skills` and `load_skills` are equivalent aliases for the same list.
 - `command`, when provided, is prepended to the child prompt as delegation context.
-- Listed skills are resolved before the child is spawned; missing or denied skills
-  fail the task call, and loaded skill content is injected before the original task body.
+- Listed skills are resolved in request order before the child is spawned;
+  duplicate names load once at their first occurrence. Missing, denied, disabled,
+  malformed, or symlink-unsafe skills fail the task call before child spawn.
+- Loaded skill content is injected before optional command context and before the
+  original task body. Task results report compact loaded-skill metadata, including
+  stable id, status, source scope, and `body_loaded: false`, without echoing full
+  skill bodies.
 - Task results include child runtime metadata and `next_actions` for status checks,
   waiting, cancellation, and continuation.
 - `background_cancel(request_id: ...)` is the canonical coordinator-owned

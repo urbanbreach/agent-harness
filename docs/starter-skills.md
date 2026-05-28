@@ -8,15 +8,71 @@ The repository ships a small starter skill pack under `.agent-harness/skills/`.
 
 ## Discovery order
 By default the harness searches these project roots, in order:
+
 1. `.agent-harness/skills`
+2. `.harness/skills`
+
+It then searches configured global roots such as
+`~/.config/agent-harness/skills`. With `skills.walk_to_git_root: true`, project
+roots are checked from the current workspace up to the nearest `.git` ancestor;
+the nearest matching skill name wins and lower-precedence duplicates are reported
+as `shadowed` in the compact catalog.
 
 That means the bundled starter pack is the canonical project-local location. To override a shipped skill, replace the matching directory under `.agent-harness/skills` (for example `.agent-harness/skills/rust-best-practices/SKILL.md`).
 
+## V1 frontmatter
+
+Every skill lives in `<skill-name>/SKILL.md` and starts with frontmatter:
+
+```markdown
+---
+name: rust-best-practices
+description: Baseline Rust guidance for this workspace.
+argument_hint: optional short usage hint
+allowed_tools: read, grep
+target_agent: build
+target_category: deep
+mcp: deferred-local-metadata
+resources: bundled-reference-not-loaded
+---
+```
+
+Required fields are `name` and `description`. `name` must match the directory
+name and use lowercase words separated by single hyphens. Optional V1 fields are
+`argument_hint`, `allowed_tools`, `target_agent`, `target_category`, `mcp`,
+`resources`, and a string-to-string `metadata` map. CamelCase aliases accepted by
+the config reference are also accepted. Unsupported public fields make the skill
+catalog entry `malformed` rather than silently changing behavior.
+
 ## Extending the pack
 - Add new project-local skills under any configured project root.
-- Keep frontmatter minimal: `name` and `description`.
+- Keep frontmatter minimal unless the extra metadata is useful before activation.
 - Prefer small, task-specific guidance over long policy dumps.
+- Use this body template when adding a durable skill:
+  - purpose
+  - use when
+  - do not use when
+  - execution policy
+  - steps
+  - tool usage
+  - escalation or stop conditions
+  - final checklist
+  - advanced notes or bundled-reference pointers
 - If a new skill is referenced from docs/tests/example configs, ship it in-repo so fresh checkouts stay reproducible.
+
+## Progressive disclosure and governance
+
+Catalog, doctor, and support export surfaces expose compact metadata only:
+stable id, name, description, source scope, root, location, status, permission
+mode, optional V1 metadata, and `body_loaded: false`. Full `SKILL.md` bodies are
+loaded only when the `skill` tool activates a loadable skill or `task(load_skills
+= [...])` resolves loadable skills before child spawn.
+
+Use `skills.disabled` to turn off skills by name, pattern, or stable id such as
+`skill:project:rust-best-practices`. Disabled, denied, malformed, missing, and
+symlink-unsafe skills are visible enough to diagnose but cannot load. Metadata
+such as `allowed_tools` is descriptive/restrictive only; it never grants tools,
+changes a profile toolset, or bypasses coordinator permission checks.
 
 ## Using the local runtime config
 The repo ships a project-local `./harness.jsonc`, which the CLI auto-discovers
