@@ -61,7 +61,7 @@ must still land before the roadmap can treat the surface as release-ready:
   `frontend-ui-ux` ship with V1-quality bodies, docs, disablement, and tests.
 - [ ] Stronger doctor checks, prompt snapshots, and evidence gates cover prompt,
   skill, task-route, and asset readiness.
-- [ ] AST-grep, model-visible session tools, and a dedicated `background_cancel`
+- [x] AST-grep search, model-visible session tools, and a dedicated `background_cancel`
   land as practical tool-surface improvements with docs and parity tests.
 
 Everything else from the heavy-orchestration references is post-V1 by default unless this document explicitly
@@ -215,7 +215,7 @@ turns those working mechanisms into well-specified release behavior.
 - [ ] The task tool contract recommends or enforces a structured delegation body:
   context, goal, downstream use, request, required tools, must-do, and must-not-do.
 - [ ] Child task summaries are capped and structured so parent context stays lean.
-- [ ] Category route model, variant, prompt append, tools, permissions, hidden
+- [x] Category route model, variant, prompt append, tools, permissions, hidden
   status, and fallback are centralized behind an `AgentCatalog`-style seam.
 - [x] Fallback from an unknown category to `general` is visible in task output and
   doctor/readiness diagnostics.
@@ -314,8 +314,8 @@ turns those working mechanisms into well-specified release behavior.
 
 ## V1 release blockers
 
-First-slice closeout evidence lives in
-`docs/v1-first-slice-prd.md#11-final-evidence-report`. Remaining unchecked items
+Current catalog/control-plane closeout evidence lives in
+`docs/v1-agent-catalog-workspace-intelligence-prd.md#13-final-evidence-report`. Remaining unchecked items
 below are still broader V1 or post-slice work; checked items are only checked
 when the current tree has command output or artifact roots cited there.
 
@@ -425,7 +425,7 @@ when the current tree has command output or artifact roots cited there.
   than the initial focus.
 - [ ] Prompt history is durable across sessions.
 - [ ] Prompt history navigation preserves drafts and cursor intent.
-- [ ] Command palette metadata is centralized and reused by slash commands,
+- [x] Command palette metadata is centralized and reused by slash commands,
   help, and keybinding surfaces.
 - [ ] Permission overlays show shortcuts, scope, and timeout/countdown state
   clearly.
@@ -451,7 +451,7 @@ when the current tree has command output or artifact roots cited there.
 - [x] Session lineage, tree, fork, and clone surfaces exist.
 - [x] Background child-task wakeup events are modeled.
 - [x] Tool summaries and artifacts are persisted with redaction/capping policy.
-- [ ] Model-visible session tools exist: `session_list`, `session_read`,
+- [x] Model-visible session tools exist: `session_list`, `session_read`,
   `session_search`, and `session_info`.
 - [ ] Resume behavior has a documented V1 acceptance test covering a realistic
   interrupted session.
@@ -496,9 +496,9 @@ when the current tree has command output or artifact roots cited there.
   inactive: `server`, `command`, `plugin`, `share`, `autoupdate`, and
   `enterprise`.
 - [x] Config-backed MCP servers are part of the runtime tool registry.
-- [ ] Doctor reports the complete resolved agent list, including primary agents,
+- [x] Doctor reports the complete resolved agent list, including primary agents,
   subagents, hidden profiles, and category routes.
-- [ ] Doctor reports stale/missing built-in asset references.
+- [x] Doctor reports stale/missing built-in asset references.
 - [ ] Doctor reports extension/roadmap readiness separately from runtime health.
 
 ## Native tool baseline
@@ -515,12 +515,13 @@ when the current tree has command output or artifact roots cited there.
 - [x] `background_output` exists.
 - [x] `batch` exists.
 - [x] Config-backed MCP tools exist.
-- [ ] `background_cancel` exists as a dedicated user-facing tool instead of only
+- [x] `background_cancel` exists as a dedicated user-facing tool instead of only
   cancellation through `background_output` arguments.
-- [ ] AST-grep search and replace are first-class native tools.
-- [ ] Model-visible session tools are first-class native tools.
-- [ ] Native tool docs include a concise V1 tool catalog.
-- [ ] Native tool parity tests cover the full V1 tool catalog.
+- [x] AST-grep search is a first-class read-only native tool.
+- [ ] AST-grep replace is a first-class native tool.
+- [x] Model-visible session tools are first-class native tools.
+- [x] Native tool docs include a concise V1 tool catalog.
+- [x] Native tool parity tests cover the full V1 tool catalog.
 
 ## Agents and subagents
 
@@ -549,7 +550,7 @@ when the current tree has command output or artifact roots cited there.
 - [x] `task` has a clear contract for sync vs background execution, cancellation,
   continuation, and skill loading.
 - [ ] Subagent output is summarized in a way that keeps parent context lean.
-- [ ] Category route model/variant/fallback resolution is centralized in an
+- [x] Category route model/variant/fallback resolution is centralized in an
   `AgentCatalog`-style seam.
 
 ## Orchestration-inspired V1 release work
@@ -568,11 +569,12 @@ cross-reference for agents choosing the next implementation slice.
 - [ ] Built-in `review-work` skill; see Skill depth.
 - [ ] Built-in `frontend-ui-ux` or equivalent visual-engineering skill; see Skill
   depth.
-- [ ] AST-grep tools; see Native tool baseline.
-- [ ] Model-visible session tools; see Sessions and replay plus Native tool
+- [x] AST-grep search; see Native tool baseline.
+- [ ] AST-grep replace; see Native tool baseline.
+- [x] Model-visible session tools; see Sessions and replay plus Native tool
   baseline.
-- [ ] Dedicated `background_cancel` tool; see Native tool baseline.
-- [ ] Doctor checks for built-in skills, category routes, and missing assets; see
+- [x] Dedicated `background_cancel` tool; see Native tool baseline.
+- [x] Doctor checks for built-in skills, category routes, and missing assets; see
   Prompt-system evidence plus Config and doctor.
 - [ ] A small slash-command/hook seam for built-in lifecycle behavior, distinct
   from arbitrary executable plugins; see Command and hook depth plus Extension
@@ -608,9 +610,9 @@ V1 should be plugin-ready, not a broad arbitrary plugin host.
 - [x] Event-sourced team primitives exist for
   create/status/message/task/shutdown/delete as primitive event tools, not as
   full Team Mode.
-- [ ] `team_list` exists.
-- [ ] Team doctor checks exist.
-- [ ] Team docs clearly label the current scope as a V1 primitive or post-V1
+- [x] `team_list` exists.
+- [x] Team doctor checks exist.
+- [x] Team docs clearly label the current scope as a V1 primitive or post-V1
   optional layer.
 - [ ] Declared team registry support exists.
 - [ ] Team worktree support exists.
@@ -661,10 +663,10 @@ V1 should be plugin-ready, not a broad arbitrary plugin host.
 - [x] Config guide is accurate for V1.
 - [ ] Architecture guide is accurate for V1.
 - [x] Testing guide is accurate for V1.
-- [ ] Native tool catalog exists.
-- [ ] Agent and subagent guide exists.
+- [x] Native tool catalog exists.
+- [x] Agent and subagent guide exists.
 - [ ] Permissions guide exists.
-- [ ] Sessions and replay guide exists.
+- [x] Sessions and replay guide exists.
 - [ ] Extension strategy guide exists, clearly marking post-V1 plugin work.
 - [ ] Privacy and local-data notes explain what leaves the machine, where sessions
   and artifacts are stored, how redaction works, and that telemetry/cloud features
@@ -679,26 +681,26 @@ V1 should be plugin-ready, not a broad arbitrary plugin host.
   the repository, because V1 starts with a user being able to run the binary.
 - [ ] Make startup prompt-first and improve prompt history, because this is the
   highest-frequency vanilla local-coding interaction.
-- [ ] Centralize command/keybinding metadata before expanding keybindings, slash
+- [x] Centralize command/keybinding metadata before expanding keybindings, slash
   commands, or help text.
 - [ ] Improve permission modal clarity before adding more powerful tools, so new
   capabilities inherit a clear approval surface.
 - [ ] Add prompt bodies, prompt snapshots, and task/permission fixtures before
   expanding subagent or skill catalogs.
-- [ ] Add an `AgentCatalog`-style resolution seam before relying on category
+- [x] Add an `AgentCatalog`-style resolution seam before relying on category
   fallbacks, hidden profiles, or category-specific prompt appends.
-- [ ] Add model-visible session tools after session/replay acceptance tests are
+- [x] Add model-visible session tools after session/replay acceptance tests are
   documented.
-- [ ] Add dedicated `background_cancel` after sync/background task contracts are
+- [x] Add dedicated `background_cancel` after sync/background task contracts are
   documented.
-- [ ] Add AST-grep native tools after the native tool catalog shape and
+- [x] Add AST-grep search after the native tool catalog shape and
   parity-test harness are stable, then update the catalog and matrix for
   AST-grep.
 - [ ] Add V1 built-in skills after skill schema, precedence, disablement, and
   progressive disclosure are documented.
 - [ ] Define the typed extension manifest seam before migrating lifecycle command
   hooks onto it or marking the extension strategy guide complete.
-- [ ] Add doctor readiness checks once the prompt, skill, tool, and agent catalog
+- [x] Add doctor readiness checks once the prompt, skill, tool, and agent catalog
   contracts are stable enough for diagnostics to enforce.
 - [ ] Keep Team Mode primitive-only for V1 unless the V1 release scope is
   deliberately re-opened; otherwise document it as a post-V1 optional layer.

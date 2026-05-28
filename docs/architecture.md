@@ -29,6 +29,7 @@ Core runtime and domain logic:
 - **proj/** - Pure projections for run summary, resume planning, and session catalog state
 - **transcript_projection** - Pure replay-derived transcript/session/message/part projection for resume, export, TUI, and debugging surfaces
 - **agent/** - Minimal agent runtime
+- **agent_catalog** - Resolved profile/category/hidden-agent metadata for doctor and support export, plus the documented task-route concepts that TUI/status surfaces align with where touched
 - **config** - Configuration parsing and validation
 - **clock** - Clock abstraction (real and fake for determinism)
 - **redact** - Secret redaction before persistence
@@ -60,7 +61,11 @@ Built-in tool implementations:
 - `edit` - Hashline-first file creation, targeted edits, deletion, and rename
 - `bash` - Execute shell commands with allowlist
 - `task` / `background_output` / `batch` / `question` / `skill` - Control-plane and delegation workflows
+- `background_cancel` - Explicit coordinator-owned cancellation wrapper for background child requests
+- `session_list` / `session_read` / `session_search` / `session_info` - Replay-derived model-visible session inspection tools
+- `ast_grep_search` - Read-only ast-grep CLI structural search adapter with workspace path safety, hard caps, and artifact spill
 - `team_create` / `team_status` / `team_send_message` / `team_task_*` / `team_shutdown_*` / `team_delete` - Event-sourced team coordination workflows
+- `team_list` - Narrow primitive projection-reader for discovering event-sourced team runs without Team Mode expansion
 - `webfetch` / `websearch` / `codesearch` / `lsp` - Network and language-intelligence workflows
 
 Hashline editing is the only normal file-changing route. Agent profiles expose `read`
@@ -71,6 +76,17 @@ The active registry exposes a single native provider surface. Canonical ids such
 `read`, `edit`, `bash`, `webfetch`, `websearch`, `codesearch`, `question`, `batch`, `task`,
 `background_output`, `team_*`, and `lsp` are the documented tool surface, while lower-level
 executors remain internal implementation details behind those tool ids.
+
+`harness-tools::tool_catalog` mirrors the active registry as metadata: stable
+canonical id, provider function name, aliases, description summary, capability,
+permission kind, actor availability, supervisor-only status, schema status,
+mutation/read-only classification, replay behavior, artifact behavior, and docs
+status. Doctor and support export can read this metadata without starting MCP
+servers or making network calls.
+
+`ast_grep_replace` is intentionally absent in V1 until it can share the same
+edit-permission, dry-run/apply, overlap, diff/artifact, and workspace-safety
+guarantees as the existing edit path.
 
 ### harness-tui (library)
 
@@ -378,6 +394,17 @@ read-only inspection guard, may delegate read-only exploration only through the 
 continuation with the active plan-file path. By default, `read` emits
 `LINE#HASH|text` anchors and `edit` consumes hashline operations on that anchored view.
 
+Model-visible session tools are part of this native surface but remain replay
+readers only. They inspect stored session roots, reject traversal/out-of-root
+selectors, redact by default, cap inline output, and spill large output to
+artifacts. They never call `harness sessions`, execute providers/tools/hooks,
+start MCP servers, or make network calls.
+
+`background_cancel` is only a canonical wrapper around the existing coordinator
+background cancellation path already used by `background_output(cancel=true)`.
+The compatibility form remains supported, but task next-actions prefer
+`background_cancel(request_id=...)` for explicit cancellation.
+
 ## Hashline Spec
 
 Hashline provides atomic, content-addressed file edits.
@@ -495,3 +522,9 @@ This enables:
 - Post-hoc analysis of runs
 - Deterministic test fixtures
 - Session sharing without code execution
+
+The session CLI and model-visible session tools both consume replay-derived
+projections. Support export adds local-readiness evidence from doctor plus agent
+catalog, native tool catalog, session-tool readiness, route metadata, artifact
+index, redaction manifest, and secret-scan status so failures can be debugged
+without exposing raw credentials.
