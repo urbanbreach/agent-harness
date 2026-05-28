@@ -322,6 +322,7 @@ fn sessions_export_cli_support_includes_readiness_and_config_summaries() {
         bundle["support"]["provider_summary"]["providers"][0]["model_count"],
         1
     );
+    assert_support_export_catalog_metadata(&bundle);
 }
 
 #[test]

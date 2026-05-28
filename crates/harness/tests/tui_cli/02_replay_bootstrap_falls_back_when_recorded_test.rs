@@ -412,7 +412,13 @@ fn command_palette_includes_task5_session_actions() {
     let palette_commands = Action::palette_commands();
     let palette_surface = palette_commands
         .iter()
-        .map(|(command, description)| format!("{command}:{description}"))
+        .map(|command| {
+            format!(
+                "{}:{}",
+                command.id,
+                Action::palette_command_description(command.id)
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n")
         .to_ascii_lowercase();

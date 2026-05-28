@@ -150,6 +150,41 @@ fn assert_harness_branded(context: &str, text: &str, forbidden_terms: &[String])
     );
 }
 
+fn assert_support_export_catalog_metadata(bundle: &serde_json::Value) {
+    assert_eq!(
+        bundle["support"]["agent_catalog_summary"]["source"],
+        "harness_core::agent_catalog"
+    );
+    assert_eq!(
+        bundle["support"]["agent_catalog_summary"]["category_fallback"]
+            ["unknown_category_profile"],
+        "general"
+    );
+    assert!(bundle["support"]["agent_catalog_summary"]["entries"]
+        .as_array()
+        .expect("agent catalog entries")
+        .iter()
+        .any(|entry| entry["id"] == "build" && entry["role"] == "primary"));
+    assert_eq!(
+        bundle["support"]["native_tool_catalog_summary"]["source"],
+        "harness_tools::tool_catalog"
+    );
+    assert!(bundle["support"]["native_tool_catalog_summary"]["tools"]
+        .as_array()
+        .expect("native tool catalog entries")
+        .iter()
+        .any(|entry| entry["canonical_id"] == "session_list"));
+    assert_eq!(
+        bundle["support"]["session_tool_readiness"]["source"],
+        "event_replay"
+    );
+    assert_eq!(
+        bundle["support"]["session_tool_readiness"]["redacted_by_default"],
+        true
+    );
+    assert_eq!(bundle["support"]["session_tool_readiness"]["available"], true);
+}
+
 fn resumable_finished_events(run_id: &str) -> Vec<EventEnvelopeV1> {
     vec![
         envelope(

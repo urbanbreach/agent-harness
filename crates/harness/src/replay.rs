@@ -563,6 +563,10 @@ fn child_session_next_actions(
                 "background_output(request_id=\"{}\", block=true)",
                 sanitize_human_text(request_id)
             ));
+            actions.push(format!(
+                "background_cancel(request_id=\"{}\", reason=\"cancelled by parent request\")",
+                sanitize_human_text(request_id)
+            ));
         }
     }
     actions.push(format!(

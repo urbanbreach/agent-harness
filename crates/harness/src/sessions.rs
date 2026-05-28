@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Args, Subcommand, ValueEnum};
+use harness_core::agent_catalog::resolve_agent_catalog;
 use harness_core::config::{
     HarnessConfig, McpServerConfig, OpenAiCompatibleProviderConfig, ProviderConfig,
 };
@@ -15,11 +16,16 @@ use harness_core::session_lineage::{
     validate_fork_stable_prefix, ChildSessionMaterializationRequest,
     ChildSessionMaterializationSourceKind, SessionLineageNode, StableSessionPrefix,
 };
+use harness_tools::{
+    coordinator_registry_with_mcp_and_editing, native_tool_catalog_entries,
+    EditingToolSurfaceConfig,
+};
 use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::cli_io::{load_events_from_run_dir, load_run_metadata};
 use crate::defaults::DEFAULT_SESSION_DIR;
+use crate::readiness::ast_grep_adapter_readiness;
 use crate::recovery::{inspect_session_recovery, resolve_session_run_dir, SessionRecoverySummary};
 use crate::replay::{
     inspect_session_catalog, print_human_summary, summarize_session, ReplayArtifactSummary,
@@ -259,6 +265,9 @@ struct SessionExportSupport {
     doctor_json: Value,
     config_summary: Value,
     provider_summary: Value,
+    agent_catalog_summary: Value,
+    native_tool_catalog_summary: Value,
+    session_tool_readiness: Value,
     route_metadata: Vec<SessionExportRouteMetadata>,
     artifact_index: Vec<ReplayArtifactSummary>,
 }
@@ -268,6 +277,9 @@ struct SessionExportReadiness {
     doctor_json: Value,
     config_summary: Value,
     provider_summary: Value,
+    agent_catalog_summary: Value,
+    native_tool_catalog_summary: Value,
+    session_tool_readiness: Value,
     credential_values: Vec<String>,
 }
 
@@ -745,6 +757,9 @@ fn session_export_support(
         doctor_json: readiness.doctor_json,
         config_summary: readiness.config_summary,
         provider_summary: readiness.provider_summary,
+        agent_catalog_summary: readiness.agent_catalog_summary,
+        native_tool_catalog_summary: readiness.native_tool_catalog_summary,
+        session_tool_readiness: readiness.session_tool_readiness,
         route_metadata: session_export_route_metadata(events, replay, catalog),
         artifact_index: replay.artifacts.clone(),
     }
@@ -797,6 +812,9 @@ fn session_export_readiness(
         }),
         config_summary: session_export_config_summary(&config_display, &paths, &config),
         provider_summary: session_export_provider_summary(&config),
+        agent_catalog_summary: session_export_agent_catalog_summary(&config),
+        native_tool_catalog_summary: session_export_native_tool_catalog_summary(&config),
+        session_tool_readiness: session_export_session_tool_readiness(&config),
         credential_values,
     }
 }
@@ -818,6 +836,25 @@ fn unavailable_session_export_readiness(reason: impl Into<String>) -> SessionExp
             "loaded": false,
             "provider_count": 0,
             "providers": [],
+            "no_network_probes": true,
+            "reason": reason,
+        }),
+        agent_catalog_summary: json!({
+            "loaded": false,
+            "source": "harness_core::agent_catalog",
+            "no_network_probes": true,
+            "reason": reason,
+        }),
+        native_tool_catalog_summary: json!({
+            "loaded": false,
+            "source": "harness_tools::tool_catalog",
+            "no_network_probes": true,
+            "reason": reason,
+        }),
+        session_tool_readiness: json!({
+            "available": false,
+            "source": "event_replay",
+            "redacted_by_default": true,
             "no_network_probes": true,
             "reason": reason,
         }),
@@ -939,6 +976,80 @@ fn session_export_provider_summary(config: &HarnessConfig) -> Value {
         "loaded": true,
         "provider_count": providers.len(),
         "providers": providers,
+        "no_network_probes": true,
+    })
+}
+
+fn session_export_agent_catalog_summary(config: &HarnessConfig) -> Value {
+    let catalog = resolve_agent_catalog(config);
+    json!({
+        "loaded": true,
+        "source": "harness_core::agent_catalog",
+        "entry_count": catalog.entries.len(),
+        "category_fallback": catalog.category_fallback,
+        "entries": catalog.entries,
+        "no_network_probes": true,
+    })
+}
+
+fn session_export_native_tool_catalog_summary(config: &HarnessConfig) -> Value {
+    let registry = coordinator_registry_with_mcp_and_editing(
+        config.permissions.shell_allowlist.clone(),
+        Default::default(),
+        EditingToolSurfaceConfig {
+            hashline_edit: config.hashline_edit,
+        },
+    );
+    let catalog = native_tool_catalog_entries(&registry);
+    let required_v1_tools = [
+        "session_list",
+        "session_read",
+        "session_search",
+        "session_info",
+        "background_cancel",
+        "team_list",
+        "ast_grep_search",
+    ];
+    json!({
+        "loaded": true,
+        "source": "harness_tools::tool_catalog",
+        "tool_count": catalog.len(),
+        "required_v1_tools": required_v1_tools,
+        "missing_required_v1_tools": required_v1_tools
+            .into_iter()
+            .filter(|tool_id| !catalog.iter().any(|entry| entry.canonical_id == *tool_id))
+            .collect::<Vec<_>>(),
+        "tools": catalog,
+        "ast_grep_adapter": ast_grep_adapter_readiness(),
+        "no_network_probes": true,
+    })
+}
+
+fn session_export_session_tool_readiness(config: &HarnessConfig) -> Value {
+    let registry = coordinator_registry_with_mcp_and_editing(
+        config.permissions.shell_allowlist.clone(),
+        Default::default(),
+        EditingToolSurfaceConfig {
+            hashline_edit: config.hashline_edit,
+        },
+    );
+    let ids = registry.tool_ids().into_iter().collect::<BTreeSet<_>>();
+    let session_tools = [
+        "session_list",
+        "session_read",
+        "session_search",
+        "session_info",
+    ];
+    json!({
+        "available": session_tools.iter().all(|tool_id| ids.contains(*tool_id)),
+        "source": "event_replay",
+        "redacted_by_default": true,
+        "side_effect_free": true,
+        "tools": session_tools,
+        "missing": session_tools
+            .into_iter()
+            .filter(|tool_id| !ids.contains(*tool_id))
+            .collect::<Vec<_>>(),
         "no_network_probes": true,
     })
 }
@@ -1812,6 +1923,9 @@ mod tests {
                 doctor_json: json!({}),
                 config_summary: json!({}),
                 provider_summary: json!({}),
+                agent_catalog_summary: json!({}),
+                native_tool_catalog_summary: json!({}),
+                session_tool_readiness: json!({}),
                 route_metadata: Vec::new(),
                 artifact_index: Vec::new(),
             },
