@@ -19,33 +19,50 @@ pub struct DefaultRedactor {
     sensitive_query_re: Regex,
 }
 
+use std::sync::LazyLock;
+
+static GLOBAL_REDACTOR: LazyLock<DefaultRedactor> = LazyLock::new(|| {
+    DefaultRedactor {
+    api_key_re: Regex::new(r"(^|[^A-Za-z0-9])(sk-[A-Za-z0-9._-]{10,})")
+        .expect("valid api key regex"),
+    google_api_key_re: Regex::new(r"AIza[0-9A-Za-z_-]{20,}")
+        .expect("valid google api key regex"),
+    aws_access_key_re: Regex::new(r"AKIA[0-9A-Z]{16}")
+        .expect("valid aws access key regex"),
+    github_pat_re: Regex::new(r"github_pat_[A-Za-z0-9_]{20,}")
+        .expect("valid github pat regex"),
+    github_token_re: Regex::new(r"ghp_[A-Za-z0-9]{20,}")
+        .expect("valid github token regex"),
+    bearer_re: Regex::new(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+")
+        .expect("valid bearer regex"),
+    cookie_header_re: Regex::new(r"(?i)\b(?:Set-Cookie|Cookie):\s*[^\r\n]+")
+        .expect("valid cookie header regex"),
+    pem_private_key_re: Regex::new(
+        r"(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
+    )
+    .expect("valid pem private key regex"),
+    url_userinfo_re: Regex::new(r"(?i)(https?://)[^/@\s]+@")
+        .expect("valid url userinfo regex"),
+    sensitive_query_re: Regex::new(
+        r"(?i)([?&](?:api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|token|password|secret)=)[^&\s]+",
+    )
+    .expect("valid sensitive query regex"),
+}
+});
+
 impl Default for DefaultRedactor {
     fn default() -> Self {
         Self {
-            api_key_re: Regex::new(r"(^|[^A-Za-z0-9])(sk-[A-Za-z0-9._-]{10,})")
-                .expect("valid api key regex"),
-            google_api_key_re: Regex::new(r"AIza[0-9A-Za-z_-]{20,}")
-                .expect("valid google api key regex"),
-            aws_access_key_re: Regex::new(r"AKIA[0-9A-Z]{16}")
-                .expect("valid aws access key regex"),
-            github_pat_re: Regex::new(r"github_pat_[A-Za-z0-9_]{20,}")
-                .expect("valid github pat regex"),
-            github_token_re: Regex::new(r"ghp_[A-Za-z0-9]{20,}")
-                .expect("valid github token regex"),
-            bearer_re: Regex::new(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+")
-                .expect("valid bearer regex"),
-            cookie_header_re: Regex::new(r"(?i)\b(?:Set-Cookie|Cookie):\s*[^\r\n]+")
-                .expect("valid cookie header regex"),
-            pem_private_key_re: Regex::new(
-                r"(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
-            )
-            .expect("valid pem private key regex"),
-            url_userinfo_re: Regex::new(r"(?i)(https?://)[^/@\s]+@")
-                .expect("valid url userinfo regex"),
-            sensitive_query_re: Regex::new(
-                r"(?i)([?&](?:api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|token|password|secret)=)[^&\s]+",
-            )
-            .expect("valid sensitive query regex"),
+            api_key_re: GLOBAL_REDACTOR.api_key_re.clone(),
+            google_api_key_re: GLOBAL_REDACTOR.google_api_key_re.clone(),
+            aws_access_key_re: GLOBAL_REDACTOR.aws_access_key_re.clone(),
+            github_pat_re: GLOBAL_REDACTOR.github_pat_re.clone(),
+            github_token_re: GLOBAL_REDACTOR.github_token_re.clone(),
+            bearer_re: GLOBAL_REDACTOR.bearer_re.clone(),
+            cookie_header_re: GLOBAL_REDACTOR.cookie_header_re.clone(),
+            pem_private_key_re: GLOBAL_REDACTOR.pem_private_key_re.clone(),
+            url_userinfo_re: GLOBAL_REDACTOR.url_userinfo_re.clone(),
+            sensitive_query_re: GLOBAL_REDACTOR.sensitive_query_re.clone(),
         }
     }
 }
