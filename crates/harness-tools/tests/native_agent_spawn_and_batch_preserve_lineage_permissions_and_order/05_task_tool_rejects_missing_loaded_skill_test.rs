@@ -5,6 +5,7 @@ async fn task_tool_rejects_missing_loaded_skill_before_child_spawn() {
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
 
+    // act
     let task_tool_call_id = handle
         .request_tool_call(
             worker_actor(&worker_id),
@@ -23,6 +24,7 @@ async fn task_tool_rejects_missing_loaded_skill_before_child_spawn() {
     wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
 
     handle.stop_run().await.expect("stop run");
+    // assert
     let events = read_events(&run.events_path);
     let finished = find_finished(&events, &task_tool_call_id);
 
@@ -39,6 +41,7 @@ async fn task_tool_rejects_missing_loaded_skill_before_child_spawn() {
 }
 #[tokio::test]
 async fn task_tool_rejects_unloadable_loaded_skills_before_child_spawn() {
+    // arrange
     let _registry_lock = skills_registry_test_lock().lock().await;
     let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
         disabled: vec!["skill:project:disabled-child".to_string()],
@@ -80,7 +83,9 @@ async fn task_tool_rejects_unloadable_loaded_skills_before_child_spawn() {
         wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
 
         let events = read_events(&run.events_path);
+        // act
         let finished = find_finished(&events, &task_tool_call_id);
+        // assert
         assert_eq!(finished.status, ToolCallStatus::Failed);
         let summary = finished.output_summary.as_deref().expect("output summary");
         assert!(summary.contains(name), "summary should name {name}: {summary}");
@@ -133,6 +138,7 @@ async fn task_tool_rejects_symlinked_loaded_skill_before_child_spawn() {
     wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
 
     handle.stop_run().await.expect("stop run");
+    // assert
     let events = read_events(&run.events_path);
     let finished = find_finished(&events, &task_tool_call_id);
 
@@ -225,7 +231,146 @@ async fn task_tool_injects_loaded_skill_content_into_child_prompt() {
 }
 
 #[tokio::test]
+async fn task_tool_injects_shipped_builtin_skill_bodies_into_child_prompt() {
+    // arrange
+    let _registry_lock = skills_registry_test_lock().lock().await;
+    let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
+        global_roots: Vec::new(),
+        ..SkillsConfig::default()
+    });
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let shipped_skill_root = repo_root().join(".agent-harness/skills");
+    let workspace_skill_root = workspace.join(".agent-harness/skills");
+    for name in ["git-master", "review-work", "frontend-ui-ux"] {
+        let skill_dir = workspace_skill_root.join(name);
+        fs::create_dir_all(&skill_dir).expect("create copied built-in skill dir");
+        fs::copy(
+            shipped_skill_root.join(name).join("SKILL.md"),
+            skill_dir.join("SKILL.md"),
+        )
+        .unwrap_or_else(|err| panic!("copy shipped built-in skill {name}: {err}"));
+    }
+    let provider = Arc::new(TaskCallingProvider::default());
+    let (handle, run, worker_id) = spawn_run_with_provider(&workspace, provider.clone()).await;
+
+    // act
+    let task_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "task",
+            json!({
+                "description": "Shipped built-in skill child",
+                "prompt": "Use the shipped built-in skills",
+                "subagent_type": "general",
+                "run_in_background": false,
+                "load_skills": ["git-master", "review-work", "frontend-ui-ux"]
+            }),
+        )
+        .await
+        .expect("request task tool");
+    wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
+
+    // assert
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &task_tool_call_id);
+    assert_eq!(finished.status, ToolCallStatus::Succeeded);
+    let output = finished.output_json.expect("task structured output");
+    let loaded_skills = output["loaded_skills"]
+        .as_array()
+        .expect("loaded skills array");
+    assert_eq!(loaded_skills.len(), 3);
+    for name in ["git-master", "review-work", "frontend-ui-ux"] {
+        assert!(loaded_skills.iter().any(|skill| {
+            skill["name"] == json!(name)
+                && skill["stable_id"] == json!(format!("skill:project:{name}"))
+                && skill["status"] == json!("loadable")
+                && skill["source_scope"] == json!("project")
+                && skill["body_loaded"] == json!(false)
+        }));
+    }
+
+    let requests = provider.requests().await;
+    assert_eq!(requests.len(), 1, "expected only the child provider request");
+    let prompt = requests[0]
+        .messages
+        .iter()
+        .map(|message| message.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    for (name, marker) in [
+        ("git-master", "Use git with atomic, reviewable intent"),
+        ("review-work", "Run a structured post-implementation review"),
+        ("frontend-ui-ux", "Improve visible UI surfaces"),
+    ] {
+        assert!(prompt.contains(&format!("<skill_content name=\"{name}\">")));
+        assert!(prompt.contains(marker), "prompt missing shipped marker for {name}");
+    }
+    assert!(prompt.contains("Use the shipped built-in skills"));
+}
+
+#[tokio::test]
+async fn task_tool_rejects_disabled_shipped_builtin_skill_before_child_spawn() {
+    // arrange
+    // act
+    // assert
+    let _registry_lock = skills_registry_test_lock().lock().await;
+    let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
+        global_roots: Vec::new(),
+        disabled: vec!["skill:project:git-master".to_string()],
+        ..SkillsConfig::default()
+    });
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let skill_dir = workspace.join(".agent-harness/skills/git-master");
+    fs::create_dir_all(&skill_dir).expect("create copied built-in skill dir");
+    fs::copy(
+        repo_root()
+            .join(".agent-harness/skills/git-master")
+            .join("SKILL.md"),
+        skill_dir.join("SKILL.md"),
+    )
+    .expect("copy git-master built-in skill");
+    let (handle, run, worker_id) = spawn_run(&workspace).await;
+
+    // act
+    let task_tool_call_id = handle
+        .request_tool_call(
+            worker_actor(&worker_id),
+            Some("deep".to_string()),
+            "task",
+            json!({
+                "description": "Disabled built-in child skill",
+                "prompt": "Try to use disabled git-master",
+                "subagent_type": "general",
+                "run_in_background": false,
+                "load_skills": ["git-master"]
+            }),
+        )
+        .await
+        .expect("request task tool");
+    wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
+
+    handle.stop_run().await.expect("stop run");
+    let events = read_events(&run.events_path);
+    let finished = find_finished(&events, &task_tool_call_id);
+    assert_eq!(finished.status, ToolCallStatus::Failed);
+    let summary = finished.output_summary.as_deref().expect("output summary");
+    assert!(summary.contains("git-master"), "summary should name git-master: {summary}");
+    assert!(
+        summary.contains("disabled by skills.disabled"),
+        "summary should explain stable-id disablement: {summary}"
+    );
+    assert!(!events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::AgentSpawned(payload) if payload.profile == "general"
+    )));
+}
+
+#[tokio::test]
 async fn task_tool_preserves_requested_skill_order_and_deduplicates_loaded_context() {
+    // arrange
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     write_skill_fixture_with_frontmatter(
@@ -261,7 +406,9 @@ async fn task_tool_preserves_requested_skill_order_and_deduplicates_loaded_conte
     wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
 
     let events = read_events(&run.events_path);
+    // act
     let finished = find_finished(&events, &task_tool_call_id);
+    // assert
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
     let output = finished.output_json.expect("task structured output");
     assert_eq!(
@@ -297,307 +444,4 @@ async fn task_tool_preserves_requested_skill_order_and_deduplicates_loaded_conte
         prompt.matches("<skill_content name=\"alpha-skill\">").count(),
         1
     );
-}
-#[tokio::test]
-async fn batch_tool_accepts_args_alias_on_real_tool_path() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
-    write_fixture(&workspace);
-
-    let (handle, run, worker_id) = spawn_run(&workspace).await;
-
-    let batch_tool_call_id = handle
-        .request_tool_call(
-            worker_actor(&worker_id),
-            Some("deep".to_string()),
-            "batch",
-            json!({
-                "tool_calls": [
-                    {"tool": "read", "args": {"filePath": "fixture.txt", "offset": 2, "limit": 1}},
-                    {"tool": "read", "args": {"filePath": "fixture.txt", "offset": 1, "limit": 1}}
-                ]
-            }),
-        )
-        .await
-        .expect("request batch tool");
-    wait_for_tool_call_finish(&run.events_path, &batch_tool_call_id).await;
-
-    handle.stop_run().await.expect("stop run");
-    let events = read_events(&run.events_path);
-    let finished = find_finished(&events, &batch_tool_call_id);
-
-    assert_eq!(finished.status, ToolCallStatus::Succeeded);
-    let output = finished.output_json.as_ref().expect("batch output json");
-    assert_eq!(output.pointer("/audit/successful"), Some(&json!(2)));
-    let details = output
-        .get("details")
-        .and_then(Value::as_array)
-        .expect("batch details");
-    assert_eq!(
-        details[0].pointer("/request/parameter_keys/0"),
-        Some(&json!("filePath"))
-    );
-    assert_eq!(
-        details[0].pointer("/request/parameters_redacted"),
-        Some(&json!(true))
-    );
-    assert!(details[0]
-        .get("summary")
-        .and_then(Value::as_str)
-        .expect("first summary")
-        .contains("|beta"));
-    assert!(details[1]
-        .get("summary")
-        .and_then(Value::as_str)
-        .expect("second summary")
-        .contains("|alpha"));
-}
-#[tokio::test]
-async fn batch_tool_accepts_wrapper_calls_inside_tool_calls_on_real_path() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
-    write_fixture(&workspace);
-
-    let (handle, run, worker_id) = spawn_run(&workspace).await;
-
-    let batch_tool_call_id = handle
-        .request_tool_call(
-            worker_actor(&worker_id),
-            Some("deep".to_string()),
-            "batch",
-            json!({
-                "tool_calls": [
-                    {"recipient_name": "functions.read", "parameters": {"filePath": "fixture.txt", "offset": 2, "limit": 1}},
-                    {"recipient_name": "functions.read", "parameters": {"filePath": "fixture.txt", "offset": 1, "limit": 1}}
-                ]
-            }),
-        )
-        .await
-        .expect("request batch tool");
-    wait_for_tool_call_finish(&run.events_path, &batch_tool_call_id).await;
-
-    handle.stop_run().await.expect("stop run");
-    let events = read_events(&run.events_path);
-    let finished = find_finished(&events, &batch_tool_call_id);
-
-    assert_eq!(finished.status, ToolCallStatus::Succeeded);
-    let output = finished.output_json.as_ref().expect("batch output json");
-    assert_eq!(output.pointer("/audit/successful"), Some(&json!(2)));
-    let details = output
-        .get("details")
-        .and_then(Value::as_array)
-        .expect("batch details");
-    assert_eq!(details[0].get("tool_id"), Some(&json!("read")));
-    assert!(details[0]
-        .get("summary")
-        .and_then(Value::as_str)
-        .expect("first summary")
-        .contains("|beta"));
-    assert!(details[1]
-        .get("summary")
-        .and_then(Value::as_str)
-        .expect("second summary")
-        .contains("|alpha"));
-}
-#[tokio::test]
-async fn task_tool_reenters_existing_child_session_by_session_id() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
-
-    let (handle, run, worker_id) = spawn_run(&workspace).await;
-
-    let first_tool_call_id = handle
-        .request_tool_call(
-            worker_actor(&worker_id),
-            Some("deep".to_string()),
-            "task",
-            json!({
-                "category": "deep",
-                "description": "Initial child",
-                "prompt": "First child turn",
-                "run_in_background": true,
-                "load_skills": []
-            }),
-        )
-        .await
-        .expect("request initial task");
-    wait_for_tool_call_finish(&run.events_path, &first_tool_call_id).await;
-
-    let first_events = read_events(&run.events_path);
-    let first_finished = find_finished(&first_events, &first_tool_call_id);
-    let first_output = first_finished
-        .output_json
-        .as_ref()
-        .expect("initial task output json");
-    let child_session_id = first_output
-        .get("child_session_id")
-        .and_then(Value::as_str)
-        .expect("child session id")
-        .to_string();
-    let first_request_id = first_output
-        .get("child_request_id")
-        .and_then(Value::as_str)
-        .expect("child request id")
-        .to_string();
-    wait_for_request_terminal(&run.events_path, &first_request_id).await;
-
-    let reentry_tool_call_id = handle
-        .request_tool_call(
-            worker_actor(&worker_id),
-            Some("deep".to_string()),
-            "task",
-            json!({
-                "category": "deep",
-                "description": "Resume child by session id",
-                "prompt": "Second child turn by session_id",
-                "session_id": child_session_id,
-                "run_in_background": true,
-                "load_skills": []
-            }),
-        )
-        .await
-        .expect("request task reentry by session_id");
-    wait_for_tool_call_finish(&run.events_path, &reentry_tool_call_id).await;
-
-    let reentry_events = read_events(&run.events_path);
-    let reentry_finished = find_finished(&reentry_events, &reentry_tool_call_id);
-    assert_eq!(reentry_finished.status, ToolCallStatus::Succeeded);
-    let reentry_output = reentry_finished
-        .output_json
-        .as_ref()
-        .expect("reentry task output json");
-    assert_eq!(
-        reentry_output
-            .get("child_session_id")
-            .and_then(Value::as_str),
-        Some(child_session_id.as_str())
-    );
-    assert_eq!(
-        reentry_output.get("resumed_existing_session"),
-        Some(&json!(true))
-    );
-    assert_eq!(
-        reentry_output.pointer("/child_session/resumed_existing_session"),
-        Some(&json!(true))
-    );
-    let second_request_id = reentry_output
-        .get("child_request_id")
-        .and_then(Value::as_str)
-        .expect("second child request id")
-        .to_string();
-    wait_for_request_terminal(&run.events_path, &second_request_id).await;
-
-    handle.stop_run().await.expect("stop run");
-    let events = read_events(&run.events_path);
-    let child_spawn_count = events
-        .iter()
-        .filter(|event| {
-            matches!(
-                &event.payload,
-                EventV1::AgentSpawned(payload) if payload.agent_id == child_session_id
-            )
-        })
-        .count();
-    assert_eq!(child_spawn_count, 1, "reentry must not spawn a new child");
-}
-#[tokio::test]
-async fn task_tool_reenters_existing_child_session_by_task_id() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
-
-    let (handle, run, worker_id) = spawn_run(&workspace).await;
-
-    let first_tool_call_id = handle
-        .request_tool_call(
-            worker_actor(&worker_id),
-            Some("deep".to_string()),
-            "task",
-            json!({
-                "category": "deep",
-                "description": "Initial child",
-                "prompt": "First child turn",
-                "run_in_background": true,
-                "load_skills": []
-            }),
-        )
-        .await
-        .expect("request initial task");
-    wait_for_tool_call_finish(&run.events_path, &first_tool_call_id).await;
-
-    let first_events = read_events(&run.events_path);
-    let first_finished = find_finished(&first_events, &first_tool_call_id);
-    let first_output = first_finished
-        .output_json
-        .as_ref()
-        .expect("initial task output json");
-    let child_task_id = first_output
-        .get("task_id")
-        .and_then(Value::as_str)
-        .expect("child task id")
-        .to_string();
-    let first_request_id = first_output
-        .get("child_request_id")
-        .and_then(Value::as_str)
-        .expect("child request id")
-        .to_string();
-    wait_for_request_terminal(&run.events_path, &first_request_id).await;
-
-    let reentry_tool_call_id = handle
-        .request_tool_call(
-            worker_actor(&worker_id),
-            Some("deep".to_string()),
-            "task",
-            json!({
-                "category": "deep",
-                "description": "Resume child by task id",
-                "prompt": "Second child turn by task_id",
-                "task_id": child_task_id,
-                "run_in_background": true,
-                "load_skills": []
-            }),
-        )
-        .await
-        .expect("request task reentry by task_id");
-    wait_for_tool_call_finish(&run.events_path, &reentry_tool_call_id).await;
-
-    let reentry_events = read_events(&run.events_path);
-    let reentry_finished = find_finished(&reentry_events, &reentry_tool_call_id);
-    assert_eq!(reentry_finished.status, ToolCallStatus::Succeeded);
-    let reentry_output = reentry_finished
-        .output_json
-        .as_ref()
-        .expect("reentry task output json");
-    assert_eq!(
-        reentry_output
-            .get("child_session_id")
-            .and_then(Value::as_str),
-        Some(child_task_id.as_str())
-    );
-    assert_eq!(
-        reentry_output.get("resumed_existing_session"),
-        Some(&json!(true))
-    );
-    assert_eq!(
-        reentry_output.pointer("/child_session/resumed_existing_session"),
-        Some(&json!(true))
-    );
-    let second_request_id = reentry_output
-        .get("child_request_id")
-        .and_then(Value::as_str)
-        .expect("second child request id")
-        .to_string();
-    wait_for_request_terminal(&run.events_path, &second_request_id).await;
-
-    handle.stop_run().await.expect("stop run");
-    let events = read_events(&run.events_path);
-    let child_spawn_count = events
-        .iter()
-        .filter(|event| {
-            matches!(
-                &event.payload,
-                EventV1::AgentSpawned(payload) if payload.agent_id == child_task_id
-            )
-        })
-        .count();
-    assert_eq!(child_spawn_count, 1, "reentry must not spawn a new child");
 }

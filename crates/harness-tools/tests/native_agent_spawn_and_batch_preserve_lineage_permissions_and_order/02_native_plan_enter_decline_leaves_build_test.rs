@@ -346,6 +346,148 @@ async fn worker_without_task_tool_cannot_redelegate() {
             if payload.parent_agent_id.as_deref() == Some(general_id.as_str())
     )));
 }
+
+#[tokio::test]
+async fn restricted_profiles_reject_edit_bash_task_and_mcp_calls() {
+    // arrange
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let session_dir = workspace.join("sessions");
+    fs::create_dir_all(&session_dir).expect("session dir");
+    let mcp_server = workspace.join("fake_mcp_server.py");
+    install_fake_mcp_server(&mcp_server);
+
+    let mut config = CoordinatorConfig::new(session_dir);
+    config.permission_policy = restricted_subagent_permission_policy();
+    config.tool_registry = Arc::new(coordinator_registry_with_mcp(
+        ShellAllowlist::default(),
+        fixture_mcp_config(&mcp_server),
+    ));
+    config.agent_profiles = restricted_subagent_profiles();
+
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(RealClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = handle
+        .start_run("restricted_profile_tool_depth", &workspace)
+        .await
+        .expect("start run");
+    let explore_agent_id = handle
+        .spawn_agent_idle(anonymous_supervisor_actor(), "explore", None)
+        .await
+        .expect("spawn explore");
+
+    for (tool_id, args_json) in [
+        (
+            "edit",
+            json!({
+                "filePath": "fixture.txt",
+                "oldString": "alpha",
+                "newString": "omega"
+            }),
+        ),
+        (
+            "bash",
+            json!({"command": "touch should-not-exist", "description": "try shell write"}),
+        ),
+        (
+            "task",
+            json!({
+                "subagent_type": "general",
+                "description": "Try recursive delegation",
+                "prompt": "Try to redelegate",
+                "run_in_background": true,
+                "load_skills": []
+            }),
+        ),
+    ] {
+        let denied = match handle
+            .request_tool_call(
+                worker_actor(&explore_agent_id),
+                Some("explore".to_string()),
+                tool_id,
+                args_json,
+            )
+            .await
+        {
+            Ok(_) => panic!("explore {tool_id} must be denied by coordinator"),
+            Err(err) => err,
+        };
+        match denied {
+            // act
+            CoordinatorError::PolicyViolation(message) => {
+                // assert
+                assert!(message.contains("not in worker toolset"));
+            }
+            other => panic!("expected toolset policy violation for {tool_id}, got {other:?}"),
+        }
+    }
+
+    let denied_mcp = handle
+        .request_tool_call(
+            worker_actor(&explore_agent_id),
+            Some("explore".to_string()),
+            "mcp.fixture.tool.call",
+            json!({"tool": "echo", "arguments": {"text": "blocked mcp write"}}),
+        )
+        .await
+        .expect_err("explore MCP tool.call must be denied by permission policy");
+    match denied_mcp {
+        CoordinatorError::PermissionDenied(_) => {}
+        other => panic!("expected MCP permission denial, got {other:?}"),
+    }
+
+    let quick_agent_id = handle
+        .spawn_agent_idle(anonymous_supervisor_actor(), "quick", None)
+        .await
+        .expect("spawn quick");
+    let denied_recursive_task = handle
+        .request_tool_call(
+            worker_actor(&quick_agent_id),
+            Some("quick".to_string()),
+            "task",
+            json!({
+                "subagent_type": "general",
+                "description": "Try category recursion",
+                "prompt": "Try to spawn another child",
+                "run_in_background": true,
+                "load_skills": []
+            }),
+        )
+        .await
+        .expect_err("category recursive task must be denied by permission policy");
+    match denied_recursive_task {
+        CoordinatorError::PermissionDenied(_) => {}
+        other => panic!("expected category task permission denial, got {other:?}"),
+    }
+
+    let events = read_events(&run.events_path);
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::PolicyViolationDetected(payload)
+            if payload.policy == "tool_not_in_toolset" && payload.detail.contains("edit")
+    )));
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::PolicyViolationDetected(payload)
+            if payload.policy == "tool_not_in_toolset" && payload.detail.contains("bash")
+    )));
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::PolicyViolationDetected(payload)
+            if payload.policy == "tool_not_in_toolset" && payload.detail.contains("task")
+    )));
+    assert!(
+        events.iter().any(|event| matches!(
+            &event.payload,
+            EventV1::PermissionResolved(payload)
+                if payload.decision == EventPermissionDecision::Deny
+        )),
+        "permission-gated MCP/category calls should emit a denial event"
+    );
+}
 #[tokio::test]
 async fn task_category_without_matching_profile_falls_back_to_general() {
     let temp_dir = setup_workspace();
@@ -421,74 +563,4 @@ async fn task_category_without_matching_profile_falls_back_to_general() {
             if payload.agent_id == child_session_id
                 && payload.profile == "general"
     )));
-}
-#[tokio::test]
-async fn background_output_retrieves_completed_child_result_by_request_id() {
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
-
-    let (handle, run, worker_id) = spawn_run(&workspace).await;
-
-    let task_tool_call_id = handle
-        .request_tool_call(
-            worker_actor(&worker_id),
-            Some("deep".to_string()),
-            "task",
-            json!({
-                "category": "deep",
-                "description": "Background child",
-                "prompt": "Return a concise completed result",
-                "run_in_background": true,
-                "load_skills": []
-            }),
-        )
-        .await
-        .expect("request task");
-    wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
-
-    let task_events = read_events(&run.events_path);
-    let task_finished = find_finished(&task_events, &task_tool_call_id);
-    let task_output = task_finished.output_json.expect("task structured output");
-    let request_id = task_output["child_request_id"]
-        .as_str()
-        .expect("child request id")
-        .to_string();
-    wait_for_request_terminal(&run.events_path, &request_id).await;
-
-    let output_tool_call_id = handle
-        .request_tool_call(
-            worker_actor(&worker_id),
-            Some("deep".to_string()),
-            "background_output",
-            json!({
-                "request_id": request_id,
-                "block": true,
-                "timeout_ms": 1
-            }),
-        )
-        .await
-        .expect("request background output");
-    wait_for_tool_call_finish(&run.events_path, &output_tool_call_id).await;
-
-    let events = read_events(&run.events_path);
-    let finished = find_finished(&events, &output_tool_call_id);
-    assert_eq!(finished.status, ToolCallStatus::Succeeded);
-    let output = finished
-        .output_json
-        .expect("background output structured json");
-    assert_eq!(output["request_id"], json!(request_id));
-    assert_eq!(output["status"], json!("completed"));
-    assert_eq!(output["terminal"], json!(true));
-    assert_eq!(output["timed_out"], json!(false));
-    assert!(output["result_summary"]
-        .as_str()
-        .is_some_and(|value| !value.is_empty()));
-    assert_eq!(output["runtime"]["profile"], json!("deep"));
-    assert_eq!(output["runtime"]["model_ref"], json!("default:deep"));
-    assert_eq!(output["runtime"]["can_redelegate"], json!(true));
-    assert!(output["next_actions"]
-        .as_array()
-        .expect("next actions")
-        .iter()
-        .any(|action| action["action"] == json!("check_status")));
 }

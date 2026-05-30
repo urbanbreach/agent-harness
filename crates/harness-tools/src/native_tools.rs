@@ -295,6 +295,7 @@ struct TodoWriteArgs {
 #[serde(deny_unknown_fields)]
 struct TaskArgs {
     description: String,
+    /// Task body delivered to the child. For non-trivial delegation, use a structured body with sections: context, goal, downstream use, request, required tools, must-do, must-not-do.
     prompt: String,
     subagent_type: Option<String>,
     category: Option<String>,
@@ -819,7 +820,7 @@ impl Tool for TaskTool {
     }
 
     fn description(&self) -> &str {
-        "Delegates work to another configured harness profile/category. `run_in_background` is required: run_in_background=false waits and returns the child result synchronously; sync child tasks do not emit background wakeup notifications. run_in_background=true returns task_id/request_id immediately and is required when testing or exercising background scheduling, completion reminders, or background_output retrieval. `load_skills` is required, even when empty; listed skills are resolved before spawning and injected into the child prompt. Use background_output with the returned request_id whenever you need status, result, or cancellation. The coordinator may also send a completion reminder later for background tasks, but do not wait for that reminder when the result is needed. `command` is prepended to the child prompt as explicit delegation context."
+        "Delegates work to another configured harness profile/category. `run_in_background` is required: run_in_background=false waits and returns the child result synchronously; sync child tasks do not emit background wakeup notifications. run_in_background=true returns task_id/request_id immediately and is required when testing or exercising background scheduling, completion reminders, or background_output retrieval. `load_skills` is required, even when empty; listed skills are resolved before spawning and injected into the child prompt. For non-trivial delegation, make `prompt` a structured body with sections: context, goal, downstream use, request, required tools, must-do, must-not-do. Use background_output with the returned request_id whenever you need status, result, or cancellation. The coordinator may also send a completion reminder later for background tasks, but do not wait for that reminder when the result is needed. `command` is prepended to the child prompt as explicit delegation context."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -1249,7 +1250,7 @@ mod tests {
     use harness_core::event::{ActorKind, EventActor};
     use harness_core::redact::DefaultRedactor;
     use harness_core::tool::{Tool, ToolContext, ToolRunState};
-    use serde_json::json;
+    use serde_json::{json, Value};
 
     #[tokio::test]
     async fn recursive_tree_renders_direct_children_once_in_sorted_order() {
@@ -1400,6 +1401,40 @@ mod tests {
         assert!(task_description.contains("injected into the child prompt"));
         assert!(task_description.contains("Use background_output"));
         assert!(task_description.contains("completion reminder later for background tasks"));
+        for field in [
+            "context",
+            "goal",
+            "downstream use",
+            "request",
+            "required tools",
+            "must-do",
+            "must-not-do",
+        ] {
+            assert!(
+                task_description.contains(field),
+                "task description should document structured delegation field {field:?}"
+            );
+        }
+
+        let task_schema = task.parameters_json_schema();
+        let prompt_description = task_schema
+            .pointer("/properties/prompt/description")
+            .and_then(Value::as_str)
+            .expect("task prompt schema description");
+        for field in [
+            "context",
+            "goal",
+            "downstream use",
+            "request",
+            "required tools",
+            "must-do",
+            "must-not-do",
+        ] {
+            assert!(
+                prompt_description.contains(field),
+                "task prompt schema should document structured delegation field {field:?}"
+            );
+        }
 
         let background_output_description = background_output.description();
         assert!(background_output_description.contains("Use this tool when you need"));

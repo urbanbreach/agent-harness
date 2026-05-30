@@ -31,6 +31,7 @@ use crate::text_json_tool_result;
 const DEFAULT_TASK_WAIT_TIMEOUT_MS: u64 = 300_000;
 const MAX_BACKGROUND_OUTPUT_TIMEOUT_MS: u64 = 300_000;
 const MAX_BATCH_CALLS: usize = 25;
+const CHILD_RESULT_SUMMARY_MAX_CHARS: usize = 1200;
 const BATCH_NESTED_ERROR: &str = "batch cannot be nested inside batch";
 const BATCH_MAX_CALLS_ERROR: &str = "Maximum of 25 tools allowed in batch";
 
@@ -131,6 +132,7 @@ impl AgentOpsExecutor {
                     duration_ms: None,
                     result_summary: None,
                     failure_summary: None,
+                    child_summary: None,
                     tool_calls: ChildToolCallCounts::default(),
                 },
             );
@@ -387,6 +389,7 @@ impl AgentOpsExecutor {
                 "session_id": summary.session_id,
                 "scheduler_task_id": summary.scheduler_task_id,
                 "status": summary.status,
+                "mode": "background",
                 "terminal": summary.terminal,
                 "block": request.block,
                 "timed_out": timed_out,
@@ -394,6 +397,7 @@ impl AgentOpsExecutor {
                 "duration_ms": summary.duration_ms,
                 "result_summary": summary.result_summary,
                 "failure_summary": summary.failure_summary,
+                "child_summary": summary.child_summary,
                 "child_tool_call_count": summary.tool_calls.requested,
                 "child_tool_call_counts": summary.tool_calls,
                 "late_result": summary.late_result,
@@ -631,6 +635,8 @@ struct ChildSessionObservability {
     result_summary: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     failure_summary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    child_summary: Option<ChildSummary>,
     tool_calls: ChildToolCallCounts,
     permissions: ChildPermissionMetadata,
     runtime: ChildRuntimeMetadata,
@@ -642,6 +648,7 @@ struct ChildRequestObservability {
     duration_ms: Option<u64>,
     result_summary: Option<String>,
     failure_summary: Option<String>,
+    child_summary: Option<ChildSummary>,
     tool_calls: ChildToolCallCounts,
 }
 
@@ -655,6 +662,7 @@ struct BackgroundRequestSummary {
     duration_ms: Option<u64>,
     result_summary: Option<String>,
     failure_summary: Option<String>,
+    child_summary: Option<ChildSummary>,
     tool_calls: ChildToolCallCounts,
     late_result: bool,
     cancel_requested: bool,
@@ -662,9 +670,22 @@ struct BackgroundRequestSummary {
     cancel_reason: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct ChildSummary {
+    kind: &'static str,
+    summary: String,
+    max_chars: usize,
+    original_chars: usize,
+    truncated: bool,
+}
+
 fn background_summary_from_projection(
     projection: BackgroundRequestProjection,
 ) -> BackgroundRequestSummary {
+    let (result_summary, result_child_summary) =
+        cap_optional_child_summary("result", projection.result_summary);
+    let (failure_summary, failure_child_summary) =
+        cap_optional_child_summary("failure", projection.failure_summary);
     BackgroundRequestSummary {
         request_id: projection.request_id,
         session_id: projection.session_id,
@@ -672,8 +693,9 @@ fn background_summary_from_projection(
         status: projection.status,
         terminal: projection.terminal,
         duration_ms: projection.duration_ms,
-        result_summary: projection.result_summary,
-        failure_summary: projection.failure_summary,
+        result_summary,
+        failure_summary,
+        child_summary: result_child_summary.or(failure_child_summary),
         tool_calls: child_tool_call_counts_from_projection(projection.tool_calls),
         late_result: projection.late_result,
         cancel_requested: false,
@@ -1146,12 +1168,17 @@ async fn summarize_child_request(
             Some(format!("timed out waiting for task request {request_id}")),
         ),
     };
+    let (result_summary, result_child_summary) =
+        cap_optional_child_summary("result", observed_result_summary);
+    let (failure_summary, failure_child_summary) =
+        cap_optional_child_summary("failure", failure_summary);
 
     Ok(ChildRequestObservability {
         status,
         duration_ms: observed_duration_ms,
-        result_summary: observed_result_summary,
+        result_summary,
         failure_summary,
+        child_summary: result_child_summary.or(failure_child_summary),
         tool_calls,
     })
 }
@@ -1411,6 +1438,44 @@ fn sanitize_cancel_reason(reason: &str) -> String {
     }
 }
 
+fn cap_optional_child_summary(
+    kind: &'static str,
+    summary: Option<String>,
+) -> (Option<String>, Option<ChildSummary>) {
+    summary
+        .map(|summary| {
+            let child_summary = cap_child_summary(kind, &summary);
+            (Some(child_summary.summary.clone()), Some(child_summary))
+        })
+        .unwrap_or((None, None))
+}
+
+fn cap_child_summary(kind: &'static str, summary: &str) -> ChildSummary {
+    let redacted = DefaultRedactor::default().redact_text(summary.trim());
+    let redacted_chars = redacted.chars().count();
+    let already_ellipsized = redacted.ends_with('…');
+    let truncated = redacted_chars > CHILD_RESULT_SUMMARY_MAX_CHARS || already_ellipsized;
+    let original_chars = if already_ellipsized && redacted_chars <= CHILD_RESULT_SUMMARY_MAX_CHARS {
+        CHILD_RESULT_SUMMARY_MAX_CHARS + 1
+    } else {
+        redacted_chars
+    };
+    let mut capped = redacted
+        .chars()
+        .take(CHILD_RESULT_SUMMARY_MAX_CHARS)
+        .collect::<String>();
+    if redacted_chars > CHILD_RESULT_SUMMARY_MAX_CHARS {
+        capped.push('…');
+    }
+    ChildSummary {
+        kind,
+        summary: capped,
+        max_chars: CHILD_RESULT_SUMMARY_MAX_CHARS,
+        original_chars,
+        truncated,
+    }
+}
+
 fn child_session_observability(
     session_id: &str,
     request_id: &str,
@@ -1435,6 +1500,7 @@ fn child_session_observability(
         duration_ms: observability.duration_ms,
         result_summary: observability.result_summary,
         failure_summary: observability.failure_summary,
+        child_summary: observability.child_summary,
         tool_calls: observability.tool_calls,
         permissions: permissions.clone(),
         runtime,
@@ -1474,6 +1540,7 @@ fn spawn_result_json(
         "duration_ms": child_session.duration_ms,
         "result_summary": child_session.result_summary,
         "failure_summary": child_session.failure_summary,
+        "child_summary": child_session.child_summary,
         "child_tool_call_count": child_session.tool_calls.requested,
         "child_tool_call_counts": child_session.tool_calls,
         "resumed_existing_session": child_session.resumed_existing_session,

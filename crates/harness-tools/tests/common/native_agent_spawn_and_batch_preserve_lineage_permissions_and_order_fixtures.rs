@@ -8,14 +8,14 @@ use async_trait::async_trait;
 mod common;
 
 use common::{
-    anonymous_supervisor_actor, find_finished, read_events, setup_workspace,
-    wait_for_request_terminal, wait_for_tool_call_finish, worker_actor,
+    anonymous_supervisor_actor, find_finished, install_fake_mcp_server, read_events, repo_root,
+    setup_workspace, wait_for_request_terminal, wait_for_tool_call_finish, worker_actor,
 };
 use harness_core::agent::{AgentModelSettings, AgentProfile};
 use harness_core::clock::RealClock;
 use harness_core::config::{
-    refresh_skills_config_registry, registered_skills_config, HarnessConfig, PermissionMode,
-    ShellAllowlist, SkillsConfig,
+    refresh_skills_config_registry, registered_skills_config, CategoryPermissions, HarnessConfig,
+    McpConfig, McpServerConfig, PermissionMode, ShellAllowlist, SkillsConfig,
 };
 use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle, RunInfo,
@@ -28,7 +28,9 @@ use harness_core::redact::DefaultRedactor;
 use harness_providers::{
     CompletionRequest, CompletionUsage, Provider, ProviderEventStream, ProviderStreamEvent,
 };
-use harness_tools::{coordinator_registry, coordinator_registry_with_question_answers};
+use harness_tools::{
+    coordinator_registry, coordinator_registry_with_mcp, coordinator_registry_with_question_answers,
+};
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
 use tokio_stream::StreamExt as _;
@@ -161,6 +163,51 @@ impl TaskCallingProvider {
     }
 }
 
+#[derive(Debug)]
+struct DelegationContractProvider {
+    requests: Mutex<Vec<CompletionRequest>>,
+}
+
+impl DelegationContractProvider {
+    fn new() -> Self {
+        Self {
+            requests: Mutex::new(Vec::new()),
+        }
+    }
+
+    async fn requests(&self) -> Vec<CompletionRequest> {
+        self.requests.lock().await.clone()
+    }
+}
+
+#[async_trait]
+impl Provider for DelegationContractProvider {
+    async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
+        let mut requests = self.requests.lock().await;
+        requests.push(req);
+        let call_count = requests.len();
+        drop(requests);
+
+        let prefix = if call_count == 1 {
+            "sync child summary"
+        } else {
+            "background child summary"
+        };
+        let body = format!("{prefix}: {}", "0123456789abcdef".repeat(220));
+        Box::pin(tokio_stream::iter(vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta(body),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 1,
+                    completion_tokens: 1,
+                    total_tokens: 2,
+                },
+            },
+        ]))
+    }
+}
+
 #[async_trait]
 impl Provider for TaskCallingProvider {
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
@@ -231,6 +278,20 @@ fn named_worker_profile(name: &str, toolset: &[&str]) -> AgentProfile {
         model_ref: "default:deep".to_string(),
         model_ref_explicit: true,
         system_prompt: format!("{name} prompt"),
+        max_iters: Some(12),
+        temperature: Some(0.0),
+        tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+        toolset: toolset.iter().map(|tool| (*tool).to_string()).collect(),
+    }
+}
+
+fn named_worker_profile_with_prompt(name: &str, toolset: &[&str], system_prompt: &str) -> AgentProfile {
+    AgentProfile {
+        name: name.to_string(),
+        category: name.to_string(),
+        model_ref: "default:deep".to_string(),
+        model_ref_explicit: true,
+        system_prompt: system_prompt.to_string(),
         max_iters: Some(12),
         temperature: Some(0.0),
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
@@ -371,6 +432,71 @@ fn plan_task_profiles() -> BTreeMap<String, AgentProfile> {
     ])
 }
 
+fn restricted_subagent_permission_policy() -> PermissionPolicy {
+    PermissionPolicy::new(
+        PermissionMode::Allow,
+        PermissionMode::Allow,
+        PermissionMode::Allow,
+    )
+    .with_category_override(
+        "explore",
+        CategoryPermissions {
+            edit: Some(PermissionMode::Deny),
+            shell: Some(PermissionMode::Deny),
+            network: Some(PermissionMode::Deny),
+            question: Some(PermissionMode::Allow),
+            task: Some(PermissionMode::Deny),
+            webfetch: Some(PermissionMode::Deny),
+            websearch: Some(PermissionMode::Deny),
+            codesearch: Some(PermissionMode::Deny),
+            lsp: Some(PermissionMode::Allow),
+            ..CategoryPermissions::default()
+        },
+    )
+    .with_category_override(
+        "quick",
+        CategoryPermissions {
+            task: Some(PermissionMode::Deny),
+            ..CategoryPermissions::default()
+        },
+    )
+}
+
+fn restricted_subagent_profiles() -> BTreeMap<String, AgentProfile> {
+    BTreeMap::from([
+        (
+            "explore".to_string(),
+            named_worker_profile(
+                "explore",
+                &["read", "grep", "glob", "list", "mcp.fixture.tool.call"],
+            ),
+        ),
+        (
+            "quick".to_string(),
+            named_worker_profile("quick", &["read", "edit", "bash", "task"]),
+        ),
+        (
+            "general".to_string(),
+            named_worker_profile("general", &["read", "bash"]),
+        ),
+    ])
+}
+
+fn fixture_mcp_config(script_path: &Path) -> McpConfig {
+    McpConfig {
+        servers: BTreeMap::from([(
+            "fixture".to_string(),
+            McpServerConfig::Stdio {
+                command: vec![script_path.to_string_lossy().into_owned()],
+                env: BTreeMap::new(),
+                cwd: None,
+                timeout_secs: 5,
+                enabled: true,
+            },
+        )]),
+    }
+}
+
 async fn spawn_run(workspace: &Path) -> (CoordinatorHandle, RunInfo, String) {
     spawn_run_with_provider(workspace, Arc::new(StaticProvider)).await
 }
@@ -378,6 +504,39 @@ async fn spawn_run(workspace: &Path) -> (CoordinatorHandle, RunInfo, String) {
 async fn spawn_run_with_provider(
     workspace: &Path,
     provider: Arc<dyn Provider>,
+) -> (CoordinatorHandle, RunInfo, String) {
+    spawn_run_with_provider_and_profiles(
+        workspace,
+        provider,
+        BTreeMap::from([
+            (
+                "deep".to_string(),
+                worker_profile(&[
+                    "task",
+                    "background_output",
+                    "background_cancel",
+                    "batch",
+                    "read",
+                    "bash",
+                ]),
+            ),
+            (
+                "explore".to_string(),
+                named_worker_profile("explore", &["read", "glob", "grep", "list"]),
+            ),
+            (
+                "general".to_string(),
+                named_worker_profile("general", &["read", "bash"]),
+            ),
+        ]),
+    )
+    .await
+}
+
+async fn spawn_run_with_provider_and_profiles(
+    workspace: &Path,
+    provider: Arc<dyn Provider>,
+    agent_profiles: BTreeMap<String, AgentProfile>,
 ) -> (CoordinatorHandle, RunInfo, String) {
     let session_dir = workspace.join("sessions");
     fs::create_dir_all(&session_dir).expect("session dir");
@@ -390,27 +549,7 @@ async fn spawn_run_with_provider(
     );
     config.provider = provider;
     config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
-    config.agent_profiles = BTreeMap::from([
-        (
-            "deep".to_string(),
-            worker_profile(&[
-                "task",
-                "background_output",
-                "background_cancel",
-                "batch",
-                "read",
-                "bash",
-            ]),
-        ),
-        (
-            "explore".to_string(),
-            named_worker_profile("explore", &["read", "glob", "grep", "list"]),
-        ),
-        (
-            "general".to_string(),
-            named_worker_profile("general", &["read", "bash"]),
-        ),
-    ]);
+    config.agent_profiles = agent_profiles;
 
     let handle = spawn_coordinator(
         config,
