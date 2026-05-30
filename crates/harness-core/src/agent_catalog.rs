@@ -11,7 +11,7 @@ use crate::coord::{
     TASK_CATEGORY_FALLBACK_PROFILE,
 };
 
-pub const SHIPPED_PRIMARY_PROFILES: &[&str] = &["build", "plan", "discipline"];
+pub const SHIPPED_PRIMARY_PROFILES: &[&str] = &["build", "plan"];
 pub const SHIPPED_SUBAGENTS: &[&str] = &["explore", "general"];
 pub const SHIPPED_CATEGORY_ROUTES: &[&str] = &[
     "visual-engineering",
@@ -28,7 +28,6 @@ pub const SHIPPED_HIDDEN_PROFILES: &[&str] = &["title", "summary", "compaction"]
 const DISPLAY_ORDER: &[&str] = &[
     "build",
     "plan",
-    "discipline",
     "explore",
     "general",
     "visual-engineering",
@@ -452,7 +451,6 @@ mod tests {
               agent: {
                 build: { system_prompt: "Build work" },
                 plan: { system_prompt: "Plan work" },
-                discipline: { system_prompt: "Discipline work" }
               },
               default_agent: "build",
               permission: {

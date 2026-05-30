@@ -19,7 +19,7 @@
       ]
     },
     "build": {
-      "digest12": "e051e753bd92",
+      "digest12": "e8a0872cf68a",
       "line_count": 53,
       "sections": [
         "Identity",
@@ -47,25 +47,6 @@
         "Do Not Use When",
         "Scope Guard",
         "Runtime-Enforced Permissions",
-        "Behavioral Guidance",
-        "Operating Loop",
-        "Ask Gate",
-        "Failure Recovery",
-        "Output Contract",
-        "Verification Gate"
-      ]
-    },
-    "discipline": {
-      "digest12": "ed468d47303e",
-      "line_count": 51,
-      "sections": [
-        "Identity",
-        "Goal",
-        "Use When",
-        "Do Not Use When",
-        "Scope Guard",
-        "Runtime-Enforced Permissions",
-        "Intent Gate",
         "Behavioral Guidance",
         "Operating Loop",
         "Ask Gate",
