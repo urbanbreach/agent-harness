@@ -8,7 +8,6 @@ Harness resolves agent/profile/category metadata through the `harness-core::agen
 |---|---|---|
 | `build` | primary | Default implementation lane. |
 | `plan` | primary | Planning lane; edits are runtime-limited to the active plan file and Plan may delegate only to `explore`. |
-| `discipline` | primary | Strict delivery lane with todo/delegation/verification emphasis. |
 | `explore` | subagent | Read-only repository lookup and local code search. |
 | `general` | subagent | Focused implementation/research child work. |
 | `visual-engineering` | category | UI/UX, layout, styling, animation, visual design. |

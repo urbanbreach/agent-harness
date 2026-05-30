@@ -103,7 +103,6 @@ fields that affect first-run behavior.
   "agent": {
     "build": { "enable": true, "model": "default/gpt-5.4-mini", "variant": "high" },
     "plan": { "enable": true, "model": "default/gpt-5.5", "variant": "xhigh" },
-    "discipline": { "enable": true, "model": "default/gpt-5.5", "variant": "high" },
     "general": { "enable": true, "model": "default/gpt-5.4-mini", "variant": "medium" },
     "explore": { "enable": true, "model": "default/gpt-5.4-mini", "variant": "low" },
     "visual-engineering": { "enable": true, "model": "category-visual-engineering" },
@@ -271,6 +270,22 @@ for those settings instead of mixing them into runtime config.
 | `username` | Upstream-compatible username setting accepted as inert compatibility input. |
 | `watcher` | Upstream-compatible watcher settings accepted as inert compatibility input. |
 
+## Extension manifest descriptors
+
+Typed extension manifests are not a runtime config key in V1. The descriptor
+schema lives at
+[`configs/extension-manifest.v1.schema.json`](../configs/extension-manifest.v1.schema.json)
+and is validated by `harness-core::extension_manifest::ExtensionManifestV1`.
+The seam is descriptor-only: parsing a manifest records stable extension ids,
+capability ids, disablement defaults, optional tool/hook/command/prompt/MCP
+bundle/diagnostic/provider-decorator descriptors, public permission names for
+tool descriptors, and static replay metadata. It does not discover manifests
+from config, register tools, execute commands, launch MCP servers, invoke
+provider decorators, load external code, or mutate sessions. Future executable
+extension behavior must be configured through a new host design and still route
+through coordinator permissions, artifact/redaction paths, and replay-safe
+metadata.
+
 ## TUI top-level keys
 
 | Key | Purpose |
@@ -371,10 +386,37 @@ The runtime config shape is:
 roots are resolved against the current workspace and, when `walk_to_git_root` is
 true, each ancestor up to the nearest `.git` directory. Relative global roots are
 resolved from the current workspace, while `~` expands to the operator home
-directory. Discovery walks project roots first, nearest workspace ancestor before
-outer ancestors, then global roots; entries inside each root are sorted by
-directory name. The first skill name wins. Later entries with the same name are
-reported as `shadowed` with an actionable reason.
+directory. Entries inside each root are sorted by directory name. The first skill
+name wins. Later entries with the same name are reported as `shadowed` with an
+actionable reason.
+
+V1 root precedence is deterministic:
+
+1. Project/workspace roots from the current workspace up to the nearest `.git`
+   ancestor. At each ancestor, Harness-owned roots (`.agent-harness/skills`, then
+   `.harness/skills`) are searched before other non-compatibility project roots;
+   roots in the same class keep their configured order.
+2. Non-compatibility global roots. Harness-owned global roots such as
+   `~/.config/agent-harness/skills` are searched before other global roots in the
+   same class.
+3. Explicitly configured project compatibility roots, from the current workspace
+   up to the nearest `.git` ancestor, in configured order.
+4. Explicitly configured global compatibility roots, in configured order.
+
+External editor, assistant, and agent compatibility roots are adapter work, not
+default V1 discovery. The harness does not search `.external-editor/skills`,
+`.assistant/skills`, `.agents/skills`, user-level `.external-editor`,
+user-level `.assistant`, or user-level `.agents` roots unless the operator
+explicitly lists those paths in `skills.project_roots` or `skills.global_roots`.
+When they are listed, they are imported after Harness-owned and other
+non-compatibility roots, even if the compatibility path appears earlier in the
+config array. Therefore `.external-editor/skills/foo/SKILL.md`,
+`.assistant/skills/foo/SKILL.md`, or `.agents/skills/foo/SKILL.md` cannot shadow
+`.agent-harness/skills/foo/SKILL.md`, `.harness/skills/foo/SKILL.md`, or a
+configured `~/.config/agent-harness/skills/foo/SKILL.md`. If only compatibility
+roots contain `foo`, configured project compatibility roots win before
+configured global compatibility roots, and duplicate compatibility roots resolve
+in their configured order.
 
 `permissions` is a skill-loading policy keyed by exact names or simple `*`
 patterns. `allow` loads immediately, `ask` requests operator confirmation before
@@ -455,12 +497,6 @@ Team member profiles that need to write shared team messages or tasks must
 include the relevant `team_*` tool ids in their toolset; worker calls are bound
 to the lead/member identity projected from the team event log.
 
-The shipped `discipline` agent is the opt-in autonomous delivery workflow. It is
-a separate primary profile, not a global toggle: use it when a turn should enforce
-todo hygiene, focused delegation, and end-to-end surface verification. The
-behavior remains prompt/profile-scoped and does not add coordinator-owned
-background scheduler loops, plugin loading, or hidden continuation semantics.
-
 `harness doctor` validates the operator-facing orchestration surface without
 making provider or MCP network calls. It checks provider/model metadata,
 provider credential availability without printing key values, configured agent
@@ -499,7 +535,7 @@ Plan-spawned child work restricted to `explore` unless a future policy adds
 tested parent-permission inheritance for write-capable subagents.
 
 The shipped agent names are available without extra config: primary
-`build`, `plan`, and `discipline`, subagents `general`, `explore`,
+`build` and `plan`, subagents `general`, `explore`,
 `visual-engineering`, `artistry`, `ultrabrain`, `deep`, `quick`,
 `unspecified-low`, `unspecified-high`, and `writing`, plus hidden `title`,
 `summary`, and `compaction` profiles. `explore` is a read-only local codebase
@@ -567,7 +603,7 @@ all canonical public permission kinds: `bash`, `edit`, `question`, `task`,
 The V1 native tool catalog is documented in
 [`docs/native-tool-catalog.md`](native-tool-catalog.md). New control-plane tools
 map to the existing permission buckets: `background_cancel` and `team_list` use
-`task`; `ast_grep_search` uses `codesearch`; `session_list`, `session_read`,
+`task`; `ast_grep_search` uses `codesearch`; `ast_grep_replace` uses `edit`; `session_list`, `session_read`,
 `session_search`, and `session_info` are read-only replay/session inspectors with
 no additional public permission bucket. Legacy broad `network` remains a
 compatibility input for older network-capability tools; new docs and examples

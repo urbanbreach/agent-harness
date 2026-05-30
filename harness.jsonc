@@ -272,11 +272,6 @@
       "model": "default/gpt-5.5",
       "variant": "xhigh",
     },
-    "discipline": {
-      "enable": true,
-      "model": "default/gpt-5.5",
-      "variant": "high",
-    },
     "general": {
       "enable": true,
       "model": "default/gpt-5.4-mini",
