@@ -135,6 +135,58 @@ pub struct ProviderStreamFinishedMetadata {
     pub thinking: Option<ProviderStreamThinkingMetadata>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderErrorCategory {
+    MissingCredentials,
+    InvalidCredentials,
+    RateLimited,
+    ContextWindowExceeded,
+    UnsupportedToolCall,
+    MalformedStream,
+    TransportFailure,
+    Other,
+}
+
+impl ProviderErrorCategory {
+    pub const ALL: [Self; 8] = [
+        Self::MissingCredentials,
+        Self::InvalidCredentials,
+        Self::RateLimited,
+        Self::ContextWindowExceeded,
+        Self::UnsupportedToolCall,
+        Self::MalformedStream,
+        Self::TransportFailure,
+        Self::Other,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::MissingCredentials => "missing_credentials",
+            Self::InvalidCredentials => "invalid_credentials",
+            Self::RateLimited => "rate_limited",
+            Self::ContextWindowExceeded => "context_window_exceeded",
+            Self::UnsupportedToolCall => "unsupported_tool_call",
+            Self::MalformedStream => "malformed_stream",
+            Self::TransportFailure => "transport_failure",
+            Self::Other => "other",
+        }
+    }
+
+    pub fn remediation(self) -> &'static str {
+        match self {
+            Self::MissingCredentials => "Configure the provider API key or apiKeyEnv value, then retry.",
+            Self::InvalidCredentials => "Check that the provider credential is valid for the selected provider and model.",
+            Self::RateLimited => "Wait for the provider rate limit to reset or switch to a less constrained model/provider.",
+            Self::ContextWindowExceeded => "Reduce prompt context, enable compaction, or choose a model with a larger context window.",
+            Self::UnsupportedToolCall => "Inspect the tool schema and provider support matrix, then retry with a supported tool shape.",
+            Self::MalformedStream => "Retry the request; if it repeats, capture a support bundle because the provider stream was malformed.",
+            Self::TransportFailure => "Check provider base URL/network reachability and retry the request.",
+            Self::Other => "Inspect the provider message and support bundle for the provider-specific failure detail.",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ProviderStreamEvent {
     Start,
@@ -165,7 +217,30 @@ pub enum ProviderStreamEvent {
     },
     Error {
         message: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        category: Option<ProviderErrorCategory>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        remediation: Option<String>,
     },
+}
+
+impl ProviderStreamEvent {
+    pub fn error(message: impl Into<String>) -> Self {
+        Self::Error {
+            message: message.into(),
+            category: None,
+            remediation: None,
+        }
+    }
+
+    pub fn categorized_error(message: impl Into<String>, category: ProviderErrorCategory) -> Self {
+        let message = message.into();
+        Self::Error {
+            message: format!("{}: {message}", category.as_str()),
+            category: Some(category),
+            remediation: Some(category.remediation().to_string()),
+        }
+    }
 }
 
 #[async_trait]
@@ -220,9 +295,9 @@ impl Provider for ProviderRouter {
         let provider_id = match self.resolve_provider_id(req.provider_id.as_deref()) {
             Ok(provider_id) => provider_id,
             Err(message) => {
-                return Box::pin(tokio_stream::iter(vec![ProviderStreamEvent::Error {
+                return Box::pin(tokio_stream::iter(vec![ProviderStreamEvent::error(
                     message,
-                }]));
+                )]));
             }
         };
 

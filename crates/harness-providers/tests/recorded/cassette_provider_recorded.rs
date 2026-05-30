@@ -63,7 +63,7 @@ async fn replay_reports_clear_mismatch_without_calling_inner_provider() {
 
     assert_eq!(calls.load(Ordering::SeqCst), 0);
     assert!(
-        matches!(&events[..], [ProviderStreamEvent::Error { message }] if message.contains("cassette request mismatch at interaction 0"))
+        matches!(&events[..], [ProviderStreamEvent::Error { message, .. }] if message.contains("cassette request mismatch at interaction 0"))
     );
 }
 
@@ -134,7 +134,7 @@ async fn unsafe_secret_refuses_to_write_recording() {
         .await;
 
     assert!(
-        matches!(&events[..], [ProviderStreamEvent::Error { message }] if message.contains("unsafe cassette secret detected"))
+        matches!(&events[..], [ProviderStreamEvent::Error { message, .. }] if message.contains("unsafe cassette secret detected"))
     );
     assert!(!path.exists(), "unsafe cassette must not be written");
 }

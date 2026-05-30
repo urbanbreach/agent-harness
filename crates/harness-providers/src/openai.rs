@@ -13,8 +13,8 @@ use tokio_stream::{self as stream, Stream, StreamExt};
 
 use crate::{
     CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider,
-    ProviderEventStream, ProviderStreamEvent, ProviderStreamFinishedMetadata,
-    ProviderStreamStartMetadata, ToolChoice, ToolDef,
+    ProviderErrorCategory, ProviderEventStream, ProviderStreamEvent,
+    ProviderStreamFinishedMetadata, ProviderStreamStartMetadata, ToolChoice, ToolDef,
 };
 
 #[derive(Debug, Clone)]
@@ -229,10 +229,12 @@ impl OpenAiCompatibleProvider {
         self.send_request(self.responses_endpoint(), request).await
     }
 
-    async fn non_success_status_message(&self, response: OpenAiHttpResponse) -> String {
+    async fn non_success_status_error(&self, response: OpenAiHttpResponse) -> ProviderStreamEvent {
         let status = response.status;
         let body = collect_body_text(response.body).await.ok();
-        format_non_success_status_message(status, body.as_deref(), &self.api_key)
+        let message = format_non_success_status_message(status, body.as_deref(), &self.api_key);
+        let category = categorize_non_success_status(status, body.as_deref(), &self.api_key);
+        ProviderStreamEvent::categorized_error(message, category)
     }
 }
 
@@ -246,6 +248,55 @@ fn format_non_success_status_message(status: u16, body: Option<&str>, api_key: &
     match detail {
         Some(detail) => format!("openai_compatible request failed with status {status}: {detail}"),
         None => format!("openai_compatible request failed with status {status}"),
+    }
+}
+
+fn categorize_non_success_status(
+    status: u16,
+    body: Option<&str>,
+    api_key: &str,
+) -> ProviderErrorCategory {
+    if api_key.trim().is_empty() {
+        return ProviderErrorCategory::MissingCredentials;
+    }
+
+    if status == 429 {
+        return ProviderErrorCategory::RateLimited;
+    }
+
+    let detail = body
+        .and_then(extract_provider_error_detail)
+        .or_else(|| body.and_then(non_empty_string).map(str::to_string))
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    if matches!(status, 401 | 403) {
+        if detail.contains("missing")
+            && (detail.contains("api key")
+                || detail.contains("apikey")
+                || detail.contains("credential")
+                || detail.contains("authorization"))
+        {
+            ProviderErrorCategory::MissingCredentials
+        } else {
+            ProviderErrorCategory::InvalidCredentials
+        }
+    } else if detail.contains("context_length_exceeded")
+        || detail.contains("context length")
+        || detail.contains("context window")
+        || detail.contains("maximum context")
+        || detail.contains("too many tokens")
+    {
+        ProviderErrorCategory::ContextWindowExceeded
+    } else if detail.contains("invalid schema for function")
+        || detail.contains("unsupported tool")
+        || detail.contains("unsupported function")
+        || detail.contains("tool call")
+        || detail.contains("function call")
+    {
+        ProviderErrorCategory::UnsupportedToolCall
+    } else {
+        ProviderErrorCategory::Other
     }
 }
 
@@ -381,13 +432,16 @@ impl Provider for OpenAiCompatibleProvider {
         let (mode, response) = match response_result {
             Ok(response) => response,
             Err(message) => {
-                return Box::pin(stream::iter(vec![ProviderStreamEvent::Error { message }]))
+                return Box::pin(stream::iter(vec![ProviderStreamEvent::categorized_error(
+                    message,
+                    ProviderErrorCategory::TransportFailure,
+                )]));
             }
         };
 
         if !(200..300).contains(&response.status) {
-            let message = self.non_success_status_message(response).await;
-            return Box::pin(stream::iter(vec![ProviderStreamEvent::Error { message }]));
+            let error = self.non_success_status_error(response).await;
+            return Box::pin(stream::iter(vec![error]));
         }
 
         let start_metadata = provider_stream_start_metadata_from_headers(&response.headers);
@@ -506,6 +560,18 @@ fn non_empty_finished_metadata(
     (metadata != ProviderStreamFinishedMetadata::default()).then_some(metadata)
 }
 
+fn malformed_stream_error(message: impl Into<String>) -> ProviderStreamEvent {
+    ProviderStreamEvent::categorized_error(message, ProviderErrorCategory::MalformedStream)
+}
+
+fn transport_failure_error(message: impl Into<String>) -> ProviderStreamEvent {
+    ProviderStreamEvent::categorized_error(message, ProviderErrorCategory::TransportFailure)
+}
+
+fn unsupported_tool_call_error(message: impl Into<String>) -> ProviderStreamEvent {
+    ProviderStreamEvent::categorized_error(message, ProviderErrorCategory::UnsupportedToolCall)
+}
+
 async fn consume_chat_sse_stream(
     response: OpenAiHttpResponse,
     tx: mpsc::Sender<ProviderStreamEvent>,
@@ -539,9 +605,9 @@ async fn consume_chat_sse_stream(
                     "openai_compatible SSE stream transport error",
                 );
                 let _ = tx
-                    .send(ProviderStreamEvent::Error {
-                        message: "openai_compatible SSE stream transport error".to_string(),
-                    })
+                    .send(transport_failure_error(
+                        "openai_compatible SSE stream transport error",
+                    ))
                     .await;
                 return;
             }
@@ -575,9 +641,9 @@ async fn consume_chat_sse_stream(
                     "openai_compatible returned invalid SSE JSON chunk",
                 );
                 let _ = tx
-                    .send(ProviderStreamEvent::Error {
-                        message: "openai_compatible returned invalid SSE JSON chunk".to_string(),
-                    })
+                    .send(malformed_stream_error(
+                        "openai_compatible returned invalid SSE JSON chunk",
+                    ))
                     .await;
                 return;
             }
@@ -696,11 +762,9 @@ async fn consume_tool_call_deltas(
     for tool_call in tool_calls {
         let Some(tool_call_id) = resolve_tool_call_id(tool_call, state) else {
             let _ = tx
-                .send(ProviderStreamEvent::Error {
-                    message:
-                        "openai_compatible stream omitted tool_call_id for chat tool call delta"
-                            .to_string(),
-                })
+                .send(unsupported_tool_call_error(
+                    "openai_compatible stream omitted tool_call_id for chat tool call delta",
+                ))
                 .await;
             return false;
         };
@@ -776,22 +840,18 @@ async fn emit_tool_call_completions(
             .cloned()
         else {
             let _ = tx
-                .send(ProviderStreamEvent::Error {
-                    message: format!(
-                        "openai_compatible chat tool call `{tool_call_id}` missing function name"
-                    ),
-                })
+                .send(unsupported_tool_call_error(format!(
+                    "openai_compatible chat tool call `{tool_call_id}` missing function name"
+                )))
                 .await;
             return false;
         };
 
         if serde_json::from_str::<serde_json::Value>(&accumulator.arguments_json).is_err() {
             let _ = tx
-                .send(ProviderStreamEvent::Error {
-                    message: format!(
-                        "openai_compatible chat tool call `{tool_call_id}` produced invalid arguments JSON"
-                    ),
-                })
+                .send(unsupported_tool_call_error(format!(
+                    "openai_compatible chat tool call `{tool_call_id}` produced invalid arguments JSON"
+                )))
                 .await;
             return false;
         }
@@ -846,9 +906,9 @@ async fn consume_responses_sse_stream(
                     "openai_compatible SSE stream transport error",
                 );
                 let _ = tx
-                    .send(ProviderStreamEvent::Error {
-                        message: "openai_compatible SSE stream transport error".to_string(),
-                    })
+                    .send(transport_failure_error(
+                        "openai_compatible SSE stream transport error",
+                    ))
                     .await;
                 return;
             }
@@ -884,12 +944,10 @@ async fn consume_responses_sse_stream(
                     ),
                 );
                 let _ = tx
-                    .send(ProviderStreamEvent::Error {
-                        message: format!(
-                            "openai_compatible returned invalid SSE JSON chunk: {err}; sample={}",
-                            summarize_sse_data(data)
-                        ),
-                    })
+                    .send(malformed_stream_error(format!(
+                        "openai_compatible returned invalid SSE JSON chunk: {err}; sample={}",
+                        summarize_sse_data(data)
+                    )))
                     .await;
                 return;
             }
@@ -952,7 +1010,7 @@ async fn consume_responses_sse_stream(
                         emit_responses_tool_call_complete(&tx, &state_key, state).await
                     {
                         warn_stream_processing_failure("responses.tool_completion", &message);
-                        let _ = tx.send(ProviderStreamEvent::Error { message }).await;
+                        let _ = tx.send(unsupported_tool_call_error(message)).await;
                         return;
                     }
                 }
@@ -978,10 +1036,9 @@ async fn consume_responses_sse_stream(
                     "openai_compatible responses stream returned error event",
                 );
                 let _ = tx
-                    .send(ProviderStreamEvent::Error {
-                        message: "openai_compatible responses stream returned error event"
-                            .to_string(),
-                    })
+                    .send(malformed_stream_error(
+                        "openai_compatible responses stream returned error event",
+                    ))
                     .await;
                 return;
             }
@@ -1017,11 +1074,9 @@ async fn handle_responses_tool_item_added(
 
     let Some(key) = item.id.clone().or_else(|| item.call_id.clone()) else {
         let _ = tx
-            .send(ProviderStreamEvent::Error {
-                message:
-                    "openai_compatible responses tool call is missing both item id and call id"
-                        .to_string(),
-            })
+            .send(unsupported_tool_call_error(
+                "openai_compatible responses tool call is missing both item id and call id",
+            ))
             .await;
         return false;
     };
@@ -1061,11 +1116,9 @@ async fn handle_responses_arguments_delta(
 ) -> bool {
     let Some(item_id) = event.item_id else {
         let _ = tx
-            .send(ProviderStreamEvent::Error {
-                message:
-                    "openai_compatible responses function_call_arguments.delta missing item_id"
-                        .to_string(),
-            })
+            .send(unsupported_tool_call_error(
+                "openai_compatible responses function_call_arguments.delta missing item_id",
+            ))
             .await;
         return false;
     };
@@ -1113,11 +1166,9 @@ async fn handle_responses_tool_item_done(
         .or(event.item_id)
     else {
         let _ = tx
-            .send(ProviderStreamEvent::Error {
-                message:
-                    "openai_compatible responses tool completion missing both item id and call id"
-                        .to_string(),
-            })
+            .send(unsupported_tool_call_error(
+                "openai_compatible responses tool completion missing both item id and call id",
+            ))
             .await;
         return false;
     };
@@ -1140,7 +1191,7 @@ async fn handle_responses_tool_item_done(
     };
 
     if let Err(message) = emit_responses_tool_call_complete(tx, &state_key, completed_state).await {
-        let _ = tx.send(ProviderStreamEvent::Error { message }).await;
+        let _ = tx.send(unsupported_tool_call_error(message)).await;
         return false;
     }
 
@@ -1811,7 +1862,8 @@ mod tests {
     };
     use crate::{
         CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider,
-        ProviderStreamEvent, ProviderStreamFinishedMetadata, ToolChoice, ToolDef,
+        ProviderErrorCategory, ProviderStreamEvent, ProviderStreamFinishedMetadata, ToolChoice,
+        ToolDef,
     };
 
     #[derive(Debug, Clone)]
@@ -1897,6 +1949,22 @@ mod tests {
                 headers,
                 response.body,
             ))
+        }
+    }
+
+    #[derive(Debug)]
+    struct FailingOpenAiTransport;
+
+    #[async_trait]
+    impl OpenAiHttpTransport for FailingOpenAiTransport {
+        async fn post_json(
+            &self,
+            _endpoint: String,
+            _headers: HeaderMap,
+            _bearer_token: String,
+            _body: serde_json::Value,
+        ) -> Result<OpenAiHttpResponse, String> {
+            Err("socket closed before response".to_string())
         }
     }
 
@@ -2075,7 +2143,7 @@ mod tests {
         .expect("build provider");
 
         let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
-        let [ProviderStreamEvent::Error { message }] = events.as_slice() else {
+        let [ProviderStreamEvent::Error { message, .. }] = events.as_slice() else {
             panic!("expected one provider error, got {events:?}");
         };
 
@@ -2420,7 +2488,7 @@ mod tests {
             .any(|event| matches!(event, ProviderStreamEvent::ToolCallDelta { .. })));
         assert!(events
             .iter()
-            .any(|event| matches!(event, ProviderStreamEvent::Error { message } if message.contains("malformed arguments JSON"))));
+            .any(|event| matches!(event, ProviderStreamEvent::Error { message, .. } if message.contains("malformed arguments JSON"))));
         assert!(!events
             .iter()
             .any(|event| matches!(event, ProviderStreamEvent::ToolCallComplete { .. })));
@@ -2533,7 +2601,7 @@ mod tests {
         let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
 
         assert_eq!(events.len(), 1);
-        let ProviderStreamEvent::Error { message } = &events[0] else {
+        let ProviderStreamEvent::Error { message, .. } = &events[0] else {
             panic!("expected an error event for non-success response")
         };
 
@@ -2558,13 +2626,134 @@ mod tests {
         let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
 
         assert_eq!(events.len(), 1);
-        let ProviderStreamEvent::Error { message } = &events[0] else {
+        let ProviderStreamEvent::Error { message, .. } = &events[0] else {
             panic!("expected an error event for non-success response")
         };
 
         assert!(message.contains("status 400"));
         assert!(message.contains("Invalid schema for function 'question'"));
         assert!(message.contains("object schema missing properties"));
+    }
+
+    #[tokio::test]
+    async fn openai_non_success_responses_map_to_stable_error_categories() {
+        // arrange
+        let cases = [
+            (
+                401,
+                json!({"error": {"message": "missing API key"}}).to_string(),
+                "",
+                ProviderErrorCategory::MissingCredentials,
+            ),
+            (
+                401,
+                json!({"error": {"message": "invalid_api_key"}}).to_string(),
+                "test-secret-key",
+                ProviderErrorCategory::InvalidCredentials,
+            ),
+            (
+                429,
+                json!({"error": {"message": "rate limit exceeded"}}).to_string(),
+                "test-secret-key",
+                ProviderErrorCategory::RateLimited,
+            ),
+            (
+                400,
+                json!({"error": {"message": "context_length_exceeded: maximum context window"}})
+                    .to_string(),
+                "test-secret-key",
+                ProviderErrorCategory::ContextWindowExceeded,
+            ),
+            (
+                400,
+                json!({"error": {"message": "unsupported tool call shape"}}).to_string(),
+                "test-secret-key",
+                ProviderErrorCategory::UnsupportedToolCall,
+            ),
+            (
+                500,
+                json!({"error": {"message": "provider server exploded"}}).to_string(),
+                "test-secret-key",
+                ProviderErrorCategory::Other,
+            ),
+        ];
+
+        for (status, body, api_key, expected_category) in cases {
+            let transport =
+                ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::text(status, body)]);
+            let provider = provider_for_transport(transport, api_key);
+            // act
+            let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
+            // assert
+            assert_single_error_category(&events, expected_category);
+        }
+    }
+
+    #[tokio::test]
+    async fn openai_malformed_stream_and_transport_failures_have_stable_categories() {
+        // arrange
+        let malformed_transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(
+            "data: {not json}\n\n".to_string(),
+        )]);
+        let malformed_provider = provider_for_transport(malformed_transport, "test-secret-key");
+        let malformed_events =
+            // act
+            collect_events(&malformed_provider, basic_request("gpt-4o-mini")).await;
+        // assert
+        assert_single_error_category(&malformed_events, ProviderErrorCategory::MalformedStream);
+
+        let transport_provider = OpenAiCompatibleProvider::with_transport(
+            OpenAiCompatibleProviderConfig {
+                base_url: "http://127.0.0.1/v1".to_string(),
+                api_key: "test-secret-key".to_string(),
+                api_mode: OpenAiApiMode::ChatCompletions,
+                timeout_ms: 15_000,
+                headers: std::collections::BTreeMap::new(),
+            },
+            Arc::new(FailingOpenAiTransport),
+        )
+        .expect("build provider");
+        let transport_events =
+            collect_events(&transport_provider, basic_request("gpt-4o-mini")).await;
+        assert_single_error_category(&transport_events, ProviderErrorCategory::TransportFailure);
+    }
+
+    fn assert_single_error_category(
+        events: &[ProviderStreamEvent],
+        expected: ProviderErrorCategory,
+    ) {
+        let error_events = events
+            .iter()
+            .filter(|event| matches!(event, ProviderStreamEvent::Error { .. }))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            error_events.len(),
+            1,
+            "expected exactly one error event: {events:?}"
+        );
+        let ProviderStreamEvent::Error {
+            message,
+            category,
+            remediation,
+        } = error_events[0]
+        else {
+            panic!("expected provider error event: {events:?}");
+        };
+        assert_eq!(
+            *category,
+            Some(expected),
+            "unexpected category in {message}"
+        );
+        assert!(
+            message.contains(expected.as_str()),
+            "message should render category {expected:?}: {message}"
+        );
+        assert!(
+            remediation
+                .as_deref()
+                .is_some_and(|hint| !hint.trim().is_empty()),
+            "error category {expected:?} should include remediation hint"
+        );
     }
 
     #[tokio::test]
@@ -2626,7 +2815,7 @@ mod tests {
                         saw_done = true;
                         break;
                     }
-                    ProviderStreamEvent::Error { message } => {
+                    ProviderStreamEvent::Error { message, .. } => {
                         panic!("live proxy returned provider error: {message}")
                     }
                 }

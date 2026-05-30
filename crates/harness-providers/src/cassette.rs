@@ -459,9 +459,9 @@ where
         if !record {
             return match self.replay(req) {
                 Ok(events) => Box::pin(stream::iter(events)),
-                Err(err) => Box::pin(stream::iter(vec![ProviderStreamEvent::Error {
-                    message: err.to_string(),
-                }])),
+                Err(err) => Box::pin(stream::iter(vec![ProviderStreamEvent::error(
+                    err.to_string(),
+                )])),
             };
         }
 
@@ -473,9 +473,9 @@ where
             .await;
         match self.append_recording(req, events.clone()) {
             Ok(()) => Box::pin(stream::iter(events)),
-            Err(err) => Box::pin(stream::iter(vec![ProviderStreamEvent::Error {
-                message: err.to_string(),
-            }])),
+            Err(err) => Box::pin(stream::iter(vec![ProviderStreamEvent::error(
+                err.to_string(),
+            )])),
         }
     }
 }

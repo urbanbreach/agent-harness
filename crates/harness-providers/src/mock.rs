@@ -97,9 +97,9 @@ impl Provider for MockProvider {
             .get(&digest)
             .cloned()
             .unwrap_or_else(|| {
-                vec![ProviderStreamEvent::Error {
-                    message: format!("mock fixture missing for request_digest={digest}"),
-                }]
+                vec![ProviderStreamEvent::error(format!(
+                    "mock fixture missing for request_digest={digest}"
+                ))]
             });
 
         Box::pin(stream::iter(events).map(|event| event))
@@ -246,7 +246,7 @@ impl From<FixtureStreamEvent> for ProviderStreamEvent {
             FixtureStreamEvent::DoneWithMetadata { usage, metadata } => {
                 Self::DoneWithMetadata { usage, metadata }
             }
-            FixtureStreamEvent::Error { message } => Self::Error { message },
+            FixtureStreamEvent::Error { message } => Self::error(message),
         }
     }
 }
@@ -317,9 +317,9 @@ mod tests {
         let events: Vec<_> = provider.stream_completion(request).await.collect().await;
         assert_eq!(
             events,
-            vec![ProviderStreamEvent::Error {
-                message: format!("mock fixture missing for request_digest={digest}")
-            }]
+            vec![ProviderStreamEvent::error(format!(
+                "mock fixture missing for request_digest={digest}"
+            ))]
         );
     }
 
