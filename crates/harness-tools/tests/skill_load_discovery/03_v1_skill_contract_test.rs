@@ -349,6 +349,65 @@ async fn shipped_v1_builtin_skills_load_and_disable_by_stable_id() {
 }
 
 #[test]
+fn shipped_builtin_skill_ids_win_over_global_and_imported_duplicates() {
+    // arrange
+    let _guard = skills_registry_test_lock();
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("home");
+    fs::create_dir_all(&home).expect("home dir");
+    let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
+        global_roots: vec![
+            home.join(".agents/skills"),
+            home.join(".config/agent-harness/skills"),
+        ],
+        ..SkillsConfig::default()
+    });
+    let root = repo_root();
+
+    for name in ["git-master", "review-work", "frontend-ui-ux"] {
+        write_skill(
+            &home.join(".agents/skills"),
+            name,
+            "Imported duplicate description",
+            "Imported duplicate body",
+        );
+        write_skill(
+            &home.join(".config/agent-harness/skills"),
+            name,
+            "Global duplicate description",
+            "Global duplicate body",
+        );
+    }
+
+    // act
+    let catalog = discover_skill_catalog(&root).expect("discover shipped skill catalog");
+
+    // assert
+    for name in ["git-master", "review-work", "frontend-ui-ux"] {
+        let active = catalog
+            .active_entry(name)
+            .unwrap_or_else(|| panic!("catalog missing shipped skill {name}"));
+        assert_eq!(active.stable_id, format!("skill:project:{name}"));
+        assert_eq!(active.status, SkillCatalogStatus::Loadable);
+        assert_eq!(active.source_scope, "project");
+        assert_eq!(
+            active.location,
+            root.join(".agent-harness/skills").join(name).join("SKILL.md")
+        );
+
+        let shadowed = catalog
+            .entries_for(name)
+            .into_iter()
+            .filter(|entry| entry.status == SkillCatalogStatus::Shadowed)
+            .collect::<Vec<_>>();
+        assert_eq!(shadowed.len(), 2, "global and imported duplicates are shadowed");
+        assert!(shadowed
+            .iter()
+            .any(|entry| entry.stable_id == format!("skill:global:{name}")));
+    }
+}
+
+#[test]
 fn shipped_v1_builtin_skills_have_quality_contract_and_catalog_metadata() {
     // arrange
     let _guard = skills_registry_test_lock();

@@ -10,18 +10,33 @@ The repository ships a small starter skill pack under `.agent-harness/skills/`.
 - `frontend-ui-ux` — visual engineering guidance for UI/UX polish with deterministic evidence.
 
 ## Discovery order
-By default the harness searches these project roots, in order:
+By default the harness searches these Harness-owned project roots, in order at
+each workspace ancestor:
 
 1. `.agent-harness/skills`
 2. `.harness/skills`
 
-It then searches configured global roots such as
+It then searches configured non-compatibility global roots such as
 `~/.config/agent-harness/skills`. With `skills.walk_to_git_root: true`, project
 roots are checked from the current workspace up to the nearest `.git` ancestor;
 the nearest matching skill name wins and lower-precedence duplicates are reported
-as `shadowed` in the compact catalog.
+as `shadowed` in the compact catalog. If a config lists extra project roots, the
+Harness-owned roots at that ancestor still run before other non-compatibility
+roots in the same class; roots in the same class keep their configured order.
 
 That means the bundled starter pack is the canonical project-local location. To override a shipped skill, replace the matching directory under `.agent-harness/skills` (for example `.agent-harness/skills/rust-best-practices/SKILL.md`).
+
+Compatibility roots from other editors or assistants are deliberately not part
+of default V1 discovery. `.external-editor/skills`, `.assistant/skills`,
+`.agents/skills`, and user-level equivalents are tracked as adapter work and are
+ignored unless an operator explicitly adds them to `skills.project_roots` or
+`skills.global_roots`. When imported this way, compatibility roots are searched
+after Harness-owned and other non-compatibility project/global roots, even if the
+compatibility path appears earlier in the config array. A duplicate
+`.agents/skills/git-master/SKILL.md` is therefore `shadowed` by
+`.agent-harness/skills/git-master/SKILL.md`; if only compatibility roots contain
+a skill, project compatibility roots win before global compatibility roots and
+configured order breaks ties within that compatibility class.
 
 ## V1 frontmatter
 

@@ -96,6 +96,354 @@ async fn skill_load_discovers_project_and_global_roots_with_precedence() {
 fn skill_discovery_walks_project_and_global_roots() {
     skill_load_discovers_project_and_global_roots_with_precedence();
 }
+
+#[test]
+fn skill_discovery_ignores_external_adapter_roots_unless_explicitly_configured() {
+    // arrange
+    let _guard = skills_registry_test_lock();
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("home");
+    let repo = temp_dir.path().join("repo");
+    fs::create_dir_all(&home).expect("home dir");
+    fs::create_dir_all(&repo).expect("repo dir");
+    fs::create_dir_all(repo.join(".git")).expect("git dir");
+
+    let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
+        global_roots: vec![home.join(".config/agent-harness/skills")],
+        ..SkillsConfig::default()
+    });
+
+    write_skill(
+        &repo.join(".agent-harness/skills"),
+        "harness-owned",
+        "Harness-owned project description",
+        "Harness-owned project body",
+    );
+    write_skill(
+        &home.join(".config/agent-harness/skills"),
+        "harness-global",
+        "Harness-owned global description",
+        "Harness-owned global body",
+    );
+    for root in [
+        ".external-editor/skills",
+        ".assistant/skills",
+        ".agents/skills",
+    ] {
+        write_skill(
+            &repo.join(root),
+            "external-project-adapter",
+            "External project description",
+            "External project body",
+        );
+    }
+    for root in [
+        home.join(".external-editor/skills"),
+        home.join(".assistant/skills"),
+        home.join(".agents/skills"),
+    ] {
+        write_skill(
+            &root,
+            "external-global-adapter",
+            "External global description",
+            "External global body",
+        );
+    }
+
+    // act
+    let default_catalog =
+        harness_tools::discover_skill_catalog(&repo).expect("discover default catalog");
+
+    // assert
+    assert!(
+        default_catalog.active_entry("harness-owned").is_some(),
+        "Harness-owned project root should be active by default"
+    );
+    assert!(
+        default_catalog.active_entry("harness-global").is_some(),
+        "configured Harness-owned global root should be active"
+    );
+    assert!(
+        default_catalog
+            .active_entry("external-project-adapter")
+            .is_none(),
+        "external project adapter roots must not be searched by default"
+    );
+    assert!(
+        default_catalog
+            .active_entry("external-global-adapter")
+            .is_none(),
+        "external global adapter roots must not be searched by default"
+    );
+
+    drop(_skills_guard);
+    let _explicit_roots_guard = SkillsConfigGuard::install(SkillsConfig {
+        project_roots: vec![
+            PathBuf::from(".external-editor/skills"),
+            PathBuf::from(".assistant/skills"),
+            PathBuf::from(".agents/skills"),
+        ],
+        global_roots: vec![home.join(".agents/skills")],
+        ..SkillsConfig::default()
+    });
+    let explicit_catalog =
+        harness_tools::discover_skill_catalog(&repo).expect("discover explicit adapter catalog");
+    assert!(
+        explicit_catalog
+            .active_entry("external-project-adapter")
+            .is_some(),
+        "external project adapter roots should load only when explicitly configured"
+    );
+    assert!(
+        explicit_catalog
+            .active_entry("external-global-adapter")
+            .is_some(),
+        "external global adapter roots should load only when explicitly configured"
+    );
+}
+
+#[test]
+fn default_harness_owned_roots_resolve_duplicates_before_global_roots() {
+    // arrange
+    let _guard = skills_registry_test_lock();
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("home");
+    let repo = temp_dir.path().join("repo");
+    fs::create_dir_all(&home).expect("home dir");
+    fs::create_dir_all(&repo).expect("repo dir");
+    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
+        global_roots: vec![home.join(".config/agent-harness/skills")],
+        ..SkillsConfig::default()
+    });
+
+    write_skill(
+        &repo.join(".harness/skills"),
+        "default-conflict",
+        "Harness fallback description",
+        "Harness fallback body",
+    );
+    write_skill(
+        &repo.join(".agent-harness/skills"),
+        "default-conflict",
+        "Harness primary description",
+        "Harness primary body",
+    );
+    write_skill(
+        &home.join(".config/agent-harness/skills"),
+        "default-conflict",
+        "Harness global description",
+        "Harness global body",
+    );
+
+    // act
+    let catalog = harness_tools::discover_skill_catalog(&repo).expect("discover catalog");
+    let entries = catalog.entries_for("default-conflict");
+
+    // assert
+    assert_eq!(entries.len(), 3, "duplicate diagnostics stay catalog-visible");
+    assert_eq!(entries[0].description, "Harness primary description");
+    assert_eq!(entries[0].status, harness_tools::SkillCatalogStatus::Loadable);
+    assert_eq!(entries[0].stable_id, "skill:project:default-conflict");
+    assert_eq!(
+        entries[0].location,
+        repo.join(".agent-harness/skills/default-conflict/SKILL.md")
+            .canonicalize()
+            .expect("canonical primary skill")
+    );
+    assert_eq!(entries[1].status, harness_tools::SkillCatalogStatus::Shadowed);
+    assert_eq!(
+        entries[1].location,
+        repo.join(".harness/skills/default-conflict/SKILL.md")
+            .canonicalize()
+            .expect("canonical fallback skill")
+    );
+    assert_eq!(entries[2].status, harness_tools::SkillCatalogStatus::Shadowed);
+    assert_eq!(entries[2].stable_id, "skill:global:default-conflict");
+}
+
+#[test]
+fn imported_compatibility_roots_do_not_shadow_harness_owned_project_skills() {
+    // arrange
+    let _guard = skills_registry_test_lock();
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("home");
+    let repo = temp_dir.path().join("repo");
+    fs::create_dir_all(&home).expect("home dir");
+    fs::create_dir_all(&repo).expect("repo dir");
+    fs::create_dir_all(repo.join(".git")).expect("git dir");
+
+    let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
+        project_roots: vec![
+            PathBuf::from(".external-editor/skills"),
+            PathBuf::from(".assistant/skills"),
+            PathBuf::from(".agents/skills"),
+            PathBuf::from(".agent-harness/skills"),
+            PathBuf::from(".harness/skills"),
+        ],
+        global_roots: vec![
+            home.join(".agents/skills"),
+            home.join(".config/agent-harness/skills"),
+        ],
+        ..SkillsConfig::default()
+    });
+
+    write_skill(
+        &repo.join(".external-editor/skills"),
+        "conflict-skill",
+        "External editor description",
+        "External editor body",
+    );
+    write_skill(
+        &repo.join(".assistant/skills"),
+        "conflict-skill",
+        "Assistant description",
+        "Assistant body",
+    );
+    write_skill(
+        &repo.join(".agents/skills"),
+        "conflict-skill",
+        "Agent adapter description",
+        "Agent adapter body",
+    );
+    write_skill(
+        &repo.join(".harness/skills"),
+        "conflict-skill",
+        "Harness fallback description",
+        "Harness fallback body",
+    );
+    write_skill(
+        &repo.join(".agent-harness/skills"),
+        "conflict-skill",
+        "Harness-owned project description",
+        "Harness-owned project body",
+    );
+    write_skill(
+        &home.join(".config/agent-harness/skills"),
+        "conflict-skill",
+        "Harness global description",
+        "Harness global body",
+    );
+    write_skill(
+        &home.join(".agents/skills"),
+        "conflict-skill",
+        "User agent adapter description",
+        "User agent adapter body",
+    );
+
+    // act
+    let catalog = harness_tools::discover_skill_catalog(&repo).expect("discover catalog");
+    let active = catalog
+        .active_entry("conflict-skill")
+        .expect("active conflict skill");
+
+    // assert
+    assert_eq!(active.status, harness_tools::SkillCatalogStatus::Loadable);
+    assert_eq!(active.stable_id, "skill:project:conflict-skill");
+    assert_eq!(active.description, "Harness-owned project description");
+    assert_eq!(
+        active.location,
+        repo.join(".agent-harness/skills/conflict-skill/SKILL.md")
+            .canonicalize()
+            .expect("canonical harness-owned skill")
+    );
+    let shadowed = catalog
+        .entries_for("conflict-skill")
+        .into_iter()
+        .filter(|entry| entry.status == harness_tools::SkillCatalogStatus::Shadowed)
+        .collect::<Vec<_>>();
+    assert_eq!(shadowed.len(), 6, "all lower-precedence duplicates are diagnostics-visible");
+    assert!(shadowed.iter().all(|entry| entry.reason.as_deref()
+        == Some("shadowed by a higher-precedence `conflict-skill` skill")));
+}
+
+#[test]
+fn imported_compatibility_roots_are_ordered_after_non_compat_roots() {
+    // arrange
+    let _guard = skills_registry_test_lock();
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("home");
+    let repo = temp_dir.path().join("repo");
+    fs::create_dir_all(&home).expect("home dir");
+    fs::create_dir_all(&repo).expect("repo dir");
+    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
+        project_roots: vec![
+            PathBuf::from(".agents/skills"),
+            PathBuf::from(".assistant/skills"),
+            PathBuf::from(".external-editor/skills"),
+        ],
+        global_roots: vec![
+            home.join(".agents/skills"),
+            home.join(".config/agent-harness/skills"),
+        ],
+        ..SkillsConfig::default()
+    });
+
+    for root in [
+        repo.join(".agents/skills"),
+        repo.join(".assistant/skills"),
+        repo.join(".external-editor/skills"),
+        home.join(".agents/skills"),
+    ] {
+        write_skill(
+            &root,
+            "compat-only",
+            &format!("{} description", root.display()),
+            &format!("{} body", root.display()),
+        );
+    }
+    write_skill(
+        &repo.join(".agents/skills"),
+        "global-harness-conflict",
+        "Project compatibility description",
+        "Project compatibility body",
+    );
+    write_skill(
+        &home.join(".config/agent-harness/skills"),
+        "global-harness-conflict",
+        "Harness global description",
+        "Harness global body",
+    );
+
+    // act
+    let catalog = harness_tools::discover_skill_catalog(&repo).expect("discover catalog");
+    let compat_entries = catalog.entries_for("compat-only");
+    let harness_conflict = catalog
+        .active_entry("global-harness-conflict")
+        .expect("active global harness conflict");
+
+    // assert
+    assert_eq!(compat_entries.len(), 4);
+    assert_eq!(compat_entries[0].status, harness_tools::SkillCatalogStatus::Loadable);
+    assert_eq!(
+        compat_entries[0].location,
+        repo.join(".agents/skills/compat-only/SKILL.md")
+            .canonicalize()
+            .expect("canonical first configured compatibility skill")
+    );
+    assert_eq!(
+        compat_entries[1].location,
+        repo.join(".assistant/skills/compat-only/SKILL.md")
+            .canonicalize()
+            .expect("canonical second configured compatibility skill")
+    );
+    assert_eq!(
+        compat_entries[2].location,
+        repo.join(".external-editor/skills/compat-only/SKILL.md")
+            .canonicalize()
+            .expect("canonical third configured compatibility skill")
+    );
+    assert_eq!(compat_entries[3].source_scope, "global");
+    assert!(compat_entries[1..]
+        .iter()
+        .all(|entry| entry.status == harness_tools::SkillCatalogStatus::Shadowed));
+
+    assert_eq!(harness_conflict.description, "Harness global description");
+    assert_eq!(harness_conflict.source_scope, "global");
+    assert_eq!(harness_conflict.stable_id, "skill:global:global-harness-conflict");
+}
+
 #[tokio::test]
 #[expect(
     clippy::await_holding_lock,
