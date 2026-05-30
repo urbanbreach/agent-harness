@@ -12,8 +12,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 
-const V1_PROMPT_PROFILES: &str = "build plan discipline general explore visual-engineering artistry ultrabrain deep quick unspecified-low unspecified-high writing";
-const V1_PRIMARY_PROMPTS: [&str; 3] = ["build", "plan", "discipline"];
+const V1_PROMPT_PROFILES: &str = "build plan general explore visual-engineering artistry ultrabrain deep quick unspecified-low unspecified-high writing";
+const V1_PRIMARY_PROMPTS: [&str; 2] = ["build", "plan"];
 const V1_CATEGORY_PROMPTS: [&str; 8] = [
     "visual-engineering",
     "artistry",
@@ -25,10 +25,9 @@ const V1_CATEGORY_PROMPTS: [&str; 8] = [
     "writing",
 ];
 const V1_HIDDEN_PROMPTS: [&str; 3] = ["title", "summary", "compaction"];
-const V1_COMPOSED_PROMPTS: [&str; 16] = [
+const V1_COMPOSED_PROMPTS: [&str; 15] = [
     "build",
     "plan",
-    "discipline",
     "general",
     "explore",
     "visual-engineering",
@@ -238,16 +237,6 @@ fn shipped_v1_prompt_bodies_have_agent_specific_seams_and_intent_gate() {
                 "plan_enter",
                 "read-only shell guard",
                 "delegate only to Explore",
-            ],
-        ),
-        (
-            "discipline",
-            &[
-                "todoread",
-                "todowrite",
-                "focused delegation",
-                "manual surface verification",
-                "no scheduler change",
             ],
         ),
         (

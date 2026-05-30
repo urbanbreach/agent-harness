@@ -234,7 +234,6 @@ fn bundled_shipped_agent_prompt(profile_name: &str) -> Option<String> {
         harness_core::plan::PLAN_AGENT_NAME => {
             include_str!("../../../.agent-harness/agents/plan.md")
         }
-        "discipline" => include_str!("../../../.agent-harness/agents/discipline.md"),
         "general" => include_str!("../../../.agent-harness/agents/general.md"),
         "explore" => include_str!("../../../.agent-harness/agents/explore.md"),
         "visual-engineering" => {
@@ -632,13 +631,12 @@ mod tests {
     }
 
     #[test]
-    fn shipped_example_config_seeds_build_plan_discipline_and_subagents() {
+    fn shipped_example_config_seeds_build_plan_and_subagents() {
         let config_path = crate::cli_config::shipped_example_config_path();
         let cfg = load_config_from_file(&config_path).expect("shipped example config should parse");
 
         assert!(cfg.agents.contains_key("build"));
         assert!(cfg.agents.contains_key("plan"));
-        assert!(cfg.agents.contains_key("discipline"));
         assert!(cfg.agents.contains_key("explore"));
         assert!(cfg.agents.contains_key("general"));
         assert_eq!(cfg.default_agent.as_deref(), Some("build"));
@@ -662,14 +660,6 @@ mod tests {
             .contains(&"background_output".to_string()));
         assert!(profiles["plan"].toolset.contains(&"bash".to_string()));
         assert!(!profiles["plan"].toolset.contains(&"plan_enter".to_string()));
-        assert!(profiles["discipline"].toolset.contains(&"edit".to_string()));
-        assert!(profiles["discipline"].toolset.contains(&"task".to_string()));
-        assert!(profiles["discipline"]
-            .toolset
-            .contains(&"todowrite".to_string()));
-        assert!(profiles["discipline"]
-            .system_prompt
-            .contains("You are the Discipline agent for Harness"));
         assert!(profiles["explore"].toolset.contains(&"read".to_string()));
         assert!(profiles["explore"].toolset.contains(&"grep".to_string()));
         assert!(!profiles["explore"].toolset.contains(&"edit".to_string()));
