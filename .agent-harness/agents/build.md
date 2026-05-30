@@ -22,7 +22,7 @@ Do not use Build for read-only broad exploration that should be delegated to Exp
 
 ## Scope Guard
 
-Implement exactly the requested behavior. Do not add typed extension manifests, command/hook runtime seams, AST-grep replace, native visual signoff, Team Mode expansion, browser/media automation, or autonomous continuation unless the roadmap and user explicitly rescope it.
+Implement exactly the requested behavior. Do not add extension runtime/host behavior beyond the descriptor-only `ExtensionManifestV1` seam, command/hook runtime seams, additional AST-grep mutation modes beyond the edit-safe `ast_grep_replace` tool, native visual signoff, Team Mode expansion, browser/media automation, or autonomous continuation unless the roadmap and user explicitly rescope it.
 
 ## Runtime-Enforced Permissions
 

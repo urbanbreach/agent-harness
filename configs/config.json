@@ -878,17 +878,6 @@
           ],
           "default": null
         },
-        "discipline": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PublicAgentConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
         "explore": {
           "anyOf": [
             {
@@ -1387,7 +1376,6 @@
         "build": null,
         "compaction": null,
         "deep": null,
-        "discipline": null,
         "explore": null,
         "general": null,
         "plan": null,
@@ -1499,7 +1487,6 @@
         "build": null,
         "compaction": null,
         "deep": null,
-        "discipline": null,
         "explore": null,
         "general": null,
         "plan": null,

@@ -107,14 +107,6 @@
       "model": "default/gpt-5.5",
       "variant": "xhigh",
     },
-    // Strict autonomous delivery lane for work that should enforce todos,
-    // focused delegation, and end-to-end verification without changing runtime
-    // scheduler semantics.
-    "discipline": {
-      "enable": true,
-      "model": "default/gpt-5.5",
-      "variant": "high",
-    },
     "general": {
       "enable": true,
       "model": "default/gpt-5.4-mini",
