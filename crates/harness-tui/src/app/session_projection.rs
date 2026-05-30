@@ -2,8 +2,8 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use harness_core::event::{
-    ActorKind, BackgroundTaskNotificationEvent, EventEnvelopeV1, EventV1, ResolvedToolIdentity,
-    UserMessageSubmittedEvent,
+    ActorKind, BackgroundTaskNotificationEvent, EventEnvelopeV1, EventV1,
+    ProviderRequestFinishedEvent, ResolvedToolIdentity, UserMessageSubmittedEvent,
 };
 
 use super::permissions::PendingPermission;
@@ -852,6 +852,7 @@ impl SessionProjection {
             EventV1::ProviderRequestFinished(data) => {
                 self.note_child_agent_request(event, &data.request_id);
                 let turn_id = Self::canonical_provider_turn_id(event, &data.request_id);
+                let provider_error_detail = provider_error_detail(data);
                 if let Some(index) = self.activity_index_for_provider_event(event, &data.request_id)
                 {
                     let should_mark_done = !self.has_active_turn_task_for_request(turn_id);
@@ -862,7 +863,10 @@ impl SessionProjection {
                         {
                             entry.transcript_text = std::mem::take(&mut entry.thinking_text);
                         }
-                        if should_mark_done {
+                        if let Some(error_detail) = provider_error_detail {
+                            entry.status = ActivityStatus::Error;
+                            entry.error_message = Some(error_detail);
+                        } else if should_mark_done {
                             entry.status = ActivityStatus::Done;
                         }
                         entry.usage = data.usage.as_ref().map(|usage| ActivityUsage {
@@ -925,14 +929,20 @@ impl SessionProjection {
                 });
             }
             EventV1::CompactionWritten(data) => {
+                let source_label = data.summary_source.as_ref().and_then(|source| {
+                    source
+                        .deterministic_fallback
+                        .then_some(" · deterministic fallback")
+                });
                 self.compaction_status = Some(CompactionStatus {
                     agent_id: data.agent_id.clone(),
                     checkpoint_id: Some(data.checkpoint_id.clone()),
                     trigger_reason: data.trigger_reason.clone(),
                     state: CompactionState::Written,
                     message: format!(
-                        "compaction checkpoint written · {} bytes",
-                        data.artifact_bytes
+                        "compaction checkpoint written{} · {} bytes",
+                        source_label.unwrap_or_default(),
+                        data.artifact_bytes,
                     ),
                 });
             }
@@ -1023,7 +1033,16 @@ impl SessionProjection {
                         if let Some(index) = self.activity_index_for_request(request_id) {
                             if let Some(entry) = self.activities.get_mut(index) {
                                 entry.status = ActivityStatus::Error;
-                                entry.error_message = non_empty_preserved_string(&data.reason);
+                                let reason = non_empty_preserved_string(&data.reason);
+                                entry.error_message = match (reason, entry.error_message.take()) {
+                                    (Some(reason), Some(existing))
+                                        if !existing.contains(&reason) =>
+                                    {
+                                        Some(format!("{reason} · {existing}"))
+                                    }
+                                    (Some(reason), _) => Some(reason),
+                                    (None, existing) => existing,
+                                };
                                 mark_activity_event(entry, event.seq, event.mono_ms);
                             }
                         }
@@ -1396,6 +1415,24 @@ impl SessionProjection {
     }
 }
 
+fn provider_error_detail(data: &ProviderRequestFinishedEvent) -> Option<String> {
+    if !data.finish_reason.eq_ignore_ascii_case("error") {
+        return None;
+    }
+
+    let metadata = data.metadata.as_ref()?;
+    let category = metadata.provider_error_category?;
+    let remediation = metadata
+        .provider_error_remediation
+        .as_deref()
+        .and_then(non_empty_preserved_string);
+
+    Some(match remediation {
+        Some(remediation) => format!("{} · {remediation}", category.as_str()),
+        None => category.as_str().to_string(),
+    })
+}
+
 fn titlecase_word(value: &str) -> String {
     let mut label = String::with_capacity(value.len());
     let mut previous_was_word = false;
@@ -1466,12 +1503,25 @@ impl AppState {
         }
 
         if self.replay_mode {
+            let composer_body = if runtime_state.kind == crate::app::RuntimeStateKind::Failure {
+                runtime_state
+                    .detail
+                    .as_deref()
+                    .filter(|detail| !detail.trim().is_empty())
+                    .map(|detail| {
+                        format!("Replay is read-only · {} · {detail}", runtime_state.summary)
+                    })
+                    .unwrap_or_else(|| format!("Replay is read-only · {}", runtime_state.summary))
+            } else {
+                "Replay is read-only.".to_string()
+            };
+
             return view_model::control_dock_view_model(
                 view_model::ControlDockInput::ReplayReadOnly {
                     runtime_context,
                     runtime_state,
                     primary_summary: grammar.primary_summary,
-                    composer_body: "Replay is read-only.".to_string(),
+                    composer_body,
                     composer_disclosure: String::new(),
                     composer_focused: self.focus == Focus::Prompt,
                 },

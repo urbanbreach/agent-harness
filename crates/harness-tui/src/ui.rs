@@ -60,9 +60,10 @@ pub(crate) use ui_overlays::{
     exact_test_status_dialog_render_snapshot_covers_harness_sections,
 };
 pub(crate) use ui_secondary::{
-    operator_sidebar_section_hit_target, operator_sidebar_selection_cell,
-    operator_sidebar_selection_text, operator_sidebar_subagent_group_hit_target,
-    operator_sidebar_subagent_session_hit_target, OperatorSidebarSelection,
+    operator_sidebar_keyboard_targets, operator_sidebar_section_hit_target,
+    operator_sidebar_selection_cell, operator_sidebar_selection_text,
+    operator_sidebar_subagent_group_hit_target, operator_sidebar_subagent_session_hit_target,
+    OperatorSidebarKeyboardTarget, OperatorSidebarKeyboardTargetKind, OperatorSidebarSelection,
     OperatorSidebarSelectionCell,
 };
 use ui_secondary::{
@@ -71,6 +72,7 @@ use ui_secondary::{
 use ui_terminal::render_terminal_panel;
 pub use ui_transcript::hovered_wheel_target;
 use ui_transcript::render_transcript_pane;
+pub(crate) use ui_transcript::transcript_diff_hunk_rows;
 pub(crate) use ui_transcript::transcript_mouse_target;
 pub(crate) use ui_transcript::transcript_scrollbar_hit;
 #[cfg(test)]

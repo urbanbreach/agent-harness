@@ -183,13 +183,46 @@ const fn session_history_action_sort_bucket(
 }
 
 fn session_history_filter_matches(entry: &SessionHistoryEntry, input: &str) -> bool {
+    let input = input.trim();
     if input.is_empty() {
         return true;
     }
 
-    session_history_display_title(entry)
-        .to_lowercase()
-        .contains(input)
+    let title = session_history_display_title(entry).to_lowercase();
+    if title.contains(input) || fuzzy_subsequence_score(&title, input).is_some() {
+        return true;
+    }
+
+    let run_id = entry.catalog.run_id.to_lowercase();
+    if run_id.contains(input) || fuzzy_subsequence_score(&run_id, input).is_some() {
+        return true;
+    }
+
+    session_history_search_fields(entry)
+        .into_iter()
+        .any(|field| field.to_lowercase().contains(input))
+}
+
+fn session_history_search_fields(entry: &SessionHistoryEntry) -> Vec<String> {
+    let mut fields = vec![
+        session_history_profile_label(entry).to_string(),
+        session_history_category_label(entry),
+        session_history_footer_label(entry),
+        format!("{:?}", entry.catalog.mode_source),
+    ];
+    if let Some(provider_model) = entry.catalog.provider_model.as_ref() {
+        fields.push(provider_model.clone());
+    }
+    if let Some(status) = entry.catalog.status {
+        fields.push(format!("{status:?}"));
+    }
+    if entry.catalog.is_resumable {
+        fields.push("continue ready".to_string());
+        fields.push("replay ready".to_string());
+    } else if let Some(reason) = entry.catalog.resume_disabled_reason.as_ref() {
+        fields.push(reason.clone());
+    }
+    fields
 }
 
 fn session_history_time_label(timestamp: &str) -> String {

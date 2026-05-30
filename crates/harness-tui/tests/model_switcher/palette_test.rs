@@ -30,6 +30,9 @@ fn model_switcher_ui_opens_from_slash_command() {
 
     assert_eq!(app.current_model_label(), "GPT-5.4 Mini · Deterministic");
 
+    // act
+    // act
+    // act
     for ch in "/model".chars() {
         app.handle_key(key(KeyCode::Char(ch)));
     }
@@ -108,7 +111,6 @@ fn model_switcher_renders_harness_select_dialog_contract() {
         LaunchMetadata::from_model_option(&multi_provider_models()[1])
             .with_available_models(multi_provider_models()),
     );
-
     for ch in "/model".chars() {
         app.handle_key(key(KeyCode::Char(ch)));
     }
@@ -170,6 +172,39 @@ fn model_switcher_filter_flattens_to_title_and_provider_matches() {
 
     assert!(rendered.contains("Claude Sonnet 4.5"), "{rendered}");
     assert!(rendered.contains("Anthropic"), "{rendered}");
+}
+
+#[test]
+fn model_switcher_renders_fallback_error_status() {
+    // arrange
+    let mut app = AppState::new_live(None, false, None);
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_option(&multi_provider_models()[1])
+            .with_available_models(multi_provider_models()),
+    );
+
+    // act
+    for ch in "/model".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
+
+    let backend = TestBackend::new(100, 30);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    terminal
+        .draw(|frame| harness_tui::ui::render_app(frame, &app))
+        .expect("draw frame");
+    let rendered = format!("{:?}", terminal.backend().buffer());
+
+    // assert
+    assert!(
+        rendered.contains("No automatic model fallback"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("provider errors stay visible"),
+        "{rendered}"
+    );
 }
 
 #[test]

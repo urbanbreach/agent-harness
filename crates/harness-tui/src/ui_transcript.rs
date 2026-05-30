@@ -17,7 +17,7 @@ use crate::theme::DIFF_SIDE_BY_SIDE_MIN_WIDTH;
 use crate::time_format::short_time_or_trimmed;
 
 use super::ui_diff::{
-    render_structured_diff_lines, render_structured_diff_lines_with_options,
+    render_structured_diff_lines, render_structured_diff_lines_with_hunk_offsets,
     StructuredDiffRenderOptions,
 };
 use super::ui_secondary::format_detail_payload;
@@ -113,6 +113,7 @@ struct TranscriptRenderSurface {
     lines: Vec<Line<'static>>,
     interaction_rows: Option<Vec<Option<TranscriptInteractionRow>>>,
     selection_rows: Option<Vec<TranscriptSelectionRow>>,
+    diff_hunk_offsets: Vec<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -138,6 +139,7 @@ struct MeasuredTranscriptSurface {
     lines: Vec<Line<'static>>,
     interaction_rows: Option<Vec<Option<TranscriptInteractionRow>>>,
     selection_rows: Option<Vec<TranscriptSelectionRow>>,
+    diff_hunk_offsets: Vec<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -162,6 +164,7 @@ pub(crate) enum TranscriptMouseTarget {
 struct ToolSectionRender {
     lines: Vec<Line<'static>>,
     interaction_rows: Vec<Option<TranscriptInteractionRow>>,
+    diff_hunk_offsets: Vec<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4995,6 +4998,7 @@ fn measure_transcript_layout(
                 lines: surface.lines,
                 interaction_rows: surface.interaction_rows,
                 selection_rows: surface.selection_rows,
+                diff_hunk_offsets: surface.diff_hunk_offsets,
             });
             previous_surface_kind = Some(surface.kind);
         }
@@ -5250,6 +5254,57 @@ pub(crate) fn transcript_selection_cell(
     row: u16,
 ) -> Option<TranscriptSelectionCell> {
     with_transcript_selection_snapshot(app, area, |snapshot| snapshot.hit(column, row)).flatten()
+}
+
+pub(crate) fn transcript_diff_hunk_rows(app: &AppState, area: Rect) -> Vec<usize> {
+    let theme = *app.theme();
+    let Some(transcript_area) = FrameLayoutPlan::for_app(app, area).transcript else {
+        return Vec::new();
+    };
+    let context = transcript_pane_context(app, transcript_area, &theme);
+    if app.startup_shell_visible() || live_empty_state_visible(app) {
+        return Vec::new();
+    }
+
+    let full_width = context.inner_area.width;
+    let show_scrollbar = with_measured_transcript_layout_for_width_on_surface(
+        app,
+        &theme,
+        full_width,
+        context.base_surface,
+        |layout| transcript_scrollbar_needed(layout, context.inner_area),
+    );
+    let render_width = if show_scrollbar {
+        full_width
+            .saturating_sub(TRANSCRIPT_SCROLLBAR_GUTTER_WIDTH + TRANSCRIPT_SCROLLBAR_TRACK_WIDTH)
+    } else {
+        full_width
+    };
+
+    with_measured_transcript_layout_for_width_on_surface(
+        app,
+        &theme,
+        render_width,
+        context.base_surface,
+        transcript_diff_hunk_rows_for_layout,
+    )
+}
+
+fn transcript_diff_hunk_rows_for_layout(layout: &MeasuredTranscriptLayout) -> Vec<usize> {
+    let mut rows = Vec::new();
+    for section in &layout.sections {
+        let section_content_top = section.top_row.saturating_add(section.leading_gap_height);
+        for surface in &section.surfaces {
+            let surface_top = section_content_top.saturating_add(surface.top_offset);
+            rows.extend(
+                surface
+                    .diff_hunk_offsets
+                    .iter()
+                    .map(|offset| surface_top.saturating_add(*offset)),
+            );
+        }
+    }
+    rows
 }
 
 pub(crate) fn transcript_mouse_target(
@@ -5540,6 +5595,7 @@ fn build_user_render_surface(
         lines,
         interaction_rows: None,
         selection_rows: None,
+        diff_hunk_offsets: Vec::new(),
     }
 }
 
@@ -5721,8 +5777,15 @@ fn build_assistant_part_render_surface(
     assistant_status: &str,
 ) -> TranscriptRenderSurface {
     let mut lines = Vec::new();
-    let (kind, show_outer_rail, rail_color, surface, interaction_rows, selection_rows) = match part
-    {
+    let (
+        kind,
+        show_outer_rail,
+        rail_color,
+        surface,
+        interaction_rows,
+        selection_rows,
+        diff_hunk_offsets,
+    ) = match part {
         TranscriptAssistantPart::Reasoning(thinking) => {
             if prepend_gap {
                 lines.push(Line::default());
@@ -5740,6 +5803,7 @@ fn build_assistant_part_render_surface(
                 transcript_flat_surface(base_surface),
                 None,
                 None,
+                Vec::new(),
             )
         }
         TranscriptAssistantPart::Body(block) => {
@@ -5774,6 +5838,7 @@ fn build_assistant_part_render_surface(
                 transcript_flat_surface(base_surface),
                 None,
                 selection_rows,
+                Vec::new(),
             )
         }
         TranscriptAssistantPart::ToolCall(tool_call) => {
@@ -5793,6 +5858,7 @@ fn build_assistant_part_render_surface(
                 transcript_nested_surface(theme, base_surface),
                 Some(render.interaction_rows),
                 None,
+                render.diff_hunk_offsets,
             )
         }
         TranscriptAssistantPart::SubagentHint => {
@@ -5810,6 +5876,7 @@ fn build_assistant_part_render_surface(
                     hint_line_count
                 ]),
                 None,
+                Vec::new(),
             )
         }
         TranscriptAssistantPart::Error(error) => {
@@ -5821,6 +5888,7 @@ fn build_assistant_part_render_surface(
                 transcript_nested_surface(theme, base_surface),
                 None,
                 None,
+                Vec::new(),
             )
         }
     };
@@ -5874,6 +5942,7 @@ fn build_assistant_part_render_surface(
         lines,
         interaction_rows,
         selection_rows,
+        diff_hunk_offsets,
     }
 }
 
@@ -5922,6 +5991,7 @@ fn build_footer_only_render_surface(
         )],
         interaction_rows: None,
         selection_rows: None,
+        diff_hunk_offsets: Vec::new(),
     }
 }
 
@@ -6112,6 +6182,7 @@ fn build_context_tool_group_render_surface(
         lines,
         interaction_rows: Some(interaction_rows),
         selection_rows: None,
+        diff_hunk_offsets: Vec::new(),
     }
 }
 
@@ -6124,6 +6195,7 @@ fn append_tool_call_section_lines(
     let mut render = ToolSectionRender {
         lines: Vec::new(),
         interaction_rows: Vec::new(),
+        diff_hunk_offsets: Vec::new(),
     };
     match tool_call.header.visual_style {
         TranscriptToolCallVisualStyle::Inline => {
@@ -6487,7 +6559,7 @@ fn append_tool_call_detail_blocks(
                 show_file_header,
             } => {
                 append_tool_call_diff_block(
-                    &mut render.lines,
+                    render,
                     diff_content,
                     fallback_path.as_deref(),
                     *force_stacked,
@@ -7146,7 +7218,7 @@ fn tool_header_disclosure_glyph(
     reason = "tool diff rendering keeps transcript shell styling explicit at the call site"
 )]
 fn append_tool_call_diff_block(
-    lines: &mut Vec<Line<'static>>,
+    render: &mut ToolSectionRender,
     diff_content: &str,
     fallback_path: Option<&str>,
     force_stacked: bool,
@@ -7170,7 +7242,7 @@ fn append_tool_call_diff_block(
             )
         })
         .max(1);
-    if let Some(diff_lines) = render_structured_diff_lines_with_options(
+    if let Some((diff_lines, hunk_offsets)) = render_structured_diff_lines_with_hunk_offsets(
         diff_content,
         fallback_path,
         "",
@@ -7184,9 +7256,10 @@ fn append_tool_call_diff_block(
         },
         theme,
     ) {
+        let start = render.lines.len();
         if let Some(shell) = card_shell {
             append_prebuilt_nested_surface_lines(
-                lines,
+                &mut render.lines,
                 shell.indent,
                 shell.rail_color,
                 shell.surface,
@@ -7195,13 +7268,18 @@ fn append_tool_call_diff_block(
             );
         } else {
             append_prebuilt_surface_lines(
-                lines,
+                &mut render.lines,
                 TRANSCRIPT_OPCODE_EDIT_INDENT,
                 transcript_nested_surface(theme, base_surface),
                 diff_lines,
                 nested_width,
             );
         }
+        render.diff_hunk_offsets.extend(
+            hunk_offsets
+                .into_iter()
+                .map(|offset| start.saturating_add(offset)),
+        );
     }
 }
 
@@ -7357,6 +7435,7 @@ fn build_pending_permission_render_surface(
         lines,
         interaction_rows: None,
         selection_rows: None,
+        diff_hunk_offsets: Vec::new(),
     }
 }
 
@@ -10402,6 +10481,7 @@ pub(crate) fn exact_test_visible_surface_lines_support_large_offsets() {
             .collect(),
         interaction_rows: None,
         selection_rows: None,
+        diff_hunk_offsets: Vec::new(),
     };
 
     let visible = visible_surface_lines(&surface, usize::from(u16::MAX) + 7, 3)
@@ -10646,6 +10726,7 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
                 lines: task_render.lines.clone(),
                 interaction_rows: Some(task_render.interaction_rows.clone()),
                 selection_rows: None,
+                diff_hunk_offsets: Vec::new(),
             }],
             lines: task_render.lines.clone(),
         }],

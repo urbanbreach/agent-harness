@@ -29,8 +29,9 @@ use crate::text::{
 };
 use crate::theme::Theme;
 use crate::ui::{
-    OperatorSidebarSelection, OperatorSidebarSelectionCell, TranscriptMouseTarget,
-    TranscriptScrollbarHit, TranscriptSelection, TranscriptSelectionCell, WheelTarget,
+    OperatorSidebarKeyboardTarget, OperatorSidebarKeyboardTargetKind, OperatorSidebarSelection,
+    OperatorSidebarSelectionCell, TranscriptMouseTarget, TranscriptScrollbarHit,
+    TranscriptSelection, TranscriptSelectionCell, WheelTarget,
 };
 use crate::view_model;
 use crate::{clipboard, ui};
@@ -39,6 +40,7 @@ mod file_mentions;
 mod lineage;
 mod pending_live;
 pub(crate) mod permissions;
+mod prompt_history;
 pub(crate) mod session_navigation;
 mod session_projection;
 mod terminal_panel;
@@ -73,6 +75,8 @@ use permissions::permission_display_summary;
 pub use permissions::{
     ActivePermissionView, PermissionEntry, QuestionOptionView, QuestionPromptView,
 };
+pub use prompt_history::prompt_history_path_for_session_dir;
+use prompt_history::PromptHistoryDraft;
 pub use session_navigation::{LaunchMetadata, McpResourceOption, ModelOption, SessionHistoryEntry};
 pub use toggles::{ToggleEntryConfig, ToggleEntryKind, ToggleMenuRow, TogglesConfig};
 
@@ -1123,12 +1127,14 @@ pub struct AppState {
     pub(crate) last_terminal_panel_max_scroll: Cell<usize>,
     last_frame_area: Option<Rect>,
     transcript_scrollbar_drag: Option<TranscriptScrollbarDragState>,
+    selected_diff_hunk_row: Option<usize>,
     hovered_transcript_target: Option<TranscriptMouseTarget>,
     hovered_subagent_footer_target: Option<SubagentFooterTarget>,
     transcript_click_activated_on_down: bool,
     transcript_selection: Option<TranscriptSelection>,
     transcript_selection_dragging: bool,
     operator_sidebar_selection: Option<OperatorSidebarSelection>,
+    selected_operator_sidebar_keyboard_index: Option<usize>,
     operator_sidebar_selection_dragging: bool,
     operator_sidebar_pending_click: Option<OperatorSidebarPendingClick>,
     transcript_cache_instance_id: u64,
@@ -1140,6 +1146,8 @@ pub struct AppState {
     pub prompt_cursor: usize,
     pub prompt_history: Vec<String>,
     pub prompt_history_index: Option<usize>,
+    prompt_history_path: Option<PathBuf>,
+    prompt_history_draft: Option<PromptHistoryDraft>,
     pub selected_activity_index: usize,
     pub palette_visible: bool,
     pub palette_input: String,
@@ -1247,12 +1255,14 @@ impl Default for AppState {
             last_terminal_panel_max_scroll: Cell::new(0),
             last_frame_area: None,
             transcript_scrollbar_drag: None,
+            selected_diff_hunk_row: None,
             hovered_transcript_target: None,
             hovered_subagent_footer_target: None,
             transcript_click_activated_on_down: false,
             transcript_selection: None,
             transcript_selection_dragging: false,
             operator_sidebar_selection: None,
+            selected_operator_sidebar_keyboard_index: None,
             operator_sidebar_selection_dragging: false,
             operator_sidebar_pending_click: None,
             transcript_cache_instance_id: NEXT_TRANSCRIPT_CACHE_INSTANCE_ID
@@ -1265,6 +1275,8 @@ impl Default for AppState {
             prompt_cursor: 0,
             prompt_history: Vec::new(),
             prompt_history_index: None,
+            prompt_history_path: None,
+            prompt_history_draft: None,
             selected_activity_index: 0,
             palette_visible: false,
             palette_input: String::new(),
@@ -1402,11 +1414,42 @@ impl AppState {
         )
     }
 
+    pub fn new_live_with_prompt_history_path(
+        session_path: Option<PathBuf>,
+        auto_exit_on_finish: bool,
+        on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
+        prompt_history_path: Option<PathBuf>,
+    ) -> Self {
+        Self::new_live_with_session_history_and_prompt_history_path(
+            session_path,
+            auto_exit_on_finish,
+            on_ui_intent,
+            Vec::new(),
+            prompt_history_path,
+        )
+    }
+
     pub fn new_live_with_session_history(
         session_path: Option<PathBuf>,
         auto_exit_on_finish: bool,
         on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
         session_history_entries: Vec<SessionHistoryEntry>,
+    ) -> Self {
+        Self::new_live_with_session_history_and_prompt_history_path(
+            session_path,
+            auto_exit_on_finish,
+            on_ui_intent,
+            session_history_entries,
+            None,
+        )
+    }
+
+    pub fn new_live_with_session_history_and_prompt_history_path(
+        session_path: Option<PathBuf>,
+        auto_exit_on_finish: bool,
+        on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
+        session_history_entries: Vec<SessionHistoryEntry>,
+        prompt_history_path: Option<PathBuf>,
     ) -> Self {
         let mut state = Self::new();
         state.focus = Focus::Prompt;
@@ -1414,6 +1457,7 @@ impl AppState {
         state.session_path = session_path;
         state.auto_exit_on_finish = auto_exit_on_finish;
         state.on_ui_intent = on_ui_intent;
+        state.set_prompt_history_path(prompt_history_path);
         state.set_session_history_entries(session_history_entries);
         if let Some(launch_metadata) = take_pending_live_launch_metadata() {
             state.set_launch_metadata(launch_metadata);
@@ -1445,10 +1489,19 @@ impl AppState {
         session_history_entries: Vec<SessionHistoryEntry>,
         on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
     ) -> Self {
+        Self::new_startup_with_prompt_history_path(session_history_entries, on_ui_intent, None)
+    }
+
+    pub fn new_startup_with_prompt_history_path(
+        session_history_entries: Vec<SessionHistoryEntry>,
+        on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
+        prompt_history_path: Option<PathBuf>,
+    ) -> Self {
         let mut state = Self::new();
         state.focus = Focus::List;
         state.startup_mode = true;
         state.on_ui_intent = on_ui_intent;
+        state.set_prompt_history_path(prompt_history_path);
         if let Some(launch_metadata) = take_pending_live_launch_metadata() {
             state.set_launch_metadata(launch_metadata);
         }
@@ -1457,6 +1510,21 @@ impl AppState {
             state.replace_prompt_input(pending_prompt.text);
         }
         state
+    }
+
+    fn set_prompt_history_path(&mut self, path: Option<PathBuf>) {
+        self.prompt_history_path = path;
+        let Some(path) = self.prompt_history_path.as_deref() else {
+            return;
+        };
+        match prompt_history::load_prompt_history(path) {
+            Ok(history) => {
+                self.prompt_history = history;
+            }
+            Err(err) => {
+                self.status_banner = Some(err);
+            }
+        }
     }
 
     pub fn apply_keybindings(&mut self, bindings: std::collections::BTreeMap<String, String>) {
@@ -2358,6 +2426,13 @@ impl AppState {
             return;
         }
 
+        if self.prompt_history_index.is_none() {
+            self.prompt_history_draft = Some(PromptHistoryDraft {
+                text: self.prompt_buffer.clone(),
+                cursor: self.prompt_cursor,
+            });
+        }
+
         let next_idx = match self.prompt_history_index {
             Some(idx) => idx.saturating_sub(1),
             None => self.prompt_history.len().saturating_sub(1),
@@ -2378,7 +2453,22 @@ impl AppState {
             return;
         }
 
-        self.clear_prompt_input();
+        self.restore_prompt_history_draft_or_clear();
+    }
+
+    fn restore_prompt_history_draft_or_clear(&mut self) {
+        self.prompt_history_index = None;
+        let Some(draft) = self.prompt_history_draft.take() else {
+            self.clear_prompt_input();
+            return;
+        };
+        self.prompt_buffer = draft.text;
+        self.prompt_cursor = draft.cursor.min(self.prompt_char_count());
+        self.clear_file_mention_tags();
+        self.continued_live_reopen_surface_active = false;
+        self.slash_draft_snapshot = None;
+        self.sync_slash_overlay();
+        self.sync_file_mention_overlay();
     }
 
     fn clear_prompt_input(&mut self) {
@@ -2386,6 +2476,7 @@ impl AppState {
         self.prompt_cursor = 0;
         self.clear_file_mention_tags();
         self.prompt_history_index = None;
+        self.prompt_history_draft = None;
         self.continued_live_reopen_surface_active = false;
         self.slash_draft_snapshot = None;
         self.sync_slash_overlay();
@@ -2589,9 +2680,21 @@ impl AppState {
         } else {
             ActivityStatus::Streaming
         };
-        self.prompt_history.push(text.clone());
+        if self.prompt_history.last() != Some(&text) {
+            self.prompt_history.push(text.clone());
+            self.save_prompt_history();
+        }
         self.clear_prompt_input();
         self.echo_submitted_prompt(text.clone(), status);
+    }
+
+    fn save_prompt_history(&mut self) {
+        let Some(path) = self.prompt_history_path.as_deref() else {
+            return;
+        };
+        if let Err(err) = prompt_history::save_prompt_history(path, &self.prompt_history) {
+            self.status_banner = Some(err);
+        }
     }
 
     fn dispatch_submitted_prompt(&mut self, text: String) {
@@ -2714,6 +2817,89 @@ impl AppState {
             }
         }
         true
+    }
+
+    fn operator_sidebar_keyboard_active(&self) -> bool {
+        self.active_review_surface.is_none()
+            && self.focus == Focus::List
+            && !self.startup_shell_visible()
+            && !self.post_run_handoff_visible()
+            && self.session_shell_operator_rail_interactive()
+    }
+
+    fn operator_sidebar_keyboard_targets(&self) -> Vec<OperatorSidebarKeyboardTarget> {
+        ui::operator_sidebar_keyboard_targets(self, self.last_frame_area)
+    }
+
+    fn selected_operator_sidebar_keyboard_target(
+        &mut self,
+    ) -> Option<OperatorSidebarKeyboardTargetKind> {
+        let targets = self.operator_sidebar_keyboard_targets();
+        if targets.is_empty() {
+            self.selected_operator_sidebar_keyboard_index = None;
+            return None;
+        }
+
+        let index = self
+            .selected_operator_sidebar_keyboard_index
+            .unwrap_or(0)
+            .min(targets.len().saturating_sub(1));
+        self.selected_operator_sidebar_keyboard_index = Some(index);
+        targets.get(index).map(|target| target.kind.clone())
+    }
+
+    fn move_operator_sidebar_keyboard_selection(&mut self, reverse: bool) -> bool {
+        let targets = self.operator_sidebar_keyboard_targets();
+        if targets.is_empty() {
+            self.selected_operator_sidebar_keyboard_index = None;
+            return false;
+        }
+
+        let next = match self.selected_operator_sidebar_keyboard_index {
+            Some(index) if reverse => index.saturating_sub(1),
+            Some(index) => (index + 1).min(targets.len().saturating_sub(1)),
+            None if reverse => targets.len().saturating_sub(1),
+            None => 0,
+        };
+        self.selected_operator_sidebar_keyboard_index = Some(next);
+        self.details_scroll = targets[next].top_row.min(usize::from(u16::MAX)) as u16;
+        true
+    }
+
+    fn activate_operator_sidebar_keyboard_selection(&mut self) -> bool {
+        let Some(target) = self.selected_operator_sidebar_keyboard_target() else {
+            return false;
+        };
+
+        match target {
+            OperatorSidebarKeyboardTargetKind::Section(section) => {
+                self.toggle_operator_sidebar_section(section);
+            }
+            OperatorSidebarKeyboardTargetKind::SubagentGroup(agent_name) => {
+                self.toggle_operator_sidebar_subagent_group(agent_name);
+            }
+            OperatorSidebarKeyboardTargetKind::SubagentSession(session_id) => {
+                self.navigate_to_child_session_id(session_id);
+            }
+        }
+        true
+    }
+
+    fn handle_operator_sidebar_action(&mut self, action: Action) -> bool {
+        if !self.operator_sidebar_keyboard_active() {
+            return false;
+        }
+
+        match action {
+            Action::MoveDown | Action::HistoryDown => {
+                self.move_operator_sidebar_keyboard_selection(false)
+            }
+            Action::MoveUp | Action::HistoryUp => {
+                self.move_operator_sidebar_keyboard_selection(true)
+            }
+            Action::SubmitPrompt => self.activate_operator_sidebar_keyboard_selection(),
+            _ => false,
+        }
     }
 
     pub(crate) fn set_frame_area(&mut self, area: Rect) {
@@ -3029,6 +3215,15 @@ impl AppState {
 
     pub(crate) fn operator_sidebar_selection(&self) -> Option<OperatorSidebarSelection> {
         self.operator_sidebar_selection
+    }
+
+    pub(crate) fn selected_operator_sidebar_keyboard_index(&self) -> Option<usize> {
+        self.selected_operator_sidebar_keyboard_index
+    }
+
+    #[cfg(test)]
+    pub(crate) fn selected_operator_sidebar_keyboard_index_for_test(&self) -> Option<usize> {
+        self.selected_operator_sidebar_keyboard_index
     }
 
     pub(crate) fn toast(&self) -> Option<&ToastState> {
@@ -3506,6 +3701,10 @@ impl AppState {
             return;
         }
 
+        if self.handle_operator_sidebar_action(action) {
+            return;
+        }
+
         if self.post_run_handoff_visible() && self.focus == Focus::List {
             match action {
                 Action::SubmitPrompt => {
@@ -3686,6 +3885,12 @@ impl AppState {
             }
             Action::SessionParent => {
                 self.navigate_to_parent_session();
+            }
+            Action::DiffHunkNext => {
+                self.navigate_diff_hunk(false);
+            }
+            Action::DiffHunkPrevious => {
+                self.navigate_diff_hunk(true);
             }
             Action::AgentCycle => {
                 self.cycle_agent(false);
@@ -3922,6 +4127,51 @@ impl AppState {
             }
             _ => false,
         }
+    }
+
+    fn navigate_diff_hunk(&mut self, reverse: bool) -> bool {
+        let Some(frame_area) = self.last_frame_area else {
+            return false;
+        };
+        let hunk_rows = ui::transcript_diff_hunk_rows(self, frame_area);
+        if hunk_rows.is_empty() {
+            return false;
+        }
+
+        let max_scroll = self.last_transcript_max_scroll.get();
+        let current_top = if self.follow_mode {
+            max_scroll
+        } else {
+            max_scroll
+                .saturating_sub(self.transcript_scroll)
+                .min(max_scroll)
+        };
+        let anchor = self.selected_diff_hunk_row.unwrap_or(current_top);
+        let target = if reverse {
+            hunk_rows
+                .iter()
+                .rev()
+                .copied()
+                .find(|row| *row < anchor)
+                .unwrap_or_else(|| hunk_rows[0])
+        } else {
+            hunk_rows
+                .iter()
+                .copied()
+                .find(|row| *row > anchor)
+                .unwrap_or_else(|| *hunk_rows.last().expect("non-empty hunk rows"))
+        };
+
+        self.selected_diff_hunk_row = Some(target);
+        self.follow_mode = false;
+        let target_top = target.min(max_scroll);
+        self.transcript_scroll = max_scroll.saturating_sub(target_top);
+        true
+    }
+
+    #[cfg(test)]
+    pub(crate) fn selected_diff_hunk_row_for_test(&self) -> Option<usize> {
+        self.selected_diff_hunk_row
     }
 
     fn scroll_transcript_up(&mut self, amount: u16) {

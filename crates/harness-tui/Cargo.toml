@@ -17,6 +17,7 @@ syntect = { version = "5.3", default-features = false, features = ["default-fanc
 [dev-dependencies]
 font8x8 = "0.3"
 fontdue = "0.9"
+harness-providers = { path = "../harness-providers" }
 image = { version = "0.25", default-features = false, features = ["png"] }
 insta = { version = "1.39", features = ["json"] }
 tempfile.workspace = true

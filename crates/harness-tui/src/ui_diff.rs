@@ -132,6 +132,25 @@ pub(super) fn render_structured_diff_lines_with_options(
     options: StructuredDiffRenderOptions,
     theme: &Theme,
 ) -> Option<Vec<Line<'static>>> {
+    render_structured_diff_lines_with_hunk_offsets(
+        diff_content,
+        fallback_path,
+        prefix,
+        width,
+        options,
+        theme,
+    )
+    .map(|(lines, _)| lines)
+}
+
+pub(super) fn render_structured_diff_lines_with_hunk_offsets(
+    diff_content: &str,
+    fallback_path: Option<&str>,
+    prefix: &str,
+    width: u16,
+    options: StructuredDiffRenderOptions,
+    theme: &Theme,
+) -> Option<(Vec<Line<'static>>, Vec<usize>)> {
     let model =
         structured_diff_model_from_patch(diff_content, fallback_path, options.highlight_intraline)?;
     Some(render_structured_diff_model(
@@ -515,11 +534,12 @@ fn render_structured_diff_model(
     show_file_header: bool,
     show_hunk_header: bool,
     theme: &Theme,
-) -> Vec<Line<'static>> {
+) -> (Vec<Line<'static>>, Vec<usize>) {
     let prefix_width = display_width(prefix);
     let content_width = usize::from(width).saturating_sub(prefix_width).max(1);
     let wide = !force_stacked && content_width >= usize::from(DIFF_SIDE_BY_SIDE_MIN_WIDTH);
     let mut lines = Vec::new();
+    let mut hunk_offsets = Vec::new();
 
     for (file_index, file) in model.files.iter().enumerate() {
         if file_index > 0 {
@@ -541,6 +561,7 @@ fn render_structured_diff_model(
                     }
                 }
                 StructuredDiffDisplayRow::HunkHeader { text } => {
+                    hunk_offsets.push(lines.len());
                     if show_hunk_header {
                         lines.push(render_diff_hunk_header(
                             prefix,
@@ -640,7 +661,7 @@ fn render_structured_diff_model(
         }
     }
 
-    lines
+    (lines, hunk_offsets)
 }
 
 #[expect(

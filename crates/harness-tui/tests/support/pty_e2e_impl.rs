@@ -70,6 +70,7 @@ pub(crate) fn pty_helper_type_first_startup() {
             run_dir: run_dir.path().to_path_buf(),
             historical_events: Vec::new(),
             session_history_entries: Vec::new(),
+            prompt_history_path: None,
             update_rx,
             compact_session_supported: false,
         },

@@ -1372,10 +1372,38 @@ fn render_model_switcher_overlay(
         overlay.width.saturating_sub(2),
         overlay.height.saturating_sub(6),
     );
+    let visible_model_rows = u16::try_from(app.model_switcher_visual_row_count())
+        .unwrap_or(u16::MAX)
+        .min(list.height.saturating_sub(1));
+    let status = Rect::new(
+        overlay.x.saturating_add(4),
+        list.y.saturating_add(visible_model_rows).saturating_add(1),
+        overlay.width.saturating_sub(8),
+        1,
+    );
 
     render_model_select_header(frame, theme, header, title);
     render_model_select_input(frame, app, theme, input);
     render_model_switcher_list(frame, app, theme, list);
+    render_model_switcher_status(frame, app, theme, status);
+}
+
+fn render_model_switcher_status(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    frame.render_widget(Paragraph::new(model_switcher_status_line(app, theme)), area);
+}
+
+fn model_switcher_status_line(app: &AppState, theme: &Theme) -> Line<'static> {
+    let _ = app;
+    let surface = model_select_surface(theme);
+    let muted = Style::default().fg(model_select_muted(theme)).bg(surface);
+    Line::from(Span::styled(
+        "No automatic model fallback; provider errors stay visible",
+        muted,
+    ))
 }
 
 fn render_model_switcher_list(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
@@ -2369,7 +2397,7 @@ pub(super) fn permission_modal_metadata_line(
         .unwrap_or_else(|| format!("perm {}", permission.permission_id));
 
     format!(
-        "{} · dig {} · timeout {}s",
+        "{} · scopes once=one-shot always=session · dig {} · timeout {}s countdown",
         subject,
         abbreviated_digest(&permission.request_digest),
         permission.timeout_ms / 1_000,

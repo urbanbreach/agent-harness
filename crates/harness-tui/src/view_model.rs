@@ -310,6 +310,10 @@ pub(crate) fn runtime_state(input: RuntimeStateInput<'_>) -> RuntimeState {
                 return state;
             }
 
+            if input.replay_mode && matches!(input.last_event, Some(EventV1::RunFailed(_))) {
+                return post_run_runtime_state(input.last_event);
+            }
+
             if let Some(permission) = input.active_permission.as_ref() {
                 return permission_runtime_state(permission);
             }

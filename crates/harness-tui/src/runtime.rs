@@ -91,6 +91,7 @@ pub enum OperatorNoticeLevel {
 pub enum TuiMode {
     Startup {
         session_history_entries: Vec<SessionHistoryEntry>,
+        prompt_history_path: Option<PathBuf>,
     },
     Replay {
         run_dir: PathBuf,
@@ -100,6 +101,7 @@ pub enum TuiMode {
         run_dir: PathBuf,
         historical_events: Vec<EventEnvelopeV1>,
         session_history_entries: Vec<SessionHistoryEntry>,
+        prompt_history_path: Option<PathBuf>,
         update_rx: Receiver<LiveUpdate>,
         compact_session_supported: bool,
     },
@@ -136,8 +138,13 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
     let (mut app, mut live_updates) = match mode {
         TuiMode::Startup {
             session_history_entries,
+            prompt_history_path,
         } => {
-            let mut app = AppState::new_startup(session_history_entries, on_ui_intent);
+            let mut app = AppState::new_startup_with_prompt_history_path(
+                session_history_entries,
+                on_ui_intent,
+                prompt_history_path,
+            );
             app.should_quit = exit_on_finish;
             if let Some(bindings) = keybindings.as_ref() {
                 app.apply_keybindings(bindings.clone());
@@ -161,14 +168,16 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             run_dir,
             historical_events,
             session_history_entries,
+            prompt_history_path,
             update_rx,
             compact_session_supported,
         } => {
-            let mut app = AppState::new_live_with_session_history(
+            let mut app = AppState::new_live_with_session_history_and_prompt_history_path(
                 Some(run_dir),
                 exit_on_finish,
                 on_ui_intent,
                 session_history_entries,
+                prompt_history_path,
             );
             app.set_compact_session_supported(compact_session_supported);
             if let Some(bindings) = keybindings.as_ref() {
@@ -466,6 +475,7 @@ pub fn run_tui() -> Result<()> {
             run_dir: PathBuf::from("."),
             historical_events: Vec::new(),
             session_history_entries: Vec::new(),
+            prompt_history_path: None,
             update_rx: rx,
             compact_session_supported: false,
         },

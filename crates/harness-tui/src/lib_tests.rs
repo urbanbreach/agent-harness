@@ -6749,7 +6749,8 @@ fn session_history_picker_renders_resumable_and_replay_rows() {
 
 #[cfg(test)]
 #[test]
-fn session_history_filter_uses_case_insensitive_substrings() {
+fn session_history_filter_matches_visible_fields_and_fuzzy_title() {
+    // arrange
     fn open_continue_picker() -> app::AppState {
         let mut app = app::AppState::new_startup(
             vec![
@@ -6791,10 +6792,12 @@ fn session_history_filter_uses_case_insensitive_substrings() {
         app
     }
 
+    // act
     let mut by_run_name = open_continue_picker();
     for ch in "runner".chars() {
         by_run_name.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
+    // assert
     assert_eq!(by_run_name.session_history_filtered, vec![0]);
 
     let mut by_case_insensitive_title = open_continue_picker();
@@ -6807,7 +6810,13 @@ fn session_history_filter_uses_case_insensitive_substrings() {
     for ch in "gpt-5".chars() {
         by_non_title_metadata.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
-    assert!(by_non_title_metadata.session_history_filtered.is_empty());
+    assert_eq!(by_non_title_metadata.session_history_filtered, vec![0]);
+
+    let mut by_fuzzy_title = open_continue_picker();
+    for ch in "alrn".chars() {
+        by_fuzzy_title.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    assert_eq!(by_fuzzy_title.session_history_filtered, vec![0]);
 
     let mut no_match = open_continue_picker();
     for ch in "missing".chars() {
@@ -8955,7 +8964,8 @@ fn live_shell_inline_tool_state_snapshot() {
         &[
             "Permission required",
             "Apply hashline edit to demo.txt",
-            "tool fs.read · dig digest…",
+            "tool fs.read · scopes once=one-shot always=session",
+            "timeout 30s countdown",
             "Allow once",
         ],
     );

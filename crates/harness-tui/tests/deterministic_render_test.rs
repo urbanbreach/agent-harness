@@ -6,7 +6,7 @@ mod deterministic_render_fixtures;
 use harness_core::event::{
     ActorKind, EditAppliedEvent, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent,
     ProviderRequestFinishedEvent, ProviderRequestStartedEvent, ProviderStreamDeltaEvent,
-    RunFinishedEvent, RunStartedEvent, ToolCallFinishedEvent, ToolCallMetadata,
+    RunFailedEvent, RunFinishedEvent, RunStartedEvent, ToolCallFinishedEvent, ToolCallMetadata,
     ToolCallRequestedEvent, ToolCallStartedEvent, ToolCallStatus, UserMessageSubmittedEvent,
     SCHEMA_VERSION,
 };
@@ -59,10 +59,8 @@ fn live_transcript_and_operator_sidebar_render_without_pty() {
 
     assert!(rendered.contains("Inspect deterministic sidebar"));
     assert!(rendered.contains("Assistant verified the rendered shell."));
-    assert_markers_in_order(
-        &rendered,
-        &["▼ MCP", "▼ LSP", "▼ Modified Files", "src/ui_secondary.rs"],
-    );
+    let sidebar_markers: &[&str] = &["▼ MCP", "▼ LSP", "▼ Modified Files", "src/ui_secondary.rs"];
+    assert_markers_in_order(&rendered, sidebar_markers);
     assert!(rendered.contains("• websearch Connected"));
     assert!(rendered.contains("• rust"));
     assert!(!rendered.contains("Current runtime:"));
@@ -77,21 +75,19 @@ fn tool_lifecycle_rows_stay_ordered_without_pty() {
 
     let rendered = render_text(&app, 180, 36);
 
-    assert_markers_in_order(
-        &rendered,
-        &[
-            "Inspect tool activity",
-            "Read src/ui.rs",
-            "Loaded src/ui.rs",
-            "Remove diff review surface",
-            "Researcher Task",
-            "audit tool lifecycle parity",
-            "2 toolcalls",
-            "cargo test -p harness-tui",
-            "snapshot mismatch",
-            "Tool summaries are now easier to scan, and edits stay inline.",
-        ],
-    );
+    let tool_markers: &[&str] = &[
+        "Inspect tool activity",
+        "Read src/ui.rs",
+        "Loaded src/ui.rs",
+        "Remove diff review surface",
+        "Researcher Task",
+        "audit tool lifecycle parity",
+        "2 toolcalls",
+        "cargo test -p harness-tui",
+        "snapshot mismatch",
+        "Tool summaries are now easier to scan, and edits stay inline.",
+    ];
+    assert_markers_in_order(&rendered, tool_markers);
     assert!(rendered.contains("Compat alias · read → fs.read"));
     assert!(rendered.contains("artifacts/tool-lifecycle-inline.diff"));
 }
@@ -110,6 +106,9 @@ fn permission_modal_preserves_draft_without_pty() {
     assert!(rendered.contains("Allow once"));
     assert!(rendered.contains("Allow always"));
     assert!(rendered.contains("Reject"));
+    assert!(rendered.contains("once=one-shot"));
+    assert!(rendered.contains("always=session"));
+    assert!(rendered.contains("countdown"));
     assert_eq!(app.prompt_buffer, "keep this draft");
 }
 
@@ -157,6 +156,9 @@ fn replay_shell_is_read_only_without_pty() {
 
     let rendered = render_text(&app, 100, 24);
 
+    // assert
+    // assert
+    // assert
     assert!(rendered.contains("Replay · read-only"));
     assert!(rendered.contains("Replay is read-only"));
     assert!(rendered.contains("r reload"));
@@ -169,6 +171,24 @@ fn replay_shell_is_read_only_without_pty() {
         app.status_banner.as_deref(),
         Some("session clone blocked: replay mode is read-only")
     );
+}
+
+#[test]
+fn replay_failure_state_renders_without_pty() {
+    // arrange
+    let app = AppState::new_replay(
+        PathBuf::from("/tmp/replay_failed_run"),
+        replay_failed_events(),
+    );
+
+    // act
+    let rendered = render_text(&app, 180, 24);
+
+    // assert
+    assert!(rendered.contains("Replay · read-only"));
+    assert!(rendered.contains("run failed"));
+    assert!(rendered.contains("provider stream ended before final message"));
+    assert!(rendered.contains("q quit"));
 }
 
 fn render_text(app: &AppState, width: u16, height: u16) -> String {
@@ -401,6 +421,26 @@ fn replay_events() -> Vec<EventEnvelopeV1> {
             Some("run_fixture"),
             EventV1::RunFinished(RunFinishedEvent {
                 summary: "done".to_string(),
+            }),
+        ),
+    ]
+}
+
+fn replay_failed_events() -> Vec<EventEnvelopeV1> {
+    vec![
+        envelope(
+            1,
+            Some("run_fixture"),
+            EventV1::RunStarted(RunStartedEvent {
+                run_name: "replay-failed-fixture".to_string(),
+                workspace_root: "/tmp/workspace".to_string(),
+            }),
+        ),
+        envelope(
+            2,
+            Some("run_fixture"),
+            EventV1::RunFailed(RunFailedEvent {
+                error: "provider stream ended before final message".to_string(),
             }),
         ),
     ]

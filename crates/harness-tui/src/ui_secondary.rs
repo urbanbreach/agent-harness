@@ -287,6 +287,20 @@ pub(crate) struct OperatorSidebarSelection {
     pub focus: OperatorSidebarSelectionCell,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum OperatorSidebarKeyboardTargetKind {
+    Section(OperatorSidebarSection),
+    SubagentGroup(String),
+    SubagentSession(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct OperatorSidebarKeyboardTarget {
+    pub kind: OperatorSidebarKeyboardTargetKind,
+    pub top_row: usize,
+    pub height: usize,
+}
+
 impl OperatorSidebarSelection {
     fn normalized(self) -> (OperatorSidebarSelectionCell, OperatorSidebarSelectionCell) {
         if self.anchor <= self.focus {
@@ -2798,12 +2812,13 @@ fn render_operator_sidebar_surface(
         );
     }
     frame.render_widget(
-        Paragraph::new(Text::from(body_layout.lines))
+        Paragraph::new(Text::from(body_layout.lines.clone()))
             .style(panel_style(surface, theme.text.primary))
             .scroll((app.details_scroll, 0))
             .wrap(Wrap { trim: true }),
         body_area,
     );
+    render_operator_sidebar_keyboard_selection(frame, app, &body_layout, body_area, theme);
     render_operator_sidebar_selection(
         frame,
         app.operator_sidebar_selection(),
@@ -3807,6 +3822,129 @@ pub(crate) fn operator_sidebar_subagent_group_hit_target(
                 )
             })
         })
+}
+
+pub(crate) fn operator_sidebar_keyboard_targets(
+    app: &AppState,
+    frame_area: Option<Rect>,
+) -> Vec<OperatorSidebarKeyboardTarget> {
+    let theme = app.theme();
+    let rail = build_operator_rail_model(app);
+    let width = frame_area
+        .and_then(|area| {
+            operator_sidebar_body_width_for_frame(app, area, theme, rail.title.as_ref())
+        })
+        .unwrap_or(80);
+    let layout =
+        build_operator_rail_body_layout(&rail.body, theme, width, app.transcript_animation_phase());
+
+    operator_sidebar_keyboard_targets_from_layout(&layout)
+}
+
+fn operator_sidebar_body_width_for_frame(
+    app: &AppState,
+    frame_area: Rect,
+    theme: &Theme,
+    title: Option<&OperatorRailTitle>,
+) -> Option<u16> {
+    let plan = crate::layout::FrameLayoutPlan::for_app(app, frame_area);
+
+    plan.operator_sidebar
+        .and_then(|area| {
+            operator_sidebar_inner_area(app, area, theme, OperatorSidebarChrome::Persistent)
+                .and_then(|inner| operator_sidebar_body_area(app, inner, theme, title))
+                .map(|body| body.width)
+        })
+        .or_else(|| {
+            plan.details_overlay.and_then(|area| {
+                operator_sidebar_inner_area(app, area, theme, OperatorSidebarChrome::Overlay)
+                    .and_then(|inner| operator_sidebar_body_area(app, inner, theme, title))
+                    .map(|body| body.width)
+            })
+        })
+}
+
+fn operator_sidebar_keyboard_targets_from_layout(
+    layout: &OperatorRailBodyLayout,
+) -> Vec<OperatorSidebarKeyboardTarget> {
+    let mut targets = Vec::new();
+    targets.extend(
+        layout
+            .heading_hit_regions
+            .iter()
+            .map(|region| OperatorSidebarKeyboardTarget {
+                kind: OperatorSidebarKeyboardTargetKind::Section(region.section),
+                top_row: region.top_row,
+                height: region.height,
+            }),
+    );
+    targets.extend(layout.subagent_group_hit_regions.iter().map(|region| {
+        OperatorSidebarKeyboardTarget {
+            kind: OperatorSidebarKeyboardTargetKind::SubagentGroup(region.agent_name.clone()),
+            top_row: region.top_row,
+            height: region.height,
+        }
+    }));
+    targets.extend(layout.subagent_hit_regions.iter().map(|region| {
+        OperatorSidebarKeyboardTarget {
+            kind: OperatorSidebarKeyboardTargetKind::SubagentSession(region.session_id.clone()),
+            top_row: region.top_row,
+            height: region.height,
+        }
+    }));
+    targets.sort_by_key(|target| target.top_row);
+    targets
+}
+
+fn render_operator_sidebar_keyboard_selection(
+    frame: &mut Frame,
+    app: &AppState,
+    layout: &OperatorRailBodyLayout,
+    area: Rect,
+    theme: &Theme,
+) {
+    if !(app.focus == Focus::List && activity_surface_visible(app)) {
+        return;
+    }
+
+    let Some(selected) = app.selected_operator_sidebar_keyboard_index() else {
+        return;
+    };
+
+    let targets = operator_sidebar_keyboard_targets_from_layout(layout);
+    if targets.is_empty() {
+        return;
+    }
+    let target = &targets[selected.min(targets.len().saturating_sub(1))];
+    let scroll_top = usize::from(app.details_scroll);
+    let visible_height = usize::from(area.height);
+    let target_bottom = target.top_row.saturating_add(target.height.max(1));
+    let buffer = frame.buffer_mut();
+
+    for local_row in 0..visible_height {
+        let absolute_row = scroll_top.saturating_add(local_row);
+        if absolute_row < target.top_row || absolute_row >= target_bottom {
+            continue;
+        }
+
+        let y = area
+            .y
+            .saturating_add(u16::try_from(local_row).unwrap_or(u16::MAX));
+        if y >= area.bottom() {
+            continue;
+        }
+
+        for local_column in 0..area.width {
+            let x = area.x.saturating_add(local_column);
+            if x >= area.right() {
+                continue;
+            }
+
+            let cell = &mut buffer[(x, y)];
+            cell.set_fg(theme.text.inverse);
+            cell.set_bg(theme.border.focus);
+        }
+    }
 }
 
 fn operator_sidebar_section_hit_target_in_surface(

@@ -11,9 +11,10 @@ use crate::ui::{
 use crate::view_model;
 use crossterm::event::{MouseButton, MouseEvent};
 use harness_core::event::{
-    ActorKind, AgentSpawnedEvent, EditAppliedEvent, EventActor, EventEnvelopeV1, EventV1,
-    ExecutionTimingMetadata, PermissionRequestedEvent, PermissionResolvedEvent,
-    ProviderReasoningDeltaEvent, ProviderRequestStartedEvent, ProviderStreamDeltaEvent,
+    ActorKind, AgentSpawnedEvent, CompactionWrittenEvent, EditAppliedEvent, EventActor,
+    EventEnvelopeV1, EventV1, ExecutionTimingMetadata, PermissionRequestedEvent,
+    PermissionResolvedEvent, ProviderReasoningDeltaEvent, ProviderRequestFinishedEvent,
+    ProviderRequestFinishedMetadata, ProviderRequestStartedEvent, ProviderStreamDeltaEvent,
     RunFailedEvent, RunFinishedEvent, RunStartedEvent, TaskCancelledEvent, TaskCompletedEvent,
     TaskCompletionMetadata, TaskLineageMetadata, TaskScheduleState, TaskScheduledEvent,
     TaskTerminalScope, ToolCallFinishedEvent, ToolCallLifecycleState, ToolCallMetadata,
@@ -21,6 +22,7 @@ use harness_core::event::{
     SCHEMA_VERSION,
 };
 use harness_core::proj::inspect_resume_plan;
+use harness_providers::ProviderErrorCategory;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::{backend::TestBackend, Terminal};
@@ -170,6 +172,57 @@ fn toggles_config_preserves_launch_metadata_entries() {
         .any(|row| row.label == "Built-in dynamic prompts"));
     assert!(rows.iter().any(|row| row.label == "build"));
     assert!(rows.iter().any(|row| row.label == "explore"));
+}
+
+#[test]
+fn compaction_written_status_surfaces_deterministic_fallback() {
+    // arrange
+    let mut app = AppState::new_live(None, false, None);
+
+    app.ingest_event(envelope(
+        1,
+        "compaction:agent_000001",
+        EventV1::CompactionWritten(CompactionWrittenEvent {
+            checkpoint_id: "checkpoint_000001".to_string(),
+            agent_id: "agent_000001".to_string(),
+            artifact_path: "artifacts/compactions/agent_000001/checkpoint_000001.json".to_string(),
+            artifact_digest: Some("digest-checkpoint".to_string()),
+            artifact_bytes: 123,
+            trigger_reason: "manual".to_string(),
+            through_seq: 10,
+            through_request_id: Some("req_000001".to_string()),
+            provider_id: Some("mock".to_string()),
+            model_id: Some("model-1".to_string()),
+            tokens_before: Some(1000),
+            tokens_before_estimate: Some(980),
+            tokens_after_estimate: Some(400),
+            summary_tokens_estimate: Some(80),
+            compacted_turns: Some(3),
+            reduction_tokens_estimate: Some(580),
+            reduction_percent_estimate: Some(59),
+            estimate_source: Some("provider_usage".to_string()),
+            summary_source: Some(harness_core::agent::ProviderCompactionSummarySource {
+                strategy: "model_backed_deterministic_fallback".to_string(),
+                model_ref: "mock:model-1".to_string(),
+                provider_id: Some("mock".to_string()),
+                model_id: Some("model-1".to_string()),
+                reasoning_effort: None,
+                text_verbosity: None,
+                previous_summary_used: false,
+                model_backed: true,
+                deterministic_fallback: true,
+                summary_contract_version: Some(1),
+                summary_contract_enforced: Some(true),
+            }),
+            preserved_turns: 1,
+        }),
+    ));
+
+    // act
+    let status = app.compaction_status().expect("compaction status");
+    // assert
+    assert_eq!(status.state, CompactionState::Written);
+    assert!(status.message.contains("deterministic fallback"));
 }
 
 #[test]
@@ -446,6 +499,77 @@ fn mouse_click_on_task_inline_row_opens_subagent_session() {
 
     assert_eq!(app.current_session_id(), Some("agent_child"));
     assert!(app.replay_mode, "inline child sessions open read-only");
+}
+
+#[test]
+fn keyboard_sidebar_subagent_selection_opens_child_session() {
+    // arrange
+    let run_dir = tempfile::tempdir().expect("create run dir");
+    let parent_path = run_dir.path().join("parent_run");
+    fs::create_dir_all(&parent_path).expect("create parent run dir");
+
+    let mut app = AppState::new_live(Some(parent_path), false, None);
+    app.ingest_event(agent_spawned(1, "parent", "build"));
+    app.ingest_event(envelope(
+        2,
+        "req_parent",
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_parent".to_string(),
+            text: "Start parent work".to_string(),
+        }),
+    ));
+    app.ingest_event(provider_started(3, "req_parent", "default", "model-parent"));
+    app.ingest_event(child_task_requested(
+        4,
+        "req_parent",
+        "tc_child_keyboard",
+        "agent_child",
+        "req_child",
+    ));
+    app.ingest_event(child_agent_spawned(5, "agent_child", "explore", "parent"));
+    app.ingest_event(envelope_with_actor(
+        6,
+        "req_child",
+        EventActor::new(ActorKind::Worker, Some("agent_child".to_string())),
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_child".to_string(),
+            provider_id: "default".to_string(),
+            model_id: "model-child".to_string(),
+            prompt_summary: "inspect child".to_string(),
+            request_digest: "digest-child-prompt".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.focus = Focus::List;
+    app.live_details_drawer_open = true;
+    app.set_frame_area(TEST_FRAME_AREA);
+    assert!(app.operator_sidebar_keyboard_active());
+    assert!(!app.operator_sidebar_keyboard_targets().is_empty());
+    assert_eq!(
+        app.keymap.get_action(&key(KeyCode::Down)),
+        Some(Action::HistoryDown)
+    );
+
+    // act
+    app.handle_key(key(KeyCode::Down));
+    assert_eq!(
+        app.selected_operator_sidebar_keyboard_index_for_test(),
+        Some(0)
+    );
+    app.handle_key(key(KeyCode::Down));
+    assert_eq!(
+        app.selected_operator_sidebar_keyboard_index_for_test(),
+        Some(1)
+    );
+
+    app.handle_key(key(KeyCode::Enter));
+
+    // assert
+    assert_eq!(app.current_session_id(), Some("agent_child"));
+    assert!(
+        app.replay_mode,
+        "keyboard opens inline child sessions read-only"
+    );
 }
 
 #[test]
@@ -3212,6 +3336,98 @@ fn edit_applied_auto_opens_modified_files_section() {
 }
 
 #[test]
+fn diff_hunk_navigation_advances_and_retreats_between_hunks() {
+    // arrange
+    let run_dir = tempfile::tempdir().expect("create run dir");
+    let artifacts_dir = run_dir.path().join("artifacts");
+    fs::create_dir_all(&artifacts_dir).expect("create artifacts dir");
+    fs::write(
+        artifacts_dir.join("two-hunks.diff"),
+        "--- docs/demo.md\n+++ docs/demo.md\n@@ -1,3 +1,3 @@\n alpha\n-old one\n+new one\n keep\n@@ -20,3 +20,3 @@\n before\n-old two\n+new two\n after\n",
+    )
+    .expect("write diff fixture");
+
+    let mut app = AppState::new_live(Some(run_dir.path().to_path_buf()), false, None);
+    app.focus = Focus::Details;
+    app.ingest_event(envelope(
+        1,
+        "req_diff_nav",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_diff_nav".to_string(),
+            provider_id: "default".to_string(),
+            model_id: "model-diff".to_string(),
+            prompt_summary: "review diff hunks".to_string(),
+            request_digest: "digest-diff-nav-request".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_diff_nav",
+        EventV1::ToolCallRequested(ToolCallRequestedEvent {
+            tool_call_id: "tc_diff_nav".to_string(),
+            tool_id: "apply_patch".to_string(),
+            args_summary: r#"{"patchText":"*** Begin Patch"}"#.to_string(),
+            args_digest: "digest-diff-nav-args".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        3,
+        "req_diff_nav",
+        EventV1::ToolCallFinished(ToolCallFinishedEvent {
+            tool_call_id: "tc_diff_nav".to_string(),
+            status: ToolCallStatus::Succeeded,
+            output_summary: Some("Success. Updated the following files".to_string()),
+            output_digest: Some("digest-diff-nav-output".to_string()),
+            output_json: Some(serde_json::json!({
+                "files": ["M docs/demo.md"],
+                "edits": [
+                    {
+                        "edit_id": "apply-patch-demo",
+                        "path": "docs/demo.md",
+                        "summary": "apply patch update docs/demo.md",
+                        "deleted": false,
+                        "diff_rel_path": "artifacts/two-hunks.diff",
+                        "diff_digest": "digest-two-hunks"
+                    }
+                ]
+            })),
+            metadata: None,
+        }),
+    ));
+    app.set_patch_file_output_expanded_for_test("tc_diff_nav", "docs/demo.md", true);
+
+    let frame_area = Rect::new(0, 0, 100, 14);
+    app.set_frame_area(frame_area);
+    let _rendered = render_debug(&app, frame_area.width, frame_area.height);
+    let hunk_rows = crate::ui::transcript_diff_hunk_rows(&app, frame_area);
+    assert_eq!(hunk_rows.len(), 2, "expected two navigable diff hunks");
+    app.follow_mode = false;
+    app.transcript_scroll = app.last_transcript_max_scroll.get();
+
+    // act
+    app.handle_key(key_with_modifiers(KeyCode::Char('n'), KeyModifiers::ALT));
+    let first_hunk = app
+        .selected_diff_hunk_row_for_test()
+        .expect("first hunk selected");
+    assert!(!app.follow_mode);
+
+    app.handle_key(key_with_modifiers(KeyCode::Char('n'), KeyModifiers::ALT));
+    let second_hunk = app
+        .selected_diff_hunk_row_for_test()
+        .expect("second hunk selected");
+    assert!(
+        second_hunk > first_hunk,
+        "next hunk should advance: first={first_hunk}, second={second_hunk}"
+    );
+
+    app.handle_key(key_with_modifiers(KeyCode::Char('p'), KeyModifiers::ALT));
+    // assert
+    assert_eq!(app.selected_diff_hunk_row_for_test(), Some(first_hunk));
+}
+
+#[test]
 fn dragging_transcript_scrollbar_updates_scroll_position() {
     let mut app = AppState::new_live(None, false, None);
     app.last_transcript_max_scroll.set(100);
@@ -4146,6 +4362,80 @@ fn task_cancelled_marks_matching_activity_as_error() {
 }
 
 #[test]
+fn provider_error_categories_surface_in_tui_activity_and_runtime_state() {
+    // arrange
+    for category in [
+        ProviderErrorCategory::MissingCredentials,
+        ProviderErrorCategory::RateLimited,
+        ProviderErrorCategory::ContextWindowExceeded,
+    ] {
+        let mut app = AppState::new_live(None, false, None);
+        let request_id = format!("req_provider_{}", category.as_str());
+        app.ingest_event(envelope(
+            1,
+            &request_id,
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: request_id.clone(),
+                provider_id: "default".to_string(),
+                model_id: "gpt-5.4-mini".to_string(),
+                prompt_summary: "Trigger provider category".to_string(),
+                request_digest: "digest-provider-category".to_string(),
+                metadata: None,
+            }),
+        ));
+        app.ingest_event(envelope(
+            2,
+            &request_id,
+            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                request_id: request_id.clone(),
+                finish_reason: "error".to_string(),
+                output_digest: None,
+                usage: None,
+                metadata: Some(ProviderRequestFinishedMetadata {
+                    provider_error_category: Some(category),
+                    provider_error_remediation: Some(category.remediation().to_string()),
+                    ..ProviderRequestFinishedMetadata::default()
+                }),
+            }),
+        ));
+        app.ingest_event(envelope(
+            3,
+            &request_id,
+            EventV1::TaskCancelled(TaskCancelledEvent {
+                task_id: "task_provider_category".to_string(),
+                reason: format!("{}: fixture provider failure", category.as_str()),
+                task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
+            }),
+        ));
+
+        let activity = app.activities.back().expect("provider error activity");
+        // act
+        let error_message = activity.error_message.as_deref().expect("error detail");
+        // assert
+        assert_eq!(activity.status, ActivityStatus::Error);
+        assert!(error_message.contains(category.as_str()), "{error_message}");
+        assert!(
+            error_message.contains("fixture provider failure"),
+            "{error_message}"
+        );
+        assert!(
+            error_message.contains(category.remediation()),
+            "{error_message}"
+        );
+        let runtime = app.runtime_state();
+        assert_eq!(runtime.kind, RuntimeStateKind::Cancelled);
+        assert!(
+            runtime
+                .detail
+                .as_deref()
+                .is_some_and(|detail| detail.contains(category.as_str())),
+            "runtime detail should include category: {:?}",
+            runtime.detail
+        );
+    }
+}
+
+#[test]
 fn child_tool_task_completed_does_not_finish_parent_turn_activity() {
     let mut app = AppState::new_live(None, false, None);
 
@@ -4534,8 +4824,90 @@ fn multiline_history_keys_move_cursor_before_recalling_history() {
     assert_eq!(app.prompt_history_index, Some(0));
 
     app.handle_key(key(KeyCode::Down));
-    assert!(app.prompt_buffer.is_empty());
+    assert_eq!(app.prompt_buffer, "alpha\nbeta");
+    assert_eq!(app.prompt_cursor, 0);
     assert_eq!(app.prompt_history_index, None);
+}
+
+#[test]
+fn prompt_history_persists_and_restores_draft_after_recall() {
+    // arrange
+    let tempdir = tempfile::tempdir().expect("tempdir");
+    let history_path = tempdir
+        .path()
+        .join("sessions")
+        .join("tui")
+        .join("prompt-history.json");
+    let mut live =
+        AppState::new_live_with_prompt_history_path(None, false, None, Some(history_path.clone()));
+
+    // act
+    for ch in "persisted prompt".chars() {
+        live.handle_key(key(KeyCode::Char(ch)));
+    }
+    live.handle_key(key(KeyCode::Enter));
+
+    // assert
+    assert!(
+        history_path.exists(),
+        "prompt history should be stored under the session data dir"
+    );
+
+    let mut restarted =
+        AppState::new_startup_with_prompt_history_path(Vec::new(), None, Some(history_path));
+    assert_eq!(
+        restarted.prompt_history,
+        vec!["persisted prompt".to_string()]
+    );
+
+    restarted.focus = Focus::Prompt;
+    restarted.prompt_buffer = "draft text".to_string();
+    restarted.prompt_cursor = 0;
+    restarted.handle_key(key(KeyCode::Up));
+    assert_eq!(restarted.prompt_buffer, "persisted prompt");
+    assert_eq!(restarted.prompt_history_index, Some(0));
+
+    restarted.handle_key(key(KeyCode::Down));
+    assert_eq!(restarted.prompt_buffer, "draft text");
+    assert_eq!(restarted.prompt_cursor, 0);
+    assert_eq!(restarted.prompt_history_index, None);
+}
+
+#[test]
+fn startup_auto_submit_persists_prompt_history_once() {
+    // arrange
+    let tempdir = tempfile::tempdir().expect("tempdir");
+    let history_path = tempdir
+        .path()
+        .join("sessions")
+        .join("tui")
+        .join("prompt-history.json");
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+    let mut startup = AppState::new_startup_with_prompt_history_path(
+        Vec::new(),
+        Some(sink),
+        Some(history_path.clone()),
+    );
+
+    // act
+    for ch in "fresh session".chars() {
+        startup.handle_key(key(KeyCode::Char(ch)));
+    }
+    startup.handle_key(key(KeyCode::Enter));
+    let live = AppState::new_live_with_prompt_history_path(None, false, None, Some(history_path));
+
+    // assert
+    assert!(matches!(
+        intents.lock().expect("lock intents").as_slice(),
+        [UiIntent::NewSession]
+    ));
+    assert_eq!(live.prompt_history, vec!["fresh session".to_string()]);
 }
 
 #[test]
@@ -5703,6 +6075,72 @@ fn slash_exit_matches_quit_requested_behavior() {
     assert_eq!(
         intents.lock().expect("lock intents").as_slice(),
         &[UiIntent::QuitRequested]
+    );
+}
+
+#[test]
+fn resume_history_surface_uses_meaningful_session_title() {
+    // arrange
+    let entry = SessionHistoryEntry {
+        run_dir: PathBuf::from("/tmp/run-title"),
+        catalog: harness_core::proj::SessionCatalogEntry {
+            run_id: "run-title".to_string(),
+            run_name: Some("map chat renderers".to_string()),
+            status: Some(harness_core::proj::RunStatus::Finished),
+            last_updated_at: Some("2026-02-03T12:00:00Z".to_string()),
+            workspace_root: Some("/tmp/workspace".to_string()),
+            profile_preset: Some("build".to_string()),
+            provider_model: Some("mock/model".to_string()),
+            mode_source: harness_core::proj::SessionModeSource::InteractiveLive,
+            is_resumable: true,
+            resume_disabled_reason: None,
+            artifact_count: 0,
+            child_session_count: 0,
+            parent_session_id: None,
+        },
+    };
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_startup(vec![entry.clone()], Some(sink));
+    for ch in "/resume".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    // act
+    app.handle_key(key(KeyCode::Enter));
+
+    // assert
+    assert!(app.session_history_visible);
+    assert_eq!(
+        app.startup_launcher_action,
+        StartupLauncherAction::ContinueSession
+    );
+    let selected = app
+        .selected_session_history_entry()
+        .expect("titled session should be selected");
+    assert_eq!(
+        session_navigation::session_history_display_title(selected),
+        "map chat renderers"
+    );
+    let rendered = render_debug(&app, 100, 30);
+    assert!(rendered.contains("map chat renderers"));
+    assert!(
+        !rendered.contains("<unavailable>"),
+        "resume history should not degrade a titled session: {rendered}"
+    );
+
+    app.handle_key(key(KeyCode::Enter));
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[UiIntent::ContinueSession {
+            run_id: "run-title".to_string(),
+            run_dir: PathBuf::from("/tmp/run-title"),
+        }]
     );
 }
 

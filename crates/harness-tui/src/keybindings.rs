@@ -169,6 +169,16 @@ const COMMAND_METADATA: &[CommandMetadata] = &[
         description: "Allow side-by-side transcript diffs when wide",
     },
     CommandMetadata {
+        id: "diff_hunk_next",
+        label: "Next diff hunk",
+        description: "Jump to the next transcript diff hunk",
+    },
+    CommandMetadata {
+        id: "diff_hunk_previous",
+        label: "Previous diff hunk",
+        description: "Jump to the previous transcript diff hunk",
+    },
+    CommandMetadata {
         id: "focus_next",
         label: "Next focus",
         description: "Cycle focus forward",
@@ -436,6 +446,8 @@ pub enum Action {
     SessionChildCycle,
     SessionChildCycleReverse,
     SessionParent,
+    DiffHunkNext,
+    DiffHunkPrevious,
     AgentCycle,
     AgentCycleReverse,
     VariantCycle,
@@ -485,6 +497,8 @@ impl Action {
             Action::SessionChildCycle => None,
             Action::SessionChildCycleReverse => None,
             Action::SessionParent => None,
+            Action::DiffHunkNext => Some("diff_hunk_next"),
+            Action::DiffHunkPrevious => Some("diff_hunk_previous"),
             Action::AgentCycle => Some("agent_cycle"),
             Action::AgentCycleReverse => Some("agent_cycle_reverse"),
             Action::VariantCycle => Some("cycle_variant"),
@@ -701,6 +715,8 @@ impl Action {
             Action::SessionChildCycle => "session_child_cycle",
             Action::SessionChildCycleReverse => "session_child_cycle_reverse",
             Action::SessionParent => "session_parent",
+            Action::DiffHunkNext => "diff_hunk_next",
+            Action::DiffHunkPrevious => "diff_hunk_previous",
             Action::AgentCycle => "agent_cycle",
             Action::AgentCycleReverse => "agent_cycle_reverse",
             Action::VariantCycle => "variant_cycle",
@@ -784,6 +800,8 @@ impl FromStr for Action {
             "session_child_cycle" => Ok(Action::SessionChildCycle),
             "session_child_cycle_reverse" => Ok(Action::SessionChildCycleReverse),
             "session_parent" => Ok(Action::SessionParent),
+            "diff_hunk_next" => Ok(Action::DiffHunkNext),
+            "diff_hunk_previous" => Ok(Action::DiffHunkPrevious),
             "agent_cycle" => Ok(Action::AgentCycle),
             "agent_cycle_reverse" => Ok(Action::AgentCycleReverse),
             "variant_cycle" => Ok(Action::VariantCycle),
@@ -990,6 +1008,22 @@ impl KeyMap {
         keymap.bind(
             KeyBinding::new(KeyCode::Char('['), KeyModifiers::CONTROL),
             Action::SessionParent,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('n'), KeyModifiers::ALT),
+            Action::DiffHunkNext,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('p'), KeyModifiers::ALT),
+            Action::DiffHunkPrevious,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char(']'), KeyModifiers::ALT),
+            Action::DiffHunkNext,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('['), KeyModifiers::ALT),
+            Action::DiffHunkPrevious,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('?'), KeyModifiers::NONE),
@@ -1299,6 +1333,8 @@ mod tests {
             Action::AllowPermission,
             Action::DenyPermission,
             Action::DismissModal,
+            Action::DiffHunkNext,
+            Action::DiffHunkPrevious,
             Action::Help,
             Action::Quit,
         ];
@@ -1449,6 +1485,128 @@ mod tests {
             keymap.get_action(&KeyEvent::new(KeyCode::Char('['), KeyModifiers::CONTROL)),
             Some(Action::SessionParent)
         );
+    }
+
+    #[test]
+    fn keymap_binds_diff_hunk_navigation_to_default_bindings() {
+        // arrange
+        let keymap = KeyMap::with_defaults();
+
+        // act
+        let next_binding = keymap.get_action(&KeyEvent::new(KeyCode::Char('n'), KeyModifiers::ALT));
+
+        // assert
+        assert_eq!(next_binding, Some(Action::DiffHunkNext));
+        assert_eq!(
+            keymap.get_action(&KeyEvent::new(KeyCode::Char('p'), KeyModifiers::ALT)),
+            Some(Action::DiffHunkPrevious)
+        );
+        assert_eq!(
+            keymap.get_action(&KeyEvent::new(KeyCode::Char(']'), KeyModifiers::ALT)),
+            Some(Action::DiffHunkNext)
+        );
+        assert_eq!(
+            keymap.get_action(&KeyEvent::new(KeyCode::Char('['), KeyModifiers::ALT)),
+            Some(Action::DiffHunkPrevious)
+        );
+        assert_eq!(keymap.get_binding_str(Action::DiffHunkNext), "Alt+n");
+        assert_eq!(keymap.get_binding_str(Action::DiffHunkPrevious), "Alt+p");
+        assert_eq!(Action::from_str("diff_hunk_next"), Ok(Action::DiffHunkNext));
+        assert_eq!(
+            Action::from_str("diff_hunk_previous"),
+            Ok(Action::DiffHunkPrevious)
+        );
+    }
+
+    #[test]
+    fn ws8_keyboard_surfaces_use_registry_actions_instead_of_hardcoded_keys() {
+        // arrange
+        let keymap = KeyMap::with_defaults();
+        let required_actions = [
+            Action::MoveDown,
+            Action::MoveUp,
+            Action::HistoryDown,
+            Action::HistoryUp,
+            Action::SubmitPrompt,
+            Action::SessionChildFirst,
+            Action::SessionChildCycle,
+            Action::SessionChildCycleReverse,
+            Action::SessionParent,
+            Action::DiffHunkNext,
+            Action::DiffHunkPrevious,
+        ];
+
+        // act
+        let app_source = include_str!("app.rs");
+
+        // assert
+        for action in required_actions {
+            assert!(
+                !keymap.get_bindings(action).is_empty(),
+                "{} must have a configurable default binding",
+                action.as_str()
+            );
+            assert_eq!(
+                Action::from_str(action.as_str()),
+                Ok(action),
+                "{} must round-trip through config action ids",
+                action.as_str()
+            );
+        }
+
+        assert_no_key_checks(
+            "operator sidebar keyboard navigation",
+            source_between(
+                app_source,
+                "fn operator_sidebar_keyboard_active",
+                "    pub(crate) fn set_frame_area",
+            ),
+        );
+        assert_no_key_checks(
+            "session child navigation dispatch",
+            source_between(
+                app_source,
+                "Action::SessionChildFirst =>",
+                "            Action::DiffHunkNext =>",
+            ),
+        );
+        assert_no_key_checks(
+            "diff hunk navigation dispatch",
+            source_between(
+                app_source,
+                "Action::DiffHunkNext =>",
+                "            Action::AgentCycle =>",
+            ),
+        );
+
+        assert_no_key_checks(
+            "operator sidebar keyboard rendering",
+            source_between(
+                include_str!("ui_secondary.rs"),
+                "pub(crate) fn operator_sidebar_keyboard_targets",
+                "fn operator_sidebar_section_hit_target_in_surface",
+            ),
+        );
+    }
+
+    fn source_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
+        let start_index = source
+            .find(start)
+            .unwrap_or_else(|| panic!("missing source marker: {start}"));
+        let after_start = &source[start_index..];
+        let end_index = after_start
+            .find(end)
+            .unwrap_or_else(|| panic!("missing source marker after {start}: {end}"));
+        &after_start[..end_index]
+    }
+
+    fn assert_no_key_checks(surface: &str, source: &str) {
+        for forbidden in ["KeyCode::", "KeyModifiers::"] {
+            assert!(
+                !source.contains(forbidden),
+                "{surface} must route keys through Action/KeyMap, found {forbidden}"
+            );
+        }
     }
 
     #[test]
