@@ -29,7 +29,6 @@ fn doctor_cli_reports_shipped_orchestration_health() {
     assert!(stdout.contains("model_references"));
     assert!(stdout.contains("workflow_profiles"));
     assert!(stdout.contains("category_routes"));
-    assert!(stdout.contains("discipline"));
     assert!(stdout.contains("visual-engineering"));
 }
 #[test]
@@ -127,8 +126,18 @@ fn doctor_cli_json_reports_extension_roadmap_readiness_separately() {
         true
     );
     assert_eq!(
-        readiness_check["details"]["planned_seams"]["typed_extension_manifest"],
-        "final_slice"
+        readiness_check["details"]["descriptor_seams"]["typed_extension_manifest"]["status"],
+        "shipped_descriptor_only"
+    );
+    assert_eq!(
+        readiness_check["details"]["descriptor_seams"]["typed_extension_manifest"]
+            ["runtime_effects_scope"],
+        "descriptor_only"
+    );
+    assert_eq!(
+        readiness_check["details"]["descriptor_seams"]["typed_extension_manifest"]
+            ["runtime_effects"]["registers_tools"],
+        false
     );
     assert_eq!(
         readiness_check["details"]["planned_seams"]["desktop_mobile_web_clients"],
@@ -234,10 +243,6 @@ fn doctor_cli_json_reports_resolved_route_metadata() {
     assert!(!serde_json::to_string(&route_check["details"]["skills"])
         .expect("serialize compact skill readiness")
         .contains("Use focused diffs."));
-    assert_eq!(
-        route_check["details"]["routes"]["discipline"]["skills"]["tool_enabled"],
-        true
-    );
     assert_eq!(
         route_check["details"]["routes"]["general"]["role"],
         "subagent"

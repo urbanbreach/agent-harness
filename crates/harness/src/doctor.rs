@@ -11,6 +11,7 @@ use harness_core::config::{
     ProviderConfig,
 };
 use harness_core::event::EventEnvelopeV1;
+use harness_core::extension_manifest::EXTENSION_MANIFEST_V1_SCHEMA_VERSION;
 use harness_core::proj::{project_team_state, TeamRunStatus};
 use harness_tools::{
     coordinator_registry_with_mcp_and_editing, discover_skill_catalog_with_config,
@@ -22,7 +23,7 @@ use serde_json::{json, Value};
 use crate::readiness::ast_grep_adapter_readiness;
 use crate::{CliDeps, CliIo};
 
-const REQUIRED_PRIMARY_AGENTS: [&str; 3] = ["build", "plan", "discipline"];
+const REQUIRED_PRIMARY_AGENTS: [&str; 2] = ["build", "plan"];
 const REQUIRED_SUBAGENTS: [&str; 2] = ["explore", "general"];
 const REQUIRED_CATEGORY_ROUTES: [&str; 8] = [
     "visual-engineering",
@@ -42,15 +43,6 @@ const BUILD_TOOLS: [&str; 5] = [
     "edit",
 ];
 const PLAN_TOOLS: [&str; 4] = ["todowrite", "task", "background_output", "plan_exit"];
-const DISCIPLINE_TOOLS: [&str; 6] = [
-    "todowrite",
-    "task",
-    "background_output",
-    "plan_enter",
-    "skill",
-    "edit",
-];
-
 #[derive(Debug, Args, Clone, Default)]
 pub(crate) struct DoctorCommand {
     /// Emit machine-readable JSON instead of text.
@@ -310,6 +302,7 @@ fn check_native_tool_catalog(config: &HarnessConfig) -> DoctorCheck {
         "background_cancel",
         "team_list",
         "ast_grep_search",
+        "ast_grep_replace",
     ];
     let missing = required
         .iter()
@@ -329,7 +322,7 @@ fn check_native_tool_catalog(config: &HarnessConfig) -> DoctorCheck {
             "team_projection": active_team_projection_summary(&config.paths.session_dir),
             "ast_grep_search": catalog.iter().any(|entry| entry.canonical_id == "ast_grep_search"),
             "ast_grep_adapter": ast_grep_adapter_readiness(),
-            "ast_grep_replace": "deferred_conditional_stretch",
+            "ast_grep_replace": "shipped_edit_safe",
         },
         "no_network_probes": true,
     });
@@ -369,10 +362,25 @@ fn check_extension_roadmap_readiness(config: &HarnessConfig) -> DoctorCheck {
             "global_skill_roots": config.skills.global_roots.iter().map(|path| path.display().to_string()).collect::<Vec<_>>(),
             "disabled_skill_selectors": config.skills.disabled.clone(),
         },
+        "descriptor_seams": {
+            "typed_extension_manifest": {
+                "status": "shipped_descriptor_only",
+                "schema_version": EXTENSION_MANIFEST_V1_SCHEMA_VERSION,
+                "schema_path": "configs/extension-manifest.v1.schema.json",
+                "runtime_effects_scope": "descriptor_only",
+                "runtime_effects": {
+                    "registers_tools": false,
+                    "executes_commands": false,
+                    "launches_mcp": false,
+                    "invokes_provider_decorators": false,
+                    "loads_external_code": false,
+                    "mutates_sessions": false,
+                },
+            },
+        },
         "planned_seams": {
-            "typed_extension_manifest": "final_slice",
             "command_hooks": "final_slice",
-            "ast_grep_replace": "final_slice",
+            "ast_grep_replace": "shipped_descriptor",
             "desktop_mobile_web_clients": "post_v1",
             "browser_media_automation": "post_v1",
             "team_mode": "primitive_only_v1",
@@ -846,7 +854,7 @@ fn check_shipped_profiles(config: &HarnessConfig) -> DoctorCheck {
 
     pass(
         "workflow_profiles",
-        "build, plan, discipline, explore, and general profiles are available",
+        "build, plan, explore, and general profiles are available",
     )
 }
 
@@ -943,20 +951,16 @@ fn check_profile_tools(config: &HarnessConfig) -> DoctorCheck {
         );
     }
 
-    let missing_core_tools = [
-        ("build", &BUILD_TOOLS[..]),
-        ("plan", &PLAN_TOOLS[..]),
-        ("discipline", &DISCIPLINE_TOOLS[..]),
-    ]
-    .into_iter()
-    .flat_map(|(profile, expected)| {
-        expected.iter().filter_map(move |tool| {
-            let agent = config.agents.get(profile)?;
-            (!agent.tools.iter().any(|configured| configured == tool))
-                .then(|| format!("{profile}.{tool}"))
+    let missing_core_tools = [("build", &BUILD_TOOLS[..]), ("plan", &PLAN_TOOLS[..])]
+        .into_iter()
+        .flat_map(|(profile, expected)| {
+            expected.iter().filter_map(move |tool| {
+                let agent = config.agents.get(profile)?;
+                (!agent.tools.iter().any(|configured| configured == tool))
+                    .then(|| format!("{profile}.{tool}"))
+            })
         })
-    })
-    .collect::<Vec<_>>();
+        .collect::<Vec<_>>();
     if !missing_core_tools.is_empty() {
         return warn(
             "tool_surface",

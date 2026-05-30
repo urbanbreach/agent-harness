@@ -47,7 +47,7 @@ fn doctor_cli_json_reports_native_tool_catalog_readiness() {
     );
     assert_eq!(
         tool_check["details"]["readiness"]["ast_grep_replace"],
-        "deferred_conditional_stretch"
+        "shipped_edit_safe"
     );
     assert_eq!(
         tool_check["details"]["readiness"]["team_projection"]["source"],
@@ -71,6 +71,7 @@ fn doctor_cli_json_reports_native_tool_catalog_readiness() {
         "background_cancel",
         "team_list",
         "ast_grep_search",
+        "ast_grep_replace",
     ] {
         assert!(
             tools
