@@ -10,6 +10,7 @@ pub(crate) mod counter_id;
 pub(crate) mod digest;
 pub mod edit;
 pub mod event;
+pub mod extension_manifest;
 pub mod file_tag;
 pub(crate) mod path_display;
 pub(crate) mod path_selector;

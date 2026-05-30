@@ -1,0 +1,375 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExtensionManifestV1",
+  "type": "object",
+  "required": [
+    "id",
+    "schemaVersion"
+  ],
+  "properties": {
+    "capabilities": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ExtensionCapabilityDescriptor"
+      }
+    },
+    "commands": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ExtensionCommandDescriptor"
+      }
+    },
+    "diagnostics": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ExtensionDiagnosticDescriptor"
+      }
+    },
+    "displayName": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "hooks": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ExtensionHookDescriptor"
+      }
+    },
+    "id": {
+      "type": "string"
+    },
+    "mcpBundles": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ExtensionMcpBundleDescriptor"
+      }
+    },
+    "prompts": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ExtensionPromptDescriptor"
+      }
+    },
+    "providerDecorators": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ExtensionProviderDecoratorDescriptor"
+      }
+    },
+    "replay": {
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ExtensionReplayDescriptor"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "schemaVersion": {
+      "type": "string"
+    },
+    "tools": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ExtensionToolDescriptor"
+      }
+    },
+    "version": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "ExtensionCapabilityDescriptor": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "defaultEnabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "description": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "replayLabel": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ExtensionCommandDescriptor": {
+      "type": "object",
+      "required": [
+        "capabilityId",
+        "id",
+        "status"
+      ],
+      "properties": {
+        "capabilityId": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "replayLabel": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/definitions/ExtensionSeamStatus"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ExtensionDiagnosticDescriptor": {
+      "type": "object",
+      "required": [
+        "capabilityId",
+        "id"
+      ],
+      "properties": {
+        "capabilityId": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "replayLabel": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ExtensionHookDescriptor": {
+      "type": "object",
+      "required": [
+        "capabilityId",
+        "id",
+        "lifecycleEvent",
+        "status"
+      ],
+      "properties": {
+        "capabilityId": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "lifecycleEvent": {
+          "type": "string"
+        },
+        "replayLabel": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/definitions/ExtensionSeamStatus"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ExtensionMcpBundleDescriptor": {
+      "type": "object",
+      "required": [
+        "capabilityId",
+        "id",
+        "status"
+      ],
+      "properties": {
+        "capabilityId": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "replayLabel": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "serverIds": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "status": {
+          "$ref": "#/definitions/ExtensionSeamStatus"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ExtensionPromptDescriptor": {
+      "type": "object",
+      "required": [
+        "capabilityId",
+        "id"
+      ],
+      "properties": {
+        "capabilityId": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "replayLabel": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ExtensionProviderDecoratorDescriptor": {
+      "type": "object",
+      "required": [
+        "capabilityId",
+        "id",
+        "status"
+      ],
+      "properties": {
+        "capabilityId": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "providerScope": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "replayLabel": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/definitions/ExtensionSeamStatus"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ExtensionReplayDescriptor": {
+      "type": "object",
+      "required": [
+        "label",
+        "summaryTemplate"
+      ],
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "summaryTemplate": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ExtensionSeamStatus": {
+      "type": "string",
+      "enum": [
+        "native",
+        "fallback",
+        "intentionally_unsupported",
+        "post_v1"
+      ]
+    },
+    "ExtensionToolDescriptor": {
+      "type": "object",
+      "required": [
+        "capabilityId",
+        "id",
+        "permission"
+      ],
+      "properties": {
+        "capabilityId": {
+          "type": "string"
+        },
+        "description": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "permission": {
+          "$ref": "#/definitions/ExtensionToolPermission"
+        },
+        "replayLabel": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ExtensionToolPermission": {
+      "type": "string",
+      "enum": [
+        "bash",
+        "edit",
+        "question",
+        "task",
+        "webfetch",
+        "websearch",
+        "codesearch",
+        "lsp"
+      ]
+    }
+  }
+}
