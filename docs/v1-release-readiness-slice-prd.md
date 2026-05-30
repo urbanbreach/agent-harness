@@ -102,7 +102,7 @@ are point-in-time observations.
   (~70k), `harness-testkit` (~4k). The coordinator is the single authority for event
   append, scheduling, permissions, tool execution, compaction, lifecycle. Events are
   the source of truth; replay is side-effect free.
-- **Agent prompt bodies** (`.agent-harness/agents/*.md`): all 13 files are **exactly
+- **Agent prompt bodies** (`.agent-harness/agents/*.md`): all 12 files are **exactly
   53 lines** of the *same generic skeleton* (Identity/Goal/Use When/Do Not Use When/
   Scope Guard/Runtime-Enforced Permissions/Behavioral Guidance/Operating Loop/Ask
   Gate/Failure Recovery/Output Contract/Verification Gate). They pass the skeleton
@@ -217,7 +217,7 @@ expected to remain open for the final slice.
   for full composed prompts. → WS2
 - Model-specific prompt tuning is either intentionally absent for V1 or explicit
   prompt presets with tests. → WS2
-- Prompt golden tests cover `build`, `plan`, `discipline`, `general`, `explore`, all
+- Prompt golden tests cover `build`, `plan`, `general`, `explore`, all
   category routes, and hidden title/summary/compaction profiles. → WS2
 
 **Subagent & category depth**
@@ -330,7 +330,7 @@ expected to remain open for the final slice.
 
 **V1 polish additions** are counted item by item, not as a subjective block. This
 slice includes the release-evidence, operator-happy-path, provider/permission/privacy,
-session/resume/compaction, and built-in-skills/prompt-discipline polish boxes that map
+session/resume/compaction, and built-in-skills/prompt-rigor polish boxes that map
 to WS1/WS3/WS4/WS5/WS7/WS8 above. Flip only concrete roadmap boxes whose exact text is
 backed by evidence. Leave the visual-image signoff, typed-extension-manifest,
 command/hook seam, AST-grep replace, and production-class performance-claim boxes for
@@ -514,7 +514,7 @@ first.
 ## 5. WS2 — Agent prompt depth
 
 ### 5.1 Why
-The 13 profile bodies are identical generic scaffolds. The roadmap requires
+The 12 profile bodies are identical generic scaffolds. The roadmap requires
 near-exact OMO adaptations that are agent-specific, an intent-gate before tool use,
 named prompt-section modules, and golden tests covering every shipped + hidden profile.
 
@@ -531,7 +531,7 @@ named prompt-section modules, and golden tests covering every shipped + hidden p
 
 ### 5.3 Deliverables
 
-1. **Rewrite all 13 profile bodies as agent-specific OMO adaptations.** Keep the
+1. **Rewrite all 12 profile bodies as agent-specific OMO adaptations.** Keep the
    shared skeleton sections (the skeleton fixture must still pass) but fill them with
    **profile-specific operating guidance** adapted from the corresponding OMO agent,
    with branding and unsupported agent-OS workflows removed and every retained behavior
@@ -540,8 +540,6 @@ named prompt-section modules, and golden tests covering every shipped + hidden p
      surface, recoverable-tool-failure behavior.
    - `plan.md`: `.agent-harness/plans/<run>.md`, `plan_exit`/`plan_enter`, read-only
      shell guard, delegation limited to `explore`.
-   - `discipline.md`: todo hygiene (`todoread`/`todowrite`), focused delegation,
-     end-to-end manual surface verification, no scheduler change.
    - `explore.md`: read-only tools only, search strategy, **structured findings output
      contract** (files, relationships, answer, next steps), stop condition.
    - `general.md`: when to take multistep work vs refuse work that belongs to Build,
@@ -550,7 +548,7 @@ named prompt-section modules, and golden tests covering every shipped + hidden p
      `quick`, `unspecified-low`, `unspecified-high`, `writing`): domain-specific
      operating guidance, use-when/do-not-use-when, recursion-deny posture, and a
      domain-appropriate output contract.
-2. **Add an intent-gate to primary prompts** (`build`, `plan`, `discipline`). Before
+2. **Add an intent-gate to primary prompts** (`build`, `plan`). Before
    tool use on an ambiguous request, the prompt must instruct: state the interpreted
    intent, then route to explain / investigate / implement / plan / ask exactly one
    blocking question. This must be a named, testable section.
@@ -561,7 +559,7 @@ named prompt-section modules, and golden tests covering every shipped + hidden p
 4. **Golden tests.** Add `insta` (or equivalent) golden snapshots for:
    - each **named prompt section** rendered in isolation, and
    - the **full composed prompt** for every shipped profile (`build`, `plan`,
-     `discipline`, `general`, `explore`, and all 8 categories) **and every hidden
+      `general`, `explore`, and all 8 categories) **and every hidden
      profile** (title generation, summary, compaction). Use a fixed `FakeClock`/fixed
      environment so snapshots are deterministic.
 5. **Per-profile required-content manifest test.** Add a test that asserts each profile
@@ -579,12 +577,12 @@ named prompt-section modules, and golden tests covering every shipped + hidden p
 
 ### 5.4 Acceptance criteria
 
-- [x] All 13 bodies are agent-specific; the required-content manifest test passes and
+- [x] All 12 bodies are agent-specific; the required-content manifest test passes and
   the "no two primary Operating Loops identical" assertion holds. **Verify:**
   `cargo test -p harness <prompt manifest test>`; deleting a seam reference from one
   body makes it fail (log the breaks-if line).
 - [x] Primary prompts contain a named intent-gate section. **Verify:** test asserts the
-  intent-gate section is present in `build`/`plan`/`discipline` composed prompts and
+  intent-gate section is present in `build`/`plan` composed prompts and
   absent-or-adapted appropriately elsewhere.
 - [x] Named prompt-section modules exist in `dynamic_prompt.rs`. **Verify:** golden
   snapshot or unit tests enumerate the prompt-section registry from source and assert
@@ -631,7 +629,7 @@ and tested before being advertised as shipped. The disablement infra already exi
    the authoring quality template (purpose, use-when, do-not-use-when, execution policy,
    steps, tool usage, escalation/stop conditions, final checklist, advanced notes).
    - **`git-master`**: adapt the OMO content (mode detection: commit / rebase /
-     history-search; atomic-commit-by-default discipline; rebase and history workflows;
+      history-search; atomic-commit-by-default rigor; rebase and history workflows;
      quick reference). Remove brand terms. All git operations must be described as
      operator-confirmed where they are destructive, consistent with Harness permission
      posture.
