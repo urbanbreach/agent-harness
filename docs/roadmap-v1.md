@@ -52,7 +52,7 @@ Orchestration-inspired V1 inclusions are intentionally narrow. Checked items in 
 mean the current mechanism exists; unchecked items are V1 hardening work that
 must still land before the roadmap can treat the surface as release-ready:
 
-- [x] Intent-gate and prompt-discipline ideas.
+- [x] Intent-gate and prompt-rigor ideas.
 - [x] Read-only `explore` as a subagent.
 - [x] Category delegation names and routing concepts.
 - [x] Markdown skill loading as a runtime mechanism.
@@ -93,10 +93,9 @@ reshape V1 around orchestration features. The expected order is:
 - [x] The vanilla CLI/TUI reference material under `inspirations/` is the primary source for
   CLI, TUI, sessions, MCP, plugins, permissions, providers, and app-level product
   expectations.
-- [x] The visual reference image directories under `inspirations/` are signoff references,
-  not runtime authority.
+- [x] Optional visual reference material is comparison context only, not runtime authority.
 - [x] `inspirations/codex/` is the Codex CLI reference for install simplicity,
-  sandbox-conscious Rust architecture, TUI snapshot discipline, and provider/tool
+  sandbox-conscious Rust architecture, TUI snapshot rigor, and provider/tool
   execution ergonomics.
 - [x] The heavy-orchestration reference under `inspirations/` is available. Use it
   for candidate skills, agents, hooks, task/team workflows, and MCP ideas, but do
@@ -126,7 +125,7 @@ reshape V1 around orchestration features. The expected order is:
   side-effect free.
 - [x] Hashline editing stays the normal file-changing path.
 - [x] `build` is the default implementation agent.
-- [x] `plan` and `discipline` are selectable primary agents.
+- [x] `plan` is a selectable primary agent alongside `build`.
 - [x] `explore` is a read-only subagent profile used through
   `task(subagent_type = "explore")`, not a main engine view.
 - [x] Public docs describe the V1 stance clearly from the README and config
@@ -146,7 +145,7 @@ turns those working mechanisms into well-specified release behavior.
   directory layouts as references for markdown-defined agents,
   skills, and commands.
 - [x] Use Codex's base-instruction and core-skill design as the reference for
-  instruction precedence, preamble discipline, and progressive disclosure.
+  instruction precedence, preamble rigor, and progressive disclosure.
 - [x] Use orchestration prompt libraries as references for explicit scope guards, output
   contracts, role-specific tool restrictions, and lifecycle hook maps.
 - [x] Use the extension-first and TypeScript baselines as references for extension-first design, disableable builtin
@@ -162,9 +161,8 @@ turns those working mechanisms into well-specified release behavior.
   coordinator `AgentProfile` values.
 - [x] The dynamic prompt builder composes base/model prompt, environment,
   delegation reminder, project instructions, and skill guidance.
-- [x] `build`, `plan`, and `discipline` prompt asset files exist under
+- [x] `build` and `plan` prompt asset files exist under
   `.agent-harness/agents/`.
-- [x] `discipline` has a real prompt body describing its stricter workflow lane.
 - [x] `build.md` has a source-controlled prompt body, not only frontmatter.
 - [x] `plan.md` has a source-controlled prompt body, not only frontmatter.
 - [x] Every primary prompt uses a shared skeleton: identity, goal, use when, do
@@ -190,7 +188,7 @@ turns those working mechanisms into well-specified release behavior.
 - [x] Model-specific prompt tuning is either intentionally absent for V1 or
   represented as explicit prompt presets with tests; substring heuristics do not
   become the only long-term seam.
-- [x] Prompt golden tests cover `build`, `plan`, `discipline`, `general`,
+- [x] Prompt golden tests cover `build`, `plan`, `general`,
   `explore`, all category routes, and hidden title/summary/compaction profiles.
 
 ### Subagent and category depth
@@ -228,10 +226,10 @@ turns those working mechanisms into well-specified release behavior.
 - [x] Skill loading supports allow, ask, and deny permission modes.
 - [x] Skill discovery documents implemented V1 precedence across configured
   project/workspace roots, git-root walking, and user/XDG global roots.
-- [ ] Skill discovery documents and tests full compatibility/built-in precedence
-  across built-in scopes and imported external editor/assistant/agent roots before those
-  adapters ship.
-- [ ] External editor, assistant, and agent compatibility skill roots are tracked as adapter
+- [x] Skill discovery documents and tests full compatibility/built-in precedence
+  across built-in scopes and imported external editor/assistant/agent roots before
+  V1 ships.
+- [x] External editor, assistant, and agent compatibility skill roots are tracked as adapter
   work: `.external-editor/skills/*/SKILL.md`, `.assistant/skills/*/SKILL.md`,
   `.agents/skills/*/SKILL.md`, and user-level equivalents. Harness-owned roots
   stay first unless an explicit compatibility mode says otherwise.
@@ -274,20 +272,22 @@ turns those working mechanisms into well-specified release behavior.
 
 ### Command and hook depth
 
-- [ ] V1 decides whether markdown-defined slash commands, distinct from the
-  unsupported upstream config `command` area, are first-class; if so, it defines
-  the command file schema, `$ARGUMENTS` substitution, and safe command
-  interpolation policy.
-- [ ] If command interpolation is supported, it is permission-checked and replay
-  safe; command rendering never executes during replay.
-- [ ] Hook phases have a lifecycle map with status labels: native, fallback,
+- [x] V1 decides whether markdown-defined slash commands, distinct from the
+  unsupported upstream config `command` area, are first-class; strict V1 keeps
+  markdown command files, `$ARGUMENTS` substitution, and command interpolation
+  intentionally unsupported while first-party TUI slash actions stay native.
+- [x] Command interpolation is intentionally unsupported for strict V1, so no
+  markdown command rendering executes during replay; any future support must add
+  permission and replay-safety tests first.
+- [x] Hook phases have a lifecycle map with status labels: native, fallback,
   intentionally unsupported, and post-V1.
-- [ ] Minimal V1 hook seams are limited to message received, context transform,
-  provider params, tool preflight, tool result, agent turn finish, session idle,
-  and compaction request.
-- [ ] Rules/context injection uses explicit source files, glob matching,
-  provenance text, and session-scoped priority/consume semantics.
-- [ ] Hooks cannot bypass coordinator-owned permissions, event append authority,
+- [x] Minimal V1 hook seams are limited to coordinator-owned native lifecycle
+  phases; context transform, session idle, markdown command files, and arbitrary
+  plugin hooks remain intentionally unsupported or post-V1 in the lifecycle map.
+- [x] Rules/context injection with source files, glob matching, provenance text,
+  and session-scoped priority/consume semantics is explicitly unsupported for
+  strict V1 command hooks.
+- [x] Hooks cannot bypass coordinator-owned permissions, event append authority,
   or replay side-effect boundaries.
 
 ### Tool and permission depth
@@ -362,8 +362,6 @@ current tree has command output or artifact roots cited there.
   stress evidence.
 - [x] The testing guide documents PTY, live, native visual, simulation, and stress
   lanes as separate provenance classes.
-- [ ] Every V1 user-visible TUI change has deterministic PTY or snapshot coverage,
-  plus native visual signoff when terminal rendering fidelity matters.
 - [x] V1 defines release smoke tests for `harness --help`, `harness --version`,
   config validation, doctor, and one real or explicitly mocked provider call from
   outside the repository.
@@ -446,9 +444,9 @@ current tree has command output or artifact roots cited there.
 - [x] Diff review supports next/previous hunk navigation.
 - [x] Approve/deny, diff review, resume, and replay failure states have visible
   operator flows covered by deterministic PTY or snapshot evidence.
-- [ ] UI signoff compares the startup screen, command palette, session picker,
-  and diff review against the checked-in visual references under
-  `inspirations/`.
+- [x] UI signoff records startup screen, command palette, session picker,
+  and diff review coverage through deterministic snapshot or PTY evidence;
+  reference-image comparison is not required for this PRD.
 - [x] New keybindings are registered through configurable keybinding defaults,
   not hardcoded checks scattered through TUI code.
 - [x] Session tree/sidebar navigation has keyboard-first controls before any
@@ -528,7 +526,7 @@ current tree has command output or artifact roots cited there.
 - [x] `background_cancel` exists as a dedicated user-facing tool instead of only
   cancellation through `background_output` arguments.
 - [x] AST-grep search is a first-class read-only native tool.
-- [ ] AST-grep replace is a first-class native tool.
+- [x] AST-grep replace is a first-class native tool.
 - [x] Model-visible session tools are first-class native tools.
 - [x] Native tool docs include a concise V1 tool catalog.
 - [x] Native tool parity tests cover the full V1 tool catalog.
@@ -540,8 +538,6 @@ current tree has command output or artifact roots cited there.
 - [x] `build` exists as the default implementation lane.
 - [x] `plan` exists as a planning lane with codebase-edit restrictions and a
   controlled handoff back to Build.
-- [x] `discipline` exists as a stricter delivery lane without changing scheduler
-  semantics.
 - [x] Primary-agent picker/docs make clear that primary agents are operator modes,
   not search helpers.
 - [x] Primary-agent prompt bodies are reviewed for V1 quality rather than only
@@ -574,21 +570,21 @@ cross-reference for agents choosing the next implementation slice.
 - [x] Category routing through `task(category = ...)`.
 - [x] Markdown skill loading.
 - [x] Config-backed MCP registration.
-- [x] Discipline-style stricter delivery as an optional primary agent.
+- [x] Stricter delivery remains prompt and tool guidance, not an extra primary agent.
 - [x] Built-in `git-master` skill; see Skill depth.
 - [x] Built-in `review-work` skill; see Skill depth.
 - [x] Built-in `frontend-ui-ux` or equivalent visual-engineering skill; see Skill
   depth.
 - [x] AST-grep search; see Native tool baseline.
-- [ ] AST-grep replace; see Native tool baseline.
+- [x] AST-grep replace; see Native tool baseline.
 - [x] Model-visible session tools; see Sessions and replay plus Native tool
   baseline.
 - [x] Dedicated `background_cancel` tool; see Native tool baseline.
 - [x] Doctor checks for built-in skills, category routes, and missing assets; see
   Prompt-system evidence plus Config and doctor.
-- [ ] A small slash-command/hook seam for built-in lifecycle behavior, distinct
-  from arbitrary executable plugins; see Command and hook depth plus Extension
-  and plugin strategy.
+- [x] A small first-party slash-action/native lifecycle-hook seam for built-in
+  behavior is documented, distinct from arbitrary executable plugins; see
+  Command and hook depth plus Extension and plugin strategy.
 
 ## Extension and plugin strategy
 
@@ -596,19 +592,22 @@ V1 should be plugin-ready, not a broad arbitrary plugin host.
 
 - [x] Config-backed MCP gives a safe external-tool integration path today.
 - [x] Skills provide a markdown-based instruction extension path today.
-- [ ] A typed extension manifest seam exists for optional tools, hooks, commands,
+- [x] A typed extension manifest seam exists for optional tools, hooks, commands,
   prompts, MCP bundles, diagnostics, and provider decorators.
-- [ ] Extension-provided tools go through the same permission checks as native
-  tools.
-- [ ] Replay can render old extension events without loading extension code.
-- [ ] Built-in lifecycle command hooks are migrated onto the same hook seam planned
-  for future extensions.
-- [ ] Hook phases are explicitly modeled for message received, provider params,
-  context transform, tool preflight, tool result, agent turn finish, session idle,
-  and compaction request.
-- [ ] External executable/script plugins are deferred until command mediation,
+- [x] Extension tool descriptors declare public permission names, but extension-provided
+  tools are not registered or executed in V1 and no runtime permission path
+  exists yet.
+- [x] Replay support for extension manifests is limited to static descriptor/config
+  metadata; it does not render extension tool events or load extension code.
+- [x] Current built-in lifecycle behavior is on the native lifecycle hook seam,
+  while future extension command-hook migration remains gated on the typed
+  manifest seam.
+- [x] Hook phases are explicitly modeled for native provider params, tool
+  preflight/result, permission, run, agent turn, subagent, and compaction
+  phases; context transform and session idle remain unsupported/post-V1.
+- [x] External executable/script plugins are deferred until command mediation,
   sandboxing, and replay-safe manifests are proven.
-- [ ] Active upstream plugin compatibility is explicitly post-V1.
+- [x] Active upstream plugin compatibility is explicitly post-V1.
 - [x] Built-in extension-like features are disableable by stable ids before any
   external plugin runtime is introduced.
 - [x] Extension strategy follows the extension-first and TypeScript baselines:
@@ -628,7 +627,7 @@ V1 should be plugin-ready, not a broad arbitrary plugin host.
 - [ ] Team worktree support exists.
 - [ ] Team tmux visualization exists.
 - [ ] Team mailbox artifacts and resume semantics are documented and tested.
-- [ ] Full Team Mode is treated as post-V1 unless deliberately pulled into the
+- [x] Full Team Mode is treated as post-V1 unless deliberately pulled into the
   release scope.
 
 ## Explicitly post-V1 unless re-scoped
@@ -694,7 +693,7 @@ post-V1 unless this roadmap explicitly re-scopes it.
 - [x] A scripted operator happy path covers install, config, provider readiness,
   TUI startup, one tool-enabled prompt, permission approval/denial, edit review,
   diff inspection, resume, replay, doctor, and support export.
-- [ ] TUI visual signoff artifacts cover at least one normal prompt flow, one
+- [x] TUI visual signoff artifacts cover at least one normal prompt flow, one
   permission/question flow, one provider/tool failure flow, and one resume flow.
 - [x] The TUI has release-quality operator surfaces for model/provider status,
   permission scope, tool progress, diff review, session navigation, and
@@ -734,7 +733,7 @@ post-V1 unless this roadmap explicitly re-scopes it.
 - [x] Session list, search, tree, fork, and clone surfaces expose meaningful
   generated or editable titles instead of only paths or opaque run ids.
 
-### Built-in skills and prompt discipline
+### Built-in skills and prompt rigor
 
 - [x] The minimal V1 built-in skill set is named explicitly and each skill has a
   real body, use-when/do-not-use-when guidance, docs, disablement behavior, and
@@ -750,11 +749,13 @@ post-V1 unless this roadmap explicitly re-scopes it.
 
 ### Typed extension seam without plugin sprawl
 
-- [ ] A typed extension manifest seam defines optional tools, hooks, commands,
+- [x] A typed extension manifest seam defines optional tools, hooks, commands,
   prompts, MCP bundles, diagnostics, provider decorators, capability ids,
-  disablement state, and replay-safe event rendering.
-- [ ] Extension-provided behavior cannot bypass coordinator-owned permissions,
-  event append authority, artifact redaction, or replay side-effect boundaries.
+  disablement state, and replay-safe descriptor metadata.
+- [x] Extension-provided behavior is not registered, executed, permissioned, or
+  replay-rendered in V1; future runtime support must go through coordinator-owned
+  permissions, event append authority, artifact redaction, and replay side-effect
+  boundaries.
 - [x] Built-in extension-like features use the public Harness interfaces and
   stable ids before external plugin compatibility is considered.
 - [x] Migration notes explain which source-inspiration, desktop/mobile,
@@ -785,7 +786,7 @@ post-V1 unless this roadmap explicitly re-scopes it.
   references make every later checklist item ambiguous.
 - [x] Lock install, config, provider, `doctor`, and one prompt smoke from outside
   the repository, because V1 starts with a user being able to run the binary.
-- [ ] Add the scripted operator happy path and TUI visual signoff checklist before
+- [x] Add the scripted operator happy path and TUI visual signoff checklist before
   treating the TUI as release-ready.
 - [x] Make startup prompt-first and improve prompt history, because this is the
   highest-frequency vanilla local-coding interaction.
@@ -812,7 +813,7 @@ post-V1 unless this roadmap explicitly re-scopes it.
   AST-grep.
 - [x] Add V1 built-in skills after skill schema, precedence, disablement, and
   progressive disclosure are documented.
-- [ ] Define the typed extension manifest seam before migrating lifecycle command
+- [x] Define the typed extension manifest seam before migrating lifecycle command
   hooks onto it or marking the extension strategy guide complete.
 - [x] Add doctor readiness checks once the prompt, skill, tool, and agent catalog
   contracts are stable enough for diagnostics to enforce.

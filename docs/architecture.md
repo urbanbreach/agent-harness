@@ -51,12 +51,12 @@ Reference prompt-system behavior is adopted only as user-observable Harness beha
 
 | Reference pattern | Harness seam | V1 status |
 |---|---|---|
-| Intent-gate before tool use | `crates/harness/src/dynamic_prompt.rs` registered `intent_gate` fixture section plus primary `.agent-harness/agents/{build,plan,discipline}.md` `## Intent Gate` sections | Shipped through primary prompt assets and covered by prompt asset tests |
+| Intent-gate before tool use | `crates/harness/src/dynamic_prompt.rs` registered `intent_gate` fixture section plus primary `.agent-harness/agents/{build,plan}.md` `## Intent Gate` sections | Shipped through primary prompt assets and covered by prompt asset tests |
 | Structured delegation reminder | `crates/harness/src/dynamic_prompt.rs` registered `delegation_reminder` section, `docs/agents-and-subagents.md`, and the `task` native tool contract | Shipped as V1 guidance; stricter fixture work remains tracked in WS9 |
 | Category-specific routing and prompt appends | `harness-core::agent_catalog`, `configs/harness.example.jsonc` category `model_profile` fallback metadata, and `.agent-harness/agents/{visual-engineering,artistry,ultrabrain,deep,quick,unspecified-low,unspecified-high,writing}.md` | Shipped through ordinary non-primary profiles with local GPT-family primary targets plus fallback metadata |
 | Markdown-defined skills with progressive disclosure | `harness-tools::skill_catalog`, `.agent-harness/skills/*/SKILL.md`, and `docs/starter-skills.md` | Shipped for the V1 built-in skill set |
-| Disableable built-in capabilities | `skills.disabled` config shape, `SkillCatalogStatus::Disabled`, doctor skill catalog metadata, and `docs/extension-strategy.md` | Shipped for skills; broader typed capability manifest is final-slice/post-V1 |
-| Command/hook lifecycle maps | `docs/extension-strategy.md` command/hook seam | Explicit final-slice/post-V1 deferral |
+| Disableable built-in capabilities | `skills.disabled` config shape, `SkillCatalogStatus::Disabled`, doctor skill catalog metadata, `harness-core::extension_manifest`, `configs/extension-manifest.v1.schema.json`, and `docs/extension-strategy.md` | Skills ship as runtime capabilities; typed extension manifests ship as descriptor-only metadata with runtime hosting post-V1 |
+| Command/hook lifecycle maps | `docs/extension-strategy.md` command/hook seam | Native lifecycle hooks ship; markdown command files and extension command-hook execution remain unsupported/post-V1 |
 
 ### harness-providers (library)
 
@@ -77,6 +77,7 @@ Built-in tool implementations:
 - `background_cancel` - Explicit coordinator-owned cancellation wrapper for background child requests
 - `session_list` / `session_read` / `session_search` / `session_info` - Replay-derived model-visible session inspection tools
 - `ast_grep_search` - Read-only ast-grep CLI structural search adapter with workspace path safety, hard caps, and artifact spill
+- `ast_grep_replace` - Edit-permission structural rewrite adapter that defaults to dry-run, uses ast-grep JSON rewrite output only, and applies through Harness path checks, atomic writes, and diff artifacts
 - `team_create` / `team_status` / `team_send_message` / `team_task_*` / `team_shutdown_*` / `team_delete` - Event-sourced team coordination workflows
 - `team_list` - Narrow primitive projection-reader for discovering event-sourced team runs without Team Mode expansion
 - `webfetch` / `websearch` / `codesearch` / `lsp` - Network and language-intelligence workflows
@@ -97,9 +98,11 @@ mutation/read-only classification, replay behavior, artifact behavior, and docs
 status. Doctor and support export can read this metadata without starting MCP
 servers or making network calls.
 
-`ast_grep_replace` is intentionally absent in V1 until it can share the same
-edit-permission, dry-run/apply, overlap, diff/artifact, and workspace-safety
-guarantees as the existing edit path.
+`ast_grep_replace` is present only as an edit-permission native tool. The
+ast-grep process supplies JSON rewrite ranges but never mutates the workspace
+directly; Harness validates byte ranges against current file contents, rejects
+overlap/truncated apply, writes diff artifacts, and performs atomic workspace
+writes through the same edit authority boundary.
 
 ### harness-tui (library)
 
