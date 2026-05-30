@@ -181,6 +181,70 @@ fn docs_do_not_reference_broken_local_markdown_targets_or_deleted_prd_artifacts(
     }
 }
 
+#[test]
+fn readiness_closeout_docs_are_current_and_back_roadmap_claims() {
+    // arrange
+    let root = repo_root();
+    let roadmap = read_doc("docs/roadmap-v1.md");
+    let budgets = read_doc("docs/budgets.md");
+    let progress = read_doc("docs/v1-release-readiness-slice-progress.md");
+    let claim_matrix = read_doc("docs/claim-evidence-matrix.md");
+    let prd_path = root.join("docs/v1-release-readiness-slice-prd.md");
+    let progress_path = root.join("docs/v1-release-readiness-slice-progress.md");
+
+    // act
+    let active_references = [("roadmap", roadmap.as_str()), ("budgets", budgets.as_str())];
+
+    // assert: active references point at restored, current files.
+    assert!(prd_path.exists(), "readiness PRD must exist");
+    assert!(progress_path.exists(), "readiness progress log must exist");
+    for (doc_name, doc) in active_references {
+        assert!(
+            doc.contains("docs/v1-release-readiness-slice-progress.md"),
+            "{doc_name} must reference the restored readiness progress log"
+        );
+    }
+
+    // assert: the current strict-V1 closeout has a live progress/evidence row.
+    for anchor in [
+        "Evidence 2026-05-30 strict V1 roadmap closeout start",
+        "roadmap-classification-baseline.md",
+        "Baseline captured 56 unchecked roadmap items",
+        "Checked release-blocker rows remain evidence-backed",
+    ] {
+        assert!(
+            progress.contains(anchor),
+            "readiness progress log missing current closeout anchor `{anchor}`"
+        );
+    }
+    assert!(
+        claim_matrix.contains("Strict V1 roadmap closeout readiness evidence is restored"),
+        "claim matrix must include the restored readiness closeout evidence row"
+    );
+
+    // assert: every checked V1 release-blocker row has progress or matrix evidence text.
+    let blocker_section = roadmap
+        .split("## V1 release blockers\n")
+        .nth(1)
+        .expect("roadmap has V1 release blockers section")
+        .split("\n## ")
+        .next()
+        .expect("release blockers section body");
+    let evidence = format!("{progress}\n{claim_matrix}").replace('`', "");
+    for checked in checked_markdown_items(blocker_section) {
+        let evidence_anchor = checked
+            .replace("`", "")
+            .split_whitespace()
+            .take(8)
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(
+            evidence.contains(&evidence_anchor),
+            "checked release-blocker row lacks progress/matrix evidence anchor `{evidence_anchor}` from `{checked}`"
+        );
+    }
+}
+
 fn markdown_files(dir: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     for entry in
@@ -194,6 +258,18 @@ fn markdown_files(dir: &Path) -> Vec<PathBuf> {
         }
     }
     files
+}
+
+fn checked_markdown_items(section: &str) -> Vec<String> {
+    section
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            trimmed
+                .strip_prefix("- [x] ")
+                .map(|item| item.trim().to_string())
+        })
+        .collect()
 }
 
 fn local_markdown_targets(body: &str) -> Vec<String> {

@@ -12,7 +12,7 @@ mod common;
 
 use common::repo_root;
 
-const V1_PROMPT_PROFILES: &str = "build plan discipline general explore visual-engineering artistry ultrabrain deep quick unspecified-low unspecified-high writing";
+const V1_PROMPT_PROFILES: &str = "build plan general explore visual-engineering artistry ultrabrain deep quick unspecified-low unspecified-high writing";
 
 fn documented_table_keys(doc: &str, heading: &str) -> BTreeSet<String> {
     let mut section = doc
@@ -274,6 +274,14 @@ fn config_docs_capture_v1_skill_contract_and_authoring_guide() {
         "`body_loaded: false`",
         "Missing, denied, disabled,\nmalformed, and symlink-unsafe skills fail before activation or child spawn",
         "They never grant runtime tools",
+        "External editor, assistant, and agent compatibility roots are adapter work",
+        "does not search `.external-editor/skills`,\n`.assistant/skills`, `.agents/skills`",
+        "explicitly lists those paths in `skills.project_roots` or `skills.global_roots`",
+        "V1 root precedence is deterministic",
+        "At each ancestor, Harness-owned roots (`.agent-harness/skills`, then\n   `.harness/skills`) are searched before other non-compatibility project roots",
+        "When they are listed, they are imported after Harness-owned and other\nnon-compatibility roots",
+        "cannot shadow\n`.agent-harness/skills/foo/SKILL.md`, `.harness/skills/foo/SKILL.md`",
+        "duplicate compatibility roots resolve\nin their configured order",
     ] {
         assert!(
             doc.contains(expected),
@@ -289,6 +297,10 @@ fn config_docs_capture_v1_skill_contract_and_authoring_guide() {
         "execution policy",
         "final checklist",
         "it never grants tools",
+        "Compatibility roots from other editors or assistants",
+        "ignored unless an operator explicitly adds them to `skills.project_roots` or\n`skills.global_roots`",
+        "compatibility roots are searched\nafter Harness-owned and other non-compatibility project/global roots",
+        "project compatibility roots win before global compatibility roots",
     ] {
         assert!(
             starter.contains(expected),
@@ -567,6 +579,11 @@ fn readme_release_claim_phrases_have_claim_evidence_rows() {
             "`{phrase}` status must be PASS or LIMITATION"
         );
     }
+}
+
+mod extension_strategy_test {
+    use super::*;
+    include!("config_docs_reference/extension_strategy_test.rs");
 }
 
 mod v1_docs_surface_test {

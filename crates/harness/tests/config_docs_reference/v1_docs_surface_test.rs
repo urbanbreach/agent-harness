@@ -94,8 +94,8 @@ fn reference_prompt_patterns_map_to_harness_seams() {
         ("Structured delegation reminder", "delegation_reminder", "WS9"),
         ("Category-specific routing and prompt appends", "agent_catalog", "profiles"),
         ("Markdown-defined skills with progressive disclosure", "skill_catalog", "built-in skill"),
-        ("Disableable built-in capabilities", "SkillCatalogStatus::Disabled", "final-slice/post-V1"),
-        ("Command/hook lifecycle maps", "extension-strategy.md", "final-slice/post-V1"),
+        ("Disableable built-in capabilities", "SkillCatalogStatus::Disabled", "descriptor-only metadata"),
+        ("Command/hook lifecycle maps", "extension-strategy.md", "unsupported/post-V1"),
     ] {
         let row = rows
             .iter()
@@ -244,7 +244,8 @@ fn thin_v1_docs_cover_their_source_surfaces() {
         "output cap",
         "blocked command",
         "ast_grep_search",
-        "ast_grep_replace is not shipped",
+        "ast_grep_replace",
+        "Defaults to dry-run",
     ] {
         assert!(
             native.contains(topic),
