@@ -166,7 +166,7 @@ fn replay_behavior(tool_id: &str, capability: ToolCapability) -> &'static str {
 fn artifact_behavior(tool_id: &str) -> &'static str {
     match tool_id {
         "read" | "glob" | "grep" | "session_read" | "session_search" | "session_info"
-        | "ast_grep_search" => "spills_large_output",
+        | "ast_grep_search" | "ast_grep_replace" => "spills_large_output",
         "edit" | "shell.run" | "bash" => "records_artifacts_when_large_or_applicable",
         _ => "summary_only",
     }
@@ -197,6 +197,7 @@ mod tests {
             "session_search",
             "session_info",
             "ast_grep_search",
+            "ast_grep_replace",
         ] {
             assert!(ids.contains(&expected), "missing catalog entry {expected}");
         }
@@ -214,6 +215,14 @@ mod tests {
             .expect("ast_grep_search");
         assert_eq!(ast_grep.permission_kind.as_deref(), Some("codesearch"));
         assert_eq!(ast_grep.mutation, "read_only");
+
+        let ast_grep_replace = catalog
+            .iter()
+            .find(|entry| entry.canonical_id == "ast_grep_replace")
+            .expect("ast_grep_replace");
+        assert_eq!(ast_grep_replace.permission_kind.as_deref(), Some("edit"));
+        assert_eq!(ast_grep_replace.mutation, "mutating");
+        assert_eq!(ast_grep_replace.artifact_behavior, "spills_large_output");
 
         let session_info = catalog
             .iter()

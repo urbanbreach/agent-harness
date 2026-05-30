@@ -16,6 +16,7 @@ fn coordinator_registry_exposes_single_native_tool_surface() {
 
     for tool_id in [
         "bash",
+        "ast_grep_replace",
         "ast_grep_search",
         "background_cancel",
         "background_output",
@@ -176,15 +177,18 @@ fn native_tool_catalog_rows_include_permission_alias_and_replay_metadata() {
 }
 
 #[test]
-fn bash_safety_guidance_and_ast_grep_replace_deferral_match_runtime_sources() {
+fn bash_safety_guidance_and_ast_grep_replace_catalog_match_runtime_sources() {
     // arrange
     // act
     let registry = coordinator_registry(ShellAllowlist::default());
     // assert
     assert!(registry.get("ast_grep_search").is_some());
-    assert!(
-        registry.get("ast_grep_replace").is_none(),
-        "ast_grep_replace must remain unregistered until the deferred edit-safety gates land"
+    let replace = registry
+        .get("ast_grep_replace")
+        .expect("ast_grep_replace should be registered after edit-safety gates");
+    assert_eq!(
+        replace.capability(),
+        harness_core::tool::ToolCapability::EditFs
     );
 
     let doc = std::fs::read_to_string(repo_path("docs/native-tool-catalog.md"))
@@ -222,10 +226,11 @@ fn bash_safety_guidance_and_ast_grep_replace_deferral_match_runtime_sources() {
         }
     }
 
-    assert!(doc.contains("`ast_grep_replace is not shipped`"));
-    assert!(!documented_tool_ids(&doc).contains("ast_grep_replace"));
-    assert!(doctor.contains("\"ast_grep_replace\": \"deferred_conditional_stretch\""));
-    assert!(claims.contains("`ast_grep_search` ships and `ast_grep_replace` is not shipped"));
+    assert!(doc.contains("`ast_grep_replace`"));
+    assert!(doc.contains("Defaults to dry-run"));
+    assert!(documented_tool_ids(&doc).contains("ast_grep_replace"));
+    assert!(doctor.contains("\"ast_grep_replace\": \"shipped_edit_safe\""));
+    assert!(claims.contains("`ast_grep_replace` ships behind edit permission"));
 }
 
 fn repo_path(relative: &str) -> std::path::PathBuf {

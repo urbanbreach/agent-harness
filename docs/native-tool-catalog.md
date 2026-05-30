@@ -6,7 +6,8 @@ Tool execution still goes through the coordinator permission path before the too
 
 | Tool id | Permission | Mutation | Replay / artifact behavior | Notes |
 |---|---|---|---|---|
-| `ast_grep_search` | `codesearch` | read-only | Capped JSON; large results spill to artifacts | Built-in ast-grep CLI structural search adapter. `ast_grep_replace` is deferred conditional/stretch. |
+| `ast_grep_search` | `codesearch` | read-only | Capped JSON; large results spill to artifacts | Built-in ast-grep CLI structural search adapter. |
+| `ast_grep_replace` | `edit` | workspace mutation | Dry-run/apply JSON plus diff artifacts; large JSON spills to artifacts | Built-in ast-grep rewrite adapter. Defaults to dry-run; the ast-grep process runs in JSON rewrite mode and never mutates the workspace directly; apply mode writes through Harness workspace path checks and atomic edit writes. |
 | `background_cancel` | `task` | control-plane mutation | Coordinator cancellation events; output is replay-derived | Canonical explicit cancellation wrapper for background child requests. Alias: `background_output(cancel=true)`. |
 | `background_output` | `task` | read/cancel compatibility | Replay-derived background status/result; `cancel: true` remains compatibility | Use for status/result retrieval; cancellation next-actions prefer `background_cancel`. Aliases: `task_id`, `session_id`. |
 | `bash` | `bash` | host command | Captured output and artifacts when large | Shell allowlist and permission policy apply before execution. |
@@ -54,10 +55,11 @@ Tool execution still goes through the coordinator permission path before the too
 - `session_list`, `session_read`, `session_search`, and `session_info` are model-visible, redacted by default, capped, and side-effect free. They read existing session directories and event logs; they do not shell out to `harness sessions`, run providers, run tools, start MCP servers, or make network calls.
 - `background_cancel` is the canonical cancellation id for a background child request. `background_output(cancel=true)` remains documented compatibility.
 - `team_list` is intentionally only a primitive projection reader. Full Team Mode, worktrees, tmux visualization, mailbox artifacts, declared registries, and file claims remain out of V1 scope.
-- `ast_grep_search` is read-only and maps to `codesearch`. It invokes the local `ast-grep` CLI in read-only mode with strict args, workspace path checks, explicit/safely inferred language, hard result/context/per-match caps, and artifact spill. `ast_grep_replace` is not shipped in this slice because the edit-safety/dry-run/apply/hashline parity gates are not implemented.
+- `ast_grep_search` is read-only and maps to `codesearch`. It invokes the local `ast-grep` CLI in read-only mode with strict args, workspace path checks, explicit/safely inferred language, hard result/context/per-match caps, and artifact spill.
+- `ast_grep_replace` maps to `edit` and defaults to dry-run. It invokes the local `ast-grep` CLI only for JSON rewrite planning, rejects traversal/unknown/unsupported args, refuses partial apply when results are truncated, validates adapter byte ranges against current file contents, and applies only through Harness workspace path checks, atomic writes, and diff artifacts.
 
 ## Bash safety
 
 The `bash` wrapper default timeout is 120000 ms. The output cap is 2000 lines or 51200 bytes before full output is written to artifacts. The blocked command policy rejects shell search/read/edit shortcuts such as `find`, `grep`/`rg`, `cat`, `head`, `tail`, `sed`, and `awk`; use `glob`, `grep`, `list`, `read`, or `edit` instead. This guidance mirrors `shell_run.rs` and `shell_safety.rs`.
 
-`ast_grep_replace is not shipped` in this slice; only `ast_grep_search` is advertised as a native structural search tool.
+`ast_grep_replace` is advertised only as an edit-permission structural rewrite tool; use dry-run first and inspect the diff artifact before apply mode.
