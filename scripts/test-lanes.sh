@@ -24,7 +24,7 @@ Usage: scripts/test-lanes.sh <mode> [options]
 Modes:
   fast                 Parallel deterministic T1-T3 developer lane via cargo nextest profile ci.
   integration          Partitioned deterministic T1-T3 nextest run for CI fan-out checks.
-  quality-gates        Static test-suite gates for sleeps, globals, real deps, focus, taxonomy, and cassette secrets.
+  quality-gates        Static test-suite gates for sleeps, globals, real/live deps, focus, taxonomy, and cassette secrets.
   perf                 T4 performance-budget lane via cargo nextest profile perf.
   coverage             Coverage ratchet lane via scripts/coverage-ratchet.sh.
   simulation           Offline deterministic simulation lane with matrix validation, artifacts, same-seed comparison, and secret scan.
@@ -61,7 +61,7 @@ Required environment:
   signoff-native requires:
     HARNESS_NATIVE_VISUAL=1
     DISPLAY=<display>
-  signoff-binary sets HARNESS_BINARY_SMOKE=1 for the ignored binary smoke.
+  signoff-binary sets HARNESS_BINARY_SMOKE=1 and HARNESS_BINARY_SMOKE_ARTIFACT_DIR for the ignored binary smoke.
   all-deterministic PTY support requires:
     cargo on PATH
     crates/harness-testkit/tests/pty_e2e.rs
@@ -488,7 +488,11 @@ run_quality_gates() {
 }
 
 run_perf() {
-  run_stage perf nextest_perf "$repo_root" cargo nextest run --profile perf --workspace --all-features || true
+  local perf_artifacts_dir
+  perf_artifacts_dir="$(stage_dir_for perf nextest_perf)/artifacts"
+  mkdir -p "$perf_artifacts_dir"
+  run_stage perf nextest_perf "$repo_root" env HARNESS_PERF_ARTIFACT_DIR="$perf_artifacts_dir" cargo nextest run --profile perf --workspace --all-features || true
+  run_stage perf perf_artifact_freshness "$repo_root" python3 scripts/check-perf-artifacts.py --artifact-dir "$perf_artifacts_dir" || true
 }
 
 run_coverage() {
@@ -541,12 +545,19 @@ run_simulation() {
 }
 
 run_signoff_binary() {
-  run_stage signoff-binary harness_binary_smoke "$repo_root" env HARNESS_BINARY_SMOKE=1 cargo test -p harness --test binary_smoke -- --ignored --exact || true
+  local binary_smoke_artifacts_dir
+  binary_smoke_artifacts_dir="$(stage_dir_for signoff-binary harness_binary_smoke)/artifacts"
+  mkdir -p "$binary_smoke_artifacts_dir"
+  run_stage signoff-binary harness_binary_smoke "$repo_root" env HARNESS_BINARY_SMOKE=1 HARNESS_BINARY_SMOKE_ARTIFACT_DIR="$binary_smoke_artifacts_dir" cargo test -p harness --test binary_smoke -- --ignored --exact || true
 }
 
 run_signoff_pty() {
   run_stage signoff-pty harness_testkit_pty_e2e "$repo_root" env RUST_TEST_THREADS=1 cargo test -p harness-testkit --test pty_e2e || true
   run_stage signoff-pty harness_tui_pty_e2e "$repo_root" env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo test -p harness-tui --test pty_e2e || true
+  local tui_happy_path_artifacts_dir
+  tui_happy_path_artifacts_dir="$(stage_dir_for signoff-pty harness_tui_happy_path_pty)/artifacts"
+  mkdir -p "$tui_happy_path_artifacts_dir"
+  run_stage signoff-pty harness_tui_happy_path_pty "$repo_root" env RUST_TEST_THREADS=1 HARNESS_TUI_HAPPY_PATH_ARTIFACT_DIR="$tui_happy_path_artifacts_dir" cargo test -p harness --test pty_happy_path_recorded -- --ignored --exact scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit || true
 }
 
 run_signoff_live() {

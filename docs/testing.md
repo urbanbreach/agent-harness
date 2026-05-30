@@ -111,6 +111,9 @@ scripts/test-lanes.sh quality-gates
 - `python3 scripts/check-test-suite-gates.py`
 - `python3 scripts/check-forbidden-branding.py`
 
+The static suite fails deterministic tests that depend on live-provider environment such as
+`HARNESS_LIVE_PROXY`; live provider coverage must stay in ignored/env-gated signoff lanes.
+
 ## Perf and coverage lanes
 
 T4 performance budgets run through the perf nextest profile:
@@ -120,8 +123,13 @@ scripts/test-lanes.sh perf
 cargo nextest run --profile perf --workspace --all-features
 ```
 
-The current budget owner is `crates/harness-core/tests/perf_test.rs`, which asserts the resume-plan
-projection stays under its measured wall-clock budget for a fixed large event log.
+The current budget owners are `crates/harness-core/tests/perf_test.rs`, which asserts the resume-plan
+projection stays under its measured wall-clock budget for a fixed large event log, and
+`crates/harness/tests/perf_sessions_surface_test.rs`, which writes `large-session-surfaces.json`
+under the perf stage artifact directory. The large-session artifact records corpus size,
+`sessions list`, `sessions reopen --json`, and `session_search` timings plus provenance.
+After nextest, the lane runs `scripts/check-perf-artifacts.py` in a `perf_artifact_freshness`
+stage so missing, stale, or provenance-mismatched perf artifacts fail closed.
 
 Coverage ratchet evidence is produced with:
 
@@ -253,12 +261,14 @@ nextest profile. Run it only when validating the compiled `main.rs` wiring:
 scripts/test-lanes.sh signoff-binary
 ```
 
-`signoff-binary` sets `HARNESS_BINARY_SMOKE=1` and runs the ignored
+`signoff-binary` sets `HARNESS_BINARY_SMOKE=1` plus `HARNESS_BINARY_SMOKE_ARTIFACT_DIR` and runs the ignored
 `cargo test -p harness --test binary_smoke -- --ignored --exact` stage through the canonical
 artifact-recording lane runner. The smoke runs `harness --help`, `harness --version`, outside-repository
 `harness config validate`, text/JSON `harness doctor`, and a deterministic `harness prompt --mock`
-first prompt against a copied canonical config through `CARGO_BIN_EXE_harness`; in-process CLI tests
-remain the default proof for command behavior.
+first prompt against a copied canonical config through `CARGO_BIN_EXE_harness`. It also records a
+PTY-backed `tui --mock --exit-on-finish` startup and a deterministic `run --scenario golden_path`
+tool path with event artifacts under the smoke artifact directory; in-process CLI tests remain the
+default proof for command behavior.
 
 ## Native visual lane
 

@@ -22,6 +22,7 @@ GATES = (
     "no-sleeps",
     "no-global-state",
     "no-real-world-deps",
+    "live-provider-env",
     "file-focus",
     "cassette-secrets",
     "orphan-snapshots",
@@ -88,6 +89,7 @@ TEST_ATTRIBUTE = re.compile(r"\s*#\[(?:tokio::)?test(?:\([^]]*\))?\]")
 TEST_FUNCTION = re.compile(r"(?:async\s+)?fn\s+([A-Za-z0-9_]+)\s*\(")
 INSTA_ASSERTION = re.compile(r"\binsta::assert_[A-Za-z0-9_]*snapshot!\s*\(")
 REQUIRED_SECTION_MARKERS = ("// arrange", "// act", "// assert")
+LIVE_PROVIDER_ENV = re.compile(r"HARNESS_LIVE_PROXY(?:_CONFIG|_PROVIDER|_MODEL)?")
 
 T5_PATH_PARTS = (
     "crates/harness-testkit/src/bin/native_visual_helper.rs",
@@ -102,6 +104,7 @@ T5_PATH_PARTS = (
     "crates/harness-testkit/tests/support/native_visual_e2e_impl.rs",
     "crates/harness-testkit/tests/support/pty_",
     "crates/harness/tests/binary_smoke.rs",
+    "crates/harness/tests/pty_happy_path_recorded.rs",
     "crates/harness-tui/tests/pty_e2e.rs",
     "crates/harness-tui/tests/support/pty_e2e_impl.rs",
     "crates/harness-tui/tests/support/visual_renderer.rs",
@@ -313,6 +316,39 @@ def iter_test_function_bodies(root: Path) -> Iterable[tuple[str, int, str, str]]
             yield relative, cursor + 1, match.group(1), "\n".join(body)
 
 
+def iter_test_function_blocks(root: Path) -> Iterable[tuple[str, int, str, str]]:
+    for path in rust_files(root):
+        relative = rel(path, root)
+        if is_t5_path(relative) or "_perf" in path.stem:
+            continue
+        if not is_test_code(path, root):
+            continue
+
+        lines = path.read_text(errors="ignore").splitlines()
+        for index, line in enumerate(lines):
+            if not TEST_ATTRIBUTE.match(line):
+                continue
+            cursor = index + 1
+            while cursor < len(lines):
+                candidate = lines[cursor].strip()
+                if candidate and not candidate.startswith("#"):
+                    break
+                cursor += 1
+            if cursor >= len(lines):
+                continue
+            match = TEST_FUNCTION.search(lines[cursor])
+            if not match:
+                continue
+            brace_depth = 0
+            block: list[str] = lines[index:cursor]
+            for body_index in range(cursor, len(lines)):
+                block.append(lines[body_index])
+                brace_depth += lines[body_index].count("{") - lines[body_index].count("}")
+                if brace_depth <= 0 and "{" in "\n".join(block):
+                    break
+            yield relative, index + 1, match.group(1), "\n".join(block)
+
+
 def conventions_key(relative: str, name: str) -> str:
     return f"{relative}::{name}"
 
@@ -380,6 +416,23 @@ def scan_conventions(root: Path) -> list[Violation]:
                 f"stale conventions baseline entry no longer matches current debt: {stale}",
             )
         )
+    return violations
+
+
+def scan_live_provider_env(root: Path) -> list[Violation]:
+    violations: list[Violation] = []
+    for relative, line_number, _name, block in iter_test_function_blocks(root):
+        if "#[ignore" in block:
+            continue
+        if LIVE_PROVIDER_ENV.search(block):
+            violations.append(
+                Violation(
+                    "live-provider-env",
+                    relative,
+                    line_number,
+                    "deterministic tests must not require HARNESS_LIVE_PROXY live provider env",
+                )
+            )
     return violations
 
 
@@ -617,6 +670,8 @@ def run_gates(root: Path, gates: Iterable[str], max_lines: int, t5_max_lines: in
     for gate in gates:
         if gate in PATTERNS:
             violations.extend(scan_pattern_gate(root, gate))
+        elif gate == "live-provider-env":
+            violations.extend(scan_live_provider_env(root))
         elif gate == "file-focus":
             violations.extend(scan_file_focus(root, max_lines))
         elif gate == "cassette-secrets":
@@ -667,6 +722,9 @@ def self_test() -> int:
         _ = (test_dir / "subprocess.rs").write_text(
             "use std::process::Command;\n#[test]\nfn p() { let _ = Command::new(\"echo\"); }\n"
         )
+        _ = (test_dir / "live_env.rs").write_text(
+            "#[test]\nfn live_env() { let _ = std::env::var(\"HARNESS_LIVE_PROXY\"); }\n"
+        )
         _ = (test_dir / "aliases_test.rs").write_text(
             "".join(
                 [
@@ -706,7 +764,7 @@ def self_test() -> int:
         )
         violations = run_gates(root, GATES, 600, 1)
         gates = {violation.gate for violation in violations}
-        expected = {"no-sleeps", "no-global-state", "no-real-world-deps", "file-focus", "cassette-secrets", "orphan-snapshots", "taxonomy", "test-names", "path-isolation", "t5-line-budget", "conventions"}
+        expected = {"no-sleeps", "no-global-state", "no-real-world-deps", "live-provider-env", "file-focus", "cassette-secrets", "orphan-snapshots", "taxonomy", "test-names", "path-isolation", "t5-line-budget", "conventions"}
         missing = expected - gates
         if missing:
             print(f"self-test missing gates: {sorted(missing)}", file=sys.stderr)

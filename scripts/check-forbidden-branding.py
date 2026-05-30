@@ -64,7 +64,6 @@ ALLOWED_MATCH_LINES = {
         413,
         414,
     },
-    Path("docs/omo-parity-spec.md"): {96, 109, 118, 553, 559, 562, 585, 670, 756, 845, 1056},
     Path("docs/test-suite-prd.md"): {7, 139, 154, 157, 427, 433, 456, 487, 648, 871, 873, 874},
 }
 ALLOWED_MATCH_TEXT = {

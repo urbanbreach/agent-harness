@@ -97,18 +97,17 @@
         "event_kind_counts": {
           "agent_spawned": 2,
           "artifact_written": 1,
-          "assistant_message_finished": 1,
+          "assistant_message_finished": 2,
           "edit_applied": 1,
           "edit_proposed": 1,
           "permission_requested": 1,
           "permission_resolved": 1,
           "provider_request_finished": 2,
           "provider_request_started": 2,
-          "provider_stream_delta": 1,
+          "provider_stream_delta": 2,
           "run_finished": 1,
           "run_started": 1,
-          "task_cancelled": 1,
-          "task_completed": 2,
+          "task_completed": 3,
           "task_scheduled": 3,
           "tool_call_finished": 1,
           "tool_call_requested": 1,
@@ -139,7 +138,7 @@
           "artifact_count": 1,
           "pending_permissions": 0,
           "tasks_in_flight": 0,
-          "total_events": 24
+          "total_events": 26
         },
         "tool_artifacts": [
           {
