@@ -45,6 +45,19 @@ Interactive agent runtime settings still come from structured config, but prompt
 
 This keeps config focused on structured behavior while allowing the built-in agent prompts to adapt to model, workspace, project-instruction, and skill context.
 
+### Prompt reference seam map
+
+Reference prompt-system behavior is adopted only as user-observable Harness behavior, not by copying source architecture, package layout, or brand-specific terminology. Each adopted pattern maps to a concrete Harness seam or an explicit deferred seam:
+
+| Reference pattern | Harness seam | V1 status |
+|---|---|---|
+| Intent-gate before tool use | `crates/harness/src/dynamic_prompt.rs` registered `intent_gate` fixture section plus primary `.agent-harness/agents/{build,plan,discipline}.md` `## Intent Gate` sections | Shipped through primary prompt assets and covered by prompt asset tests |
+| Structured delegation reminder | `crates/harness/src/dynamic_prompt.rs` registered `delegation_reminder` section, `docs/agents-and-subagents.md`, and the `task` native tool contract | Shipped as V1 guidance; stricter fixture work remains tracked in WS9 |
+| Category-specific routing and prompt appends | `harness-core::agent_catalog`, `configs/harness.example.jsonc` category `model_profile` fallback metadata, and `.agent-harness/agents/{visual-engineering,artistry,ultrabrain,deep,quick,unspecified-low,unspecified-high,writing}.md` | Shipped through ordinary non-primary profiles with local GPT-family primary targets plus fallback metadata |
+| Markdown-defined skills with progressive disclosure | `harness-tools::skill_catalog`, `.agent-harness/skills/*/SKILL.md`, and `docs/starter-skills.md` | Shipped for the V1 built-in skill set |
+| Disableable built-in capabilities | `skills.disabled` config shape, `SkillCatalogStatus::Disabled`, doctor skill catalog metadata, and `docs/extension-strategy.md` | Shipped for skills; broader typed capability manifest is final-slice/post-V1 |
+| Command/hook lifecycle maps | `docs/extension-strategy.md` command/hook seam | Explicit final-slice/post-V1 deferral |
+
 ### harness-providers (library)
 
 Provider abstraction for LLM completions:
@@ -466,9 +479,38 @@ Interactive question state for `user.question` is stored separately under
 `state/questions/<tool_call_id>.json` inside the run root so headless flows and replay helpers can
 inspect the native prompt/answer handoff without scraping tool artifacts.
 
+## Event-store crash-tail recovery
+
+The JSONL event store is append-only, but opening a run with the writer lock held may repair an
+interrupted final write before replay starts. The scanner accepts all complete contiguous events,
+truncates one unterminated invalid final line back to the previous complete line boundary, and
+normalizes one complete final event that is missing its newline terminator by appending the newline.
+Already-terminated invalid JSON remains a hard parse error. Recovery never executes providers,
+tools, hooks, MCP servers, shell commands, or replay side effects; it only repairs the event log
+tail so prior complete events remain readable and the next append uses the expected sequence.
+
 ## Provider Context Compaction
 
 Provider-visible conversation state is compacted without rewriting `events.jsonl`.
+
+V1 compaction contract:
+
+- Threshold policy: proactive and pre-prompt checks use provider/model context-window metadata when
+  present; when metadata is absent, estimated trigger checks use
+  `runtime.compaction.fallback_input_tokens` (default `32768`). Overflow-style provider failures may
+  run one overflow retry when `runtime.compaction.auto_retry_overflow=true`.
+- Retained recent turns: `provider_context_keep_recent_tokens` keeps roughly one quarter of the
+  model input window, clamped between 2,000 and 8,000 tokens. Manual `/compact` preserves the latest
+  completed turn verbatim; overflow/failed-response compaction may use summary-only or split-tail
+  boundaries only when that safely reduces provider context.
+- File/tool/skill/todo/plan context: checkpoint operational memory stores event-derived read-file and
+  modified-file facts, generic tool operation facts, skill loads, todo updates, and plan handoff/edit
+  references from compacted turns. These facts are redacted and capped before persistence.
+- Todo/plan bridging: todo updates (`todowrite`/`todoread`) and plan-mode handoff references
+  (`plan_exit`/`plan_enter` and `.agent-harness/plans/...`) are summarized as compact operation facts
+  so a resumed agent can continue without guessing which checklist or plan file was active.
+- Post-compaction restoration hints: checkpoint summaries include source facts, relevant
+  files/artifacts, operational memory, tail-boundary metadata, and a reminder that preserved recent turns plus the live user prompt take precedence over the lossy recap.
 
 - `events.jsonl` remains append-only and stays the source of truth.
 - Compaction writes checkpoint artifacts under `artifacts/compactions/<agent_id>/<checkpoint_id>.json`.
@@ -484,7 +526,8 @@ Checkpoint payloads carry:
 - tail-boundary metadata describing whether the preserved suffix is whole-turn, oversized whole-turn, or summary-only,
 - summary-source metadata recording hook overrides, optional model-backed summaries, and deterministic fallback,
 - summary contract metadata, including the active contract version when the default Harness sections are enforced,
-- replay-derived operational memory for read files, modified files, and compact operation facts,
+- replay-derived operational memory for read files, modified files, generic tool operations, skill
+  loads, todo updates, and plan handoff/edit references,
 - a first-class timeline entry that UIs/replay views can render without parsing prose.
 
 Failed and aborted provider turns can be kept as recent turns when preserving them helps continuity.
@@ -493,7 +536,7 @@ surface the same incomplete-turn marker instead of displaying the partial assist
 
 The checkpoint recap injected back into provider requests is historical background only. It is intentionally not treated as a system instruction; preserved recent turns and the live user prompt take precedence.
 
-Lifecycle hooks can observe `compaction_requested`. Critical hook failure cancels the checkpoint and records `CompactionFailed`. A successful hook may supply a custom summary by writing output beginning with `compaction_summary:`; hook summaries take precedence over optional model-backed summaries. Model-backed summary calls are disabled by default, run through the provider abstraction without emitting provider request/stream events, and must return the default Harness summary sections when `runtime.compaction.structured_summary_contract=true`. Empty, failing, overflowing, or invalid model summaries fall back to the deterministic rolling summary and record `summary_source.deterministic_fallback=true`.
+Lifecycle hooks can observe `compaction_requested`. Critical hook failure cancels the checkpoint and records `CompactionFailed`. A successful hook may supply a custom summary by writing output beginning with `compaction_summary:`; hook summaries take precedence over optional model-backed summaries. Model-backed summary calls are disabled by default, run through the provider abstraction without emitting provider request/stream events, and must return the default Harness summary sections when `runtime.compaction.structured_summary_contract=true`. Empty, failing, overflowing, or invalid model summaries fall back to the deterministic rolling summary and record `summary_source.deterministic_fallback=true` on both the checkpoint artifact and `CompactionWritten` event so UI status surfaces can show the fallback path. Overflow-retry and failed-response compaction attempts are bounded to one recorded attempt for the triggering request.
 
 Operational memory remains event-derived. The coordinator gathers capped read-file facts, modified-file facts, and compact operation facts from the durable event/artifact stream between checkpoint boundaries, then stores summary counts and facts inside checkpoint metadata. Replay does not scan the workspace or execute tools to rebuild that memory.
 

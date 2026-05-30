@@ -3,7 +3,10 @@
 ## `task`
 
 - `task` is the canonical child-delegation tool.
-- `prompt` is the task body delivered to the child.
+- `prompt` is the task body delivered to the child. For non-trivial delegation,
+  structure it with `context`, `goal`, `downstream use`, `request`,
+  `required tools`, `must-do`, and `must-not-do` sections so the child receives
+  reviewable task context.
 - `run_in_background` is required: `false` waits for the child result and does
   not emit a background wakeup; `true` returns ids immediately and later emits
   the background completion reminder.
@@ -17,8 +20,12 @@
   original task body. Task results report compact loaded-skill metadata, including
   stable id, status, source scope, and `body_loaded: false`, without echoing full
   skill bodies.
-- Task results include child runtime metadata and `next_actions` for status checks,
-  waiting, cancellation, and continuation.
+- Task results include child runtime metadata, `next_actions` for status checks,
+  waiting, cancellation, and continuation, plus capped `result_summary` /
+  `failure_summary` text and a structured `child_summary` object. The
+  parent-visible child summary is redacted and capped at 1,200 characters; when
+  truncated, it ends with `…` and records `truncated: true`, `max_chars`, and the
+  observed `original_chars`.
 - `background_cancel(request_id: ...)` is the canonical coordinator-owned
   cancellation tool for an authorized non-terminal background child task.
   `background_output(cancel: true, request_id: ...)` remains compatibility.
@@ -66,22 +73,33 @@ That prompt command is deterministic mocked execution. It proves the first promp
 path separately from `doctor`; it does not prove live provider authentication or
 transport health.
 
+For a real provider first run, replace the example provider endpoint and
+credential source before the live prompt. Use the provider's OpenAI-compatible
+`baseURL`, set an environment variable such as `OPENAI_API_KEY`, and point the
+provider at it with `apiKeyEnv` instead of writing a secret into the config. For
+example, edit the copied `harness.jsonc` so the provider `options` include
+`"baseURL": "https://api.openai.com/v1"` and
+`"apiKeyEnv": ["OPENAI_API_KEY"]`, then run `harness doctor` followed by a
+live prompt or signoff-live lane. `doctor` checks that the named credential is
+available and redacted. doctor does not prove live provider authentication or transport health.
+
 The default path is:
 
 - provider: `default` (`openai_compatible`) via the local CLIProxy-compatible loopback endpoint
 - default agent: `build`
 - default model: `default/gpt-5.4-mini`
 - interactive model: `default/gpt-5.4-mini` (`high` reasoning preset)
+- category model profiles: OMO-style scale adapted to local GPT primary targets plus validated fallback metadata (`category-ultrabrain`, `category-deep`, `category-quick`, and the other shipped category profiles)
 
-Primary agents are discovered from `.agent-harness/agents/*.md` and use the
-runtime config's `model` default:
+Primary agents and category subagents are discovered from `.agent-harness/agents/*.md` and use the
+runtime config's direct model or named `model_profile` settings:
 
 - `build` — default implementation lane
 - `plan` — stable read-only planning lane with runtime-enforced edits limited to the active `.agent-harness/plans/<run>.md` file, plus `plan_exit` to hand off to Build
 - `discipline` — optional strict delivery lane for todo-driven autonomous work, focused delegation, and end-to-end verification
 - `explore` — shipped read-only subagent profile for local codebase search via `task(subagent_type: "explore")`
 - `general` — shipped focused implementation/research subagent profile via `task(subagent_type: "general")`
-- category subagents — `visual-engineering`, `artistry`, `ultrabrain`, `deep`, `quick`, `unspecified-low`, `unspecified-high`, and `writing` route OMO-style `task(category: "...")` calls through ordinary toggleable profiles
+- category subagents — `visual-engineering`, `artistry`, `ultrabrain`, `deep`, `quick`, `unspecified-low`, `unspecified-high`, and `writing` route OMO-style `task(category: "...")` calls through ordinary toggleable profiles with category-specific model profiles and fallback metadata
 
 Validate the shipped example config:
 
@@ -229,7 +247,7 @@ deterministic and provider-free. `--mode live` and `--mode all` exercise the too
 path against the configured provider, including best-effort LSP diagnostics, fail-open unsupported
 LSP probes, and absolute-path workspace reads.
 
-The shipped `default` provider points at the local CLIProxy-compatible bridge (`http://127.0.0.1:8317/v1`) and uses an explicit local placeholder bearer token so the default flow stays aligned between docs, config, and live signoff lanes without depending on `OPENAI_API_KEY`. Its catalog mirrors the configured CLIProxyAPI GPT family, including GPT 5.5, GPT 5.4, GPT 5.4 Mini, GPT 5.4 extended-context presets, GPT 5.3 Codex, GPT 5.2, and GPT 5.1/Codex variants.
+The shipped `default` provider points at the local CLIProxy-compatible bridge (`http://127.0.0.1:8317/v1`) and uses an explicit local placeholder bearer token so the default flow stays aligned between docs, config, and live signoff lanes without depending on `OPENAI_API_KEY`. The starter catalog intentionally defines only GPT 5.5 and GPT 5.4 Mini; broader generated provider catalogs live in `configs/provider-catalog.reference.jsonc`.
 
 The TUI exposes workflow slash commands for `/model`, `/status`, `/toggles`, `/resume`, `/new`, `/tree`, `/fork`, and `/clone`. `/model` switches the agent/model used for subsequent turns, `/status` opens the system status dialog, `/toggles` opens the session-local Toggles menu for configured agents, prompts, hooks, MCP servers, tools, skills, and YOLO menu state, `/resume` opens the saved-session picker, and `/new` starts a clean live run. `/tree` shows the Harness session lineage tree for saved sessions. `/fork` creates a child Harness session from the current session at an explicit stable event cutoff. `/clone` creates a child Harness session from the latest stable prefix of the selected source session.
 

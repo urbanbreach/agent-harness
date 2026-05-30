@@ -5,6 +5,9 @@ The repository ships a small starter skill pack under `.agent-harness/skills/`.
 ## Included skills
 - `rust-best-practices` — Rust-focused contribution and verification guidance for this workspace.
 - `issue-delivery` — issue closeout checklist for docs, verification, and commit/issue hygiene.
+- `git-master` — safe git commit, rebase, and history-search workflows.
+- `review-work` — post-implementation review orchestration using shipped Harness categories.
+- `frontend-ui-ux` — visual engineering guidance for UI/UX polish with deterministic evidence.
 
 ## Discovery order
 By default the harness searches these project roots, in order:
@@ -73,6 +76,16 @@ Use `skills.disabled` to turn off skills by name, pattern, or stable id such as
 symlink-unsafe skills are visible enough to diagnose but cannot load. Metadata
 such as `allowed_tools` is descriptive/restrictive only; it never grants tools,
 changes a profile toolset, or bypasses coordinator permission checks.
+
+## Built-in skill use-when / do-not-use-when
+
+| Stable id | Use when | Do not use when |
+|---|---|---|
+| `skill:project:git-master` | The operator asks for commits, rebases, squashes, or history archaeology. | The task is ordinary coding with no git operation requested, or the action would rewrite history without approval. |
+| `skill:project:review-work` | Significant changed work needs high-rigor review across goal fit, quality, security, QA, and context. | There is no changed work yet or the edit is trivial enough for direct verification. |
+| `skill:project:frontend-ui-ux` | A UI, TUI, layout, typography, color, motion, or visual evidence problem is in scope. | The task is backend-only or provider/session/runtime logic with no visible surface. |
+
+Disable a built-in with `skills.disabled`, for example `"skill:project:git-master"`.
 
 ## Using the local runtime config
 The repo ships a project-local `./harness.jsonc`, which the CLI auto-discovers

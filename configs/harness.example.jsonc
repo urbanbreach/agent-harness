@@ -41,6 +41,55 @@
   // Active default model. Use provider/model, optionally provider/model/variant.
   "model": "default/gpt-5.4-mini",
 
+  // OMO-style category scale, adapted to the local GPT-family starter catalog.
+  // Runtime profile resolution selects the primary target; fallback targets are
+  // validated/catalog metadata until explicit automatic model retry is shipped.
+  // Larger provider catalogs can point these same profile names at Gemini,
+  // Claude, Kimi, or other provider-specific targets without changing agents.
+  "model_profile": {
+    "category-visual-engineering": {
+      "model": "default/gpt-5.5",
+      "variant": "high",
+      "fallback": [{ "model": "default/gpt-5.4-mini", "variant": "high" }]
+    },
+    "category-artistry": {
+      "model": "default/gpt-5.5",
+      "variant": "high",
+      "fallback": [{ "model": "default/gpt-5.4-mini", "variant": "high" }]
+    },
+    "category-ultrabrain": {
+      "model": "default/gpt-5.5",
+      "variant": "xhigh",
+      "fallback": [{ "model": "default/gpt-5.4-mini", "variant": "high" }]
+    },
+    "category-deep": {
+      // Matches OMO's Deep lane as broad autonomous work, not Ultrabrain-level reasoning.
+      "model": "default/gpt-5.5",
+      "variant": "medium",
+      "fallback": [{ "model": "default/gpt-5.4-mini", "variant": "high" }]
+    },
+    "category-quick": {
+      "model": "default/gpt-5.4-mini",
+      "variant": "low",
+      "fallback": [{ "model": "default/gpt-5.5", "variant": "low" }]
+    },
+    "category-unspecified-low": {
+      "model": "default/gpt-5.4-mini",
+      "variant": "medium",
+      "fallback": [{ "model": "default/gpt-5.5", "variant": "medium" }]
+    },
+    "category-unspecified-high": {
+      "model": "default/gpt-5.5",
+      "variant": "high",
+      "fallback": [{ "model": "default/gpt-5.4-mini", "variant": "high" }]
+    },
+    "category-writing": {
+      "model": "default/gpt-5.4-mini",
+      "variant": "medium",
+      "fallback": [{ "model": "default/gpt-5.5", "variant": "medium" }]
+    }
+  },
+
   // Built-in agents are listed so they are easy to discover and toggle.
   // Set enable:false (or enabled:false) to remove one from the runtime.
   // Add model, prompt, tools, or permission here only when overriding defaults.
@@ -81,43 +130,35 @@
     // default.
     "visual-engineering": {
       "enable": true,
-      "model": "default/gpt-5.4-mini",
-      "variant": "high",
+      "model": "category-visual-engineering",
     },
     "artistry": {
       "enable": true,
-      "model": "default/gpt-5.5",
-      "variant": "high",
+      "model": "category-artistry",
     },
     "ultrabrain": {
       "enable": true,
-      "model": "default/gpt-5.5",
-      "variant": "xhigh",
+      "model": "category-ultrabrain",
     },
     "deep": {
       "enable": true,
-      "model": "default/gpt-5.5",
-      "variant": "high",
+      "model": "category-deep",
     },
     "quick": {
       "enable": true,
-      "model": "default/gpt-5.4-mini",
-      "variant": "low",
+      "model": "category-quick",
     },
     "unspecified-low": {
       "enable": true,
-      "model": "default/gpt-5.4-mini",
-      "variant": "low",
+      "model": "category-unspecified-low",
     },
     "unspecified-high": {
       "enable": true,
-      "model": "default/gpt-5.5",
-      "variant": "high",
+      "model": "category-unspecified-high",
     },
     "writing": {
       "enable": true,
-      "model": "default/gpt-5.4-mini",
-      "variant": "medium",
+      "model": "category-writing",
     },
     "title": {
       "enable": true,
