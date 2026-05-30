@@ -15,6 +15,13 @@ The operator CLI remains available:
 
 Support export includes replay-derived session metadata, doctor JSON, config/provider summaries, agent catalog summary, native tool catalog summary, session-tool readiness, route metadata, artifact index, redaction manifest, and secret-scan status.
 
+Typed extension manifests use the same replay boundary. V1 stores and renders
+only static descriptor metadata (`extension.manifest.v1`): extension id,
+capability ids, disabled capability ids, descriptor counts, and replay labels.
+Replay never discovers manifests, loads extension code, registers tools,
+executes commands, launches MCP servers, invokes provider decorators, or mutates
+session state to render old extension metadata.
+
 ## Model-visible session tools
 
 The V1 control plane adds native tools so a model can inspect prior Harness sessions without shelling out to the CLI:

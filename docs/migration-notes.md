@@ -8,7 +8,7 @@ Harness borrows lessons from source-inspiration projects while intentionally not
 |---|---|
 | HTTP server | Explicitly post-V1; no hosted API/server mode ships here. |
 | web share | Explicitly post-V1; local support export is the V1 path. |
-| plugin host | Typed extension manifest and plugin hosting are final-slice/post-V1. |
+| plugin host | Typed extension manifest descriptors ship for V1; runtime plugin hosting remains post-V1. |
 | autoupdate | Explicitly post-V1; builds are operator-controlled. |
 | enterprise | Explicitly post-V1. |
 | desktop/mobile/PWA | Non-goal for V1. |
