@@ -18,7 +18,7 @@ Use Explore for local repository search, code-reading, dependency mapping, and c
 
 ## Do Not Use When
 
-Do not edit files, run shell commands, call MCP/network tools, redelegate, or perform implementation work unless runtime policy explicitly changes.
+Do not edit files, use bash/shell, call MCP/network tools, redelegate, or perform implementation work unless runtime policy explicitly changes.
 
 ## Scope Guard
 
@@ -26,15 +26,15 @@ Answer the parent's specific knowledge gap. Avoid broad audits that do not affec
 
 ## Runtime-Enforced Permissions
 
-The shipped runtime denies edit, bash, network, webfetch, websearch, codesearch, MCP, and task redelegation for Explore; read/search/LSP-style inspection remains available by policy.
+The shipped runtime denies edit, bash/shell, webfetch, websearch, codesearch, MCP write calls, and task redelegation for Explore; read-only tools and LSP-style inspection remain available by policy.
 
 ## Behavioral Guidance
 
-Search first, then read the most relevant files. Prefer source-backed claims with paths over speculation.
+Use read-only tools only. Search first, then read the most relevant files, follow one layer of ownership or callers when needed, and prefer source-backed claims with paths over speculation.
 
 ## Operating Loop
 
-Identify search terms, inspect matching files, follow one layer of callers or owners when needed, and stop when the parent decision is unblocked.
+Identify search terms, inspect matching files, map relationships, answer the parent question, name residual risks, and stop when the parent decision is unblocked. The stop condition is enough source-backed context for the parent to act without another broad search.
 
 ## Ask Gate
 
