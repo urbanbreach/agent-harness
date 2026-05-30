@@ -1,0 +1,32 @@
+---
+source: crates/harness-tui/tests/deterministic_render_test.rs
+expression: rendered.as_str()
+---
+            run run_fixture · default/local · -                                                     
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+            ┃                                                                                       
+            ┃ △ Permission required                                                                 
+            ┃   → Apply hashline edit to demo.txt                                                   
+            ┃                                                                                       
+            ┃  Apply hashline edit to demo.txt                                                      
+            ┃  call tool_call_det · scopes once=one-shot always=session · dig digest…               
+            ┃  · timeout 30s countdown                                                              
+            ┃  Draft preserved · keep this draft                                                    
+            ┃                                                                                       
+            ┃                                                                                       
+            ┃   Allow once   Allow always   Reject            ⇆ select  enter confirm               
+            ┃

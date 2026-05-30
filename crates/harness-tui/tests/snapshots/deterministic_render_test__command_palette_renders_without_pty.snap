@@ -1,0 +1,44 @@
+---
+source: crates/harness-tui/tests/deterministic_render_test.rs
+expression: rendered.as_str()
+---
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                     Session      Commands                                         esc                                  
+                                                                                                                        
+                                  █ Search                                                                              
+                                                                                                                        
+                                  Suggested                                                                             
+                                     New session Start a fresh live session        new                                  
+                                                                                                                        
+                           “in    Sessions                                                test                          
+                                     Continue session Continue a prior sessio…  resume                                  
+                                     Replay session Replay a previous session…  replay                                  
+                                                                                                                        
+                                  Agents                                                                                
+                                     Next agent Cycle to the next primary agent    tab                                  
+                                     Previous agent Cycle to the previous …  shift+tab                                  
+                                     Cycle reasoning preset Cycle the configu…  ctrl+t                                  
+                                     Toggles Toggle profiles, tools, hooks, …  toggles                                  
+                                                                                                                        
+                                  Sessions                                                                              
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+┃                                                                                                                       
+┃                                                                                                                       
+┃                                                                                                                       
+┃                                                                                                                       
+╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                                                                                 live 0  Ctrl+p commands
