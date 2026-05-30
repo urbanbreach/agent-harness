@@ -265,7 +265,6 @@ fn schema_cli_prints_runtime_json_schema() {
     for agent in [
         "build",
         "plan",
-        "discipline",
         "general",
         "explore",
         "visual-engineering",
@@ -449,7 +448,6 @@ fn config_validate_cli_accepts_shipped_example_config() {
     assert!(provider.models.contains_key("gpt-5.5"));
     assert!(provider.models.contains_key("gpt-5.4-mini"));
     assert!(parsed.agents.contains_key("build"));
-    assert!(parsed.agents.contains_key("discipline"));
     for category in [
         "visual-engineering",
         "artistry",

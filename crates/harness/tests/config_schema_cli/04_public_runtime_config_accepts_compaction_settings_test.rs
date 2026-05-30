@@ -64,7 +64,6 @@ fn root_runtime_example_uses_canonical_public_keys() {
     assert_eq!(parsed.small_model.as_deref(), Some("default/gpt-5.4-mini"));
     assert!(parsed.agent.build.is_some());
     assert!(parsed.agent.plan.is_some());
-    assert!(parsed.agent.discipline.is_some());
     assert!(parsed.agent.general.is_some());
     assert!(parsed.agent.explore.is_some());
     assert!(parsed.agent.visual_engineering.is_some());

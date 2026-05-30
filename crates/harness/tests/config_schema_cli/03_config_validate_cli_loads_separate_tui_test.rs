@@ -400,7 +400,6 @@ fn shipped_runtime_example_parses_as_public_runtime_config() {
     assert!(provider.models.contains_key("gpt-5.4-mini"));
     assert!(parsed.agent.build.is_some());
     assert!(parsed.agent.plan.is_some());
-    assert!(parsed.agent.discipline.is_some());
     assert!(parsed.agent.general.is_some());
     assert!(parsed.agent.explore.is_some());
     assert!(parsed.agent.visual_engineering.is_some());

@@ -744,8 +744,6 @@ pub struct PublicAgentMap {
     #[serde(default)]
     pub plan: Option<PublicAgentConfig>,
     #[serde(default)]
-    pub discipline: Option<PublicAgentConfig>,
-    #[serde(default)]
     pub general: Option<PublicAgentConfig>,
     #[serde(default)]
     pub explore: Option<PublicAgentConfig>,
@@ -780,7 +778,6 @@ impl PublicAgentMap {
     pub fn is_empty(&self) -> bool {
         self.build.is_none()
             && self.plan.is_none()
-            && self.discipline.is_none()
             && self.general.is_none()
             && self.explore.is_none()
             && self.visual_engineering.is_none()
@@ -802,7 +799,6 @@ impl PublicAgentMap {
         for (name, agent) in [
             ("build", self.build),
             ("plan", self.plan),
-            ("discipline", self.discipline),
             ("general", self.general),
             ("explore", self.explore),
             ("visual-engineering", self.visual_engineering),
@@ -1425,81 +1421,6 @@ fn default_shipped_agents(
                     "edit",
                     "bash",
                     crate::plan::PLAN_EXIT_TOOL_ID,
-                ]
-                .into_iter()
-                .map(str::to_string)
-                .collect(),
-            },
-        ),
-        (
-            "discipline".to_string(),
-            ProfileConfig {
-                name: None,
-                description:
-                    "Disciplined autonomous delivery lane with strict todo, delegation, and verification behavior."
-                        .to_string(),
-                system_prompt: None,
-                model_ref: model_ref.to_string(),
-                model_ref_explicit: false,
-                variant: None,
-                temperature: None,
-                top_p: None,
-                mode: AgentMode::Primary,
-                hidden: false,
-                color: None,
-                options: BTreeMap::new(),
-                permissions: Some(ProfilePermissions {
-                    fallback: None,
-                    edit: Some(PermissionMode::Allow),
-                    shell: Some(PermissionMode::Allow),
-                    network: Some(PermissionMode::Allow),
-                    question: Some(PermissionMode::Allow),
-                    task: Some(PermissionMode::Allow),
-                    webfetch: Some(PermissionMode::Allow),
-                    websearch: Some(PermissionMode::Allow),
-                    codesearch: Some(PermissionMode::Allow),
-                    lsp: Some(PermissionMode::Allow),
-                    rules: PermissionRuleSet::default(),
-                }),
-                max_iters: None,
-                tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
-                tools: vec![
-                    "todowrite",
-                    "todoread",
-                    "question",
-                    crate::plan::PLAN_ENTER_TOOL_ID,
-                    "task",
-                    "background_output",
-                    "background_cancel",
-                    "team_list",
-                    "team_create",
-                    "team_status",
-                    "team_send_message",
-                    "team_task_create",
-                    "team_task_list",
-                    "team_task_get",
-                    "team_task_update",
-                    "team_shutdown_request",
-                    "team_shutdown_approve",
-                    "team_shutdown_reject",
-                    "team_delete",
-                    "skill",
-                    "websearch",
-                    "webfetch",
-                    "codesearch",
-                    "ast_grep_search",
-                    "lsp",
-                    "read",
-                    "glob",
-                    "grep",
-                    "list",
-                    "session_list",
-                    "session_read",
-                    "session_search",
-                    "session_info",
-                    "edit",
-                    "bash",
-                    "batch",
                 ]
                 .into_iter()
                 .map(str::to_string)
