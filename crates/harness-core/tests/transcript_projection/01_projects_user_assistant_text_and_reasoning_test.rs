@@ -271,6 +271,7 @@ fn projects_compaction_checkpoint_requested_written_applied_and_failed_state() {
                 reduction_tokens_estimate: Some(580),
                 reduction_percent_estimate: Some(59),
                 estimate_source: Some("provider_usage".to_string()),
+                summary_source: None,
                 preserved_turns: 1,
             }),
         ),

@@ -5,8 +5,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
-use harness_providers::CompletionUsage;
+use harness_providers::{CompletionUsage, ProviderErrorCategory};
 
+use crate::agent::ProviderCompactionSummarySource;
 use crate::clock::Clock;
 use crate::digest::digest12_json;
 use crate::perm::PermissionGrant;
@@ -465,6 +466,10 @@ pub struct ProviderRequestFinishedMetadata {
     pub assistant_message: Option<ProviderAssistantMessageMetadata>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking: Option<ProviderThinkingMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_error_category: Option<ProviderErrorCategory>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_error_remediation: Option<String>,
 }
 
 /// Durable provider request start barrier.
@@ -585,6 +590,8 @@ pub struct CompactionWrittenEvent {
     pub reduction_percent_estimate: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub estimate_source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary_source: Option<ProviderCompactionSummarySource>,
     pub preserved_turns: u32,
 }
 

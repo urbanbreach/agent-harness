@@ -60,6 +60,11 @@ mod part_12_resume_existing_run_persists_bindings_for_test {
     include!("coord/12_resume_existing_run_persists_bindings_for_test.rs");
 }
 
+mod part_12b_resume_acceptance_restores_realistic_interrupted_session_test {
+    use super::*;
+    include!("coord/12b_resume_acceptance_restores_realistic_interrupted_session_test.rs");
+}
+
 mod part_13_overflow_retry_compacts_context_and_retries_test {
     use super::*;
     include!("coord/13_overflow_retry_compacts_context_and_retries_test.rs");

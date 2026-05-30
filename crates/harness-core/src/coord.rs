@@ -2801,11 +2801,12 @@ impl Coordinator {
         } else {
             category.clone()
         };
-        let skip_outer_question_permission = canonical_tool_id_for(&tool_id) == Some("question");
+        let raw_permission_kind = permission_kind_for_tool_call(&tool_id, capability);
+        let skip_outer_question_permission = raw_permission_kind == Some(PermissionKind::Question);
         let maybe_kind = if skip_outer_question_permission {
             None
         } else {
-            permission_kind_for_tool_call(&tool_id, capability)
+            raw_permission_kind
         };
         let rule_selectors = maybe_kind
             .map(|kind| {
@@ -7613,7 +7614,7 @@ async fn generate_harness_session_title(
     while let Some(event) = stream.next().await {
         match event {
             ProviderStreamEvent::TextDelta(delta) => text.push_str(&delta),
-            ProviderStreamEvent::Error { message } => return Err(message),
+            ProviderStreamEvent::Error { message, .. } => return Err(message),
             ProviderStreamEvent::Start
             | ProviderStreamEvent::Started { .. }
             | ProviderStreamEvent::ReasoningDelta(_)
@@ -9153,6 +9154,7 @@ where
             reduction_tokens_estimate: checkpoint.metadata.reduction_tokens_estimate,
             reduction_percent_estimate: checkpoint.metadata.reduction_percent_estimate,
             estimate_source: trigger.estimate_source.clone(),
+            summary_source: checkpoint.summary_source.clone(),
             preserved_turns: checkpoint.recent_turns.len() as u32,
         }),
     )?;

@@ -520,10 +520,10 @@ pub struct ProviderRequestFinished {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentRuntimeEvent {
-    ProviderRequestStarted(ProviderRequestStarted),
+    ProviderRequestStarted(Box<ProviderRequestStarted>),
     ProviderStreamDelta { request_id: String, delta: String },
     ProviderReasoningDelta { request_id: String, delta: String },
-    ProviderRequestFinished(ProviderRequestFinished),
+    ProviderRequestFinished(Box<ProviderRequestFinished>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -727,7 +727,7 @@ where
     let mut stream = provider.stream_completion(completion_request).await;
     let (provider_start_metadata, mut pending_event) =
         consume_provider_start_event(&mut stream).await;
-    emit(AgentRuntimeEvent::ProviderRequestStarted(
+    emit(AgentRuntimeEvent::ProviderRequestStarted(Box::new(
         ProviderRequestStarted {
             request_id: request_id.clone(),
             provider_id: model.provider_id,
@@ -740,7 +740,7 @@ where
                 provider_start_metadata.as_ref(),
             )),
         },
-    ))
+    )))
     .await;
     let mut output = String::new();
 
@@ -768,7 +768,7 @@ where
             ProviderStreamEvent::ToolCallDelta { .. }
             | ProviderStreamEvent::ToolCallComplete { .. } => {}
             ProviderStreamEvent::Done { usage } => {
-                emit(AgentRuntimeEvent::ProviderRequestFinished(
+                emit(AgentRuntimeEvent::ProviderRequestFinished(Box::new(
                     ProviderRequestFinished {
                         request_id: request_id.clone(),
                         finish_reason: "done".to_string(),
@@ -783,7 +783,7 @@ where
                             None,
                         )),
                     },
-                ))
+                )))
                 .await;
 
                 return AgentTurnOutcome::Succeeded {
@@ -795,7 +795,7 @@ where
                 usage,
                 metadata: provider_metadata,
             } => {
-                emit(AgentRuntimeEvent::ProviderRequestFinished(
+                emit(AgentRuntimeEvent::ProviderRequestFinished(Box::new(
                     ProviderRequestFinished {
                         request_id: request_id.clone(),
                         finish_reason: "done".to_string(),
@@ -810,7 +810,7 @@ where
                             provider_metadata.as_ref(),
                         )),
                     },
-                ))
+                )))
                 .await;
 
                 return AgentTurnOutcome::Succeeded {
@@ -818,23 +818,30 @@ where
                     messages: Vec::new(),
                 };
             }
-            ProviderStreamEvent::Error { message } => {
-                emit(AgentRuntimeEvent::ProviderRequestFinished(
+            ProviderStreamEvent::Error {
+                message,
+                category,
+                remediation,
+            } => {
+                let mut metadata = provider_finished_metadata(
+                    &request_id,
+                    &request_id,
+                    "error",
+                    &output,
+                    "",
+                    None,
+                );
+                metadata.provider_error_category = category;
+                metadata.provider_error_remediation = remediation;
+                emit(AgentRuntimeEvent::ProviderRequestFinished(Box::new(
                     ProviderRequestFinished {
                         request_id: request_id.clone(),
                         finish_reason: "error".to_string(),
                         output_digest: None,
                         usage: None,
-                        metadata: Some(provider_finished_metadata(
-                            &request_id,
-                            &request_id,
-                            "error",
-                            &output,
-                            "",
-                            None,
-                        )),
+                        metadata: Some(metadata),
                     },
-                ))
+                )))
                 .await;
 
                 return AgentTurnOutcome::failed_with_memory(
@@ -845,7 +852,7 @@ where
         }
     }
 
-    emit(AgentRuntimeEvent::ProviderRequestFinished(
+    emit(AgentRuntimeEvent::ProviderRequestFinished(Box::new(
         ProviderRequestFinished {
             request_id: request_id.clone(),
             finish_reason: "stream_ended".to_string(),
@@ -860,7 +867,7 @@ where
                 None,
             )),
         },
-    ))
+    )))
     .await;
 
     AgentTurnOutcome::Succeeded {
@@ -914,7 +921,7 @@ where
         provider_start_metadata.as_ref(),
     );
 
-    emit(AgentRuntimeEvent::ProviderRequestStarted(
+    emit(AgentRuntimeEvent::ProviderRequestStarted(Box::new(
         ProviderRequestStarted {
             request_id: provider_request_id.clone(),
             provider_id: model.provider_id.clone(),
@@ -923,7 +930,7 @@ where
             request_digest,
             metadata: Some(started_metadata.clone()),
         },
-    ))
+    )))
     .await;
 
     let mut output = String::new();
@@ -935,6 +942,8 @@ where
     let mut usage = None;
     let mut provider_error = None;
     let mut finished_provider_metadata = None;
+    let mut finished_provider_error_category = None;
+    let mut finished_provider_error_remediation = None;
 
     loop {
         let Some(event) = next_provider_event(&mut pending_event, &mut stream).await else {
@@ -997,9 +1006,15 @@ where
                 finished_provider_metadata = metadata;
                 break;
             }
-            ProviderStreamEvent::Error { message } => {
+            ProviderStreamEvent::Error {
+                message,
+                category,
+                remediation,
+            } => {
                 stop_reason = "error".to_string();
                 provider_error = Some(message);
+                finished_provider_error_category = category;
+                finished_provider_error_remediation = remediation;
                 break;
             }
         }
@@ -1013,12 +1028,15 @@ where
         &reasoning,
         finished_provider_metadata.as_ref(),
     );
+    let mut finished_metadata = finished_metadata;
+    finished_metadata.provider_error_category = finished_provider_error_category;
+    finished_metadata.provider_error_remediation = finished_provider_error_remediation;
     let output_digest = if stop_reason == "error" {
         None
     } else {
         Some(digest12(output.as_bytes()))
     };
-    emit(AgentRuntimeEvent::ProviderRequestFinished(
+    emit(AgentRuntimeEvent::ProviderRequestFinished(Box::new(
         ProviderRequestFinished {
             request_id: provider_request_id.clone(),
             finish_reason: stop_reason.clone(),
@@ -1026,7 +1044,7 @@ where
             usage: usage.clone(),
             metadata: Some(finished_metadata.clone()),
         },
-    ))
+    )))
     .await;
 
     if let Some(reason) = provider_error {
@@ -1611,6 +1629,8 @@ fn provider_finished_metadata(
         cache_write_tokens: provider_metadata.and_then(|metadata| metadata.cache_write_tokens),
         assistant_message,
         thinking,
+        provider_error_category: None,
+        provider_error_remediation: None,
     }
 }
 
@@ -1768,9 +1788,9 @@ struct NullProvider;
 #[async_trait]
 impl Provider for NullProvider {
     async fn stream_completion(&self, _req: CompletionRequest) -> ProviderEventStream {
-        Box::pin(tokio_stream::iter(vec![ProviderStreamEvent::Error {
-            message: "no provider configured".to_string(),
-        }]))
+        Box::pin(tokio_stream::iter(vec![ProviderStreamEvent::error(
+            "no provider configured",
+        )]))
     }
 }
 

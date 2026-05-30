@@ -5,9 +5,7 @@ async fn failed_turn_context_preserves_provider_error_partial_output() {
         vec![
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta("partial answer".to_string()),
-            ProviderStreamEvent::Error {
-                message: "provider exploded".to_string(),
-            },
+            ProviderStreamEvent::error("provider exploded"),
         ],
         vec![
             ProviderStreamEvent::Start,
@@ -359,9 +357,7 @@ async fn failed_response_compaction_writes_checkpoint_after_provider_error() {
                 "partial provider output {}",
                 "B".repeat(12_000)
             )),
-            ProviderStreamEvent::Error {
-                message: "provider exploded".to_string(),
-            },
+            ProviderStreamEvent::error("provider exploded"),
         ],
     ]);
     let coordinator = test_agent_coordinator_with_provider_and_compaction(

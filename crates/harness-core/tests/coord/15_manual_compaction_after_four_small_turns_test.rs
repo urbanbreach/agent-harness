@@ -323,6 +323,20 @@ async fn model_backed_compaction_falls_back_for_invalid_summary_and_records_meta
 
     let events = load_events(&run.events_path);
     let checkpoint = manual_checkpoint(&run, &events);
+    let written_event = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::CompactionWritten(payload) if payload.trigger_reason == "manual" => {
+                Some(payload)
+            }
+            _ => None,
+        })
+        .expect("manual compaction written event");
+    let written_json = serde_json::to_value(written_event).expect("serialize written event");
+    assert_eq!(
+        written_json["summary_source"]["strategy"],
+        "model_backed_deterministic_fallback"
+    );
     let source = checkpoint.summary_source.expect("summary source metadata");
     assert_eq!(source.strategy, "model_backed_deterministic_fallback");
     assert!(source.model_backed);
@@ -330,6 +344,11 @@ async fn model_backed_compaction_falls_back_for_invalid_summary_and_records_meta
     assert!(checkpoint.summary.contains("## Goal"));
     assert!(checkpoint.summary.contains("first question"));
     assert!(!checkpoint.summary.contains("not a structured checkpoint"));
+    assert_eq!(
+        provider.requests().len(),
+        3,
+        "fallback should use two prompt requests plus one failed summary request without looping"
+    );
 }
 #[tokio::test]
 async fn hook_summary_override_takes_precedence_over_model_backed_compaction() {
@@ -434,9 +453,7 @@ async fn overflow_retry_split_oversized_latest_turn_preserves_suffix_context() {
         provider_text_events(&oversized_answer),
         vec![
             ProviderStreamEvent::Start,
-            ProviderStreamEvent::Error {
-                message: "prompt token count of 128713 exceeds the limit of 128000".to_string(),
-            },
+            ProviderStreamEvent::error("prompt token count of 128713 exceeds the limit of 128000"),
         ],
         provider_text_events("recovered answer"),
     ]);

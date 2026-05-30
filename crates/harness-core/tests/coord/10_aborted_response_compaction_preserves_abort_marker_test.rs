@@ -182,9 +182,7 @@ async fn failed_response_compaction_failure_does_not_mask_original_error() {
                 "partial provider output {}",
                 "B".repeat(12_000)
             )),
-            ProviderStreamEvent::Error {
-                message: "provider exploded".to_string(),
-            },
+            ProviderStreamEvent::error("provider exploded"),
         ],
     ]);
     let coordinator = test_agent_coordinator_with_provider_and_compaction(
@@ -267,9 +265,7 @@ async fn critical_compaction_requested_hook_failure_records_compaction_failed() 
                 "partial provider output {}",
                 "B".repeat(12_000)
             )),
-            ProviderStreamEvent::Error {
-                message: "provider exploded".to_string(),
-            },
+            ProviderStreamEvent::error("provider exploded"),
         ],
     ]);
     let hook_runtime_config = HookRuntimeConfig {

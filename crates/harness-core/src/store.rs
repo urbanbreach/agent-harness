@@ -562,7 +562,7 @@ fn scan_events_from_file(file_path: &Path) -> Result<ScanResult, EventStoreError
         path: display_path(file_path),
         source,
     })?;
-    let file_len = file
+    let mut file_len = file
         .metadata()
         .map(|metadata| metadata.len())
         .map_err(|source| EventStoreError::ReadLog {
@@ -593,13 +593,31 @@ fn scan_events_from_file(file_path: &Path) -> Result<ScanResult, EventStoreError
         line_number += 1;
         let line_offset = offset;
         offset = offset.saturating_add(bytes_read as u64);
-        let line = decode_jsonl_line(&raw_line, file_path)?;
+        let terminated = raw_line.ends_with(b"\n");
+        let line = match decode_jsonl_line(&raw_line, file_path) {
+            Ok(line) => line,
+            Err(_) if !terminated => {
+                repair_truncated_jsonl_tail(file_path, line_offset)?;
+                file_len = line_offset;
+                break;
+            }
+            Err(err) => return Err(err),
+        };
 
-        let event: EventEnvelopeV1 =
-            serde_json::from_str(&line).map_err(|source| EventStoreError::InvalidJsonLine {
-                line: line_number,
-                source,
-            })?;
+        let event: EventEnvelopeV1 = match serde_json::from_str(&line) {
+            Ok(event) => event,
+            Err(_) if !terminated => {
+                repair_truncated_jsonl_tail(file_path, line_offset)?;
+                file_len = line_offset;
+                break;
+            }
+            Err(source) => {
+                return Err(EventStoreError::InvalidJsonLine {
+                    line: line_number,
+                    source,
+                })
+            }
+        };
 
         if event.seq != expected_seq {
             return Err(EventStoreError::NonMonotonicSequence {
@@ -616,6 +634,12 @@ fn scan_events_from_file(file_path: &Path) -> Result<ScanResult, EventStoreError
         });
 
         expected_seq += 1;
+
+        if !terminated {
+            append_missing_jsonl_newline(file_path)?;
+            file_len = file_len.saturating_add(1);
+            break;
+        }
     }
 
     Ok(ScanResult {
@@ -623,6 +647,38 @@ fn scan_events_from_file(file_path: &Path) -> Result<ScanResult, EventStoreError
         next_seq: expected_seq,
         file_len,
     })
+}
+
+fn repair_truncated_jsonl_tail(file_path: &Path, len: u64) -> Result<(), EventStoreError> {
+    let file = OpenOptions::new()
+        .write(true)
+        .open(file_path)
+        .map_err(|source| EventStoreError::WriteLog {
+            path: display_path(file_path),
+            source,
+        })?;
+    file.set_len(len)
+        .and_then(|_| file.sync_data())
+        .map_err(|source| EventStoreError::WriteLog {
+            path: display_path(file_path),
+            source,
+        })
+}
+
+fn append_missing_jsonl_newline(file_path: &Path) -> Result<(), EventStoreError> {
+    let mut file = OpenOptions::new()
+        .append(true)
+        .open(file_path)
+        .map_err(|source| EventStoreError::WriteLog {
+            path: display_path(file_path),
+            source,
+        })?;
+    file.write_all(b"\n")
+        .and_then(|_| file.sync_data())
+        .map_err(|source| EventStoreError::WriteLog {
+            path: display_path(file_path),
+            source,
+        })
 }
 
 fn decode_jsonl_line(raw_line: &[u8], file_path: &Path) -> Result<String, EventStoreError> {
@@ -1071,6 +1127,55 @@ mod tests {
         let replayed_seqs: Vec<u64> = replayed.into_iter().map(|event| event.seq).collect();
 
         assert_eq!(replayed_seqs, vec![2, 3]);
+    }
+
+    #[tokio::test]
+    async fn jsonl_open_repairs_truncated_final_jsonl_line_and_preserves_complete_events() {
+        // arrange
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let run_id = "run_truncated_tail";
+        let file_path = {
+            let store = JsonlFileEventStore::open(temp_dir.path(), run_id, false)
+                .expect("open jsonl event store");
+            store
+                .append(run_started_draft(run_id, 1))
+                .expect("append first event");
+            store
+                .append(run_started_draft(run_id, 2))
+                .expect("append second event");
+            store.file_path().to_path_buf()
+        };
+
+        OpenOptions::new()
+            .append(true)
+            .open(&file_path)
+            .expect("open events file for truncated tail")
+            .write_all(b"{")
+            .expect("write truncated tail");
+
+        let repaired = JsonlFileEventStore::open_existing(temp_dir.path(), run_id, false)
+            // act
+            .expect("reopen should repair truncated final JSONL line");
+        // assert
+        assert_eq!(repaired.next_seq().expect("read next seq"), 3);
+        let replayed = collect_stream(repaired.replay(1).expect("build replay stream")).await;
+        let replayed_seqs = replayed.iter().map(|event| event.seq).collect::<Vec<_>>();
+        assert_eq!(replayed_seqs, vec![1, 2]);
+
+        let contents = fs::read_to_string(repaired.file_path()).expect("read repaired log");
+        assert!(!contents.ends_with('{'));
+        assert_eq!(contents.lines().count(), 2);
+
+        let appended = repaired
+            .append(run_started_draft(run_id, 3))
+            .expect("append after truncated tail repair");
+        assert_eq!(appended.seq, 3);
+        let replayed = collect_stream(repaired.replay(1).expect("build replay stream")).await;
+        let replayed_seqs = replayed
+            .into_iter()
+            .map(|event| event.seq)
+            .collect::<Vec<_>>();
+        assert_eq!(replayed_seqs, vec![1, 2, 3]);
     }
 
     #[test]

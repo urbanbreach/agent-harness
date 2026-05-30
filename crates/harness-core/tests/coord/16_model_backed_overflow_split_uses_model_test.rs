@@ -16,9 +16,7 @@ async fn model_backed_overflow_split_uses_model_prefix_summary() {
         provider_text_events(&oversized_answer),
         vec![
             ProviderStreamEvent::Start,
-            ProviderStreamEvent::Error {
-                message: "prompt token count of 128713 exceeds the limit of 128000".to_string(),
-            },
+            ProviderStreamEvent::error("prompt token count of 128713 exceeds the limit of 128000"),
         ],
         provider_text_events(model_prefix_summary),
         provider_text_events(&model_checkpoint_summary),
@@ -120,9 +118,7 @@ async fn model_backed_overflow_split_summary_without_prefix_content_falls_back()
         provider_text_events(&oversized_answer),
         vec![
             ProviderStreamEvent::Start,
-            ProviderStreamEvent::Error {
-                message: "prompt token count of 128713 exceeds the limit of 128000".to_string(),
-            },
+            ProviderStreamEvent::error("prompt token count of 128713 exceeds the limit of 128000"),
         ],
         provider_text_events(model_prefix_summary),
         provider_text_events(&invalid_checkpoint_summary),
@@ -207,9 +203,7 @@ async fn model_backed_overflow_split_empty_prefix_summary_falls_back_determinist
         provider_text_events(&oversized_answer),
         vec![
             ProviderStreamEvent::Start,
-            ProviderStreamEvent::Error {
-                message: "prompt token count of 128713 exceeds the limit of 128000".to_string(),
-            },
+            ProviderStreamEvent::error("prompt token count of 128713 exceeds the limit of 128000"),
         ],
         provider_text_events(""),
         provider_text_events(&model_checkpoint_summary),
@@ -284,9 +278,7 @@ async fn overflow_auto_retry_can_be_disabled_by_compaction_config() {
         provider_text_events("first answer"),
         vec![
             ProviderStreamEvent::Start,
-            ProviderStreamEvent::Error {
-                message: "prompt token count of 128713 exceeds the limit of 128000".to_string(),
-            },
+            ProviderStreamEvent::error("prompt token count of 128713 exceeds the limit of 128000"),
         ],
     ]);
     let coordinator = test_agent_coordinator_with_provider_and_compaction(

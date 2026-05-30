@@ -1641,7 +1641,7 @@ fn default_shipped_agents(
         ),
         category_routing_profile(
             "unspecified-low",
-            "Low-effort fallback subagent for uncategorized small tasks.",
+            "Low-to-moderate fallback subagent for contained uncategorized tasks.",
             model_ref,
         ),
         category_routing_profile(

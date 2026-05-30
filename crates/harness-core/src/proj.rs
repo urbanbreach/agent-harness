@@ -1314,9 +1314,6 @@ pub fn project_resume_plan<'a>(
                 known_profiles.clear();
                 pending_permissions.clear();
                 tasks_in_flight.clear();
-                tool_calls.clear();
-                completed_tasks.clear();
-                session_artifacts.clear();
                 agent_turns_in_flight.clear();
                 agent_turns_terminal_pending_late.clear();
             }

@@ -363,9 +363,7 @@ async fn provider_partial_output_then_error_is_not_successful_assistant_message(
     let provider = SequentialScriptedProvider::new(vec![vec![
         ProviderStreamEvent::Start,
         ProviderStreamEvent::TextDelta("partial answer".to_string()),
-        ProviderStreamEvent::Error {
-            message: "provider exploded".to_string(),
-        },
+        ProviderStreamEvent::error("provider exploded"),
     ]]);
     let coordinator = test_agent_coordinator_with_provider(temp_dir.path(), Arc::new(provider), 1);
 
@@ -437,9 +435,10 @@ async fn records_provider_error_events_and_fails_agent_turn() {
     let provider = SequentialScriptedProvider::new(vec![vec![
         ProviderStreamEvent::Start,
         ProviderStreamEvent::TextDelta("partial answer".to_string()),
-        ProviderStreamEvent::Error {
-            message: "provider exploded".to_string(),
-        },
+        ProviderStreamEvent::categorized_error(
+            "provider exploded",
+            ProviderErrorCategory::RateLimited,
+        ),
     ]]);
     let coordinator = test_agent_coordinator_with_provider(temp_dir.path(), Arc::new(provider), 1);
 
@@ -465,7 +464,7 @@ async fn records_provider_error_events_and_fails_agent_turn() {
                 &event.payload,
                 EventV1::TaskCancelled(data)
                     if event.correlation_id.as_deref() == Some(request_id.as_str())
-                        && data.reason == "provider exploded"
+                        && data.reason == "rate_limited: provider exploded"
             )
         })
     })
@@ -487,6 +486,11 @@ async fn records_provider_error_events_and_fails_agent_turn() {
                 if event.correlation_id.as_deref() == Some(request_id.as_str())
                     && data.finish_reason == "error"
                     && data.output_digest.is_none()
+                    && data.metadata.as_ref().and_then(|metadata| metadata.provider_error_category)
+                        == Some(ProviderErrorCategory::RateLimited)
+                    && data.metadata.as_ref()
+                        .and_then(|metadata| metadata.provider_error_remediation.as_deref())
+                        .is_some_and(|hint| hint.contains("rate limit"))
         )
     }));
     assert!(!events.iter().any(|event| {

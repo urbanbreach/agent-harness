@@ -191,9 +191,7 @@ async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response
         provider_text_events("first answer"),
         vec![
             ProviderStreamEvent::Start,
-            ProviderStreamEvent::Error {
-                message: "prompt token count of 128713 exceeds the limit of 128000".to_string(),
-            },
+            ProviderStreamEvent::error("prompt token count of 128713 exceeds the limit of 128000"),
         ],
     ]);
     let overflow = test_agent_coordinator_with_provider(
@@ -267,9 +265,7 @@ async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response
                 "partial provider output {}",
                 "B".repeat(35_100)
             )),
-            ProviderStreamEvent::Error {
-                message: "provider exploded".to_string(),
-            },
+            ProviderStreamEvent::error("provider exploded"),
         ],
     ]);
     let failed = test_agent_coordinator_with_provider_and_compaction(

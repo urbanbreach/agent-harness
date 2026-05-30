@@ -367,6 +367,8 @@ fn replay_new_loop_metadata_is_non_semantic_for_run_summary() {
                         summary_digest: Some("digest-thinking-summary".to_string()),
                         signature: Some("thinking-signature-redacted".to_string()),
                     }),
+                    provider_error_category: None,
+                    provider_error_remediation: None,
                 }),
             }),
         ),

@@ -495,7 +495,8 @@ pub fn permission_kind_for_tool(tool_id: &str) -> Option<PermissionKind> {
 
     match canonical_tool_id {
         "question" => Some(PermissionKind::Question),
-        "task" => Some(PermissionKind::Task),
+        "plan_enter" | "plan_exit" => Some(PermissionKind::Question),
+        "task" | "skill" => Some(PermissionKind::Task),
         "background_cancel" => Some(PermissionKind::Task),
         "team_list" => Some(PermissionKind::Task),
         "todoread" | "todowrite" => Some(PermissionKind::Task),
@@ -1041,7 +1042,19 @@ mod tests {
             permission_kind_for_tool("question"),
             Some(PermissionKind::Question)
         );
+        assert_eq!(
+            permission_kind_for_tool("plan_enter"),
+            Some(PermissionKind::Question)
+        );
+        assert_eq!(
+            permission_kind_for_tool("plan_exit"),
+            Some(PermissionKind::Question)
+        );
         assert_eq!(permission_kind_for_tool("task"), Some(PermissionKind::Task));
+        assert_eq!(
+            permission_kind_for_tool("skill"),
+            Some(PermissionKind::Task)
+        );
         assert_eq!(
             permission_kind_for_tool("webfetch"),
             Some(PermissionKind::WebFetch)

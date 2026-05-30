@@ -179,9 +179,7 @@ async fn coordinator_isolates_parallel_child_failures() {
                 "alpha-prompt".to_string(),
                 vec![
                     ProviderStreamEvent::Start,
-                    ProviderStreamEvent::Error {
-                        message: "alpha child failed".to_string(),
-                    },
+                    ProviderStreamEvent::error("alpha child failed"),
                 ],
             ),
             (

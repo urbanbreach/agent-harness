@@ -26,9 +26,7 @@ async fn overflow_retry_compacts_context_and_retries_with_summary() {
         ],
         vec![
             ProviderStreamEvent::Start,
-            ProviderStreamEvent::Error {
-                message: "prompt token count of 128713 exceeds the limit of 128000".to_string(),
-            },
+            ProviderStreamEvent::error("prompt token count of 128713 exceeds the limit of 128000"),
         ],
         vec![
             ProviderStreamEvent::Start,
@@ -146,9 +144,7 @@ async fn overflow_retry_can_compact_a_single_large_preserved_turn() {
         ],
         vec![
             ProviderStreamEvent::Start,
-            ProviderStreamEvent::Error {
-                message: "prompt token count of 128713 exceeds the limit of 128000".to_string(),
-            },
+            ProviderStreamEvent::error("prompt token count of 128713 exceeds the limit of 128000"),
         ],
         vec![
             ProviderStreamEvent::Start,
@@ -257,9 +253,7 @@ async fn overflow_retry_does_not_resend_same_context_when_compaction_is_noop() {
         ],
         vec![
             ProviderStreamEvent::Start,
-            ProviderStreamEvent::Error {
-                message: "prompt token count of 128713 exceeds the limit of 128000".to_string(),
-            },
+            ProviderStreamEvent::error("prompt token count of 128713 exceeds the limit of 128000"),
         ],
     ]);
     let coordinator =

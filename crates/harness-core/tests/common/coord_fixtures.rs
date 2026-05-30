@@ -37,7 +37,7 @@ use harness_core::store::EventStoreError;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
 use harness_providers::mock::{request_digest, MockProvider};
 use harness_providers::{
-    CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider,
+    CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider, ProviderErrorCategory,
     ProviderEventStream, ProviderStreamEvent, ProviderStreamFinishedMetadata,
     ProviderStreamStartMetadata, ProviderStreamThinkingMetadata,
 };
@@ -310,9 +310,9 @@ impl Provider for SequentialScriptedProvider {
                 .get(call_index)
                 .cloned()
                 .unwrap_or_else(|| {
-                    vec![ProviderStreamEvent::Error {
-                        message: format!("unexpected stream_completion call index {call_index}"),
-                    }]
+                    vec![ProviderStreamEvent::error(format!(
+                        "unexpected stream_completion call index {call_index}"
+                    ))]
                 }),
         ))
     }

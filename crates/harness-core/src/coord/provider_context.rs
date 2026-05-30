@@ -826,6 +826,12 @@ struct ProviderOperationalMemoryFacts {
     operation_facts: Vec<String>,
 }
 
+#[derive(Debug, Clone)]
+struct ProviderToolContextFact {
+    tool_id: String,
+    args_summary: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ProviderFileOperationKind {
     Read,
@@ -881,6 +887,7 @@ fn collect_compacted_file_operation_facts(
 
     let mut tool_operations: BTreeMap<String, ProviderFileOperationKind> = BTreeMap::new();
     let mut tool_output_paths: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut tool_contexts: BTreeMap<String, ProviderToolContextFact> = BTreeMap::new();
     for event in events
         .iter()
         .filter(|event| event.seq > lower_bound_seq && event.seq <= through_seq)
@@ -890,6 +897,15 @@ fn collect_compacted_file_operation_facts(
         }
         match &event.payload {
             EventV1::ToolCallRequested(payload) => {
+                tool_contexts.insert(
+                    payload.tool_call_id.clone(),
+                    ProviderToolContextFact {
+                        tool_id: redactor.redact_text(&payload.tool_id),
+                        args_summary: non_empty_trimmed(&payload.args_summary).map(|summary| {
+                            summarize_compaction_text(&redactor.redact_text(summary))
+                        }),
+                    },
+                );
                 if let Some(operation) = tool_call_operation(
                     Some(payload.tool_id.as_str()),
                     payload.metadata.as_ref(),
@@ -916,6 +932,7 @@ fn collect_compacted_file_operation_facts(
 
     let mut read = BTreeMap::new();
     let mut modified = BTreeMap::new();
+    let mut operation_facts = Vec::new();
     for event in events
         .iter()
         .filter(|event| event.seq > lower_bound_seq && event.seq <= through_seq)
@@ -974,6 +991,18 @@ fn collect_compacted_file_operation_facts(
                     .get(&payload.tool_call_id)
                     .copied()
                     .or_else(|| tool_call_operation(None, payload.metadata.as_ref(), None));
+                if operation.is_none() {
+                    if let Some(context) = tool_contexts.get(&payload.tool_call_id) {
+                        add_tool_operation_fact(
+                            &mut operation_facts,
+                            &context.tool_id,
+                            &payload.tool_call_id,
+                            context.args_summary.as_deref(),
+                            payload.output_summary.as_deref(),
+                            redactor,
+                        );
+                    }
+                }
                 if operation != Some(ProviderFileOperationKind::Read) {
                     continue;
                 }
@@ -997,7 +1026,7 @@ fn collect_compacted_file_operation_facts(
         }
     }
 
-    finalize_provider_operational_memory(read, modified)
+    finalize_provider_operational_memory(read, modified, operation_facts)
 }
 
 fn compacted_request_ids_for_operational_memory(
@@ -1273,9 +1302,51 @@ fn add_file_operation_fact(
     }
 }
 
+fn add_tool_operation_fact(
+    facts: &mut Vec<String>,
+    tool_id: &str,
+    tool_call_id: &str,
+    args_summary: Option<&str>,
+    output_summary: Option<&str>,
+    redactor: &(impl Redactor + ?Sized),
+) {
+    let mut line = format!(
+        "tool {} via {}",
+        redactor.redact_text(tool_id),
+        tool_call_id
+    );
+    let args_summary = args_summary
+        .and_then(non_empty_trimmed)
+        .map(|summary| summarize_compaction_text(&redactor.redact_text(summary)));
+    let output_summary = output_summary
+        .and_then(non_empty_trimmed)
+        .map(|summary| summarize_compaction_text(&redactor.redact_text(summary)));
+
+    match (args_summary, output_summary) {
+        (Some(args), Some(output)) => {
+            line.push_str(": ");
+            line.push_str(&args);
+            line.push_str(" -> ");
+            line.push_str(&output);
+        }
+        (Some(args), None) => {
+            line.push_str(": ");
+            line.push_str(&args);
+        }
+        (None, Some(output)) => {
+            line.push_str(": ");
+            line.push_str(&output);
+        }
+        (None, None) => {}
+    }
+
+    facts.push(summarize_compaction_text(&line));
+}
+
 fn finalize_provider_operational_memory(
     read: BTreeMap<(String, String), ProviderFileOperationFact>,
     modified: BTreeMap<(String, String), ProviderFileOperationFact>,
+    extra_operation_facts: Vec<String>,
 ) -> ProviderOperationalMemoryFacts {
     let (read_files, read_omitted) = cap_file_operation_facts(read);
     let (modified_files, modified_omitted) = cap_file_operation_facts(modified);
@@ -1307,6 +1378,12 @@ fn finalize_provider_operational_memory(
             line.push_str(summary);
         }
         operation_facts.push(summarize_compaction_text(&line));
+    }
+    for fact in extra_operation_facts {
+        if operation_facts.len() >= PROVIDER_CONTEXT_OPERATION_FACT_LIMIT {
+            break;
+        }
+        operation_facts.push(fact);
     }
     operation_facts.truncate(PROVIDER_CONTEXT_OPERATION_FACT_LIMIT);
     ProviderOperationalMemoryFacts {
@@ -1642,7 +1719,7 @@ pub(super) async fn model_backed_compaction_summary_for(
     while let Some(event) = stream.next().await {
         match event {
             ProviderStreamEvent::TextDelta(delta) => output.push_str(&delta),
-            ProviderStreamEvent::Error { message } => return Err(message),
+            ProviderStreamEvent::Error { message, .. } => return Err(message),
             ProviderStreamEvent::Done { .. } | ProviderStreamEvent::DoneWithMetadata { .. } => {
                 break
             }
@@ -1736,7 +1813,7 @@ async fn model_backed_split_prefix_summary_for(
     while let Some(event) = stream.next().await {
         match event {
             ProviderStreamEvent::TextDelta(delta) => output.push_str(&delta),
-            ProviderStreamEvent::Error { message } => return Err(message),
+            ProviderStreamEvent::Error { message, .. } => return Err(message),
             ProviderStreamEvent::Done { .. } | ProviderStreamEvent::DoneWithMetadata { .. } => {
                 break
             }
