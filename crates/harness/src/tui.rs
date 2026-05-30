@@ -33,8 +33,9 @@ use harness_core::session_title::create_default_title;
 use harness_core::store::{EventStore, EventStoreError};
 use harness_tools::{coordinator_registry, discover_skill_catalog, SkillCatalogEntry};
 use harness_tui::app::{
-    set_pending_live_launch_metadata, set_pending_live_prompt_auto_submit, LaunchMetadata,
-    ModelOption, SessionHistoryEntry, ToggleEntryConfig, ToggleEntryKind, TogglesConfig,
+    prompt_history_path_for_session_dir, set_pending_live_launch_metadata,
+    set_pending_live_prompt_auto_submit, LaunchMetadata, ModelOption, SessionHistoryEntry,
+    ToggleEntryConfig, ToggleEntryKind, TogglesConfig,
 };
 use harness_tui::{
     close_preserved_terminal_session, run_tui_with_options, set_pending_replay_launch_metadata,
@@ -1159,6 +1160,7 @@ async fn run_interactive_mode(
                     session_history_entries,
                     Arc::clone(&launch_selection),
                     persist_model_selection,
+                    Some(prompt_history_path_for_session_dir(&settings.session_dir)),
                 )
             }
         },
@@ -1295,6 +1297,7 @@ async fn run_direct_continue_mode(
                     session_history_entries,
                     Arc::clone(&launch_selection),
                     persist_model_selection,
+                    Some(prompt_history_path_for_session_dir(&settings.session_dir)),
                 )
             }
         },
@@ -1365,6 +1368,7 @@ async fn run_startup_launcher(
     session_history_entries: Vec<SessionHistoryEntry>,
     launch_selection: LaunchSelection,
     persist_model_selection: bool,
+    prompt_history_path: Option<PathBuf>,
 ) -> Result<InteractiveWorkflow, String> {
     profile_handoff("startup_launcher.begin");
     let selected_intent = Arc::new(Mutex::new(None::<UiIntent>));
@@ -1397,6 +1401,7 @@ async fn run_startup_launcher(
         run_tui_with_options(TuiOptions {
             mode: TuiMode::Startup {
                 session_history_entries,
+                prompt_history_path,
             },
             exit_on_finish,
             on_ui_intent: Some(on_ui_intent),
@@ -1567,6 +1572,7 @@ async fn run_continue_session_bootstrap(
             live_update_tx,
             preloaded_last_seq.saturating_add(1),
             Some(forwarder_live_agent_target),
+            false,
         )
         .await
     });
@@ -1593,6 +1599,7 @@ async fn run_continue_session_bootstrap(
     let exit_on_finish = cmd.exit_on_finish;
     let toggles = Some(settings.toggles.clone());
     set_pending_live_launch_metadata(continue_metadata);
+    let prompt_history_path = Some(prompt_history_path_for_session_dir(&settings.session_dir));
     let session_history_entries =
         load_live_session_history_entries(&run.run_dir, &settings.session_dir)?;
 
@@ -1605,6 +1612,7 @@ async fn run_continue_session_bootstrap(
             exit_on_finish,
             ui_intent_sender,
             true,
+            prompt_history_path,
             toggles,
         ))
     })
@@ -1641,6 +1649,7 @@ fn continue_live_tui_options(
     exit_on_finish: bool,
     ui_intent_sender: UiIntentSink,
     compact_session_supported: bool,
+    prompt_history_path: Option<PathBuf>,
     toggles: Option<TogglesConfig>,
 ) -> TuiOptions {
     TuiOptions {
@@ -1648,6 +1657,7 @@ fn continue_live_tui_options(
             run_dir,
             historical_events,
             session_history_entries,
+            prompt_history_path,
             update_rx,
             compact_session_supported,
         },
@@ -1659,6 +1669,10 @@ fn continue_live_tui_options(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "new live TUI options mirror the live handoff state explicitly"
+)]
 fn new_live_tui_options(
     run_dir: PathBuf,
     session_history_entries: Vec<SessionHistoryEntry>,
@@ -1666,6 +1680,7 @@ fn new_live_tui_options(
     exit_on_finish: bool,
     ui_intent_sender: UiIntentSink,
     compact_session_supported: bool,
+    prompt_history_path: Option<PathBuf>,
     toggles: Option<TogglesConfig>,
 ) -> TuiOptions {
     TuiOptions {
@@ -1673,6 +1688,7 @@ fn new_live_tui_options(
             run_dir,
             historical_events: Vec::new(),
             session_history_entries,
+            prompt_history_path,
             update_rx,
             compact_session_supported,
         },
@@ -1958,6 +1974,7 @@ async fn run_new_live_session(
 
     let exit_on_finish = cmd.exit_on_finish;
     let toggles = Some(settings.toggles.clone());
+    let prompt_history_path = Some(prompt_history_path_for_session_dir(&settings.session_dir));
     set_pending_live_launch_metadata(launch_metadata);
 
     let tui_result = tokio::task::spawn_blocking(move || {
@@ -1969,6 +1986,7 @@ async fn run_new_live_session(
             exit_on_finish,
             ui_intent_sender,
             true,
+            prompt_history_path,
             toggles,
         ))
     })
@@ -2178,7 +2196,14 @@ async fn bootstrap_new_live_runtime(
         let live_update_tx = live_update_tx.clone();
         let forwarder_live_agent_target = Arc::clone(&live_agent_target);
         async move {
-            forward_events_to_tui(store, live_update_tx, 1, Some(forwarder_live_agent_target)).await
+            forward_events_to_tui(
+                store,
+                live_update_tx,
+                1,
+                Some(forwarder_live_agent_target),
+                false,
+            )
+            .await
         }
     });
 
@@ -2272,8 +2297,17 @@ async fn run_live_mode(
         let _ = logging::init_logging(config, &run_dir)?;
     }
 
-    let event_forwarder_task =
-        tokio::spawn(async move { forward_events_to_tui(store, live_update_tx, 1, None).await });
+    let stop_forwarder_after_terminal_event = cmd.exit_on_finish;
+    let event_forwarder_task = tokio::spawn(async move {
+        forward_events_to_tui(
+            store,
+            live_update_tx,
+            1,
+            None,
+            stop_forwarder_after_terminal_event,
+        )
+        .await
+    });
 
     let intent_coordinator = coordinator.clone();
     let ui_intent_task = tokio::spawn(async move {
@@ -2296,6 +2330,7 @@ async fn run_live_mode(
 
     let exit_on_finish = cmd.exit_on_finish;
     let toggles = Some(settings.toggles.clone());
+    let prompt_history_path = Some(prompt_history_path_for_session_dir(&settings.session_dir));
     set_pending_live_launch_metadata(scenario_launch_metadata());
     let session_history_entries =
         load_live_session_history_entries(&run_dir, &settings.session_dir)?;
@@ -2309,6 +2344,7 @@ async fn run_live_mode(
             exit_on_finish,
             ui_intent_sender,
             false,
+            prompt_history_path,
             toggles,
         ))
     })
@@ -2424,6 +2460,7 @@ async fn forward_events_to_tui(
     live_update_tx: std_mpsc::Sender<LiveUpdate>,
     start_from_seq: u64,
     live_agent_target: Option<LiveAgentTargetState>,
+    stop_after_terminal_event: bool,
 ) -> Result<(), String> {
     let mut from_seq = start_from_seq.max(1);
     let mut last_seq_seen = from_seq.saturating_sub(1);
@@ -2439,6 +2476,7 @@ async fn forward_events_to_tui(
                         continue;
                     }
 
+                    let terminal_event = is_terminal_event(&event.payload);
                     last_seq_seen = event.seq;
                     from_seq = last_seq_seen.saturating_add(1);
                     maybe_update_live_agent_target_for_plan_handoff(
@@ -2449,6 +2487,9 @@ async fn forward_events_to_tui(
                         .send(LiveUpdate::Event(Box::new(event)))
                         .is_err()
                     {
+                        return Ok(());
+                    }
+                    if stop_after_terminal_event && terminal_event {
                         return Ok(());
                     }
                 }
@@ -2469,6 +2510,7 @@ async fn forward_events_to_tui(
                             continue;
                         }
 
+                        let terminal_event = is_terminal_event(&replayed_event.payload);
                         last_seq_seen = replayed_event.seq;
                         from_seq = last_seq_seen.saturating_add(1);
                         maybe_update_live_agent_target_for_plan_handoff(
@@ -2479,6 +2521,9 @@ async fn forward_events_to_tui(
                             .send(LiveUpdate::Event(Box::new(replayed_event)))
                             .is_err()
                         {
+                            return Ok(());
+                        }
+                        if stop_after_terminal_event && terminal_event {
                             return Ok(());
                         }
                     }
@@ -2812,12 +2857,11 @@ async fn await_task(name: &str, handle: JoinHandle<Result<(), String>>) -> Resul
 }
 
 fn has_terminal_event(events: &[EventEnvelopeV1]) -> bool {
-    events.iter().any(|event| {
-        matches!(
-            &event.payload,
-            EventV1::RunFinished(_) | EventV1::RunFailed(_)
-        )
-    })
+    events.iter().any(|event| is_terminal_event(&event.payload))
+}
+
+fn is_terminal_event(payload: &EventV1) -> bool {
+    matches!(payload, EventV1::RunFinished(_) | EventV1::RunFailed(_))
 }
 
 fn unique_interactive_run_id() -> String {
@@ -2850,8 +2894,10 @@ mod tests {
         AgentSpawnedEvent, ProviderRequestFinishedEvent, ProviderRequestStartedEvent,
         RunFinishedEvent, RunStartedEvent, SCHEMA_VERSION,
     };
+    use harness_core::store::{EventEnvelopeWithoutSeqV1, InMemoryEventStore};
     use harness_tui::app::{set_pending_live_prompt_draft, AppState};
     use std::sync::{Mutex, OnceLock};
+    use std::time::Duration;
 
     fn mock_mode_cwd_test_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -3024,6 +3070,25 @@ mod tests {
         }
     }
 
+    fn forwarder_event_draft(
+        run_id: &str,
+        marker: &str,
+        payload: EventV1,
+    ) -> EventEnvelopeWithoutSeqV1 {
+        EventEnvelopeWithoutSeqV1 {
+            schema_version: SCHEMA_VERSION,
+            event_id: format!("evt_forwarder_{marker}"),
+            run_id: run_id.to_string(),
+            mono_ms: 0,
+            ts: Some("2026-05-03T00:02:00Z".to_string()),
+            actor: EventActor::new(ActorKind::System, Some("tui-forwarder-test".to_string())),
+            correlation_id: None,
+            causation_id: None,
+            stream_key: Some(format!("run:{run_id}")),
+            payload,
+        }
+    }
+
     fn catalog_events(run_id: &str) -> Vec<EventEnvelopeV1> {
         vec![
             catalog_event(
@@ -3111,6 +3176,7 @@ mod tests {
             Arc::clone(&sink),
             true,
             None,
+            None,
         );
         assert!(fresh.preserve_terminal_on_exit);
         assert!(matches!(
@@ -3131,6 +3197,7 @@ mod tests {
             sink,
             true,
             None,
+            None,
         );
         assert!(resumed.preserve_terminal_on_exit);
         assert!(matches!(
@@ -3149,8 +3216,16 @@ mod tests {
         let (_tx, rx) = std_mpsc::channel::<LiveUpdate>();
         let sink: UiIntentSink = Arc::new(|_| {});
 
-        let options =
-            new_live_tui_options(run_dir.clone(), Vec::new(), rx, false, sink, true, None);
+        let options = new_live_tui_options(
+            run_dir.clone(),
+            Vec::new(),
+            rx,
+            false,
+            sink,
+            true,
+            None,
+            None,
+        );
 
         let TuiMode::Live {
             run_dir: configured_run_dir,
@@ -3214,8 +3289,17 @@ mod tests {
 
         let (_tx, rx) = std_mpsc::channel::<LiveUpdate>();
         let sink: UiIntentSink = Arc::new(|_| {});
-        let options =
-            continue_live_tui_options(child_dir, Vec::new(), entries, rx, false, sink, true, None);
+        let options = continue_live_tui_options(
+            child_dir,
+            Vec::new(),
+            entries,
+            rx,
+            false,
+            sink,
+            true,
+            None,
+            None,
+        );
 
         let TuiMode::Live {
             session_history_entries,
@@ -3412,6 +3496,49 @@ mod tests {
             resume_plan.is_resumable,
             "child should be resumable from copied metadata: {:?}",
             resume_plan.resume_disabled_reason
+        );
+    }
+
+    #[tokio::test]
+    async fn event_forwarder_stops_after_terminal_event_when_requested() {
+        // arrange
+        let store = Arc::new(InMemoryEventStore::new());
+        store
+            .append(forwarder_event_draft(
+                "run_forwarder_terminal",
+                "started",
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "forwarder terminal".to_string(),
+                    workspace_root: "/workspace".to_string(),
+                }),
+            ))
+            .expect("append started event");
+        store
+            .append(forwarder_event_draft(
+                "run_forwarder_terminal",
+                "finished",
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ))
+            .expect("append finished event");
+        let (tx, rx) = std_mpsc::channel();
+
+        // act
+        tokio::time::timeout(
+            Duration::from_millis(500),
+            forward_events_to_tui(store, tx, 1, None, true),
+        )
+        .await
+        .expect("forwarder should stop after forwarding terminal event")
+        .expect("forwarder succeeds");
+
+        // assert
+        let updates = rx.try_iter().collect::<Vec<_>>();
+        assert_eq!(updates.len(), 2);
+        assert!(matches!(updates[0], LiveUpdate::Event(_)));
+        assert!(
+            matches!(updates[1], LiveUpdate::Event(ref event) if is_terminal_event(&event.payload))
         );
     }
 
@@ -4174,6 +4301,7 @@ mod tests {
 
     #[test]
     fn runtime_toggles_report_compact_skill_catalog_states() {
+        // arrange
         let workspace = tempfile::tempdir().expect("workspace tempdir");
         fs::create_dir_all(workspace.path().join(".git")).expect("git dir");
         for (name, body) in [
@@ -4225,7 +4353,9 @@ mod tests {
         let ready = toggles
             .entries
             .iter()
+            // act
             .find(|entry| {
+                // assert
                 matches!(&entry.kind, ToggleEntryKind::AgentSkill { agent, skill }
                     if agent == "build" && skill == "skill:project:ready-skill")
             })

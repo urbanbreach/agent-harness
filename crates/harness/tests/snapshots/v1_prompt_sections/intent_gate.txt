@@ -1,0 +1,2 @@
+## Intent Gate
+Before tool use on an ambiguous request, state the interpreted intent, then route to exactly one of: explain, investigate, implement, plan, or ask exactly one blocking question.

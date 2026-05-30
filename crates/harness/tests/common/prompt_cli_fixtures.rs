@@ -12,7 +12,8 @@ use harness_core::event::{
     TaskTerminalScope, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use harness_providers::{
-    CompletionRequest, CompletionUsage, Provider, ProviderEventStream, ProviderStreamEvent,
+    CompletionRequest, CompletionUsage, Provider, ProviderErrorCategory, ProviderEventStream,
+    ProviderStreamEvent,
 };
 use tempfile::tempdir;
 
@@ -170,9 +171,14 @@ fn tool_call_events(
 fn provider_error_events() -> Vec<ProviderStreamEvent> {
     vec![
         ProviderStreamEvent::Start,
-        ProviderStreamEvent::Error {
-            message: "fixture provider failure".to_string(),
-        },
+        ProviderStreamEvent::error("fixture provider failure"),
+    ]
+}
+
+fn categorized_provider_error_events(category: ProviderErrorCategory) -> Vec<ProviderStreamEvent> {
+    vec![
+        ProviderStreamEvent::Start,
+        ProviderStreamEvent::categorized_error("fixture provider failure", category),
     ]
 }
 

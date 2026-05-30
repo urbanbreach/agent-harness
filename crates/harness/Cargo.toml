@@ -23,8 +23,10 @@ tracing-appender = "0.2"
 
 [dev-dependencies]
 harness-testkit = { path = "../harness-testkit" }
+portable-pty = "0.8"
 sha2 = "0.10"
 tempfile.workspace = true
+vt100 = "0.15"
 
 [lints]
 workspace = true

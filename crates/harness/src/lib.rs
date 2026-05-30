@@ -94,17 +94,26 @@ impl RootInteractiveArgs {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// Launch the interactive terminal UI.
     Tui(TuiCommand),
+    /// Run a deterministic built-in scenario.
     Run(RunCommand),
+    /// Check local runtime readiness and configuration health.
     Doctor(DoctorCommand),
+    /// Inspect, generate, or probe provider model catalogs.
     Models(ModelsCommand),
+    /// Run one headless prompt through a configured or mock provider.
     Prompt(PromptCommand),
+    /// Replay one stored event log without provider or tool execution.
     Replay(ReplayCommand),
+    /// List, inspect, export, replay, continue, or branch stored sessions.
     Sessions {
         #[command(subcommand)]
         command: SessionsCommand,
     },
+    /// Print the runtime or TUI JSON schema.
     Schema(SchemaCommand),
+    /// Validate runtime and TUI configuration.
     Config {
         #[command(subcommand)]
         command: ConfigCommands,
@@ -119,6 +128,7 @@ struct SchemaCommand {
 
 #[derive(Debug, Subcommand)]
 enum ConfigCommands {
+    /// Validate discovered or explicit runtime/TUI config files.
     Validate,
 }
 

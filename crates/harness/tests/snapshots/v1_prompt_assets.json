@@ -1,7 +1,7 @@
 {
   "profiles": {
     "artistry": {
-      "digest12": "7e3554a7b1c4",
+      "digest12": "ce0e5cea7163",
       "line_count": 47,
       "sections": [
         "Identity",
@@ -19,8 +19,8 @@
       ]
     },
     "build": {
-      "digest12": "247d9b0469f5",
-      "line_count": 47,
+      "digest12": "e051e753bd92",
+      "line_count": 53,
       "sections": [
         "Identity",
         "Goal",
@@ -28,6 +28,7 @@
         "Do Not Use When",
         "Scope Guard",
         "Runtime-Enforced Permissions",
+        "Intent Gate",
         "Behavioral Guidance",
         "Operating Loop",
         "Ask Gate",
@@ -37,8 +38,8 @@
       ]
     },
     "deep": {
-      "digest12": "f2e22e2d1117",
-      "line_count": 47,
+      "digest12": "111f5da1af62",
+      "line_count": 49,
       "sections": [
         "Identity",
         "Goal",
@@ -55,8 +56,8 @@
       ]
     },
     "discipline": {
-      "digest12": "c06dc8f7a072",
-      "line_count": 47,
+      "digest12": "ed468d47303e",
+      "line_count": 51,
       "sections": [
         "Identity",
         "Goal",
@@ -64,6 +65,7 @@
         "Do Not Use When",
         "Scope Guard",
         "Runtime-Enforced Permissions",
+        "Intent Gate",
         "Behavioral Guidance",
         "Operating Loop",
         "Ask Gate",
@@ -73,7 +75,7 @@
       ]
     },
     "explore": {
-      "digest12": "56aa328196ff",
+      "digest12": "12147c950a5a",
       "line_count": 47,
       "sections": [
         "Identity",
@@ -91,7 +93,7 @@
       ]
     },
     "general": {
-      "digest12": "216a9b323740",
+      "digest12": "4ee1b61ec1c0",
       "line_count": 47,
       "sections": [
         "Identity",
@@ -109,8 +111,8 @@
       ]
     },
     "plan": {
-      "digest12": "8499a46ea938",
-      "line_count": 47,
+      "digest12": "f425a90dc790",
+      "line_count": 53,
       "sections": [
         "Identity",
         "Goal",
@@ -118,6 +120,7 @@
         "Do Not Use When",
         "Scope Guard",
         "Runtime-Enforced Permissions",
+        "Intent Gate",
         "Behavioral Guidance",
         "Operating Loop",
         "Ask Gate",
@@ -127,8 +130,8 @@
       ]
     },
     "quick": {
-      "digest12": "527c494b7c4a",
-      "line_count": 47,
+      "digest12": "989fa34b0b32",
+      "line_count": 59,
       "sections": [
         "Identity",
         "Goal",
@@ -145,8 +148,8 @@
       ]
     },
     "ultrabrain": {
-      "digest12": "e24136412645",
-      "line_count": 47,
+      "digest12": "35a99a4e14ae",
+      "line_count": 49,
       "sections": [
         "Identity",
         "Goal",
@@ -163,8 +166,8 @@
       ]
     },
     "unspecified-high": {
-      "digest12": "33578ede5dff",
-      "line_count": 47,
+      "digest12": "087492bfe9a9",
+      "line_count": 56,
       "sections": [
         "Identity",
         "Goal",
@@ -181,8 +184,8 @@
       ]
     },
     "unspecified-low": {
-      "digest12": "60b107a4b7a2",
-      "line_count": 47,
+      "digest12": "32c91a3c148a",
+      "line_count": 55,
       "sections": [
         "Identity",
         "Goal",
@@ -199,8 +202,8 @@
       ]
     },
     "visual-engineering": {
-      "digest12": "a655825b8883",
-      "line_count": 47,
+      "digest12": "f05e0a3eca90",
+      "line_count": 53,
       "sections": [
         "Identity",
         "Goal",
@@ -217,8 +220,8 @@
       ]
     },
     "writing": {
-      "digest12": "893097eb25f4",
-      "line_count": 47,
+      "digest12": "e377119d4bdc",
+      "line_count": 49,
       "sections": [
         "Identity",
         "Goal",

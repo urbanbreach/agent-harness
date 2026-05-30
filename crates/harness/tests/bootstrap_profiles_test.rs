@@ -1,12 +1,49 @@
+use harness_core::agent::{build_provider_tool_defs, AgentProfile};
 use harness_core::config::{
     load_config_from_file_with_context, load_config_from_str, ConfigLoadContext, HarnessConfig,
+    ResolvedModelTarget,
 };
-use harness_core::perm::{PermissionKind, PolicyDecision};
+use harness_core::perm::{
+    permission_kind_for_tool_call, PermissionKind, PermissionRuleRequest, PolicyDecision,
+};
+use harness_core::tool::ToolRegistry;
+use harness_core::workspace::WorkspaceEnvironment;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 
 const V1_PROMPT_PROFILES: &str = "build plan discipline general explore visual-engineering artistry ultrabrain deep quick unspecified-low unspecified-high writing";
+const V1_PRIMARY_PROMPTS: [&str; 3] = ["build", "plan", "discipline"];
+const V1_CATEGORY_PROMPTS: [&str; 8] = [
+    "visual-engineering",
+    "artistry",
+    "ultrabrain",
+    "deep",
+    "quick",
+    "unspecified-low",
+    "unspecified-high",
+    "writing",
+];
+const V1_HIDDEN_PROMPTS: [&str; 3] = ["title", "summary", "compaction"];
+const V1_COMPOSED_PROMPTS: [&str; 16] = [
+    "build",
+    "plan",
+    "discipline",
+    "general",
+    "explore",
+    "visual-engineering",
+    "artistry",
+    "ultrabrain",
+    "deep",
+    "quick",
+    "unspecified-low",
+    "unspecified-high",
+    "writing",
+    "title",
+    "summary",
+    "compaction",
+];
+const UPDATE_PROMPT_SNAPSHOTS_ENV: &str = "HARNESS_UPDATE_PROMPT_SNAPSHOTS";
 
 #[allow(dead_code)]
 #[path = "../src/dynamic_prompt.rs"]
@@ -96,500 +133,358 @@ fn shipped_v1_prompt_asset_snapshot_matches_source() {
     assert_eq!(actual, expected, "shipped V1 prompt asset snapshot drifted");
 }
 
-fn shipped_v1_prompt_asset_snapshot(repo_root: &Path) -> serde_json::Value {
-    let mut profiles = serde_json::Map::new();
-    for profile in V1_PROMPT_PROFILES.split_whitespace() {
-        let asset_path = repo_root
-            .join(".agent-harness")
-            .join("agents")
-            .join(format!("{profile}.md"));
-        let markdown = fs::read_to_string(&asset_path)
-            .unwrap_or_else(|err| panic!("read prompt asset {}: {err}", asset_path.display()));
-        let body = prompt_body_from_markdown(&markdown);
-        let digest12 = blake3::hash(body.as_bytes())
-            .to_hex()
-            .chars()
-            .take(12)
-            .collect::<String>();
-        let sections = body
-            .lines()
-            .filter_map(|line| line.strip_prefix("## "))
-            .map(str::to_string)
-            .collect::<Vec<_>>();
-        profiles.insert(
-            profile.to_string(),
-            serde_json::json!({
-                "digest12": digest12,
-                "line_count": body.lines().count(),
-                "sections": sections,
-            }),
+#[test]
+fn shipped_v1_prompt_section_snapshots_match_source() {
+    // arrange
+    let snapshot_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("snapshots")
+        .join("v1_prompt_sections");
+    let model = snapshot_model_target();
+    let workspace = snapshot_workspace_environment();
+    let environment = dynamic_prompt::DynamicPromptEnvironment {
+        workspace: &workspace,
+        platform: "linux",
+        today: "Fri May 29 2026",
+    };
+    let context = dynamic_prompt::DynamicPromptContext {
+        configured_prompt: Some("Runtime agent prompt fixture."),
+        model: &model,
+        instruction_prompt: Some("Instructions from: fixture\nFollow the fixture rule."),
+        skill_tool_enabled: true,
+    };
+    let section_names = dynamic_prompt::registered_prompt_sections()
+        .iter()
+        .map(|section| section.name)
+        .collect::<Vec<_>>();
+
+    // act
+    for section_name in section_names {
+        let rendered = dynamic_prompt::render_prompt_section_with_environment(
+            section_name,
+            context,
+            environment,
+        )
+        .unwrap_or_else(|| panic!("prompt section {section_name} did not render"));
+        assert_snapshot_text(&snapshot_dir.join(format!("{section_name}.txt")), &rendered);
+    }
+
+    // assert
+    let expected_files = dynamic_prompt::registered_prompt_sections()
+        .iter()
+        .map(|section| format!("{}.txt", section.name))
+        .collect::<Vec<_>>();
+    assert_snapshot_dir_contains_exact_files(&snapshot_dir, &expected_files);
+}
+
+#[test]
+fn shipped_v1_full_composed_prompt_snapshots_match_source() {
+    // arrange
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let config_path = repo_root.join("configs/harness.example.jsonc");
+    let config = load_config_from_repo_file(&config_path, &repo_root);
+    let coordinator_config =
+        bootstrap::build_interactive_coordinator_config(&config).expect("build config");
+    let snapshot_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("snapshots")
+        .join("v1_composed_prompts");
+
+    // act
+    for hidden_profile in V1_HIDDEN_PROMPTS {
+        assert!(
+            V1_COMPOSED_PROMPTS.contains(&hidden_profile),
+            "hidden profile {hidden_profile} must have a full composed prompt snapshot"
         );
     }
 
-    serde_json::json!({
-        "schema_version": "v1-prompt-assets-snapshot-v1",
-        "profiles": profiles,
-    })
-}
-
-fn prompt_body_from_markdown(markdown: &str) -> String {
-    let mut lines = markdown.lines();
-    if lines.next() == Some("---") {
-        for line in &mut lines {
-            if line == "---" {
-                break;
-            }
-        }
-        return lines.collect::<Vec<_>>().join("\n").trim().to_string();
+    for profile in V1_COMPOSED_PROMPTS {
+        let runtime_prompt = coordinator_config
+            .agent_profiles
+            .get(profile)
+            .unwrap_or_else(|| panic!("missing composed prompt profile {profile}"));
+        let rendered = normalize_composed_prompt_snapshot(&runtime_prompt.system_prompt);
+        assert!(
+            !rendered.trim().is_empty(),
+            "{profile} composed prompt snapshot source must not be empty"
+        );
+        assert_snapshot_text(&snapshot_dir.join(format!("{profile}.txt")), &rendered);
     }
-    markdown.trim().to_string()
+
+    // assert
+    let expected_files = V1_COMPOSED_PROMPTS
+        .iter()
+        .map(|profile| format!("{profile}.txt"))
+        .collect::<Vec<_>>();
+    assert_snapshot_dir_contains_exact_files(&snapshot_dir, &expected_files);
+}
+
+include!("common/bootstrap_profile_helpers.rs");
+
+#[test]
+fn shipped_v1_prompt_bodies_have_agent_specific_seams_and_intent_gate() {
+    // arrange
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let required = [
+        (
+            "build",
+            &["hashline edit", "real CLI", "recoverable tool failure"] as &[_],
+        ),
+        (
+            "plan",
+            &[
+                ".agent-harness/plans/<run>.md",
+                "plan_exit",
+                "plan_enter",
+                "read-only shell guard",
+                "delegate only to Explore",
+            ],
+        ),
+        (
+            "discipline",
+            &[
+                "todoread",
+                "todowrite",
+                "focused delegation",
+                "manual surface verification",
+                "no scheduler change",
+            ],
+        ),
+        (
+            "explore",
+            &[
+                "read-only tools",
+                "files",
+                "relationships",
+                "answer",
+                "next_steps",
+                "stop condition",
+            ],
+        ),
+        (
+            "general",
+            &[
+                "multistep work",
+                "belongs to Build",
+                "compact parent context",
+            ],
+        ),
+        (
+            "visual-engineering",
+            &["UI/UX", "layout", "visual evidence", "recursion-deny"],
+        ),
+        (
+            "artistry",
+            &["creative", "recursion-deny", "output contract"],
+        ),
+        (
+            "ultrabrain",
+            &["logic", "architecture", "effort estimate", "recursion-deny"],
+        ),
+        ("deep", &["end-to-end", "autonomous", "recursion-deny"]),
+        ("quick", &["small", "low-risk", "recursion-deny"]),
+        (
+            "unspecified-low",
+            &["low-to-moderate", "uncategorized", "recursion-deny"],
+        ),
+        (
+            "unspecified-high",
+            &["complex uncategorized", "high-effort", "recursion-deny"],
+        ),
+        ("writing", &["documentation", "prose", "recursion-deny"]),
+    ];
+
+    for (profile, anchors) in required {
+        let body = shipped_profile_body(&repo_root, profile);
+        // act
+        for anchor in anchors {
+            // assert
+            assert!(
+                body.contains(anchor),
+                "{profile} prompt missing distinctive V1 seam anchor `{anchor}`"
+            );
+        }
+    }
+
+    for profile in V1_PRIMARY_PROMPTS {
+        let body = shipped_profile_body(&repo_root, profile);
+        assert!(
+            body.contains("## Intent Gate"),
+            "{profile} primary prompt missing named Intent Gate section"
+        );
+        for route in [
+            "explain",
+            "investigate",
+            "implement",
+            "plan",
+            "ask exactly one blocking question",
+        ] {
+            assert!(
+                body.contains(route),
+                "{profile} Intent Gate missing route `{route}`"
+            );
+        }
+    }
 }
 
 #[test]
-fn interactive_bootstrap_builds_runtime_state_from_agents() {
-    let config = load_config_from_str(
-        r#"
-        {
-          providers: {
-            default: {
-              type: "openai_compatible",
-              base_url: "http://127.0.0.1:8317/v1",
-              api_key: "test-key",
-              api_mode: "responses",
-              timeout_ms: 60000,
-              models: {
-                "gpt-4o-mini": {
-                  display_name: "GPT-4o mini",
-                },
-              },
-            },
-          },
-          agents: {
-            deep: {
-              description: "Deep work",
-              system_prompt: "Deep prompt",
-              model_ref: "default:gpt-4o-mini",
-              tools: [],
-            },
-            review: {
-              description: "Review mode",
-              system_prompt: "Review prompt",
-              model_ref: "default:gpt-4o-mini",
-              permissions: {
-                task: "deny",
-              },
-              tools: [],
-            },
-          },
-          permissions: {
-            defaults: {
-              edit: "allow",
-              shell: "allow",
-              network: "allow",
-            },
-            shell_allowlist: {
-              executables: ["git"],
-              cwd_roots: ["."],
-            },
-          },
-          runtime: {
-            background_tasks: {
-              default_concurrency: 2,
-              provider_concurrency: 2,
-              model_concurrency: 2,
-              stale_timeout_ms: 15000,
-              message_staleness_timeout_ms: 5000,
-            },
-            session_dir: ".agent-harness/sessions",
-          },
-          integrations: {
-            remote_search: {
-              endpoint: "https://mcp.exa.ai/mcp",
-            },
-          },
-        }
-        "#,
-    )
-    .expect("config should parse");
-
+fn shipped_profile_permission_promises_match_runtime_policy_and_toolsets() {
+    // arrange
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let config_path = repo_root.join("configs/harness.example.jsonc");
+    let config = load_config_from_repo_file(&config_path, &repo_root);
     let coordinator_config =
         bootstrap::build_interactive_coordinator_config(&config).expect("build config");
 
-    assert!(coordinator_config.agent_profiles.contains_key("deep"));
-    assert!(coordinator_config.agent_profiles.contains_key("review"));
-    let review_prompt = &coordinator_config.agent_profiles["review"].system_prompt;
-    assert!(review_prompt.starts_with("Review prompt"));
-    assert!(review_prompt.contains("The exact model ID is default/gpt-4o-mini"));
-
-    assert_eq!(
-        coordinator_config
-            .permission_policy
-            .evaluate(Some("review"), PermissionKind::Task),
-        PolicyDecision::Deny
+    let plan_prompt = prompt_section(
+        &coordinator_config.agent_profiles["plan"].system_prompt,
+        "Runtime-Enforced Permissions",
     );
-}
-
-#[test]
-fn build_and_review_permissions_follow_configured_policy() {
-    let config = load_config_from_str(
-        r#"
-        {
-          providers: {
-            default: {
-              type: "openai_compatible",
-              base_url: "http://127.0.0.1:8317/v1",
-              api_key: "test-key",
-              api_mode: "responses",
-              timeout_ms: 60000,
-              models: {
-                "gpt-4o-mini": {
-                  display_name: "GPT-4o mini",
-                },
-              },
-            },
-          },
-          agents: {
-            build: {
-              description: "Implementation mode",
-              system_prompt: "Build prompt",
-              model_ref: "default:gpt-4o-mini",
-              permissions: {
-                edit: "allow",
-                shell: "allow",
-                task: "allow",
-              },
-              tools: [],
-            },
-            review: {
-              description: "Review mode",
-              system_prompt: "Review prompt",
-              model_ref: "default:gpt-4o-mini",
-              permissions: {
-                edit: "deny",
-                shell: "deny",
-                task: "deny",
-              },
-              tools: [],
-            },
-          },
-          default_agent: "build",
-          permissions: {
-            defaults: {
-              edit: "allow",
-              shell: "allow",
-              network: "allow",
-              task: "allow",
-            },
-            shell_allowlist: {
-              executables: ["git"],
-              cwd_roots: ["."],
-            },
-          },
-          runtime: {
-            background_tasks: {
-              default_concurrency: 2,
-              provider_concurrency: 2,
-              model_concurrency: 2,
-              stale_timeout_ms: 15000,
-              message_staleness_timeout_ms: 5000,
-            },
-            session_dir: ".agent-harness/sessions",
-          },
-          integrations: {
-            remote_search: {
-              endpoint: "https://mcp.exa.ai/mcp",
-            },
-          },
-        }
-        "#,
-    )
-    .expect("config should parse");
-
-    let coordinator_config =
-        bootstrap::build_interactive_coordinator_config(&config).expect("build config");
-
-    assert_eq!(bootstrap::interactive_profile_name(&config), "build");
+    for anchor in [
+        "write only the active `.agent-harness/plans/<run>.md` plan file",
+        "runtime read-only shell guard for `bash`",
+        "delegate only to Explore",
+        // act
+    ] {
+        // assert
+        assert!(
+            plan_prompt.contains(anchor),
+            "plan permission prompt missing runtime-enforced anchor `{anchor}`"
+        );
+    }
     assert_eq!(
-        coordinator_config
-            .permission_policy
-            .evaluate(Some("build"), PermissionKind::EditFs),
+        coordinator_config.permission_policy.evaluate_request(
+            Some("plan"),
+            PermissionKind::EditFs,
+            Some(&PermissionRuleRequest::WorkspacePath(
+                ".agent-harness/plans/run_demo.md".to_string()
+            )),
+        ),
         PolicyDecision::Allow
     );
     assert_eq!(
-        coordinator_config
-            .permission_policy
-            .evaluate(Some("build"), PermissionKind::Shell),
-        PolicyDecision::Allow
-    );
-    assert_eq!(
-        coordinator_config
-            .permission_policy
-            .evaluate(Some("review"), PermissionKind::EditFs),
+        coordinator_config.permission_policy.evaluate_request(
+            Some("plan"),
+            PermissionKind::EditFs,
+            Some(&PermissionRuleRequest::WorkspacePath(
+                "src/lib.rs".to_string()
+            )),
+        ),
         PolicyDecision::Deny
     );
-    assert_eq!(
+    assert!(matches!(
         coordinator_config
             .permission_policy
-            .evaluate(Some("review"), PermissionKind::Shell),
-        PolicyDecision::Deny
+            .evaluate(Some("plan"), PermissionKind::Shell),
+        PolicyDecision::Ask { .. }
+    ));
+    let plan_task_description = task_description_for_profile(
+        coordinator_config.tool_registry.as_ref(),
+        &coordinator_config.agent_profiles["plan"],
     );
-    assert_eq!(
-        coordinator_config
-            .permission_policy
-            .evaluate(Some("review"), PermissionKind::Task),
-        PolicyDecision::Deny
+    assert!(plan_task_description.contains("- explore:"));
+    assert!(!plan_task_description.contains("- general:"));
+
+    let explore_prompt = prompt_section(
+        &coordinator_config.agent_profiles["explore"].system_prompt,
+        "Runtime-Enforced Permissions",
     );
-}
-
-#[test]
-fn interactive_bootstrap_uses_discovered_markdown_prompt_when_inline_missing() {
-    let temp = tempdir().expect("tempdir");
-    let repo = temp.path().join("repo");
-    fs::create_dir_all(repo.join(".git")).expect("create git dir");
-    fs::create_dir_all(&repo).expect("create repo");
-
-    let config_path = repo.join("harness.jsonc");
-    fs::write(
-        &config_path,
-        r#"
-        {
-          providers: {
-            default: {
-              type: "openai_compatible",
-              base_url: "http://127.0.0.1:8317/v1",
-              api_key: "test-key",
-              api_mode: "responses",
-              timeout_ms: 60000,
-              models: {
-                "gpt-4o-mini": {
-                  display_name: "GPT-4o mini",
-                },
-              },
-            },
-          },
-          agents: {
-            build: {
-              description: "Build work",
-              model_ref: "default:gpt-4o-mini",
-              tools: [],
-            },
-          },
-          permissions: {
-            defaults: {
-              edit: "allow",
-              shell: "allow",
-              network: "allow",
-            },
-            shell_allowlist: {
-              executables: ["git"],
-              cwd_roots: ["."],
-            },
-          },
-          runtime: {
-            background_tasks: {
-              default_concurrency: 2,
-              provider_concurrency: 2,
-              model_concurrency: 2,
-              stale_timeout_ms: 15000,
-              message_staleness_timeout_ms: 5000,
-            },
-            session_dir: ".agent-harness/sessions",
-          },
-          integrations: {
-            remote_search: {
-              endpoint: "https://mcp.exa.ai/mcp",
-            },
-          },
-        }
-        "#,
-    )
-    .expect("write config");
-    write_agent_markdown(&repo, "build", "Markdown-backed build prompt.");
-
-    let config = load_config_from_repo_file(&config_path, &repo);
-    let coordinator_config =
-        bootstrap::build_interactive_coordinator_config(&config).expect("build config");
-    let prompt = &coordinator_config.agent_profiles["build"].system_prompt;
-    assert!(prompt.starts_with("Markdown-backed build prompt."));
-    assert!(prompt.contains("The exact model ID is default/gpt-4o-mini"));
-}
-
-#[test]
-fn interactive_bootstrap_uses_discovered_discipline_markdown_prompt() {
-    let temp = tempdir().expect("tempdir");
-    let repo = temp.path().join("repo");
-    fs::create_dir_all(repo.join(".git")).expect("create git dir");
-    fs::create_dir_all(&repo).expect("create repo");
-
-    let config_path = repo.join("harness.jsonc");
-    fs::write(
-        &config_path,
-        r#"
-        {
-          provider: {
-            default: {
-              type: "openai_compatible",
-              baseURL: "http://127.0.0.1:8317/v1",
-              apiKey: "test-key",
-              apiMode: "responses",
-              models: {
-                "gpt-5.4-mini": {
-                  name: "GPT-5.4 mini",
-                },
-              },
-            },
-          },
-          model: "default/gpt-5.4-mini",
-          agent: {
-            discipline: {
-              enable: true,
-            },
-          },
-          default_agent: "discipline",
-          permission: "ask",
-        }
-        "#,
-    )
-    .expect("write config");
-    write_agent_markdown(
-        &repo,
-        "discipline",
-        r#"---
-{ description: "Temp discipline prompt" }
----
-
-Unique markdown discipline prompt.
-"#,
+    for (tool_id, prompt_anchor) in [
+        ("edit", "denies edit"),
+        ("bash", "bash/shell"),
+        ("webfetch", "webfetch"),
+        ("websearch", "websearch"),
+        ("codesearch", "codesearch"),
+        ("task", "task redelegation"),
+    ] {
+        assert!(
+            explore_prompt.contains(prompt_anchor),
+            "explore prompt missing restriction anchor `{prompt_anchor}`"
+        );
+        assert!(
+            coordinator_denies_tool_for_profile(&coordinator_config, "explore", tool_id),
+            "explore prompt claims `{tool_id}` is restricted but runtime allows it"
+        );
+    }
+    assert!(
+        explore_prompt.contains("MCP write calls"),
+        "explore prompt must declare the MCP write-call boundary"
     );
 
-    let config = load_config_from_repo_file(&config_path, &repo);
-    let coordinator_config =
-        bootstrap::build_interactive_coordinator_config(&config).expect("build config");
-    let prompt = &coordinator_config.agent_profiles["discipline"].system_prompt;
-    assert!(prompt.starts_with("Unique markdown discipline prompt."));
-    assert!(prompt.contains("The exact model ID is default/gpt-5.4-mini"));
+    let general_prompt = prompt_section(
+        &coordinator_config.agent_profiles["general"].system_prompt,
+        "Runtime-Enforced Permissions",
+    );
+    assert!(general_prompt.contains("cannot redelegate"));
+    assert!(coordinator_denies_tool_for_profile(
+        &coordinator_config,
+        "general",
+        "task"
+    ));
+
+    for category in V1_CATEGORY_PROMPTS {
+        let section = prompt_section(
+            &coordinator_config.agent_profiles[category].system_prompt,
+            "Runtime-Enforced Permissions",
+        );
+        assert!(
+            section.contains("denies recursive task delegation"),
+            "{category} prompt missing category recursion-deny claim"
+        );
+        assert!(
+            coordinator_denies_tool_for_profile(&coordinator_config, category, "task"),
+            "{category} prompt claims recursive task denial but runtime allows task"
+        );
+    }
 }
 
 #[test]
-fn interactive_bootstrap_allows_discipline_without_markdown_prompt() {
-    let temp = tempdir().expect("tempdir");
-    let repo = temp.path().join("repo");
-    fs::create_dir_all(repo.join(".git")).expect("create git dir");
-    fs::create_dir_all(&repo).expect("create repo");
+fn shipped_v1_primary_prompts_are_not_generic_scaffold_copies() {
+    // arrange
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut distinctive_sections = std::collections::BTreeSet::new();
 
-    let config_path = repo.join("harness.jsonc");
-    fs::write(
-        &config_path,
-        r#"
-        {
-          provider: {
-            default: {
-              type: "openai_compatible",
-              baseURL: "http://127.0.0.1:8317/v1",
-              apiKey: "test-key",
-              apiMode: "responses",
-              models: {
-                "gpt-5.4-mini": {
-                  name: "GPT-5.4 mini",
-                },
-              },
-            },
-          },
-          model: "default/gpt-5.4-mini",
-          agent: {
-            discipline: {
-              enable: true,
-            },
-          },
-          default_agent: "discipline",
-          permission: "ask",
-        }
-        "#,
-    )
-    .expect("write config");
-
-    let config = load_config_from_repo_file(&config_path, &repo);
-    let coordinator_config =
-        bootstrap::build_interactive_coordinator_config(&config).expect("build config");
-    let prompt = &coordinator_config.agent_profiles["discipline"].system_prompt;
-    assert!(prompt.starts_with("## Identity"));
-    assert!(prompt.contains("You are the Discipline agent for Harness"));
-    assert!(prompt.contains("The exact model ID is default/gpt-5.4-mini"));
+    for profile in V1_PRIMARY_PROMPTS {
+        let body = shipped_profile_body(&repo_root, profile);
+        let distinctive = format!(
+            "{}\n{}",
+            prompt_section(&body, "Behavioral Guidance"),
+            prompt_section(&body, "Operating Loop") // act
+        );
+        // assert
+        assert!(
+            distinctive_sections.insert(distinctive),
+            "{profile} Behavioral Guidance + Operating Loop duplicate another primary prompt"
+        );
+    }
 }
 
 #[test]
-fn interactive_bootstrap_prepends_project_agents_md_to_agent_prompt() {
-    let temp = tempdir().expect("tempdir");
-    let repo = temp.path().join("repo");
-    fs::create_dir_all(repo.join(".git")).expect("create git dir");
-    fs::create_dir_all(&repo).expect("create repo");
+fn dynamic_prompt_named_sections_are_addressable() {
+    // arrange
+    let sections = dynamic_prompt::registered_prompt_sections();
+    let names = sections
+        .iter()
+        .map(|section| section.name)
+        .collect::<Vec<_>>();
+    for required in [
+        "base_model",
+        "environment",
+        "delegation_reminder",
+        "project_instructions",
+        "skill_guidance",
+        "intent_gate",
+        // act
+    ] {
+        // assert
+        assert!(
+            names.contains(&required),
+            "dynamic prompt section registry missing `{required}`"
+        );
+    }
+}
 
-    let config_path = repo.join("harness.jsonc");
-    fs::write(
-        &config_path,
-        r#"
-        {
-          providers: {
-            default: {
-              type: "openai_compatible",
-              base_url: "http://127.0.0.1:8317/v1",
-              api_key: "test-key",
-              api_mode: "responses",
-              timeout_ms: 60000,
-              models: {
-                "gpt-4o-mini": {
-                  display_name: "GPT-4o mini",
-                },
-              },
-            },
-          },
-          agents: {
-            build: {
-              description: "Build work",
-              system_prompt: "Build prompt",
-              model_ref: "default:gpt-4o-mini",
-              tools: [],
-            },
-          },
-          permissions: {
-            defaults: {
-              edit: "allow",
-              shell: "allow",
-              network: "allow",
-            },
-            shell_allowlist: {
-              executables: ["git"],
-              cwd_roots: ["."],
-            },
-          },
-          runtime: {
-            background_tasks: {
-              default_concurrency: 2,
-              provider_concurrency: 2,
-              model_concurrency: 2,
-              stale_timeout_ms: 15000,
-              message_staleness_timeout_ms: 5000,
-            },
-            session_dir: ".agent-harness/sessions",
-          },
-          integrations: {
-            remote_search: {
-              endpoint: "https://mcp.exa.ai/mcp",
-            },
-          },
-        }
-        "#,
-    )
-    .expect("write config");
-    fs::write(repo.join("AGENTS.md"), "Project-wide instructions.")
-        .expect("write project instructions");
-
-    let config = load_config_from_repo_file(&config_path, &repo);
-    let coordinator_config =
-        bootstrap::build_interactive_coordinator_config(&config).expect("build config");
-    let prompt = &coordinator_config.agent_profiles["build"].system_prompt;
-    assert!(prompt.contains("Instructions from:"));
-    assert!(prompt.contains("Project-wide instructions."));
-    assert!(prompt.starts_with("Build prompt"));
-    assert!(prompt.contains("The exact model ID is default/gpt-4o-mini"));
+mod runtime_bootstrap_test {
+    use super::*;
+    include!("bootstrap_profiles/runtime_bootstrap_test.rs");
 }

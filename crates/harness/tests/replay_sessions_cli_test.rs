@@ -40,6 +40,11 @@ mod part_08_sessions_export_test {
     include!("replay_sessions_cli/08_sessions_export_test.rs");
 }
 
+mod part_08b_sessions_export_redaction_artifacts_test {
+    use super::*;
+    include!("replay_sessions_cli/08b_sessions_export_redaction_artifacts_test.rs");
+}
+
 mod part_09_sessions_export_support_scan_test {
     use super::*;
     include!("replay_sessions_cli/09_sessions_export_support_scan_test.rs");

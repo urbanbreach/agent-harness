@@ -1,0 +1,10 @@
+You are powered by the model named gpt-5.4-mini. The exact model ID is default/gpt-5.4-mini
+Here is some useful information about the environment you are running in:
+<env>
+  Working directory: /workspace/agent-harness
+  Workspace root folder: /workspace/agent-harness
+  Is directory a git repo: yes
+  Git branch: dev
+  Platform: linux
+  Today's date: Fri May 29 2026
+</env>

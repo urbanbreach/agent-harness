@@ -36,8 +36,11 @@ use crate::CliDeps;
 
 #[derive(Debug, Subcommand, Clone)]
 pub enum SessionsCommand {
+    /// List saved sessions with optional status/profile/resumable filters.
     List(SessionsListCommand),
+    /// Inspect one saved session and summarize replay-derived state.
     Inspect(InspectSessionCommand),
+    /// Reopen one session by resolving its run id to a stored run directory.
     Reopen(ReopenCommand),
     /// Replay one session by resolving its run id to a stored run directory.
     Replay(ReplaySessionCommand),
@@ -2282,5 +2285,33 @@ mod tests {
         assert!(rendered.contains("resume blocked"));
         assert!(rendered.contains("/tmp/run-human"));
         assert!(rendered.contains("run-parent"));
+    }
+
+    #[test]
+    fn render_human_session_table_surfaces_meaningful_session_title() {
+        // arrange
+        let mut entry = sample_entry(
+            "run-title",
+            42,
+            Some(RunStatus::Finished),
+            Some("build"),
+            SessionModeSource::InteractiveLive,
+            true,
+            0,
+            0,
+            None,
+        );
+        entry.catalog.run_name = Some("map chat renderers".to_string());
+
+        // act
+        let rendered = render_human_session_table(&[entry]);
+
+        // assert
+        assert!(rendered.contains("run_name"));
+        assert!(rendered.contains("map chat renderers"));
+        assert!(
+            !rendered.contains("<unavailable>"),
+            "a titled session should not degrade to only run id/path: {rendered}"
+        );
     }
 }

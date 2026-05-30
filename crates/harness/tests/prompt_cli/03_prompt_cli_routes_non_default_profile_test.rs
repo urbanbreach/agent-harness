@@ -198,6 +198,69 @@ async fn prompt_cli_exits_nonzero_on_provider_error_finish() {
     assert!(events_body.contains("\"finish_reason\":\"error\""));
     assert!(events_body.contains("\"event_type\":\"task_cancelled\""));
 }
+
+#[tokio::test]
+async fn prompt_cli_surfaces_provider_error_categories_in_stderr_and_events() {
+    // arrange
+    for category in [
+        ProviderErrorCategory::MissingCredentials,
+        ProviderErrorCategory::RateLimited,
+        ProviderErrorCategory::ContextWindowExceeded,
+    ] {
+        let provider = ScriptedPromptProvider::fixed(categorized_provider_error_events(category));
+        let temp = tempdir().expect("tempdir");
+        let config_path = temp.path().join("harness.categorized-provider-error.jsonc");
+        let session_dir = temp.path().join("sessions");
+        fs::write(
+            &config_path,
+            prompt_cli_config("https://fixture.test/v1", &session_dir, &[]),
+        )
+        .expect("write config");
+
+        let output = run_harness_in_blocking_with_provider(
+            temp.path(),
+            [
+                "--config",
+                config_path.to_str().expect("config path utf-8"),
+                "prompt",
+                "--text",
+                "Trigger a categorized provider error.",
+            ],
+            provider,
+        )
+        .await;
+
+        // act
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        // assert
+        assert!(!output.status.success(), "stderr:\n{stderr}");
+        assert!(
+            stderr.contains(category.as_str()),
+            "stderr should render provider category {}:\n{stderr}",
+            category.as_str()
+        );
+        assert!(
+            stderr.contains("fixture provider failure"),
+            "stderr should preserve provider message:\n{stderr}"
+        );
+
+        let run_dirs = fs::read_dir(&session_dir)
+            .expect("read session dir")
+            .map(|entry| entry.expect("session dir entry").path())
+            .filter(|path| path.is_dir())
+            .collect::<Vec<_>>();
+        assert_eq!(run_dirs.len(), 1, "expected one prompt run dir");
+        let events_body = fs::read_to_string(run_dirs[0].join("events.jsonl"))
+            .expect("read provider error events");
+        assert!(events_body.contains("\"finish_reason\":\"error\""));
+        assert!(events_body.contains(&format!(
+            "\"provider_error_category\":\"{}\"",
+            category.as_str()
+        )));
+        assert!(events_body.contains("\"provider_error_remediation\""));
+    }
+}
+
 #[tokio::test]
 async fn prompt_cli_continues_after_tool_failure_as_tool_message() {
     let provider = ScriptedPromptProvider::sequence(vec![

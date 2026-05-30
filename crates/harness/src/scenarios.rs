@@ -172,6 +172,38 @@ pub fn golden_path_provider() -> MockProvider {
                 },
             ],
         );
+
+        if prompt == "worker-prompt" {
+            let worker_request_with_tools = CompletionRequest {
+                provider_id: request.provider_id.clone(),
+                model_id: request.model_id.clone(),
+                messages: request.messages.clone(),
+                temperature: request.temperature,
+                max_tokens: request.max_tokens,
+                variant: request.variant.clone(),
+                reasoning_effort: request.reasoning_effort.clone(),
+                text_verbosity: request.text_verbosity.clone(),
+                reasoning_summary: request.reasoning_summary.clone(),
+                tools: Some(vec![demo_edit_tool_def()]),
+                tool_choice: Some(ToolChoice::Auto),
+                stream: request.stream,
+            };
+
+            scripted_events.insert(
+                request_digest(&worker_request_with_tools),
+                vec![
+                    ProviderStreamEvent::Start,
+                    ProviderStreamEvent::TextDelta(format!("{prompt}-delta")),
+                    ProviderStreamEvent::Done {
+                        usage: CompletionUsage {
+                            prompt_tokens: 2,
+                            completion_tokens: 1,
+                            total_tokens: 3,
+                        },
+                    },
+                ],
+            );
+        }
     }
 
     let interactive_request = CompletionRequest {

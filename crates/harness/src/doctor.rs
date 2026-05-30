@@ -222,6 +222,7 @@ fn build_report(
         check_resolved_routes(config, workspace_root),
         check_profile_tools(config),
         check_native_tool_catalog(config),
+        check_extension_roadmap_readiness(config),
         check_permissions(config),
         check_session_dir(&config.paths.session_dir),
         check_mcp(config),
@@ -348,6 +349,40 @@ fn check_native_tool_catalog(config: &HarnessConfig) -> DoctorCheck {
             "{} native tool catalog entries are available",
             catalog.len()
         ),
+        details,
+    )
+}
+
+fn check_extension_roadmap_readiness(config: &HarnessConfig) -> DoctorCheck {
+    let details = json!({
+        "scope": "roadmap_readiness_not_runtime_health",
+        "separate_from_runtime_health": true,
+        "core_capabilities": {
+            "markdown_skills": "shipped",
+            "config_backed_mcp": "shipped",
+            "native_tool_catalog": "shipped",
+            "agent_category_routes": "shipped",
+        },
+        "built_in_capabilities": {
+            "configured_agent_profiles": config.agents.len(),
+            "project_skill_roots": config.skills.project_roots.iter().map(|path| path.display().to_string()).collect::<Vec<_>>(),
+            "global_skill_roots": config.skills.global_roots.iter().map(|path| path.display().to_string()).collect::<Vec<_>>(),
+            "disabled_skill_selectors": config.skills.disabled.clone(),
+        },
+        "planned_seams": {
+            "typed_extension_manifest": "final_slice",
+            "command_hooks": "final_slice",
+            "ast_grep_replace": "final_slice",
+            "desktop_mobile_web_clients": "post_v1",
+            "browser_media_automation": "post_v1",
+            "team_mode": "primitive_only_v1",
+        },
+        "no_network_probes": true,
+    });
+
+    pass_with_details(
+        "extension_roadmap_readiness",
+        "roadmap and extension readiness are reported separately from local runtime health",
         details,
     )
 }

@@ -15,6 +15,11 @@ mod part_02b_doctor_cli_reports_native_tool_catalog_readiness_test {
     include!("config_schema_cli/02b_doctor_cli_reports_native_tool_catalog_readiness_test.rs");
 }
 
+mod part_02c_config_validate_and_provider_credentials_test {
+    use super::*;
+    include!("config_schema_cli/02c_config_validate_and_provider_credentials_test.rs");
+}
+
 mod part_03_config_validate_cli_loads_separate_tui_test {
     use super::*;
     include!("config_schema_cli/03_config_validate_cli_loads_separate_tui_test.rs");
@@ -23,4 +28,9 @@ mod part_03_config_validate_cli_loads_separate_tui_test {
 mod part_04_public_runtime_config_accepts_compaction_settings_test {
     use super::*;
     include!("config_schema_cli/04_public_runtime_config_accepts_compaction_settings_test.rs");
+}
+
+mod part_05_cli_surface_audit_test {
+    use super::*;
+    include!("config_schema_cli/05_cli_surface_audit_test.rs");
 }

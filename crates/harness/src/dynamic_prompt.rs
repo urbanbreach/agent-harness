@@ -3,6 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use harness_core::config::ResolvedModelTarget;
 use harness_core::workspace::WorkspaceEnvironment;
 
+#[derive(Clone, Copy)]
 pub struct DynamicPromptContext<'a> {
     pub configured_prompt: Option<&'a str>,
     pub model: &'a ResolvedModelTarget,
@@ -10,21 +11,103 @@ pub struct DynamicPromptContext<'a> {
     pub skill_tool_enabled: bool,
 }
 
+#[derive(Clone, Copy)]
+pub struct DynamicPromptEnvironment<'a> {
+    pub workspace: &'a WorkspaceEnvironment,
+    pub platform: &'a str,
+    pub today: &'a str,
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PromptSectionModule {
+    pub name: &'static str,
+    pub purpose: &'static str,
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+pub const PROMPT_SECTION_MODULES: [PromptSectionModule; 6] = [
+    PromptSectionModule {
+        name: "base_model",
+        purpose: "base provider-family prompt or configured prompt override",
+    },
+    PromptSectionModule {
+        name: "environment",
+        purpose: "workspace, model, platform, date, and git context",
+    },
+    PromptSectionModule {
+        name: "delegation_reminder",
+        purpose: "task sync/background behavior and background_output guidance",
+    },
+    PromptSectionModule {
+        name: "project_instructions",
+        purpose: "AGENTS.md and configured project instruction prompt",
+    },
+    PromptSectionModule {
+        name: "skill_guidance",
+        purpose: "skill tool progressive-disclosure reminder",
+    },
+    PromptSectionModule {
+        name: "intent_gate",
+        purpose: "primary prompt section requiring interpreted intent before ambiguous tool use",
+    },
+];
+
+#[cfg(test)]
+#[allow(dead_code)]
+pub fn registered_prompt_sections() -> &'static [PromptSectionModule] {
+    &PROMPT_SECTION_MODULES
+}
+
+pub fn render_prompt_section_with_environment(
+    name: &str,
+    ctx: DynamicPromptContext<'_>,
+    environment: DynamicPromptEnvironment<'_>,
+) -> Option<String> {
+    match name {
+        "base_model" => Some(
+            ctx.configured_prompt
+                .map(ToOwned::to_owned)
+                .unwrap_or_else(|| provider_prompt(ctx.model.model.as_str()).to_string()),
+        ),
+        "environment" => Some(environment_prompt(ctx.model, environment)),
+        "delegation_reminder" => Some(task_delegation_prompt().to_string()),
+        "project_instructions" => ctx.instruction_prompt.map(ToOwned::to_owned),
+        "skill_guidance" => ctx.skill_tool_enabled.then(skills_prompt),
+        "intent_gate" => Some(intent_gate_prompt().to_string()),
+        _ => None,
+    }
+}
+
 pub fn compose(ctx: DynamicPromptContext<'_>) -> String {
-    let mut sections = vec![ctx
-        .configured_prompt
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| provider_prompt(ctx.model.model.as_str()).to_string())];
-    sections.push(environment_prompt(ctx.model));
-    sections.push(task_delegation_prompt().to_string());
+    let workspace = WorkspaceEnvironment::current();
+    let today = today_date_string();
+    compose_with_environment(
+        ctx,
+        DynamicPromptEnvironment {
+            workspace: &workspace,
+            platform: std::env::consts::OS,
+            today: &today,
+        },
+    )
+}
 
-    if let Some(instructions) = ctx.instruction_prompt {
-        sections.push(instructions.to_string());
-    }
-
-    if ctx.skill_tool_enabled {
-        sections.push(skills_prompt());
-    }
+pub fn compose_with_environment(
+    ctx: DynamicPromptContext<'_>,
+    environment: DynamicPromptEnvironment<'_>,
+) -> String {
+    let sections = [
+        "base_model",
+        "environment",
+        "delegation_reminder",
+        "project_instructions",
+        "skill_guidance",
+    ]
+    .into_iter()
+    .filter_map(|name| render_prompt_section_with_environment(name, ctx, environment))
+    .collect::<Vec<_>>();
 
     sections.join("\n\n")
 }
@@ -55,9 +138,12 @@ fn provider_prompt(model_id: &str) -> &'static str {
     PROMPT_DEFAULT
 }
 
-fn environment_prompt(model: &ResolvedModelTarget) -> String {
-    let environment = WorkspaceEnvironment::current();
+fn environment_prompt(
+    model: &ResolvedModelTarget,
+    environment: DynamicPromptEnvironment<'_>,
+) -> String {
     let branch = environment
+        .workspace
         .git_branch
         .as_deref()
         .map(|branch| format!("\n  Git branch: {branch}"))
@@ -66,20 +152,24 @@ fn environment_prompt(model: &ResolvedModelTarget) -> String {
         "You are powered by the model named {model_name}. The exact model ID is {provider}/{model_name}\nHere is some useful information about the environment you are running in:\n<env>\n  Working directory: {cwd}\n  Workspace root folder: {worktree}\n  Is directory a git repo: {is_git}{branch}\n  Platform: {platform}\n  Today's date: {date}\n</env>",
         model_name = model.model,
         provider = model.provider,
-        cwd = environment.working_directory.display(),
-        worktree = environment.workspace_root.display(),
-        is_git = if environment.is_git_repository {
+        cwd = environment.workspace.working_directory.display(),
+        worktree = environment.workspace.workspace_root.display(),
+        is_git = if environment.workspace.is_git_repository {
             "yes"
         } else {
             "no"
         },
-        platform = std::env::consts::OS,
-        date = today_date_string(),
+        platform = environment.platform,
+        date = environment.today,
     )
 }
 
 fn task_delegation_prompt() -> &'static str {
-    "Task delegation reminder: if the `task` tool is available, `run_in_background=false` is synchronous; the child result returns directly in the current tool response and no `[BACKGROUND TASK ...]` reminder is emitted. Use `run_in_background=true` when testing background subagents, wakeups, completion reminders, or `background_output`."
+    "Task delegation reminder: if the `task` tool is available, use a structured delegation body with context, goal, downstream use, request, required tools, must-do, and must-not-do. `run_in_background=false` is synchronous; the child result returns directly in the current tool response and no `[BACKGROUND TASK ...]` reminder is emitted. Use `run_in_background=true` when testing background subagents, wakeups, completion reminders, or `background_output`."
+}
+
+fn intent_gate_prompt() -> &'static str {
+    "## Intent Gate\nBefore tool use on an ambiguous request, state the interpreted intent, then route to exactly one of: explain, investigate, implement, plan, or ask exactly one blocking question."
 }
 
 fn today_date_string() -> String {
