@@ -153,6 +153,10 @@ fn permission_policy_supports_native_tool_permission_kinds() {
         permission_kind_for_tool("lsp.rename"),
         Some(PermissionKind::EditFs)
     );
+    assert_eq!(
+        permission_kind_for_tool("ast_grep_replace"),
+        Some(PermissionKind::EditFs)
+    );
     assert_eq!(permission_kind_for_tool("agent.spawn"), None);
     assert_eq!(permission_kind_for_tool("search.web"), None);
     assert_eq!(permission_kind_for_tool("code.lsp"), None);
