@@ -1309,7 +1309,7 @@ fn split_model_ref(model_ref: &str) -> (Option<String>, String, Option<String>) 
 
 fn child_route_role(runtime: &AgentRuntimeInfo) -> &'static str {
     match runtime.profile_name.as_str() {
-        "build" | "plan" | "discipline" => "primary",
+        "build" | "plan" => "primary",
         "general" | "explore" => "subagent",
         "visual-engineering" | "artistry" | "ultrabrain" | "deep" | "quick" | "unspecified-low"
         | "unspecified-high" | "writing" => "category",

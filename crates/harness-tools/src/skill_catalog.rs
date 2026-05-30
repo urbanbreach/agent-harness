@@ -124,6 +124,13 @@ enum SkillSourceScope {
     Global,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SkillRootKind {
+    HarnessOwned,
+    Custom,
+    Compatibility,
+}
+
 impl SkillSourceScope {
     fn as_str(self) -> &'static str {
         match self {
@@ -741,21 +748,57 @@ fn validate_skill_name(name: &str, skill_file: &Path) -> Result<(), String> {
 
 fn skill_search_dirs(current_dir: &Path, config: &SkillsConfig) -> Vec<SkillSearchDir> {
     let mut dirs = Vec::new();
+    let project_roots = ordered_skill_roots(&config.project_roots);
+    let global_roots = ordered_skill_roots(&config.global_roots);
+
     for base_dir in project_search_bases(current_dir, config.walk_to_git_root) {
-        for root in &config.project_roots {
-            push_unique_search_dir(
-                &mut dirs,
-                SkillSearchDir {
-                    path: resolve_skill_root(&base_dir, root),
-                    project_base: Some(base_dir.clone()),
-                    source_scope: SkillSourceScope::Project,
-                },
-            );
-        }
+        push_project_search_dirs(&mut dirs, &base_dir, &project_roots, false);
     }
-    for root in &config.global_roots {
+
+    push_global_search_dirs(&mut dirs, current_dir, &global_roots, false);
+
+    for base_dir in project_search_bases(current_dir, config.walk_to_git_root) {
+        push_project_search_dirs(&mut dirs, &base_dir, &project_roots, true);
+    }
+
+    push_global_search_dirs(&mut dirs, current_dir, &global_roots, true);
+
+    dirs
+}
+
+fn push_project_search_dirs(
+    dirs: &mut Vec<SkillSearchDir>,
+    base_dir: &Path,
+    roots: &[(&PathBuf, SkillRootKind)],
+    compatibility: bool,
+) {
+    for (root, kind) in roots {
+        if (*kind == SkillRootKind::Compatibility) != compatibility {
+            continue;
+        }
         push_unique_search_dir(
-            &mut dirs,
+            dirs,
+            SkillSearchDir {
+                path: resolve_skill_root(base_dir, root),
+                project_base: Some(base_dir.to_path_buf()),
+                source_scope: SkillSourceScope::Project,
+            },
+        );
+    }
+}
+
+fn push_global_search_dirs(
+    dirs: &mut Vec<SkillSearchDir>,
+    current_dir: &Path,
+    roots: &[(&PathBuf, SkillRootKind)],
+    compatibility: bool,
+) {
+    for (root, kind) in roots {
+        if (*kind == SkillRootKind::Compatibility) != compatibility {
+            continue;
+        }
+        push_unique_search_dir(
+            dirs,
             SkillSearchDir {
                 path: resolve_skill_root(current_dir, root),
                 project_base: None,
@@ -763,7 +806,43 @@ fn skill_search_dirs(current_dir: &Path, config: &SkillsConfig) -> Vec<SkillSear
             },
         );
     }
-    dirs
+}
+
+fn ordered_skill_roots(roots: &[PathBuf]) -> Vec<(&PathBuf, SkillRootKind)> {
+    let mut ordered = roots
+        .iter()
+        .enumerate()
+        .map(|(index, root)| (index, root, classify_skill_root(root)))
+        .collect::<Vec<_>>();
+    ordered.sort_by_key(|(index, _, kind)| (skill_root_kind_rank(*kind), *index));
+    ordered
+        .into_iter()
+        .map(|(_, root, kind)| (root, kind))
+        .collect()
+}
+
+fn skill_root_kind_rank(kind: SkillRootKind) -> usize {
+    match kind {
+        SkillRootKind::HarnessOwned => 0,
+        SkillRootKind::Custom => 1,
+        SkillRootKind::Compatibility => 2,
+    }
+}
+
+fn classify_skill_root(root: &Path) -> SkillRootKind {
+    if root.ends_with(".agent-harness/skills")
+        || root.ends_with(".harness/skills")
+        || root.ends_with(".config/agent-harness/skills")
+    {
+        SkillRootKind::HarnessOwned
+    } else if root.ends_with(".external-editor/skills")
+        || root.ends_with(".assistant/skills")
+        || root.ends_with(".agents/skills")
+    {
+        SkillRootKind::Compatibility
+    } else {
+        SkillRootKind::Custom
+    }
 }
 
 fn project_search_bases(current_dir: &Path, walk_to_git_root: bool) -> Vec<PathBuf> {
