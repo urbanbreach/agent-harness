@@ -15,7 +15,6 @@ use harness_tui::app::{AppState, LaunchMetadata};
 use harness_tui::render_test::render_to_string;
 use harness_tui::{ui, FrameLayoutPlan};
 use ratatui::layout::Rect;
-
 #[test]
 fn startup_shell_is_compose_first_without_pty() {
     let mut app = AppState::new_startup(Vec::new(), None);
@@ -75,6 +74,8 @@ fn tool_lifecycle_rows_stay_ordered_without_pty() {
 
     let rendered = render_text(&app, 180, 36);
 
+    insta::assert_snapshot!(rendered.as_str());
+
     let tool_markers: &[&str] = &[
         "Inspect tool activity",
         "Read src/ui.rs",
@@ -93,6 +94,27 @@ fn tool_lifecycle_rows_stay_ordered_without_pty() {
 }
 
 #[test]
+fn command_palette_renders_without_pty() {
+    // arrange
+    let mut app = AppState::new_live(None, false, None);
+    app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+
+    // act
+    let rendered = render_text(&app, 120, 40);
+
+    // assert
+    insta::assert_snapshot!(rendered.as_str());
+
+    assert!(rendered.contains("Commands"));
+    assert!(rendered.contains("New session"));
+    assert!(rendered.contains("Continue session"));
+    assert!(rendered.contains("Next agent"));
+}
+
+#[test]
 fn permission_modal_preserves_draft_without_pty() {
     let mut app = AppState::new_live(None, false, None);
     app.prompt_buffer = "keep this draft".to_string();
@@ -100,6 +122,8 @@ fn permission_modal_preserves_draft_without_pty() {
     app.ingest_event(permission_requested_event(1, "perm_det", "tool_call_det"));
 
     let rendered = render_text(&app, 100, 28);
+
+    insta::assert_snapshot!(rendered.as_str());
 
     assert!(rendered.contains("Permission required"));
     assert!(rendered.contains("Apply hashline edit to demo.txt"));
@@ -123,6 +147,8 @@ fn startup_session_history_picker_renders_without_pty() {
 
     let rendered = render_text(&app, 100, 24);
 
+    insta::assert_snapshot!(rendered.as_str());
+
     assert!(rendered.contains("Continue session"));
     assert!(rendered.contains("Search"));
     assert!(rendered.contains("alpha-run"));
@@ -143,6 +169,8 @@ fn question_permission_prompt_renders_without_pty() {
 
     let rendered = render_text(&app, 100, 28);
 
+    insta::assert_snapshot!(rendered.as_str());
+
     assert!(rendered.contains("Pick one"));
     assert!(rendered.contains("Type your own answer"));
     assert!(rendered.contains("↑↓ select"));
@@ -155,6 +183,8 @@ fn replay_shell_is_read_only_without_pty() {
     let mut app = AppState::new_replay(PathBuf::from("/tmp/replay_run"), replay_events());
 
     let rendered = render_text(&app, 100, 24);
+
+    insta::assert_snapshot!(rendered.as_str());
 
     // assert
     // assert
@@ -183,6 +213,8 @@ fn replay_failure_state_renders_without_pty() {
 
     // act
     let rendered = render_text(&app, 180, 24);
+
+    insta::assert_snapshot!(rendered.as_str());
 
     // assert
     assert!(rendered.contains("Replay · read-only"));
