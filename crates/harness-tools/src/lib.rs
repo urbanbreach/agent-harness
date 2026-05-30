@@ -108,7 +108,7 @@ mod session_tools;
 use session_tools::{SessionInfoTool, SessionListTool, SessionReadTool, SessionSearchTool};
 
 mod ast_grep;
-use ast_grep::AstGrepSearchTool;
+use ast_grep::{AstGrepReplaceTool, AstGrepSearchTool};
 
 pub mod tool_catalog;
 pub use tool_catalog::{native_tool_catalog_entries, NativeToolCatalogEntry};
@@ -409,10 +409,14 @@ fn coordinator_native_tool_surface(
     let network_executor = executors.network_executor.clone();
     let github_executor = executors.github_executor.clone();
     let shell_command_runner = executors.shell_command_runner.clone();
-    let ast_grep_tool = executors
-        .ast_grep_command
+    let ast_grep_command = executors.ast_grep_command.clone();
+    let ast_grep_tool = ast_grep_command
+        .clone()
         .map(AstGrepSearchTool::with_command)
         .unwrap_or_else(AstGrepSearchTool::new);
+    let ast_grep_replace_tool = ast_grep_command
+        .map(AstGrepReplaceTool::with_command)
+        .unwrap_or_else(AstGrepReplaceTool::new);
     let agent_ops_executor = Arc::new(AgentOpsExecutor::with_question_answer_source(
         question_answer_source.clone(),
     ));
@@ -435,6 +439,7 @@ fn coordinator_native_tool_surface(
         boxed_tool(SessionSearchTool),
         boxed_tool(SessionInfoTool),
         boxed_tool(ast_grep_tool),
+        boxed_tool(ast_grep_replace_tool),
         boxed_tool(TeamCreateTool),
         boxed_tool(TeamListTool),
         boxed_tool(TeamStatusTool),
@@ -634,6 +639,7 @@ mod tests {
 
         for tool_id in [
             "bash",
+            "ast_grep_replace",
             "ast_grep_search",
             "background_cancel",
             "background_output",

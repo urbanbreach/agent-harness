@@ -548,7 +548,7 @@ fn create_parent_dir(path: &Path) -> Result<(), ToolError> {
     Ok(())
 }
 
-fn write_atomic(path: &Path, content: &str) -> Result<(), ToolError> {
+pub(crate) fn write_atomic(path: &Path, content: &str) -> Result<(), ToolError> {
     let parent = path.parent().ok_or_else(|| {
         ToolError::Execution(format!(
             "failed to resolve parent directory for {}",
