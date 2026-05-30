@@ -504,6 +504,7 @@ pub fn permission_kind_for_tool(tool_id: &str) -> Option<PermissionKind> {
         "websearch" => Some(PermissionKind::WebSearch),
         "codesearch" => Some(PermissionKind::CodeSearch),
         "ast_grep_search" => Some(PermissionKind::CodeSearch),
+        "ast_grep_replace" => Some(PermissionKind::EditFs),
         "lsp" => Some(PermissionKind::Lsp),
         "lsp.rename" => Some(PermissionKind::EditFs),
         "bash" => Some(PermissionKind::Shell),
@@ -1078,6 +1079,10 @@ mod tests {
         );
         assert_eq!(
             permission_kind_for_tool("lsp.rename"),
+            Some(PermissionKind::EditFs)
+        );
+        assert_eq!(
+            permission_kind_for_tool("ast_grep_replace"),
             Some(PermissionKind::EditFs)
         );
         assert_eq!(permission_kind_for_tool("user.question"), None);

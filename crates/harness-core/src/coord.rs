@@ -9702,24 +9702,51 @@ fn shell_command_selector(
 
 fn workspace_path_selector_paths(workspace_root: &Path, args_json: &Value) -> Vec<String> {
     let mut paths = BTreeSet::new();
-    for key in [
-        "path",
-        "filePath",
-        "from_path",
-        "fromPath",
-        "rename",
-        "to_path",
-        "toPath",
-    ] {
-        if let Some(raw_path) = args_json.get(key).and_then(Value::as_str) {
-            if let Some(path) =
-                workspace_relative_path_from_maybe_absolute(workspace_root, Path::new(raw_path))
-            {
-                paths.insert(path);
-            }
-        }
+    for key in WORKSPACE_PATH_SELECTOR_KEYS {
+        collect_workspace_path_selector(workspace_root, args_json.get(key), &mut paths);
     }
     paths.into_iter().collect()
+}
+
+const WORKSPACE_PATH_SELECTOR_KEYS: &[&str] = &[
+    "path",
+    "paths",
+    "filePath",
+    "from_path",
+    "fromPath",
+    "rename",
+    "to_path",
+    "toPath",
+];
+
+fn collect_workspace_path_selector(
+    workspace_root: &Path,
+    value: Option<&Value>,
+    paths: &mut BTreeSet<String>,
+) {
+    match value {
+        Some(Value::String(raw_path)) => {
+            insert_workspace_path_selector(workspace_root, raw_path, paths);
+        }
+        Some(Value::Array(raw_paths)) => {
+            for raw_path in raw_paths.iter().filter_map(Value::as_str) {
+                insert_workspace_path_selector(workspace_root, raw_path, paths);
+            }
+        }
+        Some(_) | None => {}
+    }
+}
+
+fn insert_workspace_path_selector(
+    workspace_root: &Path,
+    raw_path: &str,
+    paths: &mut BTreeSet<String>,
+) {
+    if let Some(path) =
+        workspace_relative_path_from_maybe_absolute(workspace_root, Path::new(raw_path))
+    {
+        paths.insert(path);
+    }
 }
 
 fn tool_request_correlation_id(run_state: &RunState, actor: &EventActor) -> Option<String> {

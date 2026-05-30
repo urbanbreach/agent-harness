@@ -30,7 +30,6 @@ const TRUE_CMD_ARGS: &str = "true";
 
 struct TestShellTool;
 struct TestEditTool;
-
 #[async_trait]
 impl Tool for TestShellTool {
     fn id(&self) -> &str {
