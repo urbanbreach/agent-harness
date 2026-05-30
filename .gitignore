@@ -20,3 +20,6 @@ artifacts/
 .codex/skills/.system/**
 !.codex/prompts/
 !.codex/prompts/**
+
+# Local IDE workspace state
+.cate/

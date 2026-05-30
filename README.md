@@ -96,7 +96,6 @@ runtime config's direct model or named `model_profile` settings:
 
 - `build` — default implementation lane
 - `plan` — stable read-only planning lane with runtime-enforced edits limited to the active `.agent-harness/plans/<run>.md` file, plus `plan_exit` to hand off to Build
-- `discipline` — optional strict delivery lane for todo-driven autonomous work, focused delegation, and end-to-end verification
 - `explore` — shipped read-only subagent profile for local codebase search via `task(subagent_type: "explore")`
 - `general` — shipped focused implementation/research subagent profile via `task(subagent_type: "general")`
 - category subagents — `visual-engineering`, `artistry`, `ultrabrain`, `deep`, `quick`, `unspecified-low`, `unspecified-high`, and `writing` route OMO-style `task(category: "...")` calls through ordinary toggleable profiles with category-specific model profiles and fallback metadata
@@ -172,8 +171,7 @@ load for compatibility, but `harness.json{,c}` and the matching XDG runtime path
 are the canonical public contract.
 
 Launch the interactive harness with Build selected by default. Press `Tab` to
-cycle primary agents, so the shipped profile set switches between Build, Plan,
-and Discipline:
+cycle primary agents, so the shipped profile set switches between Build and Plan:
 
 ```bash
 cargo run -p harness -- --config configs/harness.example.jsonc
@@ -188,11 +186,6 @@ permission prompts plus a read-only shell guard, and may delegate only to the
 read-only `explore` profile under the current runtime policy. See the
 [`docs/config.md` Plan operator workflow](docs/config.md#plan-operator-workflow)
 for the step-by-step Build → Plan → Build approval flow.
-
-Use the Discipline profile when you want OMO-style strictness without enabling a
-new scheduler loop: it is a separate primary agent that prompts for todo hygiene,
-focused delegation, and manual surface verification while leaving coordinator
-scheduling, permissions, and event ownership unchanged.
 
 Use category subagents when delegation should pick a domain-optimized lane
 without adding scheduler state. `task(category: "visual-engineering")`,
