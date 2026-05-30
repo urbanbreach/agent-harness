@@ -7,31 +7,31 @@ Tool execution still goes through the coordinator permission path before the too
 | Tool id | Permission | Mutation | Replay / artifact behavior | Notes |
 |---|---|---|---|---|
 | `ast_grep_search` | `codesearch` | read-only | Capped JSON; large results spill to artifacts | Built-in ast-grep CLI structural search adapter. `ast_grep_replace` is deferred conditional/stretch. |
-| `background_cancel` | `task` | control-plane mutation | Coordinator cancellation events; output is replay-derived | Canonical explicit cancellation wrapper for background child requests. |
-| `background_output` | `task` | read/cancel compatibility | Replay-derived background status/result; `cancel: true` remains compatibility | Use for status/result retrieval; cancellation next-actions prefer `background_cancel`. |
+| `background_cancel` | `task` | control-plane mutation | Coordinator cancellation events; output is replay-derived | Canonical explicit cancellation wrapper for background child requests. Alias: `background_output(cancel=true)`. |
+| `background_output` | `task` | read/cancel compatibility | Replay-derived background status/result; `cancel: true` remains compatibility | Use for status/result retrieval; cancellation next-actions prefer `background_cancel`. Aliases: `task_id`, `session_id`. |
 | `bash` | `bash` | host command | Captured output and artifacts when large | Shell allowlist and permission policy apply before execution. |
-| `batch` | `task` | depends on child calls | Preserves source order for model-visible results | Executes multiple native tool calls through coordinator tool execution. |
+| `batch` | none | depends on child calls | Preserves source order for model-visible results | Executes multiple native tool calls through coordinator tool execution; each child call keeps its own permission check. |
 | `codesearch` | `codesearch` | network/read-only | External I/O when called | Remote code-search integration. |
 | `edit` | `edit` | workspace mutation | Hashline/diff artifacts | Normal file-changing route. |
 | `github.issue` | legacy `network` compatibility | network mutation/read | External I/O when called | GitHub integration wrapper; not required for offline V1 claims. |
 | `github.pull_request` | legacy `network` compatibility | network mutation/read | External I/O when called | GitHub integration wrapper; not required for offline V1 claims. |
 | `glob` | none | read-only | Inline capped output | Workspace-safe file discovery. |
 | `grep` | none | read-only | Large results spill to artifacts | Workspace-safe text search. |
-| `invalid` | `task` | control-plane report | Summary only | Records malformed/unsupported tool calls as tool messages. |
+| `invalid` | none | control-plane report | Summary only | Records malformed/unsupported tool calls as tool messages. |
 | `list` | none | read-only | Inline capped output | Workspace-safe directory listing. |
 | `lsp` | `lsp` | language read-only | Structured unsupported responses | Diagnostics/symbol/reference helpers. |
-| `lsp.rename` | `edit` | workspace mutation | Rename/diff artifacts | LSP rename path remains edit-permission gated. |
+| `lsp.rename` | `edit` | workspace mutation | Rename/diff artifacts | LSP rename path remains edit-permission gated. Alias: `rename_symbol`. |
 | `plan_enter` | `question` | control-plane question | Summary only | Requests Build → Plan handoff. |
 | `plan_exit` | `question` | control-plane question | Summary only | Requests Plan → Build continuation. |
 | `question` | `question` | user interaction | Summary only | Operator question/confirmation path. |
-| `read` | none | read-only | Hashline anchors; large output spills | Workspace-safe file read. |
+| `read` | none | read-only | Hashline anchors; large output spills | Workspace-safe file read. Aliases: `filePath`, `path`. |
 | `session_info` | none | read-only | Replay-derived JSON; large output spills | Model-visible session metadata, lineage, event counts, artifacts, recovery notes. |
 | `session_list` | none | read-only | Replay-derived JSON | Model-visible session catalog listing with filters/sort/caps. |
 | `session_read` | none | read-only | Replay-derived JSON; large output spills | Bounded redacted event/message windows. |
 | `session_search` | none | read-only | Replay-derived JSON; large output spills | Redacted search over safe replay-derived session text. |
 | `shell.run` | `bash` | host command | Captured output and artifacts when large | Lower-level shell id kept canonical for compatibility tests. |
 | `skill` | `task` | prompt/control-plane read | Summary plus loaded skill content | Loads configured markdown skills under skill permission rules. |
-| `task` | `task` | child scheduling | Child session events and structured route/runtime metadata | Canonical subagent delegation tool. |
+| `task` | `task` | child scheduling | Child session events and structured route/runtime metadata | Canonical subagent delegation tool. Aliases: `agent`, `subagent_type`. |
 | `team_create` | `task` | team mutation | Event-sourced projection output | Primitive team coordination tool. |
 | `team_delete` | `task` | team mutation | Event-sourced projection output | Deletes projected team state. |
 | `team_list` | `task` | read-only | Event-sourced primitive projection output | Narrow list-only primitive; no Team Mode worktrees/tmux/mailbox/file claims. |
@@ -55,3 +55,9 @@ Tool execution still goes through the coordinator permission path before the too
 - `background_cancel` is the canonical cancellation id for a background child request. `background_output(cancel=true)` remains documented compatibility.
 - `team_list` is intentionally only a primitive projection reader. Full Team Mode, worktrees, tmux visualization, mailbox artifacts, declared registries, and file claims remain out of V1 scope.
 - `ast_grep_search` is read-only and maps to `codesearch`. It invokes the local `ast-grep` CLI in read-only mode with strict args, workspace path checks, explicit/safely inferred language, hard result/context/per-match caps, and artifact spill. `ast_grep_replace` is not shipped in this slice because the edit-safety/dry-run/apply/hashline parity gates are not implemented.
+
+## Bash safety
+
+The `bash` wrapper default timeout is 120000 ms. The output cap is 2000 lines or 51200 bytes before full output is written to artifacts. The blocked command policy rejects shell search/read/edit shortcuts such as `find`, `grep`/`rg`, `cat`, `head`, `tail`, `sed`, and `awk`; use `glob`, `grep`, `list`, `read`, or `edit` instead. This guidance mirrors `shell_run.rs` and `shell_safety.rs`.
+
+`ast_grep_replace is not shipped` in this slice; only `ast_grep_search` is advertised as a native structural search tool.

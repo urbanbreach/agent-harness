@@ -13,10 +13,12 @@ The generated JSON schemas are the source of truth:
 
 Start with `configs/harness.example.jsonc`. It keeps the happy path small: one
 OpenAI-compatible provider, two local GPT-family model entries, explicit
-tool-call capability metadata, per-agent model/variant choices for the shipped
-profiles, scalar permission mode, and optional MCP. The full file is the
-canonical example; the excerpt below is intentionally abridged but keeps the
-same provider/model/agent shape and the fields that affect first-run behavior.
+tool-call capability metadata, OMO-style category scale through model profiles
+with primary targets plus validated fallback metadata,
+per-agent model choices for the shipped profiles, scalar permission mode, and
+optional MCP. The full file is the canonical example; the excerpt below is
+intentionally abridged but keeps the same provider/model/agent shape and the
+fields that affect first-run behavior.
 
 ```jsonc
 {
@@ -56,20 +58,62 @@ same provider/model/agent shape and the fields that affect first-run behavior.
     }
   },
   "model": "default/gpt-5.4-mini",
+  "model_profile": {
+    "category-visual-engineering": {
+      "model": "default/gpt-5.5",
+      "variant": "high",
+      "fallback": [{ "model": "default/gpt-5.4-mini", "variant": "high" }]
+    },
+    "category-artistry": {
+      "model": "default/gpt-5.5",
+      "variant": "high",
+      "fallback": [{ "model": "default/gpt-5.4-mini", "variant": "high" }]
+    },
+    "category-ultrabrain": {
+      "model": "default/gpt-5.5",
+      "variant": "xhigh",
+      "fallback": [{ "model": "default/gpt-5.4-mini", "variant": "high" }]
+    },
+    "category-deep": {
+      "model": "default/gpt-5.5",
+      "variant": "medium",
+      "fallback": [{ "model": "default/gpt-5.4-mini", "variant": "high" }]
+    },
+    "category-quick": {
+      "model": "default/gpt-5.4-mini",
+      "variant": "low",
+      "fallback": [{ "model": "default/gpt-5.5", "variant": "low" }]
+    },
+    "category-unspecified-low": {
+      "model": "default/gpt-5.4-mini",
+      "variant": "medium",
+      "fallback": [{ "model": "default/gpt-5.5", "variant": "medium" }]
+    },
+    "category-unspecified-high": {
+      "model": "default/gpt-5.5",
+      "variant": "high",
+      "fallback": [{ "model": "default/gpt-5.4-mini", "variant": "high" }]
+    },
+    "category-writing": {
+      "model": "default/gpt-5.4-mini",
+      "variant": "medium",
+      "fallback": [{ "model": "default/gpt-5.5", "variant": "medium" }]
+    }
+  },
   "agent": {
     "build": { "enable": true, "model": "default/gpt-5.4-mini", "variant": "high" },
     "plan": { "enable": true, "model": "default/gpt-5.5", "variant": "xhigh" },
     "discipline": { "enable": true, "model": "default/gpt-5.5", "variant": "high" },
     "general": { "enable": true, "model": "default/gpt-5.4-mini", "variant": "medium" },
     "explore": { "enable": true, "model": "default/gpt-5.4-mini", "variant": "low" },
-    "visual-engineering": { "enable": true, "model": "default/gpt-5.4-mini", "variant": "high" },
-    "artistry": { "enable": true, "model": "default/gpt-5.5", "variant": "high" },
-    "ultrabrain": { "enable": true, "model": "default/gpt-5.5", "variant": "xhigh" },
-    "deep": { "enable": true, "model": "default/gpt-5.5", "variant": "high" },
-    "quick": { "enable": true, "model": "default/gpt-5.4-mini", "variant": "low" },
-    "unspecified-low": { "enable": true, "model": "default/gpt-5.4-mini", "variant": "low" },
-    "unspecified-high": { "enable": true, "model": "default/gpt-5.5", "variant": "high" },
-    "writing": { "enable": true, "model": "default/gpt-5.4-mini", "variant": "medium" },
+    "visual-engineering": { "enable": true, "model": "category-visual-engineering" },
+    "artistry": { "enable": true, "model": "category-artistry" },
+    "ultrabrain": { "enable": true, "model": "category-ultrabrain" },
+    "deep": { "enable": true, "model": "category-deep" },
+    "quick": { "enable": true, "model": "category-quick" },
+    "unspecified-low": { "enable": true, "model": "category-unspecified-low" },
+    "unspecified-high": { "enable": true, "model": "category-unspecified-high" },
+    "writing": { "enable": true, "model": "category-writing" },
     "title": { "enable": true, "hidden": true },
     "summary": { "enable": true, "hidden": true },
     "compaction": { "enable": true, "hidden": true }
@@ -87,8 +131,11 @@ same provider/model/agent shape and the fields that affect first-run behavior.
 ```
 
 Only write the settings you want to own. The canonical example lists built-in
-agents for discoverability and pins their model variants so doctor/TUI/task
-metadata agree. Each entry still inherits the shipped description, prompt,
+agents for discoverability and pins category routes through named model profiles
+so doctor/TUI/task metadata agree. The starter adapts OMO's provider-specific
+category defaults into the local GPT-family catalog; larger catalogs can retarget
+the same `category-*` profile names to Gemini, Claude, Kimi, or other available
+providers. Each agent still inherits the shipped description, prompt,
 permissions, and tools unless you override those fields. Keep larger model
 catalogs, agent tool lists, background-task knobs, and compaction defaults out of
 day-to-day configs unless a project needs a deliberate override.
@@ -99,6 +146,16 @@ Each variant is a named model option preset; for OpenAI-compatible reasoning
 models, set `metadata.reasoningEffort` so the TUI can display and select variants
 like `low`, `medium`, or `high`. Use additional variant fields only for
 non-standard names or per-variant limits, modalities, or options.
+
+## V1 model prompt tuning stance
+
+Per-model prompt tuning is intentionally absent for V1: substring heuristics do
+not select prompt bodies, and the base prompt is composed through
+`crates/harness/src/dynamic_prompt.rs` plus markdown agent assets. Model-specific
+differences in this slice are explicit `variants` metadata such as reasoning
+effort, not hidden prompt forks. If provider/model prompt presets are added
+later, they must be named presets layered over the base prompt and covered by
+golden prompt tests.
 
 The larger provider catalog lives in `configs/provider-catalog.reference.jsonc`.
 That file is a reference and validation fixture for provider and model metadata,
@@ -132,6 +189,32 @@ scratch output to stdout or `--output`. Committed updates should go through
 Review generated provider `baseURL` values before merging; models.dev describes
 many providers, while the harness currently executes only OpenAI-compatible
 transports.
+
+### First-run provider authentication
+
+The copied `configs/harness.example.jsonc` is a local loopback starter so the
+mock and deterministic signoff paths do not require external credentials. For a
+real provider first run, update `provider.<id>.options.baseURL` to the provider's
+OpenAI-compatible endpoint and prefer `provider.<id>.options.apiKeyEnv` over an
+inline `apiKey`. A typical OpenAI-compatible setup uses:
+
+```jsonc
+{
+  "provider": {
+    "default": {
+      "type": "openai_compatible",
+      "options": {
+        "baseURL": "https://api.openai.com/v1",
+        "apiKeyEnv": ["OPENAI_API_KEY"]
+      }
+    }
+  }
+}
+```
+
+`harness doctor` keeps secret values redacted. doctor checks that the named environment variable is present,
+and doctor does not prove live provider authentication or transport health; use a
+live prompt or signoff-live lane when you need transport and credential proof.
 
 ## Public contract summary
 
@@ -172,7 +255,7 @@ for those settings instead of mixing them into runtime config.
 | `mcp` | MCP server definitions keyed by server name. |
 | `mode` | Deprecated upstream alias for `agent`; entries are translated as agent definitions. |
 | `model` | Default full-capability model reference. |
-| `model_profile` | Named model selectors that resolve to configured provider/model targets plus optional fallback targets. |
+| `model_profile` | Named model selectors that resolve to configured provider/model targets plus optional fallback metadata; runtime profile resolution selects the primary target in V1. |
 | `permission` | Default permission policy for the supported tool subset plus optional shell allowlist. |
 | `plugin` | Upstream plugin list; accepted only when empty because plugins are not loaded by the harness. |
 | `provider` | Provider definitions keyed by provider id. |
@@ -194,6 +277,11 @@ for those settings instead of mixing them into runtime config.
 | --- | --- |
 | `$schema` | Optional schema URI for editor integration. |
 | `keybinds` | Supported TUI keybinding overrides. |
+
+TUI prompt history is runtime state, not config. Interactive startup and live
+sessions load and append prompt history at `<session-dir>/tui/prompt-history.json`
+using a versioned JSON schema, so submitted prompts survive process restarts while
+unsent drafts stay in the active composer until submitted or discarded.
 
 ## Discovery and precedence
 
@@ -424,9 +512,12 @@ UX, layout, styling, animation, and design; `artistry` covers complex creative
 problem-solving; `ultrabrain` covers hard logic, architecture, algorithms, and
 deep debugging; `deep` covers autonomous research and end-to-end implementation;
 `quick` covers small low-risk changes; `unspecified-low` and `unspecified-high`
-cover uncategorized low- and high-effort work; and `writing` covers docs and
-prose. Shipped subagents intentionally omit or deny `task` by default so they do
-not recursively redelegate unless a project opts into that tool.
+cover uncategorized low-to-moderate and high-effort work; and `writing` covers
+docs and prose. Shipped subagents intentionally omit or deny `task` by default so
+they do not recursively redelegate unless a project opts into that tool. Named
+category model profiles preserve OMO-style scale as primary targets plus
+validated fallback metadata; automatic provider/model retry is not V1 runtime
+behavior.
 When a subagent profile does not configure its own `model`, task delegation
 inherits the invoking parent turn's active model and model settings. If the
 subagent profile has an explicit `model`, that configured model wins. The `task`
