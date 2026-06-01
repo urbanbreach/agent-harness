@@ -241,8 +241,8 @@ turns those working mechanisms into well-specified release behavior.
   do not use when, execution policy, steps, tool usage, escalation/stop
   conditions, final checklist, and advanced notes.
 - [x] Skill loading follows progressive disclosure: metadata in catalog and
-  SKILL.md on activation; bundled references/assets remain deferred
-  metadata/follow-up, not runtime-loaded in this slice.
+  SKILL.md plus declared bundled resources on activation, with resource caps and
+  escape tests.
 - [x] Skill prompt injection order and conflict resolution with agent prompts and
   AGENTS.md is documented.
 - [x] Built-in skills are disableable by stable ids before V1 adds more of them.
@@ -654,6 +654,19 @@ V1 should be plugin-ready, not a broad arbitrary plugin host.
 - [ ] Math-heavy adaptive optimization controllers, shadow dual execution,
   online policy evaluation, or VOI planners.
 - [ ] Broad non-OpenAI-compatible provider transports beyond the implemented execution path.
+- [ ] OS-level execution sandbox for build/plan tool execution (Linux
+  Landlock+seccomp, macOS Seatbelt), distinct from the operator permission layer;
+  Windows remains best-effort/unsupported initially. See
+  [`docs/pre-v1-enhancements-prd.md`](pre-v1-enhancements-prd.md) §9.
+- [ ] Native Anthropic transport with explicit `cache_control` ephemeral
+  breakpoints and per-model-capability TTL gating.
+- [ ] Server-side context reuse (`previous_response_id`) for the Responses API,
+  with replay-safety design for server-held state.
+- [ ] OAuth/provider integrations beyond Codex and GitHub Copilot, including
+  regional/Chinese providers.
+- [ ] Standardized external MCP config import (`.mcp.json`-style) for interop.
+- [ ] Harness logo / brand redesign (human-owned design task, not an
+  autonomous-agent deliverable).
 
 ## Explicit V1 non-goals from the inspiration review
 
@@ -761,6 +774,142 @@ post-V1 unless this roadmap explicitly re-scopes it.
 - [x] Migration notes explain which source-inspiration, desktop/mobile,
   browser/media, and plugin surfaces are unsupported
   by design for V1.
+
+## V1 enhancement additions (provider auth, caching, prompt parity)
+
+These items extend V1 beyond the checked foundations with high-leverage,
+well-scoped capability for a vanilla local-coding harness. They are the scope of
+[`docs/pre-v1-enhancements-prd.md`](pre-v1-enhancements-prd.md), which holds the
+strict end-state goal, anti-gaming contract, workstreams, and evidence rules.
+Heavier items (OS sandbox, native Anthropic transport, server-side response
+reuse, additional providers, logo) stay post-V1 in the list above. All boxes
+below are unchecked until backed by the PRD's cited evidence.
+
+### Provider authentication (OAuth): Codex and GitHub Copilot first
+
+- [x] A provider credential abstraction supports `apiKey`/`apiKeyEnv` and an
+  `oauth` credential kind without adding a new transport protocol;
+  OpenAI-compatible execution stays the base path. Evidence:
+  `cargo test -p harness-core auth -- --nocapture`; `cargo test -p harness-providers openai_compatible_uses_credential_source_before_static_api_key -- --nocapture`; source citation:
+  [`docs/pre-v1-enhancements-progress.md`](pre-v1-enhancements-progress.md).
+- [x] OAuth credentials persist in a dedicated store outside `harness.json`, in the
+  platform data dir, with restrictive permissions, and never appear in
+  `events.jsonl`, support bundles, or committed files. Evidence:
+  `cargo test -p harness --test replay_sessions_cli_test sessions_export_cli_excludes_stored_credentials_and_scans_for_leaks -- --nocapture`; `cargo check -p harness-core`; source citation:
+  [`docs/pre-v1-enhancements-progress.md`](pre-v1-enhancements-progress.md).
+- [x] OAuth access tokens refresh automatically from the stored refresh token with
+  single-flight behavior; failures map to the existing provider error categories.
+  Evidence: `cargo test -p harness-core auth -- --nocapture`; source citation:
+  [`docs/pre-v1-enhancements-progress.md`](pre-v1-enhancements-progress.md).
+- [x] Codex (ChatGPT) OAuth login works via PKCE loopback (browser) and
+  device-code (headless) flows, with requests decorated by bearer token, account
+  id, and the Codex endpoint without leaking secrets. Evidence:
+  `cargo test -p harness-core codex -- --nocapture`;
+  `cargo test -p harness auth -- --nocapture`;
+  `cargo test -p harness-providers codex_auth_profile_rewrites_endpoint_and_adds_context_headers -- --nocapture`; source citation:
+  [`docs/pre-v1-enhancements-progress.md`](pre-v1-enhancements-progress.md).
+- [x] GitHub Copilot OAuth login works via the GitHub device-code flow, with public
+  and enterprise deployment options and the required Copilot request headers.
+  Evidence: `cargo test -p harness-core copilot -- --nocapture`;
+  `cargo test -p harness-providers github_copilot_auth_profile_rewrites_public_and_enterprise_headers -- --nocapture`; source citation:
+  [`docs/pre-v1-enhancements-progress.md`](pre-v1-enhancements-progress.md).
+- [x] `harness auth login/logout/list` CLI commands exist and a skippable TUI
+  first-run login flow exists, neither printing secrets. Evidence:
+  `cargo test -p harness auth -- --nocapture`;
+  `cargo test -p harness-tui onboarding -- --nocapture`; source citation:
+  [`docs/pre-v1-enhancements-progress.md`](pre-v1-enhancements-progress.md).
+- [x] Stored Codex and GitHub Copilot credentials activate built-in provider/model
+  catalogs for CLI/TUI/prompt use without requiring a project `harness.json`;
+  `/model` groups authenticated provider rows, persists valid recent selections,
+  and selected provider/model metadata routes the next prompt. Evidence:
+  `cargo test -p harness runtime_catalog -- --nocapture`;
+  `cargo test -p harness no_config_tui -- --nocapture`;
+  `cargo test -p harness prompt::tests::no_config_prompt -- --nocapture`;
+  `cargo test -p harness-tui model_switcher -- --nocapture`; source citation:
+  [`docs/opencode-auth-model-parity-progress.md`](opencode-auth-model-parity-progress.md).
+- [x] Doctor reports per-provider auth status (kind, presence, expiry) with
+  redacted values, separate from transport health. Evidence:
+  `cargo test -p harness auth -- --nocapture`; source citation:
+  [`docs/pre-v1-enhancements-progress.md`](pre-v1-enhancements-progress.md).
+- [x] OAuth flows are proven with deterministic fixture/mock tests; live OAuth is
+  env-gated/manual only and never required for deterministic lanes. Evidence:
+  `cargo test -p harness-core codex -- --nocapture`;
+  `cargo test -p harness-core copilot -- --nocapture`;
+  `scripts/test-lanes.sh simulation`; source citation:
+  [`docs/pre-v1-enhancements-progress.md`](pre-v1-enhancements-progress.md).
+
+### Prompt-cache optimization (OpenAI-compatible path, pi-mono parity)
+
+- [x] OpenAI-compatible requests set a stable, clamped, per-session
+  `prompt_cache_key` to maximize cache routing and hit rate. Evidence:
+  `cargo test -p harness-providers openai_compatible_ -- --nocapture`; source
+  citation:
+  [`docs/pre-v1-enhancements-progress.md`](pre-v1-enhancements-progress.md).
+- [x] The composed system prompt keeps volatile fields (date, git branch) at the
+  tail of the stable prefix, covered by a composition-order test. Evidence:
+  `cargo test -p harness dynamic_prompt_keeps_volatile_environment_at_stable_prefix_tail -- --nocapture`;
+  source citation:
+  [`docs/pre-v1-enhancements-progress.md`](pre-v1-enhancements-progress.md).
+- [x] Cache read/write token telemetry is surfaced in an operator-visible TUI
+  status, derived from existing event fields. Evidence:
+  `cargo test -p harness-tui cache_read_write_tokens_render_as_separate_status_labels -- --nocapture`;
+  source citation:
+  [`docs/pre-v1-enhancements-progress.md`](pre-v1-enhancements-progress.md).
+
+### Model resolution and prompt parity
+
+- [x] Model-family/capability resolution uses an explicit, tested seam (not only
+  `model_id.contains(...)` heuristics) for prompt selection and per-family request
+  behavior, with a documented default fallback. Evidence:
+  `cargo test -p harness-core --test model_variant_resolution_test -- --nocapture`,
+  `cargo test -p harness-core model_resolution -- --nocapture`, and
+  `cargo test -p harness provider_prompt_uses_resolved_metadata_family_not_model_substrings -- --nocapture`;
+  source citation:
+  [`docs/pre-v1-enhancements-progress.md`](pre-v1-enhancements-progress.md).
+- [x] The roadmap's substring-heuristic vs explicit-preset claim is reconciled
+  honestly with a citation. Evidence:
+  [`docs/config.md`](config.md#v1-model-prompt-tuning-stance) plus
+  `cargo test -p harness --test config_docs_reference_test -- --nocapture`;
+  source citation:
+  [`docs/pre-v1-enhancements-progress.md`](pre-v1-enhancements-progress.md).
+- [x] Non-GPT family prompts (Anthropic, Gemini, and any Copilot-exposed families)
+  meet the shared skeleton at OMO-parity quality, branding-stripped, with golden
+  snapshots. Evidence:
+  `cargo test -p harness family_prompt -- --nocapture` and
+  `cargo test -p harness --test bootstrap_profiles_test shipped_v1_family_prompt_assets_match_golden_snapshots -- --nocapture`;
+  source citation:
+  [`docs/pre-v1-enhancements-progress.md`](pre-v1-enhancements-progress.md).
+- [x] Model-family prompt bodies are sourced from data assets rather than hardcoded
+  Rust string constants, with a drift test for missing/empty assets. Evidence:
+  `cargo test -p harness family_prompt -- --nocapture` and
+  `cargo test -p harness --test config_schema_cli_test prompt_family_asset -- --nocapture`;
+  source citation:
+  [`docs/pre-v1-enhancements-progress.md`](pre-v1-enhancements-progress.md).
+
+### Skill hardening
+
+- [x] Bundled skill references/assets load via progressive disclosure within
+  documented caps, instead of remaining deferred-only metadata. Evidence:
+  `cargo test -p harness-tools --test skill_load_discovery_test -- --nocapture`;
+  sources: `docs/pre-v1-enhancements-progress.md`, `docs/extension-strategy.md`,
+  `docs/starter-skills.md`.
+- [x] Skill discovery has symlink-escape and path-traversal tests across all
+  configured project/global roots. Evidence:
+  `cargo test -p harness-tools --test skill_load_discovery_test -- --nocapture`;
+  sources: `docs/pre-v1-enhancements-progress.md`,
+  `crates/harness-tools/tests/skill_load_discovery/03_v1_skill_contract_test.rs`.
+
+### First-run onboarding and UX
+
+- [x] A skippable first-run onboarding flow (provider/auth selection → first prompt
+  → visible success) exists in the TUI, adapted from the opencode onboarding UX
+  without its branding, and does not block pre-configured users. Evidence:
+  `cargo test -p harness-tui onboarding -- --nocapture`; `cargo test -p harness auth -- --nocapture`; source citation:
+  [`docs/pre-v1-enhancements-progress.md`](pre-v1-enhancements-progress.md).
+- [x] Skill listing/selection UX in the TUI is aligned with the opencode skill
+  surface where it improves clarity. Evidence:
+  `cargo test -p harness-tui onboarding -- --nocapture`; source citation:
+  [`docs/pre-v1-enhancements-progress.md`](pre-v1-enhancements-progress.md).
 
 ## Documentation deliverables
 

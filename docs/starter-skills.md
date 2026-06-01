@@ -51,14 +51,16 @@ allowed_tools: read, grep
 target_agent: build
 target_category: deep
 mcp: deferred-local-metadata
-resources: bundled-reference-not-loaded
+resources: references/usage.md, references/checklist.md
 ---
 ```
 
 Required fields are `name` and `description`. `name` must match the directory
 name and use lowercase words separated by single hyphens. Optional V1 fields are
 `argument_hint`, `allowed_tools`, `target_agent`, `target_category`, `mcp`,
-`resources`, and a string-to-string `metadata` map. CamelCase aliases accepted by
+`resources`, and a string-to-string `metadata` map. `resources` is a comma- or
+newline-separated list of relative files under the skill directory; it is loaded
+only on activation, never during catalog discovery. CamelCase aliases accepted by
 the config reference are also accepted. Unsupported public fields make the skill
 catalog entry `malformed` rather than silently changing behavior.
 
@@ -84,7 +86,14 @@ Catalog, doctor, and support export surfaces expose compact metadata only:
 stable id, name, description, source scope, root, location, status, permission
 mode, optional V1 metadata, and `body_loaded: false`. Full `SKILL.md` bodies are
 loaded only when the `skill` tool activates a loadable skill or `task(load_skills
-= [...])` resolves loadable skills before child spawn.
+= [...])` resolves loadable skills before child spawn. Declared resource files
+follow the same activation-only path and are appended under `## Bundled
+resources`.
+
+Resource loading is bounded: max 5 files per activation, max 64 KiB per file,
+max 200 KiB total loaded bytes, and max path depth 4 under the skill root.
+Absolute paths, `..`, globs, directories, and symlink escapes are rejected before
+reading. Loaded resource text is redacted before it enters the skill output.
 
 Use `skills.disabled` to turn off skills by name, pattern, or stable id such as
 `skill:project:rust-best-practices`. Disabled, denied, malformed, missing, and

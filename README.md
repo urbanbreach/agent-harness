@@ -65,31 +65,28 @@ cd /tmp/harness-first-run
 /path/to/agent-harness/target/debug/harness --version
 /path/to/agent-harness/target/debug/harness config validate
 /path/to/agent-harness/target/debug/harness doctor
-/path/to/agent-harness/target/debug/harness prompt --mock --text "Hello from PTY" \
+/path/to/agent-harness/target/debug/harness run --mock "Hello from PTY" \
   --out prompt.events.jsonl --print-run-dir
 ```
 
-That prompt command is deterministic mocked execution. It proves the first prompt
+That run command is deterministic mocked execution. It proves the first prompt
 path separately from `doctor`; it does not prove live provider authentication or
 transport health.
 
-For a real provider first run, replace the example provider endpoint and
-credential source before the live prompt. Use the provider's OpenAI-compatible
-`baseURL`, set an environment variable such as `OPENAI_API_KEY`, and point the
-provider at it with `apiKeyEnv` instead of writing a secret into the config. For
-example, edit the copied `harness.jsonc` so the provider `options` include
-`"baseURL": "https://api.openai.com/v1"` and
-`"apiKeyEnv": ["OPENAI_API_KEY"]`, then run `harness doctor` followed by a
-live prompt or signoff-live lane. `doctor` checks that the named credential is
-available and redacted. doctor does not prove live provider authentication or transport health.
+For a real provider first run, use the shipped `openai-codex` provider and log in
+with `harness auth login codex`, or set `OPENAI_API_KEY` as the documented
+fallback. The provider keeps credential material out of config with
+`authProvider: "codex"`; live prompts exercise the Codex OAuth-backed request
+path. `doctor` checks that the named credential is available and redacted.
+doctor does not prove live provider authentication or transport health.
 
 The default path is:
 
-- provider: `default` (`openai_compatible`) via the local CLIProxy-compatible loopback endpoint
+- provider: `openai-codex` (`openai_compatible`) via Codex OAuth
 - default agent: `build`
-- default model: `default/gpt-5.4-mini`
-- interactive model: `default/gpt-5.4-mini` (`high` reasoning preset)
-- category model profiles: OMO-style scale adapted to local GPT primary targets plus validated fallback metadata (`category-ultrabrain`, `category-deep`, `category-quick`, and the other shipped category profiles)
+- default model: `openai-codex/gpt-5.4-mini`
+- interactive model: `openai-codex/gpt-5.4-mini` (`high` reasoning preset)
+- category model profiles: OMO-style scale adapted to Codex OAuth-backed GPT primary targets plus validated fallback metadata (`category-ultrabrain`, `category-deep`, `category-quick`, and the other shipped category profiles)
 
 Primary agents and category subagents are discovered from `.agent-harness/agents/*.md` and use the
 runtime config's direct model or named `model_profile` settings:
@@ -143,9 +140,9 @@ Troubleshooting starts with the local checks before live provider execution:
   unresolved `apiKeyEnv` names without printing secret values.
 - Invalid credentials or rate limits: run a live `prompt`/stress lane; `doctor`
   does not make provider calls and cannot prove authentication.
-- Base URL or local proxy mismatch: compare the provider `baseURL` in
-  `harness.jsonc` with the local proxy endpoint and use the live prompt lane for
-  transport proof.
+- Base URL or provider mismatch: compare the provider `baseURL` and
+  `authProvider` in `harness.jsonc` with the expected Codex OAuth setup and use
+  the live prompt lane for transport proof.
 - Missing MCP/LSP/tool prerequisites: `doctor` reports configured MCP readiness;
   tool failures are persisted as tool messages, and unsupported LSP probes stay
   recoverable in the prompt path.
@@ -194,12 +191,16 @@ matching subagent profiles first, then fall back to `general` when a category is
 not configured. The shipped category profiles deny recursive task delegation by
 default and can be toggled or retuned under `agent` like any other profile.
 
-Run the harness headlessly from the terminal with the provider-backed `prompt` command:
+Run the harness headlessly from the terminal with the command-driven `run` command:
 
 ```bash
-cargo run -p harness -- prompt "Summarize the current workspace"
-printf 'Review the changed files' | cargo run -p harness -- prompt --stdin
+cargo run -p harness -- run "Summarize the current workspace"
+printf 'Review changed files' | cargo run -p harness -- run
+cargo run -p harness -- run --model openai-codex/gpt-5.5 "hello"
 ```
+
+`harness prompt` remains available as the lower-level compatibility surface used
+by older scripts and focused prompt-path tests.
 
 For tool-enabled headless stress tests, point `prompt` at a tool-capable config and
 persist the event log for later inspection:
@@ -240,7 +241,7 @@ deterministic and provider-free. `--mode live` and `--mode all` exercise the too
 path against the configured provider, including best-effort LSP diagnostics, fail-open unsupported
 LSP probes, and absolute-path workspace reads.
 
-The shipped `default` provider points at the local CLIProxy-compatible bridge (`http://127.0.0.1:8317/v1`) and uses an explicit local placeholder bearer token so the default flow stays aligned between docs, config, and live signoff lanes without depending on `OPENAI_API_KEY`. The starter catalog intentionally defines only GPT 5.5 and GPT 5.4 Mini; broader generated provider catalogs live in `configs/provider-catalog.reference.jsonc`.
+The shipped `openai-codex` provider uses `authProvider: "codex"` with an `OPENAI_API_KEY` fallback so default live runs exercise the Codex OAuth-backed path instead of a local proxy bridge. The starter catalog intentionally defines only GPT 5.5 and GPT 5.4 Mini; broader generated provider catalogs live in `configs/provider-catalog.reference.jsonc`.
 
 The TUI exposes workflow slash commands for `/model`, `/status`, `/toggles`, `/resume`, `/new`, `/tree`, `/fork`, and `/clone`. `/model` switches the agent/model used for subsequent turns, `/status` opens the system status dialog, `/toggles` opens the session-local Toggles menu for configured agents, prompts, hooks, MCP servers, tools, skills, and YOLO menu state, `/resume` opens the saved-session picker, and `/new` starts a clean live run. `/tree` shows the Harness session lineage tree for saved sessions. `/fork` creates a child Harness session from the current session at an explicit stable event cutoff. `/clone` creates a child Harness session from the latest stable prefix of the selected source session.
 

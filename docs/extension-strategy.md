@@ -16,7 +16,19 @@ MCP servers are declared in runtime config under `mcp`. Enabled servers register
 
 ## Markdown skills
 
-Markdown skills live under configured skill roots such as `.agent-harness/skills`. Discovery reads frontmatter and compact metadata; full bodies load only when the `skill` tool or `task(load_skills=[...])` activates them. Skills never grant runtime tools or bypass coordinator permissions.
+Markdown skills live under configured skill roots such as `.agent-harness/skills`.
+Discovery reads frontmatter and compact metadata; full bodies and bundled
+`resources` files load only when the `skill` tool or `task(load_skills=[...])`
+activates them. Skills never grant runtime tools or bypass coordinator
+permissions.
+
+Bundled resources use progressive disclosure. The `resources` frontmatter field
+is a comma- or newline-separated list of relative file paths under the skill
+directory. Directories, globs, absolute paths, `..`, and symlink escapes are
+rejected before reading. V1 caps each activation to 5 files, 64 KiB per file, 200
+KiB total loaded bytes, and path depth 4 under the skill root. Loaded resource
+text is redacted and appended to the normal skill activation body, so catalog,
+doctor, and support surfaces still expose compact metadata only.
 
 Harness-owned skill roots stay first for V1. External editor/assistant/agent
 roots such as `.external-editor/skills`, `.assistant/skills`, and
@@ -111,7 +123,17 @@ permission checks, artifact/redaction paths, and replay side-effect boundaries.
 
 Order is intentional where it affects runtime behavior: coordinator event append and permission checks own authority before native tool registration, native tool registration owns tool ids before agent prompt assembly advertises tool use, and compaction consumes replay-derived event/tool context after those events exist. Disableable built-in skill rows are sorted by stable id so doctor, docs, and tests stay deterministic; skill activation still respects the operator-requested `load_skills` order.
 
-The V1 disableable built-in skills write no JSONL or artifact state by themselves. They can change prompt context only after explicit `skill` or `task(load_skills=[...])` activation, and that activity is represented by the existing event schema and tool output summaries. Any future release-blocking built-in that writes JSONL or artifact state must document its `schema_version`, migration policy, and replay behavior before the roadmap box can stay checked. Existing release evidence artifacts document their schemas in the owning surface: event logs in `docs/architecture.md` and `docs/sessions-and-replay.md`, native tool artifacts in `docs/native-tool-catalog.md`, simulation artifacts in `docs/testing.md`, and lane-specific perf/PTY artifacts in `docs/budgets.md` and `docs/testing.md`.
+V1 disableable built-in skills write no JSONL or artifact state by themselves.
+They can change prompt context only after explicit `skill` or
+`task(load_skills=[...])` activation, and that activity is represented by the
+existing event schema and tool output summaries. Bundled resources follow the
+same activation-only contract and are capped/redacted before they enter the
+skill body. Any future release-blocking built-in that writes JSONL or artifact
+state must document its `schema_version`, migration policy, and replay behavior
+before the roadmap box can stay checked. Existing release evidence artifacts
+document their schemas in the owning surface: event logs in `docs/architecture.md` and `docs/sessions-and-replay.md`, native tool artifacts in
+`docs/native-tool-catalog.md`, simulation artifacts in `docs/testing.md`, and
+lane-specific perf/PTY artifacts in `docs/budgets.md` and `docs/testing.md`.
 
 ## Deferred seams
 

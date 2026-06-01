@@ -12,7 +12,7 @@ The generated JSON schemas are the source of truth:
 ## Minimal starter
 
 Start with `configs/harness.example.jsonc`. It keeps the happy path small: one
-OpenAI-compatible provider, two local GPT-family model entries, explicit
+Codex OAuth-backed OpenAI-compatible provider, two GPT-family model entries, explicit
 tool-call capability metadata, OMO-style category scale through model profiles
 with primary targets plus validated fallback metadata,
 per-agent model choices for the shipped profiles, scalar permission mode, and
@@ -24,13 +24,15 @@ fields that affect first-run behavior.
 {
   "$schema": "./config.json",
   "provider": {
-    "default": {
+    "openai-codex": {
       "type": "openai_compatible",
-      "name": "Local OpenAI-Compatible Provider",
+      "name": "OpenAI Codex",
       "options": {
-        "baseURL": "http://127.0.0.1:8317/v1",
-        "apiKey": "placeholder-api-key",
-        "timeoutMs": 1800000
+        "authProvider": "codex",
+        "baseURL": "https://api.openai.com/v1",
+        "apiKeyEnv": ["OPENAI_API_KEY"],
+        "timeoutMs": 1800000,
+        "cacheRetention": "short"
       },
       "models": {
         "gpt-5.5": {
@@ -57,54 +59,54 @@ fields that affect first-run behavior.
       }
     }
   },
-  "model": "default/gpt-5.4-mini",
+  "model": "openai-codex/gpt-5.4-mini",
   "model_profile": {
     "category-visual-engineering": {
-      "model": "default/gpt-5.5",
+      "model": "openai-codex/gpt-5.5",
       "variant": "high",
-      "fallback": [{ "model": "default/gpt-5.4-mini", "variant": "high" }]
+      "fallback": [{ "model": "openai-codex/gpt-5.4-mini", "variant": "high" }]
     },
     "category-artistry": {
-      "model": "default/gpt-5.5",
+      "model": "openai-codex/gpt-5.5",
       "variant": "high",
-      "fallback": [{ "model": "default/gpt-5.4-mini", "variant": "high" }]
+      "fallback": [{ "model": "openai-codex/gpt-5.4-mini", "variant": "high" }]
     },
     "category-ultrabrain": {
-      "model": "default/gpt-5.5",
+      "model": "openai-codex/gpt-5.5",
       "variant": "xhigh",
-      "fallback": [{ "model": "default/gpt-5.4-mini", "variant": "high" }]
+      "fallback": [{ "model": "openai-codex/gpt-5.4-mini", "variant": "high" }]
     },
     "category-deep": {
-      "model": "default/gpt-5.5",
+      "model": "openai-codex/gpt-5.5",
       "variant": "medium",
-      "fallback": [{ "model": "default/gpt-5.4-mini", "variant": "high" }]
+      "fallback": [{ "model": "openai-codex/gpt-5.4-mini", "variant": "high" }]
     },
     "category-quick": {
-      "model": "default/gpt-5.4-mini",
+      "model": "openai-codex/gpt-5.4-mini",
       "variant": "low",
-      "fallback": [{ "model": "default/gpt-5.5", "variant": "low" }]
+      "fallback": [{ "model": "openai-codex/gpt-5.5", "variant": "low" }]
     },
     "category-unspecified-low": {
-      "model": "default/gpt-5.4-mini",
+      "model": "openai-codex/gpt-5.4-mini",
       "variant": "medium",
-      "fallback": [{ "model": "default/gpt-5.5", "variant": "medium" }]
+      "fallback": [{ "model": "openai-codex/gpt-5.5", "variant": "medium" }]
     },
     "category-unspecified-high": {
-      "model": "default/gpt-5.5",
+      "model": "openai-codex/gpt-5.5",
       "variant": "high",
-      "fallback": [{ "model": "default/gpt-5.4-mini", "variant": "high" }]
+      "fallback": [{ "model": "openai-codex/gpt-5.4-mini", "variant": "high" }]
     },
     "category-writing": {
-      "model": "default/gpt-5.4-mini",
+      "model": "openai-codex/gpt-5.4-mini",
       "variant": "medium",
-      "fallback": [{ "model": "default/gpt-5.5", "variant": "medium" }]
+      "fallback": [{ "model": "openai-codex/gpt-5.5", "variant": "medium" }]
     }
   },
   "agent": {
-    "build": { "enable": true, "model": "default/gpt-5.4-mini", "variant": "high" },
-    "plan": { "enable": true, "model": "default/gpt-5.5", "variant": "xhigh" },
-    "general": { "enable": true, "model": "default/gpt-5.4-mini", "variant": "medium" },
-    "explore": { "enable": true, "model": "default/gpt-5.4-mini", "variant": "low" },
+    "build": { "enable": true, "model": "openai-codex/gpt-5.4-mini", "variant": "high" },
+    "plan": { "enable": true, "model": "openai-codex/gpt-5.5", "variant": "xhigh" },
+    "general": { "enable": true, "model": "openai-codex/gpt-5.4-mini", "variant": "medium" },
+    "explore": { "enable": true, "model": "openai-codex/gpt-5.4-mini", "variant": "low" },
     "visual-engineering": { "enable": true, "model": "category-visual-engineering" },
     "artistry": { "enable": true, "model": "category-artistry" },
     "ultrabrain": { "enable": true, "model": "category-ultrabrain" },
@@ -146,15 +148,39 @@ models, set `metadata.reasoningEffort` so the TUI can display and select variant
 like `low`, `medium`, or `high`. Use additional variant fields only for
 non-standard names or per-variant limits, modalities, or options.
 
+OpenAI-compatible providers accept `cacheRetention` either beside the provider
+fields or under `options`. The default is `short`: the runtime sends a stable,
+clamped, per-session `prompt_cache_key` when a session id is available. Set
+`cacheRetention: "none"` to omit cache-affinity request fields. Set
+`cacheRetention: "long"` only when you want provider-supported extended
+retention; the current transport emits `prompt_cache_retention: "24h"` only for
+direct `api.openai.com` OpenAI-compatible requests and otherwise falls back to
+the stable key.
+
+OpenAI-compatible providers may also set `authProvider` to `codex` or
+`github-copilot`. That opt-in keeps the OpenAI-compatible transport while letting
+the runtime resolve credentials from the secure credential store before falling
+back to `apiKeyEnv` and inline `apiKey`. Stored credentials live outside
+`harness.json{,c}` under the platform data directory at
+`credentials/{authProvider}.json`, are atomically replaced, and use restrictive
+file permissions: POSIX `0600`, and on Windows a protected owner-only DACL.
+
 ## V1 model prompt tuning stance
 
-Per-model prompt tuning is intentionally absent for V1: substring heuristics do
-not select prompt bodies, and the base prompt is composed through
-`crates/harness/src/dynamic_prompt.rs` plus markdown agent assets. Model-specific
-differences in this slice are explicit `variants` metadata such as reasoning
-effort, not hidden prompt forks. If provider/model prompt presets are added
-later, they must be named presets layered over the base prompt and covered by
-golden prompt tests.
+Provider-family prompt selection is routed through the explicit model-resolution
+seam in `harness_core::model_resolution`, which prefers catalog
+`metadata.family` and falls back to a documented heuristic/default family. The
+base prompt is composed through `crates/harness/src/dynamic_prompt.rs`, markdown
+agent assets, and non-GPT family prompt bodies under
+`.agent-harness/prompt-families/{family}.md` for `anthropic`, `gemini`, `kimi`,
+and `trinity`. If a referenced family prompt asset is missing or empty, the
+runtime fails closed to the documented default prompt and `doctor --json` reports
+`model.prompt_family_asset.status = "fallback"` with the relative asset path and
+warning. Model-specific differences in this slice are explicit catalog metadata
+such as family, modalities, context/output limits, variants, reasoning support,
+and data-backed family prompts, rather than scattered raw `model_id.contains(...)` checks.
+If provider/model prompt presets are added later, they must be named
+presets layered over the base prompt and covered by golden prompt tests.
 
 The larger provider catalog lives in `configs/provider-catalog.reference.jsonc`.
 That file is a reference and validation fixture for provider and model metadata,
@@ -191,11 +217,10 @@ transports.
 
 ### First-run provider authentication
 
-The copied `configs/harness.example.jsonc` is a local loopback starter so the
-mock and deterministic signoff paths do not require external credentials. For a
-real provider first run, update `provider.<id>.options.baseURL` to the provider's
-OpenAI-compatible endpoint and prefer `provider.<id>.options.apiKeyEnv` over an
-inline `apiKey`. A typical OpenAI-compatible setup uses:
+The copied `configs/harness.example.jsonc` targets Codex OAuth by default through
+the `openai-codex` provider id. It keeps credential material out of config by
+using `authProvider: "codex"` plus `apiKeyEnv` fallback. A typical non-OAuth
+OpenAI-compatible setup still uses:
 
 ```jsonc
 {
@@ -204,16 +229,78 @@ inline `apiKey`. A typical OpenAI-compatible setup uses:
       "type": "openai_compatible",
       "options": {
         "baseURL": "https://api.openai.com/v1",
-        "apiKeyEnv": ["OPENAI_API_KEY"]
+        "apiKeyEnv": ["OPENAI_API_KEY"],
+        "cacheRetention": "short"
       }
     }
   }
 }
 ```
 
-`harness doctor` keeps secret values redacted. doctor checks that the named environment variable is present,
-and doctor does not prove live provider authentication or transport health; use a
-live prompt or signoff-live lane when you need transport and credential proof.
+For the V1 built-in OAuth-backed providers, add `authProvider` and leave
+credential material out of config:
+
+```jsonc
+{
+  "provider": {
+    "openai-codex": {
+      "type": "openai_compatible",
+      "options": {
+        "authProvider": "codex",
+        "baseURL": "https://api.openai.com/v1",
+        "apiKeyEnv": ["OPENAI_API_KEY"],
+        "cacheRetention": "short"
+      }
+    },
+    "github-copilot": {
+      "type": "openai_compatible",
+      "options": {
+        "authProvider": "github-copilot",
+        "baseURL": "https://api.githubcopilot.com",
+        "cacheRetention": "short"
+      }
+    }
+  }
+}
+```
+
+Credential resolution order is stored OAuth, stored API key, `apiKeyEnv`, then
+inline `apiKey`. Logout/auth-management commands remove only stored credential
+files, so existing `apiKeyEnv` or inline fallbacks remain valid. Support exports
+include a redaction manifest entry for credential-store files, never credential
+file contents.
+
+Use `harness auth list [--json]` to inspect configured `codex` and
+`github-copilot` auth providers with redacted status. Run `harness auth login`
+for the opencode-style standalone picker: provider order is OpenAI, then GitHub
+Copilot; OpenAI offers `ChatGPT Pro/Plus (browser)`, `ChatGPT Pro/Plus
+(headless)`, and `Manually enter API Key`; GitHub Copilot prompts for
+GitHub.com vs GitHub Enterprise before device-code login. Explicit commands still
+bypass the picker: `harness auth login <provider> --method device|browser|api-key`
+stores or replaces the active stored credential for that auth-provider id. The
+`--method` value also accepts the matching opencode labels, such as `ChatGPT
+Pro/Plus (browser)`, `ChatGPT Pro/Plus (headless)`, `Manually enter API Key`,
+and `Login with GitHub Copilot`. Codex supports device, browser, and API-key
+stdin login; browser login can also complete from an SSH session by pasting the
+final localhost callback URL into the terminal if the remote loopback callback is
+not reachable from the desktop browser. GitHub Copilot supports device-code login
+for V1. Use
+`harness auth logout <provider>` to delete only the stored credential file;
+config and environment fallbacks are not edited. The TUI exposes the same auth
+entry point through `/auth` (`/login`) and the `Auth` command-palette row.
+
+Codex OAuth follows the ChatGPT PKCE/device-code reference flow and decorates the
+existing OpenAI-compatible transport with the Codex endpoint, bearer token, and
+account/session headers. GitHub Copilot OAuth follows the opencode Copilot
+device-code reference: the GitHub device `access_token` is stored as the active
+OAuth credential and sent directly as the Copilot bearer; no separate
+GitHub-to-Copilot token exchange is performed in the deterministic V1 path.
+Copilot Enterprise credentials store the normalized enterprise domain so request
+decoration can select `https://copilot-api.<domain>` while public Copilot uses
+`https://api.githubcopilot.com`.
+
+`harness doctor` keeps secret values redacted. For `apiKeyEnv` fallbacks, doctor checks that the named environment variable is present. For `authProvider`
+entries, doctor checks stored credential presence before environment or inline fallbacks, and doctor does not prove live provider authentication or transport health; use a live prompt or signoff-live lane when you need transport and credential proof.
 
 ## Public contract summary
 
@@ -242,8 +329,8 @@ for those settings instead of mixing them into runtime config.
 | `command` | Upstream command configuration; accepted only when empty because the harness does not execute configured commands. |
 | `compaction` | Upstream-compatible compaction settings accepted as inert compatibility input; harness compaction knobs live under `runtime.compaction`. |
 | `default_agent` | Default interactive agent selected at startup; the shipped example keeps `build` as the default while `plan` remains selectable. |
-| `disabled_providers` | Upstream-compatible provider filter accepted as inert compatibility input. |
-| `enabled_providers` | Upstream-compatible provider filter accepted as inert compatibility input. |
+| `disabled_providers` | Upstream-compatible provider filter; hides matching configured and authenticated built-in providers from runtime model catalogs. |
+| `enabled_providers` | Upstream-compatible provider allow-list; when non-empty, only matching configured/authenticated built-in providers remain in runtime model catalogs. |
 | `enterprise` | Upstream enterprise configuration; accepted only when empty because the harness does not implement enterprise product integration. |
 | `experimental` | Upstream-compatible experimental settings accepted as inert compatibility input. |
 | `formatter` | Upstream-compatible formatter settings accepted as inert compatibility input. |
@@ -696,7 +783,7 @@ especially:
 Model variants may also set `context_window_tokens`, `max_input_tokens`, and
 `max_output_tokens`. Variant values override the base model metadata for picker
 labels and compaction estimates, which lets one provider model expose multiple
-operator-facing presets such as an extended-context CLIProxyAPI GPT profile while
+operator-facing presets such as an extended-context GPT profile while
 still using the same underlying provider model id.
 
 The coordinator uses those values to decide when proactive compaction should checkpoint older provider-visible history and how much recent context to preserve verbatim. The preserved tail defaults to roughly a quarter of usable context, clamped to a practical coding-agent range, while always keeping at least the latest complete turn when possible.
