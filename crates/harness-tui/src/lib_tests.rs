@@ -490,11 +490,44 @@ delegate_test!(slash_shell_closes_review_surface => app::exact_test_slash_shell_
 delegate_test!(slash_follow_toggles_follow_mode => app::exact_test_slash_follow_toggles_follow_mode);
 delegate_test!(live_slash_compact_appears_when_supported => app::exact_test_live_slash_compact_appears_when_supported);
 delegate_test!(live_slash_compact_emits_ui_intent => app::exact_test_live_slash_compact_emits_ui_intent);
+delegate_test!(auth_slash_and_palette_emit_ui_intent_mid_session => app::exact_test_auth_slash_and_palette_emit_ui_intent_mid_session);
+delegate_test!(onboarding_inventory_has_focus_hints_redaction_and_skill_selection => app::exact_test_onboarding_inventory_has_focus_hints_redaction_and_skill_selection);
+delegate_test!(onboarding_skip_is_launch_local_and_writes_no_auth_intent => app::exact_test_onboarding_skip_is_launch_local_and_writes_no_auth_intent);
+delegate_test!(onboarding_auth_waits_for_backend_result => app::exact_test_onboarding_auth_waits_for_backend_result);
+delegate_test!(onboarding_api_key_emits_hidden_stdin_without_visible_secret => app::exact_test_onboarding_api_key_emits_hidden_stdin_without_visible_secret);
+delegate_test!(onboarding_copilot_enterprise_is_reachable_and_redacts_domain => app::exact_test_onboarding_copilot_enterprise_is_reachable_and_redacts_domain);
 delegate_test!(live_without_compact_support_hides_slash_compact => app::exact_test_live_without_compact_support_hides_slash_compact);
 delegate_test!(slash_menu_lists_lineage_commands => app::exact_test_slash_menu_lists_lineage_commands);
 delegate_test!(slash_lineage_write_commands_blocked_in_replay => app::exact_test_slash_lineage_write_commands_blocked_in_replay);
 delegate_test!(slash_lineage_write_commands_blocked_when_live_unstable => app::exact_test_slash_lineage_write_commands_blocked_when_live_unstable);
 delegate_test!(slash_lineage_descriptions_use_harness_branding => app::exact_test_slash_lineage_descriptions_use_harness_branding);
+
+#[cfg(test)]
+#[test]
+fn onboarding_inventory_screens_render_in_startup_surface() {
+    for step in app::OnboardingStep::INVENTORY {
+        let mut app = app::AppState::new_startup(Vec::new(), None);
+        app.set_onboarding_step_for_test(step);
+        let screen = app.onboarding_screen().expect("onboarding screen");
+        let rendered = render_live_lines(&app, 120, 36);
+        assert!(
+            rendered.contains("Harness setup"),
+            "screen {} should render in the Harness setup frame\n{rendered}",
+            step.snapshot_name()
+        );
+        assert!(
+            rendered.contains(screen.title),
+            "screen {} should render title {}\n{rendered}",
+            step.snapshot_name(),
+            screen.title
+        );
+        assert!(
+            !rendered.to_lowercase().contains("opencode"),
+            "screen {} should use Harness branding only\n{rendered}",
+            step.snapshot_name()
+        );
+    }
+}
 
 #[cfg(test)]
 #[test]
@@ -6495,6 +6528,7 @@ fn command_palette_renders_and_filters() {
             "agent_cycle_reverse".to_string(),
             "cycle_variant".to_string(),
             "toggles".to_string(),
+            "auth".to_string(),
             "open_event_log".to_string(),
             "toggle_terminal_panel".to_string(),
             "toggle_follow".to_string(),
@@ -9832,6 +9866,7 @@ fn transcript_turn_group_test_activity(
         thinking_text: String::new(),
         transcript_text: transcript_text.to_string(),
         usage: None,
+        cache_usage: None,
         error_message: None,
         permissions: Vec::new(),
         tool_calls: Vec::new(),

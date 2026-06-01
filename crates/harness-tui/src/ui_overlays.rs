@@ -1397,13 +1397,16 @@ fn render_model_switcher_status(frame: &mut Frame, app: &AppState, theme: &Theme
 }
 
 fn model_switcher_status_line(app: &AppState, theme: &Theme) -> Line<'static> {
-    let _ = app;
     let surface = model_select_surface(theme);
     let muted = Style::default().fg(model_select_muted(theme)).bg(surface);
-    Line::from(Span::styled(
-        "No automatic model fallback; provider errors stay visible",
-        muted,
-    ))
+    let text = if app.launch_metadata().available_models().is_empty()
+        && app.launch_metadata().model().is_none()
+    {
+        "Connect a provider with /connect or /auth to list models"
+    } else {
+        "No automatic model fallback; provider errors stay visible"
+    };
+    Line::from(Span::styled(text, muted))
 }
 
 fn render_model_switcher_list(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
@@ -1424,7 +1427,13 @@ fn render_model_switcher_list(frame: &mut Frame, app: &AppState, theme: &Theme, 
         );
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
-                "No results found",
+                if app.launch_metadata().available_models().is_empty()
+                    && app.launch_metadata().model().is_none()
+                {
+                    "Connect a provider to list models"
+                } else {
+                    "No results found"
+                },
                 Style::default().fg(model_select_muted(theme)).bg(surface),
             ))),
             empty_area,

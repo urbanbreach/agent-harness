@@ -768,6 +768,7 @@ fn runtime_tool_identity_fixture(status: ToolCallDisplayStatus) -> ActivityEntry
         thinking_text: String::new(),
         transcript_text: String::new(),
         usage: None,
+        cache_usage: None,
         error_message: None,
         permissions: Vec::new(),
         tool_calls: vec![crate::app::ToolCallEntry {

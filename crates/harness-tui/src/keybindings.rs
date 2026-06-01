@@ -89,6 +89,11 @@ const COMMAND_METADATA: &[CommandMetadata] = &[
         description: "Toggle profiles, tools, hooks, MCP, YOLO",
     },
     CommandMetadata {
+        id: "auth",
+        label: "Auth",
+        description: "Manage provider login, logout, and auth status",
+    },
+    CommandMetadata {
         id: "close_review_surface",
         label: "Session shell",
         description: "Return to the transcript-first session shell",
@@ -304,7 +309,7 @@ fn command_metadata(id: &str) -> Option<&'static CommandMetadata> {
     COMMAND_METADATA.iter().find(|entry| entry.id == id)
 }
 
-const SLASH_COMMANDS: [SlashCommand; 16] = [
+const SLASH_COMMANDS: [SlashCommand; 17] = [
     SlashCommand {
         id: "new",
         metadata_id: "slash_new",
@@ -354,6 +359,11 @@ const SLASH_COMMANDS: [SlashCommand; 16] = [
         id: "toggles",
         metadata_id: "toggles",
         aliases: &[],
+    },
+    SlashCommand {
+        id: "auth",
+        metadata_id: "auth",
+        aliases: &["login"],
     },
     SlashCommand {
         id: "events",
@@ -578,6 +588,12 @@ impl Action {
                 metadata_id: "toggles",
                 shortcut: "toggles",
                 section: PaletteCommandSection::Agent,
+            },
+            PaletteCommand {
+                id: "auth",
+                metadata_id: "auth",
+                shortcut: "auth",
+                section: PaletteCommandSection::System,
             },
             PaletteCommand {
                 id: "close_review_surface",

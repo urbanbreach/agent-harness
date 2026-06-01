@@ -80,6 +80,12 @@ pub enum LiveUpdate {
         message: String,
         level: OperatorNoticeLevel,
     },
+    AuthBackendResult {
+        success: bool,
+    },
+    AuthProviderCatalogRefreshed {
+        launch_metadata: Box<LaunchMetadata>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -92,6 +98,8 @@ pub enum TuiMode {
     Startup {
         session_history_entries: Vec<SessionHistoryEntry>,
         prompt_history_path: Option<PathBuf>,
+        onboarding_required: bool,
+        update_rx: Receiver<LiveUpdate>,
     },
     Replay {
         run_dir: PathBuf,
@@ -139,17 +147,20 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         TuiMode::Startup {
             session_history_entries,
             prompt_history_path,
+            onboarding_required,
+            update_rx,
         } => {
             let mut app = AppState::new_startup_with_prompt_history_path(
                 session_history_entries,
                 on_ui_intent,
                 prompt_history_path,
             );
+            app.set_onboarding_required(onboarding_required);
             app.should_quit = exit_on_finish;
             if let Some(bindings) = keybindings.as_ref() {
                 app.apply_keybindings(bindings.clone());
             }
-            (app, None)
+            (app, Some(update_rx))
         }
         TuiMode::Replay { run_dir, events } => {
             let mut app = AppState::new_replay(run_dir, events);
@@ -583,6 +594,16 @@ fn drain_live_updates(
                 );
                 state.changed = true;
             }
+            Ok(LiveUpdate::AuthBackendResult { success }) => {
+                drained += 1;
+                app.apply_auth_backend_result(success);
+                state.changed = true;
+            }
+            Ok(LiveUpdate::AuthProviderCatalogRefreshed { launch_metadata }) => {
+                drained += 1;
+                app.apply_auth_provider_catalog_refresh(*launch_metadata);
+                state.changed = true;
+            }
             Err(TryRecvError::Empty) => break,
             Err(TryRecvError::Disconnected) => {
                 let disconnected_message = "live event stream disconnected";
@@ -799,6 +820,34 @@ mod tests {
             }
         );
         assert_eq!(app.session_history_entries, vec![entry]);
+    }
+
+    #[test]
+    fn drain_live_updates_applies_auth_backend_result_to_onboarding() {
+        let (tx, rx) = mpsc::channel();
+        let mut app = AppState::new_startup(Vec::new(), None);
+        app.set_onboarding_step_for_test(crate::app::OnboardingStep::CodexDevice);
+        app.handle_key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Enter,
+            crossterm::event::KeyModifiers::NONE,
+        ));
+        tx.send(LiveUpdate::AuthBackendResult { success: true })
+            .expect("send auth result");
+
+        let state = drain_live_updates(&mut app, &rx);
+
+        assert_eq!(
+            state,
+            LiveUpdateDrainState {
+                changed: true,
+                disconnected: false,
+                budget_exhausted: false,
+            }
+        );
+        assert_eq!(
+            app.onboarding_screen().expect("success screen").step,
+            crate::app::OnboardingStep::LoginSuccess
+        );
     }
 
     #[test]

@@ -15,11 +15,11 @@ use harness_core::session_title::is_parent_default_title;
 use serde_json::Value;
 
 use super::{
-    json_string_field, set_pending_live_launch_metadata, set_pending_live_prompt_draft,
-    task_child_request_id_from_output, task_child_session_id_from_output, ActivityEntry, AppState,
-    Focus, PermissionConfirmSelection, PermissionModalSelection, PermissionModalStage,
-    PostRunHandoffAction, ReviewSurface, StartupLauncherAction, SubagentSessionInfo, Tab,
-    ToolCallEntry, UiIntent,
+    auth_status_banner, json_string_field, set_pending_live_launch_metadata,
+    set_pending_live_prompt_draft, task_child_request_id_from_output,
+    task_child_session_id_from_output, ActivityEntry, AppState, Focus, PermissionConfirmSelection,
+    PermissionModalSelection, PermissionModalStage, PostRunHandoffAction, ReviewSurface,
+    StartupLauncherAction, SubagentSessionInfo, Tab, ToolCallEntry, UiIntent,
 };
 use crate::keybindings::{self, Action};
 use crate::text::{has_trimmed_content, non_empty_trimmed};
@@ -1314,6 +1314,7 @@ impl AppState {
             .trim()
             .strip_prefix('/')
             .and_then(|command| {
+                let command = command.split_whitespace().next().unwrap_or(command);
                 keybindings::slash_commands().iter().find_map(|entry| {
                     ((entry.id == command || entry.aliases.contains(&command))
                         && self.slash_command_available(entry.id))
@@ -1334,7 +1335,7 @@ impl AppState {
 
     fn slash_command_available(&self, command: &str) -> bool {
         match command {
-            "new" | "status" | "toggles" | "help" | "exit" => true,
+            "new" | "status" | "toggles" | "auth" | "help" | "exit" => true,
             "resume" | "replay" => !self.replay_mode,
             "fork" => !self.startup_mode && !self.replay_mode,
             "clone" => !self.startup_mode && self.lineage_write_blocked_reason().is_none(),
@@ -1350,12 +1351,6 @@ impl AppState {
 
     fn model_switcher_supported(&self) -> bool {
         !self.replay_mode
-            && (!self.launch_metadata.available_models().is_empty()
-                || self.launch_metadata.model().is_some()
-                || self
-                    .activities
-                    .iter()
-                    .any(|activity| activity_provider_model(activity).is_some()))
     }
 
     fn restore_slash_draft(&mut self, preserved_draft: Option<String>) {
@@ -1437,6 +1432,15 @@ impl AppState {
             "toggles" => {
                 self.restore_slash_draft(preserved_draft);
                 self.open_toggles_menu();
+            }
+            "auth" => {
+                let auth_args = auth_slash_args_from_prompt(&self.prompt_buffer);
+                self.restore_slash_draft(preserved_draft);
+                self.status_banner = Some(auth_status_banner(&auth_args));
+                self.emit_ui_intent(UiIntent::OpenAuthManager {
+                    args: auth_args,
+                    stdin: None,
+                });
             }
             "status" => {
                 self.restore_slash_draft(preserved_draft);
@@ -1868,6 +1872,14 @@ impl AppState {
             "toggles" => {
                 self.open_toggles_menu();
             }
+            "auth" => {
+                let auth_args = vec!["list".to_string()];
+                self.status_banner = Some(auth_status_banner(&auth_args));
+                self.emit_ui_intent(UiIntent::OpenAuthManager {
+                    args: auth_args,
+                    stdin: None,
+                });
+            }
             "cycle_variant" => self.execute_action(Action::VariantCycle),
             "close_review_surface" => self.execute_action(Action::CloseReviewSurface),
             "open_event_log" => self.execute_action(Action::OpenEventLog),
@@ -1966,7 +1978,13 @@ impl AppState {
         if self.startup_shell_visible() {
             matches!(
                 command_id,
-                "new_session" | "resume_session" | "replay_session" | "toggles" | "help" | "quit"
+                "new_session"
+                    | "resume_session"
+                    | "replay_session"
+                    | "toggles"
+                    | "auth"
+                    | "help"
+                    | "quit"
             )
         } else if matches!(command_id, "show_timestamps" | "hide_timestamps") {
             self.active_review_surface.is_none()
@@ -2175,6 +2193,18 @@ impl AppState {
                 self.should_quit = true;
                 self.emit_ui_intent(UiIntent::QuitRequested);
             }
+        }
+    }
+
+    pub fn launch_metadata(&self) -> &LaunchMetadata {
+        &self.launch_metadata
+    }
+
+    pub fn apply_auth_provider_catalog_refresh(&mut self, launch_metadata: LaunchMetadata) {
+        self.set_launch_metadata(launch_metadata);
+        if !self.launch_metadata.available_models().is_empty() {
+            self.status_banner = Some("Provider connected; choose a model".to_string());
+            self.open_model_switcher();
         }
     }
 
@@ -2545,15 +2575,15 @@ impl AppState {
                     .cloned()
             })
             .or_else(|| {
+                self.launch_metadata
+                    .to_model_option()
+                    .map(|option| option.with_profile(profile.to_string()))
+            })
+            .or_else(|| {
                 available
                     .iter()
                     .find(|option| option.profile == profile)
                     .cloned()
-            })
-            .or_else(|| {
-                self.launch_metadata
-                    .to_model_option()
-                    .map(|option| option.with_profile(profile.to_string()))
             })
     }
 
@@ -3403,6 +3433,25 @@ fn slash_command_match_rank(command: &str, description: &str, query: &str) -> Op
 
 fn slash_command_display_width(command: &str) -> usize {
     command.chars().count().saturating_add(1)
+}
+
+fn auth_slash_args_from_prompt(prompt: &str) -> Vec<String> {
+    let trimmed = prompt.trim().trim_start_matches('/');
+    let mut parts = trimmed.split_whitespace();
+    match parts.next() {
+        Some("login") => std::iter::once("login".to_string())
+            .chain(parts.map(str::to_string))
+            .collect(),
+        Some("auth") => {
+            let args = parts.map(str::to_string).collect::<Vec<_>>();
+            if args.is_empty() {
+                vec!["list".to_string()]
+            } else {
+                args
+            }
+        }
+        _ => vec!["list".to_string()],
+    }
 }
 
 fn slash_subsequence_score(haystack: &str, needle: &str) -> Option<usize> {

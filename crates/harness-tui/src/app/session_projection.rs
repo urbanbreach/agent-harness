@@ -12,10 +12,11 @@ use super::{
     merge_orchestration_task_event, merge_resolved_tool_identity, merge_tool_call_metadata,
     new_streaming_activity_entry, task_child_request_id_from_output,
     task_child_session_id_from_output, task_completed_updates_assistant_transcript,
-    ActiveContextUsage, ActivityEntry, ActivityStatus, ActivityUsage, AppState, CompactionState,
-    CompactionStatus, CompactionUsageMetrics, Focus, MemoryCaps, NewStreamingActivityEntryArgs,
-    OrchestrationOwnerLabels, OrchestrationSummary, OrchestrationTaskRow, OrchestrationTaskState,
-    ToolCallDisplayStatus, ToolCallEntry, TOOL_OUTPUT_DISPLAY_MAX_CHARS,
+    ActiveContextUsage, ActivityCacheUsage, ActivityEntry, ActivityStatus, ActivityUsage, AppState,
+    CompactionState, CompactionStatus, CompactionUsageMetrics, Focus, MemoryCaps,
+    NewStreamingActivityEntryArgs, OrchestrationOwnerLabels, OrchestrationSummary,
+    OrchestrationTaskRow, OrchestrationTaskState, ToolCallDisplayStatus, ToolCallEntry,
+    TOOL_OUTPUT_DISPLAY_MAX_CHARS,
 };
 use crate::text::non_empty_preserved_string;
 use crate::view_model;
@@ -874,6 +875,15 @@ impl SessionProjection {
                             completion_tokens: usage.completion_tokens,
                             total_tokens: usage.total_tokens,
                         });
+                        entry.cache_usage = data.metadata.as_ref().and_then(|metadata| {
+                            match (metadata.cache_read_tokens, metadata.cache_write_tokens) {
+                                (None, None) => None,
+                                (read_tokens, write_tokens) => Some(ActivityCacheUsage {
+                                    read_tokens: read_tokens.unwrap_or(0),
+                                    write_tokens: write_tokens.unwrap_or(0),
+                                }),
+                            }
+                        });
                         if let Some(usage) = data.usage.as_ref() {
                             self.active_context_usage = Some(ActiveContextUsage::estimate(
                                 usage.prompt_tokens.saturating_add(usage.completion_tokens),
@@ -1477,6 +1487,26 @@ impl AppState {
         self.control_dock_view_model().runtime_context
     }
 
+    pub(crate) fn cache_status_summary_segment(
+        &self,
+    ) -> Option<view_model::ControlDockSummarySegment> {
+        let cache = self
+            .projection
+            .activities
+            .iter()
+            .rev()
+            .find_map(|entry| entry.cache_usage)?;
+
+        Some(view_model::ControlDockSummarySegment {
+            kind: view_model::ControlDockSummarySegmentKind::Orchestration,
+            text: format!(
+                "cache read {} · write {}",
+                cache.read_tokens, cache.write_tokens
+            ),
+            tone: view_model::ControlDockSummaryTone::Secondary,
+        })
+    }
+
     pub(crate) fn control_dock_view_model(&self) -> view_model::ControlDockViewModel {
         let runtime_state = self.runtime_state();
         let grammar = view_model::runtime_context_grammar(view_model::RuntimeContextGrammarInput {
@@ -1537,7 +1567,9 @@ impl AppState {
             runtime_context,
             runtime_state,
             primary_summary: grammar.primary_summary,
-            summary_segment: grammar.summary_segment,
+            summary_segment: self
+                .cache_status_summary_segment()
+                .or(grammar.summary_segment),
             composer_body,
             composer_disclosure: String::new(),
             composer_focused: self.focus == Focus::Prompt,

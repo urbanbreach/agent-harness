@@ -682,6 +682,7 @@ pub(crate) fn exact_test_compaction_applied_updates_active_context_usage_estimat
             completion_tokens: 100,
             total_tokens: 500,
         }),
+        cache_usage: None,
         error_message: None,
         permissions: Vec::new(),
         tool_calls: Vec::new(),

@@ -38,6 +38,7 @@ use crate::{clipboard, ui};
 
 mod file_mentions;
 mod lineage;
+mod onboarding;
 mod pending_live;
 pub(crate) mod permissions;
 mod prompt_history;
@@ -64,6 +65,7 @@ pub(crate) use file_mentions::{
     SystemFileMentionWorkspaceScanner,
 };
 pub use lineage::{ForkSelectorState, LineageBrowserState};
+pub use onboarding::{OnboardingScreen, OnboardingStep};
 pub use pending_live::{
     set_pending_live_launch_metadata, set_pending_live_prompt_auto_submit,
     set_pending_live_prompt_draft,
@@ -456,6 +458,7 @@ pub struct ActivityEntry {
     pub thinking_text: String,
     pub transcript_text: String,
     pub usage: Option<ActivityUsage>,
+    pub cache_usage: Option<ActivityCacheUsage>,
     pub error_message: Option<String>,
     pub permissions: Vec<PermissionEntry>,
     pub tool_calls: Vec<ToolCallEntry>,
@@ -470,6 +473,12 @@ pub struct ActivityUsage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
     pub total_tokens: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ActivityCacheUsage {
+    pub read_tokens: u32,
+    pub write_tokens: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -559,6 +568,7 @@ fn new_streaming_activity_entry(args: NewStreamingActivityEntryArgs) -> Activity
         thinking_text: String::new(),
         transcript_text,
         usage: None,
+        cache_usage: None,
         error_message: None,
         permissions: Vec::new(),
         tool_calls: Vec::new(),
@@ -973,6 +983,10 @@ pub enum UiIntent {
         launch_metadata: LaunchMetadata,
     },
     CompactSession,
+    OpenAuthManager {
+        args: Vec<String>,
+        stdin: Option<String>,
+    },
     InterruptSession {
         task_ids: Vec<String>,
     },
@@ -988,6 +1002,56 @@ pub enum UiIntent {
         stable_prefix: harness_core::session_lineage::StableSessionPrefix,
     },
     QuitRequested,
+}
+
+pub(super) fn auth_status_banner(args: &[String]) -> String {
+    format!(
+        "auth backend requested: harness auth {}",
+        display_auth_args_for_status(args)
+    )
+}
+
+fn display_auth_args_for_status(args: &[String]) -> String {
+    let mut display = Vec::with_capacity(args.len());
+    let mut redact_next = false;
+    for arg in args {
+        if redact_next {
+            display.push("<redacted>".to_string());
+            redact_next = false;
+            continue;
+        }
+        if auth_arg_redacts_next(arg) {
+            display.push(arg.clone());
+            redact_next = true;
+            continue;
+        }
+        if let Some(redacted) = redact_auth_arg_value(arg) {
+            display.push(redacted);
+            continue;
+        }
+        display.push(arg.clone());
+    }
+    display.join(" ")
+}
+
+fn auth_arg_redacts_next(arg: &str) -> bool {
+    matches!(
+        arg,
+        "--mock-token" | "--mock-refresh-token" | "--enterprise-url"
+    )
+}
+
+fn redact_auth_arg_value(arg: &str) -> Option<String> {
+    [
+        "--mock-token=",
+        "--mock-refresh-token=",
+        "--enterprise-url=",
+    ]
+    .into_iter()
+    .find_map(|prefix| {
+        arg.strip_prefix(prefix)
+            .map(|_| format!("{prefix}<redacted>"))
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -1168,6 +1232,12 @@ pub struct AppState {
     expanded_operator_sidebar_subagent_groups: BTreeSet<String>,
     pub startup_mode: bool,
     pub startup_launcher_action: StartupLauncherAction,
+    pub(crate) onboarding_visible: bool,
+    pub(crate) onboarding_step: OnboardingStep,
+    pub(crate) onboarding_selected: usize,
+    pub(crate) onboarding_skipped_for_launch: bool,
+    pub(crate) onboarding_auth_in_progress: bool,
+    pub(crate) onboarding_secret_input: String,
     post_run_handoff_action: PostRunHandoffAction,
     continued_post_run_handoff_active: bool,
     continued_live_reopen_surface_active: bool,
@@ -1299,6 +1369,12 @@ impl Default for AppState {
             expanded_operator_sidebar_subagent_groups: BTreeSet::new(),
             startup_mode: false,
             startup_launcher_action: StartupLauncherAction::default(),
+            onboarding_visible: false,
+            onboarding_step: OnboardingStep::StartSplash,
+            onboarding_selected: 0,
+            onboarding_skipped_for_launch: false,
+            onboarding_auth_in_progress: false,
+            onboarding_secret_input: String::new(),
             post_run_handoff_action: PostRunHandoffAction::default(),
             continued_post_run_handoff_active: false,
             continued_live_reopen_surface_active: false,
@@ -1510,6 +1586,54 @@ impl AppState {
             state.replace_prompt_input(pending_prompt.text);
         }
         state
+    }
+
+    pub fn set_onboarding_required(&mut self, required: bool) {
+        self.onboarding_visible = required && !self.onboarding_skipped_for_launch;
+        if self.onboarding_visible {
+            self.focus = Focus::List;
+            self.onboarding_step = OnboardingStep::StartSplash;
+            self.onboarding_selected = 0;
+            self.onboarding_auth_in_progress = false;
+            self.onboarding_secret_input.clear();
+        }
+    }
+
+    pub fn onboarding_screen(&self) -> Option<OnboardingScreen> {
+        self.onboarding_visible
+            .then(|| onboarding::screen_for(self.onboarding_step, self.onboarding_selected))
+    }
+
+    pub fn set_onboarding_step_for_test(&mut self, step: OnboardingStep) {
+        self.onboarding_visible = true;
+        self.onboarding_step = step;
+        self.onboarding_selected = 0;
+        self.onboarding_auth_in_progress = false;
+        self.onboarding_secret_input.clear();
+        self.focus = Focus::List;
+    }
+
+    pub fn apply_auth_backend_result(&mut self, success: bool) {
+        if !self.onboarding_visible || !self.onboarding_auth_in_progress {
+            return;
+        }
+        self.onboarding_auth_in_progress = false;
+        self.onboarding_secret_input.clear();
+        self.onboarding_step = if success {
+            OnboardingStep::LoginSuccess
+        } else {
+            OnboardingStep::LoginErrorTimeout
+        };
+        self.onboarding_selected = 0;
+        self.focus = Focus::List;
+    }
+
+    fn onboarding_accepts_hidden_text(&self) -> bool {
+        self.onboarding_visible
+            && matches!(
+                self.onboarding_step,
+                OnboardingStep::ApiKeyEntry | OnboardingStep::CopilotEnterpriseDevice
+            )
     }
 
     fn set_prompt_history_path(&mut self, path: Option<PathBuf>) {
@@ -2521,6 +2645,11 @@ impl AppState {
     }
 
     pub(crate) fn handle_paste(&mut self, text: &str) {
+        if self.onboarding_accepts_hidden_text() && !self.onboarding_auth_in_progress {
+            self.onboarding_secret_input.push_str(text.trim());
+            return;
+        }
+
         if self.composer_disabled() {
             return;
         }
@@ -2661,6 +2790,7 @@ impl AppState {
             thinking_text: String::new(),
             transcript_text: String::new(),
             usage: None,
+            cache_usage: None,
             error_message: None,
             permissions: Vec::new(),
             tool_calls: Vec::new(),
@@ -2698,6 +2828,17 @@ impl AppState {
     }
 
     fn dispatch_submitted_prompt(&mut self, text: String) {
+        if self.launch_metadata.model().is_none()
+            && self.launch_metadata.provider() == "local"
+            && self.launch_metadata.configured_profile().is_some()
+        {
+            self.status_banner = Some("Connect a provider to send prompts".to_string());
+            self.show_toast(
+                "Connect a provider to send prompts".to_string(),
+                ToastVariant::Error,
+            );
+            return;
+        }
         let selected_file_tags = self.selected_file_tags();
         let selected_agent_tags = self.selected_agent_tags();
         let selected_resource_tags = self.selected_resource_tags();
@@ -3304,6 +3445,26 @@ impl AppState {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
+        if self.onboarding_accepts_hidden_text()
+            && !self.onboarding_auth_in_progress
+            && !key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::ALT)
+        {
+            match key.code {
+                KeyCode::Char(c) => {
+                    self.execute_action(Action::Char(c));
+                    self.maybe_auto_exit();
+                    return;
+                }
+                KeyCode::Backspace => {
+                    self.execute_action(Action::Backspace);
+                    self.maybe_auto_exit();
+                    return;
+                }
+                _ => {}
+            }
+        }
+
         if self.overlay_stack().top() == Some(OverlayKind::PermissionModal) {
             self.handle_permission_modal_key(key);
             return;
@@ -3696,9 +3857,222 @@ impl AppState {
         }
     }
 
+    fn move_onboarding_selection(&mut self, delta: isize) {
+        let len = onboarding::screen_for(self.onboarding_step, self.onboarding_selected)
+            .choices
+            .len();
+        if len == 0 {
+            self.onboarding_selected = 0;
+            return;
+        }
+        self.onboarding_selected = if delta < 0 {
+            if self.onboarding_selected == 0 {
+                len - 1
+            } else {
+                self.onboarding_selected - 1
+            }
+        } else {
+            (self.onboarding_selected + 1) % len
+        };
+    }
+
+    fn request_onboarding_auth(&mut self, args: Vec<String>, stdin: Option<String>) {
+        self.onboarding_auth_in_progress = true;
+        self.status_banner = Some(auth_status_banner(&args));
+        self.emit_ui_intent(UiIntent::OpenAuthManager { args, stdin });
+    }
+
+    fn execute_onboarding_auth_step(&mut self) {
+        match self.onboarding_step {
+            OnboardingStep::CodexBrowser => self.request_onboarding_auth(
+                vec![
+                    "login".to_string(),
+                    "codex".to_string(),
+                    "--method".to_string(),
+                    "browser".to_string(),
+                ],
+                None,
+            ),
+            OnboardingStep::CodexDevice => self.request_onboarding_auth(
+                vec![
+                    "login".to_string(),
+                    "codex".to_string(),
+                    "--method".to_string(),
+                    "device".to_string(),
+                ],
+                None,
+            ),
+            OnboardingStep::CopilotPublicDevice => self.request_onboarding_auth(
+                vec![
+                    "login".to_string(),
+                    "github-copilot".to_string(),
+                    "--method".to_string(),
+                    "device".to_string(),
+                ],
+                None,
+            ),
+            OnboardingStep::CopilotEnterpriseDevice => {
+                let enterprise_url = self.onboarding_secret_input.trim().to_string();
+                if enterprise_url.is_empty() {
+                    self.status_banner =
+                        Some("enterprise login requires a domain; input stays hidden".to_string());
+                    return;
+                }
+                self.onboarding_secret_input.clear();
+                self.request_onboarding_auth(
+                    vec![
+                        "login".to_string(),
+                        "github-copilot".to_string(),
+                        "--method".to_string(),
+                        "device".to_string(),
+                        "--enterprise-url".to_string(),
+                        enterprise_url,
+                    ],
+                    None,
+                );
+            }
+            OnboardingStep::ApiKeyEntry => {
+                let secret = self.onboarding_secret_input.trim().to_string();
+                if secret.is_empty() {
+                    self.status_banner =
+                        Some("api-key login requires a pasted key; input stays hidden".to_string());
+                    return;
+                }
+                self.onboarding_secret_input.clear();
+                self.request_onboarding_auth(
+                    vec![
+                        "login".to_string(),
+                        "codex".to_string(),
+                        "--method".to_string(),
+                        "api-key".to_string(),
+                        "--api-key-stdin".to_string(),
+                    ],
+                    Some(secret),
+                );
+            }
+            _ => {}
+        }
+    }
+
+    fn execute_onboarding_selection(&mut self) {
+        if self.onboarding_auth_in_progress {
+            self.status_banner = Some("auth backend already running".to_string());
+            return;
+        }
+        match self.onboarding_step {
+            OnboardingStep::StartSplash if self.onboarding_selected == 1 => {
+                self.onboarding_step = OnboardingStep::SkipConfirmation;
+                self.onboarding_selected = 0;
+            }
+            OnboardingStep::ProviderPick if self.onboarding_selected == 1 => {
+                self.onboarding_step = OnboardingStep::CopilotTargetPick;
+                self.onboarding_selected = 0;
+            }
+            OnboardingStep::CopilotTargetPick => {
+                self.onboarding_step = if self.onboarding_selected == 1 {
+                    OnboardingStep::CopilotEnterpriseDevice
+                } else {
+                    OnboardingStep::CopilotPublicDevice
+                };
+                self.onboarding_selected = 0;
+            }
+            OnboardingStep::AuthMethodPick => {
+                self.onboarding_step = match self.onboarding_selected {
+                    1 => OnboardingStep::CodexBrowser,
+                    2 => OnboardingStep::ApiKeyEntry,
+                    _ => OnboardingStep::CodexDevice,
+                };
+                self.onboarding_selected = 0;
+            }
+            OnboardingStep::LoginErrorTimeout if self.onboarding_selected == 1 => {
+                self.onboarding_step = OnboardingStep::SkipConfirmation;
+                self.onboarding_selected = 0;
+            }
+            OnboardingStep::CodexBrowser
+            | OnboardingStep::CodexDevice
+            | OnboardingStep::CopilotPublicDevice
+            | OnboardingStep::CopilotEnterpriseDevice
+            | OnboardingStep::ApiKeyEntry => {
+                self.execute_onboarding_auth_step();
+            }
+            OnboardingStep::SkipConfirmation if self.onboarding_selected == 0 => {
+                self.onboarding_visible = false;
+                self.onboarding_skipped_for_launch = true;
+                self.status_banner = Some(
+                    "onboarding skipped for this launch; no credential was written".to_string(),
+                );
+            }
+            OnboardingStep::FirstPromptSuccess => {
+                self.onboarding_visible = false;
+                self.apply_new_session_launcher_selection();
+            }
+            _ => {
+                self.onboarding_step = self.onboarding_step.next();
+                self.onboarding_selected = 0;
+            }
+        }
+    }
+
+    fn handle_onboarding_text_action(&mut self, action: Action) -> bool {
+        if !self.onboarding_visible
+            || self.onboarding_auth_in_progress
+            || !matches!(
+                self.onboarding_step,
+                OnboardingStep::ApiKeyEntry | OnboardingStep::CopilotEnterpriseDevice
+            )
+        {
+            return false;
+        }
+
+        match action {
+            Action::Char(c) => {
+                if !c.is_control() {
+                    self.onboarding_secret_input.push(c);
+                }
+                true
+            }
+            Action::Backspace => {
+                self.onboarding_secret_input.pop();
+                true
+            }
+            Action::ClearPrompt => {
+                self.onboarding_secret_input.clear();
+                true
+            }
+            _ => false,
+        }
+    }
+
     fn execute_action(&mut self, action: Action) {
         if self.execute_permission_action(action) {
             return;
+        }
+
+        if self.handle_onboarding_text_action(action) {
+            return;
+        }
+
+        if self.onboarding_visible && self.focus == Focus::List {
+            match action {
+                Action::SubmitPrompt => {
+                    self.execute_onboarding_selection();
+                    return;
+                }
+                Action::MoveUp | Action::HistoryUp => {
+                    self.move_onboarding_selection(-1);
+                    return;
+                }
+                Action::MoveDown | Action::HistoryDown => {
+                    self.move_onboarding_selection(1);
+                    return;
+                }
+                Action::DismissModal => {
+                    self.onboarding_step = OnboardingStep::SkipConfirmation;
+                    self.onboarding_selected = 0;
+                    return;
+                }
+                _ => {}
+            }
         }
 
         if self.handle_operator_sidebar_action(action) {
@@ -4429,6 +4803,7 @@ pub(crate) fn exact_test_startup_slash_commands_execute_without_menu() {
     assert_eq!(
         app.slash_filtered,
         vec![
+            "auth".to_string(),
             "exit".to_string(),
             "help".to_string(),
             "new".to_string(),
@@ -4602,6 +4977,369 @@ pub(crate) fn exact_test_live_slash_compact_emits_ui_intent() {
     assert_eq!(
         intents.lock().expect("lock intents").as_slice(),
         &[UiIntent::CompactSession]
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_auth_slash_and_palette_emit_ui_intent_mid_session() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut slash = AppState::new_live(
+        Some(PathBuf::from("/tmp/session")),
+        false,
+        Some(sink.clone()),
+    );
+    slash.prompt_buffer = "/login codex --method device".to_string();
+    slash.prompt_cursor = slash.prompt_buffer.chars().count();
+    slash.slash_draft_snapshot = Some("draft after auth".to_string());
+    slash.sync_slash_overlay();
+
+    slash.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert_eq!(slash.prompt_buffer, "draft after auth");
+    assert!(!slash.slash_visible);
+    assert_eq!(
+        slash.status_banner.as_deref(),
+        Some("auth backend requested: harness auth login codex --method device")
+    );
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[UiIntent::OpenAuthManager {
+            args: vec![
+                "login".to_string(),
+                "codex".to_string(),
+                "--method".to_string(),
+                "device".to_string()
+            ],
+            stdin: None,
+        }]
+    );
+
+    let mut palette = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(sink));
+    palette.handle_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
+    for ch in "auth".chars() {
+        palette.handle_key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE));
+    }
+    palette.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert!(!palette.palette_visible);
+    assert_eq!(
+        palette.status_banner.as_deref(),
+        Some("auth backend requested: harness auth list")
+    );
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[
+            UiIntent::OpenAuthManager {
+                args: vec![
+                    "login".to_string(),
+                    "codex".to_string(),
+                    "--method".to_string(),
+                    "device".to_string()
+                ],
+                stdin: None,
+            },
+            UiIntent::OpenAuthManager {
+                args: vec!["list".to_string()],
+                stdin: None,
+            }
+        ]
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_onboarding_inventory_has_focus_hints_redaction_and_skill_selection() {
+    for step in OnboardingStep::INVENTORY {
+        let screen = onboarding::screen_for(step, 0);
+        let text = screen
+            .lines()
+            .into_iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            !text.to_lowercase().contains("opencode"),
+            "onboarding screen {} should use Harness branding only:\n{text}",
+            step.snapshot_name()
+        );
+        assert!(
+            !text.contains("oauth-access")
+                && !text.contains("refresh")
+                && !text.contains("acct-")
+                && !text.contains("sk-"),
+            "onboarding screen {} should not include secret-like values:\n{text}",
+            step.snapshot_name()
+        );
+        assert!(
+            !screen.choices.is_empty(),
+            "onboarding screen {} should expose at least one selectable row",
+            step.snapshot_name()
+        );
+        assert!(
+            !screen.footer.trim().is_empty(),
+            "onboarding screen {} should include key hints",
+            step.snapshot_name()
+        );
+        if matches!(
+            step,
+            OnboardingStep::CodexBrowser
+                | OnboardingStep::CodexDevice
+                | OnboardingStep::CopilotPublicDevice
+                | OnboardingStep::CopilotEnterpriseDevice
+                | OnboardingStep::ApiKeyEntry
+                | OnboardingStep::LoginSuccess
+        ) {
+            assert!(
+                text.contains("redacted"),
+                "onboarding screen {} should explicitly redact sensitive auth metadata:\n{text}",
+                step.snapshot_name()
+            );
+        }
+    }
+
+    let skill_screen = onboarding::screen_for(OnboardingStep::SkillSelection, 0);
+    let skill_labels = skill_screen
+        .choices
+        .iter()
+        .map(|choice| choice.label)
+        .collect::<Vec<_>>();
+    assert_eq!(skill_labels, vec!["build", "plan", "explore"]);
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_onboarding_skip_is_launch_local_and_writes_no_auth_intent() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+    let mut app = AppState::new_startup(Vec::new(), Some(sink));
+    app.set_onboarding_required(true);
+    assert!(app.onboarding_screen().is_some());
+
+    app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert_eq!(
+        app.onboarding_screen().expect("skip screen").step,
+        OnboardingStep::SkipConfirmation
+    );
+
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert!(app.onboarding_screen().is_none());
+    assert_eq!(
+        app.status_banner.as_deref(),
+        Some("onboarding skipped for this launch; no credential was written")
+    );
+    assert!(intents.lock().expect("lock intents").is_empty());
+
+    app.set_onboarding_required(true);
+    assert!(
+        app.onboarding_screen().is_none(),
+        "skip should suppress onboarding only for the current AppState launch"
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_onboarding_auth_waits_for_backend_result() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+    let mut app = AppState::new_startup(Vec::new(), Some(sink));
+    app.set_onboarding_step_for_test(OnboardingStep::CodexDevice);
+
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert_eq!(
+        app.onboarding_screen().expect("codex device screen").step,
+        OnboardingStep::CodexDevice,
+        "onboarding must not show success before the backend reports success"
+    );
+    assert!(app.onboarding_auth_in_progress);
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[UiIntent::OpenAuthManager {
+            args: vec![
+                "login".to_string(),
+                "codex".to_string(),
+                "--method".to_string(),
+                "device".to_string()
+            ],
+            stdin: None,
+        }]
+    );
+
+    app.apply_auth_backend_result(true);
+
+    assert!(!app.onboarding_auth_in_progress);
+    assert_eq!(
+        app.onboarding_screen().expect("success screen").step,
+        OnboardingStep::LoginSuccess
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_onboarding_api_key_emits_hidden_stdin_without_visible_secret() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+    let mut app = AppState::new_startup(Vec::new(), Some(sink));
+    app.set_onboarding_step_for_test(OnboardingStep::ApiKeyEntry);
+    let secret = "sk-tui-onboarding-secret-value";
+
+    app.handle_paste(secret);
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert!(
+        !app.status_banner
+            .as_deref()
+            .unwrap_or_default()
+            .contains(secret),
+        "onboarding status leaked the pasted API key"
+    );
+    assert!(
+        app.onboarding_secret_input.is_empty(),
+        "secret buffer should be cleared after auth request handoff"
+    );
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[UiIntent::OpenAuthManager {
+            args: vec![
+                "login".to_string(),
+                "codex".to_string(),
+                "--method".to_string(),
+                "api-key".to_string(),
+                "--api-key-stdin".to_string()
+            ],
+            stdin: Some(secret.to_string()),
+        }]
+    );
+    assert_eq!(
+        app.onboarding_screen().expect("api key screen").step,
+        OnboardingStep::ApiKeyEntry,
+        "success must wait for backend result"
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_onboarding_copilot_enterprise_is_reachable_and_redacts_domain() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+    let mut app = AppState::new_startup(Vec::new(), Some(sink));
+    let enterprise_domain = "https://github.example.test";
+
+    app.set_onboarding_required(true);
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert_eq!(
+        app.onboarding_screen().expect("provider screen").step,
+        OnboardingStep::ProviderPick
+    );
+
+    app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    let target_screen = app.onboarding_screen().expect("copilot target screen");
+    assert_eq!(target_screen.step, OnboardingStep::CopilotTargetPick);
+    assert_eq!(
+        target_screen
+            .choices
+            .iter()
+            .map(|choice| choice.label)
+            .collect::<Vec<_>>(),
+        vec!["GitHub.com", "Enterprise"]
+    );
+
+    app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert_eq!(
+        app.onboarding_screen()
+            .expect("enterprise device screen")
+            .step,
+        OnboardingStep::CopilotEnterpriseDevice
+    );
+
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert!(!app.onboarding_auth_in_progress);
+    assert_eq!(
+        app.status_banner.as_deref(),
+        Some("enterprise login requires a domain; input stays hidden")
+    );
+    assert!(
+        intents.lock().expect("lock intents").is_empty(),
+        "blank Enterprise domain must not emit a public-fallback auth request"
+    );
+
+    app.handle_paste(enterprise_domain);
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert!(
+        !app.status_banner
+            .as_deref()
+            .unwrap_or_default()
+            .contains(enterprise_domain),
+        "onboarding status leaked the enterprise domain"
+    );
+    assert!(
+        app.status_banner
+            .as_deref()
+            .unwrap_or_default()
+            .contains("--enterprise-url <redacted>"),
+        "onboarding status should redact the enterprise-url value"
+    );
+    assert!(
+        app.onboarding_secret_input.is_empty(),
+        "enterprise domain buffer should be cleared after auth request handoff"
+    );
+    assert_eq!(
+        app.onboarding_screen()
+            .expect("enterprise device screen")
+            .step,
+        OnboardingStep::CopilotEnterpriseDevice,
+        "success must wait for backend result"
+    );
+    assert!(app.onboarding_auth_in_progress);
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[UiIntent::OpenAuthManager {
+            args: vec![
+                "login".to_string(),
+                "github-copilot".to_string(),
+                "--method".to_string(),
+                "device".to_string(),
+                "--enterprise-url".to_string(),
+                enterprise_domain.to_string(),
+            ],
+            stdin: None,
+        }]
+    );
+
+    app.apply_auth_backend_result(true);
+
+    assert!(!app.onboarding_auth_in_progress);
+    assert_eq!(
+        app.onboarding_screen().expect("success screen").step,
+        OnboardingStep::LoginSuccess
     );
 }
 

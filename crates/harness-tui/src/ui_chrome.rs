@@ -1365,6 +1365,9 @@ fn control_dock_summary_segment(
             tone,
         });
     }
+    if let Some(cache_segment) = app.cache_status_summary_segment() {
+        return Some(cache_segment);
+    }
 
     let summary = app.orchestration_summary();
     let latest_warning = app.orchestration_latest_warning();
@@ -3502,6 +3505,7 @@ pub(crate) fn exact_test_tool_status_summary_uses_effective_tool_identity() {
         thinking_text: String::new(),
         transcript_text: String::new(),
         usage: None,
+        cache_usage: None,
         error_message: None,
         permissions: Vec::new(),
         tool_calls: vec![crate::app::ToolCallEntry {

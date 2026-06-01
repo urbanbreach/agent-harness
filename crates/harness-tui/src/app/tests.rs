@@ -1617,6 +1617,7 @@ fn transcript_selection_test_app_with_text(transcript_text: &str) -> AppState {
         thinking_text: String::new(),
         transcript_text: transcript_text.to_string(),
         usage: None,
+        cache_usage: None,
         error_message: None,
         permissions: Vec::new(),
         tool_calls: Vec::new(),
@@ -3026,6 +3027,65 @@ fn tab_cycles_build_and_plan_primary_agents() {
 }
 
 #[test]
+fn agent_cycle_preserves_user_selected_provider_model_across_profiles() {
+    let build_codex = runtime_context_model_option(
+        "build",
+        "openai-codex",
+        "gpt-5.5",
+        Some("high"),
+        "GPT 5.5 · High",
+    );
+    let build_default = runtime_context_model_option(
+        "build",
+        "default",
+        "gpt-5.5",
+        Some("high"),
+        "GPT 5.5 · High",
+    );
+    let plan_default = runtime_context_model_option(
+        "plan",
+        "default",
+        "gpt-5.5",
+        Some("xhigh"),
+        "GPT 5.5 · XHigh",
+    );
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(None, false, Some(sink));
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_option(&build_codex)
+            .with_available_models(vec![build_codex, build_default, plan_default])
+            .with_switchable_profiles(vec!["build".to_string(), "plan".to_string()]),
+    );
+
+    app.handle_key(key(KeyCode::Tab));
+
+    assert_eq!(app.active_profile(), "plan");
+    assert_eq!(app.active_provider(), "openai-codex");
+    assert_eq!(app.launch_metadata().model(), Some("gpt-5.5"));
+    assert_eq!(app.launch_metadata().variant(), Some("high"));
+    let intents = intents.lock().expect("lock intents");
+    let [UiIntent::SwitchModel {
+        profile,
+        launch_metadata,
+    }] = intents.as_slice()
+    else {
+        panic!("expected one switch-model intent: {intents:?}");
+    };
+    assert_eq!(profile, "plan");
+    assert_eq!(launch_metadata.profile(), "plan");
+    assert_eq!(launch_metadata.provider(), "openai-codex");
+    assert_eq!(launch_metadata.model(), Some("gpt-5.5"));
+    assert_eq!(launch_metadata.variant(), Some("high"));
+}
+
+#[test]
 fn switching_agent_after_submit_keeps_existing_turn_footer_agent() {
     let build_option =
         runtime_context_model_option("build", "default", "gpt-5.4-mini", None, "GPT-5.4 Mini");
@@ -4307,6 +4367,45 @@ fn provider_request_finished_keeps_activity_streaming_until_turn_task_completes(
     let activity = app.activities.back().expect("completed activity exists");
     assert_eq!(activity.status, ActivityStatus::Done);
     assert!(!app.active_turn_in_progress());
+}
+
+#[test]
+fn cache_read_write_tokens_render_as_separate_status_labels() {
+    let mut app = AppState::new_live(None, false, None);
+
+    app.ingest_event(envelope(
+        1,
+        "req_cache",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "provider_req_cache".to_string(),
+            provider_id: "default".to_string(),
+            model_id: "gpt-5.4-mini".to_string(),
+            prompt_summary: "Use cached prompt".to_string(),
+            request_digest: "digest-cache-start".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_cache",
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: "provider_req_cache".to_string(),
+            finish_reason: "done".to_string(),
+            output_digest: Some("digest-cache-finish".to_string()),
+            usage: None,
+            metadata: Some(ProviderRequestFinishedMetadata {
+                cache_read_tokens: Some(41),
+                cache_write_tokens: Some(17),
+                ..ProviderRequestFinishedMetadata::default()
+            }),
+        }),
+    ));
+
+    let segment = app
+        .control_dock_view_model()
+        .summary_segment
+        .expect("cache summary status segment");
+    assert_eq!(segment.text, "cache read 41 · write 17");
 }
 
 #[test]

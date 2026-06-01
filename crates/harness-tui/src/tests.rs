@@ -590,6 +590,7 @@ pub(super) fn module_transcript_edit_tool_wide_diff_uses_syntax_highlighting_and
         thinking_text: String::new(),
         transcript_text: String::new(),
         usage: None,
+        cache_usage: None,
         error_message: None,
         permissions: Vec::new(),
         tool_calls: Vec::new(),
