@@ -2,6 +2,7 @@
 
 pub mod agent;
 pub mod agent_catalog;
+pub mod auth;
 pub mod clock;
 pub mod config;
 pub mod conversation;
@@ -12,6 +13,7 @@ pub mod edit;
 pub mod event;
 pub mod extension_manifest;
 pub mod file_tag;
+pub mod model_resolution;
 pub(crate) mod path_display;
 pub(crate) mod path_selector;
 pub mod perm;

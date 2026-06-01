@@ -9,6 +9,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
+use crate::auth::AuthProviderId;
+use crate::model_resolution::{resolve_model, ModelResolution, ModelResolutionInput};
 use crate::text::non_empty_trimmed;
 
 pub const DEFAULT_REMOTE_SEARCH_ENDPOINT: &str = "https://mcp.exa.ai/mcp";
@@ -97,6 +99,10 @@ pub struct HarnessConfig {
     #[serde(rename = "$schema", default)]
     pub schema: Option<String>,
     pub providers: BTreeMap<String, ProviderConfig>,
+    #[serde(default)]
+    pub disabled_providers: Vec<String>,
+    #[serde(default)]
+    pub enabled_providers: Vec<String>,
     #[serde(
         rename = "model_profile",
         default,
@@ -919,6 +925,8 @@ impl ProviderConfig {
 pub struct OpenAiCompatibleProviderConfig {
     #[serde(default)]
     pub name: Option<String>,
+    #[serde(rename = "authProvider", default, alias = "auth_provider")]
+    pub auth_provider: Option<AuthProviderId>,
     #[serde(rename = "baseURL", default, alias = "base_url", alias = "baseUrl")]
     pub base_url: String,
     #[serde(rename = "apiKey", default, alias = "api_key")]
@@ -938,6 +946,8 @@ pub struct OpenAiCompatibleProviderConfig {
     pub timeout_ms: u64,
     #[serde(rename = "apiMode", default, alias = "api_mode")]
     pub api_mode: OpenAiApiMode,
+    #[serde(rename = "cacheRetention", default, alias = "cache_retention")]
+    pub cache_retention: harness_providers::CacheRetention,
     #[serde(default)]
     pub headers: BTreeMap<String, String>,
     #[serde(default)]
@@ -972,6 +982,12 @@ impl OpenAiCompatibleProviderConfig {
             "provider openai_compatible.name",
             "provider openai_compatible.options.name",
         )?;
+        merge_option_alias(
+            &mut self.auth_provider,
+            self.options.auth_provider.take(),
+            "provider openai_compatible.auth_provider",
+            "provider openai_compatible.options.authProvider",
+        )?;
         merge_map_alias(
             &mut self.headers,
             std::mem::take(&mut self.options.headers),
@@ -985,6 +1001,17 @@ impl OpenAiCompatibleProviderConfig {
             } else if self.api_mode != api_mode {
                 return Err(ConfigError::InvalidReference(
                     "provider openai_compatible.api_mode conflicts with provider openai_compatible.options.apiMode; use one value"
+                        .to_string(),
+                ));
+            }
+        }
+
+        if let Some(cache_retention) = self.options.cache_retention.take() {
+            if self.cache_retention == harness_providers::CacheRetention::Short {
+                self.cache_retention = cache_retention;
+            } else if self.cache_retention != cache_retention {
+                return Err(ConfigError::InvalidReference(
+                    "provider openai_compatible.cache_retention conflicts with provider openai_compatible.options.cacheRetention; use one value"
                         .to_string(),
                 ));
             }
@@ -1008,6 +1035,8 @@ impl OpenAiCompatibleProviderConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
 #[serde(deny_unknown_fields)]
 pub struct OpenAiCompatibleProviderOptions {
+    #[serde(rename = "authProvider", default, alias = "auth_provider")]
+    pub auth_provider: Option<AuthProviderId>,
     #[serde(rename = "baseURL", default, alias = "base_url", alias = "baseUrl")]
     pub base_url: Option<String>,
     #[serde(rename = "apiKey", default, alias = "api_key")]
@@ -1021,6 +1050,8 @@ pub struct OpenAiCompatibleProviderOptions {
     pub api_key_env: Vec<String>,
     #[serde(rename = "apiMode", default, alias = "api_mode")]
     pub api_mode: Option<OpenAiApiMode>,
+    #[serde(rename = "cacheRetention", default, alias = "cache_retention")]
+    pub cache_retention: Option<harness_providers::CacheRetention>,
     #[serde(rename = "timeoutMs", default, alias = "timeout_ms")]
     pub timeout_ms: Option<u64>,
     #[serde(default)]
@@ -1145,6 +1176,7 @@ pub struct ResolvedProfileModelMetadata {
     pub reasoning_effort: Option<String>,
     pub text_verbosity: Option<String>,
     pub recommended_for: Option<String>,
+    pub resolution: ModelResolution,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1166,6 +1198,7 @@ pub struct ResolvedModelCatalogEntry {
     pub text_verbosity: Option<String>,
     pub recommended_for: Option<String>,
     pub supports_reasoning_summaries: bool,
+    pub resolution: ModelResolution,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1177,6 +1210,7 @@ pub struct ResolvedModelTarget {
     pub reasoning_effort: Option<String>,
     pub text_verbosity: Option<String>,
     pub reasoning_summary: Option<String>,
+    pub resolution: ModelResolution,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1919,13 +1953,17 @@ fn resolve_direct_model_target(
         variant: resolved.variant,
         reasoning_effort: resolved.reasoning_effort.clone(),
         text_verbosity: resolved.text_verbosity,
-        reasoning_summary: if resolved.supports_reasoning_summaries
+        reasoning_summary: if resolved
+            .resolution
+            .capabilities
+            .supports_reasoning_summaries
             && resolved.reasoning_effort.is_some()
         {
             Some("auto".to_string())
         } else {
             None
         },
+        resolution: resolved.resolution,
     })
 }
 
@@ -2247,6 +2285,14 @@ pub fn resolve_profile_model_metadata(
         .or_else(|| variant.and_then(|(_, variant_cfg)| variant_cfg.limit.output))
         .or(model.max_output_tokens)
         .or(model.limit.output);
+    let resolution = resolve_model_catalog_metadata(
+        provider_name,
+        model_name,
+        model,
+        context_window_tokens,
+        max_input_tokens,
+        max_output_tokens,
+    );
 
     Ok(ResolvedProfileModelMetadata {
         profile: profile_name.to_string(),
@@ -2284,6 +2330,7 @@ pub fn resolve_profile_model_metadata(
         }),
         recommended_for: variant
             .and_then(|(_, variant_cfg)| variant_cfg.metadata.recommended_for.clone()),
+        resolution,
     })
 }
 
@@ -2405,6 +2452,14 @@ fn build_resolved_model_catalog_entry(
         .or_else(|| variant.and_then(|(_, variant_cfg)| variant_cfg.limit.output))
         .or(model.max_output_tokens)
         .or(model.limit.output);
+    let resolution = resolve_model_catalog_metadata(
+        provider_name,
+        model_name,
+        model,
+        context_window_tokens,
+        max_input_tokens,
+        max_output_tokens,
+    );
 
     ResolvedModelCatalogEntry {
         provider: provider_name.to_string(),
@@ -2446,7 +2501,29 @@ fn build_resolved_model_catalog_entry(
         recommended_for: variant
             .and_then(|(_, variant_cfg)| variant_cfg.metadata.recommended_for.clone()),
         supports_reasoning_summaries: model.metadata.supports_reasoning_summaries.unwrap_or(false),
+        resolution,
     }
+}
+
+fn resolve_model_catalog_metadata(
+    provider_name: &str,
+    model_name: &str,
+    model: &ModelConfig,
+    context_window_tokens: Option<u32>,
+    max_input_tokens: Option<u32>,
+    max_output_tokens: Option<u32>,
+) -> ModelResolution {
+    resolve_model(ModelResolutionInput {
+        provider: provider_name,
+        model: model_name,
+        metadata_family: model.metadata.family.as_deref(),
+        input_modalities: &model.modalities.input,
+        context_window_tokens,
+        max_input_tokens,
+        max_output_tokens,
+        supports_tool_calls: model.metadata.supports_tool_calls,
+        supports_reasoning_summaries: model.metadata.supports_reasoning_summaries,
+    })
 }
 
 fn provider_backend_label(provider: &ProviderConfig) -> Option<&'static str> {
@@ -2496,6 +2573,25 @@ fn merge_vec_alias(
     alias_path: &str,
 ) -> Result<(), ConfigError> {
     merge_alias_value(target, alias, Vec::is_empty, target_path, alias_path)
+}
+
+fn merge_option_alias<T: PartialEq>(
+    target: &mut Option<T>,
+    alias: Option<T>,
+    target_path: &str,
+    alias_path: &str,
+) -> Result<(), ConfigError> {
+    match (target.as_ref(), alias) {
+        (_, None) => Ok(()),
+        (None, Some(alias)) => {
+            *target = Some(alias);
+            Ok(())
+        }
+        (Some(current), Some(alias)) if *current == alias => Ok(()),
+        (Some(_), Some(_)) => Err(ConfigError::InvalidReference(format!(
+            "{target_path} conflicts with {alias_path}; use one value"
+        ))),
+    }
 }
 
 fn merge_alias_value<T>(
@@ -3628,6 +3724,118 @@ mod tests {
         assert_eq!(reviewer.mode, AgentMode::Subagent);
         assert!(reviewer.hidden);
         assert_eq!(reviewer.max_iters, Some(4));
+    }
+
+    #[test]
+    fn openai_compatible_cache_retention_normalizes_from_options_and_rejects_conflicts() {
+        let cfg = r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              options: {
+                baseURL: "http://127.0.0.1:8317/v1",
+                apiKey: "test-key",
+                cacheRetention: "long"
+              },
+              models: {
+                "gpt-4o-mini": { name: "GPT-4o mini" }
+              }
+            }
+          },
+          model: "default/gpt-4o-mini",
+          default_agent: "build",
+        }
+        "#;
+
+        let parsed = load_config_from_str(cfg).expect("cache retention options config parses");
+        let ProviderConfig::OpenAiCompatible(provider) = &parsed.providers["default"];
+        assert_eq!(
+            provider.cache_retention,
+            harness_providers::CacheRetention::Long
+        );
+
+        let conflicting = r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              cacheRetention: "none",
+              options: {
+                baseURL: "http://127.0.0.1:8317/v1",
+                apiKey: "test-key",
+                cacheRetention: "long"
+              },
+              models: {
+                "gpt-4o-mini": { name: "GPT-4o mini" }
+              }
+            }
+          },
+          model: "default/gpt-4o-mini",
+          default_agent: "build",
+        }
+        "#;
+
+        let err =
+            load_config_from_str(conflicting).expect_err("conflicting cache retention must fail");
+        assert!(
+            err.to_string().contains("options.cacheRetention"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn openai_compatible_auth_provider_normalizes_from_options_and_rejects_conflicts() {
+        let cfg = r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              options: {
+                authProvider: "codex",
+                baseURL: "http://127.0.0.1:8317/v1",
+                apiKey: "test-key"
+              },
+              models: {
+                "gpt-4o-mini": { name: "GPT-4o mini" }
+              }
+            }
+          },
+          model: "default/gpt-4o-mini",
+          default_agent: "build",
+        }
+        "#;
+
+        let parsed = load_config_from_str(cfg).expect("auth provider options config parses");
+        let ProviderConfig::OpenAiCompatible(provider) = &parsed.providers["default"];
+        assert_eq!(provider.auth_provider, Some(AuthProviderId::Codex));
+
+        let conflicting = r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              authProvider: "codex",
+              options: {
+                authProvider: "github-copilot",
+                baseURL: "http://127.0.0.1:8317/v1",
+                apiKey: "test-key"
+              },
+              models: {
+                "gpt-4o-mini": { name: "GPT-4o mini" }
+              }
+            }
+          },
+          model: "default/gpt-4o-mini",
+          default_agent: "build",
+        }
+        "#;
+
+        let err = load_config_from_str(conflicting).expect_err("conflicting auth provider fails");
+        assert!(
+            err.to_string().contains("options.authProvider"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]

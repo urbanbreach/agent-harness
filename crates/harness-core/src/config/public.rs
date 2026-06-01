@@ -218,8 +218,8 @@ const PUBLIC_RUNTIME_TOP_LEVEL_CONFIG_KEYS: &[PublicConfigTopLevelKey] = &[
     ),
     runtime_key!("compaction", InertCompatibility, schema, docs),
     runtime_key!("default_agent", Canonical, schema, docs),
-    runtime_key!("disabled_providers", InertCompatibility, schema, docs),
-    runtime_key!("enabled_providers", InertCompatibility, schema, docs),
+    runtime_key!("disabled_providers", Compatibility, schema, docs),
+    runtime_key!("enabled_providers", Compatibility, schema, docs),
     runtime_key!(
         "enterprise",
         UnsupportedActive,
@@ -2073,6 +2073,12 @@ pub(super) fn translate_public_runtime_root(
         merge_config_value(&mut providers, value.clone());
     }
     translated.insert("providers".to_string(), providers);
+    if let Some(value) = object.get("disabled_providers").cloned() {
+        translated.insert("disabled_providers".to_string(), value);
+    }
+    if let Some(value) = object.get("enabled_providers").cloned() {
+        translated.insert("enabled_providers".to_string(), value);
+    }
 
     let model = object
         .get("model")

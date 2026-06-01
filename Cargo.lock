@@ -996,8 +996,10 @@ dependencies = [
 name = "harness"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "blake3",
  "clap",
+ "crossterm",
  "harness-core",
  "harness-providers",
  "harness-testkit",
@@ -1024,6 +1026,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "blake3",
+ "getrandom 0.3.4",
  "harness-providers",
  "humantime",
  "insta",
@@ -1033,6 +1036,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
@@ -1050,6 +1054,7 @@ dependencies = [
  "harness-testkit",
  "json5",
  "reqwest",
+ "schemars",
  "serde",
  "serde_json",
  "tempfile",
