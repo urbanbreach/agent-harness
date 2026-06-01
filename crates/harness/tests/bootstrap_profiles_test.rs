@@ -220,6 +220,100 @@ fn shipped_v1_full_composed_prompt_snapshots_match_source() {
 
 include!("common/bootstrap_profile_helpers.rs");
 
+const V1_FAMILY_PROMPT_SNAPSHOTS: [&str; 4] = ["anthropic", "gemini", "kimi", "trinity"];
+
+fn family_prompt_model_target(
+    family: harness_core::model_resolution::PromptFamily,
+) -> ResolvedModelTarget {
+    let model = format!("fixture-{}", family.id());
+    let model_family = match family {
+        harness_core::model_resolution::PromptFamily::Anthropic => {
+            harness_core::model_resolution::ModelFamily::Claude
+        }
+        harness_core::model_resolution::PromptFamily::Gemini => {
+            harness_core::model_resolution::ModelFamily::Gemini
+        }
+        harness_core::model_resolution::PromptFamily::Kimi => {
+            harness_core::model_resolution::ModelFamily::Kimi
+        }
+        harness_core::model_resolution::PromptFamily::Trinity => {
+            harness_core::model_resolution::ModelFamily::Trinity
+        }
+        _ => harness_core::model_resolution::ModelFamily::Unknown,
+    };
+    ResolvedModelTarget {
+        model_ref: format!("default:{model}"),
+        provider: "default".to_string(),
+        model,
+        variant: None,
+        reasoning_effort: None,
+        text_verbosity: None,
+        reasoning_summary: None,
+        resolution: harness_core::model_resolution::ModelResolution {
+            family: model_family,
+            family_source: harness_core::model_resolution::ModelFamilySource::Metadata,
+            prompt_family: family,
+            capabilities: harness_core::model_resolution::ModelCapabilities {
+                variants: Vec::new(),
+                reasoning_efforts: Vec::new(),
+                supports_tool_calls: true,
+                supports_vision: false,
+                supports_temperature: true,
+                supports_top_p: true,
+                supports_thinking: false,
+                supports_reasoning_summaries: false,
+                context_window_tokens: None,
+                max_input_tokens: None,
+                max_output_tokens: None,
+            },
+        },
+    }
+}
+
+#[test]
+fn shipped_v1_family_prompt_assets_match_golden_snapshots() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let snapshot_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("snapshots")
+        .join("v1_family_prompts");
+    let workspace = WorkspaceEnvironment {
+        working_directory: repo_root.clone(),
+        workspace_root: repo_root,
+        is_git_repository: true,
+        git_branch: Some("dev".to_string()),
+    };
+    let environment = dynamic_prompt::DynamicPromptEnvironment {
+        workspace: &workspace,
+        platform: "linux",
+        today: "Fri May 29 2026",
+    };
+
+    for family in dynamic_prompt::family_prompt_asset_families() {
+        let model = family_prompt_model_target(*family);
+        let rendered = dynamic_prompt::compose_with_environment(
+            dynamic_prompt::DynamicPromptContext {
+                configured_prompt: None,
+                model: &model,
+                instruction_prompt: Some("Instructions from: fixture\nFollow the fixture rule."),
+                skill_tool_enabled: true,
+            },
+            environment,
+        );
+        let rendered = normalize_composed_prompt_snapshot(&rendered);
+        assert_snapshot_text(
+            &snapshot_dir.join(format!("{}.txt", family.id())),
+            &rendered,
+        );
+    }
+
+    let expected_files = V1_FAMILY_PROMPT_SNAPSHOTS
+        .iter()
+        .map(|family| format!("{family}.txt"))
+        .collect::<Vec<_>>();
+    assert_snapshot_dir_contains_exact_files(&snapshot_dir, &expected_files);
+}
+
 #[test]
 fn shipped_v1_prompt_bodies_have_agent_specific_seams_and_intent_gate() {
     // arrange

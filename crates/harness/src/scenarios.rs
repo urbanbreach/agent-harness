@@ -155,6 +155,7 @@ pub fn golden_path_provider() -> MockProvider {
             reasoning_summary: None,
             tools: None,
             tool_choice: None,
+            context: Default::default(),
             stream: true,
         };
 
@@ -186,6 +187,7 @@ pub fn golden_path_provider() -> MockProvider {
                 reasoning_summary: request.reasoning_summary.clone(),
                 tools: Some(vec![demo_edit_tool_def()]),
                 tool_choice: Some(ToolChoice::Auto),
+                context: Default::default(),
                 stream: request.stream,
             };
 
@@ -233,6 +235,7 @@ pub fn golden_path_provider() -> MockProvider {
         reasoning_summary: None,
         tools: None,
         tool_choice: None,
+        context: Default::default(),
         stream: true,
     };
 
@@ -264,6 +267,7 @@ pub fn golden_path_provider() -> MockProvider {
         reasoning_summary: interactive_request.reasoning_summary.clone(),
         tools: Some(vec![demo_edit_tool_def()]),
         tool_choice: Some(ToolChoice::Auto),
+        context: Default::default(),
         stream: interactive_request.stream,
     };
 
@@ -282,6 +286,10 @@ pub fn golden_path_provider() -> MockProvider {
             },
         ],
     );
+
+    for prompt_text in ["hello", "hi", "pipe", "arg\npipe", "Hello"] {
+        insert_worker_text_response(&mut scripted_events, prompt_text, true, "Hello world");
+    }
 
     let shell_parity_request = CompletionRequest {
         provider_id: Some("mock".to_string()),
@@ -310,6 +318,7 @@ pub fn golden_path_provider() -> MockProvider {
         reasoning_summary: None,
         tools: Some(vec![demo_edit_tool_def()]),
         tool_choice: Some(ToolChoice::Auto),
+        context: Default::default(),
         stream: true,
     };
 
@@ -330,6 +339,63 @@ pub fn golden_path_provider() -> MockProvider {
     );
 
     MockProvider::new(scripted_events)
+}
+
+fn insert_worker_text_response(
+    scripted_events: &mut BTreeMap<String, Vec<ProviderStreamEvent>>,
+    prompt_text: &str,
+    include_tools: bool,
+    response: &str,
+) {
+    let mut request = CompletionRequest {
+        provider_id: Some("mock".to_string()),
+        model_id: "model-1".to_string(),
+        messages: vec![
+            CompletionMessage {
+                role: MessageRole::System,
+                content: "worker-prompt".to_string(),
+                name: None,
+                tool_call_id: None,
+                assistant_tool_calls: None,
+            },
+            CompletionMessage {
+                role: MessageRole::User,
+                content: prompt_text.to_string(),
+                name: None,
+                tool_call_id: None,
+                assistant_tool_calls: None,
+            },
+        ],
+        temperature: Some(0.0),
+        max_tokens: None,
+        variant: None,
+        reasoning_effort: None,
+        text_verbosity: None,
+        reasoning_summary: None,
+        tools: None,
+        tool_choice: None,
+        context: Default::default(),
+        stream: true,
+    };
+    if include_tools {
+        request.tools = Some(vec![demo_edit_tool_def()]);
+        request.tool_choice = Some(ToolChoice::Auto);
+    }
+
+    scripted_events.insert(
+        request_digest(&request),
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta(response.to_string()),
+            ProviderStreamEvent::Done {
+                usage: CompletionUsage {
+                    prompt_tokens: 4,
+                    completion_tokens: 2,
+                    total_tokens: 6,
+                },
+            },
+        ],
+    );
 }
 
 fn demo_edit_tool_def() -> ToolDef {
@@ -361,6 +427,7 @@ pub fn golden_path_profiles() -> BTreeMap<String, AgentProfile> {
             model_ref: "mock:model-1".to_string(),
             model_ref_explicit: true,
             system_prompt: "planner-prompt".to_string(),
+            cache_retention: Default::default(),
             max_iters: Some(12),
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::ContinueAsToolMessage,
@@ -375,6 +442,7 @@ pub fn golden_path_profiles() -> BTreeMap<String, AgentProfile> {
             model_ref: "mock:model-1".to_string(),
             model_ref_explicit: true,
             system_prompt: "worker-prompt".to_string(),
+            cache_retention: Default::default(),
             max_iters: Some(12),
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::ContinueAsToolMessage,

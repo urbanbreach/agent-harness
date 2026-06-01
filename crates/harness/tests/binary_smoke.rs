@@ -75,6 +75,10 @@ fn harness_binary_supports_operator_first_run_smoke() {
         ])
         .output()
         .expect("run harness prompt --mock through real binary outside repo");
+    let run_output = outside_repo_harness(temp.path())
+        .args(["run", "--mock", "Hello"])
+        .output()
+        .expect("run harness run --mock through real binary outside repo");
     let tui_startup_output = run_tui_startup_through_pty(temp.path());
     let tool_prompt_events_arg = tool_prompt_events_path
         .to_str()
@@ -156,6 +160,10 @@ fn harness_binary_supports_operator_first_run_smoke() {
     let prompt_events = fs::read_to_string(&prompt_events_path).expect("read prompt event log");
     assert!(prompt_events.contains("\"event_type\":\"task_completed\""));
     assert!(prompt_events.contains("Hello world"));
+
+    assert_success(&run_output);
+    let stdout = String::from_utf8_lossy(&run_output.stdout);
+    assert!(stdout.contains("Hello world"), "stdout:\n{stdout}");
 
     let stdout = String::from_utf8_lossy(&tui_startup_output.stdout);
     let stderr = String::from_utf8_lossy(&tui_startup_output.stderr);

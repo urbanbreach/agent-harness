@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use clap::Args;
@@ -23,12 +23,13 @@ use crate::cli_io::{
     DEFAULT_EVENT_WAIT_TIMEOUT,
 };
 use crate::defaults::DEFAULT_SESSION_DIR;
-use crate::{CliDeps, CliIo};
+use crate::prompt::{PromptCommand, PromptOutputFormat};
+use crate::{prompt, CliDeps, CliIo};
 
 #[derive(Debug, Args, Clone)]
 pub struct RunCommand {
     #[arg(long, value_enum)]
-    pub scenario: ScenarioName,
+    pub scenario: Option<ScenarioName>,
 
     #[arg(long, default_value_t = false)]
     pub deterministic: bool,
@@ -41,6 +42,53 @@ pub struct RunCommand {
 
     #[arg(long, default_value_t = false)]
     pub print_run_dir: bool,
+
+    #[arg(long, default_value_t = false)]
+    pub mock: bool,
+
+    #[arg(long, default_value_t = false)]
+    pub stdin: bool,
+
+    #[arg(
+        long = "continue",
+        short = 'c',
+        default_value_t = false,
+        conflicts_with = "session"
+    )]
+    pub continue_session: bool,
+
+    #[arg(long, short = 's', value_name = "RUN_ID_OR_PATH")]
+    pub session: Option<String>,
+
+    #[arg(long, short = 'm')]
+    pub model: Option<String>,
+
+    #[arg(long = "agent")]
+    pub agent: Option<String>,
+
+    #[arg(long)]
+    pub variant: Option<String>,
+
+    #[arg(long, default_value_t = false)]
+    pub thinking: bool,
+
+    #[arg(long, value_enum, default_value_t = PromptOutputFormat::Default)]
+    pub format: PromptOutputFormat,
+
+    #[arg(long = "file", short = 'f', value_name = "PATH")]
+    pub files: Vec<PathBuf>,
+
+    #[arg(long = "dangerously-skip-permissions", default_value_t = false)]
+    pub dangerously_skip_permissions: bool,
+
+    #[arg(long, short = 'i', default_value_t = false)]
+    pub interactive: bool,
+
+    #[arg(long)]
+    pub command: Option<String>,
+
+    #[arg(value_name = "MESSAGE", num_args = 0..)]
+    pub message: Vec<String>,
 }
 
 struct RunSettings {
@@ -59,6 +107,10 @@ pub fn execute_with_io(
     io: &mut CliIo<'_>,
     deps: &CliDeps,
 ) -> i32 {
+    if cmd.scenario.is_none() {
+        return execute_prompt_run(cmd, config_path, global_session_dir, io, deps);
+    }
+
     let settings = match resolve_settings(&cmd, config_path, global_session_dir) {
         Ok(settings) => settings,
         Err(err) => {
@@ -93,7 +145,7 @@ pub fn execute_with_io(
                 let _ = writeln!(
                     io.stdout,
                     "scenario {} complete: {}",
-                    cmd.scenario.as_str(),
+                    scenario(&cmd).as_str(),
                     outcome.events_path.display()
                 );
             }
@@ -105,6 +157,175 @@ pub fn execute_with_io(
             1
         }
     }
+}
+
+fn execute_prompt_run(
+    cmd: RunCommand,
+    config_path: Option<PathBuf>,
+    global_session_dir: Option<PathBuf>,
+    io: &mut CliIo<'_>,
+    deps: &CliDeps,
+) -> i32 {
+    if cmd.interactive {
+        let _ = writeln!(
+            io.stderr,
+            "run setup failed: --interactive is not implemented in this slice"
+        );
+        return 2;
+    }
+    if cmd.command.is_some() {
+        let _ = writeln!(
+            io.stderr,
+            "run setup failed: --command is not implemented in this slice"
+        );
+        return 2;
+    }
+
+    let prompt_text = match resolve_run_prompt_text(&cmd, io, deps) {
+        Ok(prompt_text) => prompt_text,
+        Err(err) => {
+            let _ = writeln!(io.stderr, "run setup failed: {err}");
+            return 2;
+        }
+    };
+
+    let resume = if cmd.continue_session {
+        match latest_resumable_session(&cmd, config_path.as_deref(), global_session_dir.clone()) {
+            Ok(session) => Some(session),
+            Err(err) => {
+                let _ = writeln!(io.stderr, "run setup failed: {err}");
+                return 2;
+            }
+        }
+    } else {
+        cmd.session.clone()
+    };
+
+    let prompt_cmd = PromptCommand {
+        text: Some(prompt_text),
+        stdin: false,
+        message: Vec::new(),
+        model: cmd.model.clone(),
+        variant: cmd.variant.clone(),
+        thinking: cmd.thinking,
+        mock: cmd.mock,
+        profile: cmd.agent.clone(),
+        resume,
+        out: cmd.out.clone(),
+        print_run_dir: cmd.print_run_dir,
+        format: cmd.format,
+    };
+
+    prompt::execute_with_io(
+        prompt_cmd,
+        config_path,
+        cmd.session_dir.clone().or(global_session_dir),
+        io,
+        deps,
+    )
+}
+
+fn resolve_run_prompt_text(
+    cmd: &RunCommand,
+    io: &mut CliIo<'_>,
+    deps: &CliDeps,
+) -> Result<String, String> {
+    let mut parts = Vec::new();
+    if !cmd.message.is_empty() {
+        parts.push(cmd.message.join(" "));
+    }
+
+    if cmd.stdin || !io.stdin_is_terminal() {
+        let mut stdin = String::new();
+        io.stdin
+            .read_to_string(&mut stdin)
+            .map_err(|err| format!("failed to read stdin: {err}"))?;
+        let trimmed = stdin.trim_end_matches(['\r', '\n']);
+        if !trimmed.is_empty() {
+            parts.push(trimmed.to_string());
+        } else if cmd.stdin && parts.is_empty() {
+            return Err("stdin was empty; pass a positional message or pipe a prompt".to_string());
+        }
+    }
+
+    if parts.is_empty() {
+        return Err("no prompt text provided; pass a positional message or pipe stdin".to_string());
+    }
+
+    let current_dir = deps
+        .current_dir()
+        .map_err(|err| format!("failed to resolve current working directory: {err}"))?;
+    for file in &cmd.files {
+        let resolved = if file.is_absolute() {
+            file.clone()
+        } else {
+            current_dir.join(file)
+        };
+        if !resolved.exists() {
+            return Err(format!("--file path does not exist: {}", file.display()));
+        }
+    }
+
+    let mut prompt_text = parts.join("\n");
+    for file in &cmd.files {
+        prompt_text.push_str("\n@");
+        prompt_text.push_str(&file.to_string_lossy());
+    }
+    Ok(prompt_text)
+}
+
+fn latest_resumable_session(
+    cmd: &RunCommand,
+    config_path: Option<&Path>,
+    global_session_dir: Option<PathBuf>,
+) -> Result<String, String> {
+    let session_dir = cmd
+        .session_dir
+        .clone()
+        .or(global_session_dir)
+        .or_else(|| {
+            load_optional_config_with_digest(config_path)
+                .ok()
+                .flatten()
+                .map(|loaded| loaded.config.paths.session_dir)
+        })
+        .unwrap_or_else(|| PathBuf::from(DEFAULT_SESSION_DIR));
+
+    let entries = fs::read_dir(&session_dir).map_err(|err| {
+        format!(
+            "failed to read session dir {}: {err}",
+            session_dir.display()
+        )
+    })?;
+    let mut candidates = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|err| format!("failed to read session entry: {err}"))?;
+        let path = entry.path();
+        if !path.join("events.jsonl").is_file() {
+            continue;
+        }
+        let recovery = crate::recovery::inspect_session_recovery(&path)?;
+        if !recovery.resumable {
+            continue;
+        }
+        let modified = entry
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .ok();
+        candidates.push((modified, recovery.run_id));
+    }
+
+    candidates.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| right.1.cmp(&left.1)));
+    candidates
+        .into_iter()
+        .map(|(_, run_id)| run_id)
+        .next()
+        .ok_or_else(|| "no resumable sessions found for --continue".to_string())
+}
+
+fn scenario(cmd: &RunCommand) -> ScenarioName {
+    cmd.scenario
+        .expect("scenario runner dispatch requires --scenario")
 }
 
 fn resolve_settings(
@@ -157,12 +378,13 @@ async fn run_once(
     io: &mut CliIo<'_>,
     deps: &CliDeps,
 ) -> Result<RunOutcome, String> {
+    let scenario = scenario(cmd);
     fs::create_dir_all(&settings.session_dir)
         .map_err(|err| format!("failed to create session dir: {err}"))?;
 
     let deterministic_run_id = settings
         .deterministic
-        .then(|| deterministic_run_id(settings.seed, cmd.scenario));
+        .then(|| deterministic_run_id(settings.seed, scenario));
 
     if let Some(run_id) = &deterministic_run_id {
         let stale_run_dir = settings.session_dir.join(run_id);
@@ -174,7 +396,7 @@ async fn run_once(
 
     let workspace = create_workspace(
         &settings.session_dir,
-        cmd.scenario,
+        scenario,
         deterministic_run_id.as_deref(),
     )?;
 
@@ -202,7 +424,7 @@ async fn run_once(
     );
 
     let run = coordinator
-        .start_run(cmd.scenario.as_str(), &workspace)
+        .start_run(scenario.as_str(), &workspace)
         .await
         .map_err(|err| err.to_string())?;
 
@@ -232,7 +454,7 @@ async fn run_once(
 
     let permission_id =
         wait_for_permission_id(&run.events_path, &tool_call_id, DEFAULT_EVENT_WAIT_TIMEOUT).await?;
-    let decision = if cmd.scenario.interactive_permissions() {
+    let decision = if scenario.interactive_permissions() {
         interactive_permission_decision(&permission_id, io)?
     } else {
         PermissionDecision::Allow
@@ -310,6 +532,30 @@ mod tests {
         (Cursor::new(Vec::new()), Vec::new(), Vec::new())
     }
 
+    fn test_run_command(scenario: ScenarioName) -> RunCommand {
+        RunCommand {
+            scenario: Some(scenario),
+            deterministic: true,
+            session_dir: None,
+            out: None,
+            print_run_dir: false,
+            mock: false,
+            stdin: false,
+            continue_session: false,
+            session: None,
+            model: None,
+            agent: None,
+            variant: None,
+            thinking: false,
+            format: crate::prompt::PromptOutputFormat::Default,
+            files: Vec::new(),
+            dangerously_skip_permissions: false,
+            interactive: false,
+            command: None,
+            message: Vec::new(),
+        }
+    }
+
     #[tokio::test]
     async fn deterministic_golden_path_twice_produces_identical_sha256_digest() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
@@ -321,13 +567,7 @@ mod tests {
             seed: 42,
             config_digest: "none".to_string(),
         };
-        let command = RunCommand {
-            scenario: ScenarioName::GoldenPath,
-            deterministic: true,
-            session_dir: None,
-            out: None,
-            print_run_dir: false,
-        };
+        let command = test_run_command(ScenarioName::GoldenPath);
 
         let (mut stdin, mut stdout, mut stderr) = test_io();
         let mut io = CliIo::new(&mut stdin, &mut stdout, &mut stderr);
@@ -368,13 +608,7 @@ mod tests {
             seed: 99,
             config_digest: "none".to_string(),
         };
-        let command = RunCommand {
-            scenario: ScenarioName::GoldenPath,
-            deterministic: true,
-            session_dir: None,
-            out: None,
-            print_run_dir: false,
-        };
+        let command = test_run_command(ScenarioName::GoldenPath);
 
         let (mut stdin, mut stdout, mut stderr) = test_io();
         let mut io = CliIo::new(&mut stdin, &mut stdout, &mut stderr);
@@ -406,13 +640,7 @@ mod tests {
             seed: 2026,
             config_digest: "none".to_string(),
         };
-        let command = RunCommand {
-            scenario: ScenarioName::GoldenPath,
-            deterministic: true,
-            session_dir: None,
-            out: None,
-            print_run_dir: false,
-        };
+        let command = test_run_command(ScenarioName::GoldenPath);
 
         let (mut stdin, mut stdout, mut stderr) = test_io();
         let mut io = CliIo::new(&mut stdin, &mut stdout, &mut stderr);
@@ -440,13 +668,7 @@ mod tests {
             seed: 2027,
             config_digest: "none".to_string(),
         };
-        let command = RunCommand {
-            scenario: ScenarioName::GoldenPath,
-            deterministic: true,
-            session_dir: None,
-            out: None,
-            print_run_dir: false,
-        };
+        let command = test_run_command(ScenarioName::GoldenPath);
 
         let (mut stdin, mut stdout, mut stderr) = test_io();
         let mut io = CliIo::new(&mut stdin, &mut stdout, &mut stderr);
@@ -497,13 +719,7 @@ mod tests {
             seed: 2028,
             config_digest: "none".to_string(),
         };
-        let command = RunCommand {
-            scenario: ScenarioName::GoldenPathInteractive,
-            deterministic: true,
-            session_dir: None,
-            out: None,
-            print_run_dir: false,
-        };
+        let command = test_run_command(ScenarioName::GoldenPathInteractive);
 
         let mut stdin = Cursor::new(b"deny\n".to_vec());
         let mut stdout = Vec::new();

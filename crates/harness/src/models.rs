@@ -2,6 +2,7 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use clap::{Args, Subcommand};
+use harness_core::auth::CredentialStore;
 use harness_core::config::{configured_model_catalog, load_resolved_config_with_context};
 
 use crate::model_probe::{GeneratedModelCatalogCommand, ModelGenerateCommand, ModelProbeCommand};
@@ -59,25 +60,53 @@ fn execute_with_writers(
             return 2;
         }
     };
-    let Some(loaded) =
-        (match load_resolved_config_with_context(config_path.as_deref(), &config_context) {
-            Ok(loaded) => loaded,
-            Err(err) => {
-                let _ = writeln!(stderr, "failed to load config: {err}");
-                return 1;
-            }
-        })
-    else {
-        let _ = writeln!(
-            stderr,
-            "models requires a config file; pass --config <path>, create ./harness.jsonc or ./harness.json, or create $XDG_CONFIG_HOME/harness/harness.jsonc or $XDG_CONFIG_HOME/harness/harness.json for shared defaults. A starting point lives at configs/harness.example.jsonc"
-        );
-        return 2;
+    let loaded = match load_resolved_config_with_context(config_path.as_deref(), &config_context) {
+        Ok(loaded) => loaded,
+        Err(err) => {
+            let _ = writeln!(stderr, "failed to load config: {err}");
+            return 1;
+        }
     };
 
-    let config = loaded.config;
+    let credential_store = CredentialStore::from_lookup(&|name| deps.env_var_value(name));
+    let runtime_catalog = match crate::runtime_catalog::resolve_runtime_catalog(
+        loaded.as_ref().map(|loaded| loaded.config.clone()),
+        loaded.as_ref().map(|_| "configured".to_string()),
+        None,
+        credential_store.as_ref(),
+        &|name| deps.env_var_value(name),
+    ) {
+        Ok(runtime_catalog) => runtime_catalog,
+        Err(err) => {
+            let _ = writeln!(stderr, "failed to resolve runtime model catalog: {err}");
+            return 1;
+        }
+    };
 
-    for entry in configured_model_catalog(&config) {
+    if loaded.is_none() && !runtime_catalog.has_connected_provider() {
+        let _ = writeln!(stderr, "models unavailable: Connect a provider with `harness auth login`, `/auth`, or `/connect` to list authenticated built-in models.");
+        return 2;
+    }
+
+    let connected_filter = if loaded.is_none() {
+        Some(
+            runtime_catalog
+                .connected_provider_ids
+                .iter()
+                .map(String::as_str)
+                .collect::<std::collections::BTreeSet<_>>(),
+        )
+    } else {
+        None
+    };
+
+    for entry in configured_model_catalog(&runtime_catalog.config) {
+        if connected_filter
+            .as_ref()
+            .is_some_and(|connected| !connected.contains(entry.provider.as_str()))
+        {
+            continue;
+        }
         let mut segments = vec![format!("{}:{}", entry.provider, entry.model)];
 
         if let Some(variant) = entry.variant.as_deref() {
@@ -98,4 +127,72 @@ fn execute_with_writers(
     }
 
     0
+}
+
+#[cfg(test)]
+mod tests {
+    use harness_core::auth::{
+        AuthProviderId, CredentialClock, CredentialStore, StoredCredential, SystemCredentialClock,
+    };
+
+    use super::{execute_with_writers, ModelsCommand};
+
+    #[test]
+    fn no_config_models_without_provider_prints_connect_guidance() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let deps = crate::CliDeps::real()
+            .with_current_dir(temp.path().to_path_buf())
+            .with_env(
+                "HARNESS_DATA_HOME",
+                temp.path().join("data").to_string_lossy(),
+            );
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        let code = execute_with_writers(
+            ModelsCommand::default(),
+            None,
+            &mut stdout,
+            &mut stderr,
+            &deps,
+        );
+
+        assert_eq!(code, 2);
+        assert!(stdout.is_empty());
+        assert!(String::from_utf8(stderr)
+            .expect("stderr utf8")
+            .contains("Connect a provider"));
+    }
+
+    #[test]
+    fn no_config_models_with_stored_copilot_lists_builtin_provider() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let data_home = temp.path().join("data");
+        CredentialStore::new(data_home.join("harness"))
+            .save(&StoredCredential::api_key(
+                AuthProviderId::GithubCopilot,
+                "test-token",
+                SystemCredentialClock.now_rfc3339(),
+            ))
+            .expect("save credential");
+        let deps = crate::CliDeps::real()
+            .with_current_dir(temp.path().to_path_buf())
+            .with_env("HARNESS_DATA_HOME", data_home.to_string_lossy());
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        let code = execute_with_writers(
+            ModelsCommand::default(),
+            None,
+            &mut stdout,
+            &mut stderr,
+            &deps,
+        );
+
+        assert_eq!(code, 0, "stderr: {}", String::from_utf8_lossy(&stderr));
+        let stdout = String::from_utf8(stdout).expect("stdout utf8");
+        assert!(stdout.contains("github-copilot:"), "{stdout}");
+        assert!(stdout.contains("label="), "{stdout}");
+        assert!(stderr.is_empty());
+    }
 }

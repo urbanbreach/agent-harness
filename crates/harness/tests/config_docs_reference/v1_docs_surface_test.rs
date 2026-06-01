@@ -7,17 +7,18 @@ fn first_run_provider_auth_docs_do_not_assume_loopback_only() {
     // act
     let readme_anchors = [
         "real provider first run",
-        "apiKeyEnv",
+        "openai-codex",
+        r#"authProvider: "codex""#,
         "OPENAI_API_KEY",
+        "Codex OAuth-backed request\npath",
         "doctor does not prove live provider authentication or transport health",
-        "live prompt or signoff-live lane",
     ];
     let config_anchors = [
         "### First-run provider authentication",
-        "provider.<id>.options.baseURL",
-        "provider.<id>.options.apiKeyEnv",
+        "openai-codex",
+        r#"authProvider: "codex""#,
+        "Codex OAuth by default",
         "OPENAI_API_KEY",
-        "local loopback",
         "doctor checks that the named environment variable is present",
         "doctor does not prove live provider authentication or transport health",
     ];
@@ -45,10 +46,10 @@ fn model_prompt_tuning_stance_is_documented_for_v1() {
     // act
     let expected_anchors = [
         "## V1 model prompt tuning stance",
-        "Per-model prompt tuning is intentionally absent for V1",
-        "substring heuristics do\nnot select prompt bodies",
+        "Provider-family prompt selection is routed through the explicit model-resolution\nseam",
+        "`harness_core::model_resolution`",
         "`crates/harness/src/dynamic_prompt.rs`",
-        "explicit `variants` metadata",
+        "rather than scattered raw `model_id.contains(...)` checks",
         "golden prompt tests",
     ];
 
@@ -90,12 +91,36 @@ fn reference_prompt_patterns_map_to_harness_seams() {
     );
 
     for (pattern, seam_anchor, status_anchor) in [
-        ("Intent-gate before tool use", "dynamic_prompt.rs", "Shipped"),
-        ("Structured delegation reminder", "delegation_reminder", "WS9"),
-        ("Category-specific routing and prompt appends", "agent_catalog", "profiles"),
-        ("Markdown-defined skills with progressive disclosure", "skill_catalog", "built-in skill"),
-        ("Disableable built-in capabilities", "SkillCatalogStatus::Disabled", "descriptor-only metadata"),
-        ("Command/hook lifecycle maps", "extension-strategy.md", "unsupported/post-V1"),
+        (
+            "Intent-gate before tool use",
+            "dynamic_prompt.rs",
+            "Shipped",
+        ),
+        (
+            "Structured delegation reminder",
+            "delegation_reminder",
+            "WS9",
+        ),
+        (
+            "Category-specific routing and prompt appends",
+            "agent_catalog",
+            "profiles",
+        ),
+        (
+            "Markdown-defined skills with progressive disclosure",
+            "skill_catalog",
+            "built-in skill",
+        ),
+        (
+            "Disableable built-in capabilities",
+            "SkillCatalogStatus::Disabled",
+            "descriptor-only metadata",
+        ),
+        (
+            "Command/hook lifecycle maps",
+            "extension-strategy.md",
+            "unsupported/post-V1",
+        ),
     ] {
         let row = rows
             .iter()
@@ -152,7 +177,8 @@ fn built_in_capability_order_and_state_policy_are_documented_and_guarded() {
 
     for ((name, stable_id), row) in built_in_skill_entries.iter().zip(rows.iter().skip(3)) {
         assert!(
-            row.first().is_some_and(|cell| cell.contains(&format!("`{name}`"))),
+            row.first()
+                .is_some_and(|cell| cell.contains(&format!("`{name}`"))),
             "built-in skill capability rows should be sorted by stable id/name; expected {name}"
         );
         assert!(

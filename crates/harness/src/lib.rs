@@ -6,7 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::ExitCode;
@@ -18,6 +18,9 @@ use harness_core::config::{
     harness_schema_pretty_json, harness_tui_schema_pretty_json, load_resolved_config_with_context,
 };
 
+extern crate self as harness;
+
+mod auth_cmd;
 mod bootstrap;
 mod cli_config;
 mod cli_io;
@@ -34,17 +37,44 @@ mod readiness;
 mod recovery;
 mod replay;
 mod run;
+mod runtime_catalog;
 mod scenarios;
 mod sessions;
 mod tui;
 
 use crate::prompt::PromptCommand;
 use crate::tui::TuiCommand;
+use auth_cmd::AuthCommand;
 use doctor::DoctorCommand;
 use models::ModelsCommand;
 use replay::ReplayCommand;
 use run::RunCommand;
 use sessions::SessionsCommand;
+
+#[doc(hidden)]
+pub use auth_cmd::AuthBackendOutput;
+
+#[doc(hidden)]
+pub fn execute_auth_backend_args(
+    args: &[String],
+    config_path: Option<PathBuf>,
+    session_dir: Option<PathBuf>,
+    stdin: &str,
+    deps: &CliDeps,
+) -> AuthBackendOutput {
+    auth_cmd::execute_backend_args(args, config_path, session_dir, stdin, deps)
+}
+
+#[doc(hidden)]
+pub fn execute_auth_backend_args_with_io(
+    args: &[String],
+    config_path: Option<PathBuf>,
+    session_dir: Option<PathBuf>,
+    io: &mut CliIo<'_>,
+    deps: &CliDeps,
+) -> i32 {
+    auth_cmd::execute_backend_args_with_io(args, config_path, session_dir, io, deps)
+}
 
 #[derive(Debug, Parser)]
 #[command(name = "harness")]
@@ -96,10 +126,12 @@ impl RootInteractiveArgs {
 enum Commands {
     /// Launch the interactive terminal UI.
     Tui(TuiCommand),
-    /// Run a deterministic built-in scenario.
+    /// Run one headless prompt, or a deterministic built-in scenario with --scenario.
     Run(RunCommand),
     /// Check local runtime readiness and configuration health.
     Doctor(DoctorCommand),
+    /// Manage stored provider authentication credentials.
+    Auth(AuthCommand),
     /// Inspect, generate, or probe provider model catalogs.
     Models(ModelsCommand),
     /// Run one headless prompt through a configured or mock provider.
@@ -137,6 +169,7 @@ pub struct CliIo<'a> {
     pub stdin: &'a mut dyn BufRead,
     pub stdout: &'a mut dyn Write,
     pub stderr: &'a mut dyn Write,
+    stdin_is_terminal: bool,
 }
 
 impl<'a> CliIo<'a> {
@@ -149,7 +182,17 @@ impl<'a> CliIo<'a> {
             stdin,
             stdout,
             stderr,
+            stdin_is_terminal: true,
         }
+    }
+
+    pub fn with_stdin_terminal(mut self, stdin_is_terminal: bool) -> Self {
+        self.stdin_is_terminal = stdin_is_terminal;
+        self
+    }
+
+    pub fn stdin_is_terminal(&self) -> bool {
+        self.stdin_is_terminal
     }
 }
 
@@ -312,7 +355,7 @@ impl CliDeps {
         self
     }
 
-    fn current_dir(&self) -> Result<PathBuf, io::Error> {
+    pub(crate) fn current_dir(&self) -> Result<PathBuf, io::Error> {
         match &self.current_dir {
             Some(current_dir) => Ok(current_dir.clone()),
             None => std::env::current_dir(),
@@ -465,10 +508,12 @@ where
 /// Run the process CLI using real OS arguments and standard streams.
 pub fn run_os() -> ExitCode {
     let stdin = io::stdin();
+    let stdin_is_terminal = stdin.is_terminal();
     let mut stdin = stdin.lock();
     let mut stdout = io::stdout();
     let mut stderr = io::stderr();
-    let mut io = CliIo::new(&mut stdin, &mut stdout, &mut stderr);
+    let mut io =
+        CliIo::new(&mut stdin, &mut stdout, &mut stderr).with_stdin_terminal(stdin_is_terminal);
     let outcome = run(std::env::args_os(), &mut io, CliDeps::real());
     ExitCode::from(outcome.code.clamp(0, u8::MAX as i32) as u8)
 }
@@ -548,6 +593,9 @@ fn execute_cli(cli: Cli, io: &mut CliIo<'_>, deps: CliDeps) -> i32 {
         Commands::Run(command) => run::execute_with_io(command, config, session_dir, io, &deps),
         Commands::Doctor(command) => {
             doctor::execute_with_io(command, config, session_dir, io, &deps)
+        }
+        Commands::Auth(command) => {
+            auth_cmd::execute_with_io(command, config, session_dir, io, &deps)
         }
         Commands::Models(command) => models::execute_with_io(command, config, io, &deps),
         Commands::Prompt(command) => {

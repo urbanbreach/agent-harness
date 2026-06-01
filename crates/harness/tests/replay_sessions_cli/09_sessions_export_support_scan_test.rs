@@ -256,6 +256,147 @@ fn sessions_export_cli_fails_closed_for_hidden_prompt_config_values_in_events() 
     );
 }
 
+#[test]
+fn sessions_export_cli_excludes_stored_credentials_and_scans_for_leaks() {
+    // arrange
+    let workspace = tempdir().expect("workspace tempdir");
+    let data_home = workspace.path().join("data-home");
+    let config_path = workspace.path().join("harness.jsonc");
+    write_support_export_config(
+        &config_path,
+        "codex",
+        "safe-placeholder-key",
+        r#",
+        "authProvider": "codex""#,
+    );
+    let store = harness_core::auth::CredentialStore::new(data_home.join("harness"));
+    store
+        .save(&harness_core::auth::StoredCredential::oauth(
+            harness_core::auth::AuthProviderId::Codex,
+            "stored-access-secret-value",
+            "stored-refresh-secret-value",
+            Some("2099-01-01T00:00:00Z".to_string()),
+            "2026-05-30T00:00:00Z",
+        ))
+        .expect("save stored credential");
+
+    let session_dir = workspace.path().join(".agent-harness/sessions");
+    let run_dir = session_dir.join("run_export_stored_credentials");
+    std::fs::create_dir_all(&run_dir).expect("create run dir");
+    write_events_jsonl(
+        &run_dir,
+        &[
+            envelope(
+                "run_export_stored_credentials",
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "stored-credentials".to_string(),
+                    workspace_root: workspace.path().display().to_string(),
+                }),
+            ),
+            envelope(
+                "run_export_stored_credentials",
+                2,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ],
+    );
+    let export_path = workspace.path().join("session-export-stored-credentials.json");
+
+    // act
+    let output = CliHarness::new()
+        .current_dir(workspace.path())
+        .env("HARNESS_DATA_HOME", &data_home)
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "--session-dir",
+            session_dir.to_str().expect("session dir utf-8"),
+            "sessions",
+            "export",
+            "run_export_stored_credentials",
+            "--output",
+            export_path.to_str().expect("export path utf-8"),
+        ])
+        .output();
+
+    // assert
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let body = std::fs::read_to_string(&export_path).expect("read export");
+    assert!(!body.contains("stored-access-secret-value"));
+    assert!(!body.contains("stored-refresh-secret-value"));
+    let bundle: serde_json::Value =
+        serde_json::from_str(&body).expect("stored credential export parses");
+    assert_eq!(
+        bundle["support"]["credential_store_manifest"]["providers"][0]["status"],
+        "excluded_stored"
+    );
+    assert_eq!(
+        bundle["support"]["credential_store_manifest"]["providers"][0]["relative_path"],
+        "credentials/codex.json"
+    );
+
+    let leak_run_dir = session_dir.join("run_export_stored_credential_leak");
+    std::fs::create_dir_all(&leak_run_dir).expect("create leak run dir");
+    write_events_jsonl(
+        &leak_run_dir,
+        &[
+            envelope(
+                "run_export_stored_credential_leak",
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "stored-credential-leak".to_string(),
+                    workspace_root: workspace.path().display().to_string(),
+                }),
+            ),
+            envelope(
+                "run_export_stored_credential_leak",
+                2,
+                EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                    tool_call_id: "toolcall_000005".to_string(),
+                    status: ToolCallStatus::Succeeded,
+                    output_summary: Some("stored-access-secret-value".to_string()),
+                    output_digest: Some("digest-stored-credential-leak".to_string()),
+                    output_json: None,
+                    metadata: None,
+                }),
+            ),
+        ],
+    );
+    let leak_export_path = workspace
+        .path()
+        .join("session-export-stored-credential-leak.json");
+
+    let leak_output = CliHarness::new()
+        .current_dir(workspace.path())
+        .env("HARNESS_DATA_HOME", &data_home)
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "--session-dir",
+            session_dir.to_str().expect("session dir utf-8"),
+            "sessions",
+            "export",
+            "run_export_stored_credential_leak",
+            "--output",
+            leak_export_path.to_str().expect("export path utf-8"),
+        ])
+        .output();
+    assert!(!leak_output.status.success());
+    assert!(!leak_export_path.exists());
+    assert!(
+        String::from_utf8_lossy(&leak_output.stderr).contains("redaction scanner found"),
+        "stderr should explain stored credential fail-closed scan: {}",
+        String::from_utf8_lossy(&leak_output.stderr)
+    );
+}
+
 fn write_support_export_config(
     config_path: &std::path::Path,
     provider_id: &str,

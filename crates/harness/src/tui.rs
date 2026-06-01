@@ -24,7 +24,7 @@ use harness_core::coord::{
 use harness_core::event::{ActorKind, EventActor, EventEnvelopeV1, EventV1, ToolCallStatus};
 use harness_core::perm::PermissionDecision;
 use harness_core::proj::{inspect_resume_plan, RecordedRuntimeContext, SessionModeSource};
-use harness_core::redact::DefaultRedactor;
+use harness_core::redact::{DefaultRedactor, Redactor};
 use harness_core::session_lineage::{
     materialize_child_session, ChildSessionMaterializationRequest,
     ChildSessionMaterializationResult, ChildSessionMaterializationSourceKind, StableSessionPrefix,
@@ -145,6 +145,7 @@ pub struct TuiCommand {
 #[derive(Debug, Clone)]
 struct LiveSettings {
     config: Option<HarnessConfig>,
+    config_path: Option<PathBuf>,
     session_dir: PathBuf,
     workspace_root: PathBuf,
     shell_allowlist: ShellAllowlist,
@@ -471,8 +472,31 @@ fn resolve_live_settings(
     } else {
         load_optional_config_with_digest_context(config_path.as_deref(), config_context)?
     };
+    let project_config_loaded = loaded.is_some();
 
-    if let Some(loaded) = loaded {
+    let mut connected_provider_ids = Vec::new();
+    let mut no_provider_connected = false;
+    if cmd.scenario.is_none() && !cmd.mock {
+        let credential_store = harness_core::auth::CredentialStore::from_env();
+        let runtime_catalog = crate::runtime_catalog::resolve_runtime_catalog(
+            loaded.as_ref().map(|loaded| loaded.config.clone()),
+            loaded.as_ref().map(|loaded| loaded.digest.clone()),
+            None,
+            credential_store.as_ref(),
+            &|name| std::env::var(name).ok(),
+        )?;
+        let config = runtime_catalog.config;
+        config_digest = runtime_catalog.config_digest;
+        connected_provider_ids = runtime_catalog.connected_provider_ids;
+        no_provider_connected = runtime_catalog.no_provider_connected;
+        config_default_profile = bootstrap::interactive_profile_name(&config);
+        agent_profiles = bootstrap::interactive_agent_profiles(&config)?;
+        shell_allowlist = config.permissions.shell_allowlist.clone();
+        config_session_dir = config.paths.session_dir.clone();
+        config_deterministic = config.deterministic.enabled;
+        config_seed = config.deterministic.seed;
+        live_config = Some(config);
+    } else if let Some(loaded) = loaded {
         let config = loaded.config;
         config_digest = loaded.digest;
         config_default_profile = bootstrap::interactive_profile_name(&config);
@@ -482,8 +506,6 @@ fn resolve_live_settings(
         config_deterministic = config.deterministic.enabled;
         config_seed = config.deterministic.seed;
         live_config = Some(config);
-    } else if cmd.scenario.is_none() && !cmd.mock {
-        return Err(bootstrap::interactive_config_guidance());
     }
 
     let session_dir = cmd
@@ -498,9 +520,16 @@ fn resolve_live_settings(
     } else {
         Some("Demo".to_string())
     };
-    let launch_metadata =
+    let mut launch_metadata =
         interactive_launch_metadata(live_config.as_ref(), &agent_profiles, &default_profile)?;
-    let launch_metadata = if live_config.is_some() {
+    if !project_config_loaded {
+        launch_metadata = launch_metadata_for_connected_providers(
+            launch_metadata,
+            &connected_provider_ids,
+            no_provider_connected,
+        );
+    }
+    let launch_metadata = if live_config.is_some() && !no_provider_connected {
         apply_persisted_model_selection(launch_metadata)
     } else {
         launch_metadata
@@ -509,6 +538,7 @@ fn resolve_live_settings(
 
     Ok(LiveSettings {
         config: live_config,
+        config_path,
         session_dir,
         workspace_root,
         shell_allowlist,
@@ -1030,6 +1060,47 @@ fn model_options_from_profiles(
         .collect()
 }
 
+fn launch_metadata_for_connected_providers(
+    launch_metadata: LaunchMetadata,
+    connected_provider_ids: &[String],
+    no_provider_connected: bool,
+) -> LaunchMetadata {
+    if no_provider_connected {
+        return LaunchMetadata::new(launch_metadata.profile().to_string(), "local", None)
+            .with_switchable_profiles(launch_metadata.switchable_profiles().to_vec());
+    }
+    if connected_provider_ids.is_empty() {
+        return launch_metadata;
+    }
+
+    let connected = connected_provider_ids
+        .iter()
+        .map(String::as_str)
+        .collect::<std::collections::BTreeSet<_>>();
+    let available = launch_metadata
+        .available_models()
+        .iter()
+        .filter(|option| connected.contains(option.provider.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    let current_connected = connected.contains(launch_metadata.provider());
+    let mut selected = if current_connected {
+        launch_metadata.clone()
+    } else if let Some(first) = available
+        .iter()
+        .find(|option| option.profile == launch_metadata.profile())
+        .or_else(|| available.first())
+    {
+        LaunchMetadata::from_model_option(first)
+    } else {
+        LaunchMetadata::new(launch_metadata.profile().to_string(), "local", None)
+    };
+    selected = selected
+        .with_available_models(available)
+        .with_switchable_profiles(launch_metadata.switchable_profiles().to_vec());
+    selected
+}
+
 fn launch_metadata_model_ref(launch_metadata: &LaunchMetadata) -> Option<String> {
     Some(format!(
         "{}:{}",
@@ -1124,6 +1195,38 @@ fn scenario_launch_metadata() -> LaunchMetadata {
     LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Demo")
 }
 
+fn onboarding_required_for_runtime(config: Option<&HarnessConfig>, demo_mode: bool) -> bool {
+    if demo_mode {
+        return false;
+    }
+    let credential_store = harness_core::auth::CredentialStore::from_env();
+    auth_onboarding_required_for_config(config, credential_store.as_ref())
+}
+
+#[cfg(not(test))]
+fn auth_onboarding_required_for_config(
+    config: Option<&HarnessConfig>,
+    credential_store: Option<&harness_core::auth::CredentialStore>,
+) -> bool {
+    crate::auth_cmd::onboarding_required_for_config(
+        config,
+        &|name| {
+            std::env::var(name)
+                .ok()
+                .is_some_and(|value| !value.trim().is_empty())
+        },
+        credential_store,
+    )
+}
+
+#[cfg(test)]
+fn auth_onboarding_required_for_config(
+    _config: Option<&HarnessConfig>,
+    _credential_store: Option<&harness_core::auth::CredentialStore>,
+) -> bool {
+    false
+}
+
 async fn run_interactive_mode(
     cmd: &TuiCommand,
     settings: &LiveSettings,
@@ -1137,6 +1240,7 @@ async fn run_interactive_mode(
         settings.launch_metadata.clone().without_mode_label(),
     ));
     let persist_model_selection = settings.config.is_some() && !demo_mode;
+    let onboarding_required = onboarding_required_for_runtime(settings.config.as_ref(), demo_mode);
     let coordinator_config_warmup = LiveCoordinatorConfigWarmup::start(settings, demo_mode);
     profile_handoff("interactive_mode.warmup_started");
 
@@ -1161,6 +1265,8 @@ async fn run_interactive_mode(
                     Arc::clone(&launch_selection),
                     persist_model_selection,
                     Some(prompt_history_path_for_session_dir(&settings.session_dir)),
+                    onboarding_required,
+                    TuiAuthBackendContext::from_settings(settings),
                 )
             }
         },
@@ -1259,6 +1365,7 @@ async fn run_direct_continue_mode(
         settings.launch_metadata.clone().without_mode_label(),
     ));
     let persist_model_selection = settings.config.is_some() && !demo_mode;
+    let onboarding_required = onboarding_required_for_runtime(settings.config.as_ref(), demo_mode);
     let coordinator_config_warmup = LiveCoordinatorConfigWarmup::start(settings, demo_mode);
     let _ = coordinator_config_warmup
         .coordinator_config(settings, demo_mode)
@@ -1298,6 +1405,8 @@ async fn run_direct_continue_mode(
                     Arc::clone(&launch_selection),
                     persist_model_selection,
                     Some(prompt_history_path_for_session_dir(&settings.session_dir)),
+                    onboarding_required,
+                    TuiAuthBackendContext::from_settings(settings),
                 )
             }
         },
@@ -1369,12 +1478,29 @@ async fn run_startup_launcher(
     launch_selection: LaunchSelection,
     persist_model_selection: bool,
     prompt_history_path: Option<PathBuf>,
+    onboarding_required: bool,
+    auth_backend: TuiAuthBackendContext,
 ) -> Result<InteractiveWorkflow, String> {
     profile_handoff("startup_launcher.begin");
     let selected_intent = Arc::new(Mutex::new(None::<UiIntent>));
     let selected_intent_sink = Arc::clone(&selected_intent);
+    let (live_update_tx, live_update_rx) = std_mpsc::channel::<LiveUpdate>();
+    let auth_update_tx = live_update_tx.clone();
+    let startup_auth_backend = auth_backend.clone();
     let on_ui_intent = Arc::new(move |intent: UiIntent| {
         if handle_model_switch_intent(&intent, &launch_selection, persist_model_selection) {
+            return;
+        }
+
+        if let UiIntent::OpenAuthManager { args, stdin } = intent {
+            spawn_tui_auth_backend_task(
+                args,
+                stdin,
+                startup_auth_backend.config_path.clone(),
+                startup_auth_backend.session_dir.clone(),
+                startup_auth_backend.workspace_root.clone(),
+                auth_update_tx.clone(),
+            );
             return;
         }
 
@@ -1402,6 +1528,8 @@ async fn run_startup_launcher(
             mode: TuiMode::Startup {
                 session_history_entries,
                 prompt_history_path,
+                onboarding_required,
+                update_rx: live_update_rx,
             },
             exit_on_finish,
             on_ui_intent: Some(on_ui_intent),
@@ -1437,6 +1565,7 @@ fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> InteractiveWorkfl
         Some(UiIntent::QuitRequested)
         | None
         | Some(UiIntent::ResolvePermission { .. })
+        | Some(UiIntent::OpenAuthManager { .. })
         | Some(UiIntent::CompactSession)
         | Some(UiIntent::InterruptSession { .. })
         | Some(UiIntent::ForkSession { .. })
@@ -1579,6 +1708,7 @@ async fn run_continue_session_bootstrap(
 
     let intent_coordinator = coordinator.clone();
     let intent_live_agent_target = Arc::clone(&live_agent_target);
+    let auth_backend = TuiAuthBackendContext::from_settings(settings);
     let ui_intent_task = tokio::spawn(async move {
         handle_ui_intents(
             intent_coordinator,
@@ -1586,6 +1716,7 @@ async fn run_continue_session_bootstrap(
             user_actor(),
             Some(intent_live_agent_target),
             intent_live_update_tx,
+            auth_backend,
         )
         .await
     });
@@ -1809,6 +1940,7 @@ fn live_workflow_from_intent(intent: &UiIntent) -> Option<InteractiveWorkflow> {
         UiIntent::QuitRequested => Some(InteractiveWorkflow::Quit),
         UiIntent::ResolvePermission { .. }
         | UiIntent::SubmitPrompt { .. }
+        | UiIntent::OpenAuthManager { .. }
         | UiIntent::CompactSession
         | UiIntent::InterruptSession { .. }
         | UiIntent::ForkSession { .. }
@@ -1822,6 +1954,7 @@ fn forward_intent_to_live_run(intent: &UiIntent) -> bool {
         intent,
         UiIntent::ResolvePermission { .. }
             | UiIntent::SubmitPrompt { .. }
+            | UiIntent::OpenAuthManager { .. }
             | UiIntent::CompactSession
             | UiIntent::InterruptSession { .. }
             | UiIntent::ForkSession { .. }
@@ -2209,6 +2342,7 @@ async fn bootstrap_new_live_runtime(
 
     let intent_coordinator = coordinator.clone();
     let intent_live_agent_target = Arc::clone(&live_agent_target);
+    let auth_backend = TuiAuthBackendContext::from_settings(settings);
     let ui_intent_task = tokio::spawn(async move {
         handle_ui_intents(
             intent_coordinator,
@@ -2216,6 +2350,7 @@ async fn bootstrap_new_live_runtime(
             user_actor(),
             Some(intent_live_agent_target),
             live_update_tx,
+            auth_backend,
         )
         .await
     });
@@ -2310,6 +2445,7 @@ async fn run_live_mode(
     });
 
     let intent_coordinator = coordinator.clone();
+    let auth_backend = TuiAuthBackendContext::from_settings(settings);
     let ui_intent_task = tokio::spawn(async move {
         handle_ui_intents(
             intent_coordinator,
@@ -2317,6 +2453,7 @@ async fn run_live_mode(
             user_actor(),
             None,
             intent_live_update_tx,
+            auth_backend,
         )
         .await
     });
@@ -2601,12 +2738,367 @@ fn compact_token_estimate(value: u32) -> String {
     value.to_string()
 }
 
+fn spawn_tui_auth_backend_task(
+    args: Vec<String>,
+    stdin: Option<String>,
+    config_path: Option<PathBuf>,
+    session_dir: Option<PathBuf>,
+    workspace_root: PathBuf,
+    live_update_tx: std_mpsc::Sender<LiveUpdate>,
+) {
+    let normalized_args = normalize_tui_auth_args(args.clone());
+    let display = display_tui_auth_args(&normalized_args);
+    let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+        message: format!("auth backend running: harness auth {display}"),
+        level: OperatorNoticeLevel::Info,
+    });
+    std::thread::spawn(move || {
+        let (message, level, success) = run_tui_auth_backend_once(
+            args,
+            config_path.clone(),
+            session_dir.clone(),
+            workspace_root.clone(),
+            stdin.unwrap_or_default(),
+            Some(live_update_tx.clone()),
+        );
+        let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
+        let _ = live_update_tx.send(LiveUpdate::AuthBackendResult { success });
+        if success {
+            match refreshed_launch_metadata_after_auth(
+                normalized_args.first().map(String::as_str),
+                config_path,
+                session_dir,
+                workspace_root,
+            ) {
+                Ok(Some(launch_metadata)) => {
+                    let _ = live_update_tx.send(LiveUpdate::AuthProviderCatalogRefreshed {
+                        launch_metadata: Box::new(launch_metadata),
+                    });
+                    let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                        message: "provider catalog refreshed; choose a model with /model"
+                            .to_string(),
+                        level: OperatorNoticeLevel::Info,
+                    });
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                        message: format!("provider catalog refresh skipped: {err}"),
+                        level: OperatorNoticeLevel::Error,
+                    });
+                }
+            }
+        }
+    });
+}
+
+fn refreshed_launch_metadata_after_auth(
+    command: Option<&str>,
+    config_path: Option<PathBuf>,
+    session_dir: Option<PathBuf>,
+    workspace_root: PathBuf,
+) -> Result<Option<LaunchMetadata>, String> {
+    if command != Some("login") {
+        return Ok(None);
+    }
+    let settings = resolve_live_settings(
+        &TuiCommand {
+            replay: None,
+            continue_session: None,
+            scenario: None,
+            mock: false,
+            deterministic: false,
+            session_dir: None,
+            exit_on_finish: false,
+            profile: None,
+        },
+        config_path,
+        session_dir,
+        workspace_root.clone(),
+        &harness_core::config::ConfigLoadContext::from_env().with_current_dir(workspace_root),
+    )?;
+    Ok(Some(settings.launch_metadata))
+}
+
+fn run_tui_auth_backend_once(
+    args: Vec<String>,
+    config_path: Option<PathBuf>,
+    session_dir: Option<PathBuf>,
+    workspace_root: PathBuf,
+    stdin: String,
+    live_update_tx: Option<std_mpsc::Sender<LiveUpdate>>,
+) -> (String, OperatorNoticeLevel, bool) {
+    let deps = harness::CliDeps::real().with_current_dir(workspace_root);
+    run_tui_auth_backend_streaming_with_deps(
+        args,
+        config_path,
+        session_dir,
+        &stdin,
+        &deps,
+        live_update_tx,
+    )
+}
+
+#[cfg(test)]
+fn run_tui_auth_backend_once_with_deps(
+    args: Vec<String>,
+    config_path: Option<PathBuf>,
+    session_dir: Option<PathBuf>,
+    deps: &harness::CliDeps,
+) -> (String, OperatorNoticeLevel) {
+    let (message, level, _) =
+        run_tui_auth_backend_streaming_with_deps(args, config_path, session_dir, "", deps, None);
+    (message, level)
+}
+
+fn run_tui_auth_backend_streaming_with_deps(
+    args: Vec<String>,
+    config_path: Option<PathBuf>,
+    session_dir: Option<PathBuf>,
+    stdin: &str,
+    deps: &harness::CliDeps,
+    live_update_tx: Option<std_mpsc::Sender<LiveUpdate>>,
+) -> (String, OperatorNoticeLevel, bool) {
+    let args = normalize_tui_auth_args(args);
+    let mut stdin = std::io::Cursor::new(stdin.as_bytes().to_vec());
+    let mut stdout = TuiAuthNoticeWriter::new(
+        live_update_tx.clone(),
+        OperatorNoticeLevel::Info,
+        "auth backend output",
+    );
+    let mut stderr = TuiAuthNoticeWriter::new(
+        live_update_tx,
+        OperatorNoticeLevel::Error,
+        "auth backend error",
+    );
+    let mut io = harness::CliIo::new(&mut stdin, &mut stdout, &mut stderr);
+    let code =
+        harness::execute_auth_backend_args_with_io(&args, config_path, session_dir, &mut io, deps);
+    stdout.flush_pending();
+    stderr.flush_pending();
+    let output = harness::AuthBackendOutput {
+        code,
+        stdout: stdout.captured(),
+        stderr: stderr.captured(),
+    };
+    let level = if output.code == 0 {
+        OperatorNoticeLevel::Info
+    } else {
+        OperatorNoticeLevel::Error
+    };
+    (
+        format_tui_auth_backend_output(&args, &output),
+        level,
+        output.code == 0,
+    )
+}
+
+struct TuiAuthNoticeWriter {
+    live_update_tx: Option<std_mpsc::Sender<LiveUpdate>>,
+    level: OperatorNoticeLevel,
+    prefix: &'static str,
+    redactor: DefaultRedactor,
+    pending: String,
+    captured: String,
+}
+
+impl TuiAuthNoticeWriter {
+    fn new(
+        live_update_tx: Option<std_mpsc::Sender<LiveUpdate>>,
+        level: OperatorNoticeLevel,
+        prefix: &'static str,
+    ) -> Self {
+        Self {
+            live_update_tx,
+            level,
+            prefix,
+            redactor: DefaultRedactor::default(),
+            pending: String::new(),
+            captured: String::new(),
+        }
+    }
+
+    fn captured(&self) -> String {
+        self.captured.clone()
+    }
+
+    fn flush_pending(&mut self) {
+        if self.pending.is_empty() {
+            return;
+        }
+        let line = std::mem::take(&mut self.pending);
+        self.emit_line(&line);
+    }
+
+    fn emit_line(&mut self, raw_line: &str) {
+        let redacted = compact_auth_backend_text(&self.redactor.redact_text(raw_line));
+        if redacted.is_empty() {
+            return;
+        }
+        self.captured.push_str(&redacted);
+        self.captured.push('\n');
+        if let Some(tx) = &self.live_update_tx {
+            let _ = tx.send(LiveUpdate::OperatorNotice {
+                message: format!("{}: {redacted}", self.prefix),
+                level: self.level,
+            });
+        }
+    }
+}
+
+impl Write for TuiAuthNoticeWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let text = String::from_utf8_lossy(buf);
+        self.pending.push_str(&text);
+        while let Some(newline_index) = self.pending.find('\n') {
+            let line = self.pending[..newline_index]
+                .trim_end_matches('\r')
+                .to_string();
+            self.pending.drain(..=newline_index);
+            self.emit_line(&line);
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.flush_pending();
+        Ok(())
+    }
+}
+
+fn normalize_tui_auth_args(args: Vec<String>) -> Vec<String> {
+    if args.is_empty() {
+        vec!["list".to_string()]
+    } else {
+        args
+    }
+}
+
+fn display_tui_auth_args(args: &[String]) -> String {
+    let mut display = Vec::with_capacity(args.len());
+    let mut redact_next = false;
+    for arg in args {
+        if redact_next {
+            display.push("<redacted>".to_string());
+            redact_next = false;
+            continue;
+        }
+        if tui_auth_arg_redacts_next(arg) {
+            display.push(arg.clone());
+            redact_next = true;
+            continue;
+        }
+        if let Some(redacted) = redact_tui_auth_arg_value(arg) {
+            display.push(redacted);
+            continue;
+        }
+        display.push(arg.clone());
+    }
+    display.join(" ")
+}
+
+fn tui_auth_arg_redacts_next(arg: &str) -> bool {
+    matches!(
+        arg,
+        "--mock-token" | "--mock-refresh-token" | "--enterprise-url"
+    )
+}
+
+fn redact_tui_auth_arg_value(arg: &str) -> Option<String> {
+    [
+        "--mock-token=",
+        "--mock-refresh-token=",
+        "--enterprise-url=",
+    ]
+    .into_iter()
+    .find_map(|prefix| {
+        arg.strip_prefix(prefix)
+            .map(|_| format!("{prefix}<redacted>"))
+    })
+}
+
+fn format_tui_auth_backend_output(args: &[String], output: &harness::AuthBackendOutput) -> String {
+    let command = display_tui_auth_args(args);
+    let stdout = compact_auth_backend_text(&output.stdout);
+    let stderr = compact_auth_backend_text(&output.stderr);
+    match (output.code, stdout.is_empty(), stderr.is_empty()) {
+        (0, false, true) => format!("auth backend completed: harness auth {command}\n{stdout}"),
+        (0, true, false) => format!("auth backend completed: harness auth {command}\n{stderr}"),
+        (0, false, false) => {
+            format!("auth backend completed: harness auth {command}\n{stdout}\n{stderr}")
+        }
+        (0, true, true) => format!("auth backend completed: harness auth {command}"),
+        (_, false, true) => {
+            format!(
+                "auth backend failed (exit {}): harness auth {command}\n{stdout}",
+                output.code
+            )
+        }
+        (_, true, false) => {
+            format!(
+                "auth backend failed (exit {}): harness auth {command}\n{stderr}",
+                output.code
+            )
+        }
+        (_, false, false) => {
+            format!(
+                "auth backend failed (exit {}): harness auth {command}\n{stdout}\n{stderr}",
+                output.code
+            )
+        }
+        (_, true, true) => {
+            format!(
+                "auth backend failed (exit {}): harness auth {command}",
+                output.code
+            )
+        }
+    }
+}
+
+fn compact_auth_backend_text(text: &str) -> String {
+    const MAX_AUTH_NOTICE_CHARS: usize = 1600;
+    let compact = text
+        .lines()
+        .map(str::trim_end)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    if compact.chars().count() <= MAX_AUTH_NOTICE_CHARS {
+        compact
+    } else {
+        let mut truncated = compact
+            .chars()
+            .take(MAX_AUTH_NOTICE_CHARS)
+            .collect::<String>();
+        truncated.push_str("\n… truncated");
+        truncated
+    }
+}
+
+#[derive(Clone)]
+struct TuiAuthBackendContext {
+    config_path: Option<PathBuf>,
+    session_dir: Option<PathBuf>,
+    workspace_root: PathBuf,
+}
+
+impl TuiAuthBackendContext {
+    fn from_settings(settings: &LiveSettings) -> Self {
+        Self {
+            config_path: settings.config_path.clone(),
+            session_dir: Some(settings.session_dir.clone()),
+            workspace_root: settings.workspace_root.clone(),
+        }
+    }
+}
+
 async fn handle_ui_intents(
     coordinator: CoordinatorHandle,
     mut intent_rx: mpsc::UnboundedReceiver<UiIntent>,
     user_actor: EventActor,
     live_agent_target: Option<LiveAgentTargetState>,
     live_update_tx: std_mpsc::Sender<LiveUpdate>,
+    auth_backend: TuiAuthBackendContext,
 ) -> Result<(), String> {
     while let Some(intent) = intent_rx.recv().await {
         match intent {
@@ -2712,6 +3204,16 @@ async fn handle_ui_intents(
                     ),
                 };
                 let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
+            }
+            UiIntent::OpenAuthManager { args, stdin } => {
+                spawn_tui_auth_backend_task(
+                    args,
+                    stdin,
+                    auth_backend.config_path.clone(),
+                    auth_backend.session_dir.clone(),
+                    auth_backend.workspace_root.clone(),
+                    live_update_tx.clone(),
+                );
             }
             UiIntent::InterruptSession { task_ids } => {
                 for task_id in task_ids {
@@ -2889,6 +3391,9 @@ pub(crate) fn replay_launch_metadata_for_test(
 mod tests {
     use super::*;
     use crate::recovery::most_recent_conversational_agent_id;
+    use harness_core::auth::{
+        AuthProviderId, CredentialClock, CredentialStore, StoredCredential, SystemCredentialClock,
+    };
     use harness_core::config::load_config_from_str;
     use harness_core::event::{
         AgentSpawnedEvent, ProviderRequestFinishedEvent, ProviderRequestStartedEvent,
@@ -2902,6 +3407,31 @@ mod tests {
     fn mock_mode_cwd_test_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn live_tui_command() -> TuiCommand {
+        TuiCommand {
+            replay: None,
+            continue_session: None,
+            scenario: None,
+            mock: false,
+            deterministic: false,
+            session_dir: None,
+            exit_on_finish: false,
+            profile: None,
+        }
+    }
+
+    fn with_harness_data_home<T>(data_home: &Path, f: impl FnOnce() -> T) -> T {
+        let _guard = mock_mode_cwd_test_lock().lock().expect("env lock poisoned");
+        let previous = std::env::var_os("HARNESS_DATA_HOME");
+        std::env::set_var("HARNESS_DATA_HOME", data_home);
+        let outcome = f();
+        match previous {
+            Some(value) => std::env::set_var("HARNESS_DATA_HOME", value),
+            None => std::env::remove_var("HARNESS_DATA_HOME"),
+        }
+        outcome
     }
 
     fn lineage_test_event(seq: u64, payload: EventV1) -> EventEnvelopeV1 {
@@ -3350,6 +3880,11 @@ mod tests {
             user_actor(),
             Some(live_agent_target),
             status_tx,
+            TuiAuthBackendContext {
+                config_path: None,
+                session_dir: Some(temp_dir.path().to_path_buf()),
+                workspace_root: temp_dir.path().to_path_buf(),
+            },
         ));
 
         intent_tx
@@ -3382,6 +3917,144 @@ mod tests {
         assert_eq!(
             manual_compaction_success_message("checkpoint_000124", Some(4_100), Some(4_100)),
             "manual compaction checkpoint written: checkpoint_000124 · active ctx estimate unchanged"
+        );
+    }
+
+    #[test]
+    fn tui_auth_backend_runs_same_auth_command_and_redacts_output() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let data_home = temp.path().join("data");
+        let config_path = temp.path().join("harness.jsonc");
+        std::fs::write(
+            &config_path,
+            r#"
+            {
+              provider: {
+                codex_route: {
+                  type: "openai_compatible",
+                  baseURL: "http://127.0.0.1:8317/v1",
+                  authProvider: "codex",
+                  models: {
+                    "gpt-5.4-mini": { name: "GPT-5.4 mini" },
+                  },
+                },
+              },
+              model: "codex_route/gpt-5.4-mini",
+              permission: "ask",
+            }
+            "#,
+        )
+        .expect("write config");
+        let deps = harness::CliDeps::real()
+            .with_current_dir(temp.path().to_path_buf())
+            .with_env("HARNESS_DATA_HOME", data_home.to_string_lossy());
+
+        let secret = "tui-auth-backend-secret-value";
+        let (message, level) = run_tui_auth_backend_once_with_deps(
+            vec![
+                "login".to_string(),
+                "codex".to_string(),
+                "--mock-token".to_string(),
+                secret.to_string(),
+            ],
+            Some(config_path.clone()),
+            Some(temp.path().join("sessions")),
+            &deps,
+        );
+
+        assert_eq!(level, OperatorNoticeLevel::Info);
+        assert!(message.contains("auth backend completed: harness auth login codex"));
+        assert!(!message.contains(secret), "TUI notice leaked auth secret");
+        assert!(
+            data_home.join("harness/credentials/codex.json").is_file(),
+            "TUI auth route must write through the same credential backend as CLI auth"
+        );
+
+        let (list_message, list_level) = run_tui_auth_backend_once_with_deps(
+            vec!["list".to_string()],
+            Some(config_path),
+            Some(temp.path().join("sessions")),
+            &deps,
+        );
+        assert_eq!(list_level, OperatorNoticeLevel::Info);
+        assert!(list_message.contains("presence=stored"));
+        assert!(
+            !list_message.contains(secret),
+            "TUI auth list leaked auth secret"
+        );
+    }
+
+    #[test]
+    fn tui_auth_backend_streams_output_and_accepts_hidden_stdin() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let data_home = temp.path().join("data");
+        let config_path = temp.path().join("harness.jsonc");
+        std::fs::write(
+            &config_path,
+            r#"
+            {
+              provider: {
+                codex_route: {
+                  type: "openai_compatible",
+                  baseURL: "http://127.0.0.1:8317/v1",
+                  authProvider: "codex",
+                  models: {
+                    "gpt-5.4-mini": { name: "GPT-5.4 mini" },
+                  },
+                },
+              },
+              model: "codex_route/gpt-5.4-mini",
+              permission: "ask",
+            }
+            "#,
+        )
+        .expect("write config");
+        let deps = harness::CliDeps::real()
+            .with_current_dir(temp.path().to_path_buf())
+            .with_env("HARNESS_DATA_HOME", data_home.to_string_lossy());
+        let secret = "sk-tui-streamed-stdin-secret";
+        let (tx, rx) = std_mpsc::channel();
+
+        let (message, level, success) = run_tui_auth_backend_streaming_with_deps(
+            vec![
+                "login".to_string(),
+                "codex".to_string(),
+                "--method".to_string(),
+                "api-key".to_string(),
+                "--api-key-stdin".to_string(),
+            ],
+            Some(config_path),
+            Some(temp.path().join("sessions")),
+            secret,
+            &deps,
+            Some(tx),
+        );
+
+        assert!(success);
+        assert_eq!(level, OperatorNoticeLevel::Info);
+        assert!(
+            !message.contains(secret),
+            "final notice leaked stdin secret"
+        );
+        let notices = rx.try_iter().collect::<Vec<_>>();
+        assert!(
+            notices.iter().any(|update| matches!(
+                update,
+                LiveUpdate::OperatorNotice { message, level: OperatorNoticeLevel::Info }
+                    if message.contains("stored api_key credential for codex")
+            )),
+            "expected streamed auth output before the final completion notice"
+        );
+        assert!(
+            notices.iter().all(|update| match update {
+                LiveUpdate::OperatorNotice { message, .. } => !message.contains(secret),
+                _ => true,
+            }),
+            "streamed auth notice leaked stdin secret"
+        );
+        assert!(
+            data_home.join("harness/credentials/codex.json").is_file(),
+            "streamed TUI auth should store the API key through the CLI backend"
         );
     }
 
@@ -3568,6 +4241,11 @@ mod tests {
             user_actor(),
             None,
             status_tx,
+            TuiAuthBackendContext {
+                config_path: None,
+                session_dir: Some(temp_dir.path().to_path_buf()),
+                workspace_root: temp_dir.path().to_path_buf(),
+            },
         ));
 
         intent_tx
@@ -3651,6 +4329,198 @@ mod tests {
         assert_eq!(recorded.provider(), "anthropic");
         assert_eq!(recorded.model(), Some("claude-3.7"));
         assert_eq!(recorded.mode_label(), None);
+    }
+
+    #[test]
+    fn no_config_tui_without_credentials_enters_connect_state() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let data_home = temp.path().join("data");
+
+        let settings = with_harness_data_home(&data_home, || {
+            resolve_live_settings(
+                &live_tui_command(),
+                None,
+                None,
+                temp.path().to_path_buf(),
+                &harness_core::config::ConfigLoadContext::from_env()
+                    .with_current_dir(temp.path().to_path_buf()),
+            )
+        })
+        .expect("no-config live settings should resolve");
+
+        assert!(settings.config.is_some());
+        assert_eq!(settings.launch_metadata.provider(), "local");
+        assert_eq!(settings.launch_metadata.model(), None);
+        assert!(settings.launch_metadata.available_models().is_empty());
+    }
+
+    #[test]
+    fn no_config_tui_with_stored_codex_launches_connected_catalog() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let data_home = temp.path().join("data");
+        CredentialStore::new(data_home.join("harness"))
+            .save(&StoredCredential::api_key(
+                AuthProviderId::Codex,
+                "test-token",
+                SystemCredentialClock.now_rfc3339(),
+            ))
+            .expect("save credential");
+
+        let settings = with_harness_data_home(&data_home, || {
+            resolve_live_settings(
+                &live_tui_command(),
+                None,
+                None,
+                temp.path().to_path_buf(),
+                &harness_core::config::ConfigLoadContext::from_env()
+                    .with_current_dir(temp.path().to_path_buf()),
+            )
+        })
+        .expect("stored Codex credential should resolve live settings");
+
+        assert_eq!(settings.launch_metadata.provider(), "openai-codex");
+        assert!(settings.launch_metadata.model().is_some());
+        assert!(settings
+            .launch_metadata
+            .available_models()
+            .iter()
+            .all(|option| option.provider == "openai-codex"));
+    }
+
+    #[test]
+    fn auth_refresh_reloads_no_config_builtin_catalog_after_login() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let data_home = temp.path().join("data");
+        CredentialStore::new(data_home.join("harness"))
+            .save(&StoredCredential::api_key(
+                AuthProviderId::GithubCopilot,
+                "test-token",
+                SystemCredentialClock.now_rfc3339(),
+            ))
+            .expect("save credential");
+
+        let launch_metadata = with_harness_data_home(&data_home, || {
+            refreshed_launch_metadata_after_auth(
+                Some("login"),
+                None,
+                None,
+                temp.path().to_path_buf(),
+            )
+        })
+        .expect("refresh should resolve")
+        .expect("launch metadata should refresh after login");
+
+        assert_eq!(launch_metadata.provider(), "github-copilot");
+        assert!(launch_metadata.model().is_some());
+        assert!(launch_metadata
+            .available_models()
+            .iter()
+            .all(|option| option.provider == "github-copilot"));
+    }
+
+    #[test]
+    fn no_config_tui_restores_recent_builtin_model_selection() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let data_home = temp.path().join("data");
+        let state_path = temp.path().join("model.json");
+        CredentialStore::new(data_home.join("harness"))
+            .save(&StoredCredential::api_key(
+                AuthProviderId::Codex,
+                "test-token",
+                SystemCredentialClock.now_rfc3339(),
+            ))
+            .expect("save credential");
+        std::fs::write(
+            &state_path,
+            r#"{"schema_version":1,"profile":"build","provider":"openai-codex","model":"gpt-5.5"}"#,
+        )
+        .expect("write model state");
+
+        let settings = with_harness_data_home(&data_home, || {
+            let previous = std::env::var_os("HARNESS_MODEL_SELECTION_STATE_FILE");
+            std::env::set_var("HARNESS_MODEL_SELECTION_STATE_FILE", &state_path);
+            let result = resolve_live_settings(
+                &live_tui_command(),
+                None,
+                None,
+                temp.path().to_path_buf(),
+                &harness_core::config::ConfigLoadContext::from_env()
+                    .with_current_dir(temp.path().to_path_buf()),
+            );
+            match previous {
+                Some(value) => std::env::set_var("HARNESS_MODEL_SELECTION_STATE_FILE", value),
+                None => std::env::remove_var("HARNESS_MODEL_SELECTION_STATE_FILE"),
+            }
+            result
+        })
+        .expect("stored Codex credential should resolve live settings");
+
+        assert_eq!(settings.launch_metadata.provider(), "openai-codex");
+        assert_eq!(settings.launch_metadata.model(), Some("gpt-5.5"));
+    }
+
+    #[test]
+    fn project_config_tui_restores_recent_model_selection() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config_path = temp.path().join("harness.jsonc");
+        let state_path = temp.path().join("model.json");
+        std::fs::write(
+            &config_path,
+            r#"{
+              provider: {
+                "openai-codex": {
+                  type: "openai_compatible",
+                  options: {
+                    authProvider: "codex",
+                    baseURL: "https://api.openai.com/v1",
+                    apiKeyEnv: ["OPENAI_API_KEY"],
+                  },
+                  models: {
+                    "gpt-5.4-mini": { name: "GPT 5.4 Mini" },
+                    "gpt-5.5": { name: "GPT 5.5" },
+                  },
+                },
+              },
+              model: "openai-codex/gpt-5.4-mini",
+              agent: {
+                build: { enable: true, model: "openai-codex/gpt-5.4-mini" },
+                plan: { enable: true, model: "openai-codex/gpt-5.4-mini" },
+              },
+              default_agent: "build",
+              permission: "ask",
+            }"#,
+        )
+        .expect("write project config");
+        std::fs::write(
+            &state_path,
+            r#"{"schema_version":1,"profile":"build","provider":"openai-codex","model":"gpt-5.5"}"#,
+        )
+        .expect("write model state");
+
+        let previous_state = std::env::var_os("HARNESS_MODEL_SELECTION_STATE_FILE");
+        let previous_key = std::env::var_os("OPENAI_API_KEY");
+        std::env::set_var("HARNESS_MODEL_SELECTION_STATE_FILE", &state_path);
+        std::env::set_var("OPENAI_API_KEY", "test-token");
+        let result = resolve_live_settings(
+            &live_tui_command(),
+            Some(config_path),
+            None,
+            temp.path().to_path_buf(),
+            &harness_core::config::ConfigLoadContext::from_env()
+                .with_current_dir(temp.path().to_path_buf()),
+        );
+        match previous_state {
+            Some(value) => std::env::set_var("HARNESS_MODEL_SELECTION_STATE_FILE", value),
+            None => std::env::remove_var("HARNESS_MODEL_SELECTION_STATE_FILE"),
+        }
+        match previous_key {
+            Some(value) => std::env::set_var("OPENAI_API_KEY", value),
+            None => std::env::remove_var("OPENAI_API_KEY"),
+        }
+
+        let settings = result.expect("project config live settings should resolve");
+        assert_eq!(settings.launch_metadata.provider(), "openai-codex");
+        assert_eq!(settings.launch_metadata.model(), Some("gpt-5.5"));
     }
 
     #[test]
@@ -4448,6 +5318,7 @@ mod tests {
             .expect("interactive agent profiles should build");
         let settings = LiveSettings {
             config: Some(config),
+            config_path: None,
             session_dir: session_dir.clone(),
             workspace_root: PathBuf::from("/tmp/warmed-workspace"),
             shell_allowlist: ShellAllowlist::default(),

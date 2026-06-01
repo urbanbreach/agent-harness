@@ -54,6 +54,12 @@ mod dynamic_prompt;
 #[path = "../../src/logging.rs"]
 mod logging;
 #[allow(dead_code)]
+#[path = "../../src/generated_model_catalog.rs"]
+mod generated_model_catalog;
+#[allow(dead_code)]
+#[path = "../../src/runtime_catalog.rs"]
+mod runtime_catalog;
+#[allow(dead_code)]
 #[path = "../../src/recovery.rs"]
 mod recovery;
 #[allow(dead_code)]

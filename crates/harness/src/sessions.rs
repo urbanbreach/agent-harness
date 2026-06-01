@@ -6,6 +6,7 @@ use std::process::ExitCode;
 
 use clap::{Args, Subcommand, ValueEnum};
 use harness_core::agent_catalog::resolve_agent_catalog;
+use harness_core::auth::CredentialStore;
 use harness_core::config::{
     HarnessConfig, McpServerConfig, OpenAiCompatibleProviderConfig, ProviderConfig,
 };
@@ -272,6 +273,7 @@ struct SessionExportSupport {
     skill_catalog_summary: Value,
     native_tool_catalog_summary: Value,
     session_tool_readiness: Value,
+    credential_store_manifest: Value,
     route_metadata: Vec<SessionExportRouteMetadata>,
     artifact_index: Vec<ReplayArtifactSummary>,
 }
@@ -285,6 +287,7 @@ struct SessionExportReadiness {
     skill_catalog_summary: Value,
     native_tool_catalog_summary: Value,
     session_tool_readiness: Value,
+    credential_store_manifest: Value,
     credential_values: Vec<String>,
 }
 
@@ -766,6 +769,7 @@ fn session_export_support(
         skill_catalog_summary: readiness.skill_catalog_summary,
         native_tool_catalog_summary: readiness.native_tool_catalog_summary,
         session_tool_readiness: readiness.session_tool_readiness,
+        credential_store_manifest: readiness.credential_store_manifest,
         route_metadata: session_export_route_metadata(events, replay, catalog),
         artifact_index: replay.artifacts.clone(),
     }
@@ -814,6 +818,7 @@ fn session_export_readiness(
     let paths = loaded.paths;
     let mut config = loaded.config;
     config.apply_session_dir_override(session_dir_override);
+    let credential_store = CredentialStore::from_lookup(&|name| deps.env_var_value(name));
     let credential_values = session_export_config_credential_values(&config, deps);
 
     SessionExportReadiness {
@@ -829,6 +834,10 @@ fn session_export_readiness(
         skill_catalog_summary: session_export_skill_catalog_summary(&skill_workspace_root, &config),
         native_tool_catalog_summary: session_export_native_tool_catalog_summary(&config),
         session_tool_readiness: session_export_session_tool_readiness(&config),
+        credential_store_manifest: session_export_credential_store_manifest(
+            &config,
+            credential_store.as_ref(),
+        ),
         credential_values,
     }
 }
@@ -878,6 +887,12 @@ fn unavailable_session_export_readiness(reason: impl Into<String>) -> SessionExp
             "no_network_probes": true,
             "reason": reason,
         }),
+        credential_store_manifest: json!({
+            "available": false,
+            "redacted_by_default": true,
+            "excluded_from_bundle": true,
+            "reason": reason,
+        }),
         credential_values: Vec::new(),
     }
 }
@@ -898,6 +913,16 @@ fn session_export_config_credential_values(config: &HarnessConfig, deps: &CliDep
     for provider in config.providers.values() {
         let ProviderConfig::OpenAiCompatible(provider) = provider;
         push_credential_value(&mut values, &provider.api_key);
+        if let (Some(auth_provider), Some(store)) = (
+            provider.auth_provider,
+            CredentialStore::from_lookup(&|name| deps.env_var_value(name)),
+        ) {
+            if let Ok(Some(stored)) = store.load(auth_provider) {
+                for value in stored.secret_values() {
+                    push_credential_value(&mut values, &value);
+                }
+            }
+        }
         for env_name in &provider.api_key_env {
             if let Some(value) = deps.env_var_value(env_name) {
                 push_credential_value(&mut values, &value);
@@ -928,6 +953,32 @@ fn session_export_config_credential_values(config: &HarnessConfig, deps: &CliDep
         }
     }
     dedupe_credential_values(values)
+}
+
+fn session_export_credential_store_manifest(
+    config: &HarnessConfig,
+    credential_store: Option<&CredentialStore>,
+) -> Value {
+    let providers = config.providers.values().filter_map(|provider| {
+        let ProviderConfig::OpenAiCompatible(provider) = provider;
+        provider.auth_provider
+    });
+    let Some(store) = credential_store else {
+        return json!({
+            "available": false,
+            "redacted_by_default": true,
+            "excluded_from_bundle": true,
+            "providers": [],
+        });
+    };
+    let entries = store.manifest_entries(providers);
+    json!({
+        "available": true,
+        "redacted_by_default": true,
+        "excluded_from_bundle": true,
+        "data_dir": store.data_dir().display().to_string(),
+        "providers": entries,
+    })
 }
 
 fn push_credential_value(values: &mut Vec<String>, value: &str) {
@@ -2006,6 +2057,7 @@ mod tests {
                 skill_catalog_summary: json!({}),
                 native_tool_catalog_summary: json!({}),
                 session_tool_readiness: json!({}),
+                credential_store_manifest: json!({}),
                 route_metadata: Vec::new(),
                 artifact_index: Vec::new(),
             },

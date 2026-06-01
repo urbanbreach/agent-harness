@@ -1,7 +1,13 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use harness_core::agent::AgentProfile;
+use harness_core::auth::codex::{
+    AuthHttpClient, AuthHttpMethod, AuthHttpRequest, AuthHttpResponse, CodexOAuthClient,
+    CodexOAuthError,
+};
+use harness_core::auth::{AuthProviderId, CredentialStore, ProviderCredentialManager};
 use harness_core::config::{
     refresh_profile_model_metadata_registry, resolve_model_selection, AgentMode, HarnessConfig,
     OpenAiApiMode as CoreOpenAiApiMode, ProviderConfig,
@@ -10,7 +16,7 @@ use harness_core::coord::CoordinatorConfig;
 use harness_core::perm::{PermissionKind, PermissionPolicy, PermissionRuleRequest, PolicyDecision};
 use harness_core::tool::ToolRegistry;
 use harness_providers::openai::{
-    OpenAiApiMode as ProviderOpenAiApiMode, OpenAiCompatibleProvider,
+    OpenAiApiMode as ProviderOpenAiApiMode, OpenAiAuthProfile, OpenAiCompatibleProvider,
     OpenAiCompatibleProviderConfig,
 };
 use harness_providers::{Provider, ProviderRouter};
@@ -169,16 +175,78 @@ fn build_provider(
     provider: &ProviderConfig,
 ) -> Result<Arc<dyn Provider>, String> {
     let ProviderConfig::OpenAiCompatible(provider) = provider;
+    let api_key = provider
+        .api_key_env
+        .iter()
+        .find_map(|name| {
+            std::env::var(name)
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        })
+        .unwrap_or_else(|| provider.api_key.clone());
 
-    OpenAiCompatibleProvider::new(OpenAiCompatibleProviderConfig {
+    let mut openai_provider = OpenAiCompatibleProvider::new(OpenAiCompatibleProviderConfig {
         base_url: provider.base_url.clone(),
-        api_key: provider.api_key.clone(),
+        api_key,
         api_mode: map_openai_api_mode(provider.api_mode.clone()),
         timeout_ms: provider.timeout_ms,
         headers: provider.headers.clone(),
     })
-    .map(|provider| Arc::new(provider) as Arc<dyn Provider>)
-    .map_err(|err| format!("failed to build provider `{provider_id}`: {err}"))
+    .map_err(|err| format!("failed to build provider `{provider_id}`: {err}"))?;
+
+    if let Some(auth_provider) = provider.auth_provider {
+        openai_provider = openai_provider.with_auth_profile(match auth_provider {
+            AuthProviderId::Codex => OpenAiAuthProfile::Codex,
+            AuthProviderId::GithubCopilot => OpenAiAuthProfile::GithubCopilot,
+        });
+        if let Some(store) = CredentialStore::from_env() {
+            let mut manager = ProviderCredentialManager::new(
+                store,
+                auth_provider,
+                provider.api_key_env.clone(),
+                provider.api_key.clone(),
+                |name| std::env::var(name).ok(),
+            );
+            if auth_provider == AuthProviderId::Codex {
+                manager = manager.with_refresher(Arc::new(CodexOAuthClient::new(Arc::new(
+                    ReqwestAuthHttpClient::default(),
+                ))));
+            }
+            openai_provider = openai_provider.with_credential_source(Arc::new(manager));
+        }
+    }
+
+    Ok(Arc::new(openai_provider) as Arc<dyn Provider>)
+}
+
+#[derive(Debug, Default)]
+struct ReqwestAuthHttpClient {
+    client: reqwest::Client,
+}
+
+#[async_trait]
+impl AuthHttpClient for ReqwestAuthHttpClient {
+    async fn send(&self, request: AuthHttpRequest) -> Result<AuthHttpResponse, CodexOAuthError> {
+        let mut builder = match request.method {
+            AuthHttpMethod::Post => self.client.post(&request.url),
+        };
+        for (name, value) in request.headers {
+            builder = builder.header(name, value);
+        }
+        let response =
+            builder
+                .body(request.body)
+                .send()
+                .await
+                .map_err(|err| CodexOAuthError::Http {
+                    message: err.without_url().to_string(),
+                })?;
+        let status = response.status().as_u16();
+        let body = response.text().await.map_err(|err| CodexOAuthError::Http {
+            message: err.without_url().to_string(),
+        })?;
+        Ok(AuthHttpResponse { status, body })
+    }
 }
 
 fn map_openai_api_mode(mode: CoreOpenAiApiMode) -> ProviderOpenAiApiMode {
@@ -307,6 +375,11 @@ fn interactive_agent_profiles_with_extra_tools(
             &model_selection.primary,
             &toolset,
         )?;
+        let cache_retention = cfg
+            .providers
+            .get(&model_selection.primary.provider)
+            .map(provider_cache_retention)
+            .unwrap_or_default();
 
         profiles.insert(
             profile_name.clone(),
@@ -318,6 +391,7 @@ fn interactive_agent_profiles_with_extra_tools(
                 system_prompt,
                 max_iters: profile_cfg.max_iters,
                 temperature: profile_cfg.temperature,
+                cache_retention,
                 tool_failure_mode: profile_cfg.tool_failure_mode,
                 toolset,
             },
@@ -325,6 +399,11 @@ fn interactive_agent_profiles_with_extra_tools(
     }
 
     Ok(profiles)
+}
+
+fn provider_cache_retention(provider: &ProviderConfig) -> harness_providers::CacheRetention {
+    let ProviderConfig::OpenAiCompatible(provider) = provider;
+    provider.cache_retention
 }
 
 fn normalize_profile_toolset(

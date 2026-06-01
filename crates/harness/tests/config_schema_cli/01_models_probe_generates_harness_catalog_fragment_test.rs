@@ -322,7 +322,9 @@ fn schema_cli_prints_runtime_json_schema() {
     assert!(provider_properties.contains_key("baseURL"));
     assert!(provider_properties.contains_key("apiKey"));
     assert!(provider_properties.contains_key("apiKeyEnv"));
+    assert!(provider_properties.contains_key("authProvider"));
     assert!(provider_properties.contains_key("apiMode"));
+    assert!(provider_properties.contains_key("cacheRetention"));
     assert!(provider_properties.contains_key("timeoutMs"));
     assert!(!provider_properties.contains_key("base_url"));
     assert!(!provider_properties.contains_key("api_key"));
@@ -334,7 +336,9 @@ fn schema_cli_prints_runtime_json_schema() {
     assert!(options_properties.contains_key("baseURL"));
     assert!(options_properties.contains_key("apiKey"));
     assert!(options_properties.contains_key("apiKeyEnv"));
+    assert!(options_properties.contains_key("authProvider"));
     assert!(options_properties.contains_key("apiMode"));
+    assert!(options_properties.contains_key("cacheRetention"));
     assert!(options_properties.contains_key("timeoutMs"));
     assert!(!options_properties.contains_key("base_url"));
     assert!(!options_properties.contains_key("api_key"));
@@ -442,8 +446,8 @@ fn config_validate_cli_accepts_shipped_example_config() {
     assert_eq!(parsed.providers.len(), 1);
     let ProviderConfig::OpenAiCompatible(provider) = parsed
         .providers
-        .get("default")
-        .expect("default provider present in shipped example config");
+        .get("openai-codex")
+        .expect("openai-codex provider present in shipped example config");
     assert_eq!(provider.models.len(), 2);
     assert!(provider.models.contains_key("gpt-5.5"));
     assert!(provider.models.contains_key("gpt-5.4-mini"));

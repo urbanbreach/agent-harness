@@ -5,7 +5,9 @@ license.workspace = true
 version.workspace = true
 
 [dependencies]
+async-trait = "0.1"
 clap.workspace = true
+crossterm.workspace = true
 harness-core = { path = "../harness-core" }
 harness-providers = { path = "../harness-providers" }
 harness-tools = { path = "../harness-tools" }

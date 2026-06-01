@@ -161,10 +161,12 @@ impl CliHarness {
         argv.push(OsString::from("harness"));
         argv.extend(self.args);
 
+        let stdin_is_terminal = self.stdin.is_empty();
         let mut stdin = Cursor::new(self.stdin);
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
-        let mut io = harness::CliIo::new(&mut stdin, &mut stdout, &mut stderr);
+        let mut io = harness::CliIo::new(&mut stdin, &mut stdout, &mut stderr)
+            .with_stdin_terminal(stdin_is_terminal);
         let mut deps = harness::CliDeps::real();
         let capture_session_dir = self.capture_session_dir.clone();
         if let Some(current_dir) = self.current_dir {

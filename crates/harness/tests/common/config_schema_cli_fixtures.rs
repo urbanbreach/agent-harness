@@ -56,6 +56,11 @@ impl HarnessCommand {
         self
     }
 
+    fn stdin(mut self, stdin: impl Into<Vec<u8>>) -> Self {
+        self.inner = self.inner.stdin(stdin);
+        self
+    }
+
     fn env<K, V>(mut self, name: K, value: V) -> Self
     where
         K: AsRef<std::ffi::OsStr>,

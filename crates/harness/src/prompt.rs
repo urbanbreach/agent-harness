@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use clap::Args;
+use clap::{Args, ValueEnum};
 use harness_core::agent::{default_model_settings_for_profile, AgentModelSettings};
 use harness_core::clock::Determinism;
 use harness_core::config::{resolve_configured_model_metadata, ShellAllowlist};
@@ -74,6 +74,15 @@ pub struct PromptCommand {
 
     #[arg(long, default_value_t = false)]
     pub print_run_dir: bool,
+
+    #[arg(long, value_enum, default_value_t = PromptOutputFormat::Default)]
+    pub format: PromptOutputFormat,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum PromptOutputFormat {
+    Default,
+    Json,
 }
 
 pub fn execute_with_io(
@@ -195,14 +204,22 @@ fn resolve_settings(
         );
     }
 
-    let loaded = load_optional_config_with_digest_context(config_path.as_deref(), config_context)?.ok_or_else(|| {
-            "prompt mode requires a config file; pass --config <path>, create ./harness.jsonc or ./harness.json, or create $XDG_CONFIG_HOME/harness/harness.jsonc or $XDG_CONFIG_HOME/harness/harness.json for shared defaults. A starting point lives at configs/harness.example.jsonc, or re-run with --mock"
-                .to_string()
-        })?;
+    let loaded = load_optional_config_with_digest_context(config_path.as_deref(), config_context)?;
+    let credential_store =
+        harness_core::auth::CredentialStore::from_lookup(&|name| deps.env_var_value(name));
+    let runtime_catalog = crate::runtime_catalog::resolve_runtime_catalog(
+        loaded.as_ref().map(|loaded| loaded.config.clone()),
+        loaded.as_ref().map(|loaded| loaded.digest.clone()),
+        global_session_dir.clone(),
+        credential_store.as_ref(),
+        &|name| deps.env_var_value(name),
+    )?;
+    if loaded.is_none() && !runtime_catalog.has_connected_provider() {
+        return Err("Connect a provider to send prompts; run `harness auth login` or use TUI `/auth`/`/connect`.".to_string());
+    }
 
-    let mut config = loaded.config;
-    config.apply_session_dir_override(global_session_dir);
-    let config_digest = loaded.digest;
+    let config = runtime_catalog.config;
+    let config_digest = runtime_catalog.config_digest;
 
     let deterministic = Determinism::enabled(config.deterministic.enabled);
     let deterministic_seed = config.deterministic.seed;
@@ -380,6 +397,7 @@ async fn run_prompt(
         &request_id,
         wait_timeout,
         cmd.thinking,
+        cmd.format,
         stdout,
     )
     .await;
@@ -496,6 +514,7 @@ async fn run_resumed_prompt(
         &request_id,
         wait_timeout,
         cmd.thinking,
+        cmd.format,
         stdout,
     )
     .await;
@@ -561,8 +580,15 @@ async fn wait_for_prompt_completion(
     timeout: Duration,
 ) -> Result<(), String> {
     let mut output = Vec::new();
-    wait_for_prompt_completion_with_output(event_store, request_id, timeout, false, &mut output)
-        .await
+    wait_for_prompt_completion_with_output(
+        event_store,
+        request_id,
+        timeout,
+        false,
+        PromptOutputFormat::Default,
+        &mut output,
+    )
+    .await
 }
 
 async fn wait_for_prompt_completion_with_output<W: Write + ?Sized>(
@@ -570,11 +596,12 @@ async fn wait_for_prompt_completion_with_output<W: Write + ?Sized>(
     request_id: &str,
     timeout: Duration,
     show_thinking: bool,
+    format: PromptOutputFormat,
     stdout: &mut W,
 ) -> Result<(), String> {
     let deadline = Instant::now() + timeout;
     let mut tracker = PromptCompletionTracker::new(request_id);
-    let mut printer = PromptStreamPrinter::new(show_thinking, stdout);
+    let mut printer = PromptStreamPrinter::new(show_thinking, format, stdout);
     let mut next_seq = 1;
     let mut stream = event_store
         .subscribe(next_seq)
@@ -672,12 +699,16 @@ fn resolve_prompt_model_override(
         model_settings.variant = resolved.variant.clone();
         model_settings.reasoning_effort = resolved.reasoning_effort.clone();
         model_settings.text_verbosity = resolved.text_verbosity.clone();
-        model_settings.reasoning_summary =
-            if resolved.supports_reasoning_summaries && model_settings.reasoning_effort.is_some() {
-                Some("auto".to_string())
-            } else {
-                None
-            };
+        model_settings.reasoning_summary = if resolved
+            .resolution
+            .capabilities
+            .supports_reasoning_summaries
+            && model_settings.reasoning_effort.is_some()
+        {
+            Some("auto".to_string())
+        } else {
+            None
+        };
 
         if cmd.thinking && model_settings.reasoning_summary.is_none() {
             model_settings.reasoning_summary = Some("auto".to_string());
@@ -735,6 +766,7 @@ enum PromptStreamSection {
 
 struct PromptStreamPrinter<'a, W: Write + ?Sized> {
     show_thinking: bool,
+    format: PromptOutputFormat,
     stdout: &'a mut W,
     active_section: Option<PromptStreamSection>,
     wrote_output: bool,
@@ -743,9 +775,10 @@ struct PromptStreamPrinter<'a, W: Write + ?Sized> {
 }
 
 impl<'a, W: Write + ?Sized> PromptStreamPrinter<'a, W> {
-    fn new(show_thinking: bool, stdout: &'a mut W) -> Self {
+    fn new(show_thinking: bool, format: PromptOutputFormat, stdout: &'a mut W) -> Self {
         Self {
             show_thinking,
+            format,
             stdout,
             active_section: None,
             wrote_output: false,
@@ -755,6 +788,11 @@ impl<'a, W: Write + ?Sized> PromptStreamPrinter<'a, W> {
     }
 
     fn observe(&mut self, event: &EventEnvelopeV1, request_id: &str) {
+        if self.format == PromptOutputFormat::Json {
+            self.write_json(event, request_id);
+            return;
+        }
+
         match &event.payload {
             EventV1::ProviderReasoningDelta(data)
                 if self.show_thinking
@@ -772,12 +810,50 @@ impl<'a, W: Write + ?Sized> PromptStreamPrinter<'a, W> {
     }
 
     fn finish(&mut self) {
+        if self.format == PromptOutputFormat::Json {
+            let _ = self.stdout.flush();
+            return;
+        }
+
         self.flush_assistant_buffer();
         if self.wrote_output {
             let _ = writeln!(self.stdout);
         }
         self.active_section = None;
         self.wrote_output = false;
+    }
+
+    fn write_json(&mut self, event: &EventEnvelopeV1, request_id: &str) {
+        let include = match &event.payload {
+            EventV1::ProviderReasoningDelta(data) => {
+                provider_event_matches_prompt(event, &data.request_id, request_id)
+            }
+            EventV1::ProviderStreamDelta(data) => {
+                provider_event_matches_prompt(event, &data.request_id, request_id)
+            }
+            EventV1::ProviderRequestStarted(data) => {
+                provider_event_matches_prompt(event, &data.request_id, request_id)
+            }
+            EventV1::ProviderRequestFinished(data) => {
+                provider_finish_matches_prompt(event, data, request_id)
+            }
+            EventV1::ToolCallRequested(_)
+            | EventV1::ToolCallStarted(_)
+            | EventV1::ToolCallFinished(_)
+            | EventV1::TaskCompleted(_)
+            | EventV1::TaskCancelled(_) => event_matches_request(event, request_id),
+            EventV1::RunFailed(_) => true,
+            _ => false,
+        };
+
+        if !include {
+            return;
+        }
+
+        if let Ok(line) = serde_json::to_string(event) {
+            let _ = writeln!(self.stdout, "{line}");
+            let _ = self.stdout.flush();
+        }
     }
 
     fn write_thinking(&mut self, delta: &str) {
@@ -1151,6 +1227,9 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use harness_core::auth::{
+        AuthProviderId, CredentialClock, CredentialStore, StoredCredential, SystemCredentialClock,
+    };
     use harness_core::event::{
         ActorKind, EventActor, EventEnvelopeV1, EventV1, ProviderRequestFinishedEvent,
         RunFailedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskCompletionMetadata,
@@ -1162,8 +1241,85 @@ mod tests {
 
     use super::{
         evaluate_prompt_completion, has_provider_error_finish, parse_wait_timeout_ms,
-        wait_for_prompt_completion, PromptCompletionStatus, DEFAULT_WAIT_TIMEOUT,
+        resolve_settings, wait_for_prompt_completion, PromptCommand, PromptCompletionStatus,
+        PromptOutputFormat, DEFAULT_WAIT_TIMEOUT,
     };
+
+    fn default_prompt_command() -> PromptCommand {
+        PromptCommand {
+            text: Some("hello".to_string()),
+            stdin: false,
+            message: Vec::new(),
+            model: None,
+            variant: None,
+            thinking: false,
+            mock: false,
+            profile: None,
+            resume: None,
+            out: None,
+            print_run_dir: false,
+            format: PromptOutputFormat::Default,
+        }
+    }
+
+    #[test]
+    fn no_config_prompt_without_provider_returns_connect_guidance() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let deps = crate::CliDeps::real()
+            .with_current_dir(temp.path().to_path_buf())
+            .with_env(
+                "HARNESS_DATA_HOME",
+                temp.path().join("data").to_string_lossy(),
+            );
+        let context = deps.config_load_context().expect("config context");
+
+        let err = match resolve_settings(
+            &default_prompt_command(),
+            None,
+            None,
+            temp.path().to_path_buf(),
+            &context,
+            &deps,
+        ) {
+            Ok(_) => panic!("no provider should block prompt setup"),
+            Err(err) => err,
+        };
+
+        assert!(err.contains("Connect a provider to send prompts"));
+    }
+
+    #[test]
+    fn no_config_prompt_with_stored_codex_uses_runtime_catalog() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let data_home = temp.path().join("data");
+        let store = CredentialStore::new(data_home.join("harness"));
+        store
+            .save(&StoredCredential::api_key(
+                AuthProviderId::Codex,
+                "test-token",
+                SystemCredentialClock.now_rfc3339(),
+            ))
+            .expect("save credential");
+        let deps = crate::CliDeps::real()
+            .with_current_dir(temp.path().to_path_buf())
+            .with_env("HARNESS_DATA_HOME", data_home.to_string_lossy());
+        let context = deps.config_load_context().expect("config context");
+
+        let settings = resolve_settings(
+            &default_prompt_command(),
+            None,
+            None,
+            temp.path().to_path_buf(),
+            &context,
+            &deps,
+        )
+        .expect("stored credential should activate runtime catalog");
+        let config = settings.logging_config.expect("runtime config");
+
+        assert!(config.providers.contains_key("openai-codex"));
+        assert!(settings.config_digest.contains("builtin-auth-runtime"));
+        assert_eq!(settings.default_profile, "build");
+    }
 
     #[test]
     fn parse_wait_timeout_ms_uses_default_when_unset() {

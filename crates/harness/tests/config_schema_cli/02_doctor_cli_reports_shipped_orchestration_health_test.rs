@@ -200,6 +200,15 @@ fn doctor_cli_json_reports_resolved_route_metadata() {
         true
     );
     assert_eq!(
+        route_check["details"]["routes"]["build"]["model"]["prompt_family_asset"]["status"],
+        "builtin"
+    );
+    assert_eq!(
+        route_check["details"]["routes"]["build"]["model"]["prompt_family_asset"]
+            ["no_network_probes"],
+        true
+    );
+    assert_eq!(
         route_check["details"]["routes"]["build"]["prompt"]["status"],
         "available"
     );
@@ -271,6 +280,75 @@ fn doctor_cli_json_reports_resolved_route_metadata() {
         route_check["details"]["category_fallback"]["policy_source"],
         "harness_core::coord::task_category_fallback_profile"
     );
+}
+
+#[test]
+fn doctor_cli_json_reports_prompt_family_asset_fallback_warning() {
+    let temp = tempdir().expect("tempdir");
+    fs::create_dir_all(temp.path().join(".agent-harness")).expect("create workspace marker");
+    let config_path = temp.path().join("harness.jsonc");
+    fs::write(
+        &config_path,
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              baseURL: "http://127.0.0.1:8317/v1",
+              apiKey: "DUMMY",
+              models: {
+                "claude-sonnet-fixture": {
+                  name: "Claude Sonnet Fixture",
+                  metadata: { family: "claude", supportsToolCalls: true },
+                },
+              },
+            },
+          },
+          model: "default/claude-sonnet-fixture",
+          permission: "ask",
+        }
+        "#,
+    )
+    .expect("write claude-family config");
+
+    let output = harness_command()
+        .current_dir(temp.path())
+        .args([
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "doctor",
+            "--json",
+        ])
+        .output()
+        .expect("run harness doctor with missing family prompt assets");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).expect("doctor json report");
+    let route_check = report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .find(|check| check["name"] == "resolved_routes")
+        .expect("resolved route metadata check");
+    let prompt_asset = &route_check["details"]["routes"]["build"]["model"]["prompt_family_asset"];
+
+    assert_eq!(prompt_asset["family"], "anthropic");
+    assert_eq!(prompt_asset["status"], "fallback");
+    assert_eq!(prompt_asset["source"], "default_prompt_fallback");
+    assert_eq!(
+        prompt_asset["path"],
+        ".agent-harness/prompt-families/anthropic.md"
+    );
+    assert!(prompt_asset["warning"]
+        .as_str()
+        .expect("prompt asset warning")
+        .contains("using default prompt"));
+    assert_eq!(prompt_asset["no_network_probes"], true);
 }
 
 #[test]

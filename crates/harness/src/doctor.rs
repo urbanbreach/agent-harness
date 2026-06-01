@@ -6,12 +6,14 @@ use clap::Args;
 use harness_core::agent_catalog::{
     resolve_agent_catalog, SHIPPED_CATEGORY_ROUTES, SHIPPED_PRIMARY_PROFILES, SHIPPED_SUBAGENTS,
 };
+use harness_core::auth::{CredentialStore, StoredCredentialKind};
 use harness_core::config::{
     resolve_model_selection, AgentMode, HarnessConfig, McpServerConfig, PermissionMode,
     ProviderConfig,
 };
 use harness_core::event::EventEnvelopeV1;
 use harness_core::extension_manifest::EXTENSION_MANIFEST_V1_SCHEMA_VERSION;
+use harness_core::model_resolution::{resolve_model, ModelResolutionInput};
 use harness_core::proj::{project_team_state, TeamRunStatus};
 use harness_tools::{
     coordinator_registry_with_mcp_and_editing, discover_skill_catalog_with_config,
@@ -20,6 +22,8 @@ use harness_tools::{
 use serde::Serialize;
 use serde_json::{json, Value};
 
+use crate::auth_cmd;
+use crate::dynamic_prompt;
 use crate::readiness::ast_grep_adapter_readiness;
 use crate::{CliDeps, CliIo};
 
@@ -152,6 +156,7 @@ pub(crate) fn execute_with_io(
         &config,
         &config_context.discovery.current_dir,
         &|name| deps.env_var_is_set(name),
+        CredentialStore::from_lookup(&|name| deps.env_var_value(name)),
     );
     if command.json {
         match serde_json::to_string_pretty(&report) {
@@ -185,6 +190,7 @@ pub(crate) fn support_report_json(
         config,
         workspace_root,
         env_var_is_set,
+        CredentialStore::from_env(),
     );
     let mut value = serde_json::to_value(report).unwrap_or_else(|err| {
         json!({
@@ -204,10 +210,11 @@ fn build_report(
     config: &HarnessConfig,
     workspace_root: &Path,
     env_var_is_set: &dyn Fn(&str) -> bool,
+    credential_store: Option<CredentialStore>,
 ) -> DoctorReport {
     let checks = vec![
         check_provider_catalog(config),
-        check_provider_credentials(config, env_var_is_set),
+        check_provider_credentials(config, env_var_is_set, &credential_store),
         check_model_references(config),
         check_shipped_profiles(config),
         check_category_routes(config),
@@ -249,7 +256,7 @@ fn check_resolved_routes(config: &HarnessConfig, workspace_root: &Path) -> Docto
         .iter()
         .map(|entry| {
             let mut value = serde_json::to_value(entry).unwrap_or_else(|_| json!({}));
-            attach_doctor_model_metadata(config, &mut value);
+            attach_doctor_model_metadata(config, workspace_root, &mut value);
             (entry.id.clone(), value)
         })
         .collect::<BTreeMap<_, _>>();
@@ -451,15 +458,27 @@ fn active_team_projection_summary(session_dir: &Path) -> Value {
     })
 }
 
-fn attach_doctor_model_metadata(config: &HarnessConfig, value: &mut Value) {
+fn attach_doctor_model_metadata(config: &HarnessConfig, workspace_root: &Path, value: &mut Value) {
     let Some(model) = value.get_mut("model").and_then(Value::as_object_mut) else {
         return;
     };
-    let provider_id = model.get("provider").and_then(Value::as_str);
-    let model_id = model.get("model").and_then(Value::as_str);
+    let provider_id = model
+        .get("provider")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let model_id = model
+        .get("model")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let provider_id_ref = provider_id.as_deref();
+    let model_id_ref = model_id.as_deref();
     model.insert(
         "tool_call_support".to_string(),
-        tool_call_support_metadata(config, provider_id, model_id),
+        tool_call_support_metadata(config, provider_id_ref, model_id_ref),
+    );
+    model.insert(
+        "prompt_family_asset".to_string(),
+        prompt_family_asset_metadata(config, workspace_root, provider_id_ref, model_id_ref),
     );
 }
 
@@ -522,6 +541,64 @@ fn tool_call_support_metadata(
             "no_network_probes": true,
         }),
     }
+}
+
+fn prompt_family_asset_metadata(
+    config: &HarnessConfig,
+    workspace_root: &Path,
+    provider_id: Option<&str>,
+    model_id: Option<&str>,
+) -> Value {
+    let Some(provider_id) = provider_id else {
+        return json!({
+            "status": "unknown",
+            "source": "model_resolution_unavailable",
+            "no_network_probes": true,
+        });
+    };
+    let Some(model_id) = model_id else {
+        return json!({
+            "status": "unknown",
+            "source": "model_resolution_unavailable",
+            "no_network_probes": true,
+        });
+    };
+    let Some(provider) = config.providers.get(provider_id) else {
+        return json!({
+            "status": "unknown",
+            "source": "provider_model_metadata_missing",
+            "no_network_probes": true,
+        });
+    };
+    let ProviderConfig::OpenAiCompatible(provider) = provider;
+    let Some(model) = provider.models.get(model_id) else {
+        return json!({
+            "status": "unknown",
+            "source": "provider_model_metadata_missing",
+            "no_network_probes": true,
+        });
+    };
+    let resolution = resolve_model(ModelResolutionInput {
+        provider: provider_id,
+        model: model_id,
+        metadata_family: model.metadata.family.as_deref(),
+        input_modalities: &model.modalities.input,
+        context_window_tokens: model.metadata.context_window_tokens.or(model.limit.context),
+        max_input_tokens: model.max_input_tokens.or(model.limit.input),
+        max_output_tokens: model.max_output_tokens.or(model.limit.output),
+        supports_tool_calls: model.metadata.supports_tool_calls,
+        supports_reasoning_summaries: model.metadata.supports_reasoning_summaries,
+    });
+    let status =
+        dynamic_prompt::prompt_family_asset_status(resolution.prompt_family, workspace_root);
+    json!({
+        "family": status.family,
+        "status": status.status,
+        "source": status.source,
+        "path": status.path.map(|path| path.display().to_string()),
+        "warning": status.warning,
+        "no_network_probes": true,
+    })
 }
 
 fn skill_readiness_metadata(config: &HarnessConfig, workspace_root: &Path) -> Value {
@@ -662,6 +739,7 @@ fn print_text_report(report: &DoctorReport, out: &mut dyn Write) {
 fn check_provider_credentials(
     config: &HarnessConfig,
     env_var_is_set: &dyn Fn(&str) -> bool,
+    credential_store: &Option<CredentialStore>,
 ) -> DoctorCheck {
     if config.providers.is_empty() {
         return fail("provider_credentials", "no providers are configured");
@@ -669,10 +747,31 @@ fn check_provider_credentials(
 
     let mut inline_credentials = 0;
     let mut env_credentials = 0;
+    let mut stored_oauth_credentials = 0;
+    let mut stored_api_key_credentials = 0;
     let mut missing = Vec::new();
+    let mut credential_errors = Vec::new();
 
     for (id, provider) in &config.providers {
         let ProviderConfig::OpenAiCompatible(provider) = provider;
+        let stored = match (provider.auth_provider, credential_store.as_ref()) {
+            (Some(auth_provider), Some(store)) => match store.load(auth_provider) {
+                Ok(stored) => stored,
+                Err(err) => {
+                    credential_errors.push(format!("{id} ({auth_provider}: {err})"));
+                    None
+                }
+            },
+            _ => None,
+        };
+        if let Some(stored) = stored {
+            match stored.kind {
+                StoredCredentialKind::Oauth => stored_oauth_credentials += 1,
+                StoredCredentialKind::ApiKey => stored_api_key_credentials += 1,
+            }
+            continue;
+        }
+
         let inline_available = non_empty(&provider.api_key);
         let env_available = provider.api_key_env.iter().any(|name| env_var_is_set(name));
 
@@ -690,24 +789,47 @@ fn check_provider_credentials(
         }
     }
 
-    if !missing.is_empty() {
-        return warn(
-            "provider_credentials",
-            format!(
-                "{} provider(s) lack an available API key: {}",
+    let auth_status =
+        auth_cmd::auth_statuses(Some(config), env_var_is_set, credential_store.as_ref());
+    let details = Some(json!({
+        "auth": auth_status,
+        "redacted": true,
+        "no_network_probes": true,
+    }));
+
+    if !credential_errors.is_empty() || !missing.is_empty() {
+        let mut findings = Vec::new();
+        if !credential_errors.is_empty() {
+            findings.push(format!(
+                "{} provider(s) have unreadable stored credentials: {}",
+                credential_errors.len(),
+                credential_errors.join("; ")
+            ));
+        }
+        if !missing.is_empty() {
+            findings.push(format!(
+                "{} provider(s) lack an available API key or stored auth credential: {}",
                 missing.len(),
                 missing.join("; ")
-            ),
-        );
+            ));
+        }
+        return DoctorCheck {
+            name: "provider_credentials".to_string(),
+            status: CheckStatus::Warn,
+            message: findings.join("; "),
+            details,
+        };
     }
 
-    pass(
-        "provider_credentials",
-        format!(
-            "{} provider(s) have credentials available; {inline_credentials} inline, {env_credentials} via environment",
+    DoctorCheck {
+        name: "provider_credentials".to_string(),
+        status: CheckStatus::Pass,
+        message: format!(
+            "{} provider(s) have credentials available; {stored_oauth_credentials} stored oauth, {stored_api_key_credentials} stored api_key, {inline_credentials} inline, {env_credentials} via environment",
             config.providers.len()
         ),
-    )
+        details,
+    }
 }
 
 fn check_provider_catalog(config: &HarnessConfig) -> DoctorCheck {

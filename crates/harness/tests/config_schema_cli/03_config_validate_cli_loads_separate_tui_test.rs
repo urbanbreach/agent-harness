@@ -305,44 +305,42 @@ fn opencode_config_shape_accepts_subagents_and_safe_inert_keys() {
         .contains_key("disabled_only"));
 }
 #[test]
-fn shipped_example_config_uses_placeholder_safe_provider_without_openai_api_key() {
+fn shipped_example_config_uses_codex_oauth_provider_without_openai_api_key() {
     let repo_root = repo_root();
     let config_path = repo_root.join("configs").join("harness.example.jsonc");
 
     let parsed = load_config_from_file(&config_path)
-        .expect("shipped example config should use its explicit placeholder key");
+        .expect("shipped example config should use its explicit Codex OAuth provider");
     let ProviderConfig::OpenAiCompatible(provider) = parsed
         .providers
-        .get("default")
-        .expect("default provider present in shipped example config");
+        .get("openai-codex")
+        .expect("openai-codex provider present in shipped example config");
 
-    assert_eq!(
-        provider.name.as_deref(),
-        Some("Local OpenAI-Compatible Provider")
-    );
-    assert_eq!(provider.base_url, "http://127.0.0.1:8317/v1");
-    assert_eq!(provider.api_key, "placeholder-api-key");
+    assert_eq!(provider.name.as_deref(), Some("OpenAI Codex"));
+    assert_eq!(provider.base_url, "https://api.openai.com/v1");
+    assert_eq!(provider.api_key, "");
+    assert_eq!(provider.api_key_env, vec!["OPENAI_API_KEY".to_string()]);
+    assert_eq!(format!("{:?}", provider.auth_provider), "Some(Codex)");
     assert_eq!(provider.timeout_ms, 1_800_000);
     assert!(matches!(provider.api_mode, OpenAiApiMode::Auto));
 }
 #[test]
-fn shipped_example_config_keeps_placeholder_safe_provider_even_when_openai_api_key_is_set() {
+fn shipped_example_config_keeps_codex_oauth_provider_even_when_openai_api_key_is_set() {
     let repo_root = repo_root();
     let config_path = repo_root.join("configs").join("harness.example.jsonc");
 
     let parsed = load_config_from_file(&config_path)
-        .expect("shipped example config should keep its explicit placeholder key");
+        .expect("shipped example config should keep its explicit Codex OAuth provider");
     let ProviderConfig::OpenAiCompatible(provider) = parsed
         .providers
-        .get("default")
-        .expect("default provider present in shipped example config");
+        .get("openai-codex")
+        .expect("openai-codex provider present in shipped example config");
 
-    assert_eq!(
-        provider.name.as_deref(),
-        Some("Local OpenAI-Compatible Provider")
-    );
-    assert_eq!(provider.base_url, "http://127.0.0.1:8317/v1");
-    assert_eq!(provider.api_key, "placeholder-api-key");
+    assert_eq!(provider.name.as_deref(), Some("OpenAI Codex"));
+    assert_eq!(provider.base_url, "https://api.openai.com/v1");
+    assert_eq!(provider.api_key, "");
+    assert_eq!(provider.api_key_env, vec!["OPENAI_API_KEY".to_string()]);
+    assert_eq!(format!("{:?}", provider.auth_provider), "Some(Codex)");
     assert_eq!(provider.timeout_ms, 1_800_000);
     assert!(matches!(provider.api_mode, OpenAiApiMode::Auto));
 }
@@ -387,14 +385,14 @@ fn shipped_runtime_example_parses_as_public_runtime_config() {
         json5::from_str(&shipped).expect("parse shipped runtime example");
 
     assert_eq!(parsed.default_agent.as_deref(), Some("build"));
-    assert_eq!(parsed.model.as_deref(), Some("default/gpt-5.4-mini"));
+    assert_eq!(parsed.model.as_deref(), Some("openai-codex/gpt-5.4-mini"));
     assert_eq!(parsed.small_model.as_deref(), None);
     assert_eq!(parsed.provider.len(), 1);
-    assert!(parsed.provider.contains_key("default"));
+    assert!(parsed.provider.contains_key("openai-codex"));
     let ProviderConfig::OpenAiCompatible(provider) = parsed
         .provider
-        .get("default")
-        .expect("default provider present in public example");
+        .get("openai-codex")
+        .expect("openai-codex provider present in public example");
     assert_eq!(provider.models.len(), 2);
     assert!(provider.models.contains_key("gpt-5.5"));
     assert!(provider.models.contains_key("gpt-5.4-mini"));
