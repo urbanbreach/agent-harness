@@ -3,12 +3,13 @@
 
   // Provider and model catalog for this workspace.
   "provider": {
-    "default": {
+    "openai-codex": {
       "type": "openai_compatible",
-      "name": "CLIProxyAPI (OpenAI)",
+      "name": "OpenAI Codex",
       "options": {
-        "baseURL": "http://127.0.0.1:8317/v1",
-        "apiKey": "sk-zerolimit",
+        "authProvider": "codex",
+        "baseURL": "https://api.openai.com/v1",
+        "apiKeyEnv": ["OPENAI_API_KEY"],
         "timeoutMs": 1800000,
       },
       "models": {
@@ -256,75 +257,75 @@
   },
 
   // Default primary model and smaller model used by hidden/background agents.
-  "model": "default/gpt-5.4",
-  "small_model": "default/gpt-5.4-mini",
+  "model": "openai-codex/gpt-5.4",
+  "small_model": "openai-codex/gpt-5.4-mini",
 
   // Built-in agents are listed explicitly for discoverability. Use enable:false
   // (or enabled:false) to remove one; add model/prompt/tools only for overrides.
   "agent": {
     "build": {
       "enable": true,
-      "model": "default/gpt-5.5",
+      "model": "openai-codex/gpt-5.5",
       "variant": "high",
     },
     "plan": {
       "enable": true,
-      "model": "default/gpt-5.5",
+      "model": "openai-codex/gpt-5.5",
       "variant": "xhigh",
     },
     "general": {
       "enable": true,
-      "model": "default/gpt-5.4-mini",
+      "model": "openai-codex/gpt-5.4-mini",
       "variant": "medium",
     },
     "explore": {
       "enable": true,
-      "model": "default/gpt-5.4-mini",
+      "model": "openai-codex/gpt-5.4-mini",
       "variant": "low",
     },
     "visual-engineering": {
       "enable": true,
-      "model": "default/gpt-5.4-mini",
+      "model": "openai-codex/gpt-5.4-mini",
       "variant": "high",
     },
     "artistry": {
       "enable": true,
-      "model": "default/gpt-5.5",
+      "model": "openai-codex/gpt-5.5",
       "variant": "high",
     },
     "ultrabrain": {
       "enable": true,
-      "model": "default/gpt-5.5",
+      "model": "openai-codex/gpt-5.5",
       "variant": "xhigh",
     },
     "deep": {
       "enable": true,
-      "model": "default/gpt-5.5",
+      "model": "openai-codex/gpt-5.5",
       "variant": "high",
     },
     "quick": {
       "enable": true,
-      "model": "default/gpt-5.4-mini",
+      "model": "openai-codex/gpt-5.4-mini",
       "variant": "low",
     },
     "unspecified-low": {
       "enable": true,
-      "model": "default/gpt-5.4-mini",
+      "model": "openai-codex/gpt-5.4-mini",
       "variant": "low",
     },
     "unspecified-high": {
       "enable": true,
-      "model": "default/gpt-5.5",
+      "model": "openai-codex/gpt-5.5",
       "variant": "high",
     },
     "writing": {
       "enable": true,
-      "model": "default/gpt-5.4-mini",
+      "model": "openai-codex/gpt-5.4-mini",
       "variant": "medium",
     },
     "title": {
       "enable": true,
-      "model": "default/gpt-5.4-mini",
+      "model": "openai-codex/gpt-5.4-mini",
       "variant": "low",
       "hidden": true,
     },

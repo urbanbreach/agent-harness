@@ -1,12 +1,13 @@
 {
   "$schema": "./config.json",
   "provider": {
-    "default": {
+    "openai-codex": {
       "type": "openai_compatible",
-      "name": "Reference Provider Catalog",
+      "name": "OpenAI Codex Reference Provider Catalog",
       "options": {
-        "baseURL": "http://127.0.0.1:8317/v1",
-        "apiKey": "placeholder-api-key",
+        "authProvider": "codex",
+        "baseURL": "https://api.openai.com/v1",
+        "apiKeyEnv": ["OPENAI_API_KEY"],
         "timeoutMs": 1800000
       },
       "models": {
@@ -79,10 +80,10 @@
       }
     }
   },
-  "model": "default/gpt-5.4",
+  "model": "openai-codex/gpt-5.4",
   "agent": {
     "build": {
-      "model": "default/gpt-5.4-mini",
+      "model": "openai-codex/gpt-5.4-mini",
       "variant": "high"
     }
   },
@@ -91,7 +92,7 @@
   "runtime": {
     "compaction": {
       "model_backed": false,
-      "model": "default/gpt-5.4-mini",
+      "model": "openai-codex/gpt-5.4-mini",
       "split_oversized_turns": false,
       "auto_retry_overflow": true,
       "structured_summary_contract": true,

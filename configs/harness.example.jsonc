@@ -4,13 +4,19 @@
   // Provider and model catalog. Most projects only need one provider and one
   // default model here; keep larger catalogs in provider-catalog.reference.jsonc.
   "provider": {
-    "default": {
+    "openai-codex": {
       "type": "openai_compatible",
-      "name": "Local OpenAI-Compatible Provider",
+      "name": "OpenAI Codex",
       "options": {
-        "baseURL": "http://127.0.0.1:8317/v1",
-        "apiKey": "placeholder-api-key",
-        "timeoutMs": 1800000
+        "authProvider": "codex",
+        "baseURL": "https://api.openai.com/v1",
+        "apiKeyEnv": ["OPENAI_API_KEY"],
+        "timeoutMs": 1800000,
+        // Prompt-cache routing posture for OpenAI-compatible providers:
+        // "short" (default) sends a stable per-session prompt_cache_key,
+        // "long" adds provider-supported long retention only for direct OpenAI,
+        // and "none" omits cache-affinity fields.
+        "cacheRetention": "short"
       },
       "models": {
         "gpt-5.5": {
@@ -39,54 +45,54 @@
   },
 
   // Active default model. Use provider/model, optionally provider/model/variant.
-  "model": "default/gpt-5.4-mini",
+  "model": "openai-codex/gpt-5.4-mini",
 
-  // OMO-style category scale, adapted to the local GPT-family starter catalog.
+  // OMO-style category scale, adapted to the Codex OAuth-backed GPT-family starter catalog.
   // Runtime profile resolution selects the primary target; fallback targets are
   // validated/catalog metadata until explicit automatic model retry is shipped.
   // Larger provider catalogs can point these same profile names at Gemini,
   // Claude, Kimi, or other provider-specific targets without changing agents.
   "model_profile": {
     "category-visual-engineering": {
-      "model": "default/gpt-5.5",
+      "model": "openai-codex/gpt-5.5",
       "variant": "high",
-      "fallback": [{ "model": "default/gpt-5.4-mini", "variant": "high" }]
+      "fallback": [{ "model": "openai-codex/gpt-5.4-mini", "variant": "high" }]
     },
     "category-artistry": {
-      "model": "default/gpt-5.5",
+      "model": "openai-codex/gpt-5.5",
       "variant": "high",
-      "fallback": [{ "model": "default/gpt-5.4-mini", "variant": "high" }]
+      "fallback": [{ "model": "openai-codex/gpt-5.4-mini", "variant": "high" }]
     },
     "category-ultrabrain": {
-      "model": "default/gpt-5.5",
+      "model": "openai-codex/gpt-5.5",
       "variant": "xhigh",
-      "fallback": [{ "model": "default/gpt-5.4-mini", "variant": "high" }]
+      "fallback": [{ "model": "openai-codex/gpt-5.4-mini", "variant": "high" }]
     },
     "category-deep": {
       // Matches OMO's Deep lane as broad autonomous work, not Ultrabrain-level reasoning.
-      "model": "default/gpt-5.5",
+      "model": "openai-codex/gpt-5.5",
       "variant": "medium",
-      "fallback": [{ "model": "default/gpt-5.4-mini", "variant": "high" }]
+      "fallback": [{ "model": "openai-codex/gpt-5.4-mini", "variant": "high" }]
     },
     "category-quick": {
-      "model": "default/gpt-5.4-mini",
+      "model": "openai-codex/gpt-5.4-mini",
       "variant": "low",
-      "fallback": [{ "model": "default/gpt-5.5", "variant": "low" }]
+      "fallback": [{ "model": "openai-codex/gpt-5.5", "variant": "low" }]
     },
     "category-unspecified-low": {
-      "model": "default/gpt-5.4-mini",
+      "model": "openai-codex/gpt-5.4-mini",
       "variant": "medium",
-      "fallback": [{ "model": "default/gpt-5.5", "variant": "medium" }]
+      "fallback": [{ "model": "openai-codex/gpt-5.5", "variant": "medium" }]
     },
     "category-unspecified-high": {
-      "model": "default/gpt-5.5",
+      "model": "openai-codex/gpt-5.5",
       "variant": "high",
-      "fallback": [{ "model": "default/gpt-5.4-mini", "variant": "high" }]
+      "fallback": [{ "model": "openai-codex/gpt-5.4-mini", "variant": "high" }]
     },
     "category-writing": {
-      "model": "default/gpt-5.4-mini",
+      "model": "openai-codex/gpt-5.4-mini",
       "variant": "medium",
-      "fallback": [{ "model": "default/gpt-5.5", "variant": "medium" }]
+      "fallback": [{ "model": "openai-codex/gpt-5.5", "variant": "medium" }]
     }
   },
 
@@ -96,7 +102,7 @@
   "agent": {
     "build": {
       "enable": true,
-      "model": "default/gpt-5.4-mini",
+      "model": "openai-codex/gpt-5.4-mini",
       "variant": "high",
     },
     // Stable read-only planning lane: Plan may inspect the workspace and write
@@ -104,17 +110,17 @@
     // continuing implementation in Build.
     "plan": {
       "enable": true,
-      "model": "default/gpt-5.5",
+      "model": "openai-codex/gpt-5.5",
       "variant": "xhigh",
     },
     "general": {
       "enable": true,
-      "model": "default/gpt-5.4-mini",
+      "model": "openai-codex/gpt-5.4-mini",
       "variant": "medium",
     },
     "explore": {
       "enable": true,
-      "model": "default/gpt-5.4-mini",
+      "model": "openai-codex/gpt-5.4-mini",
       "variant": "low",
     },
     // OMO-style task category routes. These are subagents used by

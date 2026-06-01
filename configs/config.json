@@ -10,6 +10,21 @@
       ],
       "type": "string"
     },
+    "AuthProviderId": {
+      "enum": [
+        "codex",
+        "github-copilot"
+      ],
+      "type": "string"
+    },
+    "CacheRetention": {
+      "enum": [
+        "none",
+        "short",
+        "long"
+      ],
+      "type": "string"
+    },
     "CompactionRuntimeConfig": {
       "additionalProperties": false,
       "properties": {
@@ -562,12 +577,34 @@
           ],
           "default": null
         },
+        "authProvider": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AuthProviderId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "baseURL": {
           "default": null,
           "type": [
             "string",
             "null"
           ]
+        },
+        "cacheRetention": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/CacheRetention"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "headers": {
           "additionalProperties": {
@@ -626,9 +663,28 @@
               ],
               "default": "auto"
             },
+            "authProvider": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/AuthProviderId"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
             "baseURL": {
               "default": "",
               "type": "string"
+            },
+            "cacheRetention": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/CacheRetention"
+                }
+              ],
+              "default": "short"
             },
             "headers": {
               "additionalProperties": {
@@ -661,7 +717,9 @@
                 "apiKey": null,
                 "apiKeyEnv": [],
                 "apiMode": null,
+                "authProvider": null,
                 "baseURL": null,
+                "cacheRetention": null,
                 "headers": {},
                 "name": null,
                 "timeoutMs": null
