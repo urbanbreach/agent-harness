@@ -19,3 +19,8 @@ mod part_04_prompt_cli_executes_fs_grep_and_test {
     use super::*;
     include!("prompt_cli/04_prompt_cli_executes_fs_grep_and_test.rs");
 }
+
+mod part_05_run_cli_prompt_parity_test {
+    use super::*;
+    include!("prompt_cli/05_run_cli_prompt_parity_test.rs");
+}

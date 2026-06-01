@@ -1,6 +1,8 @@
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use harness_core::config::ResolvedModelTarget;
+use harness_core::model_resolution::PromptFamily;
 use harness_core::workspace::WorkspaceEnvironment;
 
 #[derive(Clone, Copy)]
@@ -34,10 +36,6 @@ pub const PROMPT_SECTION_MODULES: [PromptSectionModule; 6] = [
         purpose: "base provider-family prompt or configured prompt override",
     },
     PromptSectionModule {
-        name: "environment",
-        purpose: "workspace, model, platform, date, and git context",
-    },
-    PromptSectionModule {
         name: "delegation_reminder",
         purpose: "task sync/background behavior and background_output guidance",
     },
@@ -52,6 +50,10 @@ pub const PROMPT_SECTION_MODULES: [PromptSectionModule; 6] = [
     PromptSectionModule {
         name: "intent_gate",
         purpose: "primary prompt section requiring interpreted intent before ambiguous tool use",
+    },
+    PromptSectionModule {
+        name: "environment",
+        purpose: "workspace, model, platform, date, and git context",
     },
 ];
 
@@ -70,7 +72,12 @@ pub fn render_prompt_section_with_environment(
         "base_model" => Some(
             ctx.configured_prompt
                 .map(ToOwned::to_owned)
-                .unwrap_or_else(|| provider_prompt(ctx.model.model.as_str()).to_string()),
+                .unwrap_or_else(|| {
+                    provider_prompt(
+                        ctx.model.resolution.prompt_family,
+                        &environment.workspace.workspace_root,
+                    )
+                }),
         ),
         "environment" => Some(environment_prompt(ctx.model, environment)),
         "delegation_reminder" => Some(task_delegation_prompt().to_string()),
@@ -100,10 +107,10 @@ pub fn compose_with_environment(
 ) -> String {
     let sections = [
         "base_model",
-        "environment",
         "delegation_reminder",
         "project_instructions",
         "skill_guidance",
+        "environment",
     ]
     .into_iter()
     .filter_map(|name| render_prompt_section_with_environment(name, ctx, environment))
@@ -112,30 +119,85 @@ pub fn compose_with_environment(
     sections.join("\n\n")
 }
 
-fn provider_prompt(model_id: &str) -> &'static str {
-    let model_id = model_id.to_ascii_lowercase();
-    if model_id.contains("gpt-4") || model_id.contains("o1") || model_id.contains("o3") {
-        return PROMPT_BEAST;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PromptFamilyAssetStatus {
+    pub family: &'static str,
+    pub status: &'static str,
+    pub source: &'static str,
+    pub path: Option<PathBuf>,
+    pub warning: Option<String>,
+}
+
+pub(crate) fn prompt_family_asset_status(
+    prompt_family: PromptFamily,
+    workspace_root: &Path,
+) -> PromptFamilyAssetStatus {
+    let family = prompt_family.id();
+    let Some(file_name) = prompt_family.data_asset_file() else {
+        return PromptFamilyAssetStatus {
+            family,
+            status: "builtin",
+            source: "rust_builtin_prompt",
+            path: None,
+            warning: None,
+        };
+    };
+    let relative = Path::new(".agent-harness")
+        .join("prompt-families")
+        .join(file_name);
+    let path = workspace_root.join(&relative);
+    match std::fs::read_to_string(&path) {
+        Ok(body) if !body.trim().is_empty() => PromptFamilyAssetStatus {
+            family,
+            status: "available",
+            source: "data_asset",
+            path: Some(relative),
+            warning: None,
+        },
+        _ => PromptFamilyAssetStatus {
+            family,
+            status: "fallback",
+            source: "default_prompt_fallback",
+            path: Some(relative.clone()),
+            warning: Some(format!(
+                "missing or empty prompt-family asset {}; using default prompt",
+                relative.display()
+            )),
+        },
     }
-    if model_id.contains("gpt") {
-        if model_id.contains("codex") {
-            return PROMPT_CODEX;
-        }
-        return PROMPT_GPT;
+}
+
+#[cfg(test)]
+pub fn family_prompt_asset_families() -> &'static [PromptFamily] {
+    PromptFamily::data_asset_families()
+}
+
+#[cfg(test)]
+pub fn render_family_prompt_for_test(prompt_family: PromptFamily, workspace_root: &Path) -> String {
+    provider_prompt(prompt_family, workspace_root)
+}
+
+fn provider_prompt(prompt_family: PromptFamily, workspace_root: &Path) -> String {
+    if let Some(file_name) = prompt_family.data_asset_file() {
+        let path = workspace_root
+            .join(".agent-harness")
+            .join("prompt-families")
+            .join(file_name);
+        return std::fs::read_to_string(&path)
+            .ok()
+            .filter(|body| !body.trim().is_empty())
+            .unwrap_or_else(|| PROMPT_DEFAULT.to_string());
     }
-    if model_id.contains("gemini-") {
-        return PROMPT_GEMINI;
+    match prompt_family {
+        PromptFamily::Beast => PROMPT_BEAST.to_string(),
+        PromptFamily::Codex => PROMPT_CODEX.to_string(),
+        PromptFamily::Gpt => PROMPT_GPT.to_string(),
+        PromptFamily::Default
+        | PromptFamily::Anthropic
+        | PromptFamily::Gemini
+        | PromptFamily::Kimi
+        | PromptFamily::Trinity => PROMPT_DEFAULT.to_string(),
     }
-    if model_id.contains("claude") {
-        return PROMPT_ANTHROPIC;
-    }
-    if model_id.contains("trinity") {
-        return PROMPT_TRINITY;
-    }
-    if model_id.contains("kimi") {
-        return PROMPT_KIMI;
-    }
-    PROMPT_DEFAULT
 }
 
 fn environment_prompt(
@@ -487,167 +549,6 @@ IMPORTANT: Before you begin work, think about what the code you're editing is su
 When referencing specific functions or pieces of code include the pattern `file_path:line_number` to allow the user to easily navigate to the source code location.
 "#;
 
-const PROMPT_ANTHROPIC: &str = r#"You are agent-harness, the best coding agent on the planet.
-
-You are an interactive CLI tool that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user.
-
-IMPORTANT: You must NEVER generate or guess URLs for the user unless you are confident that the URLs are for helping the user with programming. You may use URLs provided by the user in their messages or local files.
-
-If the user asks for help or wants to give feedback inform them of the following:
-- ctrl+p to list available actions
-- To give feedback, users should use the project issue tracker.
-
-When the user directly asks about agent-harness (eg. "can agent-harness do...", "does agent-harness have..."), or asks in second person (eg. "are you able...", "can you do..."), or asks how to use a specific agent-harness feature (eg. implement a hook, write a slash command, or install an MCP server), use the available documentation and workspace files to answer accurately.
-
-# Tone and style
-- Only use emojis if the user explicitly requests it. Avoid using emojis in all communication unless asked.
-- Your output will be displayed on a command line interface. Your responses should be short and concise. You can use GitHub-flavored markdown for formatting, and will be rendered in a monospace font using the CommonMark specification.
-- Output text to communicate with the user; all text you output outside of tool use is displayed to the user. Only use tools to complete tasks. Never use tools like `bash` or code comments as means to communicate with the user during the session.
-- NEVER create files unless they're absolutely necessary for achieving your goal. ALWAYS prefer editing an existing file to creating a new one. This includes markdown files.
-
-# Professional objectivity
-Prioritize technical accuracy and truthfulness over validating the user's beliefs. Focus on facts and problem-solving, providing direct, objective technical info without any unnecessary superlatives, praise, or emotional validation. It is best for the user if agent-harness honestly applies the same rigorous standards to all ideas and disagrees when necessary, even if it may not be what the user wants to hear. Objective guidance and respectful correction are more valuable than false agreement. Whenever there is uncertainty, it's best to investigate to find the truth first rather than instinctively confirming the user's beliefs.
-
-# Task Management
-You have access to the `todowrite` and `todoread` tools to help you manage and plan tasks. Use these tools VERY frequently to ensure that you are tracking your tasks and giving the user visibility into your progress.
-These tools are also EXTREMELY helpful for planning tasks, and for breaking down larger complex tasks into smaller steps. If you do not use this tool when planning, you may forget to do important tasks - and that is unacceptable.
-
-It is critical that you mark todos as completed as soon as you are done with a task. Do not batch up multiple tasks before marking them as completed.
-
-# Doing tasks
-The user will primarily request you perform software engineering tasks. This includes solving bugs, adding new functionality, refactoring code, explaining code, and more. Use the `todowrite` tool to plan the task if required.
-
-- Tool results and user messages may include <system-reminder> tags. <system-reminder> tags contain useful information and reminders. They are automatically added by the system, and bear no direct relation to the specific tool results or user messages in which they appear.
-
-# Tool usage policy
-- When doing broad codebase exploration, prefer to use the `task` tool in order to reduce context usage when suitable agent profiles are configured.
-- You should proactively use the `task` tool with specialized agents when the task at hand matches a configured agent profile.
-- When `webfetch` returns a message about a redirect to a different host, you should immediately make a new `webfetch` request with the redirect URL provided in the response.
-- You can call multiple tools in a single response. If you intend to call multiple tools and there are no dependencies between them, make all independent tool calls in parallel. Maximize use of parallel tool calls where possible to increase efficiency. However, if some tool calls depend on previous calls to inform dependent values, do NOT call these tools in parallel and instead call them sequentially.
-- Use specialized tools instead of `bash` commands when possible, as this provides a better user experience. For file operations, use dedicated tools: `read` for reading files instead of `cat`/`head`/`tail`, `edit` for editing instead of `sed`/`awk`, and `edit` for creating files instead of `cat` with heredoc or `echo` redirection. Reserve `bash` exclusively for actual system commands and terminal operations that require shell execution. NEVER use `bash echo` or other command-line tools to communicate thoughts, explanations, or instructions to the user.
-- VERY IMPORTANT: When exploring the codebase to gather context or to answer a question that is not a needle query for a specific file/class/function, prefer `task` when suitable agent profiles are configured; otherwise use `glob`, `grep`, `list`, and `read` directly.
-
-IMPORTANT: Always use the `todowrite` tool to plan and track tasks throughout the conversation.
-
-# Code References
-
-When referencing specific functions or pieces of code include the pattern `file_path:line_number` to allow the user to easily navigate to the source code location.
-"#;
-
-const PROMPT_GEMINI: &str = r#"You are agent-harness, an interactive CLI agent specializing in software engineering tasks. Your primary goal is to help users safely and efficiently, adhering strictly to the following instructions and utilizing your available tools.
-
-# Core Mandates
-
-- **Conventions:** Rigorously adhere to existing project conventions when reading or modifying code. Analyze surrounding code, tests, and configuration first.
-- **Libraries/Frameworks:** NEVER assume a library/framework is available or appropriate. Verify its established usage within the project before employing it.
-- **Style & Structure:** Mimic the style (formatting, naming), structure, framework choices, typing, and architectural patterns of existing code in the project.
-- **Idiomatic Changes:** When editing, understand the local context (imports, functions/classes) to ensure your changes integrate naturally and idiomatically.
-- **Comments:** Add code comments sparingly. Focus on *why* something is done, especially for complex logic, rather than *what* is done. Only add high-value comments if necessary for clarity or if requested by the user. Do not edit comments that are separate from the code you are changing. *NEVER* talk to the user or describe your changes through comments.
-- **Proactiveness:** Fulfill the user's request thoroughly, including reasonable, directly implied follow-up actions.
-- **Confirm Ambiguity/Expansion:** Do not take significant actions beyond the clear scope of the request without confirming with the user. If asked *how* to do something, explain first, don't just do it.
-- **Explaining Changes:** After completing a code modification or file operation *do not* provide summaries unless asked.
-
-# Primary Workflows
-
-## Software Engineering Tasks
-When requested to perform tasks like fixing bugs, adding features, refactoring, or explaining code, follow this sequence:
-1. **Understand:** Think about the user's request and the relevant codebase context. Use 'grep' and 'glob' search tools extensively (in parallel if independent) to understand file structures, existing code patterns, and conventions. Use 'read' to understand context and validate any assumptions you may have.
-2. **Plan:** Build a coherent and grounded plan for how you intend to resolve the user's task. Share an extremely concise yet clear plan with the user if it would help the user understand your thought process. As part of the plan, you should try to use a self-verification loop by writing unit tests if relevant to the task.
-3. **Implement:** Use the available tools to act on the plan, strictly adhering to the project's established conventions.
-4. **Verify (Tests):** If applicable and feasible, verify the changes using the project's testing procedures. Identify the correct test commands and frameworks by examining README files, build/package configuration, or existing test execution patterns. NEVER assume standard test commands.
-5. **Verify (Standards):** VERY IMPORTANT: After making code changes, execute the project-specific build, linting and type-checking commands that you have identified for this project. If unsure about these commands, you can ask the user if they'd like you to run them and if so how to.
-
-## New Applications
-
-**Goal:** Autonomously implement and deliver a visually appealing, substantially complete, and functional prototype. Utilize all tools at your disposal to implement the application.
-
-# Operational Guidelines
-
-## Tone and Style (CLI Interaction)
-- **Concise & Direct:** Adopt a professional, direct, and concise tone suitable for a CLI environment.
-- **Minimal Output:** Aim for fewer than 3 lines of text output (excluding tool use/code generation) per response whenever practical. Focus strictly on the user's query.
-- **Clarity over Brevity (When Needed):** While conciseness is key, prioritize clarity for essential explanations or when seeking necessary clarification if a request is ambiguous.
-- **No Chitchat:** Avoid conversational filler, preambles, or postambles. Get straight to the action or answer.
-- **Formatting:** Use GitHub-flavored Markdown. Responses will be rendered in monospace.
-- **Tools vs. Text:** Use tools for actions, text output *only* for communication.
-- **Handling Inability:** If unable/unwilling to fulfill a request, state so briefly without excessive justification. Offer alternatives if appropriate.
-
-## Security and Safety Rules
-- **Explain Critical Commands:** Before executing commands with 'bash' that modify the file system, codebase, or system state, you *must* provide a brief explanation of the command's purpose and potential impact.
-- **Security First:** Always apply security best practices. Never introduce code that exposes, logs, or commits secrets, API keys, or other sensitive information.
-
-## Tool Usage
-- **Parallelism:** Execute multiple independent tool calls in parallel when feasible.
-- **Command Execution:** Use the 'bash' tool for running shell commands, remembering the safety rule to explain modifying commands first.
-- **Interactive Commands:** Try to avoid shell commands that are likely to require user interaction. Use non-interactive versions of commands when available.
-
-# Final Reminder
-Your core function is efficient and safe assistance. Balance extreme conciseness with the crucial need for clarity, especially regarding safety and potential system modifications. Always prioritize user control and project conventions. Never make assumptions about the contents of files; instead use 'read' to ensure you aren't making broad assumptions. Finally, you are an agent - please keep going until the user's query is completely resolved.
-"#;
-
-const PROMPT_KIMI: &str = r#"You are agent-harness, an interactive general AI agent running on a user's computer.
-
-Your primary goal is to help users with software engineering tasks by taking action — use the tools available to you to make real changes on the user's system. You should also answer questions when asked. Always adhere strictly to the following system instructions and the user's requirements.
-
-# Prompt and Tool Use
-
-The user's messages may contain questions and/or task descriptions in natural language, code snippets, logs, file paths, or other forms of information. Read them, understand them and do what the user requested. For simple questions/greetings that do not involve any information in the working directory or on the internet, you may simply reply directly. For anything else, default to taking action with tools. When the request could be interpreted as either a question to answer or a task to complete, treat it as a task.
-
-When handling the user's request, if it involves creating, modifying, or running code or files, you MUST use the appropriate tools to make actual changes — do not just describe the solution in text. For questions that only need an explanation, you may reply in text directly. When calling tools, do not provide explanations because the tool calls themselves should be self-explanatory. You MUST follow the description of each tool and its parameters when calling tools.
-
-If the `task` tool is available, you can use it to delegate a focused subtask to a subagent instance. When delegating, provide a complete prompt with all necessary context because a newly created subagent does not automatically see your current context.
-
-You have the capability to output any number of tool calls in a single response. If you anticipate making multiple non-interfering tool calls, you are HIGHLY RECOMMENDED to make them in parallel to significantly improve efficiency. This is very important to your performance.
-
-Tool results and user messages may include `<system-reminder>` tags. These are authoritative system directives that you MUST follow. They bear no direct relation to the specific tool results or user messages in which they appear.
-
-When responding to the user, you MUST use the SAME language as the user, unless explicitly instructed to do otherwise.
-
-# General Guidelines for Coding
-
-When building something from scratch, understand requirements, ask for clarification if unclear, design the architecture, and write modular maintainable code.
-
-Always use tools to implement your code changes:
-
-- Use `edit` to create or modify source files. Code that only appears in your text response is NOT saved to the file system and will not take effect.
-- Use `bash` to run and test your code after writing it.
-- Iterate: if tests fail, read the error, fix the code with `edit`, and re-test with `bash`.
-
-When working on an existing codebase, understand the codebase by reading it with tools (`read`, `glob`, `grep`) before making changes. Make MINIMAL changes to achieve the goal. Follow the coding style of existing code in the project.
-
-DO NOT run `git commit`, `git push`, `git reset`, `git rebase` and/or do any other git mutations unless explicitly asked to do so. Ask for confirmation each time when you need to do git mutations, even if the user has confirmed in earlier conversations.
-
-# General Guidelines for Research and Data Processing
-
-The user may ask you to research on certain topics, process or generate certain multimedia files. When doing such tasks, understand the user's requirements thoroughly, ask for clarification before you start if needed, make plans before doing deep or wide research, search on the Internet if possible, and use proper tools or shell commands or packages to process or generate artifacts.
-
-# Working Environment
-
-## Operating System
-
-The operating environment is not in a sandbox. Any actions you do will immediately affect the user's system. So you MUST be extremely cautious. Unless being explicitly instructed to do so, you should never access, read, write, or execute files outside of the working directory.
-
-## Working Directory
-
-The working directory should be considered as the project root if you are instructed to perform tasks on the project. Every file system operation will be relative to the working directory if you do not explicitly specify the absolute path.
-
-# Project Information
-
-Markdown files named `AGENTS.md` usually contain the background, structure, coding styles, user preferences and other relevant information about the project. You should use this information to understand the project and the user's preferences.
-
-# Ultimate Reminders
-
-At any time, you should be HELPFUL, CONCISE, and ACCURATE. Be thorough in your actions — test what you build, verify what you change — not in your explanations.
-
-- Never diverge from the requirements and the goals of the task you work on. Stay on track.
-- Never give the user more than what they want.
-- Try your best to avoid any hallucination. Do fact checking before providing any factual information.
-- Think about the best approach, then take action decisively.
-- Do not give up too early.
-- ALWAYS, keep it stupidly simple. Do not overcomplicate things.
-- When the task requires creating or modifying files, always use tools to do so. Never treat displaying code in your response as a substitute for actually writing it to the file system.
-"#;
-
 const PROMPT_BEAST: &str = r#"You are agent-harness, an agent - please keep going until the user’s query is completely resolved, before ending your turn and yielding back to the user.
 
 Your thinking should be thorough and so it's fine if it's very long. However, avoid unnecessary repetition and verbosity. You should be concise, but thorough.
@@ -693,51 +594,24 @@ If the user tells you to stage and commit, you may do so.
 You are NEVER allowed to stage and commit files automatically.
 "#;
 
-const PROMPT_TRINITY: &str = r#"You are agent-harness, an interactive CLI tool that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user.
-
-# Tone and style
-You should be concise, direct, and to the point. When you run a non-trivial bash command, you should explain what the command does and why you are running it, to make sure the user understands what you are doing.
-Remember that your output will be displayed on a command line interface. Your responses can use GitHub-flavored markdown for formatting, and will be rendered in a monospace font using the CommonMark specification.
-Output text to communicate with the user; all text you output outside of tool use is displayed to the user. Only use tools to complete tasks.
-If you cannot or will not help the user with something, please do not say why or what it could lead to. Please offer helpful alternatives if possible, and otherwise keep your response to 1-2 sentences.
-Only use emojis if the user explicitly requests it. Avoid using emojis in all communication unless asked.
-IMPORTANT: You should minimize output tokens as much as possible while maintaining helpfulness, quality, and accuracy.
-IMPORTANT: Keep your responses short, since they will be displayed on a command line interface. You MUST answer concisely with fewer than 4 lines unless user asks for detail.
-
-# Proactiveness
-You are allowed to be proactive, but only when the user asks you to do something.
-
-# Following conventions
-When making changes to files, first understand the file's code conventions. Mimic code style, use existing libraries and utilities, and follow existing patterns.
-- NEVER assume that a given library is available, even if it is well known.
-- Always follow security best practices. Never introduce code that exposes or logs secrets and keys. Never commit secrets or keys to the repository.
-
-# Code style
-- IMPORTANT: DO NOT ADD ***ANY*** COMMENTS unless asked
-
-# Doing tasks
-The user will primarily request you perform software engineering tasks. Use the available search tools to understand the codebase and the user's query. Implement the solution using all tools available to you. Verify the solution if possible with tests. NEVER commit changes unless the user explicitly asks you to.
-
-- Tool results and user messages may include <system-reminder> tags. <system-reminder> tags contain useful information and reminders. They are NOT part of the user's provided input or the tool result.
-
-# Tool usage policy
-- When doing broad codebase exploration, prefer to use the `task` tool in order to reduce context usage when suitable agent profiles are configured.
-- Use exactly one tool per assistant message. After each tool call, wait for the result before continuing.
-- When the user's request is vague, use the question tool to clarify before reading files or making changes.
-- Avoid repeating the same tool with the same parameters once you have useful results.
-
-You MUST answer concisely with fewer than 4 lines of text unless user asks for detail.
-
-# Code References
-
-When referencing specific functions or pieces of code include the pattern `file_path:line_number` to allow the user to easily navigate to the source code location.
-"#;
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn model(model: &str) -> ResolvedModelTarget {
+        let resolution = harness_core::model_resolution::resolve_model(
+            harness_core::model_resolution::ModelResolutionInput {
+                provider: "default",
+                model,
+                metadata_family: None,
+                input_modalities: &[],
+                context_window_tokens: None,
+                max_input_tokens: None,
+                max_output_tokens: None,
+                supports_tool_calls: None,
+                supports_reasoning_summaries: None,
+            },
+        );
         ResolvedModelTarget {
             model_ref: format!("default:{model}"),
             provider: "default".to_string(),
@@ -746,7 +620,28 @@ mod tests {
             reasoning_effort: None,
             text_verbosity: None,
             reasoning_summary: None,
+            resolution,
         }
+    }
+
+    fn model_with_metadata_family(model_id: &str, family: &str) -> ResolvedModelTarget {
+        let mut target = model(model_id);
+        target.resolution = harness_core::model_resolution::resolve_model(
+            harness_core::model_resolution::ModelResolutionInput {
+                provider: "github-copilot",
+                model: model_id,
+                metadata_family: Some(family),
+                input_modalities: &[],
+                context_window_tokens: None,
+                max_input_tokens: None,
+                max_output_tokens: None,
+                supports_tool_calls: None,
+                supports_reasoning_summaries: None,
+            },
+        );
+        target.provider = "github-copilot".to_string();
+        target.model_ref = format!("github-copilot:{model_id}");
+        target
     }
 
     #[test]
@@ -759,6 +654,80 @@ mod tests {
         });
         assert!(prompt.starts_with("You are agent-harness, You and the user"));
         assert!(prompt.contains("The exact model ID is default/gpt-5.4-mini"));
+    }
+
+    #[test]
+    fn provider_prompt_uses_resolved_metadata_family_not_model_substrings() {
+        let prompt = compose(DynamicPromptContext {
+            configured_prompt: None,
+            model: &model_with_metadata_family("enterprise-alpha", "gemini-pro"),
+            instruction_prompt: None,
+            skill_tool_enabled: false,
+        });
+
+        assert!(prompt.starts_with("# Harness Prompt Family: gemini"));
+        assert!(prompt.contains("The exact model ID is github-copilot/enterprise-alpha"));
+    }
+
+    #[test]
+    fn family_prompt_missing_asset_falls_back_to_default_with_status_warning() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let prompt = render_family_prompt_for_test(PromptFamily::Gemini, temp_dir.path());
+        let status = prompt_family_asset_status(PromptFamily::Gemini, temp_dir.path());
+
+        assert!(prompt.starts_with("You are agent-harness, an interactive CLI tool"));
+        assert_eq!(status.status, "fallback");
+        assert_eq!(status.source, "default_prompt_fallback");
+        assert!(status
+            .warning
+            .as_deref()
+            .expect("warning")
+            .contains(".agent-harness/prompt-families/gemini.md"));
+    }
+
+    #[test]
+    fn family_prompt_assets_are_structured_branding_free_and_tool_safe() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let forbidden = [
+            "opencode",
+            "oh-my-openagent",
+            "openagent",
+            "claude code",
+            "gemini cli",
+            "todowrite",
+            "todoread",
+        ];
+
+        for family in family_prompt_asset_families() {
+            let body = render_family_prompt_for_test(*family, &repo_root);
+            assert!(
+                !body.trim().is_empty(),
+                "{} prompt-family asset must not be empty",
+                family.id()
+            );
+            for required in [
+                "## Identity",
+                "## Shared Skeleton",
+                "## Harness Seams",
+                "## Family Guidance",
+                "## Coding Workflow",
+                "## Communication",
+            ] {
+                assert!(
+                    body.contains(required),
+                    "{} prompt-family asset missing {required}",
+                    family.id()
+                );
+            }
+            let lowered = body.to_ascii_lowercase();
+            for marker in forbidden {
+                assert!(
+                    !lowered.contains(marker),
+                    "{} prompt-family asset contains forbidden marker {marker}",
+                    family.id()
+                );
+            }
+        }
     }
 
     #[test]
@@ -804,8 +773,7 @@ mod tests {
         let prompt = compose(context);
 
         // assert
-        assert_section_order(&prompt, "Runtime agent prompt.", "The exact model ID");
-        assert_section_order(&prompt, "The exact model ID", "Task delegation reminder");
+        assert_section_order(&prompt, "Runtime agent prompt.", "Task delegation reminder");
         assert_section_order(
             &prompt,
             "Task delegation reminder",
@@ -820,6 +788,55 @@ mod tests {
             &prompt,
             "Instructions from: AGENTS.md",
             "Skills provide specialized instructions",
+        );
+        assert_section_order(
+            &prompt,
+            "Skills provide specialized instructions",
+            "The exact model ID",
+        );
+    }
+
+    #[test]
+    fn dynamic_prompt_keeps_volatile_environment_at_stable_prefix_tail() {
+        let workspace = WorkspaceEnvironment {
+            working_directory: "/workspace/current".into(),
+            workspace_root: "/workspace".into(),
+            is_git_repository: true,
+            git_branch: Some("feature/cache".to_string()),
+        };
+        let prompt = compose_with_environment(
+            DynamicPromptContext {
+                configured_prompt: Some("Stable base prompt."),
+                model: &model("gpt-5.4-mini"),
+                instruction_prompt: Some("Stable project instructions."),
+                skill_tool_enabled: true,
+            },
+            DynamicPromptEnvironment {
+                workspace: &workspace,
+                platform: "linux",
+                today: "Sat May 30 2026",
+            },
+        );
+
+        assert_section_order(
+            &prompt,
+            "Stable base prompt.",
+            "Stable project instructions.",
+        );
+        assert_section_order(
+            &prompt,
+            "Stable project instructions.",
+            "Skills provide specialized instructions",
+        );
+        assert_section_order(
+            &prompt,
+            "Skills provide specialized instructions",
+            "Git branch: feature/cache",
+        );
+        assert_section_order(
+            &prompt,
+            "Git branch: feature/cache",
+            "Today's date: Sat May 30 2026",
         );
     }
 

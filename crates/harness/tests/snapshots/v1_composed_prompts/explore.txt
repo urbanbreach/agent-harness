@@ -46,17 +46,6 @@ Return sections named `answer`, `files`, `relationships`, `risks`, and `next_ste
 
 The result is complete when the parent can act without another broad search.
 
-You are powered by the model named gpt-5.4-mini. The exact model ID is default/gpt-5.4-mini
-Here is some useful information about the environment you are running in:
-<env>
-  Working directory: /workspace/agent-harness
-  Workspace root folder: /workspace/agent-harness
-  Is directory a git repo: yes
-  Git branch: dev
-  Platform: linux
-  Today's date: Fri May 29 2026
-</env>
-
 Task delegation reminder: if the `task` tool is available, use a structured delegation body with context, goal, downstream use, request, required tools, must-do, and must-not-do. `run_in_background=false` is synchronous; the child result returns directly in the current tool response and no `[BACKGROUND TASK ...]` reminder is emitted. Use `run_in_background=true` when testing background subagents, wakeups, completion reminders, or `background_output`.
 
 Instructions from: /workspace/agent-harness/AGENTS.md
@@ -166,3 +155,14 @@ RUST_TEST_THREADS=1 cargo test -p harness-testkit --test pty_e2e
 - Do not broaden compatibility aliases into the canonical public config contract.
 - Do not treat runtime session/artifact directories as source.
 - Do not claim PTY/live/native visual evidence without the matching lane or artifact provenance.
+
+You are powered by the model named gpt-5.4-mini. The exact model ID is openai-codex/gpt-5.4-mini
+Here is some useful information about the environment you are running in:
+<env>
+  Working directory: /workspace/agent-harness
+  Workspace root folder: /workspace/agent-harness
+  Is directory a git repo: yes
+  Git branch: dev
+  Platform: linux
+  Today's date: Fri May 29 2026
+</env>
