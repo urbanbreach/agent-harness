@@ -151,6 +151,169 @@ async fn v1_skill_activation_reports_metadata_then_loads_body() {
     clippy::await_holding_lock,
     reason = "the global registry lock intentionally serializes skills registry mutation across awaits"
 )]
+async fn v1_skill_activation_loads_bundled_resources_with_caps_and_redaction() {
+    let _guard = skills_registry_test_lock();
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let repo = temp_dir.path().join("repo");
+    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    let _skills_guard = SkillsConfigGuard::install(skills_config_without_global_roots());
+    let skill_root = repo.join(".agent-harness/skills");
+
+    write_v1_skill(
+        &skill_root,
+        "resource-skill",
+        "name: resource-skill\ndescription: Resource description\nresources: references/guide.md, references/large.md",
+        "ACTIVATION BODY.",
+    );
+    let skill_dir = skill_root.join("resource-skill");
+    fs::create_dir_all(skill_dir.join("references")).expect("references dir");
+    fs::write(
+        skill_dir.join("references/guide.md"),
+        "RESOURCE GUIDE SENTINEL\nBearer super.secret.token\n",
+    )
+    .expect("write guide resource");
+    fs::write(
+        skill_dir.join("references/large.md"),
+        format!("{}TRUNCATED TAIL SENTINEL", "x".repeat(70 * 1024)),
+    )
+    .expect("write large resource");
+
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let skill_tool = registry.get("skill").expect("skill tool");
+    let skill = skill_tool
+        .call(
+            tool_context(&repo, "toolcall-v1-resource"),
+            json!({"name": "resource-skill"}),
+        )
+        .await
+        .expect("activation skill loads resources");
+
+    assert!(skill.display_text.contains("## Bundled resources"));
+    assert!(skill
+        .display_text
+        .contains("<skill_resource path=\"references/guide.md\""));
+    assert!(skill.display_text.contains("RESOURCE GUIDE SENTINEL"));
+    assert!(skill.display_text.contains("Bearer [REDACTED]"));
+    assert!(!skill.display_text.contains("super.secret.token"));
+    assert!(skill
+        .display_text
+        .contains("<skill_resource path=\"references/large.md\""));
+    assert!(skill.display_text.contains("truncated=\"true\""));
+    assert!(!skill.display_text.contains("TRUNCATED TAIL SENTINEL"));
+}
+
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global registry lock intentionally serializes skills registry mutation across awaits"
+)]
+async fn v1_skill_resources_reject_escape_paths_for_project_and_global_roots() {
+    let _guard = skills_registry_test_lock();
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let repo = temp_dir.path().join("repo");
+    let home = temp_dir.path().join("home");
+    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    fs::create_dir_all(&home).expect("home dir");
+    fs::write(repo.join("outside-project.txt"), "PROJECT SECRET").expect("outside project");
+    fs::write(home.join("outside-global.txt"), "GLOBAL SECRET").expect("outside global");
+    let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
+        global_roots: vec![home.join(".config/agent-harness/skills")],
+        ..SkillsConfig::default()
+    });
+
+    let cases = vec![
+        (
+            "project-dotdot".to_string(),
+            repo.join(".agent-harness/skills"),
+            "../outside-project.txt".to_string(),
+        ),
+        (
+            "global-dotdot".to_string(),
+            home.join(".config/agent-harness/skills"),
+            "../outside-global.txt".to_string(),
+        ),
+        (
+            "project-absolute".to_string(),
+            repo.join(".agent-harness/skills"),
+            repo.join("outside-project.txt").display().to_string(),
+        ),
+    ];
+    for (name, root, resource) in cases {
+        write_v1_skill(
+            &root,
+            &name,
+            &format!("name: {name}\ndescription: Escape description\nresources: {resource}"),
+            "BODY",
+        );
+    }
+
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let skill_tool = registry.get("skill").expect("skill tool");
+    for name in ["project-dotdot", "global-dotdot", "project-absolute"] {
+        let err = skill_tool
+            .call(
+                tool_context(&repo, &format!("toolcall-v1-resource-{name}")),
+                json!({"name": name}),
+            )
+            .await
+            .expect_err("resource escape should reject activation");
+        let message = err.to_string();
+        assert!(
+            message.contains("resource") && message.contains("invalid"),
+            "escape message should explain invalid resource path: {message}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global registry lock intentionally serializes skills registry mutation across awaits"
+)]
+async fn v1_skill_resources_reject_symlink_escape() {
+    let _guard = skills_registry_test_lock();
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let repo = temp_dir.path().join("repo");
+    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    fs::write(repo.join("outside-symlink.txt"), "SYMLINK SECRET").expect("outside symlink");
+    let _skills_guard = SkillsConfigGuard::install(skills_config_without_global_roots());
+    let skill_root = repo.join(".agent-harness/skills");
+
+    write_v1_skill(
+        &skill_root,
+        "symlink-resource",
+        "name: symlink-resource\ndescription: Symlink description\nresources: refs/link.md",
+        "BODY",
+    );
+    let skill_dir = skill_root.join("symlink-resource");
+    fs::create_dir_all(skill_dir.join("refs")).expect("refs dir");
+    std::os::unix::fs::symlink(
+        repo.join("outside-symlink.txt"),
+        skill_dir.join("refs/link.md"),
+    )
+    .expect("symlink escape");
+
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let skill_tool = registry.get("skill").expect("skill tool");
+    let err = skill_tool
+        .call(
+            tool_context(&repo, "toolcall-v1-symlink-resource"),
+            json!({"name": "symlink-resource"}),
+        )
+        .await
+        .expect_err("symlink escape should reject activation");
+    assert!(
+        err.to_string().contains("outside its skill root"),
+        "symlink escape message should mention skill root: {err}"
+    );
+}
+
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "the global registry lock intentionally serializes skills registry mutation across awaits"
+)]
 async fn v1_skill_catalog_reports_shadowed_disabled_denied_and_malformed_states() {
     let _guard = skills_registry_test_lock();
     let temp_dir = tempfile::tempdir().expect("tempdir");

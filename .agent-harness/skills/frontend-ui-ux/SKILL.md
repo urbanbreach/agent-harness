@@ -6,7 +6,7 @@ allowed_tools: read, grep, bash
 target_agent: build
 target_category: visual-engineering
 mcp: none
-resources: deferred-reference-not-loaded
+resources:
 ---
 
 # Frontend UI UX

@@ -369,6 +369,7 @@ fn native_provider_tool_defs_accept_edit_and_question_export_schemas() {
         model_ref: "mock:model".to_string(),
         model_ref_explicit: true,
         system_prompt: "test".to_string(),
+        cache_retention: Default::default(),
         max_iters: Some(4),
         temperature: Some(0.0),
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,

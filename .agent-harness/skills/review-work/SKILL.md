@@ -6,7 +6,7 @@ allowed_tools: task, background_output, background_cancel, bash, read, grep
 target_agent: build
 target_category: deep
 mcp: none
-resources: deferred-reference-not-loaded
+resources:
 ---
 
 # Review Work

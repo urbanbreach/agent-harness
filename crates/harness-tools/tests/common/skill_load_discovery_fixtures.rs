@@ -83,6 +83,7 @@ fn worker_profile(name: &str, toolset: &[&str]) -> AgentProfile {
         model_ref_explicit: true,
         system_prompt: format!("{name} prompt"),
         temperature: None,
+        cache_retention: Default::default(),
         max_iters: Some(12),
         tool_failure_mode: ToolFailureMode::FailTurn,
         toolset: toolset.iter().map(|tool| (*tool).to_string()).collect(),

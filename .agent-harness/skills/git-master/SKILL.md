@@ -6,7 +6,7 @@ allowed_tools: bash
 target_agent: build
 target_category: deep
 mcp: none
-resources: deferred-reference-not-loaded
+resources:
 ---
 
 # Git Master
