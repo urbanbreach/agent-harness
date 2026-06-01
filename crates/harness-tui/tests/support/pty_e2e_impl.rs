@@ -1,8 +1,9 @@
-use harness_tui::{run_tui_with_options, TuiMode, TuiOptions};
+use harness_tui::{run_tui_with_options, LiveUpdate, TuiMode, TuiOptions, UiIntent};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use std::cmp;
 use std::io::{Read, Write};
 use std::sync::mpsc::{self, Receiver};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 use vt100::Parser;
@@ -12,7 +13,9 @@ const READ_POLL_TIMEOUT: Duration = Duration::from_millis(50);
 const PTY_SIGNOFF_ENV: &str = "HARNESS_TUI_PTY_SIGNOFF";
 const HELPER_SCENARIO_ENV: &str = "HARNESS_TUI_PTY_HELPER_SCENARIO";
 const TYPE_FIRST_STARTUP_SCENARIO: &str = "type_first_startup";
+const ONBOARDING_AUTH_SCENARIO: &str = "onboarding_auth";
 const TYPE_FIRST_STARTUP_TEST: &str = "pty_helper_type_first_startup";
+const ONBOARDING_AUTH_TEST: &str = "pty_helper_onboarding_auth";
 const READY_MARKER: &str = "Ctrl+p commands";
 const DRAFT_TEXT: &str = "Hello from PTY";
 
@@ -58,6 +61,49 @@ pub(crate) fn pty_smoke_starts_accepts_input_resizes_and_exits() {
     assert!(status.success(), "helper tui child exited with {status:?}");
 }
 
+pub(crate) fn pty_onboarding_auth_drives_required_screens() {
+    if !cfg!(target_os = "linux") || std::env::var(PTY_SIGNOFF_ENV).as_deref() != Ok("1") {
+        return;
+    }
+
+    let mut helper = spawn_helper(ONBOARDING_AUTH_TEST, ONBOARDING_AUTH_SCENARIO);
+    helper.wait_for("Harness setup");
+    helper.wait_for("Connect a provider");
+
+    send_key(helper.writer.as_mut(), b'\r').expect("start onboarding setup");
+    helper.wait_for("Select provider");
+    send_key(helper.writer.as_mut(), b'\r').expect("choose Codex provider");
+    helper.wait_for("Choose login method");
+    send_bytes(helper.writer.as_mut(), b"\x1b[B").expect("move to browser auth method");
+    send_bytes(helper.writer.as_mut(), b"\x1b[B").expect("move to api-key auth method");
+    send_key(helper.writer.as_mut(), b'\r').expect("choose API key auth method");
+    helper.wait_for("secret redacted");
+
+    helper
+        .writer
+        .write_all(b"sk-pty-redacted-test")
+        .expect("type hidden API key");
+    helper.writer.flush().expect("flush hidden API key");
+    send_key(helper.writer.as_mut(), b'\r').expect("submit hidden API key");
+    helper.wait_for("Credential stored");
+    helper.wait_for("secret redacted");
+
+    send_key(helper.writer.as_mut(), b'\r').expect("continue to skill selection");
+    helper.wait_for("Select skills");
+    send_key(helper.writer.as_mut(), b'\r').expect("continue to first-prompt success");
+    helper.wait_for("Ready for first prompt");
+    send_key(helper.writer.as_mut(), b'\r').expect("finish onboarding helper");
+
+    let status = helper
+        .child
+        .wait()
+        .expect("wait for onboarding helper exit");
+    assert!(
+        status.success(),
+        "onboarding helper tui child exited with {status:?}"
+    );
+}
+
 pub(crate) fn pty_helper_type_first_startup() {
     if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(TYPE_FIRST_STARTUP_SCENARIO) {
         return;
@@ -83,6 +129,37 @@ pub(crate) fn pty_helper_type_first_startup() {
     .expect("run type-first helper tui");
 }
 
+pub(crate) fn pty_helper_onboarding_auth() {
+    if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(ONBOARDING_AUTH_SCENARIO) {
+        return;
+    }
+
+    let (update_tx, update_rx) = mpsc::channel();
+    let auth_tx = update_tx.clone();
+    let on_ui_intent: Arc<dyn Fn(UiIntent) + Send + Sync> = Arc::new(move |intent| {
+        if matches!(intent, UiIntent::OpenAuthManager { .. }) {
+            auth_tx
+                .send(LiveUpdate::AuthBackendResult { success: true })
+                .expect("send mocked auth backend result");
+        }
+    });
+
+    run_tui_with_options(TuiOptions {
+        mode: TuiMode::Startup {
+            session_history_entries: Vec::new(),
+            prompt_history_path: None,
+            onboarding_required: true,
+            update_rx,
+        },
+        exit_on_finish: false,
+        on_ui_intent: Some(on_ui_intent),
+        keybindings: None,
+        toggles: None,
+        preserve_terminal_on_exit: false,
+    })
+    .expect("run onboarding helper tui");
+}
+
 struct SpawnedHelper {
     master: Box<dyn MasterPty + Send>,
     child: Box<dyn portable_pty::Child + Send>,
@@ -98,6 +175,10 @@ impl SpawnedHelper {
 }
 
 fn spawn_type_first_startup_helper() -> SpawnedHelper {
+    spawn_helper(TYPE_FIRST_STARTUP_TEST, TYPE_FIRST_STARTUP_SCENARIO)
+}
+
+fn spawn_helper(test_name: &str, scenario: &str) -> SpawnedHelper {
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(pty_size(PRIMARY_COLS, PRIMARY_ROWS))
@@ -106,9 +187,9 @@ fn spawn_type_first_startup_helper() -> SpawnedHelper {
     let current_test_bin = std::env::current_exe().expect("resolve current test binary");
     let mut command = CommandBuilder::new(current_test_bin.to_string_lossy().as_ref());
     command.arg("--exact");
-    command.arg(TYPE_FIRST_STARTUP_TEST);
+    command.arg(test_name);
     command.arg("--nocapture");
-    command.env(HELPER_SCENARIO_ENV, TYPE_FIRST_STARTUP_SCENARIO);
+    command.env(HELPER_SCENARIO_ENV, scenario);
     configure_deterministic_env(&mut command);
 
     let child = pair
@@ -174,6 +255,11 @@ fn drain_output(parser: &mut Parser, output_rx: &Receiver<Vec<u8>>) {
 
 fn send_key(writer: &mut dyn Write, key: u8) -> std::io::Result<()> {
     writer.write_all(&[key])?;
+    writer.flush()
+}
+
+fn send_bytes(writer: &mut dyn Write, bytes: &[u8]) -> std::io::Result<()> {
+    writer.write_all(bytes)?;
     writer.flush()
 }
 

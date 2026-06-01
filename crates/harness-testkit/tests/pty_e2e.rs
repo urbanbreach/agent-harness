@@ -57,6 +57,7 @@ fn pty_signoff_manifest_declares_required_flow_artifacts() {
         .expect("manifest flows must be an array");
     for flow_id in [
         "startup",
+        "onboarding_auth",
         "command_palette",
         "session_picker_resume",
         "permission_question",

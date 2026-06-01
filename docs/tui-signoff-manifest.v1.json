@@ -28,6 +28,24 @@
       ]
     },
     {
+      "id": "onboarding_auth",
+      "release_class": "first_run_auth_flow",
+      "deterministic_tests": [
+        "cargo test -p harness-tui onboarding -- --nocapture",
+        "cargo test -p harness auth -- --nocapture",
+        "RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo test -p harness-tui --test pty_e2e pty_onboarding_auth_drives_required_screens -- --nocapture"
+      ],
+      "pty_stages": [
+        "scripts/test-lanes.sh signoff-pty :: harness_tui_pty_e2e"
+      ],
+      "required_markers": [
+        "Harness setup",
+        "Connect a provider",
+        "secret redacted",
+        "Select skills"
+      ]
+    },
+    {
       "id": "command_palette",
       "release_class": "operator_navigation_flow",
       "deterministic_tests": [

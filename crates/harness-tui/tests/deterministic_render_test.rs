@@ -104,9 +104,10 @@ fn command_palette_renders_without_pty() {
 
     // act
     let rendered = render_text(&app, 120, 40);
+    let snapshot = trim_trailing_snapshot_whitespace(&rendered);
 
     // assert
-    insta::assert_snapshot!(rendered.as_str());
+    insta::assert_snapshot!(snapshot.as_str());
 
     assert!(rendered.contains("Commands"));
     assert!(rendered.contains("New session"));
@@ -227,6 +228,14 @@ fn render_text(app: &AppState, width: u16, height: u16) -> String {
     render_to_string(app, Rect::new(0, 0, width, height), |app, frame, _area| {
         ui::render_app(frame, app)
     })
+}
+
+fn trim_trailing_snapshot_whitespace(rendered: &str) -> String {
+    rendered
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn assert_markers_in_order(screen: &str, markers: &[&str]) {
