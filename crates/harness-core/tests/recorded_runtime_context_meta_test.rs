@@ -268,6 +268,7 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             model_ref: MODEL_REF.to_string(),
             model_ref_explicit: true,
             system_prompt: "system prompt".to_string(),
+            cache_retention: Default::default(),
             max_iters: Some(12),
             temperature: Some(0.0),
             tool_failure_mode: ToolFailureMode::FailTurn,

@@ -6121,6 +6121,7 @@ struct ChildSessionMirror {
 struct QueuedAgentTurn {
     task_id: String,
     agent_id: String,
+    session_id: String,
     request_id: String,
     profile: AgentProfile,
     request: AgentRequest,
@@ -6917,6 +6918,7 @@ where
     let agent_id = request.agent_id.clone();
     let task_id = format!("task_{:06}", run_state.next_task_id);
     run_state.next_task_id += 1;
+    let session_id = run_state.info.run_id.clone();
 
     let provider_id = model.provider_id.clone();
     let model_id = model.model_id.clone();
@@ -6949,6 +6951,7 @@ where
         run_state.queue_agent_turn(QueuedAgentTurn {
             task_id,
             agent_id,
+            session_id,
             request_id,
             profile,
             request,
@@ -6991,6 +6994,7 @@ where
                 QueuedAgentTurn {
                     task_id,
                     agent_id,
+                    session_id,
                     request_id,
                     profile,
                     request,
@@ -7018,6 +7022,7 @@ where
             run_state.queue_agent_turn(QueuedAgentTurn {
                 task_id,
                 agent_id,
+                session_id,
                 request_id,
                 profile,
                 request,
@@ -7413,6 +7418,7 @@ struct ProviderStreamPhaseRequest<'a> {
     job_tx: mpsc::Sender<Command>,
     task_id: &'a str,
     agent_id: &'a str,
+    session_id: &'a str,
 }
 
 async fn run_agent_turn_phase_loop(request: AgentTurnPhaseLoopRequest<'_>) -> AgentTurnOutcome {
@@ -7467,6 +7473,7 @@ async fn run_agent_turn_phase_loop(request: AgentTurnPhaseLoopRequest<'_>) -> Ag
             job_tx: job_tx.clone(),
             task_id: &task.task_id,
             agent_id: &task.agent_id,
+            session_id: &task.session_id,
         })
         .await
         {
@@ -7606,6 +7613,7 @@ async fn generate_harness_session_title(
             reasoning_summary: None,
             tools: None,
             tool_choice: None,
+            context: Default::default(),
             stream: true,
         })
         .await;
@@ -7676,6 +7684,7 @@ async fn run_provider_stream_phase(
         job_tx,
         task_id,
         agent_id,
+        session_id,
     } = request;
     let task_id = task_id.to_string();
     let agent_id = agent_id.to_string();
@@ -7688,6 +7697,7 @@ async fn run_provider_stream_phase(
             model_settings: request.model_settings.clone(),
             turn_request_id: turn_request_id.to_string(),
             provider_request_id,
+            session_id: Some(session_id.to_string()),
             prompt_summary: &request.prompt,
             context: ProviderBoundaryContext::ProviderMessages { messages },
             tool_defs,

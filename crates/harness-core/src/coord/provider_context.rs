@@ -1711,6 +1711,7 @@ pub(super) async fn model_backed_compaction_summary_for(
         reasoning_summary: None,
         tools: None,
         tool_choice: None,
+        context: Default::default(),
         stream: true,
     };
 
@@ -1805,6 +1806,7 @@ async fn model_backed_split_prefix_summary_for(
         reasoning_summary: None,
         tools: None,
         tool_choice: None,
+        context: Default::default(),
         stream: true,
     };
 

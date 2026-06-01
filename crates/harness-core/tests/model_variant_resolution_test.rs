@@ -1,6 +1,7 @@
 use harness_core::config::{
     load_config_from_str, resolve_model_selection, resolve_profile_model_metadata, HarnessConfig,
 };
+use harness_core::model_resolution::{ModelFamily, ModelFamilySource, PromptFamily};
 
 fn variant_test_config() -> HarnessConfig {
     json5::from_str(
@@ -159,6 +160,16 @@ fn model_variant_resolution_returns_variant_display_and_metadata() {
     assert_eq!(metadata.reasoning_effort.as_deref(), Some("minimal"));
     assert_eq!(metadata.text_verbosity.as_deref(), Some("low"));
     assert_eq!(metadata.recommended_for.as_deref(), Some("deep"));
+    assert_eq!(metadata.resolution.family, ModelFamily::Gpt5);
+    assert_eq!(
+        metadata.resolution.family_source,
+        ModelFamilySource::Heuristic
+    );
+    assert_eq!(metadata.resolution.prompt_family, PromptFamily::Gpt);
+    assert_eq!(
+        metadata.resolution.capabilities.context_window_tokens,
+        Some(128000)
+    );
 }
 
 #[test]
@@ -234,8 +245,61 @@ fn named_model_profile_resolves_primary_and_fallback_order() {
     assert_eq!(selection.primary.model_ref, "default:gpt-5.4-mini");
     assert_eq!(selection.primary.variant.as_deref(), Some("low"));
     assert_eq!(selection.primary.reasoning_effort.as_deref(), Some("low"));
+    assert_eq!(selection.primary.resolution.family, ModelFamily::Gpt5);
     assert_eq!(selection.fallback.len(), 1);
     assert_eq!(selection.fallback[0].model_ref, "default:gpt-5.4");
+    assert_eq!(selection.fallback[0].resolution.family, ModelFamily::Gpt5);
+}
+
+#[test]
+fn model_resolution_prefers_metadata_family_and_exposes_capabilities() {
+    let config = load_config_from_str(
+        r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              baseURL: "http://127.0.0.1:8317/v1",
+              apiKey: "test-key",
+              models: {
+                "enterprise-alpha": {
+                  name: "Enterprise Alpha",
+                  metadata: {
+                    family: "gemini",
+                    contextWindowTokens: 1048576,
+                    supportsToolCalls: false,
+                    supportsReasoningSummaries: true
+                  },
+                  modalities: { input: ["text", "image"], output: ["text"] },
+                  limit: { input: 900000, output: 64000 },
+                },
+              },
+            },
+          },
+          model: "default/enterprise-alpha",
+          agent: {
+            build: { model: "default/enterprise-alpha" },
+          },
+          default_agent: "build",
+          permission: { edit: "ask", bash: "ask" },
+        }
+        "#,
+    )
+    .expect("config should load");
+
+    let selection = resolve_model_selection(&config, "default/enterprise-alpha", None)
+        .expect("direct model resolves");
+    let resolution = &selection.primary.resolution;
+
+    assert_eq!(resolution.family, ModelFamily::Gemini);
+    assert_eq!(resolution.family_source, ModelFamilySource::Metadata);
+    assert_eq!(resolution.prompt_family, PromptFamily::Gemini);
+    assert!(resolution.capabilities.supports_vision);
+    assert!(!resolution.capabilities.supports_tool_calls);
+    assert!(resolution.capabilities.supports_reasoning_summaries);
+    assert_eq!(resolution.capabilities.context_window_tokens, Some(1048576));
+    assert_eq!(resolution.capabilities.max_input_tokens, Some(900000));
+    assert_eq!(resolution.capabilities.max_output_tokens, Some(64000));
 }
 
 #[test]

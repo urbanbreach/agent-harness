@@ -51,6 +51,7 @@ fn boundary_profile() -> AgentProfile {
         model_ref_explicit: true,
         system_prompt: "sys".to_string(),
         temperature: Some(0.1),
+        cache_retention: Default::default(),
         max_iters: Some(12),
         tool_failure_mode: ToolFailureMode::FailTurn,
         toolset: vec!["read".to_string()],

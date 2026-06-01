@@ -99,3 +99,8 @@ mod part_19_replay_suppresses_hooks_but_preserves_hook_test {
     use super::*;
     include!("coord/19_replay_suppresses_hooks_but_preserves_hook_test.rs");
 }
+
+mod part_20_provider_cache_context_uses_run_session_test {
+    use super::*;
+    include!("coord/20_provider_cache_context_uses_run_session_test.rs");
+}

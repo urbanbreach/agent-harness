@@ -182,6 +182,7 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
         model_ref_explicit: true,
         system_prompt: "single-call-system".to_string(),
         temperature: Some(0.0),
+        cache_retention: Default::default(),
         max_iters: Some(12),
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
         toolset: vec!["shell.run".to_string()],
@@ -216,6 +217,7 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
         reasoning_summary: None,
         tools: Some(tool_defs.clone()),
         tool_choice: Some(harness_providers::ToolChoice::Auto),
+        context: Default::default(),
         stream: true,
     };
     let mut scripted = BTreeMap::new();
@@ -260,6 +262,7 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
             model_settings: request.model_settings.clone(),
             turn_request_id: "turn_1".to_string(),
             provider_request_id: "provider_call_1".to_string(),
+            session_id: Some("agent-test".to_string()),
             prompt_summary: &request.prompt,
             context: ProviderBoundaryContext::ProviderMessages {
                 messages: &messages,

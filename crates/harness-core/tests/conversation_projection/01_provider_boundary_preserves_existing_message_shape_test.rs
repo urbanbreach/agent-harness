@@ -109,6 +109,7 @@ fn provider_boundary_preserves_existing_message_shape() {
             reasoning_summary: Some("auto".to_string()),
             tools: Some(tool_defs),
             tool_choice: Some(ToolChoice::Auto),
+            context: Default::default(),
             stream: true,
         }
     );

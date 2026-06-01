@@ -5,9 +5,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use harness_providers::{
-    AssistantToolCall, CompletionMessage, CompletionRequest, CompletionUsage, MessageRole,
-    Provider, ProviderEventStream, ProviderStreamEvent, ProviderStreamFinishedMetadata,
-    ProviderStreamStartMetadata, ProviderStreamThinkingMetadata, ToolChoice, ToolDef,
+    AssistantToolCall, CacheRetention, CompletionMessage, CompletionRequest, CompletionUsage,
+    MessageRole, Provider, ProviderEventStream, ProviderRequestContext, ProviderRequestInitiator,
+    ProviderStreamEvent, ProviderStreamFinishedMetadata, ProviderStreamStartMetadata,
+    ProviderStreamThinkingMetadata, ToolChoice, ToolDef,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
@@ -41,6 +42,8 @@ pub struct AgentProfile {
     #[serde(default)]
     pub temperature: Option<f32>,
     #[serde(default)]
+    pub cache_retention: CacheRetention,
+    #[serde(default)]
     pub max_iters: Option<usize>,
     pub tool_failure_mode: ToolFailureMode,
     pub toolset: Vec<String>,
@@ -55,6 +58,7 @@ impl AgentProfile {
             model_ref_explicit: false,
             system_prompt: String::new(),
             temperature: None,
+            cache_retention: CacheRetention::Short,
             max_iters: None,
             tool_failure_mode: ToolFailureMode::FailTurn,
             toolset: Vec::new(),
@@ -633,6 +637,7 @@ pub struct StreamAssistantResponseOnceRequest<'a> {
     pub model_settings: AgentModelSettings,
     pub turn_request_id: String,
     pub provider_request_id: String,
+    pub session_id: Option<String>,
     pub prompt_summary: &'a str,
     pub context: ProviderBoundaryContext<'a>,
     pub tool_defs: &'a [ToolDef],
@@ -721,7 +726,8 @@ where
         tools: None,
         tool_choice: None,
     });
-    let completion_request = provider_boundary.request;
+    let mut completion_request = provider_boundary.request;
+    apply_provider_request_context(&mut completion_request, None, Some(request_id.as_str()));
     let request_digest = digest12_json(&completion_request);
 
     let mut stream = provider.stream_completion(completion_request).await;
@@ -891,6 +897,7 @@ where
         model_settings,
         turn_request_id,
         provider_request_id,
+        session_id,
         prompt_summary,
         context,
         tool_defs,
@@ -909,7 +916,12 @@ where
         tools: (!tool_defs.is_empty()).then(|| tool_defs.to_vec()),
         tool_choice: (!tool_defs.is_empty()).then_some(ToolChoice::Auto),
     });
-    let completion_request = provider_boundary.request;
+    let mut completion_request = provider_boundary.request;
+    apply_provider_request_context(
+        &mut completion_request,
+        session_id.as_deref(),
+        Some(provider_request_id.as_str()),
+    );
     let request_digest = digest12_json(&completion_request);
 
     let mut stream = provider.stream_completion(completion_request).await;
@@ -1123,6 +1135,7 @@ where
             model_settings: request.model_settings.clone(),
             turn_request_id: request_id,
             provider_request_id,
+            session_id: None,
             prompt_summary: &request.prompt,
             context: ProviderBoundaryContext::ProjectedHarness {
                 messages: &projected_context,
@@ -1200,15 +1213,16 @@ pub fn transform_context_for_provider(input: ProviderBoundaryInput<'_>) -> Provi
         ProviderBoundaryContext::ProviderMessages { messages } => messages.to_vec(),
     };
 
-    let request = build_completion_request(
-        Some(model.provider_id),
-        model.model_id,
-        messages.clone(),
-        profile.temperature,
+    let request = build_completion_request(CompletionRequestInput {
+        provider_id: Some(model.provider_id),
+        model_id: model.model_id,
+        messages: messages.clone(),
+        temperature: profile.temperature,
+        cache_retention: profile.cache_retention,
         model_settings,
         tools,
         tool_choice,
-    );
+    });
 
     ProviderBoundaryOutput { messages, request }
 }
@@ -1735,15 +1749,28 @@ pub(crate) fn tool_result_to_message_content(result: &ToolResult) -> String {
     }
 }
 
-fn build_completion_request(
+struct CompletionRequestInput {
     provider_id: Option<String>,
     model_id: String,
     messages: Vec<CompletionMessage>,
     temperature: Option<f32>,
+    cache_retention: CacheRetention,
     model_settings: AgentModelSettings,
     tools: Option<Vec<ToolDef>>,
     tool_choice: Option<ToolChoice>,
-) -> CompletionRequest {
+}
+
+fn build_completion_request(input: CompletionRequestInput) -> CompletionRequest {
+    let CompletionRequestInput {
+        provider_id,
+        model_id,
+        messages,
+        temperature,
+        cache_retention,
+        model_settings,
+        tools,
+        tool_choice,
+    } = input;
     let AgentModelSettings {
         variant,
         reasoning_effort,
@@ -1763,8 +1790,23 @@ fn build_completion_request(
         reasoning_summary,
         tools,
         tool_choice,
+        context: ProviderRequestContext {
+            cache_retention,
+            ..ProviderRequestContext::default()
+        },
         stream: true,
     }
+}
+
+fn apply_provider_request_context(
+    request: &mut CompletionRequest,
+    session_id: Option<&str>,
+    request_id: Option<&str>,
+) {
+    request.context.session_id = session_id.and_then(non_empty_trimmed).map(str::to_string);
+    request.context.request_id = request_id.and_then(non_empty_trimmed).map(str::to_string);
+    request.context.initiator = ProviderRequestInitiator::Agent;
+    request.context.has_media = false;
 }
 
 pub fn default_model_settings_for_profile(profile_name: &str) -> AgentModelSettings {
@@ -1776,10 +1818,16 @@ pub fn default_model_settings_for_profile(profile_name: &str) -> AgentModelSetti
         variant: metadata.variant,
         reasoning_effort: metadata.reasoning_effort.clone(),
         text_verbosity: metadata.text_verbosity,
-        reasoning_summary: metadata
-            .reasoning_effort
-            .as_ref()
-            .map(|_| "auto".to_string()),
+        reasoning_summary: if metadata
+            .resolution
+            .capabilities
+            .supports_reasoning_summaries
+            && metadata.reasoning_effort.is_some()
+        {
+            Some("auto".to_string())
+        } else {
+            None
+        },
     }
 }
 
@@ -2212,6 +2260,7 @@ mod tests {
                 reasoning_summary: Some("auto".to_string()),
                 tools: Some(tool_defs),
                 tool_choice: Some(ToolChoice::Auto),
+                context: Default::default(),
                 stream: true,
             }
         );
@@ -2379,6 +2428,7 @@ mod tests {
             model_ref: "mock:model-1".to_string(),
             model_ref_explicit: true,
             system_prompt: "sys".to_string(),
+            cache_retention: Default::default(),
             max_iters: Some(max_iters),
             temperature: Some(0.1),
             tool_failure_mode: ToolFailureMode::FailTurn,
@@ -2430,6 +2480,7 @@ mod tests {
             reasoning_summary: None,
             tools: Some(tool_defs.to_vec()),
             tool_choice: Some(ToolChoice::Auto),
+            context: Default::default(),
             stream: true,
         }
     }
