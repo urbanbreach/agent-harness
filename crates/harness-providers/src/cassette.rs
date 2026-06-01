@@ -664,6 +664,7 @@ mod tests {
             reasoning_summary: None,
             tools: None,
             tool_choice: None,
+            context: Default::default(),
             stream: true,
         }
     }

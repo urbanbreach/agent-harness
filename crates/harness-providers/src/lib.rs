@@ -9,8 +9,10 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use thiserror::Error;
 use tokio_stream::{self, Stream};
 
 pub mod cassette;
@@ -65,6 +67,71 @@ pub enum ToolChoice {
     None,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum CacheRetention {
+    None,
+    #[default]
+    Short,
+    Long,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderRequestInitiator {
+    #[default]
+    Agent,
+    User,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderRequestContext {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "ProviderRequestInitiator::is_default")]
+    pub initiator: ProviderRequestInitiator,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub has_media: bool,
+    #[serde(default, skip_serializing_if = "CacheRetention::is_default")]
+    pub cache_retention: CacheRetention,
+}
+
+impl Default for ProviderRequestContext {
+    fn default() -> Self {
+        Self {
+            session_id: None,
+            request_id: None,
+            initiator: ProviderRequestInitiator::Agent,
+            has_media: false,
+            cache_retention: CacheRetention::Short,
+        }
+    }
+}
+
+impl ProviderRequestContext {
+    pub fn is_default(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
+impl ProviderRequestInitiator {
+    fn is_default(value: &Self) -> bool {
+        *value == Self::Agent
+    }
+}
+
+impl CacheRetention {
+    fn is_default(value: &Self) -> bool {
+        *value == Self::Short
+    }
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CompletionRequest {
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -87,6 +154,8 @@ pub struct CompletionRequest {
     pub tools: Option<Vec<ToolDef>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<ToolChoice>,
+    #[serde(default, skip_serializing_if = "ProviderRequestContext::is_default")]
+    pub context: ProviderRequestContext,
     pub stream: bool,
 }
 
@@ -185,6 +254,46 @@ impl ProviderErrorCategory {
             Self::Other => "Inspect the provider message and support bundle for the provider-specific failure detail.",
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderCredentialKind {
+    StoredOauth,
+    StoredApiKey,
+    EnvApiKey,
+    InlineApiKey,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderBearerToken {
+    pub token: String,
+    pub kind: ProviderCredentialKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enterprise_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Error)]
+#[error("{message}")]
+pub struct ProviderCredentialError {
+    pub category: ProviderErrorCategory,
+    pub message: String,
+}
+
+impl ProviderCredentialError {
+    pub fn new(category: ProviderErrorCategory, message: impl Into<String>) -> Self {
+        Self {
+            category,
+            message: message.into(),
+        }
+    }
+}
+
+#[async_trait]
+pub trait ProviderCredentialSource: Send + Sync {
+    async fn bearer_token(&self) -> Result<ProviderBearerToken, ProviderCredentialError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -371,6 +480,7 @@ mod tests {
                 }),
             }]),
             tool_choice: Some(ToolChoice::Auto),
+            context: Default::default(),
             stream: true,
         };
 
@@ -401,6 +511,7 @@ mod tests {
             reasoning_summary: None,
             tools: None,
             tool_choice: None,
+            context: Default::default(),
             stream: true,
         };
 

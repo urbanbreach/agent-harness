@@ -193,6 +193,7 @@ fn request(content: &str) -> CompletionRequest {
         reasoning_summary: None,
         tools: None,
         tool_choice: None,
+        context: Default::default(),
         stream: true,
     }
 }

@@ -178,6 +178,7 @@ fn native_surface_request() -> CompletionRequest {
             },
         ]),
         tool_choice: Some(ToolChoice::Auto),
+        context: Default::default(),
         stream: true,
     }
 }

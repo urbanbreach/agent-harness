@@ -12,10 +12,15 @@ use tokio::sync::mpsc;
 use tokio_stream::{self as stream, Stream, StreamExt};
 
 use crate::{
-    CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider,
-    ProviderErrorCategory, ProviderEventStream, ProviderStreamEvent,
+    CacheRetention, CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider,
+    ProviderBearerToken, ProviderCredentialKind, ProviderCredentialSource, ProviderErrorCategory,
+    ProviderEventStream, ProviderRequestContext, ProviderStreamEvent,
     ProviderStreamFinishedMetadata, ProviderStreamStartMetadata, ToolChoice, ToolDef,
 };
+
+const OPENAI_PROMPT_CACHE_KEY_MAX_LENGTH: usize = 64;
+pub const CODEX_API_ENDPOINT: &str = "https://chatgpt.com/backend-api/codex/responses";
+pub const COPILOT_API_BASE: &str = "https://api.githubcopilot.com";
 
 #[derive(Debug, Clone)]
 pub struct OpenAiCompatibleProviderConfig {
@@ -33,6 +38,12 @@ pub enum OpenAiApiMode {
     ChatCompletions,
     #[default]
     Auto,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpenAiAuthProfile {
+    Codex,
+    GithubCopilot,
 }
 
 #[derive(Debug, Error)]
@@ -58,6 +69,8 @@ pub struct OpenAiCompatibleProvider {
     transport: Arc<dyn OpenAiHttpTransport>,
     base_url: String,
     api_key: String,
+    credential_source: Option<Arc<dyn ProviderCredentialSource>>,
+    auth_profile: Option<OpenAiAuthProfile>,
     api_mode: OpenAiApiMode,
     headers: HeaderMap,
 }
@@ -160,6 +173,8 @@ impl OpenAiCompatibleProvider {
             transport: Arc::new(ReqwestOpenAiHttpTransport { client }),
             base_url: config.base_url,
             api_key: config.api_key,
+            credential_source: None,
+            auth_profile: None,
             api_mode: config.api_mode,
             headers,
         })
@@ -174,9 +189,24 @@ impl OpenAiCompatibleProvider {
             transport,
             base_url: config.base_url,
             api_key: config.api_key,
+            credential_source: None,
+            auth_profile: None,
             api_mode: config.api_mode,
             headers,
         })
+    }
+
+    pub fn with_credential_source(
+        mut self,
+        credential_source: Arc<dyn ProviderCredentialSource>,
+    ) -> Self {
+        self.credential_source = Some(credential_source);
+        self
+    }
+
+    pub fn with_auth_profile(mut self, auth_profile: OpenAiAuthProfile) -> Self {
+        self.auth_profile = Some(auth_profile);
+        self
     }
 
     fn chat_completions_endpoint(&self) -> String {
@@ -202,38 +232,163 @@ impl OpenAiCompatibleProvider {
             })
     }
 
+    async fn provider_credential(&self) -> Result<ProviderBearerToken, ProviderStreamEvent> {
+        if let Some(source) = &self.credential_source {
+            let credential = source
+                .bearer_token()
+                .await
+                .map_err(|err| ProviderStreamEvent::categorized_error(err.message, err.category))?;
+            if credential.token.trim().is_empty() {
+                return Err(ProviderStreamEvent::categorized_error(
+                    "openai_compatible credential source returned an empty bearer token",
+                    ProviderErrorCategory::MissingCredentials,
+                ));
+            }
+            return Ok(credential);
+        }
+
+        if self.api_key.trim().is_empty() {
+            return Err(ProviderStreamEvent::categorized_error(
+                "openai_compatible credentials are missing",
+                ProviderErrorCategory::MissingCredentials,
+            ));
+        }
+
+        Ok(ProviderBearerToken {
+            token: self.api_key.clone(),
+            kind: ProviderCredentialKind::InlineApiKey,
+            account_id: None,
+            enterprise_url: None,
+        })
+    }
+
     async fn send_request<T: Serialize>(
         &self,
         endpoint: String,
         request: &T,
+        credential: &ProviderBearerToken,
+        context: &ProviderRequestContext,
     ) -> Result<OpenAiHttpResponse, String> {
-        let body = serde_json::to_value(request)
+        let mut body = serde_json::to_value(request)
             .map_err(|err| format!("failed to serialize openai_compatible request: {err}"))?;
+        if matches!(self.auth_profile, Some(OpenAiAuthProfile::Codex)) {
+            if let serde_json::Value::Object(body) = &mut body {
+                body.insert("store".to_string(), serde_json::Value::Bool(false));
+                body.remove("max_output_tokens");
+                body.remove("max_tokens");
+                apply_codex_gpt5_response_defaults(body);
+            }
+        }
+        let (endpoint, headers) = self.decorate_request(endpoint, credential, context)?;
         self.transport
-            .post_json(endpoint, self.headers.clone(), self.api_key.clone(), body)
+            .post_json(endpoint, headers, credential.token.clone(), body)
             .await
     }
 
     async fn send_chat_request(
         &self,
         request: &OpenAiChatCompletionsRequest,
+        credential: &ProviderBearerToken,
+        context: &ProviderRequestContext,
     ) -> Result<OpenAiHttpResponse, String> {
-        self.send_request(self.chat_completions_endpoint(), request)
-            .await
+        self.send_request(
+            self.chat_completions_endpoint(),
+            request,
+            credential,
+            context,
+        )
+        .await
     }
 
     async fn send_responses_request(
         &self,
         request: &OpenAiResponsesRequest,
+        credential: &ProviderBearerToken,
+        context: &ProviderRequestContext,
     ) -> Result<OpenAiHttpResponse, String> {
-        self.send_request(self.responses_endpoint(), request).await
+        self.send_request(self.responses_endpoint(), request, credential, context)
+            .await
     }
 
-    async fn non_success_status_error(&self, response: OpenAiHttpResponse) -> ProviderStreamEvent {
+    fn decorate_request(
+        &self,
+        endpoint: String,
+        credential: &ProviderBearerToken,
+        context: &ProviderRequestContext,
+    ) -> Result<(String, HeaderMap), String> {
+        let mut headers = self.headers.clone();
+        remove_header_case_insensitive(&mut headers, "authorization");
+
+        if self.auth_profile.is_none() {
+            return Ok((endpoint, headers));
+        }
+
+        match self.auth_profile {
+            Some(OpenAiAuthProfile::Codex) => {
+                insert_static_header(&mut headers, "originator", "harness")?;
+                insert_static_header(
+                    &mut headers,
+                    "user-agent",
+                    concat!("harness/", env!("CARGO_PKG_VERSION")),
+                )?;
+                if let Some(session_id) = context.session_id.as_deref().and_then(non_empty_string) {
+                    insert_static_header(&mut headers, "session-id", session_id)?;
+                }
+                if let Some(request_id) = context.request_id.as_deref().and_then(non_empty_string) {
+                    insert_static_header(&mut headers, "request-id", request_id)?;
+                }
+                if let Some(account_id) =
+                    credential.account_id.as_deref().and_then(non_empty_string)
+                {
+                    insert_static_header(&mut headers, "chatgpt-account-id", account_id)?;
+                }
+
+                let rewritten = rewrite_codex_endpoint(&endpoint).unwrap_or(endpoint);
+                Ok((rewritten, headers))
+            }
+            Some(OpenAiAuthProfile::GithubCopilot) => {
+                remove_header_case_insensitive(&mut headers, "x-api-key");
+                insert_static_header(
+                    &mut headers,
+                    "x-initiator",
+                    match context.initiator {
+                        crate::ProviderRequestInitiator::Agent => "agent",
+                        crate::ProviderRequestInitiator::User => "user",
+                    },
+                )?;
+                insert_static_header(&mut headers, "Openai-Intent", "conversation-edits")?;
+                insert_static_header(
+                    &mut headers,
+                    "user-agent",
+                    concat!("harness/", env!("CARGO_PKG_VERSION")),
+                )?;
+                if context.has_media {
+                    insert_static_header(&mut headers, "Copilot-Vision-Request", "true")?;
+                }
+                let base = copilot_base_url(credential.enterprise_url.as_deref())?;
+                let rewritten = rewrite_endpoint_base(&endpoint, &base);
+                Ok((rewritten, headers))
+            }
+            None => Ok((endpoint, headers)),
+        }
+    }
+
+    fn supports_long_prompt_cache_retention(&self) -> bool {
+        reqwest::Url::parse(self.base_url.trim())
+            .ok()
+            .and_then(|url| url.host_str().map(str::to_string))
+            .is_some_and(|host| host.eq_ignore_ascii_case("api.openai.com"))
+    }
+
+    async fn non_success_status_error(
+        &self,
+        response: OpenAiHttpResponse,
+        bearer_token: &str,
+    ) -> ProviderStreamEvent {
         let status = response.status;
         let body = collect_body_text(response.body).await.ok();
-        let message = format_non_success_status_message(status, body.as_deref(), &self.api_key);
-        let category = categorize_non_success_status(status, body.as_deref(), &self.api_key);
+        let message = format_non_success_status_message(status, body.as_deref(), bearer_token);
+        let category = categorize_non_success_status(status, body.as_deref(), bearer_token);
         ProviderStreamEvent::categorized_error(message, category)
     }
 }
@@ -316,10 +471,10 @@ struct SseEvent {
 
 async fn next_sse_event(
     body: &mut OpenAiResponseBody,
-    buffer: &mut String,
+    buffer: &mut Vec<u8>,
 ) -> Result<Option<SseEvent>, String> {
     loop {
-        if let Some((frame, remaining)) = split_sse_frame(buffer) {
+        if let Some((frame, remaining)) = split_sse_frame(buffer)? {
             *buffer = remaining;
             if let Some(event) = parse_sse_frame(&frame) {
                 return Ok(Some(event));
@@ -331,26 +486,33 @@ async fn next_sse_event(
             if buffer.is_empty() {
                 return Ok(None);
             }
-            let frame = std::mem::take(buffer);
+            let frame = String::from_utf8(std::mem::take(buffer)).map_err(|err| {
+                format!("openai_compatible SSE stream returned non-UTF-8 bytes: {err}")
+            })?;
             return Ok(parse_sse_frame(&frame));
         };
-        let chunk = chunk?;
-        let text = String::from_utf8(chunk).map_err(|err| {
-            format!("openai_compatible SSE stream returned non-UTF-8 bytes: {err}")
-        })?;
-        buffer.push_str(&text);
+        buffer.extend_from_slice(&chunk?);
     }
 }
 
-fn split_sse_frame(buffer: &str) -> Option<(String, String)> {
-    for delimiter in ["\r\n\r\n", "\n\n", "\r\r"] {
-        if let Some(index) = buffer.find(delimiter) {
-            let frame = buffer[..index].to_string();
-            let remaining = buffer[index + delimiter.len()..].to_string();
-            return Some((frame, remaining));
+fn split_sse_frame(buffer: &[u8]) -> Result<Option<(String, Vec<u8>)>, String> {
+    for delimiter in [
+        b"\r\n\r\n".as_slice(),
+        b"\n\n".as_slice(),
+        b"\r\r".as_slice(),
+    ] {
+        if let Some(index) = buffer
+            .windows(delimiter.len())
+            .position(|window| window == delimiter)
+        {
+            let frame = String::from_utf8(buffer[..index].to_vec()).map_err(|err| {
+                format!("openai_compatible SSE stream returned non-UTF-8 bytes: {err}")
+            })?;
+            let remaining = buffer[index + delimiter.len()..].to_vec();
+            return Ok(Some((frame, remaining)));
         }
     }
-    None
+    Ok(None)
 }
 
 fn parse_sse_frame(frame: &str) -> Option<SseEvent> {
@@ -393,31 +555,88 @@ where
     tools.map(|tools| tools.into_iter().map(Into::into).collect())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OpenAiPromptCacheParams {
+    key: Option<String>,
+    retention: Option<&'static str>,
+}
+
+fn openai_prompt_cache_params(
+    context: &ProviderRequestContext,
+    supports_long_cache_retention: bool,
+) -> OpenAiPromptCacheParams {
+    let key = match context.cache_retention {
+        CacheRetention::None => None,
+        CacheRetention::Short | CacheRetention::Long => context
+            .session_id
+            .as_deref()
+            .and_then(non_empty_string)
+            .map(clamp_openai_prompt_cache_key),
+    };
+    let retention = (key.is_some()
+        && context.cache_retention == CacheRetention::Long
+        && supports_long_cache_retention)
+        .then_some("24h");
+
+    OpenAiPromptCacheParams { key, retention }
+}
+
+fn clamp_openai_prompt_cache_key(key: &str) -> String {
+    key.chars()
+        .take(OPENAI_PROMPT_CACHE_KEY_MAX_LENGTH)
+        .collect()
+}
+
 #[async_trait]
 impl Provider for OpenAiCompatibleProvider {
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
+        let credential = match self.provider_credential().await {
+            Ok(credential) => credential,
+            Err(event) => return Box::pin(stream::iter(vec![event])),
+        };
+        let context = req.context.clone();
+        let supports_long_cache_retention = self.supports_long_prompt_cache_retention();
+        let responses_system_as_instructions =
+            matches!(self.auth_profile, Some(OpenAiAuthProfile::Codex));
         let response_result = match self.api_mode {
             OpenAiApiMode::ChatCompletions => {
-                let chat_request = OpenAiChatCompletionsRequest::from(req);
-                self.send_chat_request(&chat_request)
+                let chat_request = OpenAiChatCompletionsRequest::from_completion_request(
+                    req,
+                    supports_long_cache_retention,
+                );
+                self.send_chat_request(&chat_request, &credential, &context)
                     .await
                     .map(|response| (OpenAiApiMode::ChatCompletions, response))
             }
             OpenAiApiMode::Responses => {
-                let responses_request = OpenAiResponsesRequest::from(req);
-                self.send_responses_request(&responses_request)
+                let responses_request = OpenAiResponsesRequest::from_completion_request(
+                    req,
+                    supports_long_cache_retention,
+                    responses_system_as_instructions,
+                );
+                self.send_responses_request(&responses_request, &credential, &context)
                     .await
                     .map(|response| (OpenAiApiMode::Responses, response))
             }
             OpenAiApiMode::Auto => {
-                let responses_request = OpenAiResponsesRequest::from(req.clone());
-                match self.send_responses_request(&responses_request).await {
+                let responses_request = OpenAiResponsesRequest::from_completion_request(
+                    req.clone(),
+                    supports_long_cache_retention,
+                    responses_system_as_instructions,
+                );
+                match self
+                    .send_responses_request(&responses_request, &credential, &context)
+                    .await
+                {
                     Ok(response)
                         if matches!(response.status, 404 | 405)
                             || (response.status == 400 && self.is_loopback_base_url()) =>
                     {
-                        let chat_request = OpenAiChatCompletionsRequest::from(req);
-                        self.send_chat_request(&chat_request)
+                        let chat_request = OpenAiChatCompletionsRequest::from_completion_request(
+                            req,
+                            supports_long_cache_retention,
+                        );
+                        self.send_chat_request(&chat_request, &credential, &context)
                             .await
                             .map(|fallback_response| {
                                 (OpenAiApiMode::ChatCompletions, fallback_response)
@@ -440,7 +659,9 @@ impl Provider for OpenAiCompatibleProvider {
         };
 
         if !(200..300).contains(&response.status) {
-            let error = self.non_success_status_error(response).await;
+            let error = self
+                .non_success_status_error(response, &credential.token)
+                .await;
             return Box::pin(stream::iter(vec![error]));
         }
 
@@ -593,7 +814,7 @@ async fn consume_chat_sse_stream(
     let mut done_emitted = false;
     let mut tool_call_state = ChatToolCallState::default();
     let mut body = response.body;
-    let mut sse_buffer = String::new();
+    let mut sse_buffer = Vec::new();
 
     loop {
         let event = match next_sse_event(&mut body, &mut sse_buffer).await {
@@ -893,22 +1114,22 @@ async fn consume_responses_sse_stream(
     let mut finished_metadata = provider_stream_finished_metadata_from_start(start_metadata);
     let mut done_emitted = false;
     let mut body = response.body;
-    let mut sse_buffer = String::new();
+    let mut sse_buffer = Vec::new();
     let mut tool_calls = BTreeMap::<String, ResponsesToolCallAccumulator>::new();
 
     loop {
         let event = match next_sse_event(&mut body, &mut sse_buffer).await {
             Ok(Some(event)) => event,
             Ok(None) => break,
-            Err(_) => {
+            Err(message) => {
                 warn_stream_processing_failure(
                     "responses.transport",
-                    "openai_compatible SSE stream transport error",
+                    &format!("openai_compatible SSE stream transport error: {message}"),
                 );
                 let _ = tx
-                    .send(transport_failure_error(
-                        "openai_compatible SSE stream transport error",
-                    ))
+                    .send(transport_failure_error(format!(
+                        "openai_compatible SSE stream transport error: {message}"
+                    )))
                     .await;
                 return;
             }
@@ -1290,6 +1511,117 @@ fn parse_headers(
     Ok(parsed)
 }
 
+fn insert_static_header(
+    headers: &mut HeaderMap,
+    name: &'static str,
+    value: &str,
+) -> Result<(), String> {
+    let name = HeaderName::from_bytes(name.as_bytes())
+        .map_err(|err| format!("invalid openai_compatible `{name}` header name: {err}"))?;
+    let value = HeaderValue::from_str(value)
+        .map_err(|err| format!("invalid openai_compatible `{name}` header value: {err}"))?;
+    headers.insert(name, value);
+    Ok(())
+}
+
+fn remove_header_case_insensitive(headers: &mut HeaderMap, name: &str) {
+    let names = headers
+        .keys()
+        .filter(|candidate| candidate.as_str().eq_ignore_ascii_case(name))
+        .cloned()
+        .collect::<Vec<_>>();
+    for name in names {
+        headers.remove(name);
+    }
+}
+
+fn rewrite_codex_endpoint(endpoint: &str) -> Option<String> {
+    let parsed = reqwest::Url::parse(endpoint).ok()?;
+    let path = parsed.path();
+    (path.ends_with("/v1/responses")
+        || path.ends_with("/responses")
+        || path.ends_with("/chat/completions"))
+    .then(|| CODEX_API_ENDPOINT.to_string())
+}
+
+fn apply_codex_gpt5_response_defaults(body: &mut serde_json::Map<String, serde_json::Value>) {
+    if !body.contains_key("input") {
+        return;
+    }
+    let Some(model_id) = body.get("model").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let model_id = model_id.to_ascii_lowercase();
+    if !model_id.contains("gpt-5") || model_id.contains("gpt-5-chat") || model_id.contains("gpt-5-pro") {
+        return;
+    }
+
+    body.entry("include".to_string()).or_insert_with(|| {
+        serde_json::Value::Array(vec![serde_json::Value::String(
+            "reasoning.encrypted_content".to_string(),
+        )])
+    });
+    body.entry("reasoning".to_string()).or_insert_with(|| {
+        serde_json::json!({
+            "effort": "medium",
+            "summary": "auto"
+        })
+    });
+    if model_id.contains("gpt-5.") && !model_id.contains("codex") {
+        body.entry("text".to_string()).or_insert_with(|| {
+            serde_json::json!({
+                "verbosity": "low"
+            })
+        });
+    }
+}
+
+fn copilot_base_url(enterprise_url: Option<&str>) -> Result<String, String> {
+    enterprise_url
+        .and_then(non_empty_string)
+        .map(normalize_copilot_enterprise_domain)
+        .transpose()
+        .map(|domain| {
+            domain
+                .map(|domain| format!("https://copilot-api.{domain}"))
+                .unwrap_or_else(|| COPILOT_API_BASE.to_string())
+        })
+}
+
+fn normalize_copilot_enterprise_domain(input: &str) -> Result<String, String> {
+    let trimmed = input.trim().trim_end_matches('/');
+    let without_scheme = trimmed
+        .strip_prefix("https://")
+        .or_else(|| trimmed.strip_prefix("http://"))
+        .unwrap_or(trimmed);
+    if without_scheme.is_empty()
+        || without_scheme.contains('/')
+        || without_scheme.contains('\\')
+        || without_scheme.contains('?')
+        || without_scheme.contains('#')
+        || without_scheme.chars().any(char::is_whitespace)
+        || without_scheme.starts_with('.')
+        || without_scheme.ends_with('.')
+    {
+        return Err(format!(
+            "invalid github-copilot enterprise URL or domain `{input}`"
+        ));
+    }
+    Ok(without_scheme.to_ascii_lowercase())
+}
+
+fn rewrite_endpoint_base(endpoint: &str, base: &str) -> String {
+    let Ok(parsed) = reqwest::Url::parse(endpoint) else {
+        return endpoint.to_string();
+    };
+    let path = parsed.path().strip_prefix("/v1").unwrap_or(parsed.path());
+    let query = parsed
+        .query()
+        .map(|query| format!("?{query}"))
+        .unwrap_or_default();
+    format!("{}{}{}", base.trim_end_matches('/'), path, query)
+}
+
 fn zero_usage() -> CompletionUsage {
     CompletionUsage {
         prompt_tokens: 0,
@@ -1302,6 +1634,10 @@ fn zero_usage() -> CompletionUsage {
 struct OpenAiChatCompletionsRequest {
     model: String,
     messages: Vec<OpenAiChatMessage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prompt_cache_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prompt_cache_retention: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1319,6 +1655,15 @@ struct OpenAiChatCompletionsRequest {
 
 impl From<CompletionRequest> for OpenAiChatCompletionsRequest {
     fn from(request: CompletionRequest) -> Self {
+        Self::from_completion_request(request, false)
+    }
+}
+
+impl OpenAiChatCompletionsRequest {
+    fn from_completion_request(
+        request: CompletionRequest,
+        supports_long_cache_retention: bool,
+    ) -> Self {
         let CompletionRequest {
             provider_id: _,
             model_id,
@@ -1331,12 +1676,16 @@ impl From<CompletionRequest> for OpenAiChatCompletionsRequest {
             reasoning_summary: _,
             tools,
             tool_choice,
+            context,
             stream,
         } = request;
+        let cache = openai_prompt_cache_params(&context, supports_long_cache_retention);
 
         Self {
             model: model_id,
             messages: messages.into_iter().map(Into::into).collect(),
+            prompt_cache_key: cache.key,
+            prompt_cache_retention: cache.retention,
             temperature,
             max_tokens,
             reasoning_effort,
@@ -1441,7 +1790,13 @@ struct OpenAiChatToolFunction {
 #[derive(Debug, Serialize)]
 struct OpenAiResponsesRequest {
     model: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    instructions: Option<String>,
     input: Vec<OpenAiResponsesInputItem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prompt_cache_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prompt_cache_retention: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1459,6 +1814,16 @@ struct OpenAiResponsesRequest {
 
 impl From<CompletionRequest> for OpenAiResponsesRequest {
     fn from(request: CompletionRequest) -> Self {
+        Self::from_completion_request(request, false, false)
+    }
+}
+
+impl OpenAiResponsesRequest {
+    fn from_completion_request(
+        request: CompletionRequest,
+        supports_long_cache_retention: bool,
+        system_as_instructions: bool,
+    ) -> Self {
         let CompletionRequest {
             provider_id: _,
             model_id,
@@ -1471,12 +1836,22 @@ impl From<CompletionRequest> for OpenAiResponsesRequest {
             reasoning_summary,
             tools,
             tool_choice,
+            context,
             stream,
         } = request;
+        let cache = openai_prompt_cache_params(&context, supports_long_cache_retention);
+        let (instructions, messages) = if system_as_instructions {
+            responses_instructions_and_messages(messages)
+        } else {
+            (None, messages)
+        };
 
         Self {
             model: model_id,
+            instructions,
             input: serialize_responses_input(messages),
+            prompt_cache_key: cache.key,
+            prompt_cache_retention: cache.retention,
             temperature,
             max_output_tokens: max_tokens,
             reasoning: (reasoning_effort.is_some() || reasoning_summary.is_some()).then_some(
@@ -1491,6 +1866,25 @@ impl From<CompletionRequest> for OpenAiResponsesRequest {
             stream,
         }
     }
+}
+
+fn responses_instructions_and_messages(
+    messages: Vec<CompletionMessage>,
+) -> (Option<String>, Vec<CompletionMessage>) {
+    let mut instructions = Vec::new();
+    let mut input_messages = Vec::new();
+    for message in messages {
+        if matches!(message.role, MessageRole::System) {
+            if let Some(content) = non_empty_string(&message.content) {
+                instructions.push(content.to_string());
+            }
+        } else {
+            input_messages.push(message);
+        }
+    }
+
+    let instructions = (!instructions.is_empty()).then(|| instructions.join("\n\n"));
+    (instructions, input_messages)
 }
 
 fn serialize_responses_input(messages: Vec<CompletionMessage>) -> Vec<OpenAiResponsesInputItem> {
@@ -1857,18 +2251,21 @@ mod tests {
     use tokio_stream::StreamExt;
 
     use super::{
-        OpenAiApiMode, OpenAiCompatibleProvider, OpenAiCompatibleProviderConfig,
-        OpenAiHttpResponse, OpenAiHttpTransport, OpenAiResponsesRequest,
+        OpenAiApiMode, OpenAiAuthProfile, OpenAiCompatibleProvider, OpenAiCompatibleProviderConfig,
+        OpenAiHttpResponse, OpenAiHttpTransport, OpenAiResponsesRequest, CODEX_API_ENDPOINT,
+        COPILOT_API_BASE,
     };
     use crate::{
-        CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider,
-        ProviderErrorCategory, ProviderStreamEvent, ProviderStreamFinishedMetadata, ToolChoice,
-        ToolDef,
+        CacheRetention, CompletionMessage, CompletionRequest, CompletionUsage, MessageRole,
+        Provider, ProviderBearerToken, ProviderCredentialKind, ProviderCredentialSource,
+        ProviderErrorCategory, ProviderRequestInitiator, ProviderStreamEvent,
+        ProviderStreamFinishedMetadata, ToolChoice, ToolDef,
     };
 
     #[derive(Debug, Clone)]
     struct RecordedOpenAiRequest {
         endpoint: String,
+        headers: HeaderMap,
         bearer_token: String,
         body: serde_json::Value,
     }
@@ -1876,18 +2273,28 @@ mod tests {
     #[derive(Debug, Clone)]
     struct ScriptedOpenAiResponse {
         status: u16,
-        body: String,
+        chunks: Vec<Result<Vec<u8>, String>>,
     }
 
     impl ScriptedOpenAiResponse {
         fn sse(body: String) -> Self {
-            Self { status: 200, body }
+            Self {
+                status: 200,
+                chunks: vec![Ok(body.into_bytes())],
+            }
+        }
+
+        fn sse_chunks(chunks: Vec<Vec<u8>>) -> Self {
+            Self {
+                status: 200,
+                chunks: chunks.into_iter().map(Ok).collect(),
+            }
         }
 
         fn text(status: u16, body: impl Into<String>) -> Self {
             Self {
                 status,
-                body: body.into(),
+                chunks: vec![Ok(body.into().into_bytes())],
             }
         }
     }
@@ -1896,6 +2303,27 @@ mod tests {
     struct ScriptedOpenAiTransport {
         responses: Mutex<VecDeque<ScriptedOpenAiResponse>>,
         requests: Mutex<Vec<RecordedOpenAiRequest>>,
+    }
+
+    #[derive(Debug)]
+    struct StaticCredentialSource {
+        token: String,
+        account_id: Option<String>,
+        enterprise_url: Option<String>,
+    }
+
+    #[async_trait]
+    impl ProviderCredentialSource for StaticCredentialSource {
+        async fn bearer_token(
+            &self,
+        ) -> Result<ProviderBearerToken, crate::ProviderCredentialError> {
+            Ok(ProviderBearerToken {
+                token: self.token.clone(),
+                kind: ProviderCredentialKind::StoredOauth,
+                account_id: self.account_id.clone(),
+                enterprise_url: self.enterprise_url.clone(),
+            })
+        }
     }
 
     impl ScriptedOpenAiTransport {
@@ -1919,7 +2347,7 @@ mod tests {
         async fn post_json(
             &self,
             endpoint: String,
-            _headers: HeaderMap,
+            headers: HeaderMap,
             bearer_token: String,
             body: serde_json::Value,
         ) -> Result<OpenAiHttpResponse, String> {
@@ -1928,6 +2356,7 @@ mod tests {
                 .expect("scripted transport requests lock")
                 .push(RecordedOpenAiRequest {
                     endpoint,
+                    headers,
                     bearer_token,
                     body,
                 });
@@ -1944,10 +2373,10 @@ mod tests {
                     reqwest::header::HeaderValue::from_static("text/event-stream"),
                 );
             }
-            Ok(OpenAiHttpResponse::text(
+            Ok(OpenAiHttpResponse::new(
                 response.status,
                 headers,
-                response.body,
+                Box::pin(tokio_stream::iter(response.chunks)),
             ))
         }
     }
@@ -2011,6 +2440,365 @@ mod tests {
             Some(&serde_json::Value::String("gpt-4o-mini".to_string()))
         );
         assert!(body.get("api_key").is_none());
+    }
+
+    #[tokio::test]
+    async fn openai_compatible_uses_credential_source_before_static_api_key() {
+        let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(
+            deterministic_sse_transcript(),
+        )]);
+        let provider = provider_for_transport(Arc::clone(&transport), "static-key")
+            .with_credential_source(Arc::new(StaticCredentialSource {
+                token: "stored-oauth-token".to_string(),
+                account_id: None,
+                enterprise_url: None,
+            }));
+
+        let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
+
+        assert!(matches!(
+            events.last(),
+            Some(ProviderStreamEvent::DoneWithMetadata { .. })
+        ));
+        let requests = transport.requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].bearer_token, "stored-oauth-token");
+    }
+
+    #[tokio::test]
+    async fn codex_auth_profile_rewrites_endpoint_and_adds_context_headers() {
+        let mut config_headers = BTreeMap::new();
+        config_headers.insert(
+            "Authorization".to_string(),
+            "Bearer stale-config-token".to_string(),
+        );
+        config_headers.insert("x-test-header".to_string(), "kept".to_string());
+        let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(
+            responses_done_sse_transcript(),
+        )]);
+        let provider = OpenAiCompatibleProvider::with_transport(
+            OpenAiCompatibleProviderConfig {
+                base_url: "https://api.openai.com/v1".to_string(),
+                api_key: "static-key".to_string(),
+                api_mode: OpenAiApiMode::Responses,
+                timeout_ms: 0,
+                headers: config_headers,
+            },
+            Arc::clone(&transport) as Arc<dyn OpenAiHttpTransport>,
+        )
+        .expect("provider")
+        .with_auth_profile(OpenAiAuthProfile::Codex)
+        .with_credential_source(Arc::new(StaticCredentialSource {
+            token: "codex-oauth-token".to_string(),
+            account_id: Some("acct_123".to_string()),
+            enterprise_url: None,
+        }));
+
+        let mut request = basic_request("gpt-5.5");
+        request.messages.insert(
+            0,
+            CompletionMessage {
+                role: MessageRole::System,
+                content: "codex base prompt".to_string(),
+                name: None,
+                tool_call_id: None,
+                assistant_tool_calls: None,
+            },
+        );
+        request.context.session_id = Some("session-abc".to_string());
+        request.context.request_id = Some("request-def".to_string());
+        let events = collect_events(&provider, request).await;
+
+        assert!(matches!(
+            events.last(),
+            Some(ProviderStreamEvent::DoneWithMetadata { .. })
+        ));
+        let requests = transport.requests();
+        assert_eq!(requests.len(), 1);
+        let request = &requests[0];
+        assert_eq!(request.endpoint, CODEX_API_ENDPOINT);
+        assert_eq!(request.bearer_token, "codex-oauth-token");
+        assert!(request.headers.get("authorization").is_none());
+        assert_eq!(
+            request
+                .headers
+                .get("chatgpt-account-id")
+                .and_then(|value| value.to_str().ok()),
+            Some("acct_123")
+        );
+        assert_eq!(
+            request
+                .headers
+                .get("session-id")
+                .and_then(|value| value.to_str().ok()),
+            Some("session-abc")
+        );
+        assert_eq!(
+            request
+                .headers
+                .get("request-id")
+                .and_then(|value| value.to_str().ok()),
+            Some("request-def")
+        );
+        assert_eq!(
+            request
+                .headers
+                .get("originator")
+                .and_then(|value| value.to_str().ok()),
+            Some("harness")
+        );
+        assert_eq!(
+            request
+                .headers
+                .get("x-test-header")
+                .and_then(|value| value.to_str().ok()),
+            Some("kept")
+        );
+        assert_eq!(
+            request.body.get("instructions"),
+            Some(&serde_json::Value::String("codex base prompt".to_string()))
+        );
+        assert_eq!(
+            request.body.get("store"),
+            Some(&serde_json::Value::Bool(false))
+        );
+        assert_eq!(
+            request.body.get("reasoning"),
+            Some(&serde_json::json!({
+                "effort": "medium",
+                "summary": "auto"
+            }))
+        );
+        assert_eq!(
+            request.body.get("include"),
+            Some(&serde_json::json!(["reasoning.encrypted_content"]))
+        );
+        assert_eq!(
+            request.body.get("text"),
+            Some(&serde_json::json!({
+                "verbosity": "low"
+            }))
+        );
+        let input = request
+            .body
+            .get("input")
+            .and_then(serde_json::Value::as_array)
+            .expect("codex request input");
+        assert_eq!(input.len(), 1);
+        assert_eq!(
+            input[0].get("role"),
+            Some(&serde_json::Value::String("user".to_string()))
+        );
+    }
+
+    #[tokio::test]
+    async fn codex_gpt_request_defaults_match_opencode_matrix() {
+        let transport = ScriptedOpenAiTransport::new([
+            ScriptedOpenAiResponse::sse(responses_done_sse_transcript()),
+            ScriptedOpenAiResponse::sse(responses_done_sse_transcript()),
+            ScriptedOpenAiResponse::sse(responses_done_sse_transcript()),
+            ScriptedOpenAiResponse::sse(responses_done_sse_transcript()),
+        ]);
+        let provider = OpenAiCompatibleProvider::with_transport(
+            OpenAiCompatibleProviderConfig {
+                base_url: "https://api.openai.com/v1".to_string(),
+                api_key: "static-key".to_string(),
+                api_mode: OpenAiApiMode::Responses,
+                timeout_ms: 0,
+                headers: BTreeMap::new(),
+            },
+            Arc::clone(&transport) as Arc<dyn OpenAiHttpTransport>,
+        )
+        .expect("provider")
+        .with_auth_profile(OpenAiAuthProfile::Codex)
+        .with_credential_source(Arc::new(StaticCredentialSource {
+            token: "codex-oauth-token".to_string(),
+            account_id: None,
+            enterprise_url: None,
+        }));
+
+        let default_gpt = basic_request("gpt-5.5");
+        let mut explicit_gpt = basic_request("gpt-5.5");
+        explicit_gpt.reasoning_effort = Some("xhigh".to_string());
+        explicit_gpt.reasoning_summary = Some("auto".to_string());
+        let codex_gpt = basic_request("gpt-5.3-codex");
+        let pro_gpt = basic_request("gpt-5.5-pro");
+
+        for request in [default_gpt, explicit_gpt, codex_gpt, pro_gpt] {
+            let events = collect_events(&provider, request).await;
+            assert!(matches!(
+                events.last(),
+                Some(ProviderStreamEvent::DoneWithMetadata { .. })
+            ));
+        }
+
+        let requests = transport.requests();
+        assert_eq!(requests.len(), 4);
+        assert_eq!(
+            requests[0].body.get("reasoning"),
+            Some(&serde_json::json!({ "effort": "medium", "summary": "auto" }))
+        );
+        assert!(requests[0].body.get("max_output_tokens").is_none());
+        assert!(requests[0].body.get("max_tokens").is_none());
+        assert_eq!(
+            requests[0].body.get("include"),
+            Some(&serde_json::json!(["reasoning.encrypted_content"]))
+        );
+        assert_eq!(
+            requests[0].body.get("text"),
+            Some(&serde_json::json!({ "verbosity": "low" }))
+        );
+        assert_eq!(
+            requests[1].body.get("reasoning"),
+            Some(&serde_json::json!({ "effort": "xhigh", "summary": "auto" }))
+        );
+        assert_eq!(
+            requests[1].body.get("include"),
+            Some(&serde_json::json!(["reasoning.encrypted_content"]))
+        );
+        assert_eq!(
+            requests[2].body.get("reasoning"),
+            Some(&serde_json::json!({ "effort": "medium", "summary": "auto" }))
+        );
+        assert_eq!(
+            requests[2].body.get("include"),
+            Some(&serde_json::json!(["reasoning.encrypted_content"]))
+        );
+        assert!(requests[2].body.get("text").is_none());
+        assert_eq!(
+            requests[3].body.get("reasoning"),
+            Some(&serde_json::json!({ "effort": "medium", "summary": "auto" }))
+        );
+        assert_eq!(
+            requests[3].body.get("text"),
+            Some(&serde_json::json!({ "verbosity": "low" }))
+        );
+    }
+
+    #[tokio::test]
+    async fn github_copilot_auth_profile_rewrites_public_and_enterprise_headers() {
+        let mut config_headers = BTreeMap::new();
+        config_headers.insert(
+            "Authorization".to_string(),
+            "Bearer stale-config-token".to_string(),
+        );
+        config_headers.insert("x-api-key".to_string(), "stale-api-key".to_string());
+        config_headers.insert("x-test-header".to_string(), "kept".to_string());
+        let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(
+            deterministic_sse_transcript(),
+        )]);
+        let provider = OpenAiCompatibleProvider::with_transport(
+            OpenAiCompatibleProviderConfig {
+                base_url: "https://api.openai.com/v1".to_string(),
+                api_key: "static-key".to_string(),
+                api_mode: OpenAiApiMode::ChatCompletions,
+                timeout_ms: 0,
+                headers: config_headers.clone(),
+            },
+            Arc::clone(&transport) as Arc<dyn OpenAiHttpTransport>,
+        )
+        .expect("provider")
+        .with_auth_profile(OpenAiAuthProfile::GithubCopilot)
+        .with_credential_source(Arc::new(StaticCredentialSource {
+            token: "copilot-public-token".to_string(),
+            account_id: None,
+            enterprise_url: None,
+        }));
+
+        let mut public_request = basic_request("gpt-5.5");
+        public_request.context.initiator = ProviderRequestInitiator::User;
+        public_request.context.has_media = false;
+        let events = collect_events(&provider, public_request).await;
+
+        assert!(matches!(
+            events.last(),
+            Some(ProviderStreamEvent::DoneWithMetadata { .. })
+        ));
+        let requests = transport.requests();
+        assert_eq!(requests.len(), 1);
+        let public = &requests[0];
+        assert_eq!(
+            public.endpoint,
+            format!("{COPILOT_API_BASE}/chat/completions")
+        );
+        assert_eq!(public.bearer_token, "copilot-public-token");
+        assert!(public.headers.get("authorization").is_none());
+        assert!(public.headers.get("x-api-key").is_none());
+        assert_eq!(
+            public
+                .headers
+                .get("x-initiator")
+                .and_then(|value| value.to_str().ok()),
+            Some("user")
+        );
+        assert_eq!(
+            public
+                .headers
+                .get("Openai-Intent")
+                .and_then(|value| value.to_str().ok()),
+            Some("conversation-edits")
+        );
+        assert!(public.headers.get("Copilot-Vision-Request").is_none());
+        assert_eq!(
+            public
+                .headers
+                .get("x-test-header")
+                .and_then(|value| value.to_str().ok()),
+            Some("kept")
+        );
+
+        let enterprise_transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(
+            responses_done_sse_transcript(),
+        )]);
+        let enterprise_provider = OpenAiCompatibleProvider::with_transport(
+            OpenAiCompatibleProviderConfig {
+                base_url: "https://api.openai.com/v1".to_string(),
+                api_key: "static-key".to_string(),
+                api_mode: OpenAiApiMode::Responses,
+                timeout_ms: 0,
+                headers: config_headers,
+            },
+            Arc::clone(&enterprise_transport) as Arc<dyn OpenAiHttpTransport>,
+        )
+        .expect("provider")
+        .with_auth_profile(OpenAiAuthProfile::GithubCopilot)
+        .with_credential_source(Arc::new(StaticCredentialSource {
+            token: "copilot-enterprise-token".to_string(),
+            account_id: None,
+            enterprise_url: Some("https://GHE.Example.COM/".to_string()),
+        }));
+
+        let mut enterprise_request = basic_request("claude-sonnet-4.5");
+        enterprise_request.context.initiator = ProviderRequestInitiator::Agent;
+        enterprise_request.context.has_media = true;
+        let events = collect_events(&enterprise_provider, enterprise_request).await;
+
+        assert!(matches!(
+            events.last(),
+            Some(ProviderStreamEvent::DoneWithMetadata { .. })
+        ));
+        let requests = enterprise_transport.requests();
+        assert_eq!(requests.len(), 1);
+        let enterprise = &requests[0];
+        assert_eq!(
+            enterprise.endpoint,
+            "https://copilot-api.ghe.example.com/responses"
+        );
+        assert_eq!(enterprise.bearer_token, "copilot-enterprise-token");
+        assert_eq!(
+            enterprise
+                .headers
+                .get("x-initiator")
+                .and_then(|value| value.to_str().ok()),
+            Some("agent")
+        );
+        assert_eq!(
+            enterprise
+                .headers
+                .get("Copilot-Vision-Request")
+                .and_then(|value| value.to_str().ok()),
+            Some("true")
+        );
     }
 
     #[tokio::test]
@@ -2092,6 +2880,142 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn openai_responses_sse_parser_handles_multibyte_utf8_split_across_chunks() {
+        let transcript = concat!(
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"hi €\"}\n\n",
+            "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":2}}}\n\n",
+        );
+        let euro = transcript.find('€').expect("euro in transcript");
+        let split = euro + 1;
+        let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse_chunks(vec![
+            transcript.as_bytes()[..split].to_vec(),
+            transcript.as_bytes()[split..].to_vec(),
+        ])]);
+        let provider = provider_for_transport_with_mode(
+            Arc::clone(&transport),
+            "test-secret-key",
+            OpenAiApiMode::Responses,
+        );
+
+        let events = collect_events(&provider, basic_request("gpt-5.5")).await;
+
+        assert!(events.contains(&ProviderStreamEvent::TextDelta("hi €".to_string())));
+        assert!(matches!(
+            events.last(),
+            Some(ProviderStreamEvent::DoneWithMetadata { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn openai_compatible_request_uses_stable_clamped_prompt_cache_key() {
+        let session_a = "session-abcdefghijklmnopqrstuvwxyz-ABCDEFGHIJKLMNOPQRSTUVWXYZ-0123456789";
+        let expected_clamped = session_a.chars().take(64).collect::<String>();
+        assert_eq!(expected_clamped.chars().count(), 64);
+
+        let mut first = basic_request("gpt-4o-mini");
+        first.context.session_id = Some(session_a.to_string());
+        let first_body = serde_json::to_value(OpenAiResponsesRequest::from_completion_request(
+            first.clone(),
+            false,
+            false,
+        ))
+        .expect("serialize first responses request");
+        let second_body = serde_json::to_value(OpenAiResponsesRequest::from_completion_request(
+            first, false, false,
+        ))
+        .expect("serialize second responses request");
+        assert_eq!(
+            first_body.get("prompt_cache_key"),
+            Some(&serde_json::Value::String(expected_clamped.clone()))
+        );
+        assert_eq!(
+            second_body.get("prompt_cache_key"),
+            Some(&serde_json::Value::String(expected_clamped.clone()))
+        );
+
+        let mut other_session = basic_request("gpt-4o-mini");
+        other_session.context.session_id = Some("session-b".to_string());
+        let other_body = serde_json::to_value(OpenAiResponsesRequest::from_completion_request(
+            other_session,
+            false,
+            false,
+        ))
+        .expect("serialize other responses request");
+        assert_ne!(
+            other_body.get("prompt_cache_key"),
+            first_body.get("prompt_cache_key")
+        );
+
+        let no_session = serde_json::to_value(OpenAiResponsesRequest::from_completion_request(
+            basic_request("gpt-4o-mini"),
+            false,
+            false,
+        ))
+        .expect("serialize no-session responses request");
+        assert!(no_session.get("prompt_cache_key").is_none());
+
+        let mut disabled = basic_request("gpt-4o-mini");
+        disabled.context.session_id = Some("session-disabled".to_string());
+        disabled.context.cache_retention = CacheRetention::None;
+        let disabled_body = serde_json::to_value(OpenAiResponsesRequest::from_completion_request(
+            disabled, true, false,
+        ))
+        .expect("serialize disabled responses request");
+        assert!(disabled_body.get("prompt_cache_key").is_none());
+        assert!(disabled_body.get("prompt_cache_retention").is_none());
+    }
+
+    #[tokio::test]
+    async fn openai_compatible_long_cache_retention_is_direct_openai_only() {
+        let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(
+            responses_done_sse_transcript(),
+        )]);
+        let direct_provider = OpenAiCompatibleProvider::with_transport(
+            OpenAiCompatibleProviderConfig {
+                base_url: "https://api.openai.com/v1".to_string(),
+                api_key: "test-secret-key".to_string(),
+                api_mode: OpenAiApiMode::Responses,
+                timeout_ms: 15_000,
+                headers: std::collections::BTreeMap::new(),
+            },
+            Arc::clone(&transport) as Arc<dyn OpenAiHttpTransport>,
+        )
+        .expect("build direct provider");
+        let mut direct_request = basic_request("gpt-4o-mini");
+        direct_request.context.session_id = Some("session-direct".to_string());
+        direct_request.context.cache_retention = CacheRetention::Long;
+        let _ = collect_events(&direct_provider, direct_request).await;
+        let direct_body = &transport.requests()[0].body;
+        assert_eq!(
+            direct_body.get("prompt_cache_key"),
+            Some(&serde_json::Value::String("session-direct".to_string()))
+        );
+        assert_eq!(
+            direct_body.get("prompt_cache_retention"),
+            Some(&serde_json::Value::String("24h".to_string()))
+        );
+
+        let proxy_transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(
+            responses_done_sse_transcript(),
+        )]);
+        let proxy_provider = provider_for_transport_with_mode(
+            Arc::clone(&proxy_transport),
+            "test-secret-key",
+            OpenAiApiMode::Responses,
+        );
+        let mut proxy_request = basic_request("gpt-4o-mini");
+        proxy_request.context.session_id = Some("session-proxy".to_string());
+        proxy_request.context.cache_retention = CacheRetention::Long;
+        let _ = collect_events(&proxy_provider, proxy_request).await;
+        let proxy_body = &proxy_transport.requests()[0].body;
+        assert_eq!(
+            proxy_body.get("prompt_cache_key"),
+            Some(&serde_json::Value::String("session-proxy".to_string()))
+        );
+        assert!(proxy_body.get("prompt_cache_retention").is_none());
+    }
+
+    #[tokio::test]
     async fn openai_auto_loopback_falls_back_to_chat_completions_on_400() {
         let transport = ScriptedOpenAiTransport::new([
             ScriptedOpenAiResponse::text(400, "unsupported responses"),
@@ -2154,6 +3078,58 @@ mod tests {
     }
 
     #[test]
+    fn openai_responses_request_sends_system_prompt_as_instructions() {
+        let request = CompletionRequest {
+            provider_id: None,
+            model_id: "gpt-5.5".to_string(),
+            messages: vec![
+                CompletionMessage {
+                    role: MessageRole::System,
+                    content: "base instructions".to_string(),
+                    name: None,
+                    tool_call_id: None,
+                    assistant_tool_calls: None,
+                },
+                CompletionMessage {
+                    role: MessageRole::User,
+                    content: "hello".to_string(),
+                    name: None,
+                    tool_call_id: None,
+                    assistant_tool_calls: None,
+                },
+            ],
+            temperature: None,
+            max_tokens: None,
+            variant: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            reasoning_summary: None,
+            tools: None,
+            tool_choice: None,
+            context: Default::default(),
+            stream: true,
+        };
+
+        let body = serde_json::to_value(OpenAiResponsesRequest::from_completion_request(
+            request, false, true,
+        ))
+        .expect("serialize responses request");
+        assert_eq!(
+            body.get("instructions"),
+            Some(&serde_json::Value::String("base instructions".to_string()))
+        );
+        let input = body
+            .get("input")
+            .and_then(serde_json::Value::as_array)
+            .expect("responses request input array");
+        assert_eq!(input.len(), 1);
+        assert_eq!(
+            input[0].get("role"),
+            Some(&serde_json::Value::String("user".to_string()))
+        );
+    }
+
+    #[test]
     fn openai_responses_request_replays_assistant_tool_call_before_function_call_output() {
         let request = CompletionRequest {
             provider_id: None,
@@ -2200,6 +3176,7 @@ mod tests {
             reasoning_summary: None,
             tools: None,
             tool_choice: None,
+            context: Default::default(),
             stream: true,
         };
 
@@ -2209,6 +3186,7 @@ mod tests {
             .get("input")
             .and_then(serde_json::Value::as_array)
             .expect("responses request input array");
+        assert!(body.get("instructions").is_none());
 
         assert!(input
             .iter()
@@ -2330,6 +3308,7 @@ mod tests {
             reasoning_summary: None,
             tools: None,
             tool_choice: None,
+            context: Default::default(),
             stream: true,
         };
 
@@ -2417,6 +3396,7 @@ mod tests {
             reasoning_summary: None,
             tools: None,
             tool_choice: None,
+            context: Default::default(),
             stream: true,
         };
 
@@ -2873,6 +3853,7 @@ mod tests {
             reasoning_summary: None,
             tools: None,
             tool_choice: None,
+            context: Default::default(),
             stream: true,
         }
     }
@@ -2908,6 +3889,7 @@ mod tests {
                 }),
             }]),
             tool_choice: Some(ToolChoice::Auto),
+            context: Default::default(),
             stream: true,
         }
     }
@@ -2958,6 +3940,15 @@ mod tests {
             "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"id\":\"item_resp_1\",\"call_id\":\"call_resp_1\",\"name\":\"filesystem_read\",\"arguments\":\"{\\\"filePath\\\":\\\"/tmp/demo.txt\\\"}\"}}\n\n",
             "event: response.completed\n",
             "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp-tool-1\",\"status\":\"completed\",\"provider_session_id\":\"session-tool-1\",\"provider_cache_id\":\"cache-tool-1\",\"usage\":{\"input_tokens\":9,\"output_tokens\":3,\"total_tokens\":12,\"input_tokens_details\":{\"cached_tokens\":5},\"cache_creation_input_tokens\":2}}}\n\n",
+            "data: [DONE]\n\n"
+        )
+        .to_string()
+    }
+
+    fn responses_done_sse_transcript() -> String {
+        concat!(
+            "event: response.completed\n",
+            "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp-cache-1\",\"status\":\"completed\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":2}}}\n\n",
             "data: [DONE]\n\n"
         )
         .to_string()

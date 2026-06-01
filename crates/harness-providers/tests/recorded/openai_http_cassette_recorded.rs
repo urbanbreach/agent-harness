@@ -256,6 +256,7 @@ fn basic_request() -> CompletionRequest {
         reasoning_summary: None,
         tools: None,
         tool_choice: None,
+        context: Default::default(),
         stream: true,
     }
 }

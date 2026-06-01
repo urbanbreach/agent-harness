@@ -9,8 +9,9 @@ use thiserror::Error;
 use tokio_stream::{self as stream, StreamExt};
 
 use crate::{
-    CompletionRequest, CompletionUsage, Provider, ProviderEventStream, ProviderStreamEvent,
-    ProviderStreamFinishedMetadata, ProviderStreamStartMetadata, ToolChoice, ToolDef,
+    CompletionRequest, CompletionUsage, Provider, ProviderEventStream, ProviderRequestContext,
+    ProviderStreamEvent, ProviderStreamFinishedMetadata, ProviderStreamStartMetadata, ToolChoice,
+    ToolDef,
 };
 
 #[derive(Debug, Error)]
@@ -113,8 +114,28 @@ pub fn request_digest(request: &CompletionRequest) -> String {
 }
 
 fn normalize_request(request: &CompletionRequest) -> Value {
-    let value = serde_json::to_value(request).unwrap_or(Value::Null);
+    let mut value = serde_json::to_value(request).unwrap_or(Value::Null);
+    normalize_volatile_provider_context_for_digest(&mut value);
     canonicalize_json(&value)
+}
+
+fn normalize_volatile_provider_context_for_digest(value: &mut Value) {
+    let Value::Object(request) = value else {
+        return;
+    };
+    let Some(Value::Object(context)) = request.get_mut("context") else {
+        return;
+    };
+
+    // Session and request ids are provider-routing metadata that change from run
+    // to run. Mock fixtures key off the prompt-visible request shape while still
+    // preserving semantic context fields such as cache retention, media, and
+    // initiator when they are explicitly non-default.
+    context.remove("session_id");
+    context.remove("request_id");
+    if context.is_empty() {
+        request.remove("context");
+    }
 }
 
 fn canonicalize_json(value: &Value) -> Value {
@@ -157,6 +178,8 @@ struct FixtureCompletionRequest {
     tools: Option<Vec<ToolDef>>,
     #[serde(default)]
     tool_choice: Option<ToolChoice>,
+    #[serde(default)]
+    context: ProviderRequestContext,
     stream: bool,
 }
 
@@ -174,6 +197,7 @@ impl From<FixtureCompletionRequest> for CompletionRequest {
             reasoning_summary: value.reasoning_summary,
             tools: value.tools,
             tool_choice: value.tool_choice,
+            context: value.context,
             stream: value.stream,
         }
     }
@@ -258,7 +282,10 @@ mod tests {
     use tokio_stream::StreamExt;
 
     use super::{request_digest, MockProvider};
-    use crate::{CompletionMessage, CompletionRequest, MessageRole, Provider, ProviderStreamEvent};
+    use crate::{
+        CompletionMessage, CompletionRequest, MessageRole, Provider, ProviderRequestContext,
+        ProviderStreamEvent,
+    };
 
     #[tokio::test]
     async fn deterministic_streaming_order_from_fixtures() {
@@ -310,6 +337,7 @@ mod tests {
             reasoning_summary: None,
             tools: None,
             tool_choice: None,
+            context: Default::default(),
             stream: true,
         };
 
@@ -321,6 +349,19 @@ mod tests {
                 "mock fixture missing for request_digest={digest}"
             ))]
         );
+    }
+
+    #[test]
+    fn request_digest_ignores_volatile_provider_context_ids() {
+        let base = fixture_known_request();
+        let mut contextual = base.clone();
+        contextual.context = ProviderRequestContext {
+            session_id: Some("agent-session-one".to_string()),
+            request_id: Some("req-volatile-one".to_string()),
+            ..ProviderRequestContext::default()
+        };
+
+        assert_eq!(request_digest(&base), request_digest(&contextual));
     }
 
     #[tokio::test]
@@ -399,6 +440,7 @@ mod tests {
             reasoning_summary: None,
             tools: None,
             tool_choice: None,
+            context: Default::default(),
             stream: true,
         }
     }
@@ -443,6 +485,7 @@ mod tests {
                 }),
             }]),
             tool_choice: Some(crate::ToolChoice::Auto),
+            context: Default::default(),
             stream: true,
         }
     }
