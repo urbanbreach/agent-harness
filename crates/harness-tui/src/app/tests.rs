@@ -2158,6 +2158,8 @@ fn tool_call_entries_prefer_resolved_identity_and_lifecycle_contract() {
     let tool_call = &app.activities[0].tool_calls[0];
     assert_eq!(tool_call.lifecycle_state(), ToolCallLifecycleState::Pending);
     assert_eq!(tool_call.status, ToolCallDisplayStatus::PendingPermission);
+    assert_eq!(tool_call.permissions.len(), 1);
+    assert_eq!(tool_call.permissions[0].resolved_decision, None);
 
     app.ingest_event(envelope(
         5,
@@ -2172,6 +2174,11 @@ fn tool_call_entries_prefer_resolved_identity_and_lifecycle_contract() {
     let tool_call = &app.activities[0].tool_calls[0];
     assert_eq!(tool_call.lifecycle_state(), ToolCallLifecycleState::Pending);
     assert_eq!(tool_call.status, ToolCallDisplayStatus::Queued);
+    assert_eq!(
+        tool_call.permissions[0].resolved_decision,
+        Some(harness_core::event::PermissionDecision::Allow)
+    );
+    assert_eq!(tool_call.permissions[0].last_seq, 5);
 
     app.ingest_event(envelope(
         6,
@@ -2204,6 +2211,64 @@ fn tool_call_entries_prefer_resolved_identity_and_lifecycle_contract() {
         ToolCallLifecycleState::Completed
     );
     assert_eq!(tool_call.status, ToolCallDisplayStatus::Succeeded);
+}
+
+#[test]
+fn activity_permission_resolution_updates_activity_level_entry() {
+    let mut app = AppState::new_live(None, false, None);
+
+    app.ingest_event(envelope(
+        1,
+        "req_activity_permission",
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_activity_permission".to_string(),
+            text: "Check activity permission".to_string(),
+        }),
+    ));
+    app.ingest_event(provider_started(
+        2,
+        "req_activity_permission",
+        "default",
+        "model-1",
+    ));
+    app.ingest_event(envelope(
+        3,
+        "req_activity_permission",
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_activity".to_string(),
+            kind: "bash".to_string(),
+            tool_call_id: None,
+            summary: "Run shell command".to_string(),
+            request_digest: "digest-perm-activity".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    ));
+
+    assert_eq!(app.activities[0].permissions.len(), 1);
+    assert_eq!(app.activities[0].permissions[0].resolved_decision, None);
+
+    app.ingest_event(envelope(
+        4,
+        "req_activity_permission",
+        EventV1::PermissionResolved(PermissionResolvedEvent {
+            permission_id: "perm_activity".to_string(),
+            decision: harness_core::event::PermissionDecision::Allow,
+            reason: Some("approved once".to_string()),
+        }),
+    ));
+
+    let permission = &app.activities[0].permissions[0];
+    assert_eq!(
+        permission.resolved_decision,
+        Some(harness_core::event::PermissionDecision::Allow)
+    );
+    assert_eq!(
+        permission.resolution_reason.as_deref(),
+        Some("approved once")
+    );
+    assert_eq!(permission.last_seq, 4);
+    assert_eq!(app.activities[0].last_seq, 4);
 }
 
 #[test]

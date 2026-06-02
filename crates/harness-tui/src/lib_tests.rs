@@ -325,7 +325,9 @@ delegate_test!(operator_rail_places_todo_below_subagents => ui::exact_test_opera
 delegate_test!(operator_rail_renders_todo_items_from_artifact_state => ui::exact_test_operator_rail_renders_todo_items_from_artifact_state);
 delegate_test!(operator_rail_renders_subagent_rows_from_orchestration_state => ui::exact_test_operator_rail_renders_subagent_rows_from_orchestration_state);
 delegate_test!(operator_rail_marks_background_subagent_terminal_from_notification => ui::exact_test_operator_rail_marks_background_subagent_terminal_from_notification);
+delegate_test!(operator_rail_uses_simple_subagent_task_labels => ui::exact_test_operator_rail_uses_simple_subagent_task_labels);
 delegate_test!(operator_rail_shows_wakeup_report_without_task_tool_row => ui::exact_test_operator_rail_shows_wakeup_report_without_task_tool_row);
+delegate_test!(operator_rail_shows_replay_wakeup_report_without_task_tool_row => ui::exact_test_operator_rail_shows_replay_wakeup_report_without_task_tool_row);
 delegate_test!(operator_rail_keeps_subagents_visible_in_replay => ui::exact_test_operator_rail_keeps_subagents_visible_in_replay);
 delegate_test!(operator_rail_hides_completed_todo_state => ui::exact_test_operator_rail_hides_completed_todo_state);
 delegate_test!(operator_rail_collapses_todo_section_body => ui::exact_test_operator_rail_collapses_todo_section_body);
@@ -522,7 +524,7 @@ fn onboarding_inventory_screens_render_in_startup_surface() {
             screen.title
         );
         assert!(
-            !rendered.to_lowercase().contains("opencode"),
+            !rendered.to_lowercase().contains("reference implementation"),
             "screen {} should use Harness branding only\n{rendered}",
             step.snapshot_name()
         );
@@ -3401,6 +3403,15 @@ fn background_notification_projects_chat_reminder_without_duplicate_user_event()
     let mut app = app::AppState::new_live(None, false, None);
     app.ingest_event(envelope(
         1,
+        None,
+        harness_core::event::EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
+            agent_id: "agent_parent".to_string(),
+            profile: "build".to_string(),
+            parent_agent_id: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
         Some("background_task_notification:req_child"),
         harness_core::event::EventV1::BackgroundTaskNotification(
             harness_core::event::BackgroundTaskNotificationEvent {
@@ -3409,9 +3420,9 @@ fn background_notification_projects_chat_reminder_without_duplicate_user_event()
                 child_session_id: "agent_child".to_string(),
                 child_request_id: "req_child".to_string(),
                 task_id: "agent_child".to_string(),
-                description: "summarize README".to_string(),
+                description: "summarize README \u{1b}]52;c;secret\u{7}".to_string(),
                 status: harness_core::event::BackgroundTaskNotificationStatus::Completed,
-                summary: "README summarized".to_string(),
+                summary: r#"{"sessionId":"term-1","cols":80,"token":"secret"}"#.to_string(),
                 terminal_event_id: "evt-terminal-child".to_string(),
                 terminal_task_id: "agent_child".to_string(),
                 delivered_turn_request_id: Some("req_parent_wakeup".to_string()),
@@ -3422,20 +3433,28 @@ fn background_notification_projects_chat_reminder_without_duplicate_user_event()
     assert_eq!(app.activities.len(), 1);
     let activity = &app.activities[0];
     assert_eq!(activity.request_id, "req_parent_wakeup");
-    assert_eq!(activity.status, app::ActivityStatus::Streaming);
+    assert_eq!(activity.status, app::ActivityStatus::Queued);
+    assert_eq!(activity.profile_label, "build");
     let reminder = activity
         .user_message
         .as_ref()
         .expect("background notification should render as chat reminder");
     assert!(reminder.text.contains("[BACKGROUND TASK COMPLETED]"));
     assert!(reminder.text.contains("ID: agent_child"));
+    assert!(!reminder.text.contains("summarize README"));
+    assert!(!reminder.text.contains("sessionId"));
+    assert!(!reminder.text.contains("secret"));
+    assert!(!reminder
+        .text
+        .chars()
+        .any(|ch| ch.is_control() && ch != '\n'));
     assert!(reminder
         .text
         .contains("background_output(request_id=\"req_child\")"));
     assert!(reminder.text.contains("task(session_id=\"agent_child\")"));
 
     app.ingest_event(envelope(
-        2,
+        3,
         Some("req_parent_wakeup"),
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
@@ -3454,6 +3473,29 @@ fn background_notification_projects_chat_reminder_without_duplicate_user_event()
             .text,
         "<system-reminder>canonical coordinator wakeup</system-reminder>"
     );
+    assert_eq!(app.activities[0].status, app::ActivityStatus::Queued);
+
+    app.ingest_event(envelope_with_actor(
+        4,
+        Some("req_parent_wakeup"),
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Worker,
+            Some("agent_parent".to_string()),
+        ),
+        harness_core::event::EventV1::ProviderRequestStarted(
+            harness_core::event::ProviderRequestStartedEvent {
+                request_id: "req_parent_wakeup".to_string(),
+                provider_id: "default".to_string(),
+                model_id: "gpt-5.4-mini".to_string(),
+                prompt_summary: "canonical coordinator wakeup".to_string(),
+                request_digest: "digest-parent-wakeup".to_string(),
+                metadata: None,
+            },
+        ),
+    ));
+
+    assert_eq!(app.activities[0].status, app::ActivityStatus::Streaming);
+    assert_eq!(app.activities[0].profile_label, "build");
 }
 
 #[cfg(test)]
@@ -3513,7 +3555,7 @@ fn operator_sidebar_shows_running_child_turn_before_task_tool_finishes() {
     assert!(app.operator_rail_has_sections());
     let sidebar = operator_sidebar_text(&app);
     assert!(sidebar.contains("▼ Subagents"));
-    assert!(sidebar.contains("• explore ⠋ inspect task behavior"));
+    assert!(sidebar.contains("• ⠋ Explore Task"));
 }
 
 #[cfg(test)]
@@ -6524,6 +6566,7 @@ fn command_palette_renders_and_filters() {
             "new_session".to_string(),
             "resume_session".to_string(),
             "replay_session".to_string(),
+            "switch_model".to_string(),
             "agent_cycle".to_string(),
             "agent_cycle_reverse".to_string(),
             "cycle_variant".to_string(),
@@ -9194,6 +9237,248 @@ fn live_status_strip_suppresses_request_digest_from_cancelled_summary() {
         .runtime_state()
         .summary
         .contains("digest-cancelled-visual"));
+}
+
+#[cfg(test)]
+#[test]
+fn parent_view_ignores_streaming_child_activity_after_returning_from_subagent() {
+    let mut app =
+        app::AppState::new_live(Some(PathBuf::from("/tmp/sessions/parent_run")), false, None);
+
+    app.ingest_event(envelope(
+        1,
+        None,
+        harness_core::event::EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
+            agent_id: "agent_parent".to_string(),
+            profile: "build".to_string(),
+            parent_agent_id: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        None,
+        harness_core::event::EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
+            agent_id: "agent_child".to_string(),
+            profile: "explore".to_string(),
+            parent_agent_id: Some("agent_parent".to_string()),
+        }),
+    ));
+    app.ingest_event(envelope_with_actor(
+        3,
+        Some("req_parent"),
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Worker,
+            Some("agent_parent".to_string()),
+        ),
+        harness_core::event::EventV1::UserMessageSubmitted(
+            harness_core::event::UserMessageSubmittedEvent {
+                request_id: "req_parent".to_string(),
+                text: "Delegate the investigation".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(envelope_with_actor(
+        4,
+        Some("req_parent"),
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Worker,
+            Some("agent_parent".to_string()),
+        ),
+        harness_core::event::EventV1::ProviderRequestStarted(
+            harness_core::event::ProviderRequestStartedEvent {
+                request_id: "provider_req_parent".to_string(),
+                provider_id: "default".to_string(),
+                model_id: "gpt-5.4-mini".to_string(),
+                prompt_summary: "Delegate the investigation".to_string(),
+                request_digest: "digest-provider-parent".to_string(),
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(envelope_with_actor(
+        5,
+        Some("req_parent"),
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Worker,
+            Some("agent_parent".to_string()),
+        ),
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tool_call_child".to_string(),
+                tool_id: "task".to_string(),
+                args_summary: serde_json::json!({
+                    "description": "inspect the lifecycle state",
+                    "subagent_type": "explore",
+                    "run_in_background": true
+                })
+                .to_string(),
+                args_digest: "digest-tool-child".to_string(),
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(envelope_with_actor(
+        6,
+        Some("req_parent"),
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Worker,
+            Some("agent_parent".to_string()),
+        ),
+        harness_core::event::EventV1::ToolCallFinished(
+            harness_core::event::ToolCallFinishedEvent {
+                tool_call_id: "tool_call_child".to_string(),
+                status: harness_core::event::ToolCallStatus::Succeeded,
+                output_summary: Some("Background task scheduled".to_string()),
+                output_digest: Some("digest-tool-child-output".to_string()),
+                output_json: Some(serde_json::json!({
+                    "profile": "explore",
+                    "background": true,
+                    "status": "scheduled",
+                    "child_session_id": "agent_child"
+                })),
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(envelope_with_actor(
+        7,
+        Some("req_parent"),
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Worker,
+            Some("agent_parent".to_string()),
+        ),
+        harness_core::event::EventV1::ProviderStreamDelta(
+            harness_core::event::ProviderStreamDeltaEvent {
+                request_id: "provider_req_parent".to_string(),
+                delta: "Child task is running in the background.".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(envelope_with_actor(
+        8,
+        Some("req_parent"),
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Worker,
+            Some("agent_parent".to_string()),
+        ),
+        harness_core::event::EventV1::ProviderRequestFinished(
+            harness_core::event::ProviderRequestFinishedEvent {
+                request_id: "provider_req_parent".to_string(),
+                finish_reason: "stop".to_string(),
+                output_digest: Some("digest-parent-finished".to_string()),
+                usage: None,
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(envelope_with_actor(
+        9,
+        Some("req_child_turn"),
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Worker,
+            Some("agent_child".to_string()),
+        ),
+        harness_core::event::EventV1::ProviderRequestStarted(
+            harness_core::event::ProviderRequestStartedEvent {
+                request_id: "provider_req_child".to_string(),
+                provider_id: "default".to_string(),
+                model_id: "gpt-5.4-mini".to_string(),
+                prompt_summary: "Inspect the lifecycle state".to_string(),
+                request_digest: "digest-provider-child".to_string(),
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(envelope_with_actor(
+        10,
+        Some("req_child_turn"),
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Worker,
+            Some("agent_child".to_string()),
+        ),
+        harness_core::event::EventV1::ProviderStreamDelta(
+            harness_core::event::ProviderStreamDeltaEvent {
+                request_id: "provider_req_child".to_string(),
+                delta: "child-only work is still streaming".to_string(),
+            },
+        ),
+    ));
+
+    assert_eq!(app.runtime_state().kind, app::RuntimeStateKind::Success);
+    assert!(!app.has_active_animations());
+
+    let rendered = render_live_lines(&app, 100, 30);
+    assert!(!rendered.contains("child-only work is still streaming"));
+    assert!(!rendered.contains("Explore · gpt-5.4-mini · active"));
+}
+
+#[cfg(test)]
+#[test]
+fn operator_sidebar_dedupes_running_task_tool_against_child_orchestration_row() {
+    let mut app = app::AppState::new_live(None, false, None);
+
+    app.ingest_event(envelope(
+        1,
+        None,
+        harness_core::event::EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
+            agent_id: "agent_child".to_string(),
+            profile: "explore".to_string(),
+            parent_agent_id: Some("agent_parent".to_string()),
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        Some("req_parent_sidebar"),
+        harness_core::event::EventV1::UserMessageSubmitted(
+            harness_core::event::UserMessageSubmittedEvent {
+                request_id: "req_parent_sidebar".to_string(),
+                text: "Run an explore subagent".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(envelope(
+        3,
+        Some("req_parent_sidebar"),
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tool_call_explore_running".to_string(),
+                tool_id: "task".to_string(),
+                args_summary: serde_json::json!({
+                    "description": "inspect sidebar lifecycle",
+                    "subagent_type": "explore",
+                    "run_in_background": true
+                })
+                .to_string(),
+                args_digest: "digest-explore-running".to_string(),
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(envelope(
+        4,
+        Some("req_parent_sidebar"),
+        harness_core::event::EventV1::ToolCallStarted(harness_core::event::ToolCallStartedEvent {
+            tool_call_id: "tool_call_explore_running".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope_with_actor(
+        5,
+        Some("provider_req_child_sidebar"),
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Worker,
+            Some("agent_child".to_string()),
+        ),
+        harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
+            task_id: "task_child_sidebar".to_string(),
+            state: harness_core::event::TaskScheduleState::Started,
+            queue_key: Some("agent:running:explore".to_string()),
+        }),
+    ));
+
+    let sidebar = operator_sidebar_text(&app);
+    assert!(sidebar.contains("• ⠋ Explore Task"), "{sidebar}");
+    assert!(!sidebar.contains("2 tasks"), "{sidebar}");
+    assert_eq!(sidebar.matches("Explore Task").count(), 1, "{sidebar}");
 }
 
 #[cfg(test)]
