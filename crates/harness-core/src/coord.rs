@@ -8358,11 +8358,85 @@ where
     R: Redactor + ?Sized,
 {
     let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
+    let context = event_context_with_keys(run_state, actor, stream_key, correlation_id);
+    let envelope = builder.build(context, payload)?;
+    append_built_event(run_state, envelope)
+}
+
+fn event_context_with_keys(
+    run_state: &RunState,
+    actor: EventActor,
+    stream_key: Option<String>,
+    correlation_id: Option<String>,
+) -> EventContext {
     let mut context = EventContext::new(run_state.next_event_seq, actor);
     context.correlation_id = correlation_id;
     context.stream_key = stream_key;
-    let envelope = builder.build(context, payload)?;
-    append_built_event(run_state, envelope)
+    context
+}
+
+fn event_context_with_correlation_fallback(
+    run_state: &RunState,
+    actor: EventActor,
+    stream_key: String,
+    request_correlation_id: Option<&str>,
+    fallback_correlation_id: &str,
+) -> EventContext {
+    event_context_with_keys(
+        run_state,
+        actor,
+        Some(stream_key),
+        Some(
+            request_correlation_id
+                .unwrap_or(fallback_correlation_id)
+                .to_string(),
+        ),
+    )
+}
+
+fn tool_call_event_context(
+    run_state: &RunState,
+    actor: EventActor,
+    tool_call_id: &str,
+    request_correlation_id: Option<&str>,
+) -> EventContext {
+    event_context_with_correlation_fallback(
+        run_state,
+        actor,
+        format!("tool_call:{tool_call_id}"),
+        request_correlation_id,
+        tool_call_id,
+    )
+}
+
+fn permission_event_context(
+    run_state: &RunState,
+    permission_id: &str,
+    request_correlation_id: Option<&str>,
+    fallback_correlation_id: &str,
+) -> EventContext {
+    event_context_with_correlation_fallback(
+        run_state,
+        system_actor(),
+        format!("permission:{permission_id}"),
+        request_correlation_id,
+        fallback_correlation_id,
+    )
+}
+
+fn edit_event_context(
+    run_state: &RunState,
+    edit_id: &str,
+    tool_call_id: &str,
+    request_correlation_id: Option<&str>,
+) -> EventContext {
+    event_context_with_correlation_fallback(
+        run_state,
+        system_actor(),
+        format!("edit:{edit_id}"),
+        request_correlation_id,
+        tool_call_id,
+    )
 }
 
 fn append_tool_call_requested_event<C, R>(
@@ -8385,11 +8459,7 @@ where
     } = args;
 
     let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
-    let mut context = EventContext::new(run_state.next_event_seq, actor);
-    context.correlation_id = request_correlation_id
-        .map(ToOwned::to_owned)
-        .or_else(|| Some(tool_call_id.to_string()));
-    context.stream_key = Some(format!("tool_call:{tool_call_id}"));
+    let context = tool_call_event_context(run_state, actor, tool_call_id, request_correlation_id);
     let envelope =
         builder.tool_call_requested(context, tool_call_id, tool_id, args_json, tool_metadata)?;
     append_built_event(run_state, envelope)
@@ -8416,11 +8486,12 @@ where
         request_correlation_id,
     } = args;
     let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
-    let mut context = EventContext::new(run_state.next_event_seq, system_actor());
-    context.correlation_id = request_correlation_id
-        .map(ToOwned::to_owned)
-        .or_else(|| Some(tool_call_id.to_string()));
-    context.stream_key = Some(format!("permission:{permission_id}"));
+    let context = permission_event_context(
+        run_state,
+        permission_id,
+        request_correlation_id,
+        tool_call_id,
+    );
 
     let envelope = builder.permission_requested(
         context,
@@ -8451,11 +8522,12 @@ where
     R: Redactor + ?Sized,
 {
     let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
-    let mut context = EventContext::new(run_state.next_event_seq, system_actor());
-    context.correlation_id = request_correlation_id
-        .map(ToOwned::to_owned)
-        .or_else(|| Some(permission_id.to_string()));
-    context.stream_key = Some(format!("permission:{permission_id}"));
+    let context = permission_event_context(
+        run_state,
+        permission_id,
+        request_correlation_id,
+        permission_id,
+    );
     let envelope = builder.build(
         context,
         EventV1::PermissionGrantRecorded(PermissionGrantRecordedEvent { grant }),
@@ -8475,11 +8547,12 @@ where
     R: Redactor + ?Sized,
 {
     let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
-    let mut context = EventContext::new(run_state.next_event_seq, system_actor());
-    context.correlation_id = request_correlation_id
-        .map(ToOwned::to_owned)
-        .or_else(|| Some(tool_call_id.to_string()));
-    context.stream_key = Some(format!("tool_call:{tool_call_id}"));
+    let context = tool_call_event_context(
+        run_state,
+        system_actor(),
+        tool_call_id,
+        request_correlation_id,
+    );
     let envelope = builder.build(
         context,
         EventV1::ToolCallStarted(ToolCallStartedEvent {
@@ -8509,11 +8582,12 @@ where
     } = args;
     let output_digest = output_summary.as_ref().map(|s| digest12(s.as_bytes()));
     let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
-    let mut context = EventContext::new(run_state.next_event_seq, system_actor());
-    context.correlation_id = request_correlation_id
-        .map(ToOwned::to_owned)
-        .or_else(|| Some(tool_call_id.to_string()));
-    context.stream_key = Some(format!("tool_call:{tool_call_id}"));
+    let context = tool_call_event_context(
+        run_state,
+        system_actor(),
+        tool_call_id,
+        request_correlation_id,
+    );
     let envelope = builder.build(
         context,
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
@@ -8541,11 +8615,12 @@ where
     R: Redactor + ?Sized,
 {
     let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
-    let mut context = EventContext::new(run_state.next_event_seq, system_actor());
-    context.correlation_id = request_correlation_id
-        .map(ToOwned::to_owned)
-        .or_else(|| Some(tool_call_id.to_string()));
-    context.stream_key = Some(format!("edit:{}", metadata.edit_id));
+    let context = edit_event_context(
+        run_state,
+        &metadata.edit_id,
+        tool_call_id,
+        request_correlation_id,
+    );
 
     let envelope = builder.build(
         context,
@@ -8579,11 +8654,12 @@ where
         request_correlation_id,
     } = args;
     let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
-    let mut context = EventContext::new(run_state.next_event_seq, system_actor());
-    context.correlation_id = request_correlation_id
-        .map(ToOwned::to_owned)
-        .or_else(|| Some(tool_call_id.to_string()));
-    context.stream_key = Some(format!("edit:{}", metadata.edit_id));
+    let context = edit_event_context(
+        run_state,
+        &metadata.edit_id,
+        tool_call_id,
+        request_correlation_id,
+    );
 
     let envelope = builder.build(
         context,
@@ -8613,11 +8689,12 @@ where
     R: Redactor + ?Sized,
 {
     let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
-    let mut context = EventContext::new(run_state.next_event_seq, system_actor());
-    context.correlation_id = request_correlation_id
-        .map(ToOwned::to_owned)
-        .or_else(|| Some(tool_call_id.to_string()));
-    context.stream_key = Some(format!("edit:{}", metadata.edit_id));
+    let context = edit_event_context(
+        run_state,
+        &metadata.edit_id,
+        tool_call_id,
+        request_correlation_id,
+    );
 
     let envelope = builder.build(
         context,
@@ -8700,11 +8777,12 @@ where
     }
 
     let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
-    let mut context = EventContext::new(run_state.next_event_seq, system_actor());
-    context.correlation_id = request_correlation_id
-        .map(ToOwned::to_owned)
-        .or_else(|| Some(tool_call_id.to_string()));
-    context.stream_key = Some(format!("tool_call:{tool_call_id}"));
+    let context = tool_call_event_context(
+        run_state,
+        system_actor(),
+        tool_call_id,
+        request_correlation_id,
+    );
     let envelope = builder.build(
         context,
         EventV1::ArtifactWritten(ArtifactWrittenEvent {
