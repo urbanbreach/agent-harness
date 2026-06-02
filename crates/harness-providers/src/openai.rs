@@ -1552,7 +1552,10 @@ fn apply_codex_gpt5_response_defaults(body: &mut serde_json::Map<String, serde_j
         return;
     };
     let model_id = model_id.to_ascii_lowercase();
-    if !model_id.contains("gpt-5") || model_id.contains("gpt-5-chat") || model_id.contains("gpt-5-pro") {
+    if !model_id.contains("gpt-5")
+        || model_id.contains("gpt-5-chat")
+        || model_id.contains("gpt-5-pro")
+    {
         return;
     }
 
@@ -2592,7 +2595,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn codex_gpt_request_defaults_match_opencode_matrix() {
+    async fn codex_gpt_request_defaults_match_reference_matrix() {
         let transport = ScriptedOpenAiTransport::new([
             ScriptedOpenAiResponse::sse(responses_done_sse_transcript()),
             ScriptedOpenAiResponse::sse(responses_done_sse_transcript()),
