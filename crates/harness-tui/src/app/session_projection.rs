@@ -63,6 +63,16 @@ impl SessionProjection {
     }
 
     fn profile_label_for_event(&self, event: &EventEnvelopeV1) -> String {
+        if let EventV1::BackgroundTaskNotification(data) = &event.payload {
+            if let Some(profile) = data
+                .parent_agent_id
+                .as_deref()
+                .and_then(|agent_id| self.agent_profiles.get(agent_id))
+            {
+                return profile.clone();
+            }
+        }
+
         event
             .actor
             .agent_id
@@ -183,15 +193,7 @@ impl SessionProjection {
 
         let text = background_task_notification_text(data);
         let status = if data.delivered_turn_request_id.is_some() {
-            if self
-                .activities
-                .iter()
-                .any(|activity| activity.status == ActivityStatus::Streaming)
-            {
-                ActivityStatus::Queued
-            } else {
-                ActivityStatus::Streaming
-            }
+            ActivityStatus::Queued
         } else {
             ActivityStatus::Done
         };
@@ -319,9 +321,7 @@ impl SessionProjection {
         for activity in &mut self.activities {
             for permission in &mut activity.permissions {
                 if permission.permission_id == permission_id {
-                    permission.resolved_decision = Some(decision);
-                    permission.resolution_reason = reason.map(str::to_owned);
-                    permission.last_seq = seq;
+                    permission.mark_resolved(decision, reason, seq);
                     activity.last_seq = seq;
                     return;
                 }
@@ -330,9 +330,7 @@ impl SessionProjection {
             for tool_call in &mut activity.tool_calls {
                 for permission in &mut tool_call.permissions {
                     if permission.permission_id == permission_id {
-                        permission.resolved_decision = Some(decision);
-                        permission.resolution_reason = reason.map(str::to_owned);
-                        permission.last_seq = seq;
+                        permission.mark_resolved(decision, reason, seq);
                         tool_call.sync_display_status();
                         tool_call.last_seq = seq;
                         activity.last_seq = seq;
@@ -711,7 +709,9 @@ impl SessionProjection {
                     };
                     if let Some(entry) = self.activities.get_mut(index) {
                         if !matches!(entry.status, ActivityStatus::Done | ActivityStatus::Error) {
-                            entry.status = status;
+                            if !activity_is_background_notification_reminder(entry) {
+                                entry.status = status;
+                            }
                         }
                         entry.user_message = Some(data.clone());
                         entry.user_timestamp = event.ts.clone();
@@ -749,6 +749,7 @@ impl SessionProjection {
             EventV1::ProviderRequestStarted(data) => {
                 self.note_child_agent_request(event, &data.request_id);
                 let turn_id = Self::canonical_provider_turn_id(event, &data.request_id);
+                self.note_child_agent_request(event, turn_id);
                 for row in self.orchestration_tasks.values_mut() {
                     if row.effective_child_request_id() == Some(turn_id)
                         || row.effective_child_request_id() == Some(data.request_id.as_str())
@@ -794,6 +795,7 @@ impl SessionProjection {
             EventV1::ProviderStreamDelta(data) => {
                 self.note_child_agent_request(event, &data.request_id);
                 let turn_id = Self::canonical_provider_turn_id(event, &data.request_id);
+                self.note_child_agent_request(event, turn_id);
                 if let Some(index) = self.activity_index_for_provider_event(event, &data.request_id)
                 {
                     if let Some(entry) = self.activities.get_mut(index) {
@@ -822,6 +824,7 @@ impl SessionProjection {
             EventV1::ProviderReasoningDelta(data) => {
                 self.note_child_agent_request(event, &data.request_id);
                 let turn_id = Self::canonical_provider_turn_id(event, &data.request_id);
+                self.note_child_agent_request(event, turn_id);
                 if let Some(index) = self.activity_index_for_provider_event(event, &data.request_id)
                 {
                     if let Some(entry) = self.activities.get_mut(index) {
@@ -853,6 +856,7 @@ impl SessionProjection {
             EventV1::ProviderRequestFinished(data) => {
                 self.note_child_agent_request(event, &data.request_id);
                 let turn_id = Self::canonical_provider_turn_id(event, &data.request_id);
+                self.note_child_agent_request(event, turn_id);
                 let provider_error_detail = provider_error_detail(data);
                 if let Some(index) = self.activity_index_for_provider_event(event, &data.request_id)
                 {
@@ -1459,17 +1463,56 @@ fn titlecase_word(value: &str) -> String {
 }
 
 fn background_task_notification_text(data: &BackgroundTaskNotificationEvent) -> String {
+    let status = data.status.as_str();
+    let task_id = background_notification_safe_field(&data.task_id);
+    let child_request_id = background_notification_safe_field(&data.child_request_id);
+    let child_session_id = background_notification_safe_field(&data.child_session_id);
+
     format!(
-        "<system-reminder>\n[BACKGROUND TASK {}]\nID: {}\nRequest ID: {}\nDescription: {}\nStatus: {}\n\n{}\n\nUse background_output(request_id=\"{}\") for full details or task(session_id=\"{}\") to continue analysis from the child session.\n</system-reminder>",
-        data.status.as_str().to_ascii_uppercase(),
-        data.task_id,
-        data.child_request_id,
-        data.description,
-        data.status.as_str(),
-        data.summary,
-        data.child_request_id,
-        data.child_session_id,
+        "<system-reminder>\n[BACKGROUND TASK {}]\nID: {}\nRequest ID: {}\nStatus: {}\n\nBackground task {}. Use background_output(request_id=\"{}\") for full details or task(session_id=\"{}\") to continue analysis from the child session.\n</system-reminder>",
+        status.to_ascii_uppercase(),
+        task_id,
+        child_request_id,
+        status,
+        status.replace('_', " "),
+        child_request_id,
+        child_session_id,
     )
+}
+
+fn background_notification_safe_field(value: &str) -> String {
+    const MAX_CHARS: usize = 120;
+
+    let mut sanitized = String::new();
+    for character in value.chars() {
+        sanitized.push(if character.is_control() || character == '\t' {
+            ' '
+        } else {
+            character
+        });
+    }
+
+    let trimmed = sanitized.trim();
+    if trimmed.is_empty() {
+        return "unknown".to_string();
+    }
+
+    let mut capped = String::new();
+    for (index, character) in trimmed.chars().enumerate() {
+        if index == MAX_CHARS {
+            capped.push('…');
+            break;
+        }
+        capped.push(character);
+    }
+    capped
+}
+
+fn activity_is_background_notification_reminder(activity: &ActivityEntry) -> bool {
+    activity
+        .user_message
+        .as_ref()
+        .is_some_and(|message| message.text.contains("[BACKGROUND TASK "))
 }
 
 impl AppState {

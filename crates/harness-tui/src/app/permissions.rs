@@ -24,6 +24,19 @@ pub struct PermissionEntry {
     pub last_seq: u64,
 }
 
+impl PermissionEntry {
+    pub(crate) fn mark_resolved(
+        &mut self,
+        decision: EventPermissionDecision,
+        reason: Option<&str>,
+        seq: u64,
+    ) {
+        self.resolved_decision = Some(decision);
+        self.resolution_reason = reason.map(str::to_owned);
+        self.last_seq = seq;
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct PendingPermission {
     pub(crate) seq: u64,

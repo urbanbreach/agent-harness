@@ -1816,7 +1816,7 @@ impl AppState {
             event_count: self.events.len(),
             last_event: self.events.last().map(|event| &event.payload),
             latest_activity: self.runtime_state_activity(),
-            activity_count: self.activities.len(),
+            activity_count: self.runtime_state_activity_count(),
             active_permission,
         });
 
@@ -2693,9 +2693,17 @@ impl AppState {
         self.sync_file_mention_overlay();
     }
 
+    pub(crate) fn hidden_delegated_child_request_ids_in_current_view<'a>(
+        &'a self,
+    ) -> BTreeSet<&'a str> {
+        self.delegated_child_request_ids_for_parent_view(self.current_session_id())
+    }
+
     fn active_turn_in_progress(&self) -> bool {
+        let hidden_child_request_ids = self.hidden_delegated_child_request_ids_in_current_view();
         self.activities
             .iter()
+            .filter(|activity| !hidden_child_request_ids.contains(activity.request_id.as_str()))
             .any(|activity| activity.status == ActivityStatus::Streaming)
     }
 
@@ -2766,11 +2774,25 @@ impl AppState {
     }
 
     fn runtime_state_activity(&self) -> Option<&ActivityEntry> {
+        let hidden_child_request_ids = self.hidden_delegated_child_request_ids_in_current_view();
         self.activities
             .iter()
             .rev()
+            .filter(|activity| !hidden_child_request_ids.contains(activity.request_id.as_str()))
             .find(|activity| activity.status == ActivityStatus::Streaming)
-            .or_else(|| self.activities.back())
+            .or_else(|| {
+                self.activities.iter().rev().find(|activity| {
+                    !hidden_child_request_ids.contains(activity.request_id.as_str())
+                })
+            })
+    }
+
+    fn runtime_state_activity_count(&self) -> usize {
+        let hidden_child_request_ids = self.hidden_delegated_child_request_ids_in_current_view();
+        self.activities
+            .iter()
+            .filter(|activity| !hidden_child_request_ids.contains(activity.request_id.as_str()))
+            .count()
     }
 
     fn echo_submitted_prompt(&mut self, text: String, status: ActivityStatus) {
@@ -4806,6 +4828,7 @@ pub(crate) fn exact_test_startup_slash_commands_execute_without_menu() {
             "auth".to_string(),
             "exit".to_string(),
             "help".to_string(),
+            "model".to_string(),
             "new".to_string(),
             "replay".to_string(),
             "resume".to_string(),
@@ -5064,7 +5087,7 @@ pub(crate) fn exact_test_onboarding_inventory_has_focus_hints_redaction_and_skil
             .collect::<Vec<_>>()
             .join("\n");
         assert!(
-            !text.to_lowercase().contains("opencode"),
+            !text.to_lowercase().contains("reference implementation"),
             "onboarding screen {} should use Harness branding only:\n{text}",
             step.snapshot_name()
         );
