@@ -130,7 +130,7 @@ fn docs_do_not_reference_broken_local_markdown_targets_or_deleted_prd_artifacts(
     let root = repo_root();
     let deleted = [
         "docs/v1-agent-catalog-workspace-intelligence-prd.md",
-        "docs/omo-parity-spec.md",
+        "docs/legacy-parity-spec.md",
         "docs/v1-skill-contract-capability-governance-prd.md",
         "skills-lock.json",
     ];
