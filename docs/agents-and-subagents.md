@@ -22,7 +22,7 @@ Harness resolves agent/profile/category metadata through the `harness-core::agen
 | `summary` | hidden | Session summary generation. |
 | `compaction` | hidden | Provider-context compaction summary. |
 
-Each catalog entry carries stable id, display name, role, mode, hidden flag, category binding, display order, prompt asset status/source, model ref plus resolved provider/model/variant, fallback chain metadata, toolset, permission posture, skill metadata, and readiness warnings. The shipped category routes use named `category-*` model profiles in `configs/harness.example.jsonc`, so the local starter preserves OMO-style category scale through GPT-family primary targets plus validated fallback metadata while larger provider catalogs can retarget the same profile names. Runtime execution currently selects the primary target from the profile; automatic provider/model retry is a separate runtime feature.
+Each catalog entry carries stable id, display name, role, mode, hidden flag, category binding, display order, prompt asset status/source, model ref plus resolved provider/model/variant, fallback chain metadata, toolset, permission posture, skill metadata, and readiness warnings. The shipped category routes use named `category-*` model profiles in `configs/harness.example.jsonc`, so the local starter preserves category scale through GPT-family primary targets plus validated fallback metadata while larger provider catalogs can retarget the same profile names. Runtime execution currently selects the primary target from the profile; automatic provider/model retry is a separate runtime feature.
 
 ## Category fallback
 

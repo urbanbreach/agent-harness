@@ -132,22 +132,22 @@ Ratatui-TUI architecture and to harness branding. "It works" is not the bar.
 "It matches the reference, or is the best possible harness-native version of it"
 is the bar.
 
-- Reference authorities by surface: **opencode** for provider auth, the `auth`
-  command surface, onboarding, and TUI/skill UX; **pi-mono** for prompt caching;
-  **OMO (`oh-my-openagent`/`oh-my-codex`)** for model resolution and model-family
+- Reference authorities by surface: **reference implementation** for provider auth, the `auth`
+  command surface, onboarding, and TUI/skill UX; **reference cache implementation** for prompt caching;
+  **reference model implementation** for model resolution and model-family
   prompts.
 - Do not stop a workstream at a thin or "good enough" version. Compare your result
   against the reference and the parity screenshots in
-  `inspirations/screenshots opencode ui parity/` and
-  `inspirations/opencode-ui-images/`. If the reference does something this
+  `inspirations/screenshots reference implementation ui parity/` and
+  `inspirations/reference implementation-ui-images/`. If the reference does something this
   workstream's surface should do and you have not matched it, you are not done.
 - Parity means *observable behavior and visual design*, reimplemented natively —
-  never copied source code, never opencode/pi/OMO branding. Where the harness's
+  never copied source code, never reference implementation/reference branding. Where the harness's
   architecture lets it do better than the reference (e.g., event-sourced replay,
   determinism, stronger redaction), do better and note it; never do worse.
 - The two explicit, non-negotiable parity targets called out by the product owner:
-  (1) the first-run onboarding must **function and look exactly like opencode's**
-  onboarding (harness identity substituted for opencode's name/logo only — see
+  (1) the first-run onboarding must **function and look exactly like reference implementation's**
+  onboarding (harness identity substituted for reference implementation's name/logo only — see
   WS6), and (2) the `auth` CLI and auth management must be runnable **at any time**,
   not only during first run (see WS6).
 - This mandate does not expand scope into §9. It raises the quality bar *within*
@@ -192,7 +192,7 @@ providers, logo) which remain post-V1 (§9).
 
 In scope (pre-V1), as workstreams WS1–WS8 in §4:
 
-- WS1 OpenAI-compatible prompt-cache parity (pi-mono technique).
+- WS1 OpenAI-compatible prompt-cache parity (reference cache implementation technique).
 - WS2 Model family/capability resolution seam (replace substring heuristics).
 - WS3 Provider credential abstraction + secure auth store + refresh.
 - WS4 Codex (ChatGPT) OAuth provider (PKCE loopback + device-code), OpenAI-compatible.
@@ -228,11 +228,11 @@ shapes may have shifted.
   near the front of the prompt, so a branch switch or midnight rollover
   invalidates the cacheable prefix tail.
 
-Reference behavior to copy (pi-mono is the caching authority):
+Reference behavior to copy (reference cache implementation is the caching authority):
 
-- `inspirations/pi-mono/packages/ai/src/providers/openai-prompt-cache.ts` —
+- `inspirations/reference cache implementation/packages/ai/src/providers/openai-prompt-cache.ts` —
   `clampOpenAIPromptCacheKey` clamps the key to 64 chars.
-- `inspirations/pi-mono/packages/ai/src/providers/openai-responses.ts` and
+- `inspirations/reference cache implementation/packages/ai/src/providers/openai-responses.ts` and
   `.../openai-completions.ts` — set `prompt_cache_key: clamp(sessionId)` on the
   request (omit when retention is disabled).
 
@@ -242,16 +242,16 @@ Reference behavior to copy (pi-mono is the caching authority):
   body via `model_id.contains("gpt-4")`, `.contains("gpt")`, `.contains("claude")`,
   `.contains("gemini-")`, `.contains("kimi")`, `.contains("trinity")`, etc.,
   returning hardcoded `const &str` bodies (`PROMPT_GPT`, `PROMPT_CODEX`,
-  `PROMPT_BEAST`, `PROMPT_ANTHROPIC`, `PROMPT_GEMINI`, `PROMPT_KIMI`,
+  `PROMPT_REASONING`, `PROMPT_ANTHROPIC`, `PROMPT_GEMINI`, `PROMPT_KIMI`,
   `PROMPT_TRINITY`, `PROMPT_DEFAULT`).
 - [`docs/roadmap-v1.md`](roadmap-v1.md) (Agent prompt depth) states "substring
   heuristics do not become the only long-term seam" yet checks
   "Model-specific prompt tuning is ... explicit prompt presets with tests." This
   tension must be reconciled honestly (implement the seam, or reword the box).
 
-Reference behavior (OMO is the model-resolution authority):
+Reference behavior (reference model implementation is the model-resolution authority):
 
-- `inspirations/oh-my-openagent/packages/model-core/src/model-family-detectors.ts`,
+- `inspirations/model reference/packages/model-core/src/model-family-detectors.ts`,
   `.../model-capabilities*`, `.../variant-resolver.ts`,
   `.../model-resolution-pipeline.ts` — a capability/family seam keyed off model
   metadata, not raw substring scans.
@@ -267,7 +267,7 @@ Both target providers are OpenAI-compatible execution with (a) an OAuth-derived
 bearer token, (b) a base-URL rewrite, and (c) provider-specific request headers.
 The reference flows, to copy as behavior:
 
-**Codex / ChatGPT** — `inspirations/opencode/packages/opencode/src/plugin/openai/codex.ts`:
+**Codex / ChatGPT** — `inspirations/reference implementation/packages/reference implementation/src/plugin/openai/codex.ts`:
 
 - Client id `app_EMoamEEZ73f0CkXaXp7hrann`; issuer `https://auth.openai.com`;
   Codex request endpoint `https://chatgpt.com/backend-api/codex/responses`.
@@ -292,7 +292,7 @@ The reference flows, to copy as behavior:
   `/chat/completions` to the Codex endpoint; add `originator`, `User-Agent`,
   `session-id`. The OAuth model set is the gpt-5.x family.
 
-**GitHub Copilot** — `inspirations/opencode/packages/opencode/src/plugin/github-copilot/copilot.ts`:
+**GitHub Copilot** — `inspirations/reference implementation/packages/reference implementation/src/plugin/github-copilot/copilot.ts`:
 
 - Client id `Ov23li8tweQw6odWQebz`; device-code POST
   `https://github.com/login/device/code` with scope `read:user`; poll
@@ -306,14 +306,14 @@ The reference flows, to copy as behavior:
   `Openai-Intent: conversation-edits`, `Copilot-Vision-Request: true` for image
   requests, `User-Agent`. Verify whether the GitHub token must be exchanged for a
   short-lived Copilot token against
-  `inspirations/opencode/packages/opencode/src/plugin/github-copilot/` (models +
+  `inspirations/reference implementation/packages/reference implementation/src/plugin/github-copilot/` (models +
   the `github-copilot-models` test) before relying on it directly; implement
   whichever the reference proves.
 
-**Auth orchestration & storage** — opencode separates the auth *method* contract
-(`packages/opencode/src/provider/auth.ts`: `methods`/`authorize`/`callback`, with
+**Auth orchestration & storage** — reference implementation separates the auth *method* contract
+(`packages/reference implementation/src/provider/auth.ts`: `methods`/`authorize`/`callback`, with
 `oauth` vs `api` kinds and prompt schemas) from the credential *store*
-(`packages/opencode/src/auth/index.ts`, `OAUTH_DUMMY_KEY`, persisted outside
+(`packages/reference implementation/src/auth/index.ts`, `OAUTH_DUMMY_KEY`, persisted outside
 runtime config). Mirror that separation: a credential store distinct from
 `harness.json`, persisted in the platform data dir with restrictive permissions,
 never in the event log or support bundle.
@@ -366,7 +366,7 @@ wrong.
 
 ### 3.5 Public contracts and shared seams
 
-Use this section for decisions opencode/pi-mono/OMO cannot make for Harness.
+Use this section for decisions reference implementation/reference cache implementation/reference model implementation cannot make for Harness.
 These are public contracts or cross-workstream seams, not implementation
 micro-design. If implementation discovers a reference conflict, update this PRD
 and the evidence log before changing behavior.
@@ -383,7 +383,7 @@ and the evidence log before changing behavior.
   `cacheRetention` (`short`/`long`/`none`, optional). Existing `apiKeyEnv` and
   inline `apiKey` stay supported as config fallbacks. OAuth tokens, refresh tokens,
   user codes, and stored API-key secrets never appear in `harness.json{,c}`.
-- **Cache-retention semantics:** the default is `short`, matching pi-mono's cache
+- **Cache-retention semantics:** the default is `short`, matching reference cache implementation's cache
   optimization posture. `none` omits `prompt_cache_key`, `prompt_cache_retention`,
   and cache-affinity headers. `short` sends a clamped `prompt_cache_key` and any
   session/request affinity headers supported by the target path. `long` additionally
@@ -460,7 +460,7 @@ explicit symlink-escape / path-traversal tests across configured roots.
 ### 3.7 Onboarding: doc-only today
 
 The checked first-run roadmap items describe documentation (copying
-`harness.jsonc`), not an interactive flow. opencode's interactive provider/auth
+`harness.jsonc`), not an interactive flow. reference implementation's interactive provider/auth
 selection lives in its TUI provider dialog and `cli/cmd/providers.ts`. Adapt the
 *UX* (provider pick → login method → first prompt → visible success), not the
 code or branding.
@@ -493,8 +493,8 @@ Required outcomes:
 - The `cacheRetention` config key (`short`/`long`/`none`) follows §3.5 exactly:
   default `short`, `none` omits cache fields, `short` sends the clamped key, and
   `long` adds provider-supported long retention only where allowed. This rounds the
-  OpenAI-compatible path to pi-mono parity; the Anthropic `cache_control`/TTL half
-  of pi-mono's behavior is honestly deferred to the post-V1 native Anthropic
+  OpenAI-compatible path to reference cache implementation parity; the Anthropic `cache_control`/TTL half
+  of reference cache implementation's behavior is honestly deferred to the post-V1 native Anthropic
   transport (§9), not silently dropped.
 
 Tests:
@@ -519,7 +519,7 @@ Required outcomes:
   `model_id.contains(...)` scans. Prompt selection, cache-retention eligibility,
   vision/header behavior, reasoning/thinking settings, and context budgeting
   consume that seam instead of re-parsing model strings locally.
-- Parity target: the seam must carry the *behavior* OMO's `model-core` exposes that
+- Parity target: the seam must carry the *behavior* reference model implementation's `model-core` exposes that
   the harness actually consumes, not a thin family-name lookup. At minimum:
   (a) family detection (`model-family-detectors`), (b) capability flags the runtime
   branches on — reasoning/thinking support, tool-call support, vision, long-cache
@@ -528,7 +528,7 @@ Required outcomes:
   (`context-limit-resolver`) so compaction/budgeting use real per-model limits, and
   (d) a documented fallback chain (`fallback-chain-from-models`) for unknown or
   unavailable models. Port the *behavior* of these, reimplemented in Rust; do not
-  port OMO's full bundled snapshot DB unless the harness needs it. Where the
+  port reference model implementation's full bundled snapshot DB unless the harness needs it. Where the
   harness already has partial equivalents (e.g. `agent_catalog`, model resolution
   in `harness-core`), extend them rather than duplicating.
 - Unknown models resolve to a documented default deterministically via the fallback
@@ -626,7 +626,7 @@ Required outcomes (per §3.3):
   public and enterprise deployment options (deployment-type selection + enterprise
   URL validation + domain normalization), polling that honors `authorization_pending`
   / `slow_down` with a safety margin, and credential storage. Before implementation,
-  re-read the cited opencode Copilot plugin and tests and make a recorded decision:
+  re-read the cited reference implementation Copilot plugin and tests and make a recorded decision:
   direct GitHub token as Copilot bearer, or GitHub→Copilot token exchange if the
   reference proves it is needed.
 - Request decoration with the documented Copilot headers (`x-initiator`,
@@ -648,29 +648,29 @@ Tests (all mocked — no live GitHub):
   header only on image requests. "breaks if:" base selection, request context, or
   headers regress.
 
-### WS6 — First-run onboarding (exact opencode parity) + always-available `auth` UX
+### WS6 — First-run onboarding (exact reference implementation parity) + always-available `auth` UX
 
 This workstream carries the two non-negotiable parity targets from §0.6.
 
-Required outcomes — onboarding must **function and look exactly like opencode's**:
+Required outcomes — onboarding must **function and look exactly like reference implementation's**:
 
 - The first-run onboarding flow must be a faithful, visual-parity reimplementation
-  of opencode's onboarding: the same screen sequence, layout, framing, ordering of
+  of reference implementation's onboarding: the same screen sequence, layout, framing, ordering of
   choices, focus/selection behavior, key hints, empty/loading/error states, and
   overall visual design — built natively in Ratatui, with harness identity
-  (name/logo/colors) substituted for opencode's name/logo only. This is *visual +
+  (name/logo/colors) substituted for reference implementation's name/logo only. This is *visual +
   behavioral* parity, not a loose "inspired by" adaptation, and not a copy of
-  opencode source code.
-- Derive the exact screens from the opencode references: the start/splash screen
-  (`inspirations/opencode/packages/opencode/src/cli/cmd/run/splash.ts`), the
+  reference implementation source code.
+- Derive the exact screens from the reference implementations: the start/splash screen
+  (`inspirations/reference implementation/packages/reference implementation/src/cli/cmd/run/splash.ts`), the
   provider dialog and model dialog
-  (`inspirations/opencode/packages/opencode/src/cli/cmd/tui/component/dialog-provider.tsx`,
+  (`inspirations/reference implementation/packages/reference implementation/src/cli/cmd/tui/component/dialog-provider.tsx`,
   `.../dialog-model.tsx`), and the account/auth command
-  (`inspirations/opencode/packages/opencode/src/cli/cmd/account.ts`). Compare the
+  (`inspirations/reference implementation/packages/reference implementation/src/cli/cmd/account.ts`). Compare the
   result side by side against the parity screenshots in
-  `inspirations/screenshots opencode ui parity/Opencode/` (start screen, command
-  menus) and the images in `inspirations/opencode-ui-images/`. If a screen differs
-  from the opencode reference in a way that is not pure branding substitution, it
+  `inspirations/screenshots reference implementation ui parity/reference-ui/` (start screen, command
+  menus) and the images in `inspirations/reference implementation-ui-images/`. If a screen differs
+  from the reference implementation in a way that is not pure branding substitution, it
   is not done.
 - Flow: provider selection → provider-declared auth method (browser/device/api key)
   → login (WS3–WS5) → first prompt → visible success signal. The flow follows the
@@ -696,7 +696,7 @@ Required outcomes — `auth` UX must be available **at any time**, not just firs
   implementation.
 - Doctor reports per-provider auth status (kind, presence, expiry where known)
   separately from provider transport health, without printing secrets.
-- Skill listing/selection UX in the TUI matches the opencode skill surface
+- Skill listing/selection UX in the TUI matches the reference implementation skill surface
   (naming, grouping, description display, selection behavior) at visual parity, the
   same standard as the onboarding screens above.
 
@@ -723,7 +723,7 @@ Tests:
 Required outcomes:
 
 - Non-GPT family prompts (at minimum Anthropic and Gemini, plus any families a
-  Copilot model exposes) are brought to OMO-parity quality: branding stripped,
+  Copilot model exposes) are brought to reference model implementation-parity quality: branding stripped,
   unsupported-tool claims removed, the shared prompt skeleton honored, and behavior
   mapped to real harness seams.
 - Model-family prompt bodies are sourced from the §3.5 data asset path rather than
@@ -784,7 +784,7 @@ Cache and prompts:
   `none` omits cache fields, `long` adds only provider-supported long-retention
   fields, and the deferred Anthropic half is documented rather than dropped.
 - [x] Model family/capability resolution uses an explicit tested seam carrying
-  OMO `model-core` behavior depth (family detection, capability flags,
+  reference model implementation `model-core` behavior depth (family detection, capability flags,
   context-limit resolution, fallback chain), not only substring scans, with a
   default-fallback test.
 - [x] The roadmap substring-heuristic/preset claim is reconciled honestly with a
@@ -818,10 +818,10 @@ Provider auth:
   palette/slash command via the centralized command metadata seam, proven by a TUI
   test routing to the same backend as the CLI.
 - [x] The first-run onboarding flow functions and looks at visual parity with the
-  §3.5 screen inventory and opencode's onboarding, with harness branding substituted
+  §3.5 screen inventory and reference implementation's onboarding, with harness branding substituted
   only, proven by PTY/snapshot tests compared against the reference screens; it is
   skippable for the current launch and never blocks a pre-configured user.
-- [x] TUI skill listing/selection UX is at visual parity with the opencode skill
+- [x] TUI skill listing/selection UX is at visual parity with the reference implementation skill
   surface, proven by a snapshot test.
 - [x] Doctor reports per-provider auth status (kind/presence/expiry) with redacted
   values, proven by a doctor test.
@@ -971,23 +971,23 @@ Harness seams to respect (re-read before editing):
 
 Inspiration references (read-only; copy behavior, never code/branding):
 
-- Caching (authority: pi-mono):
-  `inspirations/pi-mono/packages/ai/src/providers/openai-prompt-cache.ts`,
+- Caching (authority: reference cache implementation):
+  `inspirations/reference cache implementation/packages/ai/src/providers/openai-prompt-cache.ts`,
   `.../openai-responses.ts`, `.../openai-completions.ts`,
-  `inspirations/pi-mono/packages/ai/src/oauth.ts`.
-- OAuth flows (authority: opencode):
-  `inspirations/opencode/packages/opencode/src/plugin/openai/codex.ts`,
+  `inspirations/reference cache implementation/packages/ai/src/oauth.ts`.
+- OAuth flows (authority: reference implementation):
+  `inspirations/reference implementation/packages/reference implementation/src/plugin/openai/codex.ts`,
   `.../plugin/github-copilot/copilot.ts`,
   `.../provider/auth.ts`, `.../auth/index.ts`, `.../cli/cmd/account.ts`.
-- Onboarding + auth UX visual parity (authority: opencode): the screen sources
-  `inspirations/opencode/packages/opencode/src/cli/cmd/run/splash.ts`,
+- Onboarding + auth UX visual parity (authority: reference implementation): the screen sources
+  `inspirations/reference implementation/packages/reference implementation/src/cli/cmd/run/splash.ts`,
   `.../cli/cmd/tui/component/dialog-provider.tsx`,
   `.../cli/cmd/tui/component/dialog-model.tsx`, plus the parity image sets
-  `inspirations/screenshots opencode ui parity/Opencode/` (and the matching
+  `inspirations/screenshots reference implementation ui parity/reference-ui/` (and the matching
   `.../Harness project/` for current-state comparison) and
-  `inspirations/opencode-ui-images/`. These images are the visual acceptance
+  `inspirations/reference implementation-ui-images/`. These images are the visual acceptance
   reference for WS6.
-- Model resolution (authority: OMO):
-  `inspirations/oh-my-openagent/packages/model-core/src/` — `model-family-detectors`,
+- Model resolution (authority: reference model implementation):
+  `inspirations/model reference/packages/model-core/src/` — `model-family-detectors`,
   `model-capabilities`, `model-settings-compatibility`, `context-limit-resolver`,
   `fallback-chain-from-models`, `variant-resolver`, `model-resolution-pipeline`.
