@@ -1,11 +1,11 @@
-# OpenCode Auth-to-Model Provider Parity PRD
+# reference implementation Auth-to-Model Provider Parity PRD
 
 **Status:** Active implementation PRD for making Harness provider authentication,
-model discovery, model selection, and active-provider display match OpenCode for
+model discovery, model selection, and active-provider display match reference implementation for
 the V1-supported providers.
 **Audience:** One autonomous implementation agent working in this repository until
 the strict end-state goal below is true.
-**Product authority:** The intended product behavior is OpenCode parity for the
+**Product authority:** The intended product behavior is reference implementation parity for the
 supported providers: OpenAI/Codex and GitHub Copilot. Extra providers, plugin auth,
 and custom provider installation are post-V1 unless they are needed as shared
 architecture seams.
@@ -25,7 +25,7 @@ This PRD is complete only when all of the following are true at the same time:
    current primary agent, persists it as recent selection state, and subsequent
    prompts use that model.
 4. The prompt shell/HUD/input chrome shows the active agent, model, and provider
-   label in the same product sense as OpenCode: a user can see whether they are
+   label in the same product sense as reference implementation: a user can see whether they are
    using CLIProxyAPI/mock/local, OpenAI Codex, or GitHub Copilot before submitting.
 5. If no provider is authenticated/configured, the UI does not crash or require
    config editing. It clearly offers `/connect` or `/auth` and blocks prompt send
@@ -44,13 +44,13 @@ does not route prompts through the selected provider.
 
 ## 1. Problem statement
 
-Harness now has a close OpenCode-style `auth login` UI for OpenAI/Codex and
+Harness now has a close reference-style `auth login` UI for OpenAI/Codex and
 GitHub Copilot, and it stores credentials securely. However, the stored
 credential does not currently activate a usable provider/model catalog on its
 own. Users still need to understand and edit provider config before the runtime,
 model picker, and prompt shell can use those credentials.
 
-That is not the OpenCode product model. In OpenCode, provider auth and model
+That is not the reference implementation product model. In reference implementation, provider auth and model
 availability are connected: once a provider is connected, the provider appears in
 the runtime state, its models appear in the model picker, the selected model is
 persisted locally, and the prompt input chrome shows the active model/provider.
@@ -99,28 +99,28 @@ augment the catalog unless disabled; they do not silently rewrite user config.
 
 ---
 
-## 3. OpenCode reference behavior
+## 3. reference implementation behavior
 
 The implementing agent must re-read these files before coding. Copy observable
 behavior and product semantics, not TypeScript architecture or branding.
 
 ### 3.1 Provider auth and connected-provider list
 
-- `inspirations/opencode/packages/opencode/src/server/routes/instance/httpapi/handlers/provider.ts`
+- `inspirations/reference implementation/packages/reference implementation/src/server/routes/instance/httpapi/handlers/provider.ts`
   - `list` merges models.dev providers with connected providers.
   - Return shape includes `all`, `default`, and `connected`.
   - `connected` is derived from authenticated provider runtime state, not from a
     manually edited config file.
-- `inspirations/opencode/packages/opencode/src/provider/auth.ts`
+- `inspirations/reference implementation/packages/reference implementation/src/provider/auth.ts`
   - Auth callbacks store credentials through the auth service.
   - OAuth authorize/callback is provider-id keyed.
-- `inspirations/opencode/packages/opencode/src/auth/index.ts`
+- `inspirations/reference implementation/packages/reference implementation/src/auth/index.ts`
   - Auth storage is separate from config.
 
 ### 3.2 Connect-provider dialog
 
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/component/dialog-provider.tsx`
-  - Provider priority puts OpenCode/OpenAI/GitHub Copilot near the top.
+- `inspirations/reference implementation/packages/reference implementation/src/cli/cmd/tui/component/dialog-provider.tsx`
+  - Provider priority puts reference implementation/OpenAI/GitHub Copilot near the top.
   - Connected providers show a checkmark.
   - Selecting a provider chooses an auth method, completes auth, disposes/reboots
     instance state, re-syncs provider state, then opens `DialogModel` scoped to
@@ -129,7 +129,7 @@ behavior and product semantics, not TypeScript architecture or branding.
 
 ### 3.3 Model picker
 
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/component/dialog-model.tsx`
+- `inspirations/reference implementation/packages/reference implementation/src/cli/cmd/tui/component/dialog-model.tsx`
   - Uses synced provider state for `sync.data.provider`.
   - Groups model rows by provider when connected.
   - Includes recents/favorites when connected.
@@ -140,7 +140,7 @@ behavior and product semantics, not TypeScript architecture or branding.
 
 ### 3.4 Local model state and active-model fallback
 
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/context/local.tsx`
+- `inspirations/reference implementation/packages/reference implementation/src/cli/cmd/tui/context/local.tsx`
   - Local model state persists recent/favorite/variant data in state `model.json`.
   - Active model resolution order is:
     1. CLI `--model`, if valid.
@@ -155,7 +155,7 @@ behavior and product semantics, not TypeScript architecture or branding.
 
 ### 3.5 Prompt input chrome/HUD
 
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`
+- `inspirations/reference implementation/packages/reference implementation/src/cli/cmd/tui/component/prompt/index.tsx`
   - When in normal mode, the prompt footer shows agent, model label, provider
     label, and variant if selected.
   - When in shell mode, it shows `Shell` instead of model/provider metadata.
@@ -164,10 +164,10 @@ behavior and product semantics, not TypeScript architecture or branding.
 
 ### 3.6 Run/footer model commands
 
-- `inspirations/opencode/packages/opencode/src/cli/cmd/run/footer.command.tsx`
+- `inspirations/reference implementation/packages/reference implementation/src/cli/cmd/run/footer.command.tsx`
   - Command-mode model switching also works from provider/model catalog state.
-- `inspirations/opencode/packages/opencode/src/cli/cmd/run/runtime.ts`
-  - Runtime state includes `opencode.model.provider` and `opencode.model.id` in
+- `inspirations/reference implementation/packages/reference implementation/src/cli/cmd/run/runtime.ts`
+  - Runtime state includes `reference implementation.model.provider` and `reference implementation.model.id` in
     metadata/logging.
 
 ---
@@ -185,7 +185,7 @@ The implementing agent must inspect these paths before editing.
   - Credential store, redaction, credential precedence.
 - `crates/harness-core/src/auth/codex.rs`
   - Codex PKCE/device flow and `codex_oauth_model_allowed`.
-  - Contains the OpenCode-compatible allowed GPT/Codex model filter.
+  - Contains the upstream-compatible allowed GPT/Codex model filter.
 - `crates/harness-core/src/auth/copilot.rs`
   - Copilot OAuth flow and `copilot_offline_fallback_models`.
 - `crates/harness/src/bootstrap.rs`
@@ -223,7 +223,7 @@ The implementing agent must inspect these paths before editing.
   - TUI live startup, config loading, launch metadata, model selection state, and
     `UiIntent::SwitchModel` handling.
   - `MODEL_SELECTION_STATE_FILE` and `PersistedModelSelection` are the Harness
-    counterpart to OpenCode’s state `model.json`.
+    counterpart to reference implementation’s state `model.json`.
 
 ### 4.4 TUI model picker and prompt chrome
 
@@ -267,7 +267,7 @@ Required behavior:
   rule. Do not expose arbitrary non-Codex GPT-4/legacy models as OAuth Codex
   models.
 - Copilot model list should use live/probed data when the architecture already has
-  it. The OpenCode reference fetches the authenticated Copilot `/models` endpoint,
+  it. The reference implementation fetches the authenticated Copilot `/models` endpoint,
   filters disabled/non-picker models, and merges the result into picker-visible
   model metadata. Harness should implement that behavior behind a deterministic
   mock/cassette seam; use the existing offline fallback models only when live
@@ -338,11 +338,11 @@ Required behavior:
 - Selecting a model must not be cosmetic. The next prompt must use the selected
   provider/model.
 - Recent selection state should be persisted to Harness’s model state file and
-  restored when valid, following OpenCode’s fallback order.
+  restored when valid, following reference implementation’s fallback order.
 
 ### 5.5 Active model resolution order
 
-Implement and test a Harness equivalent of OpenCode’s local model fallback:
+Implement and test a Harness equivalent of reference implementation’s local model fallback:
 
 1. CLI/profile override, if valid.
 2. Explicit config agent/default model, if valid.
@@ -352,7 +352,7 @@ Implement and test a Harness equivalent of OpenCode’s local model fallback:
 6. No-provider state with connect guidance.
 
 The exact profile integration can follow existing Harness concepts, but the user
-observable result must match OpenCode: a real connected provider becomes usable
+observable result must match reference implementation: a real connected provider becomes usable
 without config, and the prompt chrome shows what is active.
 
 ### 5.6 Prompt shell/HUD must show active provider/model
@@ -395,7 +395,7 @@ When TUI auth completes mid-session:
 - Provider/model runtime state refreshes.
 - The newly connected provider appears in `/model` without requiring restart.
 - The connect/auth dialog should either open the model picker scoped to that
-  provider or show an operator notice telling the user to pick a model. OpenCode
+  provider or show an operator notice telling the user to pick a model. reference implementation
   opens `DialogModel(providerID)` after auth; match that if feasible.
 
 ---
@@ -405,7 +405,7 @@ When TUI auth completes mid-session:
 1. As a first-time user, I want to log into OpenAI/Codex and immediately pick a
    model, so that I can start using Harness without writing config.
 2. As a first-time user, I want to log into GitHub Copilot and immediately pick a
-   model, so that Copilot works like it does in OpenCode.
+   model, so that Copilot works like it does in reference implementation.
 3. As an operator, I want `/model` to show only usable connected provider models
    and clear connect options, so that I know what I can actually run.
 4. As an operator, I want the prompt HUD to show the active provider and model, so
@@ -478,7 +478,7 @@ When TUI auth completes mid-session:
 - [ ] Completing TUI auth mid-session refreshes provider/model state without a TUI
       restart.
 - [ ] After TUI auth, the user is guided into model selection for the newly
-      connected provider, matching OpenCode’s `DialogModel(providerID)` behavior as
+      connected provider, matching reference implementation’s `DialogModel(providerID)` behavior as
       closely as the Harness UI allows.
 - [ ] CLI `harness auth login` followed by `harness tui` works without config.
 
@@ -627,7 +627,7 @@ scripts/test-lanes.sh signoff-pty
 ## 9. Out of scope
 
 - Additional provider auth beyond OpenAI/Codex and GitHub Copilot.
-- OpenCode plugin provider auth.
+- reference implementation plugin provider auth.
 - Custom provider configuration UX beyond preserving existing config behavior.
 - Publishing to NPM or changing distribution channels.
 - Real live OAuth as an autonomous test requirement.
@@ -652,8 +652,8 @@ scripts/test-lanes.sh signoff-pty
 - Prefer one deep module with a simple interface over conditionals spread across
   `tui.rs`, `bootstrap.rs`, `models.rs`, and `app.rs`.
 - Record every acceptance result in a progress log before claiming completion.
-  Recommended progress file: `docs/opencode-auth-model-parity-progress.md`.
-- If you discover an OpenCode reference conflict, update this PRD with the source
+  Recommended progress file: `docs/auth-model-parity-progress.md`.
+- If you discover an reference implementation conflict, update this PRD with the source
   citation before implementing the resolved behavior.
 
 ---
@@ -663,7 +663,7 @@ scripts/test-lanes.sh signoff-pty
 The implementing agent’s final answer must include:
 
 1. Files changed.
-2. Which OpenCode reference files were used.
+2. Which reference implementation files were used.
 3. How no-config auth activation works.
 4. How model picker state and provider routing share the same catalog.
 5. Manual PTY/TUI QA observations.

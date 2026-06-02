@@ -1,13 +1,13 @@
-# OpenCode Auth-to-Model Provider Parity Progress
+# reference implementation Auth-to-Model Provider Parity Progress
 
-Source PRD: `docs/opencode-auth-model-parity-prd.md`.
+Source PRD: `docs/auth-model-parity-prd.md`.
 
 ## Baseline/reference audit
 
 Read before coding:
 
 - Repo guidance: root `AGENTS.md`, `crates/harness-core/AGENTS.md`, `crates/harness-providers/AGENTS.md`, `crates/harness-tools/AGENTS.md`, `crates/harness-tui/AGENTS.md`, `crates/harness-testkit/tests/AGENTS.md`, `.agent-harness/AGENTS.md`.
-- OpenCode reference files: `inspirations/opencode/packages/opencode/src/server/routes/instance/httpapi/handlers/provider.ts`, `.../provider/auth.ts`, `.../auth/index.ts`, `.../cli/cmd/tui/component/dialog-provider.tsx`, `.../cli/cmd/tui/component/dialog-model.tsx`, `.../cli/cmd/tui/context/local.tsx`, `.../cli/cmd/tui/component/prompt/index.tsx`, `.../cli/cmd/run/footer.command.tsx`, `.../cli/cmd/run/runtime.ts`.
+- reference implementation files: `inspirations/reference implementation/packages/reference implementation/src/server/routes/instance/httpapi/handlers/provider.ts`, `.../provider/auth.ts`, `.../auth/index.ts`, `.../cli/cmd/tui/component/dialog-provider.tsx`, `.../cli/cmd/tui/component/dialog-model.tsx`, `.../cli/cmd/tui/context/local.tsx`, `.../cli/cmd/tui/component/prompt/index.tsx`, `.../cli/cmd/run/footer.command.tsx`, `.../cli/cmd/run/runtime.ts`.
 - Harness source map: `crates/harness-core/src/config.rs`, `crates/harness-core/src/auth.rs`, `crates/harness-core/src/auth/codex.rs`, `crates/harness-core/src/auth/copilot.rs`, `crates/harness/src/bootstrap.rs`, `crates/harness/src/models.rs`, `crates/harness/src/prompt.rs`, `crates/harness/src/tui.rs`, `crates/harness-tui/src/app.rs`, `crates/harness-tui/src/app/session_navigation.rs`.
 
 ## Acceptance/evidence ledger
