@@ -100,20 +100,20 @@ reshape V1 around orchestration features. The expected order is:
 - [x] The heavy-orchestration reference under `inspirations/` is available. Use it
   for candidate skills, agents, hooks, task/team workflows, and MCP ideas, but do
   not treat complete agent-OS parity as a V1 goal.
-- [x] `inspirations/oh-my-codex/` is the workflow-layer reference for pairing a
+- [x] A workflow-layer reference under `inspirations/` is available for pairing a
   base harness with setup, doctor, real execution smoke tests, durable plans, and
   optional tmux/team runtime.
 - [x] The TypeScript baseline under `inspirations/` is available for package seams,
   provider abstraction, configurable keybindings, interactive testing practice,
   and supply-chain hardening.
-- [x] `inspirations/pi_agent_rust/` is the Rust performance/security reference:
+- [x] A Rust performance/security reference under `inspirations/` covers
   single-binary release posture, structured concurrency, capability-gated
   extensions, session indexing, evidence-gated claims, and crash-resilient
   persistence.
 - [x] The extension-first reference under `inspirations/` is available: keep core
   changes small, ship useful builtin extensions, and leave heavier features as
   installable packages.
-- [x] `inspirations/shuvcode/` is the product-polish reference for review diffs,
+- [x] A product-polish reference under `inspirations/` covers for review diffs,
   session sidebars, search, status surfaces, mobile/desktop clients, and user
   interface experiments pending upstream.
 
@@ -176,9 +176,9 @@ turns those working mechanisms into well-specified release behavior.
   AGENTS.md, runtime agent prompt, config instructions, loaded skills, and task
   delegation context.
 - [x] Prompt bodies for primary agents, subagents, and category routes are
-  near-exact adaptations of the relevant OMO prompt bodies, with only branding,
+  near-exact adaptations of the relevant reference model implementation prompt bodies, with only branding,
   unsupported agent-OS workflows, and features not present or not planned for
-  Harness removed. Any retained OMO behavior must map to an explicit Harness
+  Harness removed. Any retained reference model implementation behavior must map to an explicit Harness
   runtime seam, permission policy, tool, documentation contract, or roadmap item.
 - [x] Primary prompts include an intent-gate pattern before tool use for ambiguous
   requests: state the interpreted intent, then route to explain, investigate,
@@ -826,7 +826,7 @@ below are unchecked until backed by the PRD's cited evidence.
   `cargo test -p harness no_config_tui -- --nocapture`;
   `cargo test -p harness prompt::tests::no_config_prompt -- --nocapture`;
   `cargo test -p harness-tui model_switcher -- --nocapture`; source citation:
-  [`docs/opencode-auth-model-parity-progress.md`](opencode-auth-model-parity-progress.md).
+  [`docs/auth-model-parity-progress.md`](auth-model-parity-progress.md).
 - [x] Doctor reports per-provider auth status (kind, presence, expiry) with
   redacted values, separate from transport health. Evidence:
   `cargo test -p harness auth -- --nocapture`; source citation:
@@ -838,7 +838,7 @@ below are unchecked until backed by the PRD's cited evidence.
   `scripts/test-lanes.sh simulation`; source citation:
   [`docs/pre-v1-enhancements-progress.md`](pre-v1-enhancements-progress.md).
 
-### Prompt-cache optimization (OpenAI-compatible path, pi-mono parity)
+### Prompt-cache optimization (OpenAI-compatible path, reference cache implementation parity)
 
 - [x] OpenAI-compatible requests set a stable, clamped, per-session
   `prompt_cache_key` to maximize cache routing and hit rate. Evidence:
@@ -873,7 +873,7 @@ below are unchecked until backed by the PRD's cited evidence.
   source citation:
   [`docs/pre-v1-enhancements-progress.md`](pre-v1-enhancements-progress.md).
 - [x] Non-GPT family prompts (Anthropic, Gemini, and any Copilot-exposed families)
-  meet the shared skeleton at OMO-parity quality, branding-stripped, with golden
+  meet the shared skeleton at reference model implementation-parity quality, branding-stripped, with golden
   snapshots. Evidence:
   `cargo test -p harness family_prompt -- --nocapture` and
   `cargo test -p harness --test bootstrap_profiles_test shipped_v1_family_prompt_assets_match_golden_snapshots -- --nocapture`;
@@ -902,11 +902,11 @@ below are unchecked until backed by the PRD's cited evidence.
 ### First-run onboarding and UX
 
 - [x] A skippable first-run onboarding flow (provider/auth selection → first prompt
-  → visible success) exists in the TUI, adapted from the opencode onboarding UX
+  → visible success) exists in the TUI, adapted from the reference implementation onboarding UX
   without its branding, and does not block pre-configured users. Evidence:
   `cargo test -p harness-tui onboarding -- --nocapture`; `cargo test -p harness auth -- --nocapture`; source citation:
   [`docs/pre-v1-enhancements-progress.md`](pre-v1-enhancements-progress.md).
-- [x] Skill listing/selection UX in the TUI is aligned with the opencode skill
+- [x] Skill listing/selection UX in the TUI is aligned with the reference implementation skill
   surface where it improves clarity. Evidence:
   `cargo test -p harness-tui onboarding -- --nocapture`; source citation:
   [`docs/pre-v1-enhancements-progress.md`](pre-v1-enhancements-progress.md).

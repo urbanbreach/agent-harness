@@ -106,7 +106,7 @@ are point-in-time observations.
   53 lines** of the *same generic skeleton* (Identity/Goal/Use When/Do Not Use When/
   Scope Guard/Runtime-Enforced Permissions/Behavioral Guidance/Operating Loop/Ask
   Gate/Failure Recovery/Output Contract/Verification Gate). They pass the skeleton
-  fixture but are **not** agent-specific OMO adaptations and contain **no intent-gate**.
+  fixture but are **not** agent-specific reference adaptations and contain **no intent-gate**.
   This is the central prompt gap.
 - **Prompt evidence:** `crates/harness/tests/bootstrap_profiles_test.rs` checks
   skeleton sections; `crates/harness/tests/snapshots/v1_prompt_assets.json` records
@@ -175,7 +175,7 @@ roadmap file at the end.
 | WS | Title | Primary outcome |
 |----|-------|-----------------|
 | WS1 | Documentation completeness & accuracy | Architecture/permissions/extension/privacy/migration docs are accurate and complete; thin docs raised to release quality; stale refs fixed. |
-| WS2 | Agent prompt depth | All profile bodies become agent-specific OMO adaptations with an intent-gate; full-composed-prompt golden tests cover every shipped + hidden profile. |
+| WS2 | Agent prompt depth | All profile bodies become agent-specific reference adaptations with an intent-gate; full-composed-prompt golden tests cover every shipped + hidden profile. |
 | WS3 | Built-in skills & disablement | `git-master`, `review-work`, `frontend-ui-ux` ship V1-quality, disableable by stable id, doctor-visible, tested. |
 | WS4 | Provider error taxonomy & support matrix | Stable user-actionable provider error categories, fallback policy, surfacing text, and a support matrix doc. |
 | WS5 | Session, resume & compaction trust | Resume acceptance, crash-write, large-session perf, compaction preservation + bounded fallback, meaningful titles, lineage docs. |
@@ -210,7 +210,7 @@ expected to remain open for the final slice.
 
 **Agent prompt depth**
 - Prompt bodies for primary agents, subagents, and category routes are near-exact
-  adaptations of the relevant OMO prompt bodies (branding/unsupported workflows
+  adaptations of the relevant reference prompt bodies (branding/unsupported workflows
   removed; retained behavior maps to a Harness seam). → WS2
 - Primary prompts include an intent-gate pattern before tool use. → WS2
 - Dynamic prompt sections are named modules with golden tests for each section and
@@ -476,7 +476,7 @@ first.
 7. **Fix stale references.** Repair the dangling `docs/v1-agent-catalog-workspace-
    intelligence-prd.md` citation in `docs/roadmap-v1.md` (point to the current closeout
    evidence location or remove the dead link). Grep the whole `docs/` tree for links to
-   deleted files (`omo-parity-spec.md`, `v1-skill-contract-capability-governance-prd.md`,
+   deleted files (`legacy-parity-spec.md`, `v1-skill-contract-capability-governance-prd.md`,
    `skills-lock.json`) and repair or remove each.
 
 ### 4.4 Acceptance criteria (tick only with evidence)
@@ -515,15 +515,12 @@ first.
 
 ### 5.1 Why
 The 12 profile bodies are identical generic scaffolds. The roadmap requires
-near-exact OMO adaptations that are agent-specific, an intent-gate before tool use,
+near-exact reference adaptations that are agent-specific, an intent-gate before tool use,
 named prompt-section modules, and golden tests covering every shipped + hidden profile.
 
 ### 5.2 Reference material (read before writing bodies)
-- OMO primary/build agent: `inspirations/oh-my-openagent/src/agents/sisyphus.ts` and
-  `.../builtin-agents/sisyphus-agent.ts`; general/subagents:
-  `.../builtin-agents/general-agents.ts`; plus `atlas-agent.ts`, `hephaestus-agent.ts`.
-- OMO dynamic prompt builder: search `inspirations/oh-my-openagent/src/agents/` for
-  `dynamic-agent-prompt-builder` and the section/skeleton composition.
+- Reference primary/build agent, general/subagent, and specialist agent bodies under `inspirations/`.
+- Reference dynamic prompt builder and section/skeleton composition under `inspirations/`.
 - Harness current composer: `crates/harness/src/dynamic_prompt.rs`; profile resolution
   `crates/harness-core/src/agent_catalog.rs`; bodies `.agent-harness/agents/*.md`;
   current snapshot `crates/harness/tests/snapshots/v1_prompt_assets.json`; skeleton
@@ -531,9 +528,9 @@ named prompt-section modules, and golden tests covering every shipped + hidden p
 
 ### 5.3 Deliverables
 
-1. **Rewrite all 12 profile bodies as agent-specific OMO adaptations.** Keep the
+1. **Rewrite all 12 profile bodies as agent-specific reference adaptations.** Keep the
    shared skeleton sections (the skeleton fixture must still pass) but fill them with
-   **profile-specific operating guidance** adapted from the corresponding OMO agent,
+   **profile-specific operating guidance** adapted from the corresponding reference agent,
    with branding and unsupported agent-OS workflows removed and every retained behavior
    mapped to a real Harness seam. Each body must reference the seams it actually uses:
    - `build.md`: hashline edit tooling, verification gate via the real CLI/TUI/API
@@ -571,7 +568,7 @@ named prompt-section modules, and golden tests covering every shipped + hidden p
    (b) implement explicit named prompt presets with golden tests. Substring heuristics
    must not be the only seam. Record which option you chose and why.
 7. **Reference-pattern → seam map.** Add a short table (in `docs/architecture.md` or a
-   dedicated `docs/prompt-system.md`) mapping each adopted OMO prompt pattern to the
+   dedicated `docs/prompt-system.md`) mapping each adopted reference prompt pattern to the
    Harness seam that owns it (e.g. intent-gate → dynamic_prompt module; delegation
    reminder → coordinator task policy). This satisfies the "name the seam" roadmap items.
 
@@ -611,10 +608,9 @@ and tested before being advertised as shipped. The disablement infra already exi
 `skill_catalog.rs` (`stable_id`, `SkillCatalogStatus::Disabled`) but no built-in uses it.
 
 ### 6.2 Reference material
-- `inspirations/oh-my-openagent/src/features/builtin-skills/skills/git-master.ts` +
-  `git-master-sections/{overview,commit-workflow,rebase-workflow,history-search-workflow,quick-reference}.ts`.
-- `.../skills/review-work.ts` (5-agent parallel review; **must be remapped** — see below).
-- `.../skills/frontend-ui-ux.ts`.
+- Reference `git-master` skill package and its commit/rebase/history/quick-reference sections under `inspirations/`.
+- Reference `review-work` skill package (5-agent parallel review; **must be remapped** — see below).
+- Reference `frontend-ui-ux` skill package.
 - Harness skill model: `crates/harness-tools/src/skill_catalog.rs`, skill config
   (`SkillsConfig`, `registered_skills_config`), skill authoring guide
   `docs/starter-skills.md`, current skills under `.agent-harness/skills/`.
@@ -628,19 +624,19 @@ and tested before being advertised as shipped. The disablement infra already exi
    allowed/expected tools, target agent/category, deferred MCP/resource metadata) and
    the authoring quality template (purpose, use-when, do-not-use-when, execution policy,
    steps, tool usage, escalation/stop conditions, final checklist, advanced notes).
-   - **`git-master`**: adapt the OMO content (mode detection: commit / rebase /
+   - **`git-master`**: adapt the reference content (mode detection: commit / rebase /
       history-search; atomic-commit-by-default rigor; rebase and history workflows;
      quick reference). Remove brand terms. All git operations must be described as
      operator-confirmed where they are destructive, consistent with Harness permission
      posture.
-   - **`review-work`**: adapt the OMO multi-agent review orchestrator, **remapped to
-     Harness agents/categories that actually exist**. OMO's `oracle` does not exist in
+   - **`review-work`**: adapt the reference multi-agent review orchestrator, **remapped to
+     Harness agents/categories that actually exist**. reference's `oracle` does not exist in
      Harness — map review reasoning roles to real Harness reasoning categories (e.g.
      `deep`/`ultrabrain`) and hands-on QA/context-mining to `unspecified-high`, using
      `task(..., run_in_background=true, load_skills=[...])` and `background_output`
      exactly as Harness supports them. Every `task(category=...)`/`task(subagent_type=...)`
      reference in the body must resolve to a real entry in the AgentCatalog.
-   - **`frontend-ui-ux`**: adapt the OMO designer-turned-developer skill (aesthetic
+   - **`frontend-ui-ux`**: adapt the reference designer-turned-developer skill (aesthetic
      direction, typography/color/motion/spatial guidance, anti-patterns). Tie its
      verification to Harness's visual evidence posture.
 2. **Stable ids + disablement.** Register a stable id for each built-in skill. Extend
@@ -1021,8 +1017,7 @@ keep parent context lean, and a delegation fixture.
 ### 12.2 Reference material
 - `crates/harness-tools/src/agent_ops.rs` (task tool), `control_plane.rs`,
   coordinator task scheduling and lineage (`coord.rs`, `session_lineage.rs`),
-  `README.md` `task` section, OMO delegation body shape in
-  `inspirations/oh-my-openagent/src/features/builtin-skills/skills/review-work.ts`.
+  `README.md` `task` section, the reference delegation body shape under `inspirations/`.
 
 ### 12.3 Deliverables
 
