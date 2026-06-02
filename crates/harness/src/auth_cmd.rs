@@ -63,7 +63,7 @@ struct AuthLoginCommand {
     #[arg(long = "provider", short = 'p', conflicts_with = "provider")]
     provider_option: Option<String>,
 
-    /// Login method. Accepts device/browser/api-key or the opencode method label.
+    /// Login method. Accepts device/browser/api-key or the supported method label.
     #[arg(long, short = 'm', value_parser = parse_login_method_arg)]
     method: Option<AuthLoginMethod>,
 
@@ -113,7 +113,7 @@ fn parse_login_method_arg(value: &str) -> Result<AuthLoginMethod, String> {
         }
         "api-key" | "api_key" | "api" | "manually enter api key" => Ok(AuthLoginMethod::ApiKey),
         _ => Err(
-            "expected device, browser, api-key, or one of the supported opencode method labels"
+            "expected device, browser, api-key, or one of the supported supported method labels"
                 .to_string(),
         ),
     }
@@ -2195,7 +2195,7 @@ mod tests {
     }
 
     #[test]
-    fn opencode_method_labels_parse_for_supported_providers() {
+    fn supported_method_labels_parse_for_supported_providers() {
         assert_eq!(
             super::parse_login_method_arg("ChatGPT Pro/Plus (browser)"),
             Ok(super::AuthLoginMethod::Browser)
