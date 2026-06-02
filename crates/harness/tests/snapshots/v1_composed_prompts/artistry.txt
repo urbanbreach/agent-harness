@@ -99,7 +99,7 @@ agent-harness/
 
 ## FIRST-PARTY SEARCH SCOPE
 - Include by default: `crates/`, `configs/`, `docs/`, `scripts/`, `.agent-harness/agents/`, `.agent-harness/skills/`, root manifests.
-- Exclude by default: `target/`, `.git/`, `sessions/`, `artifacts/`, `.harness/`, `.omo/`, `.gnhf/`, `.sisyphus/`, `.omx/`, `.codex/`, `inspirations/`.
+- Exclude by default: `target/`, `.git/`, `sessions/`, `artifacts/`, `.harness/`, `.gnhf/`, `.sisyphus/`, `.omx/`, `.codex/`, `inspirations/`.
 - Search `inspirations/` only when explicitly comparing reference implementations.
 
 ## COMMANDS
