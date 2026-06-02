@@ -28,7 +28,7 @@ pub enum ModelFamilySource {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PromptFamily {
-    Beast,
+    Reasoning,
     Codex,
     Gpt,
     Anthropic,
@@ -41,7 +41,7 @@ pub enum PromptFamily {
 impl PromptFamily {
     pub fn id(self) -> &'static str {
         match self {
-            Self::Beast => "beast",
+            Self::Reasoning => "reasoning",
             Self::Codex => "codex",
             Self::Gpt => "gpt",
             Self::Anthropic => "anthropic",
@@ -257,7 +257,7 @@ fn normalize_family_token(value: &str) -> String {
 
 fn prompt_family_for(family: ModelFamily) -> PromptFamily {
     match family {
-        ModelFamily::OpenAiReasoning => PromptFamily::Beast,
+        ModelFamily::OpenAiReasoning => PromptFamily::Reasoning,
         ModelFamily::Codex => PromptFamily::Codex,
         ModelFamily::Gpt5 | ModelFamily::GptLegacy => PromptFamily::Gpt,
         ModelFamily::ClaudeOpus | ModelFamily::Claude => PromptFamily::Anthropic,

@@ -1036,12 +1036,7 @@ pub(super) fn validate_public_root_config_object(
         return Err(ConfigError::RetiredConfigKeys(format!(
             concat!(
                 "unsupported active ",
-                "Open",
-                "Code",
-                " config keys: {}; this harness accepts the ",
-                "Open",
-                "Code",
-                " config shape, but does not execute server, command, plugin, sharing, update, or enterprise product features"
+                "unsupported active retired config keys: {}; this harness accepts inert compatibility settings, but does not execute server, command, plugin, sharing, update, or enterprise product features"
             ),
             format_backticked_list(unsupported_active)
         )));
@@ -2313,12 +2308,10 @@ pub fn harness_schema_pretty_json() -> Result<String, ConfigError> {
             );
             agent_map.insert(
                 "description".to_string(),
-                serde_json::Value::String(concat!(
-                    "Named agent definitions. Built-in ",
-                    "Open",
-                    "Code",
-                    "-compatible agents are explicit so editors can complete them, and custom names are accepted through the same shape."
-                ).to_string()),
+                serde_json::Value::String(
+                    "Named agent definitions. Built-in Harness-compatible agents are explicit so editors can complete them, and custom names are accepted through the same shape."
+                        .to_string(),
+                ),
             );
         }
         if let Some(disable_property) = definitions
@@ -2331,12 +2324,7 @@ pub fn harness_schema_pretty_json() -> Result<String, ConfigError> {
             disable_property.insert(
                 "description".to_string(),
                 serde_json::Value::String(
-                    concat!(
-                        "Open",
-                        "Code",
-                        "-compatible negative toggle. Equivalent to `enable: false`."
-                    )
-                    .to_string(),
+                    "Compatibility negative toggle. Equivalent to `enable: false`.".to_string(),
                 ),
             );
         }
