@@ -47,7 +47,7 @@
   // Active default model. Use provider/model, optionally provider/model/variant.
   "model": "openai-codex/gpt-5.4-mini",
 
-  // OMO-style category scale, adapted to the Codex OAuth-backed GPT-family starter catalog.
+  // Category scale, adapted to the Codex OAuth-backed GPT-family starter catalog.
   // Runtime profile resolution selects the primary target; fallback targets are
   // validated/catalog metadata until explicit automatic model retry is shipped.
   // Larger provider catalogs can point these same profile names at Gemini,
@@ -69,7 +69,7 @@
       "fallback": [{ "model": "openai-codex/gpt-5.4-mini", "variant": "high" }]
     },
     "category-deep": {
-      // Matches OMO's Deep lane as broad autonomous work, not Ultrabrain-level reasoning.
+      // Matches the Deep lane as broad autonomous work, not Ultrabrain-level reasoning.
       "model": "openai-codex/gpt-5.5",
       "variant": "medium",
       "fallback": [{ "model": "openai-codex/gpt-5.4-mini", "variant": "high" }]
@@ -123,7 +123,7 @@
       "model": "openai-codex/gpt-5.4-mini",
       "variant": "low",
     },
-    // OMO-style task category routes. These are subagents used by
+    // Task category routes. These are subagents used by
     // task(category=...) and intentionally deny recursive task delegation by
     // default.
     "visual-engineering": {
