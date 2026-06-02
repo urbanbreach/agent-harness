@@ -2274,12 +2274,18 @@ fn composer_metadata_candidates(
 }
 
 fn active_turn_profile_label(app: &AppState) -> Option<String> {
-    let activity = app
-        .activities
-        .iter()
-        .rev()
-        .find(|activity| activity.status == ActivityStatus::Streaming)
-        .or_else(|| app.activities.back())?;
+    let hidden_child_request_ids = app.hidden_delegated_child_request_ids_in_current_view();
+    let activity =
+        app.activities
+            .iter()
+            .rev()
+            .filter(|activity| !hidden_child_request_ids.contains(activity.request_id.as_str()))
+            .find(|activity| activity.status == ActivityStatus::Streaming)
+            .or_else(|| {
+                app.activities.iter().rev().find(|activity| {
+                    !hidden_child_request_ids.contains(activity.request_id.as_str())
+                })
+            })?;
     if !matches!(
         activity.status,
         ActivityStatus::Streaming | ActivityStatus::Queued

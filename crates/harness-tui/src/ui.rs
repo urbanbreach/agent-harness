@@ -214,8 +214,10 @@ pub(crate) use ui_secondary::{
     exact_test_operator_rail_section_model_separates_mcp_from_native_tool_activity,
     exact_test_operator_rail_section_model_surfaces_pending_permissions_first,
     exact_test_operator_rail_section_model_uses_runtime_mcp_activity_without_config,
+    exact_test_operator_rail_shows_replay_wakeup_report_without_task_tool_row,
     exact_test_operator_rail_shows_wakeup_report_without_task_tool_row,
     exact_test_operator_rail_uses_generated_session_title,
+    exact_test_operator_rail_uses_simple_subagent_task_labels,
     exact_test_operator_sidebar_hit_target_maps_section_headers,
 };
 #[cfg(test)]

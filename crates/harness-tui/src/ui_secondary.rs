@@ -1390,6 +1390,8 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
                 output_summary: Some("Task Result: wrapped child".to_string()),
                 output_digest: Some("digest-task-wrapped-child-output".to_string()),
                 output_json: Some(serde_json::json!({
+                    "profile": "navigator",
+                    "status": "scheduled",
                     "session_id": "child_running_session"
                 })),
                 metadata: None,
@@ -1428,15 +1430,15 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
 
     let sidebar = operator_sidebar_text_for_test(&app).join("\n");
     assert!(sidebar.contains("▼ Subagents"));
-    assert!(sidebar.contains("▶ explore ⠋ 2 tasks · 1 active"));
+    assert!(sidebar.contains("▶ Explore ⠋ 2 tasks · 1 active"));
     assert!(!sidebar.contains("  ⠋ inspect README"));
     assert!(!sidebar.contains("  ✓ cross-check docs"));
     assert!(!sidebar.contains("            bullets"));
-    assert!(sidebar.contains("• general ✓ summary"));
-    assert!(sidebar.contains("• plan ✗ cancelled"));
-    assert!(sidebar.contains("• navigator ⠋ open wrapped child session"));
-    assert!(sidebar.contains("• orphan ⠋ task_orphan_running"));
-    assert!(sidebar.contains("• queued ⠋ task_orphan_queued"));
+    assert!(sidebar.contains("• ✓ General Task"));
+    assert!(sidebar.contains("• ✗ Plan Task"));
+    assert!(sidebar.contains("• ⠋ Navigator Task"));
+    assert!(sidebar.contains("• ⠋ Orphan Task"));
+    assert!(sidebar.contains("• ⠋ Queued Task"));
     assert!(!sidebar.contains("intentionally long repository"));
 
     let theme = *app.theme();
@@ -1448,7 +1450,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
                 .iter()
                 .map(|span| span.content.as_ref())
                 .collect::<String>()
-                .contains("▶ explore ⠋ 2 tasks · 1 active")
+                .contains("▶ Explore ⠋ 2 tasks · 1 active")
         })
         .expect("collapsed explore group line");
     assert_eq!(explore_group.spans[0].style.fg, Some(theme.status.success));
@@ -1463,13 +1465,12 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
                 .iter()
                 .map(|span| span.content.as_ref())
                 .collect::<String>()
-                .contains("• plan ✗ cancelled")
+                .contains("• ✗ Plan Task")
         })
         .expect("cancelled subagent line");
     assert_eq!(cancelled.spans[0].style.fg, Some(theme.text.primary));
-    assert_eq!(cancelled.spans[1].style.fg, Some(theme.text.primary));
-    assert_eq!(cancelled.spans[3].style.fg, Some(theme.text.secondary));
-    assert_eq!(cancelled.spans[4].style.fg, Some(theme.text.secondary));
+    assert_eq!(cancelled.spans[1].style.fg, Some(theme.text.secondary));
+    assert_eq!(cancelled.spans[2].style.fg, Some(theme.text.secondary));
 
     let sidebar_area = Rect::new(0, 0, 32, 40);
     let theme = &theme;
@@ -1485,7 +1486,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
     let explore_group_region = wrapped_layout
         .subagent_group_hit_regions
         .iter()
-        .find(|region| region.agent_name == "explore")
+        .find(|region| region.agent_name == "Explore")
         .expect("explore group hit region");
     assert_eq!(
         operator_sidebar_subagent_group_hit_target_in_surface(
@@ -1499,7 +1500,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
                 .saturating_add(title_height)
                 .saturating_add(explore_group_region.top_row as u16),
         ),
-        Some("explore".to_string())
+        Some("Explore".to_string())
     );
     assert!(
         wrapped_layout
@@ -1581,7 +1582,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
     let group_region = layout
         .subagent_group_hit_regions
         .iter()
-        .find(|region| region.agent_name == "explore")
+        .find(|region| region.agent_name == "Explore")
         .expect("explore group hit region in frame layout");
     let group_row = body_area.y.saturating_add(group_region.top_row as u16);
     let group_col = body_area.x;
@@ -1604,9 +1605,9 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
     }
 
     let expanded_sidebar = operator_sidebar_text_for_test(&app).join("\n");
-    assert!(expanded_sidebar.contains("▼ explore ⠋ 2 tasks · 1 active"));
-    assert!(expanded_sidebar.contains("  ⠋ inspect README"));
-    assert!(expanded_sidebar.contains("  ✓ cross-check docs"));
+    assert!(expanded_sidebar.contains("▼ Explore ⠋ 2 tasks · 1 active"));
+    assert!(expanded_sidebar.contains("  ⠋ Explore Task"));
+    assert!(expanded_sidebar.contains("  ✓ Explore Task 2"));
     let expanded_lines = operator_sidebar_lines_for_test(&app);
     let running = expanded_lines
         .iter()
@@ -1615,7 +1616,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
                 .iter()
                 .map(|span| span.content.as_ref())
                 .collect::<String>()
-                .contains("  ⠋ inspect README")
+                .contains("  ⠋ Explore Task")
         })
         .expect("running subagent line after expanding group");
     assert_eq!(running.spans[0].style.fg, Some(theme.status.success));
@@ -1638,8 +1639,8 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
     let collapsed_sidebar = operator_sidebar_text_for_test(&app).join("\n");
     assert!(collapsed_sidebar.contains("▶ Subagents (6 types)"));
     assert!(!collapsed_sidebar.contains("inspect README"));
-    assert!(!collapsed_sidebar.contains("✓ summary"));
-    assert!(!collapsed_sidebar.contains("✗ cancelled"));
+    assert!(!collapsed_sidebar.contains("✓ General Task"));
+    assert!(!collapsed_sidebar.contains("✗ Plan Task"));
 }
 
 #[cfg(test)]
@@ -1685,7 +1686,9 @@ pub(crate) fn exact_test_operator_rail_marks_background_subagent_terminal_from_n
                 output_summary: Some("Background task scheduled".to_string()),
                 output_digest: Some("digest-background-task-output".to_string()),
                 output_json: Some(serde_json::json!({
+                    "profile": "general",
                     "background": true,
+                    "status": "scheduled",
                     "child_session_id": "agent_child",
                     "child_request_id": "req_child"
                 })),
@@ -1695,7 +1698,7 @@ pub(crate) fn exact_test_operator_rail_marks_background_subagent_terminal_from_n
     ));
 
     let active_sidebar = operator_sidebar_text_for_test(&app).join("\n");
-    assert!(active_sidebar.contains("• general ⠋ summarize README"));
+    assert!(active_sidebar.contains("• ⠋ General Task"));
 
     app.ingest_event(operator_rail_test_event_with_correlation(
         4,
@@ -1719,9 +1722,189 @@ pub(crate) fn exact_test_operator_rail_marks_background_subagent_terminal_from_n
     ));
 
     let completed_sidebar = operator_sidebar_text_for_test(&app).join("\n");
-    assert!(completed_sidebar.contains("• general ✓ summarize README"));
-    assert!(!completed_sidebar.contains("• general ⠋ summarize README"));
+    assert!(completed_sidebar.contains("• ✓ General Task"));
+    assert!(!completed_sidebar.contains("• ⠋ General Task"));
     assert!(!completed_sidebar.contains("1 active"));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_operator_rail_uses_simple_subagent_task_labels() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        1,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::User, None),
+        "req_simple_subagents",
+        harness_core::event::EventV1::UserMessageSubmitted(
+            harness_core::event::UserMessageSubmittedEvent {
+                request_id: "req_simple_subagents".to_string(),
+                text: "Run several subagents".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        2,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+        "req_simple_subagents",
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tool_call_explore_background".to_string(),
+                tool_id: "task".to_string(),
+                args_summary: serde_json::json!({
+                    "description": "Delegation context from parent: - investigate everything and return a detailed report",
+                    "subagent_type": "explore",
+                    "run_in_background": true
+                })
+                .to_string(),
+                args_digest: "digest-explore-background".to_string(),
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        3,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+        "req_simple_subagents",
+        harness_core::event::EventV1::ToolCallFinished(
+            harness_core::event::ToolCallFinishedEvent {
+                tool_call_id: "tool_call_explore_background".to_string(),
+                status: harness_core::event::ToolCallStatus::Succeeded,
+                output_summary: Some("Background task scheduled".to_string()),
+                output_digest: Some("digest-explore-background-output".to_string()),
+                output_json: Some(serde_json::json!({
+                    "profile": "explore",
+                    "background": true,
+                    "status": "scheduled",
+                    "child_session_id": "agent_explore",
+                    "child_request_id": "req_explore"
+                })),
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        4,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
+        "background_task_notification:req_explore",
+        harness_core::event::EventV1::BackgroundTaskNotification(
+            harness_core::event::BackgroundTaskNotificationEvent {
+                parent_session_id: "run_fixture".to_string(),
+                parent_agent_id: Some("agent_parent".to_string()),
+                child_session_id: "agent_explore".to_string(),
+                child_request_id: "req_explore".to_string(),
+                task_id: "agent_explore".to_string(),
+                description: "Delegation context from parent: - investigate everything".to_string(),
+                status: harness_core::event::BackgroundTaskNotificationStatus::Completed,
+                summary: "{\"sessionId\":\"term-1\",\"cols\":80}".to_string(),
+                terminal_event_id: "evt_explore_done".to_string(),
+                terminal_task_id: "agent_explore".to_string(),
+                delivered_turn_request_id: Some("req_parent_wakeup".to_string()),
+            },
+        ),
+    ));
+    for (seq, tool_call_id, request_id, status) in [
+        (
+            5,
+            "tool_call_librarian_one",
+            "req_librarian_one",
+            harness_core::event::BackgroundTaskNotificationStatus::Completed,
+        ),
+        (
+            8,
+            "tool_call_librarian_two",
+            "req_librarian_two",
+            harness_core::event::BackgroundTaskNotificationStatus::Failed,
+        ),
+    ] {
+        app.ingest_event(operator_rail_test_event_with_correlation(
+            seq,
+            harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+            "req_simple_subagents",
+            harness_core::event::EventV1::ToolCallRequested(
+                harness_core::event::ToolCallRequestedEvent {
+                    tool_call_id: tool_call_id.to_string(),
+                    tool_id: "task".to_string(),
+                    args_summary: serde_json::json!({
+                        "description": "Use remote repositories and official docs; return references",
+                        "subagent_type": "librarian",
+                        "run_in_background": true
+                    })
+                    .to_string(),
+                    args_digest: format!("digest-{tool_call_id}"),
+                    metadata: None,
+                },
+            ),
+        ));
+        app.ingest_event(operator_rail_test_event_with_correlation(
+            seq + 1,
+            harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+            "req_simple_subagents",
+            harness_core::event::EventV1::ToolCallFinished(
+                harness_core::event::ToolCallFinishedEvent {
+                    tool_call_id: tool_call_id.to_string(),
+                    status: harness_core::event::ToolCallStatus::Succeeded,
+                    output_summary: Some("Background task scheduled".to_string()),
+                    output_digest: Some(format!("digest-{tool_call_id}-output")),
+                    output_json: Some(serde_json::json!({
+                        "profile": "librarian",
+                        "background": true,
+                        "status": "scheduled",
+                        "child_session_id": format!("agent_{request_id}"),
+                        "child_request_id": request_id
+                    })),
+                    metadata: None,
+                },
+            ),
+        ));
+        app.ingest_event(operator_rail_test_event_with_correlation(
+            seq + 2,
+            harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
+            &format!("background_task_notification:{request_id}"),
+            harness_core::event::EventV1::BackgroundTaskNotification(
+                harness_core::event::BackgroundTaskNotificationEvent {
+                    parent_session_id: "run_fixture".to_string(),
+                    parent_agent_id: Some("agent_parent".to_string()),
+                    child_session_id: format!("agent_{request_id}"),
+                    child_request_id: request_id.to_string(),
+                    task_id: format!("agent_{request_id}"),
+                    description: "Use remote repositories and official docs".to_string(),
+                    status,
+                    summary: "remote search finished".to_string(),
+                    terminal_event_id: format!("evt_{request_id}_done"),
+                    terminal_task_id: format!("agent_{request_id}"),
+                    delivered_turn_request_id: None,
+                },
+            ),
+        ));
+    }
+
+    let model = build_operator_rail_model(&app);
+    let groups = match &model.body.sections[0] {
+        OperatorRailBodySection::Subagents { groups, .. } => groups,
+        section => panic!("expected subagent section, got {}", section.heading()),
+    };
+    let explore = groups
+        .iter()
+        .find(|group| group.agent_name == "Explore")
+        .expect("explore group");
+    assert_eq!(explore.items.len(), 1);
+    assert_eq!(explore.items[0].description, "Explore Task");
+    assert_eq!(explore.items[0].status, SubagentRailStatus::Completed);
+
+    let librarian = groups
+        .iter()
+        .find(|group| group.agent_name == "Librarian")
+        .expect("librarian group");
+    assert_eq!(librarian.items.len(), 2);
+    assert_eq!(librarian.items[0].description, "Librarian Task");
+    assert_eq!(librarian.items[0].status, SubagentRailStatus::Completed);
+    assert_eq!(librarian.items[1].description, "Librarian Task 2");
+    assert_eq!(librarian.items[1].status, SubagentRailStatus::Error);
+
+    let sidebar = operator_sidebar_text_for_test(&app).join("\n");
+    assert!(!sidebar.contains("Delegation context"));
+    assert!(!sidebar.contains("{\"sessionId\""));
+    assert!(!sidebar.contains("Use remote repositories"));
+    assert!(!sidebar.contains(" · 1 active"));
 }
 
 #[cfg(test)]
@@ -1760,8 +1943,50 @@ pub(crate) fn exact_test_operator_rail_shows_wakeup_report_without_task_tool_row
 
     let sidebar = operator_sidebar_text_for_test(&app).join("\n");
     assert!(sidebar.contains("▼ Subagents"));
-    assert!(sidebar.contains("• plan ✓ Wakeup report finished"));
+    assert!(sidebar.contains("• ✓ Plan Task"));
     assert!(!sidebar.contains("• subagent ✓"));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_operator_rail_shows_replay_wakeup_report_without_task_tool_row() {
+    let events = vec![
+        operator_rail_test_event_with_correlation(
+            1,
+            harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
+            "agent_child",
+            harness_core::event::EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
+                agent_id: "agent_child".to_string(),
+                profile: "plan".to_string(),
+                parent_agent_id: Some("agent_parent".to_string()),
+            }),
+        ),
+        operator_rail_test_event_with_correlation(
+            2,
+            harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
+            "background_task_notification:req_child",
+            harness_core::event::EventV1::BackgroundTaskNotification(
+                harness_core::event::BackgroundTaskNotificationEvent {
+                    parent_session_id: "run_fixture".to_string(),
+                    parent_agent_id: Some("agent_parent".to_string()),
+                    child_session_id: "agent_child".to_string(),
+                    child_request_id: "req_child".to_string(),
+                    task_id: "task_child".to_string(),
+                    description: "Inspect replay sidebar wakeup".to_string(),
+                    status: harness_core::event::BackgroundTaskNotificationStatus::Completed,
+                    summary: "Replay wakeup report finished".to_string(),
+                    terminal_event_id: "evt_child_done".to_string(),
+                    terminal_task_id: "task_child".to_string(),
+                    delivered_turn_request_id: Some("req_parent_wakeup".to_string()),
+                },
+            ),
+        ),
+    ];
+    let app = AppState::new_replay(std::path::PathBuf::from("/tmp/replay-wakeup"), events);
+
+    let sidebar = operator_sidebar_text_for_test(&app).join("\n");
+    assert!(sidebar.contains("▼ Subagents"));
+    assert!(sidebar.contains("• ✓ Plan Task"));
+    assert!(!sidebar.contains("Replay wakeup report finished"));
 }
 
 #[cfg(test)]
@@ -1828,7 +2053,7 @@ pub(crate) fn exact_test_operator_rail_keeps_subagents_visible_in_replay() {
 
     let sidebar = operator_sidebar_text_for_test(&app).join("\n");
     assert!(sidebar.contains("▼ Subagents"));
-    assert!(sidebar.contains("• researcher ✓ audit replay subagent sidebar"));
+    assert!(sidebar.contains("• ✓ Researcher Task"));
 }
 
 #[cfg(test)]
@@ -3576,16 +3801,6 @@ fn subagent_item_line(
         text: leading.to_string(),
         style: bullet_style,
     });
-    if !multi_item {
-        chunks.push(StyledTextChunk {
-            text: group.agent_name.clone(),
-            style: Style::default().fg(theme.text.primary),
-        });
-        chunks.push(StyledTextChunk {
-            text: " ".to_string(),
-            style: Style::default().fg(theme.text.secondary),
-        });
-    }
     chunks.extend([
         StyledTextChunk {
             text: format!("{} ", item.status.glyph(animation_phase)),
@@ -4265,12 +4480,13 @@ fn operator_sidebar_subagent_groups(app: &AppState) -> Vec<SubagentRailGroup> {
     let mut parent_tool_call_ids = std::collections::BTreeSet::new();
     let mut child_session_ids = std::collections::BTreeSet::new();
     let mut child_request_ids = std::collections::BTreeSet::new();
+    let mut unlinked_active_tool_counts: BTreeMap<String, usize> = BTreeMap::new();
     for activity in &app.activities {
         for tool_call in &activity.tool_calls {
             if !operator_sidebar_tool_call_is_task_spawn(tool_call) {
                 continue;
             }
-            let Some((agent_name, description)) = subagent_args_from_tool_call(tool_call) else {
+            let Some(agent_name) = subagent_agent_name_from_tool_call(tool_call) else {
                 continue;
             };
             let child_session_id = subagent_child_session_id(tool_call);
@@ -4282,14 +4498,20 @@ fn operator_sidebar_subagent_groups(app: &AppState) -> Vec<SubagentRailGroup> {
             if let Some(child_request_id) = child_request_id.as_ref() {
                 child_request_ids.insert(child_request_id.clone());
             }
+            let status = subagent_status_from_app(
+                app,
+                tool_call,
+                child_session_id.as_deref(),
+                child_request_id.as_deref(),
+            );
+            if child_session_id.is_none() && child_request_id.is_none() && status.is_active() {
+                *unlinked_active_tool_counts
+                    .entry(agent_name.clone())
+                    .or_default() += 1;
+            }
             let item = SubagentRailItem {
-                description,
-                status: subagent_status_from_app(
-                    app,
-                    tool_call,
-                    child_session_id.as_deref(),
-                    child_request_id.as_deref(),
-                ),
+                description: String::new(),
+                status,
                 child_session_id,
             };
             if let Some(group) = groups
@@ -4307,11 +4529,10 @@ fn operator_sidebar_subagent_groups(app: &AppState) -> Vec<SubagentRailGroup> {
         }
     }
 
-    if app.replay_mode {
-        return groups;
-    }
-
     for row in app.orchestration_visible_rows() {
+        if app.replay_mode && background_notification_for_orchestration_row(app, &row).is_none() {
+            continue;
+        }
         if row
             .parent_tool_call_id
             .as_ref()
@@ -4340,9 +4561,18 @@ fn operator_sidebar_subagent_groups(app: &AppState) -> Vec<SubagentRailGroup> {
         else {
             continue;
         };
+        let status = SubagentRailStatus::from_orchestration_state(row.state);
+        if row.parent_tool_call_id.is_none() && status.is_active() {
+            if let Some(count) = unlinked_active_tool_counts.get_mut(&agent_name) {
+                if *count > 0 {
+                    *count -= 1;
+                    continue;
+                }
+            }
+        }
         let item = SubagentRailItem {
-            description: subagent_description_from_orchestration_row(&row),
-            status: SubagentRailStatus::from_orchestration_state(row.state),
+            description: String::new(),
+            status,
             child_session_id: row.effective_child_session_id().map(str::to_string),
         };
         if let Some(group) = groups
@@ -4359,15 +4589,29 @@ fn operator_sidebar_subagent_groups(app: &AppState) -> Vec<SubagentRailGroup> {
         }
     }
 
+    assign_subagent_task_labels(&mut groups);
     groups
+}
+
+fn assign_subagent_task_labels(groups: &mut [SubagentRailGroup]) {
+    for group in groups {
+        let base = format!("{} Task", group.agent_name);
+        let multiple = group.items.len() > 1;
+        for (index, item) in group.items.iter_mut().enumerate() {
+            item.description = if multiple && index > 0 {
+                format!("{base} {}", index + 1)
+            } else {
+                base.clone()
+            };
+        }
+    }
 }
 
 fn subagent_name_from_queue_key(queue_key: &str) -> Option<String> {
     ["agent:queue:", "agent:queued:", "agent:running:"]
         .iter()
         .find_map(|prefix| queue_key.strip_prefix(prefix))
-        .map(sanitize_operator_sidebar_line)
-        .filter(|name| !name.is_empty())
+        .and_then(subagent_agent_label)
 }
 
 fn subagent_name_from_background_notification_row(
@@ -4377,7 +4621,7 @@ fn subagent_name_from_background_notification_row(
     let notification = background_notification_for_orchestration_row(app, row)?;
     let agent_name = subagent_profile_for_agent_id(app, &notification.child_session_id)
         .or_else(|| subagent_profile_for_agent_id(app, &notification.task_id))
-        .unwrap_or_else(|| "subagent".to_string());
+        .unwrap_or_else(|| "Subagent".to_string());
     non_empty_sanitized_operator_sidebar_line(&agent_name)
 }
 
@@ -4414,7 +4658,7 @@ fn subagent_profile_for_agent_id(app: &AppState, agent_id: &str) -> Option<Strin
             return None;
         };
         (data.agent_id == agent_id)
-            .then(|| non_empty_sanitized_operator_sidebar_line(&data.profile))
+            .then(|| subagent_agent_label(&data.profile))
             .flatten()
     })
 }
@@ -4425,22 +4669,22 @@ fn child_subagent_profile_for_agent_id(app: &AppState, agent_id: &str) -> Option
             return None;
         };
         (data.agent_id == agent_id && data.parent_agent_id.is_some())
-            .then(|| non_empty_sanitized_operator_sidebar_line(&data.profile))
+            .then(|| subagent_agent_label(&data.profile))
             .flatten()
     })
+}
+
+fn subagent_agent_label(value: &str) -> Option<String> {
+    let sanitized = sanitize_operator_sidebar_line(value);
+    if sanitized.is_empty() {
+        return None;
+    }
+    Some(crate::app::humanize_profile_label(&sanitized))
 }
 
 fn non_empty_sanitized_operator_sidebar_line(text: &str) -> Option<String> {
     let sanitized = sanitize_operator_sidebar_line(text);
     (!sanitized.is_empty()).then_some(sanitized)
-}
-
-fn subagent_description_from_orchestration_row(row: &crate::app::OrchestrationTaskRow) -> String {
-    let description = row
-        .result_summary
-        .as_deref()
-        .unwrap_or(row.task_id.as_str());
-    sanitize_operator_sidebar_line(description)
 }
 
 fn subagent_status_from_app(
@@ -4465,21 +4709,24 @@ fn subagent_status_from_app(
         return SubagentRailStatus::from_orchestration_state(row.state);
     }
 
-    if tool_call
-        .lineage
-        .as_ref()
-        .and_then(|lineage| lineage.child_session_id.as_deref())
-        .is_none()
-        && child_session_id.is_some()
-        && matches!(
-            tool_call.status,
-            crate::app::ToolCallDisplayStatus::Succeeded
-        )
-    {
-        return SubagentRailStatus::Running;
+    if let Some(status) = subagent_status_from_output_json(tool_call.output_json.as_ref()) {
+        return status;
     }
 
     SubagentRailStatus::from_tool_call_status(tool_call.status)
+}
+
+fn subagent_status_from_output_json(
+    output_json: Option<&serde_json::Value>,
+) -> Option<SubagentRailStatus> {
+    let status = trimmed_json_string_field(output_json, &["status", "final_status"])?;
+    match status.trim().to_ascii_lowercase().as_str() {
+        "queued" => Some(SubagentRailStatus::Queued),
+        "scheduled" | "running" | "in_progress" => Some(SubagentRailStatus::Running),
+        "completed" | "succeeded" | "success" => Some(SubagentRailStatus::Completed),
+        "cancelled" | "failed" | "timed_out" | "error" => Some(SubagentRailStatus::Error),
+        _ => None,
+    }
 }
 
 fn subagent_status_from_background_notification(
@@ -4512,17 +4759,34 @@ fn operator_sidebar_tool_call_is_task_spawn(tool_call: &crate::app::ToolCallEntr
         || matches!(tool_call.tool_id.as_str(), "agent.spawn" | "task")
 }
 
-fn subagent_args_from_tool_call(tool_call: &crate::app::ToolCallEntry) -> Option<(String, String)> {
-    let value = serde_json::from_str::<serde_json::Value>(&tool_call.args_summary).ok()?;
+fn subagent_agent_name_from_tool_call(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
+    let args = serde_json::from_str::<serde_json::Value>(&tool_call.args_summary).ok();
     let agent_name = trimmed_json_string_field(
-        Some(&value),
-        &["subagent_type", "profile", "profile_name", "category"],
-    )?;
-    let description = trimmed_json_string_field(Some(&value), &["description"]).unwrap_or_default();
-    Some((
-        sanitize_operator_sidebar_line(&agent_name),
-        sanitize_operator_sidebar_line(&description),
-    ))
+        tool_call.output_json.as_ref(),
+        &["profile", "profile_name", "subagent_type", "category"],
+    )
+    .or_else(|| {
+        trimmed_json_nested_string_field(
+            tool_call.output_json.as_ref(),
+            &["route", "resolved_profile"],
+        )
+    })
+    .or_else(|| {
+        trimmed_json_nested_string_field(tool_call.output_json.as_ref(), &["route", "profile_id"])
+    })
+    .or_else(|| {
+        trimmed_json_nested_string_field(
+            tool_call.output_json.as_ref(),
+            &["route", "requested_category"],
+        )
+    })
+    .or_else(|| {
+        trimmed_json_string_field(
+            args.as_ref(),
+            &["subagent_type", "profile", "profile_name", "category"],
+        )
+    })?;
+    subagent_agent_label(&agent_name)
 }
 
 fn subagent_child_session_id(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
