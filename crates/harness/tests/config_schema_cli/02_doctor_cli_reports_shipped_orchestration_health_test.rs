@@ -5,6 +5,7 @@ fn doctor_cli_reports_shipped_orchestration_health() {
 
     let output = harness_command()
         .current_dir(&repo_root)
+        .env("OPENAI_API_KEY", "doctor-shipped-example-test-key")
         .args([
             "--config",
             config_path.to_str().expect("config path utf-8"),
@@ -38,6 +39,7 @@ fn doctor_cli_emits_json_report() {
 
     let output = harness_command()
         .current_dir(&repo_root)
+        .env("OPENAI_API_KEY", "doctor-shipped-example-test-key")
         .args([
             "--config",
             config_path.to_str().expect("config path utf-8"),

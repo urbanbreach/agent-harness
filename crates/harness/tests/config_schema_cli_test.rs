@@ -20,6 +20,16 @@ mod part_02c_config_validate_and_provider_credentials_test {
     include!("config_schema_cli/02c_config_validate_and_provider_credentials_test.rs");
 }
 
+mod part_02d_auth_credentials_cli_test {
+    use super::*;
+    include!("config_schema_cli/02d_auth_credentials_cli_test.rs");
+}
+
+mod part_02e_config_validate_discovery_test {
+    use super::*;
+    include!("config_schema_cli/02e_config_validate_discovery_test.rs");
+}
+
 mod part_03_config_validate_cli_loads_separate_tui_test {
     use super::*;
     include!("config_schema_cli/03_config_validate_cli_loads_separate_tui_test.rs");

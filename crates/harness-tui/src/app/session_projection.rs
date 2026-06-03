@@ -708,10 +708,10 @@ impl SessionProjection {
                         ActivityStatus::Streaming
                     };
                     if let Some(entry) = self.activities.get_mut(index) {
-                        if !matches!(entry.status, ActivityStatus::Done | ActivityStatus::Error) {
-                            if !activity_is_background_notification_reminder(entry) {
-                                entry.status = status;
-                            }
+                        if !matches!(entry.status, ActivityStatus::Done | ActivityStatus::Error)
+                            && !activity_is_background_notification_reminder(entry)
+                        {
+                            entry.status = status;
                         }
                         entry.user_message = Some(data.clone());
                         entry.user_timestamp = event.ts.clone();

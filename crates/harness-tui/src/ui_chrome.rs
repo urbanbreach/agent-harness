@@ -1214,7 +1214,7 @@ fn tool_status_summary(
 }
 
 pub(super) fn compact_inline_payload(payload: &str, max_chars: usize) -> Option<String> {
-    crate::text_compact::compact_payload(payload, 4, max_chars)
+    crate::text::compact_payload(payload, 4, max_chars)
 }
 
 pub(super) fn tool_status_tokens(

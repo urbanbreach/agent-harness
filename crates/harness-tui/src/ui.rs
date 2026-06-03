@@ -26,18 +26,65 @@ use crate::theme::Theme;
 mod ui_chrome;
 #[path = "ui_diff.rs"]
 mod ui_diff;
+#[path = "ui_fenced_text.rs"]
+mod ui_fenced_text;
 #[path = "ui_lifecycle.rs"]
 mod ui_lifecycle;
 #[path = "ui_lsp.rs"]
 mod ui_lsp;
+#[path = "ui_markdown.rs"]
+mod ui_markdown;
 #[path = "ui_overlays.rs"]
 mod ui_overlays;
 #[path = "ui_secondary.rs"]
 mod ui_secondary;
+#[path = "ui_syntax_highlight.rs"]
+mod ui_syntax_highlight;
 #[path = "ui_terminal.rs"]
 mod ui_terminal;
+#[path = "ui_tool_delegation.rs"]
+mod ui_tool_delegation;
+#[path = "ui_tool_diffs.rs"]
+mod ui_tool_diffs;
+#[path = "ui_tool_error.rs"]
+mod ui_tool_error;
+#[path = "ui_tool_input.rs"]
+mod ui_tool_input;
+#[path = "ui_tool_metadata.rs"]
+mod ui_tool_metadata;
+#[path = "ui_tool_output.rs"]
+mod ui_tool_output;
+#[path = "ui_tool_paths.rs"]
+mod ui_tool_paths;
+#[path = "ui_tool_question_todo.rs"]
+mod ui_tool_question_todo;
+#[path = "ui_tool_style.rs"]
+mod ui_tool_style;
+#[path = "ui_tool_titles.rs"]
+mod ui_tool_titles;
+#[path = "ui_tool_visibility.rs"]
+mod ui_tool_visibility;
 #[path = "ui_transcript.rs"]
 mod ui_transcript;
+#[path = "ui_transcript_bash.rs"]
+mod ui_transcript_bash;
+#[path = "ui_transcript_events.rs"]
+mod ui_transcript_events;
+#[path = "ui_transcript_interaction.rs"]
+mod ui_transcript_interaction;
+#[path = "ui_transcript_layout.rs"]
+mod ui_transcript_layout;
+#[path = "ui_transcript_scrollbar.rs"]
+mod ui_transcript_scrollbar;
+#[path = "ui_transcript_selection.rs"]
+mod ui_transcript_selection;
+#[path = "ui_transcript_style.rs"]
+mod ui_transcript_style;
+#[path = "ui_transcript_surface.rs"]
+mod ui_transcript_surface;
+#[cfg(test)]
+#[path = "ui_transcript_test_helpers.rs"]
+mod ui_transcript_test_helpers;
 
 pub(crate) use ui_chrome::subagent_footer_mouse_target;
 use ui_chrome::{
@@ -70,23 +117,22 @@ use ui_secondary::{
     render_events_tab, render_help_tab, render_live_details_overlay, render_operator_sidebar,
 };
 use ui_terminal::render_terminal_panel;
-pub use ui_transcript::hovered_wheel_target;
 use ui_transcript::render_transcript_pane;
 pub(crate) use ui_transcript::transcript_diff_hunk_rows;
 pub(crate) use ui_transcript::transcript_mouse_target;
 pub(crate) use ui_transcript::transcript_scrollbar_hit;
 #[cfg(test)]
 pub(crate) use ui_transcript::transcript_selection_debug_snapshot;
+pub(crate) use ui_transcript::{transcript_selection_cell, transcript_selection_text};
+pub use ui_transcript_interaction::hovered_wheel_target;
+pub(crate) use ui_transcript_interaction::TranscriptMouseTarget;
+pub(crate) use ui_transcript_scrollbar::TranscriptScrollbarHit;
 #[cfg(test)]
-pub(crate) use ui_transcript::{
+pub(crate) use ui_transcript_selection::{
     reset_transcript_selection_cache_metrics_for_test,
     transcript_selection_cache_build_count_for_test,
 };
-pub(crate) use ui_transcript::{
-    transcript_selection_cell, transcript_selection_text, TranscriptSelection,
-    TranscriptSelectionCell,
-};
-pub(crate) use ui_transcript::{TranscriptMouseTarget, TranscriptScrollbarHit};
+pub(crate) use ui_transcript_selection::{TranscriptSelection, TranscriptSelectionCell};
 
 #[cfg(test)]
 pub(crate) use ui_chrome::{

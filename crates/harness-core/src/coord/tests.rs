@@ -59,25 +59,26 @@ use super::{
     append_permission_requested_event, append_tool_call_finished_event,
     append_tool_call_requested_event, append_tool_call_started_event,
     build_model_compaction_prompt, build_provider_context_summary, compact_provider_context,
-    compaction_summary_override_from_hooks, completion_messages_to_conversation_messages,
-    permission_rule_request_selectors, plan_mode_shell_boundary_denial,
-    provider_context_summary_required_headings, provider_tool_message_status,
-    restore_provider_context_from_history, schedule_pending_agent_wakeups_for_idle_agent,
-    spawn_coordinator, summarize_hook_output, validate_model_compaction_summary,
-    ChildTaskTurnState, Coordinator, CoordinatorConfig, CoordinatorError, EditAppliedEventArgs,
-    FailedTerminalCompactionRequest, HashlineEditMetadata, HookExecutionBatch,
-    HookInvocationContext, JobOutcome, JobProgressKind, PendingPermissionResolution,
-    PendingPermissionState, PermissionRequestedEventArgs, ProviderCompactionTrigger,
-    ProviderContextCompactionPlan, QueuedAgentTurn, RunInfo, RunState, RunningAgentTurn,
-    TaskExecutionState, TaskState, TokioLifecycleHookCommandExecutor, ToolCallFinishedEventArgs,
-    ToolCallRequestedEventArgs,
+    completion_messages_to_conversation_messages, permission_rule_request_selectors,
+    plan_mode_shell_boundary_denial, provider_context_summary_required_headings,
+    provider_tool_message_status, restore_provider_context_from_history,
+    schedule_pending_agent_wakeups_for_idle_agent, spawn_coordinator, summarize_hook_output,
+    validate_model_compaction_summary, ChildTaskTurnState, Coordinator, CoordinatorConfig,
+    CoordinatorError, EditAppliedEventArgs, FailedTerminalCompactionRequest, HashlineEditMetadata,
+    HookExecutionBatch, HookInvocationContext, JobOutcome, JobProgressKind,
+    PendingPermissionResolution, PendingPermissionState, PermissionRequestedEventArgs,
+    ProviderCompactionTrigger, ProviderContextCompactionPlan, QueuedAgentTurn, RunInfo, RunState,
+    RunningAgentTurn, TaskExecutionState, TaskState, TokioLifecycleHookCommandExecutor,
+    ToolCallFinishedEventArgs, ToolCallRequestedEventArgs,
 };
 use harness_providers::{CompletionMessage, MessageRole};
 
 use super::hooks::{
     LifecycleHookCommandExecutor, LifecycleHookCommandInvocation, LifecycleHookCommandOutput,
 };
-use super::provider_context::ProviderContextCompactionRequest;
+use super::provider_context::{
+    compaction_summary_override_from_hooks, ProviderContextCompactionRequest,
+};
 
 struct TestShellTool;
 
@@ -4955,7 +4956,7 @@ fn compaction_summary_override_uses_explicit_hook_prefix_only() {
     };
 
     assert_eq!(
-        compaction_summary_override_from_hooks(&batch).as_deref(),
+        compaction_summary_override_from_hooks(&batch.hook_executions).as_deref(),
         Some("custom compacted recap")
     );
 }

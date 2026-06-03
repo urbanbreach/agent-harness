@@ -254,78 +254,150 @@
         },
       },
     },
+    "default": {
+      "type": "openai_compatible",
+      "name": "CLIProxyAPI (OpenAI)",
+      "options": {
+        "baseURL": "http://127.0.0.1:8317/v1",
+        "apiKey": "sk-zerolimit",
+        "timeoutMs": 1800000,
+      },
+      "models": {
+        "gpt-5.3-codex": { "name": "GPT 5.3 Codex" },
+        "gpt-5.5": {
+          "name": "GPT 5.5",
+          "variants": {
+            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
+            "medium": {
+              "name": "Medium",
+              "metadata": { "reasoningEffort": "medium" },
+            },
+            "high": {
+              "name": "High",
+              "metadata": { "reasoningEffort": "high" },
+            },
+            "xhigh": {
+              "name": "XHigh",
+              "metadata": { "reasoningEffort": "xhigh" },
+            },
+          },
+        },
+        "gpt-5.4": {
+          "name": "GPT 5.4 (272k)",
+          "variants": {
+            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
+            "medium": {
+              "name": "Medium",
+              "metadata": { "reasoningEffort": "medium" },
+            },
+            "high": {
+              "name": "High",
+              "metadata": { "reasoningEffort": "high" },
+            },
+            "xhigh": {
+              "name": "XHigh",
+              "metadata": { "reasoningEffort": "xhigh" },
+            },
+          },
+        },
+        "gpt-5.4-1m": { "name": "GPT 5.4 (1M)" },
+        "gpt-5.4-mini": {
+          "name": "GPT 5.4 Mini",
+          "variants": {
+            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
+            "medium": {
+              "name": "Medium",
+              "metadata": { "reasoningEffort": "medium" },
+            },
+            "high": {
+              "name": "High",
+              "metadata": { "reasoningEffort": "high" },
+            },
+            "xhigh": {
+              "name": "XHigh",
+              "metadata": { "reasoningEffort": "xhigh" },
+            },
+          },
+        },
+        "gpt-5.2": { "name": "GPT 5.2" },
+        "gpt-5.1-codex-max": { "name": "GPT 5.1 Codex Max" },
+        "gpt-5.1-codex": { "name": "GPT 5.1 Codex" },
+        "gpt-5.1-codex-mini": { "name": "GPT 5.1 Codex Mini" },
+        "gpt-5.1": { "name": "GPT 5.1" },
+      },
+    },
   },
 
   // Default primary model and smaller model used by hidden/background agents.
-  "model": "openai-codex/gpt-5.4",
-  "small_model": "openai-codex/gpt-5.4-mini",
+  "model": "default/gpt-5.4",
+  "small_model": "default/gpt-5.4-mini",
 
   // Built-in agents are listed explicitly for discoverability. Use enable:false
   // (or enabled:false) to remove one; add model/prompt/tools only for overrides.
   "agent": {
     "build": {
       "enable": true,
-      "model": "openai-codex/gpt-5.5",
+      "model": "default/gpt-5.5",
       "variant": "high",
     },
     "plan": {
       "enable": true,
-      "model": "openai-codex/gpt-5.5",
+      "model": "default/gpt-5.5",
       "variant": "xhigh",
     },
     "general": {
       "enable": true,
-      "model": "openai-codex/gpt-5.4-mini",
+      "model": "default/gpt-5.4-mini",
       "variant": "medium",
     },
     "explore": {
       "enable": true,
-      "model": "openai-codex/gpt-5.4-mini",
+      "model": "default/gpt-5.4-mini",
       "variant": "low",
     },
     "visual-engineering": {
       "enable": true,
-      "model": "openai-codex/gpt-5.4-mini",
+      "model": "default/gpt-5.4-mini",
       "variant": "high",
     },
     "artistry": {
       "enable": true,
-      "model": "openai-codex/gpt-5.5",
+      "model": "default/gpt-5.5",
       "variant": "high",
     },
     "ultrabrain": {
       "enable": true,
-      "model": "openai-codex/gpt-5.5",
+      "model": "default/gpt-5.5",
       "variant": "xhigh",
     },
     "deep": {
       "enable": true,
-      "model": "openai-codex/gpt-5.5",
+      "model": "default/gpt-5.5",
       "variant": "high",
     },
     "quick": {
       "enable": true,
-      "model": "openai-codex/gpt-5.4-mini",
+      "model": "default/gpt-5.4-mini",
       "variant": "low",
     },
     "unspecified-low": {
       "enable": true,
-      "model": "openai-codex/gpt-5.4-mini",
+      "model": "default/gpt-5.4-mini",
       "variant": "low",
     },
     "unspecified-high": {
       "enable": true,
-      "model": "openai-codex/gpt-5.5",
+      "model": "default/gpt-5.5",
       "variant": "high",
     },
     "writing": {
       "enable": true,
-      "model": "openai-codex/gpt-5.4-mini",
+      "model": "default/gpt-5.4-mini",
       "variant": "medium",
     },
     "title": {
       "enable": true,
-      "model": "openai-codex/gpt-5.4-mini",
+      "model": "default/gpt-5.4-mini",
       "variant": "low",
       "hidden": true,
     },

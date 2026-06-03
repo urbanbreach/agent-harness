@@ -4109,6 +4109,24 @@ fn transcript_render_key_is_cached_across_selection_drag_path() {
 }
 
 #[test]
+fn transcript_render_key_reuses_cache_until_marked_dirty() {
+    let mut app = transcript_selection_test_app();
+
+    AppState::reset_transcript_render_key_metrics_for_test();
+
+    let initial_key = app.transcript_render_cache_key();
+    let cached_key = app.transcript_render_cache_key();
+    assert_eq!(initial_key, cached_key);
+    assert_eq!(AppState::transcript_render_key_build_count_for_test(), 1);
+
+    app.mark_transcript_dirty_for_test();
+
+    let dirty_key = app.transcript_render_cache_key();
+    assert_ne!(initial_key, dirty_key);
+    assert_eq!(AppState::transcript_render_key_build_count_for_test(), 2);
+}
+
+#[test]
 fn historical_task_completed_marks_turn_done_and_unblocks_first_resumed_submit() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink = {

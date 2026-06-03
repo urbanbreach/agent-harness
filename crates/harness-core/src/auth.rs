@@ -877,6 +877,8 @@ fn non_empty_owned(value: String) -> Option<String> {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex as StdMutex;
+    use tokio::sync::oneshot;
 
     #[derive(Debug)]
     struct FixedClock(SystemTime);
@@ -887,10 +889,21 @@ mod tests {
         }
     }
 
-    #[derive(Debug)]
     struct CountingRefresher {
         calls: AtomicUsize,
         expires_at: String,
+        started: StdMutex<Option<oneshot::Sender<()>>>,
+        release: StdMutex<Option<oneshot::Receiver<()>>>,
+    }
+
+    impl fmt::Debug for CountingRefresher {
+        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter
+                .debug_struct("CountingRefresher")
+                .field("calls", &self.calls.load(Ordering::SeqCst))
+                .field("expires_at", &self.expires_at)
+                .finish_non_exhaustive()
+        }
     }
 
     #[async_trait]
@@ -903,7 +916,13 @@ mod tests {
             assert_eq!(provider, AuthProviderId::Codex);
             assert_eq!(credential.refresh_token.as_deref(), Some("refresh-old"));
             self.calls.fetch_add(1, Ordering::SeqCst);
-            tokio::time::sleep(Duration::from_millis(25)).await;
+            if let Some(started) = self.started.lock().expect("started lock").take() {
+                let _ = started.send(());
+            }
+            let release = self.release.lock().expect("release lock").take();
+            if let Some(release) = release {
+                let _ = release.await;
+            }
             Ok(OAuthRefreshOutcome {
                 access_token: "access-new".to_string(),
                 refresh_token: Some("refresh-new".to_string()),
@@ -1031,9 +1050,13 @@ mod tests {
                 "2026-05-29T00:00:00Z",
             ))
             .expect("save expired oauth credential");
+        let (started_tx, started_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
         let refresher = Arc::new(CountingRefresher {
             calls: AtomicUsize::new(0),
             expires_at: "2026-05-31T00:00:00Z".to_string(),
+            started: StdMutex::new(Some(started_tx)),
+            release: StdMutex::new(Some(release_rx)),
         });
         let manager = Arc::new(
             ProviderCredentialManager::new(
@@ -1053,10 +1076,13 @@ mod tests {
             let manager = manager.clone();
             async move { manager.resolve().await.expect("first resolve") }
         });
+        started_rx.await.expect("refresh started");
         let second = tokio::spawn({
             let manager = manager.clone();
             async move { manager.resolve().await.expect("second resolve") }
         });
+        tokio::task::yield_now().await;
+        release_tx.send(()).expect("release refresher");
         let first = first.await.expect("first join");
         let second = second.await.expect("second join");
 

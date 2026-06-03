@@ -3,7 +3,7 @@ use std::ffi::OsString;
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use cli_io::load_events_from_run_dir;
@@ -51,20 +51,20 @@ mod defaults;
 #[path = "../../src/dynamic_prompt.rs"]
 mod dynamic_prompt;
 #[allow(dead_code)]
-#[path = "../../src/logging.rs"]
-mod logging;
-#[allow(dead_code)]
 #[path = "../../src/generated_model_catalog.rs"]
 mod generated_model_catalog;
 #[allow(dead_code)]
-#[path = "../../src/runtime_catalog.rs"]
-mod runtime_catalog;
+#[path = "../../src/logging.rs"]
+mod logging;
 #[allow(dead_code)]
 #[path = "../../src/recovery.rs"]
 mod recovery;
 #[allow(dead_code)]
 #[path = "../../src/replay.rs"]
 mod replay;
+#[allow(dead_code)]
+#[path = "../../src/runtime_catalog.rs"]
+mod runtime_catalog;
 #[allow(dead_code)]
 #[path = "../../src/scenarios.rs"]
 mod scenarios;
@@ -73,8 +73,7 @@ mod scenarios;
 mod tui_impl;
 
 fn startup_draft_test_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
+    tui_impl::tests::startup_draft_test_lock()
 }
 
 fn run_harness<I, S>(args: I) -> CliHarnessOutput
@@ -221,8 +220,7 @@ impl Provider for CapturingInteractiveProvider {
     }
 }
 
-fn capturing_interactive_provider_router(
-) -> (
+fn capturing_interactive_provider_router() -> (
     Arc<CapturingInteractiveProvider>,
     Arc<CapturingInteractiveProvider>,
     Arc<dyn Provider>,

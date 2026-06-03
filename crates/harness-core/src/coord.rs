@@ -1,11 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use serde::Deserialize;
 use serde_json::{json, Value};
 use thiserror::Error;
 use tokio::sync::{mpsc, oneshot};
@@ -23,42 +21,37 @@ use crate::agent::{
 };
 use crate::clock::Clock;
 use crate::config::{
-    registered_hook_runtime_config, registered_mcp_server_first_class_tool_id,
-    CompactionRuntimeConfig, HookLifecycleEvent, HookRuntimeConfig, LifecycleHookConfig,
-    ShellAllowlist, ToolFailureMode,
+    registered_hook_runtime_config, CompactionRuntimeConfig, HookLifecycleEvent, HookRuntimeConfig,
+    LifecycleHookConfig, ShellAllowlist, ToolFailureMode,
 };
 use crate::conversation::{
     ConversationAssistantMessage, ConversationMessage, ConversationToolCall,
     ConversationToolResultMessage, ConversationUserMessage,
 };
 use crate::counter_id::parse_prefixed_counter;
-use crate::digest::{digest12, digest12_json};
-use crate::edit::hashline::HashlinePatch;
+use crate::digest::digest12;
 use crate::event::{
     ActorKind, AgentSpawnedEvent, ArtifactWrittenEvent, BackgroundTaskNotificationEvent,
     BackgroundTaskNotificationStatus, CompactionAppliedEvent, CompactionFailedEvent,
     CompactionRequestedEvent, CompactionWrittenEvent, EditAppliedEvent, EditProposedEvent,
-    EditRejectedEvent, EventActor, EventArtifactRef, EventBuildError, EventBuilder, EventContext,
-    EventEnvelopeV1, EventV1, ExecutionTimingMetadata, HookExecutionMetadata, HookExecutionStatus,
-    PermissionDecision as EventPermissionDecision, PermissionGrantRecordedEvent,
-    PermissionRequestedArgs, PermissionResolvedEvent, PolicyViolationDetectedEvent,
-    ProviderAssistantMessageMetadata, ProviderReasoningDeltaEvent, ProviderRequestFinishedMetadata,
-    ProviderRequestStartedMetadata, RunFailedEvent, RunFinishedEvent, RunStartedEvent,
-    StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskCompletionMetadata,
-    TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState, TaskScheduledEvent,
-    TaskTerminalScope, TeamBounds, TeamCreatedEvent, TeamDeletedEvent, TeamMemberRole,
-    TeamMemberSelector, TeamMemberSpawnedEvent, TeamMemberSpec, TeamMessage, TeamMessageKind,
-    TeamMessageSentEvent, TeamShutdownApprovedEvent, TeamShutdownRejectedEvent,
+    EditRejectedEvent, EventActor, EventBuildError, EventBuilder, EventContext, EventEnvelopeV1,
+    EventV1, HookExecutionMetadata, PermissionDecision as EventPermissionDecision,
+    PermissionGrantRecordedEvent, PermissionRequestedArgs, PermissionResolvedEvent,
+    PolicyViolationDetectedEvent, ProviderAssistantMessageMetadata, ProviderReasoningDeltaEvent,
+    ProviderRequestFinishedMetadata, ProviderRequestStartedMetadata, RunFailedEvent,
+    RunFinishedEvent, RunStartedEvent, StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent,
+    TaskCompletionMetadata, TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState,
+    TaskScheduledEvent, TaskTerminalScope, TeamBounds, TeamCreatedEvent, TeamDeletedEvent,
+    TeamMemberRole, TeamMemberSelector, TeamMemberSpawnedEvent, TeamMemberSpec, TeamMessage,
+    TeamMessageKind, TeamMessageSentEvent, TeamShutdownApprovedEvent, TeamShutdownRejectedEvent,
     TeamShutdownRequestedEvent, TeamSpec, TeamTask, TeamTaskCreatedEvent, TeamTaskStatus,
     TeamTaskUpdatedEvent, ToolCallFinishedEvent, ToolCallMetadata, ToolCallStartedEvent,
     ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent,
 };
-use crate::path_selector::workspace_relative_path_from_maybe_absolute;
 use crate::perm::{
     permission_kind_for_tool, permission_kind_for_tool_call, PermissionDecision, PermissionGrant,
-    PermissionGrantMatcher, PermissionGrantRequest, PermissionGrantScope, PermissionGrantSet,
-    PermissionKind, PermissionPolicy, PermissionRuleRequest, PermissionToolSelector,
-    PolicyDecision,
+    PermissionGrantRequest, PermissionGrantScope, PermissionGrantSet, PermissionKind,
+    PermissionPolicy, PolicyDecision,
 };
 use crate::proj::{
     inspect_resume_plan, project_background_request, project_team_state,
@@ -66,38 +59,48 @@ use crate::proj::{
     RecordedRuntimeContext, RunMetadata, SessionModeSource, TeamProjection, TeamRunProjection,
 };
 use crate::provider_args::provider_tool_arguments_json;
-use crate::question_answers::{validate_question_answers, QuestionAnswerPrompt};
 use crate::redact::Redactor;
 use crate::sched::{
     ConcurrencyKey, ScheduleDecision, Scheduler, SchedulerLimits, TaskProgressSnapshot,
 };
-use crate::session_paths::{ARTIFACTS_DIR_NAME, EVENTS_FILE_NAME, META_FILE_NAME};
+use crate::session_paths::{ARTIFACTS_DIR_NAME, META_FILE_NAME};
 use crate::session_title::{
-    clean_generated_title, create_default_title, is_parent_default_title, TITLE_AGENT_NAME,
-    TITLE_GENERATION_USER_PROMPT,
+    clean_generated_title, is_parent_default_title, TITLE_AGENT_NAME, TITLE_GENERATION_USER_PROMPT,
 };
 use crate::store::{EventEnvelopeWithoutSeqV1, EventStore, EventStoreError, JsonlFileEventStore};
 use crate::text::{non_empty_trimmed, truncate_with_ellipsis};
-use crate::tool::{
-    canonical_tool_id_for, sanitize_mcp_tool_segment, ToolContext, ToolRegistry, ToolResult,
-    ToolRunState,
-};
+use crate::tool::{ToolContext, ToolRegistry, ToolResult, ToolRunState};
 use harness_providers::{
     AssistantToolCall, CompletionMessage, CompletionRequest, MessageRole, Provider,
     ProviderStreamEvent, ToolDef,
 };
 
+mod child_session;
 mod hooks;
+mod permission;
 mod provider_context;
+mod question;
+mod task_category;
 mod team;
 mod tool_execution;
+mod tool_metadata;
 
+use self::child_session::{
+    create_child_session_mirror, finish_child_session_mirrors, mirror_event_to_child_session,
+    restore_child_session_mirrors, ChildSessionMirror,
+};
 use self::team::{
     reject_nested_team_create, require_active_team, require_active_team_or_shutdown,
     validate_team_action, validate_team_actor_can_make_unowned_team_write, validate_team_member,
     validate_team_message, validate_team_participant, validate_team_profile_role,
     validate_team_shutdown_request_can_open, validate_team_shutdown_request_pending,
     validate_team_task_create, validate_team_task_update, TeamActionKind, TeamParticipantRole,
+};
+
+use self::permission::{
+    evaluate_permission_rule_requests, event_permission_decision, permission_decision_label,
+    permission_grant_request, permission_request_digest, permission_rule_request_selectors,
+    permission_summary, plan_mode_edit_boundary_denial, plan_mode_shell_boundary_denial,
 };
 
 #[cfg(test)]
@@ -108,19 +111,37 @@ pub use self::hooks::{
     TokioLifecycleHookCommandExecutor,
 };
 
+pub use self::task_category::{
+    task_category_fallback_chain, task_category_fallback_disabled_for_parent,
+    task_category_fallback_profile, TASK_CATEGORY_FALLBACK_DISABLED_PARENT_PROFILES,
+    TASK_CATEGORY_FALLBACK_PROFILE,
+};
+
 use self::provider_context::{
     approximate_provider_context_tokens, approximate_text_tokens, compaction_summary_model_ref,
+    compaction_summary_override_from_hooks, is_provider_context_overflow_reason,
     model_backed_compaction_summary_for, restore_provider_context_from_history,
-    serialize_provider_context_checkpoint, CompactionSummaryDecision, ModelBackedCompactionSummary,
-    ProviderCompactionTrigger, ProviderContextCompactionRequest,
-    PROVIDER_CONTEXT_COMPACTION_TURN_EXCERPT_MAX_CHARS,
+    serialize_provider_context_checkpoint, truncated_failure_reason, CompactionSummaryDecision,
+    ModelBackedCompactionSummary, ProviderCompactionTrigger, ProviderContextCompactionRequest,
+};
+use self::question::{
+    parse_question_request_prompts, question_request_timeout_ms, validate_question_answers_reason,
+    QuestionPromptSpec,
+};
+use self::tool_metadata::{
+    applied_tool_edit_metadata, event_artifact_refs, execution_timing_metadata,
+    extract_hook_execution_metadata, failed_tool_output_json, hashline_edit_metadata,
+    requested_tool_call_metadata, stable_tool_output_json, tool_call_metadata,
+    tool_identity_metadata, tool_task_lineage_metadata, AppliedToolEditMetadata,
+    HashlineEditMetadata,
 };
 
 #[cfg(test)]
 use self::provider_context::{
     build_model_compaction_prompt, build_provider_context_summary,
     provider_context_summary_required_headings, validate_model_compaction_summary,
-    ProviderContextCompactionPlan, PROVIDER_CONTEXT_SUMMARY_CONTRACT_VERSION,
+    ProviderContextCompactionPlan, PROVIDER_CONTEXT_COMPACTION_TURN_EXCERPT_MAX_CHARS,
+    PROVIDER_CONTEXT_SUMMARY_CONTRACT_VERSION,
 };
 
 const DEFAULT_COMMAND_BUFFER: usize = 64;
@@ -128,33 +149,6 @@ const DEFAULT_TOOL_CONCURRENCY: usize = 1;
 const DEFAULT_PROVIDER_MODEL_CONCURRENCY: usize = 1;
 const DEFAULT_STALE_TIMEOUT_MS: u64 = 15_000;
 const DEFAULT_WATCHDOG_TICK_MS: u64 = 100;
-pub const TASK_CATEGORY_FALLBACK_PROFILE: &str = "general";
-pub const TASK_CATEGORY_FALLBACK_DISABLED_PARENT_PROFILES: &[&str] = &["plan"];
-
-pub fn task_category_fallback_profile(category: &str) -> Option<&'static str> {
-    let category = category.trim();
-    (!category.is_empty() && !category.eq_ignore_ascii_case(TASK_CATEGORY_FALLBACK_PROFILE))
-        .then_some(TASK_CATEGORY_FALLBACK_PROFILE)
-}
-
-pub fn task_category_fallback_chain(category: Option<&str>) -> Vec<String> {
-    let Some(category) = category.map(str::trim).filter(|value| !value.is_empty()) else {
-        return Vec::new();
-    };
-    let mut chain = vec![category.to_string()];
-    if let Some(fallback) = task_category_fallback_profile(category) {
-        chain.push(fallback.to_string());
-    }
-    chain
-}
-
-pub fn task_category_fallback_disabled_for_parent(parent_profile: Option<&str>) -> bool {
-    parent_profile.is_some_and(|profile| {
-        TASK_CATEGORY_FALLBACK_DISABLED_PARENT_PROFILES
-            .iter()
-            .any(|disabled| profile.eq_ignore_ascii_case(disabled))
-    })
-}
 const DEFAULT_SIMULATED_JOB_DURATION_MS: u64 = 10;
 const DEFAULT_QUESTION_TIMEOUT_MS: u64 = 0;
 const COORDINATOR_AGENT_ID: &str = "coordinator";
@@ -4583,8 +4577,11 @@ impl Coordinator {
 
                 let result_summary = result.display_text;
                 let artifact_refs = event_artifact_refs(&result.artifacts);
-                let lineage =
-                    tool_task_lineage_metadata(&task, result_for_response.structured_json.as_ref());
+                let lineage = tool_task_lineage_metadata(
+                    &task.tool_call_id,
+                    task.request_correlation_id.as_deref(),
+                    result_for_response.structured_json.as_ref(),
+                );
                 let mut hook_executions = task_hook_state.hook_executions.clone();
                 hook_executions.extend(extract_hook_execution_metadata(
                     result_for_response.structured_json.as_ref(),
@@ -4784,7 +4781,11 @@ impl Coordinator {
                     request_correlation_id.as_deref(),
                     tool_call_metadata(
                         task.tool_metadata.as_ref(),
-                        Some(tool_task_lineage_metadata(&task, None)),
+                        Some(tool_task_lineage_metadata(
+                            &task.tool_call_id,
+                            task.request_correlation_id.as_deref(),
+                            None,
+                        )),
                         Vec::new(),
                         Some(timing.clone()),
                         hook_executions.clone(),
@@ -4865,7 +4866,11 @@ impl Coordinator {
                     request_correlation_id.as_deref(),
                     tool_call_metadata(
                         task.tool_metadata.as_ref(),
-                        Some(tool_task_lineage_metadata(&task, None)),
+                        Some(tool_task_lineage_metadata(
+                            &task.tool_call_id,
+                            task.request_correlation_id.as_deref(),
+                            None,
+                        )),
                         Vec::new(),
                         Some(timing),
                         hook_executions.clone(),
@@ -5310,7 +5315,8 @@ impl Coordinator {
             )?;
             return Err(CoordinatorError::LifecycleHookFailed(reason));
         }
-        let summary_override = compaction_summary_override_from_hooks(&requested_hook_batch);
+        let summary_override =
+            compaction_summary_override_from_hooks(&requested_hook_batch.hook_executions);
         let summary_decision = if let Some(summary) = summary_override {
             CompactionSummaryDecision::hook(summary)
         } else if self.config.compaction.model_backed {
@@ -6111,12 +6117,6 @@ impl RunState {
     }
 }
 
-#[derive(Debug)]
-struct ChildSessionMirror {
-    event_store: Arc<JsonlFileEventStore>,
-    append_parent_finish: bool,
-}
-
 #[derive(Debug, Clone)]
 struct QueuedAgentTurn {
     task_id: String,
@@ -6215,18 +6215,6 @@ fn push_incomplete_provider_turn(
         artifacts: Vec::new(),
         messages: Vec::new(),
     });
-}
-
-fn truncated_failure_reason(reason: &str) -> Option<String> {
-    let reason = reason.trim();
-    if reason.is_empty() {
-        None
-    } else {
-        Some(truncate_with_ellipsis(
-            reason,
-            PROVIDER_CONTEXT_COMPACTION_TURN_EXCERPT_MAX_CHARS,
-        ))
-    }
 }
 
 fn agent_turn_child_lineage(
@@ -6328,6 +6316,51 @@ fn background_task_notification_text(notification: &BackgroundTaskNotificationEv
     )
 }
 
+fn background_task_notification_reminder_text(
+    notification: &BackgroundTaskNotificationEvent,
+) -> String {
+    format!(
+        "<system-reminder>\n{}\n</system-reminder>",
+        background_task_notification_text(notification)
+    )
+}
+
+fn build_background_task_notification<R>(
+    redactor: &R,
+    child_task: &ChildTaskTurnState,
+    parent_agent_id: Option<String>,
+    delivered_turn_request_id: Option<String>,
+    terminal_event: &EventEnvelopeV1,
+    status: BackgroundTaskNotificationStatus,
+    summary: &str,
+) -> BackgroundTaskNotificationEvent
+where
+    R: Redactor + ?Sized,
+{
+    let capped_description = truncate_with_ellipsis(
+        &redactor.redact_text(&child_task.description),
+        BACKGROUND_TASK_NOTIFICATION_DESCRIPTION_MAX_CHARS,
+    );
+    let capped_summary = truncate_with_ellipsis(
+        &redactor.redact_text(summary),
+        BACKGROUND_TASK_NOTIFICATION_SUMMARY_MAX_CHARS,
+    );
+
+    BackgroundTaskNotificationEvent {
+        parent_session_id: child_task.parent_session_id.clone(),
+        parent_agent_id,
+        child_session_id: child_task.child_session_id.clone(),
+        child_request_id: child_task.child_request_id.clone(),
+        task_id: child_task.task_id.clone(),
+        description: capped_description,
+        status,
+        summary: capped_summary,
+        terminal_event_id: terminal_event.event_id.clone(),
+        terminal_task_id: terminal_terminal_task_id(terminal_event),
+        delivered_turn_request_id,
+    }
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "background notification scheduling needs explicit coordinator dependencies"
@@ -6370,31 +6403,16 @@ where
     let delivered_turn_request_id = parent_profile
         .as_ref()
         .map(|_| allocate_provider_request_id(run_state));
-    let capped_description = truncate_with_ellipsis(
-        &redactor.redact_text(&child_task.description),
-        BACKGROUND_TASK_NOTIFICATION_DESCRIPTION_MAX_CHARS,
-    );
-    let capped_summary = truncate_with_ellipsis(
-        &redactor.redact_text(summary),
-        BACKGROUND_TASK_NOTIFICATION_SUMMARY_MAX_CHARS,
-    );
-    let notification = BackgroundTaskNotificationEvent {
-        parent_session_id: child_task.parent_session_id.clone(),
-        parent_agent_id: parent_agent_id.clone(),
-        child_session_id: child_task.child_session_id.clone(),
-        child_request_id: child_task.child_request_id.clone(),
-        task_id: child_task.task_id.clone(),
-        description: capped_description,
+    let notification = build_background_task_notification(
+        redactor,
+        &child_task,
+        parent_agent_id.clone(),
+        delivered_turn_request_id.clone(),
+        terminal_event,
         status,
-        summary: capped_summary,
-        terminal_event_id: terminal_event.event_id.clone(),
-        terminal_task_id: terminal_terminal_task_id(terminal_event),
-        delivered_turn_request_id: delivered_turn_request_id.clone(),
-    };
-    let notification_text = format!(
-        "<system-reminder>\n{}\n</system-reminder>",
-        background_task_notification_text(&notification)
+        summary,
     );
+    let notification_text = background_task_notification_reminder_text(&notification);
 
     append_payload_event_with_correlation(
         clock,
@@ -6620,22 +6638,6 @@ enum TaskExecutionState {
     Running,
 }
 
-#[derive(Debug, Clone)]
-struct HashlineEditMetadata {
-    edit_id: String,
-    path: String,
-    summary: String,
-    patch_digest: String,
-}
-
-#[derive(Debug, Clone)]
-struct AppliedToolEditMetadata {
-    metadata: HashlineEditMetadata,
-    diff_rel_path: Option<String>,
-    diff_digest: Option<String>,
-    deleted: bool,
-}
-
 struct TaskState {
     tool_call_id: String,
     tool_metadata: Option<ToolIdentityMetadata>,
@@ -6679,45 +6681,6 @@ enum PendingPermissionResolution {
         prompts: Vec<QuestionPromptSpec>,
         respond_to: oneshot::Sender<Result<Vec<Vec<String>>, String>>,
     },
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct QuestionRequestSpec {
-    questions: Vec<QuestionPromptSpec>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct QuestionPromptSpec {
-    #[serde(rename = "question")]
-    _question: String,
-    header: String,
-    options: Vec<QuestionOptionSpec>,
-    #[serde(default)]
-    multiple: Option<bool>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct QuestionOptionSpec {
-    label: String,
-    #[serde(rename = "description")]
-    _description: String,
-}
-
-impl QuestionAnswerPrompt for QuestionPromptSpec {
-    fn header(&self) -> &str {
-        &self.header
-    }
-
-    fn multiple(&self) -> bool {
-        self.multiple.unwrap_or(false)
-    }
-
-    fn canonical_option_label<'a>(&'a self, answer: &str) -> Option<&'a str> {
-        self.options
-            .iter()
-            .find(|option| option.label.eq_ignore_ascii_case(answer))
-            .map(|option| option.label.as_str())
-    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -8287,46 +8250,6 @@ where
     Ok(())
 }
 
-fn parse_question_answers_reason(reason: Option<&str>) -> Result<Vec<Vec<String>>, String> {
-    let Some(reason) = reason.and_then(non_empty_trimmed) else {
-        return Err("question answers were not provided".to_string());
-    };
-
-    serde_json::from_str::<Vec<Vec<String>>>(reason)
-        .map_err(|err| format!("invalid question answer payload: {err}"))
-}
-
-fn validate_question_answers_reason(
-    reason: Option<&str>,
-    prompts: &[QuestionPromptSpec],
-) -> Result<Vec<Vec<String>>, String> {
-    let answers = parse_question_answers_reason(reason)?;
-    validate_question_answers(prompts, answers)
-}
-
-fn parse_question_request_prompts(request_json: &Value) -> Result<Vec<QuestionPromptSpec>, String> {
-    let request = serde_json::from_value::<QuestionRequestSpec>(request_json.clone())
-        .map_err(|err| format!("invalid question request payload: {err}"))?;
-    validate_question_prompts(request.questions)
-}
-
-fn validate_question_prompts(
-    prompts: Vec<QuestionPromptSpec>,
-) -> Result<Vec<QuestionPromptSpec>, String> {
-    if prompts.is_empty() {
-        return Err("at least one question is required".to_string());
-    }
-
-    Ok(prompts)
-}
-
-fn question_request_timeout_ms(permission_policy: &PermissionPolicy) -> u64 {
-    match permission_policy.evaluate(None, PermissionKind::Question) {
-        PolicyDecision::Ask { timeout_ms, .. } => timeout_ms,
-        PolicyDecision::Allow | PolicyDecision::Deny => DEFAULT_QUESTION_TIMEOUT_MS,
-    }
-}
-
 fn append_payload_event<C, R>(
     clock: &C,
     redactor: &R,
@@ -8798,302 +8721,6 @@ where
     append_built_event(run_state, envelope)
 }
 
-fn create_child_session_mirror<C, R>(
-    clock: &C,
-    redactor: &R,
-    config: &CoordinatorConfig,
-    run_state: &mut RunState,
-    child_session_id: &str,
-    profile: &str,
-    child_session_title: Option<&str>,
-) -> Result<(), CoordinatorError>
-where
-    C: Clock + ?Sized,
-    R: Redactor + ?Sized,
-{
-    if run_state
-        .child_session_mirrors
-        .contains_key(child_session_id)
-    {
-        return Ok(());
-    }
-
-    let event_store = Arc::new(JsonlFileEventStore::open(
-        &config.session_dir,
-        child_session_id,
-        config.deterministic_store,
-    )?);
-    let run_dir = config.session_dir.join(child_session_id);
-    let title = child_session_title
-        .and_then(non_empty_trimmed)
-        .map(str::to_string)
-        .unwrap_or_else(|| create_default_title(clock, true));
-
-    write_child_session_metadata(
-        clock,
-        config,
-        run_state,
-        child_session_id,
-        &run_dir,
-        &title,
-        profile,
-    )?;
-
-    let child_appender = ChildPayloadAppender {
-        clock,
-        redactor,
-        event_store: event_store.as_ref(),
-        child_run_id: child_session_id,
-    };
-    child_appender.append(
-        system_actor(),
-        Some(format!("run:{child_session_id}")),
-        None,
-        EventV1::RunStarted(RunStartedEvent {
-            run_name: title,
-            workspace_root: run_state.info.workspace_root.display().to_string(),
-        }),
-    )?;
-    child_appender.append(
-        system_actor(),
-        Some(format!("agent:{child_session_id}")),
-        None,
-        EventV1::AgentSpawned(AgentSpawnedEvent {
-            agent_id: child_session_id.to_string(),
-            profile: profile.to_string(),
-            parent_agent_id: None,
-        }),
-    )?;
-
-    run_state.child_session_mirrors.insert(
-        child_session_id.to_string(),
-        ChildSessionMirror {
-            event_store,
-            append_parent_finish: true,
-        },
-    );
-    Ok(())
-}
-
-fn restore_child_session_mirrors<C, R>(
-    clock: &C,
-    redactor: &R,
-    config: &CoordinatorConfig,
-    run_state: &mut RunState,
-    restored_agent_bindings: &[(String, String, Option<String>)],
-) -> Result<(), CoordinatorError>
-where
-    C: Clock + ?Sized,
-    R: Redactor + ?Sized,
-{
-    for (agent_id, profile, parent_agent_id) in restored_agent_bindings {
-        if parent_agent_id.is_none() {
-            continue;
-        }
-
-        let run_dir = config.session_dir.join(agent_id);
-        if run_dir.join(EVENTS_FILE_NAME).exists() {
-            let event_store = Arc::new(JsonlFileEventStore::open_existing(
-                &config.session_dir,
-                agent_id,
-                config.deterministic_store,
-            )?);
-            run_state.child_session_mirrors.insert(
-                agent_id.clone(),
-                ChildSessionMirror {
-                    event_store,
-                    append_parent_finish: false,
-                },
-            );
-        } else {
-            create_child_session_mirror(
-                clock, redactor, config, run_state, agent_id, profile, None,
-            )?;
-        }
-    }
-
-    Ok(())
-}
-
-fn write_child_session_metadata<C>(
-    clock: &C,
-    config: &CoordinatorConfig,
-    run_state: &RunState,
-    child_session_id: &str,
-    child_run_dir: &Path,
-    title: &str,
-    profile: &str,
-) -> Result<(), CoordinatorError>
-where
-    C: Clock + ?Sized,
-{
-    let created_at = if config.deterministic_store {
-        None
-    } else {
-        clock.system_time_rfc3339()
-    };
-    let metadata = json!({
-        "run_id": child_session_id,
-        "run_name": title,
-        "workspace_root": run_state.info.workspace_root.display().to_string(),
-        "created_at": created_at,
-        "config_digest": config.config_digest.clone(),
-        "harness_version": config.harness_version.clone(),
-        "recorded_runtime_context": null,
-        "harness_lineage": {
-            "relationship": "task_child_session",
-            "parent_run_id": run_state.info.run_id.clone(),
-            "parent_session_id": run_state.info.run_id.clone(),
-            "child_session_id": child_session_id,
-            "profile": profile,
-        }
-    });
-    let meta_path = child_run_dir.join(META_FILE_NAME);
-    let body = serde_json::to_string_pretty(&metadata)?;
-    fs::write(&meta_path, body).map_err(|source| CoordinatorError::WriteRunMetadata {
-        path: meta_path.display().to_string(),
-        source,
-    })
-}
-
-struct ChildPayloadAppender<'a, C, R>
-where
-    C: Clock + ?Sized,
-    R: Redactor + ?Sized,
-{
-    clock: &'a C,
-    redactor: &'a R,
-    event_store: &'a JsonlFileEventStore,
-    child_run_id: &'a str,
-}
-
-impl<C, R> ChildPayloadAppender<'_, C, R>
-where
-    C: Clock + ?Sized,
-    R: Redactor + ?Sized,
-{
-    fn append(
-        &self,
-        actor: EventActor,
-        stream_key: Option<String>,
-        correlation_id: Option<String>,
-        payload: EventV1,
-    ) -> Result<EventEnvelopeV1, CoordinatorError> {
-        let builder = EventBuilder::new(self.clock, self.redactor, self.child_run_id.to_string());
-        let mut context = EventContext::new(self.event_store.next_seq()?, actor);
-        context.stream_key = stream_key;
-        context.correlation_id = correlation_id;
-        let envelope = builder.build(context, payload)?;
-        Ok(self
-            .event_store
-            .append(EventEnvelopeWithoutSeqV1::from(envelope))?)
-    }
-}
-
-fn mirror_event_to_child_session(
-    run_state: &mut RunState,
-    event: &EventEnvelopeV1,
-) -> Result<(), CoordinatorError> {
-    let Some(child_session_id) = child_session_id_for_event(run_state, event) else {
-        return Ok(());
-    };
-    let Some(mirror) = run_state.child_session_mirrors.get(&child_session_id) else {
-        return Ok(());
-    };
-
-    let mut child_event = event.clone();
-    child_event.run_id = child_session_id.clone();
-    child_event.seq = mirror.event_store.next_seq()?;
-    child_event.event_id = format!("evt_{child_session_id}_mirror_{:012}", event.seq);
-    if child_event.stream_key.as_deref() == Some(format!("run:{}", run_state.info.run_id).as_str())
-    {
-        child_event.stream_key = Some(format!("run:{child_session_id}"));
-    }
-
-    mirror
-        .event_store
-        .append(EventEnvelopeWithoutSeqV1::from(child_event))?;
-    Ok(())
-}
-
-fn child_session_id_for_event(run_state: &RunState, event: &EventEnvelopeV1) -> Option<String> {
-    if matches!(
-        event.payload,
-        EventV1::RunStarted(_) | EventV1::RunFinished(_)
-    ) {
-        return None;
-    }
-
-    if let Some(agent_id) = event.actor.agent_id.as_deref() {
-        if run_state.child_session_mirrors.contains_key(agent_id) {
-            return Some(agent_id.to_string());
-        }
-    }
-
-    if let Some(request_id) = event.correlation_id.as_deref() {
-        if let Some(child_session_id) = run_state.child_request_session_by_id.get(request_id) {
-            return Some(child_session_id.clone());
-        }
-    }
-
-    match &event.payload {
-        EventV1::ProviderRequestStarted(payload) => run_state
-            .child_request_session_by_id
-            .get(&payload.request_id)
-            .cloned(),
-        EventV1::ProviderStreamDelta(payload) => run_state
-            .child_request_session_by_id
-            .get(&payload.request_id)
-            .cloned(),
-        EventV1::ProviderReasoningDelta(payload) => run_state
-            .child_request_session_by_id
-            .get(&payload.request_id)
-            .cloned(),
-        EventV1::ProviderRequestFinished(payload) => run_state
-            .child_request_session_by_id
-            .get(&payload.request_id)
-            .cloned(),
-        EventV1::AssistantMessageFinished(payload) => run_state
-            .child_request_session_by_id
-            .get(&payload.request_id)
-            .cloned(),
-        _ => None,
-    }
-}
-
-fn finish_child_session_mirrors<C, R>(
-    clock: &C,
-    redactor: &R,
-    run_state: &RunState,
-    summary: &str,
-) -> Result<(), CoordinatorError>
-where
-    C: Clock + ?Sized,
-    R: Redactor + ?Sized,
-{
-    for (child_session_id, mirror) in &run_state.child_session_mirrors {
-        if !mirror.append_parent_finish {
-            continue;
-        }
-        let child_appender = ChildPayloadAppender {
-            clock,
-            redactor,
-            event_store: mirror.event_store.as_ref(),
-            child_run_id: child_session_id,
-        };
-        child_appender.append(
-            system_actor(),
-            Some(format!("run:{child_session_id}")),
-            None,
-            EventV1::RunFinished(RunFinishedEvent {
-                summary: format!("parent session finished: {summary}"),
-            }),
-        )?;
-    }
-
-    Ok(())
-}
-
 fn write_run_metadata(
     run_state: &RunState,
     config: &CoordinatorConfig,
@@ -9358,485 +8985,6 @@ where
     )
 }
 
-fn compaction_summary_override_from_hooks(batch: &HookExecutionBatch) -> Option<String> {
-    batch.hook_executions.iter().rev().find_map(|execution| {
-        if execution.status != HookExecutionStatus::Succeeded {
-            return None;
-        }
-        let summary = execution.output_summary.as_deref()?.trim();
-        summary
-            .strip_prefix("compaction_summary:")
-            .and_then(non_empty_trimmed)
-            .map(ToOwned::to_owned)
-    })
-}
-
-fn is_provider_context_overflow_reason(reason: &str) -> bool {
-    let normalized = reason.to_ascii_lowercase();
-    [
-        "context length",
-        "context window",
-        "too many tokens",
-        "prompt token count",
-        "maximum context",
-        "input token",
-        "reduce the length",
-        "token count of",
-        "exceeds the limit",
-    ]
-    .iter()
-    .any(|needle| normalized.contains(needle))
-}
-
-fn event_permission_decision(decision: PermissionDecision) -> EventPermissionDecision {
-    match decision {
-        PermissionDecision::Allow => EventPermissionDecision::Allow,
-        PermissionDecision::Deny => EventPermissionDecision::Deny,
-    }
-}
-
-fn permission_decision_label(decision: EventPermissionDecision) -> &'static str {
-    match decision {
-        EventPermissionDecision::Allow => "allow",
-        EventPermissionDecision::Deny => "deny",
-    }
-}
-
-fn permission_summary(redactor: &dyn Redactor, tool_id: &str, args_json: &Value) -> String {
-    let redacted_args = crate::redact::redact_value(redactor, args_json);
-    let args = serde_json::to_string(&redacted_args).unwrap_or_else(|_| "null".to_string());
-    format!("tool={tool_id} args={args}")
-}
-
-fn permission_request_digest(tool_id: &str, args_json: &Value) -> String {
-    let canonical = serde_json::to_vec(args_json).unwrap_or_else(|_| b"null".to_vec());
-    let mut bytes = Vec::with_capacity(tool_id.len() + 1 + canonical.len());
-    bytes.extend_from_slice(tool_id.as_bytes());
-    bytes.push(0x1f);
-    bytes.extend_from_slice(&canonical);
-    digest12(&bytes)
-}
-
-fn permission_grant_request(
-    workspace_root: &Path,
-    kind: PermissionKind,
-    tool_id: &str,
-    args_json: &Value,
-    request_digest: &str,
-) -> PermissionGrantRequest {
-    PermissionGrantRequest {
-        kind,
-        tool: permission_tool_selector(tool_id, args_json),
-        matcher: permission_grant_matcher(workspace_root, kind, args_json, request_digest),
-    }
-}
-
-fn permission_tool_selector(tool_id: &str, args_json: &Value) -> PermissionToolSelector {
-    let effective_tool_id = effective_mcp_tool_id(tool_id, args_json).unwrap_or_else(|| {
-        canonical_tool_id_for(tool_id)
-            .unwrap_or(tool_id)
-            .to_string()
-    });
-    let canonical_tool_id = canonical_tool_id_for(tool_id).map(str::to_string);
-
-    PermissionToolSelector {
-        effective_tool_id,
-        canonical_tool_id,
-    }
-}
-
-fn permission_grant_matcher(
-    workspace_root: &Path,
-    kind: PermissionKind,
-    args_json: &Value,
-    request_digest: &str,
-) -> PermissionGrantMatcher {
-    match kind {
-        PermissionKind::Shell => shell_command_selector(args_json, request_digest)
-            .unwrap_or_else(|| request_digest_selector(request_digest)),
-        PermissionKind::EditFs => {
-            let paths = workspace_path_selector_paths(workspace_root, args_json);
-            if paths.len() == 1 {
-                PermissionGrantMatcher::WorkspacePath {
-                    path: paths.into_iter().next().expect("single path exists"),
-                    request_digest: request_digest.to_string(),
-                }
-            } else {
-                request_digest_selector(request_digest)
-            }
-        }
-        _ => request_digest_selector(request_digest),
-    }
-}
-
-fn evaluate_permission_rule_requests(
-    policy: &PermissionPolicy,
-    category: Option<&str>,
-    kind: PermissionKind,
-    selectors: &[PermissionRuleRequest],
-) -> PolicyDecision {
-    if selectors.is_empty() {
-        return policy.evaluate_request(category, kind, None);
-    }
-
-    let mut ask_decision = None;
-    for selector in selectors {
-        match policy.evaluate_request(category, kind, Some(selector)) {
-            PolicyDecision::Deny => return PolicyDecision::Deny,
-            PolicyDecision::Ask {
-                timeout_ms,
-                default_decision,
-            } => {
-                ask_decision = Some(PolicyDecision::Ask {
-                    timeout_ms,
-                    default_decision,
-                });
-            }
-            PolicyDecision::Allow => {}
-        }
-    }
-
-    ask_decision.unwrap_or(PolicyDecision::Allow)
-}
-
-fn permission_rule_request_selectors(
-    workspace_root: &Path,
-    kind: PermissionKind,
-    args_json: &Value,
-) -> Vec<PermissionRuleRequest> {
-    match kind {
-        PermissionKind::Shell => shell_command_rule_selector(args_json).into_iter().collect(),
-        PermissionKind::EditFs => workspace_path_rule_selectors(workspace_root, args_json),
-        PermissionKind::Task => task_agent_rule_selectors(args_json),
-        PermissionKind::Network
-        | PermissionKind::Question
-        | PermissionKind::WebFetch
-        | PermissionKind::WebSearch
-        | PermissionKind::CodeSearch
-        | PermissionKind::Lsp => Vec::new(),
-    }
-}
-
-fn plan_mode_edit_boundary_denial(
-    category: Option<&str>,
-    kind: Option<PermissionKind>,
-    run_id: &str,
-    workspace_root: &Path,
-    args_json: &Value,
-) -> Option<String> {
-    if category != Some(crate::plan::PLAN_AGENT_NAME) || kind != Some(PermissionKind::EditFs) {
-        return None;
-    }
-
-    let active_plan = crate::plan::plan_file_relative_path(run_id)
-        .to_string_lossy()
-        .to_string();
-    let paths = workspace_path_selector_paths(workspace_root, args_json);
-    if !paths.is_empty() && paths.iter().all(|path| path == &active_plan) {
-        return active_plan_symlink_denial(workspace_root, &active_plan);
-    }
-
-    let requested = if paths.is_empty() {
-        "<unresolved path>".to_string()
-    } else {
-        paths.join(", ")
-    };
-    Some(format!(
-        "plan mode may edit only the active plan file `{active_plan}`; requested `{requested}`"
-    ))
-}
-
-fn plan_mode_shell_boundary_denial(
-    category: Option<&str>,
-    kind: Option<PermissionKind>,
-    args_json: &Value,
-) -> Option<String> {
-    if category != Some(crate::plan::PLAN_AGENT_NAME) || kind != Some(PermissionKind::Shell) {
-        return None;
-    }
-
-    let command = args_json
-        .get("command")
-        .or_else(|| args_json.get("cmd"))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|command| !command.is_empty());
-    let Some(command) = command else {
-        return Some("plan mode bash requires a read-only inspection command".to_string());
-    };
-
-    if is_plan_mode_read_only_shell_command(command) {
-        None
-    } else {
-        Some(format!(
-            "plan mode bash may only run read-only inspection commands; requested `{command}`"
-        ))
-    }
-}
-
-fn is_plan_mode_read_only_shell_command(command: &str) -> bool {
-    let trimmed = command.trim();
-    if trimmed.is_empty()
-        || contains_shell_control_operator(trimmed)
-        || contains_shell_quote_or_escape(trimmed)
-    {
-        return false;
-    }
-
-    let tokens = trimmed.split_whitespace().collect::<Vec<_>>();
-    match tokens.as_slice() {
-        ["pwd"] => true,
-        ["ls", ..] => true,
-        ["git", subcommand, args @ ..] => is_plan_mode_read_only_git_command(subcommand, args),
-        _ => false,
-    }
-}
-
-fn is_plan_mode_read_only_git_command(subcommand: &str, args: &[&str]) -> bool {
-    match subcommand {
-        "status" | "diff" | "log" | "show" | "rev-parse" | "merge-base" => {
-            !contains_git_write_output_arg(args) && !contains_git_exec_capable_arg(args)
-        }
-        "branch" => is_plan_mode_read_only_git_branch(args),
-        _ => false,
-    }
-}
-
-fn contains_git_write_output_arg(args: &[&str]) -> bool {
-    args.iter()
-        .any(|arg| *arg == "-o" || *arg == "--output" || arg.starts_with("--output="))
-}
-
-fn contains_git_exec_capable_arg(args: &[&str]) -> bool {
-    args.iter().any(|arg| {
-        matches!(*arg, "--ext-diff" | "--textconv")
-            || arg.starts_with("--ext-diff=")
-            || arg.starts_with("--textconv=")
-    })
-}
-
-fn is_plan_mode_read_only_git_branch(args: &[&str]) -> bool {
-    const MUTATING_FLAGS: &[&str] = &[
-        "-d",
-        "-D",
-        "-m",
-        "-M",
-        "-c",
-        "-C",
-        "--copy",
-        "--create-reflog",
-        "--delete",
-        "--edit-description",
-        "--move",
-        "--no-track",
-        "--set-upstream-to",
-        "--track",
-        "--unset-upstream",
-    ];
-
-    !args.iter().any(|arg| {
-        MUTATING_FLAGS.contains(arg)
-            || arg.starts_with("--set-upstream-to=")
-            || !arg.starts_with('-')
-    })
-}
-
-fn contains_shell_control_operator(command: &str) -> bool {
-    command
-        .chars()
-        .any(|ch| matches!(ch, '>' | '<' | '|' | '&' | ';' | '`'))
-        || command.contains("$(")
-}
-
-fn contains_shell_quote_or_escape(command: &str) -> bool {
-    command.chars().any(|ch| matches!(ch, '\'' | '"' | '\\'))
-}
-
-fn active_plan_symlink_denial(workspace_root: &Path, active_plan: &str) -> Option<String> {
-    let mut current = workspace_root.to_path_buf();
-    for component in Path::new(active_plan).components() {
-        match component {
-            std::path::Component::Normal(segment) => current.push(segment),
-            std::path::Component::CurDir => continue,
-            std::path::Component::ParentDir
-            | std::path::Component::RootDir
-            | std::path::Component::Prefix(_) => {
-                return Some(format!(
-                    "plan mode active plan path `{active_plan}` contains an invalid component"
-                ));
-            }
-        }
-
-        match fs::symlink_metadata(&current) {
-            Ok(metadata) if metadata.file_type().is_symlink() => {
-                return Some(format!(
-                    "plan mode active plan path `{active_plan}` must not contain symlink component `{}`",
-                    current.display()
-                ));
-            }
-            Ok(_) => {}
-            Err(err) if err.kind() == io::ErrorKind::NotFound => return None,
-            Err(err) => {
-                return Some(format!(
-                    "plan mode could not verify active plan path `{active_plan}`: {err}"
-                ));
-            }
-        }
-    }
-    None
-}
-
-fn task_agent_rule_selectors(args_json: &Value) -> Vec<PermissionRuleRequest> {
-    let mut team_selectors = Vec::new();
-    if let Some(members) = args_json.get("members").and_then(Value::as_array) {
-        for member in members {
-            team_selectors.extend(task_agent_rule_selectors(member));
-        }
-    }
-    if let Some(lead) = args_json.get("lead") {
-        team_selectors.extend(task_agent_rule_selectors(lead));
-    }
-    if !team_selectors.is_empty() {
-        team_selectors.sort_by(|left, right| {
-            permission_rule_request_key(left).cmp(permission_rule_request_key(right))
-        });
-        team_selectors.dedup();
-        return team_selectors;
-    }
-
-    let category = trimmed_arg(args_json, "category");
-    let subagent_type = ["subagent_type", "agent", "profile", "profileName"]
-        .into_iter()
-        .find_map(|key| trimmed_arg(args_json, key));
-
-    match (category, subagent_type) {
-        (Some(category), Some(subagent_type)) if category == subagent_type => {
-            vec![PermissionRuleRequest::TaskAgent(category)]
-        }
-        (Some(_), Some(subagent_type)) | (None, Some(subagent_type)) => {
-            vec![PermissionRuleRequest::TaskAgent(subagent_type)]
-        }
-        (Some(category), None) => {
-            let mut selectors = vec![PermissionRuleRequest::TaskAgent(category.clone())];
-            if let Some(fallback) = task_category_fallback_profile(&category) {
-                selectors.push(PermissionRuleRequest::TaskAgent(fallback.to_string()));
-            }
-            selectors
-        }
-        (None, None) => Vec::new(),
-    }
-}
-
-fn permission_rule_request_key(selector: &PermissionRuleRequest) -> &str {
-    match selector {
-        PermissionRuleRequest::ShellCommand(value)
-        | PermissionRuleRequest::WorkspacePath(value)
-        | PermissionRuleRequest::TaskAgent(value) => value,
-    }
-}
-
-fn trimmed_arg(args_json: &Value, key: &str) -> Option<String> {
-    args_json
-        .get(key)
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-}
-
-fn shell_command_rule_selector(args_json: &Value) -> Option<PermissionRuleRequest> {
-    args_json
-        .get("command")
-        .or_else(|| args_json.get("cmd"))
-        .and_then(Value::as_str)
-        .map(|command| PermissionRuleRequest::ShellCommand(command.to_string()))
-}
-
-fn workspace_path_rule_selectors(
-    workspace_root: &Path,
-    args_json: &Value,
-) -> Vec<PermissionRuleRequest> {
-    workspace_path_selector_paths(workspace_root, args_json)
-        .into_iter()
-        .map(PermissionRuleRequest::WorkspacePath)
-        .collect()
-}
-
-fn request_digest_selector(request_digest: &str) -> PermissionGrantMatcher {
-    PermissionGrantMatcher::RequestDigest {
-        request_digest: request_digest.to_string(),
-    }
-}
-
-fn shell_command_selector(
-    args_json: &Value,
-    request_digest: &str,
-) -> Option<PermissionGrantMatcher> {
-    let command = args_json
-        .get("command")
-        .or_else(|| args_json.get("cmd"))
-        .and_then(Value::as_str)?;
-    let mut command_identity = Vec::new();
-    command_identity.extend_from_slice(command.as_bytes());
-    if let Some(args) = args_json.get("args").and_then(Value::as_array) {
-        command_identity.push(0x1f);
-        command_identity.extend_from_slice(&serde_json::to_vec(args).ok()?);
-    }
-    Some(PermissionGrantMatcher::ShellCommand {
-        command_digest: digest12(&command_identity),
-        request_digest: request_digest.to_string(),
-    })
-}
-
-fn workspace_path_selector_paths(workspace_root: &Path, args_json: &Value) -> Vec<String> {
-    let mut paths = BTreeSet::new();
-    for key in WORKSPACE_PATH_SELECTOR_KEYS {
-        collect_workspace_path_selector(workspace_root, args_json.get(key), &mut paths);
-    }
-    paths.into_iter().collect()
-}
-
-const WORKSPACE_PATH_SELECTOR_KEYS: &[&str] = &[
-    "path",
-    "paths",
-    "filePath",
-    "from_path",
-    "fromPath",
-    "rename",
-    "to_path",
-    "toPath",
-];
-
-fn collect_workspace_path_selector(
-    workspace_root: &Path,
-    value: Option<&Value>,
-    paths: &mut BTreeSet<String>,
-) {
-    match value {
-        Some(Value::String(raw_path)) => {
-            insert_workspace_path_selector(workspace_root, raw_path, paths);
-        }
-        Some(Value::Array(raw_paths)) => {
-            for raw_path in raw_paths.iter().filter_map(Value::as_str) {
-                insert_workspace_path_selector(workspace_root, raw_path, paths);
-            }
-        }
-        Some(_) | None => {}
-    }
-}
-
-fn insert_workspace_path_selector(
-    workspace_root: &Path,
-    raw_path: &str,
-    paths: &mut BTreeSet<String>,
-) {
-    if let Some(path) =
-        workspace_relative_path_from_maybe_absolute(workspace_root, Path::new(raw_path))
-    {
-        paths.insert(path);
-    }
-}
-
 fn tool_request_correlation_id(run_state: &RunState, actor: &EventActor) -> Option<String> {
     if actor.kind != ActorKind::Worker {
         return None;
@@ -9854,418 +9002,6 @@ fn allocate_provider_request_id(run_state: &mut RunState) -> String {
     let request_id = format!("req_{:06}", run_state.next_provider_request_id);
     run_state.next_provider_request_id += 1;
     request_id
-}
-
-fn hashline_edit_metadata(
-    tool_id: &str,
-    args_json: &Value,
-    tool_call_id: &str,
-) -> Option<HashlineEditMetadata> {
-    if tool_id != HASHLINE_APPLY_TOOL_ID {
-        let canonical_tool_id = canonical_tool_id_for(tool_id)?;
-        if canonical_tool_id != "edit" {
-            return None;
-        }
-
-        let path = args_json
-            .get("path")
-            .or_else(|| args_json.get("filePath"))
-            .and_then(Value::as_str)?;
-        let (edit_id, summary) = (
-            edit_id_from_native_edit_args(args_json, tool_call_id),
-            "rewrite file through native edit tool".to_string(),
-        );
-
-        return Some(HashlineEditMetadata {
-            edit_id,
-            path: path.to_string(),
-            summary,
-            patch_digest: digest12_json(args_json),
-        });
-    }
-
-    let patch: HashlinePatch = serde_json::from_value(args_json.clone()).ok()?;
-    let patch_digest = digest12_json(&patch);
-
-    Some(HashlineEditMetadata {
-        edit_id: patch.edit_id,
-        path: patch.path,
-        summary: format!("apply hashline patch with {} op(s)", patch.ops.len()),
-        patch_digest,
-    })
-}
-
-fn edit_id_from_native_edit_args(args_json: &Value, tool_call_id: &str) -> String {
-    args_json
-        .get("editId")
-        .or_else(|| args_json.get("edit_id"))
-        .and_then(Value::as_str)
-        .and_then(non_empty_trimmed)
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| format!("edit-{tool_call_id}"))
-}
-
-fn hashline_diff_refs(result: &ToolResult) -> (Option<String>, Option<String>) {
-    let structured = result.structured_json.as_ref().and_then(Value::as_object);
-    let structured_path = structured
-        .and_then(|value| value.get("diff_rel_path"))
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned);
-    let structured_digest = structured
-        .and_then(|value| value.get("diff_digest"))
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned);
-
-    if structured_path.is_some() && structured_digest.is_some() {
-        return (structured_path, structured_digest);
-    }
-
-    let artifact = result
-        .artifacts
-        .iter()
-        .find(|artifact| artifact.path.ends_with(".diff"));
-    let artifact_path = artifact.map(|artifact| artifact.path.clone());
-    let artifact_digest = artifact.and_then(|artifact| artifact.digest.clone());
-
-    (
-        structured_path.or(artifact_path),
-        structured_digest.or(artifact_digest),
-    )
-}
-
-fn applied_tool_edit_metadata(
-    _tool_id: &str,
-    result: &ToolResult,
-    fallback: Option<&HashlineEditMetadata>,
-) -> Vec<AppliedToolEditMetadata> {
-    let Some(metadata) = fallback else {
-        return Vec::new();
-    };
-    let structured = result.structured_json.as_ref().and_then(Value::as_object);
-    let mut metadata = metadata.clone();
-    if let Some(edit_id) = structured
-        .and_then(|value| value.get("edit_id"))
-        .and_then(Value::as_str)
-        .and_then(non_empty_trimmed)
-    {
-        metadata.edit_id = edit_id.to_string();
-    }
-    if let Some(path) = structured
-        .and_then(|value| value.get("path"))
-        .and_then(Value::as_str)
-        .and_then(non_empty_trimmed)
-    {
-        metadata.path = path.to_string();
-    }
-    let deleted = structured
-        .and_then(|value| value.get("resolved_to_path"))
-        .is_none()
-        && structured
-            .and_then(|value| value.get("resolved_path"))
-            .and_then(Value::as_str)
-            .is_some_and(|path| !Path::new(path).exists());
-    let (diff_rel_path, diff_digest) = hashline_diff_refs(result);
-    vec![AppliedToolEditMetadata {
-        metadata,
-        diff_rel_path,
-        diff_digest,
-        deleted,
-    }]
-}
-
-fn requested_tool_call_metadata(tool_id: &str, args_json: &Value) -> Option<ToolCallMetadata> {
-    let tool_identity = tool_identity_metadata(tool_id, args_json);
-    tool_call_metadata(tool_identity.as_ref(), None, Vec::new(), None, Vec::new())
-}
-
-fn tool_identity_metadata(tool_id: &str, args_json: &Value) -> Option<ToolIdentityMetadata> {
-    if let Some(canonical_tool_id) = effective_mcp_tool_id(tool_id, args_json) {
-        return Some(ToolIdentityMetadata {
-            canonical_tool_id: Some(canonical_tool_id),
-            alias_source_tool_id: None,
-        });
-    }
-
-    Some(ToolIdentityMetadata {
-        canonical_tool_id: Some(tool_id.to_string()),
-        alias_source_tool_id: None,
-    })
-}
-
-fn effective_mcp_tool_id(tool_id: &str, args_json: &Value) -> Option<String> {
-    let mut segments = tool_id.split('.');
-    let Some("mcp") = segments.next() else {
-        return None;
-    };
-    let server_id = segments.next()?.trim();
-    if server_id.is_empty() {
-        return None;
-    }
-
-    let suffix = segments.collect::<Vec<_>>().join(".");
-    if suffix == "tool.call" {
-        let remote_tool_name = args_json
-            .get("tool")
-            .and_then(Value::as_str)
-            .and_then(non_empty_trimmed)?;
-        if let Some(tool_id) =
-            registered_mcp_server_first_class_tool_id(server_id, remote_tool_name)
-        {
-            return Some(tool_id);
-        }
-        return Some(format!(
-            "mcp.{server_id}.{}",
-            sanitize_mcp_tool_segment(remote_tool_name)
-        ));
-    }
-
-    Some(tool_id.to_string())
-}
-
-fn tool_call_metadata(
-    tool_identity: Option<&ToolIdentityMetadata>,
-    lineage: Option<TaskLineageMetadata>,
-    artifact_refs: Vec<EventArtifactRef>,
-    timing: Option<ExecutionTimingMetadata>,
-    hook_executions: Vec<HookExecutionMetadata>,
-) -> Option<ToolCallMetadata> {
-    let canonical_tool_id = tool_identity.and_then(|value| value.canonical_tool_id.clone());
-    let alias_source_tool_id = tool_identity.and_then(|value| value.alias_source_tool_id.clone());
-
-    if canonical_tool_id.is_none()
-        && alias_source_tool_id.is_none()
-        && lineage.is_none()
-        && artifact_refs.is_empty()
-        && timing.is_none()
-        && hook_executions.is_empty()
-    {
-        return None;
-    }
-
-    Some(ToolCallMetadata {
-        canonical_tool_id,
-        alias_source_tool_id,
-        lineage,
-        artifact_refs,
-        timing,
-        hook_executions,
-    })
-}
-
-fn tool_task_lineage_metadata(
-    task: &TaskState,
-    output_json: Option<&Value>,
-) -> TaskLineageMetadata {
-    TaskLineageMetadata {
-        parent_tool_call_id: Some(task.tool_call_id.clone()),
-        parent_task_id: None,
-        parent_request_id: task.request_correlation_id.clone(),
-        parent_session_id: extract_lineage_value(output_json, &["parent_session_id"]),
-        child_session_id: extract_lineage_value(
-            output_json,
-            &["child_session_id", "session_id", "task_id"],
-        ),
-        child_request_id: extract_lineage_value(output_json, &["child_request_id", "request_id"]),
-        child_provider_id: extract_lineage_value(
-            output_json,
-            &["child_provider_id", "provider_id", "provider"],
-        ),
-        child_model_id: extract_lineage_value(
-            output_json,
-            &["child_model_id", "model_id", "model"],
-        ),
-    }
-}
-
-fn extract_lineage_value(output_json: Option<&Value>, candidate_keys: &[&str]) -> Option<String> {
-    let root = output_json?.as_object()?;
-    for key in candidate_keys {
-        if let Some(value) = root
-            .get(*key)
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned)
-        {
-            return Some(value);
-        }
-    }
-
-    let nested = root.get("lineage").and_then(Value::as_object)?;
-    for key in candidate_keys {
-        if let Some(value) = nested
-            .get(*key)
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned)
-        {
-            return Some(value);
-        }
-    }
-
-    None
-}
-
-fn event_artifact_refs(artifacts: &[crate::tool::ArtifactRef]) -> Vec<EventArtifactRef> {
-    let mut refs = artifacts
-        .iter()
-        .map(|artifact| EventArtifactRef {
-            path: artifact.path.clone(),
-            digest: artifact.digest.clone(),
-        })
-        .collect::<Vec<_>>();
-    refs.sort_by(|left, right| {
-        left.path
-            .cmp(&right.path)
-            .then_with(|| left.digest.cmp(&right.digest))
-    });
-    refs
-}
-
-fn execution_timing_metadata(
-    started_mono_ms: u64,
-    finished_mono_ms: u64,
-) -> ExecutionTimingMetadata {
-    ExecutionTimingMetadata {
-        started_mono_ms: Some(started_mono_ms),
-        finished_mono_ms: Some(finished_mono_ms),
-        elapsed_ms: Some(finished_mono_ms.saturating_sub(started_mono_ms)),
-    }
-}
-
-fn stable_tool_output_json(
-    structured_output: Option<Value>,
-    output_summary: &str,
-    artifact_refs: &[EventArtifactRef],
-    lineage: &TaskLineageMetadata,
-    timing: &ExecutionTimingMetadata,
-    hook_executions: &[HookExecutionMetadata],
-) -> Value {
-    let harness_metadata = json!({
-        "output_summary": output_summary,
-        "artifact_refs": artifact_refs,
-        "lineage": lineage,
-        "timing": timing,
-        "hook_executions": hook_executions,
-    });
-
-    match structured_output {
-        Some(Value::Object(mut value)) => {
-            value.insert("_harness".to_string(), harness_metadata);
-            Value::Object(value)
-        }
-        Some(value) => json!({
-            "_harness": harness_metadata,
-            "structured_output": value,
-        }),
-        None => json!({
-            "_harness": harness_metadata,
-        }),
-    }
-}
-
-fn extract_hook_execution_metadata(output_json: Option<&Value>) -> Vec<HookExecutionMetadata> {
-    let Some(output_json) = output_json else {
-        return Vec::new();
-    };
-
-    let mut hook_executions = Vec::new();
-    for source in [
-        output_json.get("hook_executions"),
-        output_json.get("hooks"),
-        output_json
-            .get("_harness")
-            .and_then(|harness| harness.get("hook_executions")),
-    ] {
-        let Some(items) = source.and_then(Value::as_array) else {
-            continue;
-        };
-
-        for item in items {
-            let Some(parsed) = parse_hook_execution_metadata(item) else {
-                continue;
-            };
-            if hook_executions.iter().any(|existing| existing == &parsed) {
-                continue;
-            }
-            hook_executions.push(parsed);
-        }
-    }
-
-    hook_executions
-}
-
-fn parse_hook_execution_metadata(value: &Value) -> Option<HookExecutionMetadata> {
-    let object = value.as_object()?;
-    let hook_name = extract_object_string(object, &["hook_name", "name", "hook", "id", "hook_id"])
-        .or_else(|| {
-            object
-                .get("hook")
-                .and_then(Value::as_object)
-                .and_then(|hook| extract_object_string(hook, &["name", "id"]))
-        })
-        .unwrap_or_else(|| "unknown_hook".to_string());
-
-    let status = extract_object_string(object, &["status", "result", "outcome"])
-        .map(|status| parse_hook_execution_status(&status))
-        .unwrap_or_default();
-
-    Some(HookExecutionMetadata {
-        hook_name,
-        status,
-        hook_event: extract_object_string(object, &["hook_event", "event", "phase", "trigger"]),
-        command_digest: extract_object_string(
-            object,
-            &["command_digest", "command_hash", "command_blake3"],
-        ),
-        output_digest: extract_object_string(object, &["output_digest", "result_digest", "digest"]),
-        output_summary: extract_object_string(
-            object,
-            &["output_summary", "summary", "message", "output_message"],
-        ),
-        duration_ms: extract_object_u64(object, &["duration_ms", "elapsed_ms"]),
-    })
-}
-
-fn extract_object_string(object: &serde_json::Map<String, Value>, keys: &[&str]) -> Option<String> {
-    for key in keys {
-        if let Some(value) = object
-            .get(*key)
-            .and_then(Value::as_str)
-            .and_then(non_empty_trimmed)
-            .map(ToOwned::to_owned)
-        {
-            return Some(value);
-        }
-    }
-
-    None
-}
-
-fn extract_object_u64(object: &serde_json::Map<String, Value>, keys: &[&str]) -> Option<u64> {
-    for key in keys {
-        if let Some(value) = object.get(*key).and_then(Value::as_u64) {
-            return Some(value);
-        }
-    }
-
-    None
-}
-
-fn parse_hook_execution_status(status: &str) -> HookExecutionStatus {
-    match status.trim().to_ascii_lowercase().as_str() {
-        "succeeded" | "success" | "ok" | "passed" => HookExecutionStatus::Succeeded,
-        "failed" | "error" => HookExecutionStatus::Failed,
-        "skipped" | "ignored" => HookExecutionStatus::Skipped,
-        _ => HookExecutionStatus::Unknown,
-    }
-}
-
-fn failed_tool_output_json(reason: &str, hook_executions: &[HookExecutionMetadata]) -> Value {
-    json!({
-        "_harness": {
-            "status": "failed",
-            "error": reason,
-            "hook_executions": hook_executions,
-        }
-    })
 }
 
 fn workspace_file_digest(workspace_root: &Path, relative_path: &str) -> Result<String, String> {

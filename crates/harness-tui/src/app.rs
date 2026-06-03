@@ -3,12 +3,9 @@ use std::collections::{hash_map::DefaultHasher, BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
+use std::sync::Arc;
 #[cfg(test)]
 use std::sync::Mutex;
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Arc,
-};
 use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -23,10 +20,7 @@ use ratatui::layout::Rect;
 
 use crate::keybindings::{Action, KeyMap};
 use crate::overlay::{OverlayKind, OverlayStack, OverlayState};
-use crate::text::{
-    has_trimmed_content, non_empty_trimmed, trimmed_json_nested_string_field,
-    trimmed_json_string_field,
-};
+use crate::text::{non_empty_trimmed, trimmed_json_string_field};
 use crate::theme::Theme;
 use crate::ui::{
     OperatorSidebarKeyboardTarget, OperatorSidebarKeyboardTargetKind, OperatorSidebarSelection,
@@ -36,6 +30,7 @@ use crate::ui::{
 use crate::view_model;
 use crate::{clipboard, ui};
 
+mod auth_display;
 mod file_mentions;
 mod lineage;
 mod onboarding;
@@ -48,7 +43,11 @@ mod terminal_panel;
 #[cfg(test)]
 mod tests;
 mod toggles;
+mod tool_output;
+mod transcript_cache;
+mod workspace_display;
 
+use self::auth_display::auth_status_banner;
 use self::permissions::{
     PermissionConfirmSelection, PermissionModalSelection, PermissionModalStage,
 };
@@ -56,6 +55,12 @@ use self::session_navigation::SessionNavigationSnapshot;
 use self::session_projection::SessionProjection;
 use self::terminal_panel::terminal_panel_event_is_shell;
 pub use self::terminal_panel::{TerminalPanelEntry, TerminalPanelStatus};
+use self::tool_output::{
+    json_string_field, task_child_request_id_from_output, task_child_session_id_from_output,
+    tool_call_has_expandable_output,
+};
+use self::transcript_cache::TranscriptRenderCache;
+use self::workspace_display::{directory_branch_label, workspace_context_labels};
 pub use crate::view_model::{ForkSelectorViewModel, LineageBrowserViewModel};
 #[cfg(test)]
 pub(crate) use file_mentions::FileMentionSelectedTag;
@@ -87,13 +92,6 @@ const TOOL_OUTPUT_DISPLAY_MAX_CHARS: usize = 100;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_CHARS: usize = 72;
 const TOOL_TRANSCRIPT_SUMMARY_MAX_FIELDS: usize = 3;
 const INTERRUPT_CONFIRM_TIMEOUT: Duration = Duration::from_secs(5);
-
-static NEXT_TRANSCRIPT_CACHE_INSTANCE_ID: AtomicU64 = AtomicU64::new(1);
-
-#[cfg(test)]
-thread_local! {
-    static TRANSCRIPT_RENDER_KEY_BUILD_COUNT: Cell<usize> = const { Cell::new(0) };
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolCallDisplayStatus {
@@ -327,7 +325,7 @@ fn tool_path_summary(args_summary: &str) -> Option<String> {
 }
 
 fn compact_tool_payload_for_transcript(payload: &str) -> Option<String> {
-    crate::text_compact::compact_payload(
+    crate::text::compact_payload(
         payload,
         TOOL_TRANSCRIPT_SUMMARY_MAX_FIELDS,
         TOOL_TRANSCRIPT_SUMMARY_MAX_CHARS,
@@ -1004,56 +1002,6 @@ pub enum UiIntent {
     QuitRequested,
 }
 
-pub(super) fn auth_status_banner(args: &[String]) -> String {
-    format!(
-        "auth backend requested: harness auth {}",
-        display_auth_args_for_status(args)
-    )
-}
-
-fn display_auth_args_for_status(args: &[String]) -> String {
-    let mut display = Vec::with_capacity(args.len());
-    let mut redact_next = false;
-    for arg in args {
-        if redact_next {
-            display.push("<redacted>".to_string());
-            redact_next = false;
-            continue;
-        }
-        if auth_arg_redacts_next(arg) {
-            display.push(arg.clone());
-            redact_next = true;
-            continue;
-        }
-        if let Some(redacted) = redact_auth_arg_value(arg) {
-            display.push(redacted);
-            continue;
-        }
-        display.push(arg.clone());
-    }
-    display.join(" ")
-}
-
-fn auth_arg_redacts_next(arg: &str) -> bool {
-    matches!(
-        arg,
-        "--mock-token" | "--mock-refresh-token" | "--enterprise-url"
-    )
-}
-
-fn redact_auth_arg_value(arg: &str) -> Option<String> {
-    [
-        "--mock-token=",
-        "--mock-refresh-token=",
-        "--enterprise-url=",
-    ]
-    .into_iter()
-    .find_map(|prefix| {
-        arg.strip_prefix(prefix)
-            .map(|_| format!("{prefix}<redacted>"))
-    })
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StartupLauncherAction {
     #[default]
@@ -1088,49 +1036,6 @@ impl StartupLauncherAction {
             Self::ReplaySession => Self::NewSession,
         }
     }
-}
-
-fn workspace_context_labels(environment: &WorkspaceEnvironment) -> Vec<String> {
-    let full = directory_branch_label(environment, false);
-    let short = directory_branch_label(environment, true);
-    if full == short {
-        vec![full]
-    } else {
-        vec![full, short]
-    }
-}
-
-fn directory_branch_label(environment: &WorkspaceEnvironment, short: bool) -> String {
-    let path = if short {
-        environment
-            .working_directory
-            .file_name()
-            .and_then(|name| name.to_str())
-            .filter(|name| !name.is_empty())
-            .map(ToOwned::to_owned)
-            .unwrap_or_else(|| home_shortened_path(&environment.working_directory))
-    } else {
-        home_shortened_path(&environment.working_directory)
-    };
-
-    match environment.git_branch.as_deref() {
-        Some(branch) if !branch.trim().is_empty() => format!("{path}:{branch}"),
-        _ => path,
-    }
-}
-
-fn home_shortened_path(path: &std::path::Path) -> String {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    if let Some(home) = home.as_deref().filter(|home| !home.as_os_str().is_empty()) {
-        if path == home {
-            return "~".to_string();
-        }
-        if let Ok(stripped) = path.strip_prefix(home) {
-            return format!("~/{}", stripped.display());
-        }
-    }
-
-    path.display().to_string()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -1201,9 +1106,7 @@ pub struct AppState {
     selected_operator_sidebar_keyboard_index: Option<usize>,
     operator_sidebar_selection_dragging: bool,
     operator_sidebar_pending_click: Option<OperatorSidebarPendingClick>,
-    transcript_cache_instance_id: u64,
-    transcript_render_epoch: u64,
-    transcript_render_key_cache: Cell<Option<(u64, u64)>>,
+    transcript_cache: TranscriptRenderCache,
     transcript_animation_phase: usize,
     pub auto_exit_on_finish: bool,
     pub prompt_buffer: String,
@@ -1335,10 +1238,7 @@ impl Default for AppState {
             selected_operator_sidebar_keyboard_index: None,
             operator_sidebar_selection_dragging: false,
             operator_sidebar_pending_click: None,
-            transcript_cache_instance_id: NEXT_TRANSCRIPT_CACHE_INSTANCE_ID
-                .fetch_add(1, Ordering::Relaxed),
-            transcript_render_epoch: 0,
-            transcript_render_key_cache: Cell::new(None),
+            transcript_cache: TranscriptRenderCache::default(),
             transcript_animation_phase: 0,
             auto_exit_on_finish: false,
             prompt_buffer: String::new(),
@@ -2018,24 +1918,13 @@ impl AppState {
     }
 
     pub(crate) fn transcript_cache_instance_id(&self) -> u64 {
-        self.transcript_cache_instance_id
+        self.transcript_cache.instance_id()
     }
 
     pub(crate) fn transcript_render_cache_key(&self) -> u64 {
         let stamp = self.transcript_render_cache_stamp();
-        if let Some((cached_stamp, cached_key)) = self.transcript_render_key_cache.get() {
-            if cached_stamp == stamp {
-                return cached_key;
-            }
-        }
-
-        let key = self.compute_transcript_render_cache_key();
-        self.transcript_render_key_cache.set(Some((stamp, key)));
-
-        #[cfg(test)]
-        TRANSCRIPT_RENDER_KEY_BUILD_COUNT.with(|count| count.set(count.get().saturating_add(1)));
-
-        key
+        self.transcript_cache
+            .cache_key(stamp, || self.compute_transcript_render_cache_key())
     }
 
     fn transcript_render_cache_stamp(&self) -> u64 {
@@ -2072,7 +1961,7 @@ impl AppState {
         self.stacked_transcript_diffs.hash(hasher);
         self.transcript_animation_phase.hash(hasher);
         self.hovered_transcript_target.hash(hasher);
-        self.transcript_render_epoch.hash(hasher);
+        self.transcript_cache.epoch().hash(hasher);
         self.active_profile().hash(hasher);
         self.session_path.hash(hasher);
     }
@@ -2152,12 +2041,12 @@ impl AppState {
 
     #[cfg(test)]
     pub(crate) fn reset_transcript_render_key_metrics_for_test() {
-        TRANSCRIPT_RENDER_KEY_BUILD_COUNT.with(|count| count.set(0));
+        TranscriptRenderCache::reset_build_metrics_for_test();
     }
 
     #[cfg(test)]
     pub(crate) fn transcript_render_key_build_count_for_test() -> usize {
-        TRANSCRIPT_RENDER_KEY_BUILD_COUNT.with(Cell::get)
+        TranscriptRenderCache::build_count_for_test()
     }
 
     pub(crate) fn advance_transcript_animation_phase(&mut self) {
@@ -2178,7 +2067,7 @@ impl AppState {
     }
 
     fn bump_transcript_render_epoch(&mut self) {
-        self.transcript_render_epoch = self.transcript_render_epoch.wrapping_add(1);
+        self.transcript_cache.bump_epoch();
     }
 
     pub(crate) fn tool_details_visible(&self) -> bool {
@@ -2693,9 +2582,7 @@ impl AppState {
         self.sync_file_mention_overlay();
     }
 
-    pub(crate) fn hidden_delegated_child_request_ids_in_current_view<'a>(
-        &'a self,
-    ) -> BTreeSet<&'a str> {
+    pub(crate) fn hidden_delegated_child_request_ids_in_current_view(&self) -> BTreeSet<&str> {
         self.delegated_child_request_ids_for_parent_view(self.current_session_id())
     }
 
@@ -4647,172 +4534,6 @@ fn action_preempts_text_input(action: Action, key: KeyEvent) -> bool {
             KeyModifiers::NONE
         )
     )
-}
-
-fn json_string_field(output_json: Option<&serde_json::Value>, keys: &[&str]) -> Option<String> {
-    trimmed_json_string_field(output_json, keys)
-}
-
-fn task_child_session_id_from_output(output_json: Option<&serde_json::Value>) -> Option<String> {
-    trimmed_json_string_field(
-        output_json,
-        &[
-            "child_session_id",
-            "session_id",
-            "task_id",
-            "childSessionId",
-            "sessionId",
-            "taskId",
-        ],
-    )
-    .or_else(|| trimmed_json_nested_string_field(output_json, &["child_session", "session_id"]))
-    .or_else(|| trimmed_json_nested_string_field(output_json, &["childSession", "sessionId"]))
-    .or_else(|| trimmed_json_nested_string_field(output_json, &["metadata", "sessionId"]))
-    .or_else(|| trimmed_json_nested_string_field(output_json, &["metadata", "session_id"]))
-    .or_else(|| trimmed_json_nested_string_field(output_json, &["lineage", "child_session_id"]))
-    .or_else(|| trimmed_json_nested_string_field(output_json, &["lineage", "session_id"]))
-    .or_else(|| trimmed_json_nested_string_field(output_json, &["lineage", "sessionId"]))
-    .or_else(|| {
-        trimmed_json_nested_string_field(output_json, &["_harness", "lineage", "child_session_id"])
-    })
-    .or_else(|| {
-        trimmed_json_nested_string_field(output_json, &["_harness", "lineage", "session_id"])
-    })
-    .or_else(|| {
-        trimmed_json_nested_string_field(output_json, &["_harness", "lineage", "sessionId"])
-    })
-}
-
-fn task_child_request_id_from_output(output_json: Option<&serde_json::Value>) -> Option<String> {
-    trimmed_json_string_field(
-        output_json,
-        &[
-            "child_request_id",
-            "request_id",
-            "childRequestId",
-            "requestId",
-        ],
-    )
-    .or_else(|| trimmed_json_nested_string_field(output_json, &["child_session", "request_id"]))
-    .or_else(|| trimmed_json_nested_string_field(output_json, &["childSession", "requestId"]))
-    .or_else(|| trimmed_json_nested_string_field(output_json, &["metadata", "requestId"]))
-    .or_else(|| trimmed_json_nested_string_field(output_json, &["metadata", "request_id"]))
-    .or_else(|| trimmed_json_nested_string_field(output_json, &["lineage", "child_request_id"]))
-    .or_else(|| trimmed_json_nested_string_field(output_json, &["lineage", "request_id"]))
-    .or_else(|| trimmed_json_nested_string_field(output_json, &["lineage", "requestId"]))
-    .or_else(|| {
-        trimmed_json_nested_string_field(output_json, &["_harness", "lineage", "child_request_id"])
-    })
-    .or_else(|| {
-        trimmed_json_nested_string_field(output_json, &["_harness", "lineage", "request_id"])
-    })
-    .or_else(|| {
-        trimmed_json_nested_string_field(output_json, &["_harness", "lineage", "requestId"])
-    })
-}
-
-fn tool_call_has_expandable_output(tool_call: &ToolCallEntry) -> bool {
-    if matches!(
-        tool_call.effective_tool_id(),
-        "fs.read" | "read" | "fs.glob" | "glob" | "fs.grep" | "grep" | "fs.ls" | "list"
-    ) {
-        return true;
-    }
-
-    if matches!(tool_call.effective_tool_id(), "shell.run" | "bash")
-        && shell_tool_output_for_expansion(tool_call).is_some_and(has_trimmed_content)
-    {
-        return true;
-    }
-
-    if matches!(tool_call.effective_tool_id(), "edit" | "fs.write")
-        && serde_json::from_str::<serde_json::Value>(&tool_call.args_summary)
-            .ok()
-            .and_then(|value| value.as_object().cloned())
-            .is_some_and(|object| {
-                let path = object
-                    .get("filePath")
-                    .or_else(|| object.get("path"))
-                    .and_then(serde_json::Value::as_str)
-                    .is_some_and(has_trimmed_content);
-                let inline_preview = match tool_call.effective_tool_id() {
-                    "edit" => {
-                        object
-                            .get("oldString")
-                            .and_then(serde_json::Value::as_str)
-                            .is_some()
-                            || object
-                                .get("newString")
-                                .and_then(serde_json::Value::as_str)
-                                .is_some()
-                    }
-                    "fs.write" => object
-                        .get("content")
-                        .and_then(serde_json::Value::as_str)
-                        .is_some(),
-                    _ => false,
-                };
-                path && inline_preview
-            })
-    {
-        return true;
-    }
-
-    if tool_call.effective_tool_id() == "apply_patch"
-        && tool_call
-            .output_json
-            .as_ref()
-            .and_then(|value| value.get("files"))
-            .and_then(serde_json::Value::as_array)
-            .is_some_and(|files| !files.is_empty())
-    {
-        return true;
-    }
-
-    if tool_call.status == ToolCallDisplayStatus::Succeeded
-        && tool_call.effective_tool_id().starts_with("mcp.")
-        && tool_call
-            .output_summary
-            .as_deref()
-            .is_some_and(has_trimmed_content)
-    {
-        return true;
-    }
-
-    let output = tool_call.output_summary.as_deref().unwrap_or_default();
-    let line_count = output.lines().count();
-    let has_diff_preview = tool_call
-        .edit
-        .as_ref()
-        .and_then(|edit| edit.diff_rel_path.as_ref())
-        .is_some()
-        || tool_call
-            .artifact_refs
-            .iter()
-            .any(|artifact| artifact.path.ends_with(".diff"));
-    !tool_call.artifact_refs.is_empty()
-        || match tool_call.effective_tool_id() {
-            "shell.run" | "bash" => line_count > 10,
-            "edit.hashline_apply" | "fs.write" | "edit" | "apply_patch" => has_diff_preview,
-            "agent.spawn" => true,
-            _ => has_trimmed_content(output) && line_count > 3,
-        }
-}
-
-fn shell_tool_output_for_expansion(tool_call: &ToolCallEntry) -> Option<&str> {
-    tool_call.output_summary.as_deref().or_else(|| {
-        let output_json = tool_call.output_json.as_ref()?;
-        output_json
-            .get("stdout")
-            .and_then(serde_json::Value::as_str)
-            .filter(|stdout| has_trimmed_content(stdout))
-            .or_else(|| {
-                output_json
-                    .get("stderr")
-                    .and_then(serde_json::Value::as_str)
-                    .filter(|stderr| has_trimmed_content(stderr))
-            })
-    })
 }
 
 #[cfg(test)]

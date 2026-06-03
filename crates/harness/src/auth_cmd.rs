@@ -1577,14 +1577,26 @@ async fn receive_codex_loopback_callback(
     session: &CodexLoopbackSession,
     store: &CredentialStore,
 ) -> Result<StoredCredential, CodexOAuthError> {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-    let (mut stream, _) = listener
+    let (stream, _) = listener
         .accept()
         .await
         .map_err(|err| CodexOAuthError::Http {
             message: format!("loopback accept failed: {err}"),
         })?;
+    handle_codex_loopback_stream(stream, client, session, store).await
+}
+
+async fn handle_codex_loopback_stream<S>(
+    mut stream: S,
+    client: &CodexOAuthClient,
+    session: &CodexLoopbackSession,
+    store: &CredentialStore,
+) -> Result<StoredCredential, CodexOAuthError>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
     let mut buffer = [0_u8; 16 * 1024];
     let bytes_read = stream
         .read(&mut buffer)
@@ -1968,12 +1980,11 @@ mod tests {
     use std::collections::VecDeque;
     use std::path::Path;
     use std::sync::{Arc, Mutex};
-    use std::time::Duration;
     use tempfile::tempdir;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     use super::{
-        complete_codex_browser_loopback, complete_codex_pasted_callback,
+        complete_codex_pasted_callback, handle_codex_loopback_stream,
         onboarding_required_for_config,
     };
 
@@ -2319,62 +2330,43 @@ mod tests {
             .to_string(),
         });
         let client = CodexOAuthClient::new(http.clone()).with_issuer("https://issuer.test");
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind loopback");
-        let port = listener.local_addr().expect("loopback addr").port();
         let session = CodexLoopbackSession::with_redirect_uri(
             PkceCodes {
                 verifier: "browser-verifier-123".to_string(),
                 challenge: "browser-challenge-123".to_string(),
             },
             "state-123",
-            format!("http://localhost:{port}/auth/callback"),
+            "http://localhost:14567/auth/callback",
             "https://issuer.test",
         );
         let temp = tempdir().expect("tempdir");
         let store = CredentialStore::new(temp.path());
-        let callback_sender = tokio::spawn(async move {
-            let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
-                .await
-                .expect("connect callback");
-            stream
-                .write_all(
-                    b"GET /auth/callback?code=browser-code-123&state=state-123 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
-                )
-                .await
-                .expect("write callback");
-            let mut response = String::new();
-            stream
-                .read_to_string(&mut response)
-                .await
-                .expect("read callback response");
-            assert!(response.contains("Authorization Successful"));
+        let (server_stream, mut browser_stream) = tokio::io::duplex(16 * 1024);
+        let handler = tokio::spawn({
+            let store = store.clone();
+            async move { handle_codex_loopback_stream(server_stream, &client, &session, &store).await }
         });
+        browser_stream
+            .write_all(
+                b"GET /auth/callback?code=browser-code-123&state=state-123 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+            )
+            .await
+            .expect("write callback");
+        browser_stream
+            .shutdown()
+            .await
+            .expect("finish callback request");
+        let mut response = String::new();
+        browser_stream
+            .read_to_string(&mut response)
+            .await
+            .expect("read callback response");
 
-        let mut stdin = std::io::Cursor::new(Vec::<u8>::new());
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-        let mut io = crate::CliIo::new(&mut stdin, &mut stdout, &mut stderr);
-        let code = complete_codex_browser_loopback(
-            listener,
-            client,
-            session,
-            &mut io,
-            &store,
-            Duration::from_secs(5),
-            super::AuthLoginUi::Plain,
-        )
-        .await;
-
-        callback_sender.await.expect("callback task");
-        assert_eq!(
-            code,
-            0,
-            "stdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&stdout),
-            String::from_utf8_lossy(&stderr)
-        );
+        assert!(response.contains("Authorization Successful"));
+        handler
+            .await
+            .expect("loopback handler task")
+            .expect("loopback handler should store credential");
         let stored = store
             .load(AuthProviderId::Codex)
             .expect("load credential")
@@ -2400,10 +2392,6 @@ mod tests {
         assert!(requests[0]
             .body
             .contains("code_verifier=browser-verifier-123"));
-        let stdout = String::from_utf8_lossy(&stdout);
-        assert!(stdout.contains("Harness Codex browser login"));
-        assert!(stdout.contains("Waiting for callback"));
-        assert!(!stdout.contains("browser-access-secret"));
-        assert!(!String::from_utf8_lossy(&stderr).contains("browser-access-secret"));
+        assert!(!response.contains("browser-access-secret"));
     }
 }

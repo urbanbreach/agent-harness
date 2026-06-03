@@ -23,9 +23,9 @@ use crate::conversation::{
     ConversationToolResultMessage, ConversationUserMessage,
 };
 use crate::event::{
-    ArtifactWrittenEvent, EventArtifactRef, EventEnvelopeV1, EventV1, ResolvedToolIdentity,
-    TaskCancelledEvent, TaskCompletedEvent, TaskTerminalScope, ToolCallMetadata,
-    ToolIdentityMetadata,
+    ArtifactWrittenEvent, EventArtifactRef, EventEnvelopeV1, EventV1, HookExecutionMetadata,
+    HookExecutionStatus, ResolvedToolIdentity, TaskCancelledEvent, TaskCompletedEvent,
+    TaskTerminalScope, ToolCallMetadata, ToolIdentityMetadata,
 };
 use crate::path_selector::workspace_relative_path_from_maybe_absolute;
 use crate::proj::RecordedRuntimeContext;
@@ -34,7 +34,7 @@ use crate::redact::Redactor;
 use crate::session_paths::EVENTS_FILE_NAME;
 use crate::text::{non_empty_trimmed, truncate_with_ellipsis};
 
-use super::{truncated_failure_reason, CoordinatorError, RunState};
+use super::{CoordinatorError, RunState};
 
 const PROVIDER_CONTEXT_COMPACTION_RESERVE_TOKENS: u32 = 1_024;
 const PROVIDER_CONTEXT_COMPACTION_KEEP_RECENT_MAX_TOKENS: u32 = 8_000;
@@ -72,6 +72,49 @@ const PROVIDER_CONTEXT_LEGACY_SUMMARY_HEADINGS: &[&str] = &[
     "## Relevant Files / Artifacts",
 ];
 
+pub(super) fn truncated_failure_reason(reason: &str) -> Option<String> {
+    let reason = reason.trim();
+    if reason.is_empty() {
+        None
+    } else {
+        Some(truncate_with_ellipsis(
+            reason,
+            PROVIDER_CONTEXT_COMPACTION_TURN_EXCERPT_MAX_CHARS,
+        ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncated_failure_reason_omits_blank_input_after_trimming() {
+        assert_eq!(truncated_failure_reason(""), None);
+        assert_eq!(truncated_failure_reason(" \n\t "), None);
+    }
+
+    #[test]
+    fn truncated_failure_reason_trims_non_empty_input() {
+        assert_eq!(
+            truncated_failure_reason("  provider failed closed  ").as_deref(),
+            Some("provider failed closed")
+        );
+    }
+
+    #[test]
+    fn truncated_failure_reason_caps_long_input_with_ellipsis() {
+        let long_reason = "x".repeat(PROVIDER_CONTEXT_COMPACTION_TURN_EXCERPT_MAX_CHARS + 1);
+        let reason = truncated_failure_reason(&long_reason).expect("truncated reason");
+
+        assert_eq!(
+            reason.chars().count(),
+            PROVIDER_CONTEXT_COMPACTION_TURN_EXCERPT_MAX_CHARS + 1
+        );
+        assert!(reason.ends_with('…'));
+    }
+}
+
 pub(super) fn provider_context_summary_required_headings(
     config: &CompactionRuntimeConfig,
 ) -> &'static [&'static str] {
@@ -81,6 +124,39 @@ pub(super) fn provider_context_summary_required_headings(
         PROVIDER_CONTEXT_LEGACY_SUMMARY_HEADINGS
     }
 }
+
+pub(super) fn compaction_summary_override_from_hooks(
+    hook_executions: &[HookExecutionMetadata],
+) -> Option<String> {
+    hook_executions.iter().rev().find_map(|execution| {
+        if execution.status != HookExecutionStatus::Succeeded {
+            return None;
+        }
+        let summary = execution.output_summary.as_deref()?.trim();
+        summary
+            .strip_prefix("compaction_summary:")
+            .and_then(non_empty_trimmed)
+            .map(ToOwned::to_owned)
+    })
+}
+
+pub(super) fn is_provider_context_overflow_reason(reason: &str) -> bool {
+    let normalized = reason.to_ascii_lowercase();
+    [
+        "context length",
+        "context window",
+        "too many tokens",
+        "prompt token count",
+        "maximum context",
+        "input token",
+        "reduce the length",
+        "token count of",
+        "exceeds the limit",
+    ]
+    .iter()
+    .any(|needle| normalized.contains(needle))
+}
+
 #[derive(Debug, Clone)]
 pub(super) struct ProviderCompactionTrigger {
     pub(super) agent_id: String,
