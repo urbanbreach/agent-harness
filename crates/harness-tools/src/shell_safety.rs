@@ -368,6 +368,11 @@ fn validate_shell_path_arguments(
         let candidate = if token.starts_with('-') {
             if let Some((_, value)) = token.split_once('=') {
                 value
+            } else if !token.starts_with("--") && token.len() > 2 {
+                let mut chars = token.chars();
+                chars.next(); // Skip '-'
+                chars.next(); // Skip flag character
+                chars.as_str()
             } else {
                 continue;
             }
@@ -745,5 +750,25 @@ mod tests {
             .validate_bash_command("cd outside && ls .", tempdir.path(), tempdir.path())
             .expect_err("cd through symlink must not escape workspace");
         assert!(matches!(cd_err, ToolError::PathEscapesWorkspace { .. }));
+    }
+
+    #[test]
+    fn validate_bash_command_short_shell_options_with_embedded_paths() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: vec!["ls".to_string(), "gcc".to_string()],
+            cwd_roots: vec![".".to_string()],
+        });
+
+        // Test with -I/etc/passwd which shouldn't be blindly stripped
+        let err = safety
+            .validate_bash_command("gcc -I/tmp/outside", tempdir.path(), tempdir.path())
+            .expect_err("embedded external path in short option should be blocked");
+
+        assert!(
+            matches!(err, ToolError::PathEscapesWorkspace { .. }),
+            "Expected PathEscapesWorkspace, got {:?}",
+            err
+        );
     }
 }
