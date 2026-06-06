@@ -61,6 +61,12 @@ pub(super) enum ResolvedTuiMode {
     },
 }
 
+pub(super) struct LiveSettingsDeps<'a> {
+    pub(super) credential_store: Option<&'a CredentialStore>,
+    pub(super) env_lookup: &'a dyn Fn(&str) -> Option<String>,
+    pub(super) model_selection_path: Option<&'a Path>,
+}
+
 pub(super) fn resolve_tui_mode(
     cmd: &TuiCommand,
     config_path: Option<PathBuf>,
@@ -114,9 +120,11 @@ pub(super) fn resolve_live_settings(
         global_session_dir,
         workspace_root,
         config_context,
-        credential_store.as_ref(),
-        &|name| std::env::var(name).ok(),
-        None,
+        LiveSettingsDeps {
+            credential_store: credential_store.as_ref(),
+            env_lookup: &|name| std::env::var(name).ok(),
+            model_selection_path: None,
+        },
     )
 }
 
@@ -127,9 +135,7 @@ pub(super) fn resolve_live_settings_for_test(
     global_session_dir: Option<PathBuf>,
     workspace_root: PathBuf,
     config_context: &harness_core::config::ConfigLoadContext,
-    credential_store: Option<&CredentialStore>,
-    env_lookup: &dyn Fn(&str) -> Option<String>,
-    model_selection_path: Option<&Path>,
+    deps: LiveSettingsDeps<'_>,
 ) -> Result<LiveSettings, String> {
     resolve_live_settings_with_deps(
         cmd,
@@ -137,9 +143,7 @@ pub(super) fn resolve_live_settings_for_test(
         global_session_dir,
         workspace_root,
         config_context,
-        credential_store,
-        env_lookup,
-        model_selection_path,
+        deps,
     )
 }
 
@@ -149,9 +153,7 @@ fn resolve_live_settings_with_deps(
     global_session_dir: Option<PathBuf>,
     workspace_root: PathBuf,
     config_context: &harness_core::config::ConfigLoadContext,
-    credential_store: Option<&CredentialStore>,
-    env_lookup: &dyn Fn(&str) -> Option<String>,
-    model_selection_path: Option<&Path>,
+    deps: LiveSettingsDeps<'_>,
 ) -> Result<LiveSettings, String> {
     let mut shell_allowlist = ShellAllowlist::default();
     let mut config_session_dir = PathBuf::from(DEFAULT_SESSION_DIR);
@@ -176,8 +178,8 @@ fn resolve_live_settings_with_deps(
             loaded.as_ref().map(|loaded| loaded.config.clone()),
             loaded.as_ref().map(|loaded| loaded.digest.clone()),
             None,
-            credential_store,
-            env_lookup,
+            deps.credential_store,
+            deps.env_lookup,
         )?;
         let config = runtime_catalog.config;
         config_digest = runtime_catalog.config_digest;
@@ -224,7 +226,7 @@ fn resolve_live_settings_with_deps(
         );
     }
     let launch_metadata = if live_config.is_some() && !no_provider_connected {
-        if let Some(path) = model_selection_path {
+        if let Some(path) = deps.model_selection_path {
             apply_persisted_model_selection_from_path(launch_metadata, path)
         } else {
             apply_persisted_model_selection(launch_metadata)

@@ -1,6 +1,6 @@
 ---
-source: crates/harness-tui/src/ui_overlays.rs
-assertion_line: 403
+source: crates/harness-tui/src/ui_overlays/status_dialog.rs
+assertion_line: 389
 expression: "format!(\"{:#?}\", terminal.backend().buffer())"
 ---
 Buffer {

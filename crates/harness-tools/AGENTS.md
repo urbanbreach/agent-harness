@@ -12,10 +12,11 @@ Read root `AGENTS.md` first. Runtime policy lives in `harness-core`; this crate 
 | Native wrappers | `src/native_tools.rs` | User-facing tool ids, aliases, blocked-command recovery hints. |
 | Filesystem search | `src/fs_glob.rs`, `src/fs_grep.rs`, `src/fs_ls.rs`, `src/fs_walk.rs` | Workspace-safe discovery, limits, output modes. |
 | Workspace edits | `src/workspace_edit.rs`, `src/hashline_*` | Read/write/edit routing, hashline anchors, apply artifacts. |
+| AST/code search | `src/ast_grep.rs`, `src/code_lsp.rs`, `src/code_lsp_rename.rs`, `src/lsp_support.rs` | Structural search/replace plus diagnostics/symbols/references/rename. |
 | Bash/network/GitHub | `src/shell_run.rs`, `src/shell_safety.rs`, `src/network.rs`, `src/github.rs` | Shell allowlist, web fetch/search/code search, GitHub wrappers. |
 | Delegation/control plane | `src/agent_ops.rs`, `src/control_plane.rs` | `task`, `background_output`, `batch`, `question`, `skill`, todos. |
-| LSP | `src/code_lsp.rs`, `src/code_lsp_rename.rs`, `src/lsp_support.rs` | Diagnostics/symbols/references/rename; unsupported responses stay structured. |
-| MCP | `src/mcp.rs` | Config-backed server registration and generic call surface. |
+| Skill catalog | `src/skill_catalog.rs` | Project/global skill discovery and compact catalog metadata. |
+| MCP | `src/mcp.rs`, `src/mcp_render.rs`, `src/mcp_session.rs` | Config-backed server registration, rendering, and generic call surface. |
 | Session/team tools | `src/session_tools.rs`, `src/team_ops.rs` | Replay-derived session reads and event-sourced team projections. |
 
 ## TOOL SURFACE RULES
@@ -25,6 +26,7 @@ Read root `AGENTS.md` first. Runtime policy lives in `harness-core`; this crate 
 - Use workspace path helpers; reject traversal and out-of-workspace access.
 - `read` emits hashline anchors by default when hashline editing is enabled; edits should consume anchored views.
 - Bash is for execution, not file IO/search/editing; blocked-command messages should point users to native tools.
+- AST-grep replace must stay structural and previewable; do not fall back to regex-shaped rewrites through this surface.
 - LSP/MCP/network availability is optional in deterministic lanes; return actionable structured errors.
 - `session_*` tools are replay-derived and must not run providers, hooks, network, MCP, or the CLI.
 
@@ -35,6 +37,8 @@ cargo test -p harness-tools --test native_tool_parity_matrix_test
 cargo test -p harness-tools --test native_execution_surface_test
 cargo test -p harness-tools --test native_workspace_edit_routing_test
 cargo test -p harness-tools --test native_agent_spawn_and_batch_preserve_lineage_permissions_and_order_test
+cargo test -p harness-tools --test native_ast_grep_search_test
+cargo test -p harness-tools --test native_ast_grep_replace_test
 cargo test -p harness-tools --test native_code_lsp_test
 cargo test -p harness-tools --test skill_load_discovery_test
 ```

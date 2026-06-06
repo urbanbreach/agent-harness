@@ -1,0 +1,276 @@
+use super::*;
+
+pub(super) fn slash_menu_closes_after_whitespace() {
+    let mut app = AppState::new_startup(Vec::new(), None);
+
+    app.handle_key(key(KeyCode::Char('/')));
+    app.handle_key(key(KeyCode::Char('n')));
+    assert!(app.slash_visible);
+
+    app.handle_key(key(KeyCode::Char(' ')));
+
+    assert!(!app.slash_visible);
+    assert_eq!(app.prompt_buffer, "/n ");
+}
+
+pub(super) fn slash_menu_resets_selection_when_filter_changes() {
+    let mut app = AppState::new_startup(Vec::new(), None);
+
+    app.handle_key(key(KeyCode::Char('/')));
+    app.slash_selected = 2;
+    assert_eq!(app.slash_selected, 2);
+
+    app.handle_key(key(KeyCode::Char('r')));
+    app.handle_key(key(KeyCode::Char('e')));
+    app.handle_key(key(KeyCode::Char('p')));
+
+    assert_eq!(app.slash_filtered, vec!["replay".to_string()]);
+    assert_eq!(app.slash_selected, 0);
+}
+
+pub(super) fn slash_menu_matches_descriptions_and_boosts_prefixes() {
+    let mut app = AppState::new_startup(Vec::new(), None);
+
+    for ch in "/saved".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+
+    assert_eq!(&app.slash_filtered[..2], ["replay", "resume"]);
+
+    app.clear_prompt_input();
+    for ch in "/re".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+
+    assert_eq!(&app.slash_filtered[..2], ["replay", "resume"]);
+    assert!(app.slash_filtered.iter().any(|command| command == "new"));
+
+    app.clear_prompt_input();
+    for ch in "/nw".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+
+    assert_eq!(app.slash_filtered.first().map(String::as_str), Some("new"));
+
+    app.clear_prompt_input();
+    for ch in "/continue".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+
+    assert_eq!(
+        app.slash_filtered.first().map(String::as_str),
+        Some("resume")
+    );
+}
+
+pub(super) fn slash_alias_executes_matching_command_without_menu() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_startup(Vec::new(), Some(sink));
+    for ch in "/quit".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
+
+    assert!(app.should_quit);
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[UiIntent::QuitRequested]
+    );
+}
+
+pub(super) fn slash_help_opens_help_surface_and_preserves_draft() {
+    // arrange
+    let mut app = AppState::new_startup(Vec::new(), None);
+
+    // act
+    app.execute_slash_command("help", Some("preserved draft".to_string()));
+
+    // assert
+    assert_eq!(app.review_surface(), Some(ReviewSurface::Help));
+    assert_eq!(app.prompt_buffer, "preserved draft");
+    assert_eq!(app.prompt_cursor, "preserved draft".chars().count());
+    assert!(!app.should_quit);
+}
+
+pub(super) fn slash_escape_clears_token_or_restores_prior_draft() {
+    let mut fresh = AppState::new_startup(Vec::new(), None);
+    for ch in "/re".chars() {
+        fresh.handle_key(key(KeyCode::Char(ch)));
+    }
+
+    fresh.handle_key(key(KeyCode::Esc));
+
+    assert_eq!(fresh.prompt_buffer, "");
+    assert_eq!(fresh.prompt_cursor, 0);
+    assert!(!fresh.slash_visible);
+
+    let mut with_draft = AppState::new_startup(Vec::new(), None);
+    with_draft.prompt_buffer = "draft".to_string();
+    with_draft.prompt_cursor = 0;
+    with_draft.handle_key(key(KeyCode::Char('/')));
+
+    with_draft.handle_key(key(KeyCode::Esc));
+
+    assert_eq!(with_draft.prompt_buffer, "draft");
+    assert_eq!(with_draft.prompt_cursor, "draft".chars().count());
+    assert!(!with_draft.slash_visible);
+}
+
+pub(super) fn slash_exit_matches_quit_requested_behavior() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_startup(Vec::new(), Some(sink));
+    for ch in "/exit".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
+
+    assert!(app.should_quit);
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[UiIntent::QuitRequested]
+    );
+}
+
+pub(super) fn resume_history_surface_uses_meaningful_session_title() {
+    // arrange
+    let entry = SessionHistoryEntry {
+        run_dir: PathBuf::from("/tmp/run-title"),
+        catalog: harness_core::proj::SessionCatalogEntry {
+            run_id: "run-title".to_string(),
+            run_name: Some("map chat renderers".to_string()),
+            status: Some(harness_core::proj::RunStatus::Finished),
+            last_updated_at: Some("2026-02-03T12:00:00Z".to_string()),
+            workspace_root: Some("/tmp/workspace".to_string()),
+            profile_preset: Some("build".to_string()),
+            provider_model: Some("mock/model".to_string()),
+            mode_source: harness_core::proj::SessionModeSource::InteractiveLive,
+            is_resumable: true,
+            resume_disabled_reason: None,
+            artifact_count: 0,
+            child_session_count: 0,
+            parent_session_id: None,
+        },
+    };
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_startup(vec![entry.clone()], Some(sink));
+    for ch in "/resume".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    // act
+    app.handle_key(key(KeyCode::Enter));
+
+    // assert
+    assert!(app.session_history_visible);
+    assert_eq!(
+        app.startup_launcher_action,
+        StartupLauncherAction::ContinueSession
+    );
+    let selected = app
+        .selected_session_history_entry()
+        .expect("titled session should be selected");
+    assert_eq!(
+        session_navigation::session_history_display_title(selected),
+        "map chat renderers"
+    );
+    let rendered = render_debug(&app, 100, 30);
+    assert!(rendered.contains("map chat renderers"));
+    assert!(
+        !rendered.contains("<unavailable>"),
+        "resume history should not degrade a titled session: {rendered}"
+    );
+
+    app.handle_key(key(KeyCode::Enter));
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[UiIntent::ContinueSession {
+            run_id: "run-title".to_string(),
+            run_dir: PathBuf::from("/tmp/run-title"),
+        }]
+    );
+}
+
+pub(super) fn slash_menu_supports_mouse_selection() {
+    let mut app = AppState::new_startup(Vec::new(), None);
+    app.handle_key(key(KeyCode::Char('/')));
+
+    let frame = Rect::new(0, 0, 100, 24);
+    let overlay = crate::layout::FrameLayoutPlan::for_app(&app, frame)
+        .slash_overlay
+        .expect("slash overlay");
+    let list_area = crate::layout::slash_command_overlay_content_area(overlay);
+    let target_index = app
+        .slash_filtered
+        .iter()
+        .position(|command| command == "new")
+        .expect("new slash command visible");
+    let target_row = list_area
+        .y
+        .saturating_add(u16::try_from(target_index).expect("target row fits in u16"));
+
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: list_area.x.saturating_add(1),
+            row: target_row,
+            modifiers: KeyModifiers::NONE,
+        },
+        frame,
+        None,
+        None,
+        None,
+    );
+    assert_eq!(app.slash_selected, target_index);
+
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Left),
+            column: list_area.x.saturating_add(1),
+            row: target_row,
+            modifiers: KeyModifiers::NONE,
+        },
+        frame,
+        None,
+        None,
+        None,
+    );
+
+    assert!(app.startup_shell_visible());
+    assert_eq!(
+        app.startup_launcher_action,
+        StartupLauncherAction::NewSession
+    );
+}
+
+pub(super) fn slash_menu_exposes_model_switcher_when_models_are_configured() {
+    let mut app = AppState::new_startup(Vec::new(), None);
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_ref("build", "default:gpt-5.4-mini").with_available_models(
+            vec![ModelOption::from_model_ref("build", "default:gpt-5.4-mini")],
+        ),
+    );
+
+    app.handle_key(key(KeyCode::Char('/')));
+
+    assert!(app.slash_filtered.iter().any(|command| command == "model"));
+}

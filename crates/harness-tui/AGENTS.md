@@ -10,12 +10,13 @@ Read root `AGENTS.md` first. E2E lane details live in `crates/harness-testkit/te
 |------|----------|-------|
 | Runtime entrypoints | `src/lib.rs`, `src/runtime.rs` | Startup/live/replay wiring and exact-name shell contract tests. |
 | App state | `src/app.rs`, `src/app/` | Event ingestion, overlays, permissions, session navigation; prefer submodule extraction over widening `app.rs`. |
-| Rendering | `src/ui.rs`, `src/ui_*.rs`, `src/ui_transcript.rs` | Main surface, chrome, overlays, transcript, secondary views. |
+| Rendering | `src/ui.rs`, `src/ui_*.rs`, `src/ui_transcript.rs`, `src/ui_transcript_*` | Main surface, chrome, overlays, transcript sections, secondary views. |
 | Geometry | `src/layout.rs` | Breakpoints, frame plan, pane sizing, wheel hit areas. |
 | Theme tokens | `src/theme.rs` | Color/token system and shell geometry defaults. |
 | Keybindings | `src/keybindings.rs` | Action map and palette command labels. |
 | View models | `src/view_model.rs` | Presentation shaping before rendering. |
-| Snapshots | `src/snapshots/`, `tests/snapshots/` | Deterministic render expectations. |
+| Model/session flows | `tests/model_switcher/`, `tests/session_navigation_keybindings_test.rs`, `src/app/session_navigation.rs` | Provider/model switcher and replay/session navigation behavior. |
+| Snapshots/signoff | `src/snapshots/`, `tests/snapshots/`, `tests/tui_signoff_manifest_test.rs` | Deterministic render expectations and required signoff manifest. |
 
 ## SHELL CONTRACT
 - Compose-first home screen: entry point is the composer, not a replay browser.
@@ -26,7 +27,7 @@ Read root `AGENTS.md` first. E2E lane details live in `crates/harness-testkit/te
 
 ## RENDERING RULES
 - Keep layout math in `src/layout.rs` and `src/theme.rs`, not scattered through render helpers.
-- `ui_transcript.rs` uses measured layout, cache keys, and a character-cell selection model; update tests when changing any of them.
+- Transcript rendering is split across `ui_transcript.rs` and `ui_transcript_*`; keep measured layout, cache keys, and the character-cell selection model coherent across those files.
 - Approved rendering stack: `syntect` for syntax highlighting, `imara-diff` for diff visualization.
 - Keep tool/transcript/orchestration states structured; do not render opaque text dumps as canonical state.
 - Native visual screenshots are local provenance signoff; PTY snapshots are deterministic safety net.
@@ -35,6 +36,9 @@ Read root `AGENTS.md` first. E2E lane details live in `crates/harness-testkit/te
 ```bash
 cargo test -p harness-tui
 cargo test -p harness-tui --test deterministic_render_test
+cargo test -p harness-tui --test model_switcher_metadata_test
+cargo test -p harness-tui --test session_navigation_keybindings_test
+cargo test -p harness-tui --test tui_signoff_manifest_test
 cargo test -p harness-tui --test pty_e2e
 RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo test -p harness-tui --test pty_e2e
 ```
@@ -45,3 +49,4 @@ Use `cargo insta review -p harness-tui --accept` only after intentionally updati
 - Do not change renderer settings, snapshot geometry helpers, font lookup order, focus regions, or capture assumptions casually.
 - Do not make replay mode write-capable.
 - Do not widen large renderer/app files when a focused sibling module is the safer move.
+- Do not update snapshots without checking whether behavior changed or the fixture drifted.

@@ -5,18 +5,26 @@ use std::path::Path;
 
 use serde_json::Value;
 
+use crate::config::HookLifecycleEvent;
 use crate::digest::digest12;
 use crate::event::PermissionDecision as EventPermissionDecision;
 use crate::path_selector::workspace_relative_path_from_maybe_absolute;
 use crate::perm::{
-    PermissionDecision, PermissionGrantMatcher, PermissionGrantRequest, PermissionKind,
-    PermissionPolicy, PermissionRuleRequest, PermissionToolSelector, PolicyDecision,
+    PermissionDecision, PermissionGrant, PermissionGrantMatcher, PermissionGrantRequest,
+    PermissionGrantScope, PermissionKind, PermissionPolicy, PermissionRuleRequest,
+    PermissionToolSelector, PolicyDecision,
 };
 use crate::redact::Redactor;
 use crate::tool::canonical_tool_id_for;
 
+use super::question::validate_question_answers_reason;
 use super::task_category::task_category_fallback_profile;
 use super::tool_metadata::effective_mcp_tool_id;
+use super::{
+    append_permission_grant_recorded_event, append_permission_resolved_event, hooks,
+    reject_pending_permission, tool_execution, CoordinatorError, HookInvocationContext,
+    PendingPermissionResolution, PendingPermissionState, ToolCallExecutionArgs,
+};
 
 pub(super) fn event_permission_decision(decision: PermissionDecision) -> EventPermissionDecision {
     match decision {
@@ -468,5 +476,382 @@ fn insert_workspace_path_selector(
         workspace_relative_path_from_maybe_absolute(workspace_root, Path::new(raw_path))
     {
         paths.insert(path);
+    }
+}
+
+impl super::Coordinator {
+    pub(in crate::coord) async fn resolve_permission_internal(
+        &mut self,
+        permission_id: String,
+        decision: PermissionDecision,
+        reason: Option<String>,
+        grant_scope: Option<PermissionGrantScope>,
+    ) -> Result<(), CoordinatorError> {
+        let clock = self.clock.clone();
+        let redactor = self.redactor.clone();
+        let job_tx = self.job_tx.clone();
+
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+
+        let Some(existing) = run_state.pending_permission(&permission_id) else {
+            return Err(CoordinatorError::UnknownPermission(permission_id));
+        };
+
+        let validated_question_answers = if decision == PermissionDecision::Allow {
+            match &existing.resolution {
+                PendingPermissionResolution::Question { prompts, .. } => Some(
+                    validate_question_answers_reason(reason.as_deref(), prompts)
+                        .map_err(CoordinatorError::PolicyViolation)?,
+                ),
+                PendingPermissionResolution::ToolCall { .. } => None,
+            }
+        } else {
+            None
+        };
+
+        let pending = run_state
+            .take_pending_permission(&permission_id)
+            .expect("pending permission exists after validation");
+
+        let hook_request_id = pending
+            .request_correlation_id
+            .clone()
+            .or_else(|| Some(pending.tool_call_id.clone()));
+        let hook_tool_call_id = pending.tool_call_id.clone();
+        let (hook_actor, hook_agent_id, hook_tool_id, hook_category) = match &pending.resolution {
+            PendingPermissionResolution::ToolCall {
+                tool_id,
+                actor,
+                category,
+                ..
+            } => (
+                actor.clone(),
+                actor.agent_id.clone(),
+                Some(tool_id.clone()),
+                category.clone(),
+            ),
+            PendingPermissionResolution::Question { actor, .. } => (
+                actor.clone(),
+                actor.agent_id.clone(),
+                Some("question".to_string()),
+                None,
+            ),
+        };
+        let mut permission_hook_executions = pending.hook_executions.clone();
+        let permission_decision = event_permission_decision(decision);
+
+        append_permission_resolved_event(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            permission_id.clone(),
+            permission_decision,
+            reason.clone(),
+        )?;
+
+        let resolved_hook_batch = hooks::run_lifecycle_hooks(
+            self.clock.as_ref(),
+            self.config.hook_command_executor.as_ref(),
+            &self.config.hook_runtime_config,
+            HookInvocationContext {
+                event: HookLifecycleEvent::PermissionResolved,
+                run_id: run_state.info.run_id.clone(),
+                workspace_root: run_state.info.workspace_root.clone(),
+                artifacts_dir: run_state.info.artifacts_dir.clone(),
+                actor: Some(hook_actor),
+                agent_id: hook_agent_id,
+                request_id: hook_request_id,
+                permission_id: Some(permission_id.clone()),
+                task_id: None,
+                tool_call_id: Some(hook_tool_call_id),
+                tool_id: hook_tool_id,
+                provider_id: None,
+                model_id: None,
+                parent_agent_id: None,
+                category: hook_category,
+                outcome: Some(permission_decision_label(permission_decision).to_string()),
+                output_summary: reason.clone(),
+                failure_reason: reason.clone(),
+            },
+        )
+        .await;
+        permission_hook_executions.extend(resolved_hook_batch.hook_executions.clone());
+        let permission_hook_failure = resolved_hook_batch.critical_failure.clone();
+
+        match pending {
+            PendingPermissionState {
+                tool_call_id,
+                request_correlation_id,
+                grant_request,
+                resolution:
+                    PendingPermissionResolution::ToolCall {
+                        tool_id,
+                        args_json,
+                        actor,
+                        category,
+                        respond_to,
+                    },
+                ..
+            } => {
+                let caller_cancelled = respond_to.as_ref().is_some_and(|sender| sender.is_closed());
+                if decision == PermissionDecision::Allow
+                    && permission_hook_failure.is_none()
+                    && !caller_cancelled
+                {
+                    if let (Some(scope), Some(grant_request)) = (grant_scope, grant_request) {
+                        let grant = PermissionGrant {
+                            grant_id: format!("grant_{permission_id}"),
+                            permission_id: permission_id.clone(),
+                            scope,
+                            expires_at: None,
+                            kind: grant_request.kind,
+                            tool: grant_request.tool,
+                            matcher: grant_request.matcher,
+                        };
+                        append_permission_grant_recorded_event(
+                            clock.as_ref(),
+                            redactor.as_ref(),
+                            run_state,
+                            &permission_id,
+                            request_correlation_id.as_deref(),
+                            grant.clone(),
+                        )?;
+                        run_state.record_permission_grant(grant);
+                    }
+
+                    tool_execution::start_tool_call_execution(
+                        clock.as_ref(),
+                        redactor.as_ref(),
+                        self.config.hook_command_executor.clone(),
+                        job_tx,
+                        run_state,
+                        self.config.hook_runtime_config.clone(),
+                        ToolCallExecutionArgs {
+                            tool_call_id,
+                            tool_id,
+                            args_json,
+                            actor,
+                            category,
+                            hook_executions: permission_hook_executions,
+                            tool_registry: self.config.tool_registry.clone(),
+                            request_correlation_id,
+                            respond_to,
+                        },
+                    )
+                    .await?;
+                } else {
+                    let (rejection_reason, response_message) =
+                        if let Some(hook_reason) = permission_hook_failure.as_ref() {
+                            (
+                                format!("permission denied by lifecycle hook: {hook_reason}"),
+                                format!(
+                                "tool call denied: critical lifecycle hook failed: {hook_reason}"
+                            ),
+                            )
+                        } else if caller_cancelled {
+                            (
+                                "tool caller cancelled before permission resolution".to_string(),
+                                "tool call cancelled before permission resolution".to_string(),
+                            )
+                        } else {
+                            (
+                                "permission denied".to_string(),
+                                "tool call denied: permission denied".to_string(),
+                            )
+                        };
+                    reject_pending_permission(
+                        self.clock.as_ref(),
+                        self.redactor.as_ref(),
+                        run_state,
+                        &rejection_reason,
+                        &response_message,
+                        PendingPermissionState {
+                            tool_call_id,
+                            request_correlation_id,
+                            hook_executions: permission_hook_executions.clone(),
+                            grant_request,
+                            resolution: PendingPermissionResolution::ToolCall {
+                                tool_id,
+                                args_json,
+                                actor,
+                                category,
+                                respond_to,
+                            },
+                        },
+                        &permission_hook_executions,
+                    )?;
+                }
+            }
+            PendingPermissionState {
+                resolution: PendingPermissionResolution::Question { respond_to, .. },
+                ..
+            } => {
+                if decision == PermissionDecision::Allow && permission_hook_failure.is_none() {
+                    let answers = validated_question_answers
+                        .expect("validated answers exist for allowed question resolution");
+                    let _ = respond_to.send(Ok(answers));
+                } else if let Some(hook_reason) = permission_hook_failure.as_ref() {
+                    let _ = respond_to.send(Err(format!(
+                        "question denied: critical lifecycle hook failed: {hook_reason}"
+                    )));
+                } else {
+                    let _ = respond_to.send(Err(
+                        reason.unwrap_or_else(|| "question rejected by user".to_string())
+                    ));
+                }
+            }
+        }
+
+        if let Some(reason) = permission_hook_failure {
+            return Err(CoordinatorError::LifecycleHookFailed(reason));
+        }
+
+        Ok(())
+    }
+
+    pub(in crate::coord) async fn resolve_permission_timeout_internal(
+        &mut self,
+        permission_id: String,
+    ) {
+        let Some(run_state) = self.run_state.as_mut() else {
+            return;
+        };
+
+        let Some(pending) = run_state.take_pending_permission(&permission_id) else {
+            return;
+        };
+
+        let timeout_reason = "permission request timed out".to_string();
+        let hook_request_id = pending
+            .request_correlation_id
+            .clone()
+            .or_else(|| Some(pending.tool_call_id.clone()));
+        let hook_tool_call_id = pending.tool_call_id.clone();
+        let (hook_actor, hook_agent_id, hook_tool_id, hook_category) = match &pending.resolution {
+            PendingPermissionResolution::ToolCall {
+                tool_id,
+                actor,
+                category,
+                ..
+            } => (
+                actor.clone(),
+                actor.agent_id.clone(),
+                Some(tool_id.clone()),
+                category.clone(),
+            ),
+            PendingPermissionResolution::Question { actor, .. } => (
+                actor.clone(),
+                actor.agent_id.clone(),
+                Some("question".to_string()),
+                None,
+            ),
+        };
+
+        let _ = append_permission_resolved_event(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            permission_id.clone(),
+            EventPermissionDecision::Deny,
+            Some(timeout_reason.clone()),
+        );
+
+        let resolved_hook_batch = hooks::run_lifecycle_hooks(
+            self.clock.as_ref(),
+            self.config.hook_command_executor.as_ref(),
+            &self.config.hook_runtime_config,
+            HookInvocationContext {
+                event: HookLifecycleEvent::PermissionResolved,
+                run_id: run_state.info.run_id.clone(),
+                workspace_root: run_state.info.workspace_root.clone(),
+                artifacts_dir: run_state.info.artifacts_dir.clone(),
+                actor: Some(hook_actor),
+                agent_id: hook_agent_id,
+                request_id: hook_request_id,
+                permission_id: Some(permission_id),
+                task_id: None,
+                tool_call_id: Some(hook_tool_call_id),
+                tool_id: hook_tool_id,
+                provider_id: None,
+                model_id: None,
+                parent_agent_id: None,
+                category: hook_category,
+                outcome: Some("deny".to_string()),
+                output_summary: Some(timeout_reason.clone()),
+                failure_reason: Some(timeout_reason.clone()),
+            },
+        )
+        .await;
+        let mut permission_hook_executions = pending.hook_executions.clone();
+        permission_hook_executions.extend(resolved_hook_batch.hook_executions.clone());
+        let permission_hook_failure = resolved_hook_batch.critical_failure.clone();
+
+        let _ = match pending {
+            PendingPermissionState {
+                tool_call_id,
+                request_correlation_id,
+                grant_request,
+                resolution:
+                    PendingPermissionResolution::ToolCall {
+                        tool_id,
+                        args_json,
+                        actor,
+                        category,
+                        respond_to,
+                    },
+                ..
+            } => {
+                let (rejection_reason, response_message) =
+                    if let Some(hook_reason) = permission_hook_failure.as_ref() {
+                        (
+                            format!("permission denied by timeout hook: {hook_reason}"),
+                            format!(
+                                "tool call timed out: critical lifecycle hook failed: {hook_reason}"
+                            ),
+                        )
+                    } else {
+                        (
+                            "permission denied by timeout".to_string(),
+                            "tool call timed out: permission request timed out".to_string(),
+                        )
+                    };
+                reject_pending_permission(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    run_state,
+                    &rejection_reason,
+                    &response_message,
+                    PendingPermissionState {
+                        tool_call_id,
+                        request_correlation_id,
+                        hook_executions: permission_hook_executions.clone(),
+                        grant_request,
+                        resolution: PendingPermissionResolution::ToolCall {
+                            tool_id,
+                            args_json,
+                            actor,
+                            category,
+                            respond_to,
+                        },
+                    },
+                    &permission_hook_executions,
+                )
+            }
+            PendingPermissionState {
+                resolution: PendingPermissionResolution::Question { respond_to, .. },
+                ..
+            } => {
+                let reason = if let Some(hook_reason) = permission_hook_failure.as_ref() {
+                    format!("question timed out: critical lifecycle hook failed: {hook_reason}")
+                } else {
+                    "question timed out awaiting user input".to_string()
+                };
+                let _ = respond_to.send(Err(reason));
+                Ok(())
+            }
+        };
     }
 }

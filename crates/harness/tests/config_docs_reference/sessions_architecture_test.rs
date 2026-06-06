@@ -2,7 +2,12 @@
 fn sessions_docs_cover_lineage_source_cutoff_summary_and_artifact_semantics() {
     // arrange
     let sessions = read_doc("docs/sessions-and-replay.md");
-    let lineage_source = read_doc("crates/harness-core/src/session_lineage.rs");
+    let lineage_source = [
+        read_doc("crates/harness-core/src/session_lineage.rs"),
+        read_doc("crates/harness-core/src/session_lineage/materialization.rs"),
+        read_doc("crates/harness-core/src/session_lineage/materialization_metadata.rs"),
+    ]
+    .join("\n");
 
     for source_anchor in [
         "fork = selected stable prefix",
@@ -86,7 +91,12 @@ fn sessions_docs_cover_resume_acceptance_realistic_interrupted_session() {
 fn architecture_docs_cover_compaction_contracts_and_preservation_context() {
     // arrange
     let architecture = read_doc("docs/architecture.md");
-    let provider_context = read_doc("crates/harness-core/src/coord/provider_context.rs");
+    let provider_context = [
+        read_doc("crates/harness-core/src/coord/provider_context.rs"),
+        read_doc("crates/harness-core/src/coord/provider_context/operational_memory.rs"),
+        read_doc("crates/harness-core/src/coord/provider_context/planning.rs"),
+    ]
+    .join("\n");
     let config = read_doc("crates/harness-core/src/config.rs");
     let coord_tests = read_doc("crates/harness-core/src/coord/tests.rs");
 

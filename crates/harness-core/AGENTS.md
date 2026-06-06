@@ -14,13 +14,17 @@ Read the workspace root `AGENTS.md` first for search scope, cross-crate invarian
 | Permissions | `src/perm.rs` | Capability to permission-kind mapping and policy resolution. |
 | Tool contracts | `src/tool.rs` | Tool traits, capabilities, canonical ids, artifact store. |
 | Config | `src/config.rs`, `src/config/` | Discovery, validation, public schema shape, compatibility inputs. |
+| Auth/model resolution | `src/auth/`, `src/model_resolution.rs`, `src/config/model_*` | Stored auth providers, catalog metadata, variants, capability inference. |
 | Projections | `src/proj.rs`, `src/transcript_projection.rs` | Pure replay/UI/resume/export/debugging views. |
+| Conversation boundary | `src/conversation.rs`, `src/provider_args.rs` | Provider-facing message shaping; keep unknown historical tools sanitized. |
 | Agent/session metadata | `src/agent.rs`, `src/session_lineage.rs`, `src/session_title.rs`, `src/session_paths.rs` | Runtime identity, lineage, titles, storage layout. |
+| Workspaces/paths | `src/workspace.rs`, `src/path_selector.rs`, `src/path_display.rs` | Workspace roots, display paths, path selection helpers. |
 | Hashline edits | `src/edit/hashline.rs` | Anchor hashing, overlap rejection, atomic apply. |
 
 ## STRUCTURE
 ```text
 src/coord/       # hooks, provider_context, team, tool_execution, focused tests
+src/auth/        # Codex/Copilot stored credential adapters
 src/config/      # discovery, loader, public config surface
 src/edit/        # hashline patch engine
 src/snapshots/   # insta snapshots for event envelopes
@@ -33,6 +37,7 @@ src/snapshots/   # insta snapshots for event envelopes
 - Permission `ask` pauses for `ResolvePermission`; headless `ask` denies unless a scenario explicitly resolves it.
 - Worker actors must not spawn agents directly; supervisor-only violations emit policy violations.
 - Compaction writes artifacts/events and preserves recent turns from config/model metadata; it must not rewrite event logs.
+- Conversation/projection code must stay replay-derived and must not call providers, tools, hooks, MCP, network, or the CLI.
 - Redact secrets before persistence and artifact summaries.
 
 ## CONFIG CONTRACT
@@ -45,8 +50,13 @@ src/snapshots/   # insta snapshots for event envelopes
 ```bash
 cargo test -p harness-core
 cargo test -p harness-core --test coord_test
+cargo test -p harness-core --test conversation_projection_test
 cargo test -p harness-core --test mcp_config_test
+cargo test -p harness-core --test model_variant_resolution_test
+cargo test -p harness-core --test native_metadata_replay_test
 cargo test -p harness-core --test permission_policy_supports_native_tool_permission_kinds_test
+cargo test -p harness-core --test resume_plan_test
+cargo test -p harness-core --test session_lineage_materialization_test
 cargo test -p harness-core --test transcript_projection_test
 ```
 Run root drift checks when event/config public contracts change:

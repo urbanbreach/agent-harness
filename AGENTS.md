@@ -1,8 +1,8 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-05-29
-**Commit:** `974b473`
-**Branch:** `dev`
+**Generated:** 2026-06-03
+**Commit:** `078c4329`
+**Branch:** `thermo-nuclear-refactor`
 
 ## OVERVIEW
 Rust workspace for an event-sourced agent harness: CLI entrypoint, coordinator/runtime core, provider adapters, built-in native tools, Ratatui TUI, and deterministic PTY/live/native verification lanes.
@@ -25,11 +25,12 @@ agent-harness/
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |------|----------|-------|
-| CLI behavior | `crates/harness/src/lib.rs`, `crates/harness/src/*.rs` | `main.rs` is a thin shim; in-process CLI tests use `CliIo`/`CliDeps`. |
+| CLI behavior | `crates/harness/AGENTS.md` | `main.rs` is a thin shim; in-process CLI tests use `CliIo`/`CliDeps`. |
 | Runtime invariants | `crates/harness-core/AGENTS.md` | Read before changing events, coordinator, permissions, config, replay, lineage. |
 | Provider protocol | `crates/harness-providers/AGENTS.md` | Read before changing `ProviderStreamEvent`, request metadata, cassettes, transports. |
 | Native tools | `crates/harness-tools/AGENTS.md` | Read before changing schemas, path safety, bash, MCP, LSP, task/session/team tools. |
 | TUI shell | `crates/harness-tui/AGENTS.md` | Read before touching transcript layout, app state, overlays, keybindings, snapshots. |
+| Testkit helpers | `crates/harness-testkit/AGENTS.md` | Deterministic fakes, workspaces, simulation evidence, native visual helpers. |
 | E2E signoff tests | `crates/harness-testkit/tests/AGENTS.md` | PTY, live proxy, native visual, artifact provenance, env gates. |
 | Runtime assets | `.agent-harness/AGENTS.md` | Agent profile markdown and skill packages loaded by the runtime. |
 | Public config | `docs/config.md`, `configs/*.json`, `configs/*.jsonc` | Generated schemas are source of truth; examples and README must agree. |
@@ -48,7 +49,7 @@ agent-harness/
 
 ## FIRST-PARTY SEARCH SCOPE
 - Include by default: `crates/`, `configs/`, `docs/`, `scripts/`, `.agent-harness/agents/`, `.agent-harness/skills/`, root manifests.
-- Exclude by default: `target/`, `.git/`, `sessions/`, `artifacts/`, `.harness/`, `.gnhf/`, `.sisyphus/`, `.omx/`, `.codex/`, `inspirations/`.
+- Exclude by default: `target/`, `.git/`, `sessions/`, `artifacts/`, `.harness/`, `.gnhf/`, `.sisyphus/`, `.omx/`, `.omo/`, `.codex/`, `inspirations/`.
 - Search `inspirations/` only when explicitly comparing reference implementations.
 
 ## COMMANDS

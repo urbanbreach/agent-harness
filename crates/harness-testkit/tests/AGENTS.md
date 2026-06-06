@@ -3,14 +3,14 @@
 ## OVERVIEW
 Workflow-heavy E2E tests for native screenshot signoff, deterministic PTY simulation, env-gated live-proxy signoff, simulation validation, and artifact provenance. Runtime-independent helpers belong in `crates/harness-testkit/src/`.
 
-Read root `AGENTS.md` first. TUI shell contracts live in `crates/harness-tui/AGENTS.md`.
+Read root `AGENTS.md` first. Testkit helper rules live in `crates/harness-testkit/AGENTS.md`; TUI shell contracts live in `crates/harness-tui/AGENTS.md`.
 
 ## STRUCTURE
 ```text
 tests/
 ├── pty_e2e.rs             # offline deterministic PTY lane; custom test target
 ├── live_proxy_e2e.rs      # env-gated live proxy preflight/signoff wrappers
-├── native_visual_e2e.rs   # local Ghostty/tmux screenshot signoff lane
+├── native_visual_e2e.rs   # local display/capture screenshot signoff lane
 ├── simulation_validator_test.rs
 ├── secretscan_test.rs
 ├── focus_region_test.rs
@@ -24,9 +24,10 @@ tests/
 |------|----------|-------|
 | Offline UI regression | `pty_e2e.rs` | Single-threaded deterministic PTY evidence. |
 | Live proxy setup | `README.live-proxy.md`, `live_proxy_e2e.rs` | Env/config preflight; behavior assertions mostly live in deterministic owners. |
-| Native screenshots | `native_visual_e2e.rs` | Ghostty renderer, tmux control, manifest-backed screenshots. |
+| Native screenshots | `native_visual_e2e.rs` | Local display/capture helper checks, manifest-backed screenshots. |
 | Simulation validation | `simulation_validator_test.rs` | Checks `docs/simulation-matrix.json`. |
 | Secret hygiene | `secretscan_test.rs` | Scans simulation/cassette artifacts when env points at them. |
+| Focus regions | `focus_region_test.rs`, `support/focus_region.rs` | Screenshot focus metadata and region calculations. |
 | Shared helpers | `support/` | Keep small and local to tests that import them. |
 
 ## LANE ORDER
@@ -41,6 +42,7 @@ tests/
 - Native gates: `HARNESS_NATIVE_VISUAL`, `DISPLAY`, optional font/capture helper variables.
 - Visual artifact root: `HARNESS_VISUAL_ARTIFACT_DIR`.
 - Simulation scan: `HARNESS_SECRETS_SCAN_ARTIFACTS`, `HARNESS_SIMULATION_ARTIFACT_DIR`.
+- Live/native signoff variables should be explicit in the lane artifact env file; do not infer them from the developer shell after the fact.
 
 ## CONVENTIONS
 - Treat PTY as the deterministic CI/headless oracle and fallback lane.
@@ -54,6 +56,7 @@ tests/
 RUST_TEST_THREADS=1 cargo test -p harness-testkit --test pty_e2e
 HARNESS_LIVE_PROXY=1 HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc HARNESS_LIVE_PROXY_PROVIDER=default HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini cargo test -p harness-testkit live_proxy_preflight_requires_live_env -- --ignored --exact
 HARNESS_NATIVE_VISUAL=1 cargo test -p harness-testkit --test native_visual_e2e -- --ignored --test-threads=1
+cargo test -p harness-testkit --test simulation_validator_test
 ```
 
 ## ANTI-PATTERNS
