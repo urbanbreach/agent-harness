@@ -1,0 +1,114 @@
+use super::*;
+
+pub(super) fn module_replay_mode_snapshot_renders_two_pane_layout() {
+    harness_core::config::clear_registered_integrations_config();
+    harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
+
+    let run_dir = write_replay_fixture(sample_replay_events());
+    let events = load_events_from_run_dir(run_dir.path()).expect("load replay events");
+
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+
+    let app = AppState::new_replay(run_dir.path().to_path_buf(), events);
+    terminal
+        .draw(|frame| ui::render_app(frame, &app))
+        .expect("draw replay frame");
+
+    assert_buffer_snapshot(
+        "replay_mode_snapshot_renders_two_pane_layout",
+        terminal.backend().buffer(),
+    );
+}
+
+pub(super) fn replay_mode_r_key_marks_reload_requested() {
+    let run_dir = write_replay_fixture(sample_replay_events());
+    let events = load_events_from_run_dir(run_dir.path()).expect("load replay events");
+
+    let mut app = AppState::new_replay(run_dir.path().to_path_buf(), events);
+    app.handle_key(key(KeyCode::Char('r')));
+
+    assert!(app.take_reload_requested());
+}
+
+pub(super) fn live_mode_snapshot_renders_grouped_streams() {
+    let mut app = AppState::new_live(None, false, None);
+    for event in sample_live_events() {
+        app.ingest_event(event);
+    }
+    app.active_tab = app::Tab::Run;
+
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    terminal
+        .draw(|frame| ui::render_app(frame, &app))
+        .expect("draw live frame");
+
+    assert_buffer_snapshot(
+        "live_mode_snapshot_renders_grouped_streams",
+        terminal.backend().buffer(),
+    );
+}
+
+pub(super) fn slash_commands_snapshot_renders_reference_style_popup() {
+    let mut app = AppState::new_live(None, false, None);
+    app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+
+    let backend = TestBackend::new(100, 24);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    terminal
+        .draw(|frame| ui::render_app(frame, &app))
+        .expect("draw slash popup frame");
+
+    assert_buffer_snapshot(
+        "slash_commands_snapshot_renders_reference_style_popup",
+        terminal.backend().buffer(),
+    );
+}
+
+pub(super) fn tool_spacing_parity_snapshot_renders_grouped_context_and_output_transition() {
+    let mut app = AppState::new_live(None, false, None);
+    for event in sample_tool_spacing_events() {
+        app.ingest_event(event);
+    }
+    app.active_tab = app::Tab::Run;
+
+    let backend = TestBackend::new(120, 30);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    terminal
+        .draw(|frame| ui::render_app(frame, &app))
+        .expect("draw tool spacing parity frame");
+
+    assert_buffer_snapshot(
+        "tool_spacing_parity_snapshot_renders_grouped_context_and_output_transition",
+        terminal.backend().buffer(),
+    );
+}
+
+pub(super) fn live_mode_renders_activity_and_transcript() {
+    let mut app = AppState::new_live(None, false, None);
+    for event in sample_live_events() {
+        app.ingest_event(event);
+    }
+    app.active_tab = app::Tab::Run;
+
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    terminal
+        .draw(|frame| ui::render_app(frame, &app))
+        .expect("draw live frame");
+
+    let debug = format!("{:?}", terminal.backend().buffer());
+    assert!(
+        debug.contains("hello world"),
+        "live mode must center the conversation surface"
+    );
+    assert!(
+        !debug.contains("Activity ("),
+        "live mode should not render the old activity cockpit by default"
+    );
+    assert!(
+        debug.contains("hello world"),
+        "transcript must show streaming content"
+    );
+}

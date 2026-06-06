@@ -1,6 +1,7 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
-expression: rendered.as_str()
+assertion_line: 110
+expression: snapshot.as_str()
 ---
 
 
@@ -25,12 +26,12 @@ expression: rendered.as_str()
                                      Replay session Replay a previous session…  replay
 
                                   Agents
+                                     Switch model Browse available provider/mo…  model
                                      Next agent Cycle to the next primary agent    tab
                                      Previous agent Cycle to the previous …  shift+tab
                                      Cycle reasoning preset Cycle the configu…  ctrl+t
                                      Toggles Toggle profiles, tools, hooks, …  toggles
 
-                                  System
 
 
 

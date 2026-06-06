@@ -45,6 +45,8 @@ pub use network::{
 };
 
 mod mcp;
+mod mcp_render;
+mod mcp_session;
 
 mod control_plane;
 use control_plane::ControlPlaneExecutor;

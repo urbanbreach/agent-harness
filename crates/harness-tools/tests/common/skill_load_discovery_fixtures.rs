@@ -75,6 +75,55 @@ fn write_invalid_skill(root: &Path, name: &str) {
     .expect("write invalid skill file");
 }
 
+fn write_v1_skill(root: &Path, name: &str, frontmatter: &str, body: &str) {
+    let skill_dir = root.join(name);
+    fs::create_dir_all(&skill_dir).expect("create v1 skill dir");
+    fs::write(
+        skill_dir.join("SKILL.md"),
+        format!("---\n{frontmatter}\n---\n\n{body}\n"),
+    )
+    .expect("write v1 skill file");
+}
+
+fn section_body<'a>(body: &'a str, section: &str) -> &'a str {
+    let section_start = body
+        .find(section)
+        .unwrap_or_else(|| panic!("missing section `{section}`"));
+    let after_heading = &body[section_start + section.len()..];
+    after_heading
+        .split("\n## ")
+        .next()
+        .expect("section split always yields current section")
+}
+
+fn assert_section_has_content(body: &str, section: &str, skill_name: &str) {
+    let content = section_body(body, section)
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        !content.is_empty(),
+        "{skill_name} section `{section}` must contain non-empty guidance"
+    );
+}
+
+fn quoted_values_after(body: &str, token: &str) -> Vec<String> {
+    body.match_indices(token)
+        .filter_map(|(index, _)| {
+            let after_token = &body[index + token.len()..];
+            let quote = after_token.chars().next()?;
+            if quote != '"' && quote != '\'' {
+                return None;
+            }
+            let after_quote = &after_token[quote.len_utf8()..];
+            let end = after_quote.find(quote)?;
+            Some(after_quote[..end].to_string())
+        })
+        .collect()
+}
+
 fn worker_profile(name: &str, toolset: &[&str]) -> AgentProfile {
     AgentProfile {
         name: name.to_string(),

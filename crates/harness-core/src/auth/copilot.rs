@@ -242,7 +242,7 @@ impl CopilotOAuthClient {
         access_token: &str,
     ) -> Result<StoredCredential, CopilotOAuthError> {
         let token = non_empty(access_token).ok_or(CopilotOAuthError::MissingAccessToken)?;
-        // opencode's Copilot plugin stores the same GitHub device access token as
+        // reference implementation's Copilot plugin stores the same GitHub device access token as
         // both `access` and `refresh`, and sends that value directly as the
         // Copilot bearer. There is no GitHub→Copilot token exchange in that
         // reference path.
@@ -539,7 +539,7 @@ mod tests {
             requests
                 .iter()
                 .all(|request| !request.url.contains("copilot_internal")),
-            "opencode reference uses the GitHub device token directly as Copilot bearer"
+            "The reference flow uses the GitHub device token directly as Copilot bearer"
         );
     }
 

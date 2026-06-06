@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use async_trait::async_trait;
 use globset::{Glob, GlobSet, GlobSetBuilder};
@@ -9,8 +8,6 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use similar::TextDiff;
-use tokio::process::Command;
-use tokio::time::timeout;
 
 use crate::fs_walk::{
     collect_workspace_files, normalize_workspace_relative_entry, workspace_file_from_path,
@@ -23,13 +20,16 @@ use crate::workspace_paths::{
 };
 use crate::{parse_tool_args, text_json_artifacts_tool_result, text_json_tool_result};
 
+mod adapter;
+
+use adapter::{run_ast_grep, AstGrepCliMatch, AstGrepRunRequest};
+
 const DEFAULT_AST_GREP_LIMIT: usize = 100;
 const MAX_AST_GREP_LIMIT: usize = 200;
 const MAX_AST_GREP_CONTEXT: usize = 5;
 const MAX_MATCH_TEXT_CHARS: usize = 4_000;
 const MAX_SNIPPET_CHARS: usize = 8_000;
 const MAX_INLINE_JSON_CHARS: usize = 24_000;
-const AST_GREP_TIMEOUT_SECS: u64 = 30;
 
 pub(crate) struct AstGrepSearchTool {
     command: String,
@@ -137,43 +137,6 @@ struct AstGrepMatch {
     byte_end: Option<u64>,
     snippet: String,
     snippet_truncated: bool,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct AstGrepCliMatch {
-    text: String,
-    range: AstGrepCliRange,
-    file: String,
-    #[serde(default)]
-    lines: Option<String>,
-    #[serde(default)]
-    language: Option<String>,
-    #[serde(default)]
-    replacement: Option<String>,
-    #[serde(default)]
-    replacement_offsets: Option<AstGrepCliByteRange>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct AstGrepCliRange {
-    #[serde(default)]
-    byte_offset: Option<AstGrepCliByteRange>,
-    start: AstGrepCliPosition,
-    end: AstGrepCliPosition,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct AstGrepCliByteRange {
-    start: u64,
-    end: u64,
-}
-
-#[derive(Debug, Deserialize)]
-struct AstGrepCliPosition {
-    line: u64,
-    column: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -644,116 +607,6 @@ fn collect_candidate_files(
     Ok(files)
 }
 
-#[derive(Debug)]
-struct AstGrepAdapterOutput {
-    matches: Vec<AstGrepCliMatch>,
-    warnings: Vec<String>,
-    exit_status: Option<i32>,
-}
-
-struct AstGrepRunRequest<'a> {
-    workspace: &'a Path,
-    roots: &'a [SearchRoot],
-    pattern: &'a str,
-    rewrite: Option<&'a str>,
-    language: &'a str,
-    include: &'a [String],
-    exclude: &'a [String],
-    context: usize,
-    command_name: &'a str,
-    tool_id: &'a str,
-}
-
-async fn run_ast_grep(request: AstGrepRunRequest<'_>) -> Result<AstGrepAdapterOutput, ToolError> {
-    let mut command = Command::new(request.command_name);
-    command
-        .kill_on_drop(true)
-        .current_dir(request.workspace)
-        .arg("run")
-        .arg("--pattern")
-        .arg(request.pattern)
-        .arg("--lang")
-        .arg(request.language)
-        .arg("--json=compact")
-        .arg("--color")
-        .arg("never")
-        .arg("--heading")
-        .arg("never")
-        .arg("--context")
-        .arg(request.context.to_string());
-    if let Some(rewrite) = request.rewrite {
-        command.arg("--rewrite").arg(rewrite);
-    }
-    for pattern in request.include {
-        command.arg("--globs").arg(pattern);
-    }
-    for pattern in request.exclude {
-        command.arg("--globs").arg(format!("!{pattern}"));
-    }
-    for root in request.roots {
-        command.arg(&root.relative);
-    }
-
-    let output = timeout(Duration::from_secs(AST_GREP_TIMEOUT_SECS), command.output())
-        .await
-        .map_err(|_| {
-            ToolError::Execution(format!(
-                "ast-grep adapter timed out after {AST_GREP_TIMEOUT_SECS}s; narrow paths, include globs, or pattern"
-            ))
-        })?
-        .map_err(|err| {
-            if err.kind() == std::io::ErrorKind::NotFound {
-                ToolError::Execution(format!(
-                    "{} requires the `ast-grep` binary on PATH; install ast-grep or remove this tool from the active toolset",
-                    request.tool_id
-                ))
-            } else {
-                ToolError::Execution(format!("failed to run ast-grep adapter: {err}"))
-            }
-        })?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    if stderr.contains("Pattern contains an ERROR node") {
-        return Err(ToolError::InvalidArguments(format!(
-            "ast-grep could not parse pattern `{}` cleanly for language `{}`: {}",
-            request.pattern,
-            request.language,
-            compact_message(&stderr)
-        )));
-    }
-
-    let warnings = stderr
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(cap_warning)
-        .collect::<Vec<_>>();
-    let parsed = serde_json::from_str::<Vec<AstGrepCliMatch>>(stdout.trim()).map_err(|err| {
-        let status = output.status.code();
-        let stderr = compact_message(&stderr);
-        ToolError::Execution(format!(
-            "failed to parse ast-grep JSON output for language `{}` (status {status:?}): {err}; stderr: {stderr}",
-            request.language
-        ))
-    })?;
-
-    if !(output.status.success() || output.status.code() == Some(1) && parsed.is_empty()) {
-        return Err(ToolError::Execution(format!(
-            "ast-grep search failed for language `{}` with status {:?}: {}",
-            request.language,
-            output.status.code(),
-            compact_message(&stderr)
-        )));
-    }
-
-    Ok(AstGrepAdapterOutput {
-        matches: parsed,
-        warnings,
-        exit_status: output.status.code(),
-    })
-}
-
 fn cli_match_to_match(matched: AstGrepCliMatch, requested_language: &str) -> AstGrepMatch {
     let (matched_text, matched_text_truncated) = cap_text(&matched.text, MAX_MATCH_TEXT_CHARS);
     let snippet_source = matched.lines.as_deref().unwrap_or(&matched.text);
@@ -1029,24 +882,6 @@ fn cap_text(text: &str, max_chars: usize) -> (String, bool) {
     let mut capped = text.chars().take(max_chars).collect::<String>();
     capped.push_str("…[truncated]");
     (capped, true)
-}
-
-fn cap_warning(line: &str) -> String {
-    cap_text(line, 500).0
-}
-
-fn compact_message(message: &str) -> String {
-    let compact = message
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ");
-    if compact.is_empty() {
-        "<no stderr>".to_string()
-    } else {
-        cap_text(&compact, 1_000).0
-    }
 }
 
 fn compile_glob_set(patterns: &[String], label: &str) -> Result<Option<GlobSet>, ToolError> {

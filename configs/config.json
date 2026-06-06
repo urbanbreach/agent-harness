@@ -765,7 +765,7 @@
         },
         "disable": {
           "default": false,
-          "description": "OpenCode-compatible negative toggle. Equivalent to `enable: false`.",
+          "description": "Compatibility negative toggle. Equivalent to `enable: false`.",
           "type": "boolean"
         },
         "enable": {
@@ -890,7 +890,7 @@
       "additionalProperties": {
         "$ref": "#/definitions/PublicAgentConfig"
       },
-      "description": "Named agent definitions. Built-in OpenCode-compatible agents are explicit so editors can complete them, and custom names are accepted through the same shape.",
+      "description": "Named agent definitions. Built-in Harness-compatible agents are explicit so editors can complete them, and custom names are accepted through the same shape.",
       "properties": {
         "artistry": {
           "anyOf": [

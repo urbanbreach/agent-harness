@@ -13,7 +13,7 @@ The generated JSON schemas are the source of truth:
 
 Start with `configs/harness.example.jsonc`. It keeps the happy path small: one
 Codex OAuth-backed OpenAI-compatible provider, two GPT-family model entries, explicit
-tool-call capability metadata, OMO-style category scale through model profiles
+tool-call capability metadata, Category scale through model profiles
 with primary targets plus validated fallback metadata,
 per-agent model choices for the shipped profiles, scalar permission mode, and
 optional MCP. The full file is the canonical example; the excerpt below is
@@ -133,7 +133,7 @@ fields that affect first-run behavior.
 
 Only write the settings you want to own. The canonical example lists built-in
 agents for discoverability and pins category routes through named model profiles
-so doctor/TUI/task metadata agree. The starter adapts OMO's provider-specific
+so doctor/TUI/task metadata agree. The starter adapts provider-specific reference
 category defaults into the local GPT-family catalog; larger catalogs can retarget
 the same `category-*` profile names to Gemini, Claude, Kimi, or other available
 providers. Each agent still inherits the shipped description, prompt,
@@ -272,13 +272,13 @@ file contents.
 
 Use `harness auth list [--json]` to inspect configured `codex` and
 `github-copilot` auth providers with redacted status. Run `harness auth login`
-for the opencode-style standalone picker: provider order is OpenAI, then GitHub
+for the standalone auth picker: provider order is OpenAI, then GitHub
 Copilot; OpenAI offers `ChatGPT Pro/Plus (browser)`, `ChatGPT Pro/Plus
 (headless)`, and `Manually enter API Key`; GitHub Copilot prompts for
 GitHub.com vs GitHub Enterprise before device-code login. Explicit commands still
 bypass the picker: `harness auth login <provider> --method device|browser|api-key`
 stores or replaces the active stored credential for that auth-provider id. The
-`--method` value also accepts the matching opencode labels, such as `ChatGPT
+`--method` value also accepts the matching reference implementation labels, such as `ChatGPT
 Pro/Plus (browser)`, `ChatGPT Pro/Plus (headless)`, `Manually enter API Key`,
 and `Login with GitHub Copilot`. Codex supports device, browser, and API-key
 stdin login; browser login can also complete from an SSH session by pasting the
@@ -291,7 +291,7 @@ entry point through `/auth` (`/login`) and the `Auth` command-palette row.
 
 Codex OAuth follows the ChatGPT PKCE/device-code reference flow and decorates the
 existing OpenAI-compatible transport with the Codex endpoint, bearer token, and
-account/session headers. GitHub Copilot OAuth follows the opencode Copilot
+account/session headers. GitHub Copilot OAuth follows the reference implementation Copilot
 device-code reference: the GitHub device `access_token` is stored as the active
 OAuth credential and sent directly as the Copilot bearer; no separate
 GitHub-to-Copilot token exchange is performed in the deterministic V1 path.
@@ -628,7 +628,7 @@ The shipped agent names are available without extra config: primary
 `summary`, and `compaction` profiles. `explore` is a read-only local codebase
 search profile for `task(subagent_type: "explore")`. `general` is a broader
 focused implementation/research profile for `task(subagent_type: "general")`.
-The category profiles are OMO-style routing lanes for `task(category: "...")`:
+The category profiles are category-based routing lanes for `task(category: "...")`:
 the task tool selects the matching profile first and falls back to `general` only
 when no matching category profile is configured. `visual-engineering` covers UI,
 UX, layout, styling, animation, and design; `artistry` covers complex creative
@@ -638,7 +638,7 @@ deep debugging; `deep` covers autonomous research and end-to-end implementation;
 cover uncategorized low-to-moderate and high-effort work; and `writing` covers
 docs and prose. Shipped subagents intentionally omit or deny `task` by default so
 they do not recursively redelegate unless a project opts into that tool. Named
-category model profiles preserve OMO-style scale as primary targets plus
+category model profiles preserve category scale as primary targets plus
 validated fallback metadata; automatic provider/model retry is not V1 runtime
 behavior.
 When a subagent profile does not configure its own `model`, task delegation

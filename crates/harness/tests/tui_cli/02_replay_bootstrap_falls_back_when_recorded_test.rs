@@ -252,7 +252,7 @@ fn tui_cli_replay_flag_bypasses_launcher_shell() {
     );
 }
 #[test]
-fn tui_cli_without_config_prints_config_guidance() {
+fn tui_cli_without_config_reaches_connect_startup() {
     let temp = tempdir().expect("tempdir");
     let output = run_harness_in(temp.path(), ["tui", "--exit-on-finish"]);
 
@@ -265,28 +265,16 @@ fn tui_cli_without_config_prints_config_guidance() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("tui setup failed: interactive mode requires a config file"),
-        "expected config guidance prefix, got:\n{stderr}"
+        !stderr.contains("tui setup failed:"),
+        "no-config interactive startup should use the built-in connect state, got:\n{stderr}"
     );
     assert!(
-        stderr.contains("./harness.jsonc"),
-        "expected current-directory config location, got:\n{stderr}"
-    );
-    assert!(
-        stderr.contains("$XDG_CONFIG_HOME/harness/harness.jsonc"),
-        "expected XDG config location, got:\n{stderr}"
-    );
-    assert!(
-        stderr.contains("configs/harness.example.jsonc"),
-        "expected shipped example config hint, got:\n{stderr}"
-    );
-    assert!(
-        stderr.contains("--mock"),
-        "expected explicit --mock escape hatch, got:\n{stderr}"
+        stderr.contains("startup launcher"),
+        "expected no-config launch to reach startup/connect UI, got:\n{stderr}"
     );
 }
 #[test]
-fn tui_cli_bare_harness_reuses_interactive_mode() {
+fn tui_cli_bare_harness_reuses_no_config_startup() {
     let temp = tempdir().expect("tempdir");
     let output = run_harness_in(temp.path(), std::iter::empty::<&str>());
 
@@ -299,12 +287,16 @@ fn tui_cli_bare_harness_reuses_interactive_mode() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("tui setup failed: interactive mode requires a config file"),
-        "expected bare harness to enter interactive tui mode, got:\n{stderr}"
+        !stderr.contains("tui setup failed:"),
+        "bare harness should use the built-in connect state without config, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("startup launcher"),
+        "expected bare harness to enter interactive startup, got:\n{stderr}"
     );
 }
 #[test]
-fn tui_cli_legacy_tui_alias_still_works() {
+fn tui_cli_legacy_tui_alias_reuses_no_config_startup() {
     let temp = tempdir().expect("tempdir");
     let output = run_harness_in(temp.path(), ["tui", "--exit-on-finish"]);
 
@@ -317,8 +309,12 @@ fn tui_cli_legacy_tui_alias_still_works() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("tui setup failed: interactive mode requires a config file"),
-        "expected legacy tui alias to keep interactive mode behavior, got:\n{stderr}"
+        !stderr.contains("tui setup failed:"),
+        "legacy tui alias should use the built-in connect state without config, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("startup launcher"),
+        "expected legacy tui alias to reach startup/connect UI, got:\n{stderr}"
     );
 }
 #[test]

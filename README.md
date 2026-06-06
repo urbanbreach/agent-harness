@@ -86,7 +86,7 @@ The default path is:
 - default agent: `build`
 - default model: `openai-codex/gpt-5.4-mini`
 - interactive model: `openai-codex/gpt-5.4-mini` (`high` reasoning preset)
-- category model profiles: OMO-style scale adapted to Codex OAuth-backed GPT primary targets plus validated fallback metadata (`category-ultrabrain`, `category-deep`, `category-quick`, and the other shipped category profiles)
+- category model profiles: category scale adapted to Codex OAuth-backed GPT primary targets plus validated fallback metadata (`category-ultrabrain`, `category-deep`, `category-quick`, and the other shipped category profiles)
 
 Primary agents and category subagents are discovered from `.agent-harness/agents/*.md` and use the
 runtime config's direct model or named `model_profile` settings:
@@ -95,7 +95,7 @@ runtime config's direct model or named `model_profile` settings:
 - `plan` — stable read-only planning lane with runtime-enforced edits limited to the active `.agent-harness/plans/<run>.md` file, plus `plan_exit` to hand off to Build
 - `explore` — shipped read-only subagent profile for local codebase search via `task(subagent_type: "explore")`
 - `general` — shipped focused implementation/research subagent profile via `task(subagent_type: "general")`
-- category subagents — `visual-engineering`, `artistry`, `ultrabrain`, `deep`, `quick`, `unspecified-low`, `unspecified-high`, and `writing` route OMO-style `task(category: "...")` calls through ordinary toggleable profiles with category-specific model profiles and fallback metadata
+- category subagents — `visual-engineering`, `artistry`, `ultrabrain`, `deep`, `quick`, `unspecified-low`, `unspecified-high`, and `writing` route category-based `task(category: "...")` calls through ordinary toggleable profiles with category-specific model profiles and fallback metadata
 
 Validate the shipped example config:
 

@@ -1,5 +1,5 @@
 ---
-source: crates/harness-core/src/event.rs
+source: crates/harness-core/src/event/tests.rs
 expression: envelope
 ---
 {

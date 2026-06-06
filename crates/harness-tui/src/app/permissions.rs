@@ -9,6 +9,19 @@ use harness_core::event::{ActorKind, EventEnvelopeV1, EventV1};
 use super::OverlayKind;
 use super::{Action, AppState, UiIntent};
 
+mod modal;
+mod question;
+
+pub(crate) use modal::{
+    PermissionConfirmSelection, PermissionModalSelection, PermissionModalStage,
+};
+pub(super) use question::permission_display_summary;
+use question::{
+    build_question_answers, parse_question_prompts, question_prompt_choice_count,
+    question_prompt_confirm_active, question_prompt_is_single_select, question_prompt_tab_count,
+};
+pub use question::{QuestionOptionView, QuestionPromptView};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PermissionEntry {
     pub permission_id: String,
@@ -22,6 +35,19 @@ pub struct PermissionEntry {
     pub resolution_reason: Option<String>,
     pub first_seq: u64,
     pub last_seq: u64,
+}
+
+impl PermissionEntry {
+    pub(crate) fn mark_resolved(
+        &mut self,
+        decision: EventPermissionDecision,
+        reason: Option<&str>,
+        seq: u64,
+    ) {
+        self.resolved_decision = Some(decision);
+        self.resolution_reason = reason.map(str::to_owned);
+        self.last_seq = seq;
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -46,72 +72,6 @@ pub struct ActivePermissionView {
     pub tool_call_id: Option<String>,
     pub tool_label: Option<String>,
     pub question_prompts: Option<Vec<QuestionPromptView>>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct QuestionPromptView {
-    pub question: String,
-    pub header: String,
-    pub options: Vec<QuestionOptionView>,
-    pub multiple: bool,
-    pub custom: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct QuestionOptionView {
-    pub label: String,
-    pub description: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) enum PermissionModalSelection {
-    #[default]
-    AllowOnce,
-    AllowAlways,
-    Reject,
-}
-
-impl PermissionModalSelection {
-    fn cycle(self, forward: bool, allow_always: bool) -> Self {
-        let options = if allow_always {
-            [Self::AllowOnce, Self::AllowAlways, Self::Reject].as_slice()
-        } else {
-            [Self::AllowOnce, Self::Reject].as_slice()
-        };
-        let current = options
-            .iter()
-            .position(|candidate| *candidate == self)
-            .unwrap_or(0);
-        let next = if forward {
-            (current + 1) % options.len()
-        } else {
-            (current + options.len() - 1) % options.len()
-        };
-        options[next]
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) enum PermissionConfirmSelection {
-    #[default]
-    Confirm,
-    Cancel,
-}
-
-impl PermissionConfirmSelection {
-    fn cycle(self, forward: bool) -> Self {
-        match (self, forward) {
-            (Self::Confirm, true) | (Self::Cancel, false) => Self::Cancel,
-            (Self::Cancel, true) | (Self::Confirm, false) => Self::Confirm,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) enum PermissionModalStage {
-    #[default]
-    Decision,
-    AlwaysConfirm,
 }
 
 impl AppState {
@@ -989,109 +949,5 @@ impl AppState {
             grant_scope,
         });
         self.submitted_permission_id = Some(permission_id);
-    }
-}
-
-fn parse_question_prompts(kind: &str, summary: &str) -> Option<Vec<QuestionPromptView>> {
-    if !kind.eq_ignore_ascii_case("question")
-        && !kind.eq_ignore_ascii_case("ask")
-        && !kind.eq_ignore_ascii_case("ask_user")
-    {
-        return None;
-    }
-
-    let value = serde_json::from_str::<serde_json::Value>(summary).ok()?;
-    let questions = value.get("questions")?.as_array()?;
-    let prompts = questions
-        .iter()
-        .map(|question| {
-            Some(QuestionPromptView {
-                question: question.get("question")?.as_str()?.to_string(),
-                header: question.get("header")?.as_str()?.to_string(),
-                options: question
-                    .get("options")?
-                    .as_array()?
-                    .iter()
-                    .map(|option| {
-                        Some(QuestionOptionView {
-                            label: option.get("label")?.as_str()?.to_string(),
-                            description: option.get("description")?.as_str()?.to_string(),
-                        })
-                    })
-                    .collect::<Option<Vec<_>>>()?,
-                multiple: question
-                    .get("multiple")
-                    .and_then(serde_json::Value::as_bool)
-                    .unwrap_or(false),
-                custom: question
-                    .get("custom")
-                    .and_then(serde_json::Value::as_bool)
-                    .unwrap_or(true),
-            })
-        })
-        .collect::<Option<Vec<_>>>()?;
-
-    Some(prompts)
-}
-
-fn build_question_answers(
-    prompts: &[QuestionPromptView],
-    current_answers: &[Vec<String>],
-) -> Result<Vec<Vec<String>>, String> {
-    let mut answers = Vec::with_capacity(prompts.len());
-
-    for (index, prompt) in prompts.iter().enumerate() {
-        let values = current_answers.get(index).cloned().unwrap_or_default();
-        if !prompt.multiple && values.len() > 1 {
-            return Err(format!(
-                "Question {} ({}) accepts only one answer.",
-                index + 1,
-                prompt.header
-            ));
-        }
-
-        answers.push(
-            values
-                .into_iter()
-                .map(|value| {
-                    prompt
-                        .options
-                        .iter()
-                        .find(|option| option.label.eq_ignore_ascii_case(&value))
-                        .map(|option| option.label.clone())
-                        .unwrap_or_else(|| value.to_string())
-                })
-                .collect(),
-        );
-    }
-
-    Ok(answers)
-}
-
-fn question_prompt_is_single_select(prompts: &[QuestionPromptView]) -> bool {
-    prompts.len() == 1 && !prompts[0].multiple
-}
-
-fn question_prompt_tab_count(prompts: &[QuestionPromptView]) -> usize {
-    if question_prompt_is_single_select(prompts) {
-        1
-    } else {
-        prompts.len() + 1
-    }
-}
-
-fn question_prompt_confirm_active(tab: usize, prompts: &[QuestionPromptView]) -> bool {
-    !question_prompt_is_single_select(prompts) && tab >= prompts.len()
-}
-
-fn question_prompt_choice_count(prompt: &QuestionPromptView) -> usize {
-    prompt.options.len() + usize::from(prompt.custom)
-}
-
-pub(super) fn permission_display_summary(permission: &ActivePermissionView) -> String {
-    if permission.question_prompts.is_some() {
-        "Question requested".to_string()
-    } else {
-        permission.summary.clone()
     }
 }

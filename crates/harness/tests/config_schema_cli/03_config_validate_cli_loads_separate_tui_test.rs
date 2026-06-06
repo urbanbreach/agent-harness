@@ -199,8 +199,8 @@ fn config_validate_cli_rejects_unsupported_upstream_top_level_keys() {
         );
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(
-            stderr.contains("unsupported active OpenCode config keys:"),
-            "unsupported key {key} stderr did not mention unsupported active OpenCode keys:\n{stderr}"
+            stderr.contains("unsupported active retired config keys:"),
+            "unsupported key {key} stderr did not mention unsupported active retired config keys:\n{stderr}"
         );
         assert!(
             stderr.contains(&format!("`{key}`")),
@@ -209,7 +209,7 @@ fn config_validate_cli_rejects_unsupported_upstream_top_level_keys() {
     }
 }
 #[test]
-fn opencode_config_shape_accepts_subagents_and_safe_inert_keys() {
+fn compatibility_config_shape_accepts_subagents_and_safe_inert_keys() {
     let parsed = load_config_from_str(
         r#"
         {
@@ -241,7 +241,7 @@ fn opencode_config_shape_accepts_subagents_and_safe_inert_keys() {
           tool_output: { max_lines: 20 },
           compaction: { auto: true, tail_turns: 2 },
           experimental: { batch_tool: true },
-          skills: { paths: [".opencode/skill"], urls: ["https://example.test/skills"] },
+          skills: { paths: [".harness/skill"], urls: ["https://example.test/skills"] },
           mcp: {
             local_docs: {
               type: "local",
@@ -274,7 +274,7 @@ fn opencode_config_shape_accepts_subagents_and_safe_inert_keys() {
         }
         "#,
     )
-    .expect("OpenCode-compatible config shape should parse");
+    .expect("compatibility config shape should parse");
 
     assert!(parsed.agents.contains_key("build"));
     assert_eq!(
@@ -296,7 +296,7 @@ fn opencode_config_shape_accepts_subagents_and_safe_inert_keys() {
     assert!(parsed
         .skills
         .project_roots
-        .contains(&Path::new(".opencode/skill").to_path_buf()));
+        .contains(&Path::new(".harness/skill").to_path_buf()));
     assert!(parsed.integrations.mcp.servers.contains_key("local_docs"));
     assert!(!parsed
         .integrations

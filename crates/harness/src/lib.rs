@@ -126,7 +126,7 @@ impl RootInteractiveArgs {
 enum Commands {
     /// Launch the interactive terminal UI.
     Tui(TuiCommand),
-    /// Run one headless prompt, or a deterministic built-in scenario with --scenario.
+    /// Run one headless prompt or deterministic built-in scenario.
     Run(RunCommand),
     /// Check local runtime readiness and configuration health.
     Doctor(DoctorCommand),

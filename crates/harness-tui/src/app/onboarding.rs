@@ -123,7 +123,7 @@ pub fn screen_for(step: OnboardingStep, selected: usize) -> OnboardingScreen {
             "Methods are provider-declared; unavailable methods are not listed.",
             vec![
                 choice("Device code", "Copy a code into the provider page"),
-                choice("Browser", "Open Codex OAuth in a browser"),
+                choice("Browser", "Launch Codex OAuth in a browser"),
                 choice("API key", "Read once from stdin and store securely"),
             ],
             None,

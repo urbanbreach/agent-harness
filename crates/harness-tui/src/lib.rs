@@ -18,7 +18,6 @@ mod runtime;
 #[cfg(test)]
 mod tests;
 mod text;
-mod text_compact;
 pub mod theme;
 mod time_format;
 pub mod ui;

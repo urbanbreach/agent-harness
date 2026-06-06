@@ -1,0 +1,701 @@
+use super::*;
+
+pub(super) fn session_shell_hides_tab_chrome_and_replay_review_is_command_driven() {
+    use ratatui::{backend::TestBackend, Terminal};
+
+    let mut live = app::AppState::new_live(None, false, None);
+    for event in session_view_events() {
+        live.ingest_event(event);
+    }
+
+    let live_backend = TestBackend::new(80, 24);
+    let mut live_terminal = Terminal::new(live_backend).expect("create live terminal");
+    live_terminal
+        .draw(|frame| ui::render_app(frame, &live))
+        .expect("draw live frame");
+
+    let live_debug = format!("{:?}", live_terminal.backend().buffer());
+    assert!(live_debug.contains("┃ "));
+    assert!(!live_debug.contains("Composer ·"));
+    assert!(!live_debug.contains("Tabs"));
+    assert!(!live_debug.contains("Activity ("));
+    assert!(!live_debug.contains("Inspector"));
+
+    live.handle_key(focus_cycle_key());
+    live.handle_key(key(crossterm::event::KeyCode::Char('i')));
+    assert_eq!(live.review_surface(), None);
+    assert!(live.details_drawer_open());
+    live.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    live.palette_filtered = vec!["open_event_log".to_string()];
+    live.palette_selected = 0;
+    live.handle_key(key(crossterm::event::KeyCode::Enter));
+    assert_eq!(live.review_surface(), Some(app::ReviewSurface::Events));
+    assert!(!live.details_drawer_open());
+    live.handle_key(key(crossterm::event::KeyCode::Esc));
+    assert_eq!(live.review_surface(), None);
+    assert!(!live.details_drawer_open());
+
+    let replay = app::AppState::new_replay(
+        std::path::PathBuf::from("/tmp/replay-session"),
+        session_view_events(),
+    );
+    let replay_backend = TestBackend::new(80, 24);
+    let mut replay_terminal = Terminal::new(replay_backend).expect("create replay terminal");
+    replay_terminal
+        .draw(|frame| ui::render_app(frame, &replay))
+        .expect("draw replay frame");
+
+    let replay_debug = format!("{:?}", replay_terminal.backend().buffer());
+    assert!(!replay_debug.contains("Tabs"));
+    assert!(replay_debug.contains("Replay · read-only"));
+
+    let mut replay = replay;
+    replay.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    replay.palette_filtered = vec!["open_event_log".to_string()];
+    replay.palette_selected = 0;
+    replay.handle_key(key(crossterm::event::KeyCode::Enter));
+    let replay_events_debug = render_live_buffer(&replay, 80, 24);
+    assert!(!replay_events_debug.contains("Tabs"));
+    assert!(replay_events_debug.contains("Selected event"));
+}
+
+pub(super) fn live_mode_accepts_input_without_focus_switch() {
+    let mut app = app::AppState::new_live(None, false, None);
+
+    for c in "hello".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(c)));
+    }
+
+    assert_eq!(app.prompt_buffer, "hello");
+    assert_eq!(app.prompt_cursor, 5);
+}
+
+pub(super) fn command_palette_renders_and_filters() {
+    let mut app = app::AppState::new_live(None, false, None);
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+
+    assert!(app.palette_visible);
+    assert_eq!(
+        app.palette_filtered,
+        vec![
+            "new_session".to_string(),
+            "resume_session".to_string(),
+            "replay_session".to_string(),
+            "switch_model".to_string(),
+            "agent_cycle".to_string(),
+            "agent_cycle_reverse".to_string(),
+            "cycle_variant".to_string(),
+            "toggles".to_string(),
+            "auth".to_string(),
+            "open_event_log".to_string(),
+            "toggle_terminal_panel".to_string(),
+            "toggle_follow".to_string(),
+            "hide_thinking".to_string(),
+            "show_timestamps".to_string(),
+            "hide_tool_details".to_string(),
+            "show_generic_tool_output".to_string(),
+            "stack_transcript_diffs".to_string(),
+            "help".to_string(),
+            "quit".to_string(),
+        ]
+    );
+
+    let open_debug = render_live_screen(&app, 120, 36);
+    assert!(open_debug.contains("Commands"));
+    assert!(open_debug.contains("New session"));
+
+    app.handle_key(key(crossterm::event::KeyCode::Char('n')));
+
+    assert_eq!(app.palette_input, "n");
+    assert_eq!(app.palette_cursor, 1);
+    assert_eq!(
+        app.palette_filtered,
+        vec!["new_session".to_string(), "agent_cycle".to_string()]
+    );
+
+    let filtered_debug = render_live_screen(&app, 120, 36);
+    assert!(filtered_debug.contains("Commands"));
+    assert!(filtered_debug.contains("Start a fresh live session"));
+    assert!(!filtered_debug.contains("Review diff artifact"));
+}
+
+pub(super) fn command_palette_exposes_model_switcher_when_models_are_configured() {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.set_launch_metadata(
+        app::LaunchMetadata::from_model_ref("build", "default:gpt-5.4-mini").with_available_models(
+            vec![app::ModelOption::from_model_ref(
+                "build",
+                "default:gpt-5.4-mini",
+            )],
+        ),
+    );
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+
+    assert!(app.palette_visible);
+    assert!(app
+        .palette_filtered
+        .iter()
+        .any(|command| command == "switch_model"));
+}
+
+pub(super) fn command_palette_dims_background_instead_of_repainting_it() {
+    let width = 120;
+    let height = 36;
+    let base = app::AppState::new_startup(Vec::new(), None);
+    let base_buffer = render_live_cells(&base, width, height);
+
+    let mut palette = app::AppState::new_startup(Vec::new(), None);
+    palette.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    assert!(palette.palette_visible);
+
+    let overlay =
+        FrameLayoutPlan::for_app(&palette, ratatui::layout::Rect::new(0, 0, width, height))
+            .palette_overlay
+            .expect("palette overlay");
+    let palette_buffer = render_live_cells(&palette, width, height);
+    let (x, y, base_cell, palette_cell) = base_buffer
+        .content
+        .iter()
+        .enumerate()
+        .find_map(|(index, base_cell)| {
+            let x = u16::try_from(index % usize::from(width)).ok()?;
+            let y = u16::try_from(index / usize::from(width)).ok()?;
+            let inside_overlay = x >= overlay.x
+                && x < overlay.x.saturating_add(overlay.width)
+                && y >= overlay.y
+                && y < overlay.y.saturating_add(overlay.height);
+            if inside_overlay || base_cell.symbol().trim().is_empty() {
+                return None;
+            }
+
+            let palette_cell = &palette_buffer[(x, y)];
+            (palette_cell.symbol() == base_cell.symbol())
+                .then(|| (x, y, base_cell.clone(), palette_cell.clone()))
+        })
+        .unwrap_or_else(|| panic!("missing visible startup cell outside the palette overlay"));
+
+    assert_eq!(palette_cell.symbol(), base_cell.symbol());
+    match (base_cell.fg, palette_cell.fg) {
+        (
+            ratatui::style::Color::Rgb(base_red, base_green, base_blue),
+            ratatui::style::Color::Rgb(palette_red, palette_green, palette_blue),
+        ) => {
+            assert_eq!(palette_red, overlay_scrim_channel(base_red));
+            assert_eq!(palette_green, overlay_scrim_channel(base_green));
+            assert_eq!(palette_blue, overlay_scrim_channel(base_blue));
+        }
+        _ => panic!("startup content at ({x}, {y}) should use rgb foreground colors"),
+    }
+    match (base_cell.bg, palette_cell.bg) {
+        (
+            ratatui::style::Color::Rgb(base_red, base_green, base_blue),
+            ratatui::style::Color::Rgb(palette_red, palette_green, palette_blue),
+        ) => {
+            assert_eq!(palette_red, overlay_scrim_channel(base_red));
+            assert_eq!(palette_green, overlay_scrim_channel(base_green));
+            assert_eq!(palette_blue, overlay_scrim_channel(base_blue));
+        }
+        _ => panic!("startup content at ({x}, {y}) should use rgb background colors"),
+    }
+}
+
+fn overlay_scrim_channel(channel: u8) -> u8 {
+    let channel = u16::from(channel);
+    u8::try_from(channel.saturating_mul(105) / 255).unwrap_or_default()
+}
+
+pub(super) fn command_palette_empty_state_renders() {
+    let mut app = app::AppState::new_live(None, false, None);
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    app.handle_key(key(crossterm::event::KeyCode::Char('z')));
+
+    assert!(app.palette_visible);
+    assert!(app.palette_filtered.is_empty());
+
+    let debug = render_live_screen(&app, 100, 24);
+    println!("EMPTY\n{debug}");
+    assert!(debug.contains("Commands"));
+    assert!(debug.contains("No results found"));
+}
+
+pub(super) fn command_palette_filtered_results_preserve_overlay_command_order() {
+    let mut app = app::AppState::new_startup(Vec::new(), None);
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    for ch in "re".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+
+    assert_eq!(
+        app.palette_filtered,
+        vec!["resume_session".to_string(), "replay_session".to_string(),]
+    );
+}
+
+pub(super) fn command_palette_includes_session_history_entry() {
+    let mut app = app::AppState::new_live(None, false, None);
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+
+    assert!(app.palette_visible);
+    assert!(app.palette_filtered.starts_with(&[
+        "new_session".to_string(),
+        "resume_session".to_string(),
+        "replay_session".to_string(),
+    ]));
+
+    let rendered = render_live_lines(&app, 100, 24);
+    assert!(rendered.contains("New session"));
+    assert!(rendered.contains("Continue session"));
+}
+
+pub(super) fn session_history_picker_renders_resumable_and_replay_rows() {
+    let entries = vec![
+        startup_session_entry_with_details(
+            "run_resume",
+            "/tmp/sessions/run_resume",
+            "New session - 2026-03-08T12:34:56.000Z",
+            Some(harness_core::proj::RunStatus::Finished),
+            Some("2026-03-08T12:34:56Z"),
+            "deep",
+            "openai/gpt-5.4-mini",
+            true,
+            None,
+        ),
+        startup_session_entry_with_mode_and_details(
+            "run_prompt_only",
+            "/tmp/sessions/run_prompt_only",
+            "beta-prompt",
+            Some(harness_core::proj::RunStatus::Failed),
+            Some("2026-03-07T03:21:00Z"),
+            "ops",
+            "anthropic/claude-3.7",
+            harness_core::proj::SessionModeSource::Prompt,
+            false,
+            Some("prompt runs are not resumable"),
+        ),
+    ];
+    let mut app = app::AppState::new_startup(entries, None);
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    for ch in "resume".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+    let resume_render = render_live_lines(&app, 120, 30);
+    assert!(resume_render.contains("Continue session"));
+    assert!(resume_render.contains("Search"));
+    assert!(resume_render.contains("New session"));
+    assert!(!resume_render.contains("New session - 2026-03-08T12:34:56.000Z"));
+    assert!(!resume_render.contains("beta-prompt"));
+    assert!(resume_render.contains("continue ready"));
+
+    app.handle_key(key(crossterm::event::KeyCode::Esc));
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    for ch in "replay".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+    let replay_render = render_live_lines(&app, 120, 30);
+    assert!(replay_render.contains("Replay session"));
+    assert!(replay_render.contains("beta-prompt"));
+    assert!(replay_render.contains("delete"));
+    assert!(replay_render.contains("rename"));
+}
+
+pub(super) fn session_history_filter_matches_visible_fields_and_fuzzy_title() {
+    fn open_continue_picker() -> app::AppState {
+        let mut app = app::AppState::new_startup(
+            vec![
+                startup_session_entry_with_mode_and_details(
+                    "RUN-ABC123",
+                    "/tmp/sessions/RUN-ABC123",
+                    "Alpha Runner",
+                    Some(harness_core::proj::RunStatus::Finished),
+                    Some("2026-03-08T12:34:56Z"),
+                    "DeepOps",
+                    "OpenAI/GPT-5.4-Mini",
+                    harness_core::proj::SessionModeSource::InteractiveLive,
+                    false,
+                    Some("run is still active"),
+                ),
+                startup_session_entry_with_details(
+                    "run_other",
+                    "/tmp/sessions/run_other",
+                    "beta-run",
+                    Some(harness_core::proj::RunStatus::Running),
+                    Some("2026-03-08T08:00:00Z"),
+                    "ops",
+                    "anthropic/claude-3.7",
+                    true,
+                    None,
+                ),
+            ],
+            None,
+        );
+
+        app.handle_key(key_with_modifiers(
+            crossterm::event::KeyCode::Char('p'),
+            crossterm::event::KeyModifiers::CONTROL,
+        ));
+        for ch in "resume".chars() {
+            app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+        }
+        app.handle_key(key(crossterm::event::KeyCode::Enter));
+        app
+    }
+
+    let mut by_run_name = open_continue_picker();
+    for ch in "runner".chars() {
+        by_run_name.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    assert_eq!(by_run_name.session_history_filtered, vec![0]);
+
+    let mut by_case_insensitive_title = open_continue_picker();
+    for ch in "ALPHA".chars() {
+        by_case_insensitive_title.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    assert_eq!(by_case_insensitive_title.session_history_filtered, vec![0]);
+
+    let mut by_non_title_metadata = open_continue_picker();
+    for ch in "gpt-5".chars() {
+        by_non_title_metadata.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    assert_eq!(by_non_title_metadata.session_history_filtered, vec![0]);
+
+    let mut by_fuzzy_title = open_continue_picker();
+    for ch in "alrn".chars() {
+        by_fuzzy_title.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    assert_eq!(by_fuzzy_title.session_history_filtered, vec![0]);
+
+    let mut no_match = open_continue_picker();
+    for ch in "missing".chars() {
+        no_match.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    no_match.handle_key(key(crossterm::event::KeyCode::Enter));
+
+    assert!(no_match.session_history_filtered.is_empty());
+    let rendered = render_live_lines(&no_match, 120, 30);
+    assert!(rendered.contains("No results found"));
+}
+
+pub(super) fn continue_picker_filters_to_interactive_sessions() {
+    let mut app = app::AppState::new_startup(
+        vec![
+            startup_session_entry_with_mode_and_details(
+                "run_blocked",
+                "/tmp/sessions/run_blocked",
+                "blocked-interactive",
+                Some(harness_core::proj::RunStatus::Running),
+                Some("2026-03-08T09:00:00Z"),
+                "ops",
+                "openai/gpt-5.4-mini",
+                harness_core::proj::SessionModeSource::InteractiveLive,
+                false,
+                Some("run is still active"),
+            ),
+            startup_session_entry_with_mode_and_details(
+                "run_prompt",
+                "/tmp/sessions/run_prompt",
+                "prompt-only",
+                Some(harness_core::proj::RunStatus::Finished),
+                Some("2026-03-08T08:00:00Z"),
+                "ops",
+                "openai/gpt-5.4-mini",
+                harness_core::proj::SessionModeSource::Prompt,
+                false,
+                Some("prompt runs are not resumable"),
+            ),
+            startup_session_entry_with_mode_and_details(
+                "run_ready_live",
+                "/tmp/sessions/run_ready_live",
+                "ready-live",
+                Some(harness_core::proj::RunStatus::Finished),
+                Some("2026-03-08T07:00:00Z"),
+                "deep",
+                "openai/gpt-5.4-mini",
+                harness_core::proj::SessionModeSource::InteractiveLive,
+                true,
+                None,
+            ),
+            startup_session_entry_with_mode_and_details(
+                "run_scenario",
+                "/tmp/sessions/run_scenario",
+                "scenario-fixture",
+                Some(harness_core::proj::RunStatus::Finished),
+                Some("2026-03-08T06:00:00Z"),
+                "default",
+                "mock/mock-1",
+                harness_core::proj::SessionModeSource::ScenarioFixture,
+                false,
+                Some("scenario fixture runs are excluded from resume"),
+            ),
+            startup_session_entry_with_mode_and_details(
+                "run_replay_only",
+                "/tmp/sessions/run_replay_only",
+                "replay-only",
+                Some(harness_core::proj::RunStatus::Finished),
+                Some("2026-03-08T05:00:00Z"),
+                "default",
+                "openai/gpt-5.4-mini",
+                harness_core::proj::SessionModeSource::ReplayOnly,
+                false,
+                Some("replay-only launches are not resumable"),
+            ),
+            startup_session_entry_with_mode_and_details(
+                "run_ready_mock",
+                "/tmp/sessions/run_ready_mock",
+                "ready-mock",
+                Some(harness_core::proj::RunStatus::Finished),
+                Some("2026-03-08T04:00:00Z"),
+                "mock",
+                "mock/mock-1",
+                harness_core::proj::SessionModeSource::InteractiveMock,
+                true,
+                None,
+            ),
+        ],
+        None,
+    );
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    for ch in "resume".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+
+    assert!(app.session_history_visible);
+    assert_eq!(
+        app.session_history_filtered
+            .iter()
+            .map(|index| app.session_history_entries[*index].catalog.run_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["run_ready_live", "run_ready_mock", "run_blocked"]
+    );
+    assert_eq!(
+        app.session_history_entries[*app
+            .session_history_filtered
+            .last()
+            .expect("blocked interactive entry present")]
+        .catalog
+        .resume_disabled_reason
+        .as_deref(),
+        Some("run is still active")
+    );
+    let rendered = render_live_lines(&app, 120, 30);
+    assert!(rendered.contains("Continue session"));
+    assert!(rendered.contains("run is still active"));
+    assert!(!rendered.contains("prompt-only"));
+    assert!(!rendered.contains("scenario-fixture"));
+    assert!(!rendered.contains("replay-only"));
+}
+
+pub(super) fn replay_picker_keeps_prompt_runs_visible() {
+    let mut app = app::AppState::new_startup(
+        vec![
+            startup_session_entry_with_mode_and_details(
+                "run_ready_live",
+                "/tmp/sessions/run_ready_live",
+                "ready-live",
+                Some(harness_core::proj::RunStatus::Finished),
+                Some("2026-03-08T07:00:00Z"),
+                "deep",
+                "openai/gpt-5.4-mini",
+                harness_core::proj::SessionModeSource::InteractiveLive,
+                true,
+                None,
+            ),
+            startup_session_entry_with_mode_and_details(
+                "run_prompt",
+                "/tmp/sessions/run_prompt",
+                "prompt-only",
+                Some(harness_core::proj::RunStatus::Failed),
+                Some("2026-03-08T06:00:00Z"),
+                "ops",
+                "openai/gpt-5.4-mini",
+                harness_core::proj::SessionModeSource::Prompt,
+                false,
+                Some("prompt runs are not resumable"),
+            ),
+            startup_session_entry_with_mode_and_details(
+                "run_scenario",
+                "/tmp/sessions/run_scenario",
+                "scenario-fixture",
+                Some(harness_core::proj::RunStatus::Finished),
+                Some("2026-03-08T05:00:00Z"),
+                "default",
+                "mock/mock-1",
+                harness_core::proj::SessionModeSource::ScenarioFixture,
+                false,
+                Some("scenario fixture runs are excluded from resume"),
+            ),
+            startup_session_entry_with_mode_and_details(
+                "run_replay_only",
+                "/tmp/sessions/run_replay_only",
+                "replay-only",
+                Some(harness_core::proj::RunStatus::Finished),
+                Some("2026-03-08T04:00:00Z"),
+                "default",
+                "openai/gpt-5.4-mini",
+                harness_core::proj::SessionModeSource::ReplayOnly,
+                false,
+                Some("replay-only launches are not resumable"),
+            ),
+        ],
+        None,
+    );
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    for ch in "replay".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+
+    assert!(app.session_history_visible);
+    assert_eq!(
+        app.session_history_filtered
+            .iter()
+            .map(|index| app.session_history_entries[*index].catalog.run_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["run_ready_live", "run_prompt"]
+    );
+    let rendered = render_live_lines(&app, 120, 30);
+    assert!(rendered.contains("Replay session"));
+    assert!(rendered.contains("prompt-only"));
+    assert!(rendered.contains("replay ready"));
+    assert!(!rendered.contains("scenario-fixture"));
+    assert!(!rendered.contains("replay-only"));
+}
+
+pub(super) fn focus_returns_after_session_history_close() {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.focus = app::Focus::Details;
+    app.prompt_buffer = "keep prompt draft".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.set_session_history_entries(vec![startup_session_entry_with_details(
+        "run_replay",
+        "/tmp/sessions/run_replay",
+        "replayable-run",
+        Some(harness_core::proj::RunStatus::Finished),
+        Some("2026-03-08T12:34:56Z"),
+        "deep",
+        "openai/gpt-5.4-mini",
+        true,
+        None,
+    )]);
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    for ch in "replay".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+
+    assert!(app.session_history_visible);
+    assert_eq!(app.focus, app::Focus::Details);
+    assert_eq!(app.prompt_buffer, "keep prompt draft");
+
+    app.handle_key(key(crossterm::event::KeyCode::Esc));
+
+    assert!(!app.session_history_visible);
+    assert!(!app.palette_visible);
+    assert_eq!(app.focus, app::Focus::Details);
+    assert_eq!(app.prompt_buffer, "keep prompt draft");
+    assert_eq!(app.prompt_cursor, "keep prompt draft".chars().count());
+}
+
+pub(super) fn command_palette_enter_executes_selected_command() {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.active_review_surface = Some(app::ReviewSurface::Help);
+    app.focus = app::Focus::Details;
+    app.prompt_buffer = "preserve me".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    for ch in "run".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+
+    assert_eq!(app.active_tab, app::Tab::Run);
+    assert!(!app.palette_visible);
+    assert_eq!(app.focus, app::Focus::Details);
+    assert_eq!(app.prompt_buffer, "preserve me");
+    assert_eq!(app.prompt_cursor, "preserve me".chars().count());
+}
+
+pub(super) fn palette_escape_preserves_prompt_draft() {
+    let mut app = app::AppState::new_live(None, false, None);
+    for c in "keep this prompt".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(c)));
+    }
+
+    let prompt_before = app.prompt_buffer.clone();
+    let cursor_before = app.prompt_cursor;
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    app.handle_key(key(crossterm::event::KeyCode::Char('d')));
+
+    assert!(app.palette_visible);
+    assert_eq!(app.palette_input, "d");
+
+    app.handle_key(key(crossterm::event::KeyCode::Esc));
+
+    assert!(!app.palette_visible);
+    assert!(app.palette_input.is_empty());
+    assert_eq!(app.palette_cursor, 0);
+    assert!(app.palette_filtered.is_empty());
+    assert_eq!(app.palette_selected, 0);
+    assert_eq!(app.prompt_buffer, prompt_before);
+    assert_eq!(app.prompt_cursor, cursor_before);
+    assert!(app.prompt_history.is_empty());
+    assert_eq!(app.prompt_history_index, None);
+}

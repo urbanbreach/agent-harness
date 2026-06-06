@@ -51,110 +51,166 @@ Task delegation reminder: if the `task` tool is available, use a structured dele
 Instructions from: /workspace/agent-harness/AGENTS.md
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-05-29
-**Commit:** `974b473`
-**Branch:** `dev`
+**Generated:** 2026-06-06
+**Commit:** `3ffaf9a5`
+**Branch:** `thermo-nuclear-refactor`
 
 ## OVERVIEW
-Rust workspace for an event-sourced agent harness: CLI entrypoint, coordinator/runtime core, provider adapters, built-in native tools, Ratatui TUI, and deterministic PTY/live/native verification lanes.
+Rust workspace for an event-sourced agent harness: CLI entrypoint, coordinator/runtime core, provider adapters, native tool surface, Ratatui TUI, runtime prompt assets, and deterministic plus opt-in signoff lanes.
 
 ## STRUCTURE
 ```text
 agent-harness/
-├── crates/harness/           # CLI binary/library: tui, prompt, run, replay, sessions, config, models
-├── crates/harness-core/      # event store, coordinator, permissions, config, projections, hashline edits
-├── crates/harness-providers/ # Provider trait, OpenAI-compatible transport, mock/cassette replay
-├── crates/harness-tools/     # native tool registry: fs/edit/bash/task/web/lsp/mcp/session/team
-├── crates/harness-tui/       # Ratatui startup/live/replay shell and transcript renderer
-├── crates/harness-testkit/   # fakes, workspaces, simulation, PTY/live/native signoff helpers
-├── configs/                  # generated schemas, canonical examples, provider catalogs
-├── docs/                     # architecture, config, testing, tool catalog, skills, PRDs
-├── scripts/                  # lane runner, stress harness, static gates, coverage ratchet
-└── .agent-harness/           # runtime-discovered agent profiles and skills
+├── crates/harness/           # CLI binary/library: auth, config, doctor, models, prompt, run, replay, sessions, TUI handoff
+├── crates/harness-core/      # coordinator, events, permissions, config, projections, lineage, hashline edits
+├── crates/harness-providers/ # provider trait, OpenAI-compatible transport, mock provider, cassettes
+├── crates/harness-tools/     # native tools: fs/edit/bash/task/web/code/lsp/mcp/session/team/control plane
+├── crates/harness-tui/       # Ratatui app state, layout, overlays, transcript renderer, terminal signoff
+├── crates/harness-testkit/   # deterministic fakes, workspaces, simulation, PTY/live/native evidence helpers
+├── configs/                  # generated schemas, starter examples, provider catalogs
+├── docs/                     # public architecture/config/testing/tool/session/release documentation
+├── scripts/                  # lane runner, static gates, perf/coverage/stress helpers
+└── .agent-harness/           # runtime agent profiles, prompt-family fragments, shipped skills, generated sessions
 ```
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |------|----------|-------|
-| CLI behavior | `crates/harness/src/lib.rs`, `crates/harness/src/*.rs` | `main.rs` is a thin shim; in-process CLI tests use `CliIo`/`CliDeps`. |
-| Runtime invariants | `crates/harness-core/AGENTS.md` | Read before changing events, coordinator, permissions, config, replay, lineage. |
-| Provider protocol | `crates/harness-providers/AGENTS.md` | Read before changing `ProviderStreamEvent`, request metadata, cassettes, transports. |
-| Native tools | `crates/harness-tools/AGENTS.md` | Read before changing schemas, path safety, bash, MCP, LSP, task/session/team tools. |
-| TUI shell | `crates/harness-tui/AGENTS.md` | Read before touching transcript layout, app state, overlays, keybindings, snapshots. |
-| E2E signoff tests | `crates/harness-testkit/tests/AGENTS.md` | PTY, live proxy, native visual, artifact provenance, env gates. |
-| Runtime assets | `.agent-harness/AGENTS.md` | Agent profile markdown and skill packages loaded by the runtime. |
-| Public config | `docs/config.md`, `configs/*.json`, `configs/*.jsonc` | Generated schemas are source of truth; examples and README must agree. |
-| Test lanes | `docs/testing.md`, `scripts/test-lanes.sh` | Lane runner writes evidence artifacts; use the narrowest lane that proves the change. |
+| CLI behavior | `crates/harness/AGENTS.md` | `main.rs` stays a thin shim; command tests use `CliIo`/`CliDeps`. |
+| Runtime invariants | `crates/harness-core/AGENTS.md` | Read before changing events, coordinator, permissions, config, replay, lineage, or compaction. |
+| Provider protocol | `crates/harness-providers/AGENTS.md` | Read before changing `ProviderStreamEvent`, request metadata, cassettes, or transport code. |
+| Native tools | `crates/harness-tools/AGENTS.md` | Read before changing tool ids, schemas, path safety, bash, MCP, LSP, task/session/team tools. |
+| TUI shell | `crates/harness-tui/AGENTS.md` | Read before touching app state, layout, transcript rendering, overlays, keybindings, or snapshots. |
+| Test helpers and signoff | `crates/harness-testkit/AGENTS.md`, `crates/harness-testkit/tests/AGENTS.md` | Deterministic fakes, simulation, PTY/live/native evidence, artifact provenance. |
+| Runtime prompt assets | `.agent-harness/AGENTS.md` | Runtime-loaded agent profiles, prompt-family fragments, and skill packages. |
+| Public docs | `docs/AGENTS.md` | Architecture, config, testing, tool catalog, session/replay, release evidence. |
+| Public config and schemas | `configs/AGENTS.md` | Generated schemas, example configs, provider catalogs. |
+| Build/test scripts | `scripts/AGENTS.md` | Lane runner, static gates, coverage/perf/stress scripts. |
 
 ## CODE MAP
 | Area | Role | High-value tests |
 |------|------|------------------|
-| `harness-core::coord` | Single scheduling/event/permission authority | `cargo test -p harness-core --test coord_test` |
-| `harness-core::event` | Event schema v1 and append-only envelope | `cargo test -p harness --test event_docs_reference_test` |
-| `harness-core::config` | Runtime/TUI config loading, public contract, schemas | `cargo test -p harness --test config_schema_cli_test` |
-| `harness-tools` | Built-in native provider tool surface | `cargo test -p harness-tools --test native_tool_parity_matrix_test` |
-| `harness-providers` | Streaming provider boundary and cassette replay | `cargo test -p harness-providers` |
-| `harness-tui` | Presentation, view models, renderer, shell geometry | `cargo test -p harness-tui` |
-| `harness-testkit` | Deterministic fakes, simulation, visual evidence | `cargo test -p harness-testkit --test simulation_validator_test` |
+| `harness-core::coord` | Single scheduling/event/permission/hook/lifecycle authority | `cargo test -p harness-core --test coord_test` |
+| `harness-core::event` | Event schema v1 and append-only envelopes | `cargo test -p harness --test event_docs_reference_test` |
+| `harness-core::config` | Runtime/TUI config loading, validation, public schema shape | `cargo test -p harness --test config_schema_cli_test` |
+| `harness-providers` | Streaming provider boundary, redacted metadata, cassette replay | `cargo test -p harness-providers` |
+| `harness-tools` | Built-in native tool surface and schema parity | `cargo test -p harness-tools --test native_tool_parity_matrix_test` |
+| `harness-tui` | App state, view models, renderer, shell geometry | `cargo test -p harness-tui --test deterministic_render_test` |
+| `harness-testkit` | Fakes, simulation evidence, visual/PTY helpers | `cargo test -p harness-testkit --test simulation_validator_test` |
 
 ## FIRST-PARTY SEARCH SCOPE
-- Include by default: `crates/`, `configs/`, `docs/`, `scripts/`, `.agent-harness/agents/`, `.agent-harness/skills/`, root manifests.
-- Exclude by default: `target/`, `.git/`, `sessions/`, `artifacts/`, `.harness/`, `.omo/`, `.gnhf/`, `.sisyphus/`, `.omx/`, `.codex/`, `inspirations/`.
-- Search `inspirations/` only when explicitly comparing reference implementations.
+- Include by default: `crates/`, `configs/`, `docs/`, `scripts/`, `.agent-harness/agents/`, `.agent-harness/prompt-families/`, `.agent-harness/skills/`, root manifests.
+- Exclude by default: `target/`, `.git/`, `sessions/`, `artifacts/`, `.harness/`, `.gnhf/`, `.sisyphus/`, `.omx/`, `.omo/`, `.codex/`, `inspirations/`, `screenshot folder/`.
+- Search `inspirations/`, `.codex/`, and `.omx/saved-dirty/` only when explicitly comparing reference implementations or recovering saved local state. Their `AGENTS.md` files are external/reference/cache content, not this project guidance.
 
 ## COMMANDS
 ```bash
 scripts/test-lanes.sh fast
 scripts/test-lanes.sh quality-gates
 scripts/test-lanes.sh integration
+scripts/test-lanes.sh all-deterministic
 cargo run -p harness -- --config configs/harness.example.jsonc config validate
-cargo run -p harness -- --config configs/harness.example.jsonc doctor
+cargo run -p harness -- --config configs/harness.example.jsonc doctor --json
 ```
+
 Targeted signoff:
 ```bash
 scripts/test-lanes.sh simulation
 scripts/test-lanes.sh signoff-binary
+scripts/test-lanes.sh signoff-pty
 RUST_TEST_THREADS=1 cargo test -p harness-testkit --test pty_e2e
 ```
 
 ## CONVENTIONS
 - Workspace lints deny `unsafe_code`, `dbg_macro`, and `todo`; clippy runs with `-D warnings`.
 - Cargo workspace commands should be explicit: `--workspace` for all members, `-p <crate>` for scoped checks.
-- `rust-toolchain.toml` pins stable plus `rustfmt` and `clippy`; CI also installs `cargo-nextest` and `cargo-llvm-cov`.
-- Runtime config is `harness.json{,c}`; TUI config is `tui.json{,c}`. Keep them separate.
-- Public permission names: `bash`, `edit`, `question`, `task`, `webfetch`, `websearch`, `codesearch`, `lsp`.
+- `rust-toolchain.toml` pins stable plus `rustfmt` and `clippy`; CI also uses `cargo-nextest` and `cargo-llvm-cov`.
+- Runtime config is `harness.json{,c}`; TUI config is `tui.json{,c}`. Keep the public contracts separate.
+- Canonical permission names: `bash`, `edit`, `question`, `task`, `webfetch`, `websearch`, `codesearch`, `lsp`.
+- Canonical native tool ids include `read`, `list`, `glob`, `grep`, `edit`, `bash`, `task`, `background_output`, `batch`, `question`, `skill`, `webfetch`, `websearch`, `codesearch`, `lsp`.
 - `task` calls require `prompt`, `run_in_background`, and `load_skills`; skills resolve before child spawn.
-- `AGENTS.md` is project guidance; `.agent-harness/agents/*.md` are runtime profile assets. Do not mix those layers.
+- `AGENTS.md` files are project guidance; `.agent-harness/agents/*.md` and `.agent-harness/prompt-families/*.md` are runtime prompt assets. Do not mix those layers.
 
 ## MANDATORY CODING SKILLS
-- For any coding work in this repository, load `karpathy-guidelines` before the first edit. Coding work includes implementation, bug fixes, refactors, tests, build scripts, schemas, and generated-code maintenance.
+- For any coding work in this repository, load `karpathy-guidelines` before the first edit. Coding work includes implementation, bug fixes, refactors, tests, build scripts, schemas, generated-code maintenance, and AGENTS guidance edits.
 - Delegated coding tasks must include the skill in `load_skills`; omit it only for pure read-only exploration, documentation-only lookup, or non-coding QA.
 
 ## UPDATE TOGETHER
 | Change | Also update |
 |--------|-------------|
-| Public config keys | `docs/config.md`, `configs/config.json`, `configs/tui.json`, config schema tests |
-| Event variants or replay semantics | `docs/architecture.md`, event/replay docs tests |
-| Native tool ids/schema/capability | `docs/native-tool-catalog.md`, `native_tool_parity_matrix_test` |
-| Test lane behavior | `docs/testing.md`, `scripts/test-lanes.sh`, owner tests |
-| Simulation invariants | `docs/simulation-matrix.json`, `simulation_validator_test`, secrets scan |
-| Provider model catalog | `configs/provider-catalog.generated.json`, generated catalog docs/tests |
+| Public config keys or validation | `docs/config.md`, `configs/config.json`, `configs/tui.json`, example configs, config schema tests |
+| Event variants or replay semantics | `docs/architecture.md`, `docs/sessions-and-replay.md`, event/replay docs tests |
+| Native tool ids/schema/capability | `docs/native-tool-catalog.md`, `native_tool_parity_matrix_test`, permission docs as needed |
+| Test lane behavior or evidence shape | `docs/testing.md`, `scripts/test-lanes.sh`, owner tests |
+| Simulation invariants | `docs/simulation-matrix.json`, `simulation_validator_test`, simulation evidence, secret scan |
+| Provider model catalog | `configs/provider-catalog.generated.json`, `configs/provider-catalog.reference.jsonc`, generated catalog docs/tests |
+| Runtime prompt assets or shipped skills | `.agent-harness/AGENTS.md`, bootstrap/profile/skill discovery tests, prompt snapshots |
 | Starter config defaults | `configs/harness.example.jsonc`, `configs/tui.example.jsonc`, README quick start |
 
 ## INVARIANTS
-- Events are the source of truth; replay is side-effect free and derives from JSONL in `seq` order.
-- Coordinator is the only event append, task scheduling, permission resolution, hook, and lifecycle authority.
+- Events are the source of truth; replay is side-effect free and derives from JSONL in contiguous `seq` order.
+- Coordinator is the only event append, task scheduling, permission resolution, hook, compaction, and lifecycle authority.
 - Permission checks precede tool execution; worker redelegation bypasses must remain blocked.
 - Hashline edits validate anchors, reject overlaps, apply bottom-up, and write atomically.
-- Provider-context compaction writes checkpoint artifacts/events; it must not rewrite `events.jsonl`.
+- Provider-context compaction writes checkpoint artifacts/events and must not rewrite `events.jsonl`.
 - Session inspection tools read replay-derived data only; they must not execute providers, hooks, MCP, network, or the CLI.
+- Provider metadata persisted to events/artifacts must be redacted; never store raw requests, raw responses, auth headers, cookies, keys, PEM blocks, or hidden reasoning text.
 
 ## ANTI-PATTERNS
 - Do not move runtime invariants into CLI, tools, providers, or TUI crates.
 - Do not make replay execute tools, network calls, hooks, or provider work.
 - Do not broaden compatibility aliases into the canonical public config contract.
 - Do not treat runtime session/artifact directories as source.
-- Do not claim PTY/live/native visual evidence without the matching lane or artifact provenance.
+- Do not claim PTY/live/native visual evidence without the matching lane and artifact provenance.
+
+Instructions from: /workspace/agent-harness/AGENTS.md
+# AGENTS: configs
+
+## OVERVIEW
+Generated schemas, starter runtime/TUI configs, extension manifest schema, and provider catalog fixtures. These files are public contract inputs.
+
+Read root `AGENTS.md` first. Human-facing explanation belongs in `../docs/config.md`; runtime parsing lives in `crates/harness-core/src/config/`.
+
+## WHERE TO LOOK
+| Task | Location | Notes |
+|------|----------|-------|
+| Runtime schema | `config.json` | Generated schema for `harness.json{,c}`. |
+| TUI schema | `tui.json` | Generated schema for `tui.json{,c}`. |
+| Starter runtime config | `harness.example.jsonc` | Canonical quick-start example and doctor/config validation fixture. |
+| Starter TUI config | `tui.example.jsonc` | TUI-only defaults; keep separate from runtime config. |
+| Provider catalogs | `provider-catalog.generated.json`, `provider-catalog.reference.jsonc` | Bundled generated catalog and larger reference fixture. |
+| Extension schema | `extension-manifest.v1.schema.json` | Descriptor-only typed extension manifest schema. |
+
+## CONVENTIONS
+- Treat `config.json`, `tui.json`, and `extension-manifest.v1.schema.json` as generated outputs. Regenerate through the owning Rust code path; do not hand-edit schema drift.
+- Runtime config is `harness.json{,c}`; TUI config is `tui.json{,c}`. Do not merge those surfaces.
+- Examples should use canonical public keys, not compatibility aliases.
+- `harness.example.jsonc` should remain a runnable first-run config with Codex OAuth-backed OpenAI-compatible defaults.
+- `provider-catalog.generated.json` is bundled by the binary; generated updates need deterministic input or an explicit `models generate` run note.
+- `provider-catalog.reference.jsonc` is validation/reference data, not runtime auto-discovery.
+
+## UPDATE TOGETHER
+| Change | Also update |
+|--------|-------------|
+| Runtime config field | `../docs/config.md`, core config parser/schema tests, examples, README |
+| TUI config field | `../docs/config.md`, TUI config parser/tests, `tui.example.jsonc` |
+| Provider catalog default | generated catalog code/tests, `../docs/provider-support.md`, README if first-run behavior changes |
+| Extension manifest schema | `../docs/extension-strategy.md`, `crates/harness-core` extension manifest tests |
+
+## TESTS
+```bash
+cargo run -p harness -- --config configs/harness.example.jsonc config validate
+cargo run -p harness -- --config configs/harness.example.jsonc doctor --json
+cargo test -p harness --test config_schema_cli_test
+cargo test -p harness --test config_docs_reference_test
+cargo test -p harness-core --test extension_manifest_test
+```
+
+## ANTI-PATTERNS
+- Do not broaden compatibility aliases into examples or docs as canonical names.
+- Do not commit schema changes without regenerating and running drift tests.
+- Do not put credentials, tokens, host-specific paths, or local MCP commands into starter configs.
+- Do not claim generated catalog coverage for providers the runtime cannot execute.
 
 Skills provide specialized instructions and workflows for specific tasks.
 Use the `skill` tool to load a skill when a task matches its description.

@@ -1,0 +1,807 @@
+use super::super::*;
+
+#[cfg(test)]
+pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_and_task_metadata()
+{
+    let theme = Theme::default();
+
+    let mut native_read = transcript_section_model_test_tool_call("tc-native-read", "fs.read");
+    native_read.resolved_tool_identity = Some(harness_core::event::ResolvedToolIdentity {
+        invoked_tool_id: Some("fs.read".to_string()),
+        effective_tool_id: Some("fs.read".to_string()),
+        canonical_tool_id: Some("fs.read".to_string()),
+        alias_source_tool_id: None,
+    });
+    native_read.args_summary = r#"{"path":"src/ui.rs","offset":12,"limit":24}"#.to_string();
+    native_read.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    native_read.status = ToolCallDisplayStatus::Succeeded;
+    native_read.output_summary = Some("24 lines read from src/ui.rs".to_string());
+    native_read.truncated_output = native_read.output_summary.clone();
+    native_read.last_mono_ms = 1_250;
+    native_read.last_timestamp = Some("2026-03-22T14:35:44Z".to_string());
+
+    let mut alias_read = transcript_section_model_test_tool_call("tc-alias-read", "read");
+    alias_read.resolved_tool_identity = Some(harness_core::event::ResolvedToolIdentity {
+        invoked_tool_id: Some("read".to_string()),
+        effective_tool_id: Some("fs.read".to_string()),
+        canonical_tool_id: Some("fs.read".to_string()),
+        alias_source_tool_id: Some("read".to_string()),
+    });
+    alias_read.args_summary = native_read.args_summary.clone();
+    alias_read.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    alias_read.status = ToolCallDisplayStatus::Succeeded;
+    alias_read.output_summary = native_read.output_summary.clone();
+    alias_read.truncated_output = native_read.truncated_output.clone();
+    alias_read.last_mono_ms = native_read.last_mono_ms;
+    alias_read.last_timestamp = native_read.last_timestamp.clone();
+
+    let native_read_section = build_transcript_tool_call_section(
+        &native_read,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    let alias_read_section = build_transcript_tool_call_section(
+        &alias_read,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(
+        native_read_section.header.title,
+        alias_read_section.header.title
+    );
+    assert_eq!(
+        native_read_section.header.icon,
+        alias_read_section.header.icon
+    );
+    assert_eq!(
+        native_read_section.header.visual_style,
+        alias_read_section.header.visual_style
+    );
+    assert_eq!(native_read_section.header.subtitle, None);
+    assert_eq!(alias_read_section.header.subtitle, None);
+    assert_eq!(
+        alias_read_section.header.disclosure_state,
+        Some(TranscriptToolCallDisclosureState::Collapsed)
+    );
+    assert!(alias_read_section
+        .detail_blocks
+        .iter()
+        .any(|block| matches!(
+            block,
+            TranscriptToolCallDetailBlock::Message { text, .. }
+                if text.contains("Compat alias · read → fs.read")
+        )));
+
+    let mut task_call = transcript_section_model_test_tool_call("tc-task", "task");
+    task_call.resolved_tool_identity = Some(harness_core::event::ResolvedToolIdentity {
+        invoked_tool_id: Some("task".to_string()),
+        effective_tool_id: Some("task".to_string()),
+        canonical_tool_id: Some("task".to_string()),
+        alias_source_tool_id: None,
+    });
+    task_call.args_summary =
+        r#"{"description":"audit transcript parity","subagent_type":"researcher"}"#.to_string();
+    task_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    task_call.status = ToolCallDisplayStatus::Succeeded;
+    task_call.output_json = Some(serde_json::json!({
+        "description": "audit transcript parity",
+        "profile": "researcher",
+        "mode": "foreground",
+        "status": "completed",
+        "duration_ms": 1600,
+        "result_summary": "Found the inline transcript path.",
+        "child_tool_call_count": 3,
+        "child_session_id": "agent_worker",
+        "child_request_id": "req_child",
+    }));
+    task_call.lineage = Some(crate::app::TaskLineageEntry {
+        parent_tool_call_id: Some("tc-task".to_string()),
+        parent_task_id: None,
+        parent_request_id: Some("req_parent".to_string()),
+        child_session_id: Some("agent_worker".to_string()),
+        child_request_id: Some("req_child".to_string()),
+    });
+    task_call.timing_elapsed_ms = Some(1600);
+    task_call.last_mono_ms = 1_600;
+    task_call.last_timestamp = Some("2026-03-22T14:36:01Z".to_string());
+
+    let task_section = build_transcript_tool_call_section(
+        &task_call,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(task_section.header.disclosure_state, None);
+    assert_eq!(
+        task_section.child_session_id.as_deref(),
+        Some("agent_worker")
+    );
+    assert_eq!(task_section.header.icon, Some("│"));
+    assert_eq!(
+        task_section.header.visual_style,
+        TranscriptToolCallVisualStyle::TaskInline
+    );
+    let task_render =
+        append_tool_call_section_lines(&task_section, &theme, 120, theme.surface.panel);
+    assert!(task_render.interaction_rows.iter().any(|interaction| matches!(
+        interaction.as_ref().map(|row| &row.target),
+        Some(TranscriptMouseTarget::SubagentSession { session_id }) if session_id == "agent_worker"
+    )));
+    assert!(
+        task_render.interaction_rows.iter().all(|interaction| matches!(
+            interaction.as_ref().map(|row| &row.target),
+            Some(TranscriptMouseTarget::SubagentSession { session_id }) if session_id == "agent_worker"
+        )),
+        "task inline rows should navigate to the child session, matching Harness's clickable task card"
+    );
+    assert!(
+        task_render
+            .interaction_rows
+            .iter()
+            .flatten()
+            .all(|row| row.hit_width < 120),
+        "task inline hitboxes should stop at the rendered card text instead of spanning the transcript row"
+    );
+    let task_hit_width = task_render.interaction_rows[0]
+        .as_ref()
+        .expect("task header interaction")
+        .hit_width;
+    let task_hit_start = task_render.interaction_rows[0]
+        .as_ref()
+        .expect("task header interaction")
+        .hit_start;
+    let task_hit_layout = MeasuredTranscriptLayout {
+        sections: vec![MeasuredTranscriptSection {
+            top_row: 0,
+            leading_gap_height: 0,
+            content_height: task_render.lines.len(),
+            surfaces: vec![MeasuredTranscriptSurface {
+                top_offset: 0,
+                height: task_render.lines.len(),
+                width: 120,
+                show_outer_rail: false,
+                rail_color: theme.border.subtle,
+                surface: theme.surface.panel,
+                lines: task_render.lines.clone(),
+                interaction_rows: Some(task_render.interaction_rows.clone()),
+                selection_rows: None,
+                diff_hunk_offsets: Vec::new(),
+            }],
+            lines: task_render.lines.clone(),
+        }],
+        total_height: task_render.lines.len(),
+    };
+    assert!(matches!(
+        transcript_mouse_target_at(
+            &task_hit_layout,
+            Rect::new(0, 0, 120, 10),
+            0,
+            task_hit_start,
+            0,
+        ),
+        Some(TranscriptMouseTarget::SubagentSession { session_id }) if session_id == "agent_worker"
+    ));
+    assert!(matches!(
+        transcript_mouse_target_at(
+            &task_hit_layout,
+            Rect::new(0, 0, 120, 10),
+            0,
+            task_hit_start
+                .saturating_add(task_hit_width)
+                .saturating_sub(1),
+            0,
+        ),
+        Some(TranscriptMouseTarget::SubagentSession { session_id }) if session_id == "agent_worker"
+    ));
+    assert_eq!(
+        transcript_mouse_target_at(
+            &task_hit_layout,
+            Rect::new(0, 0, 120, 10),
+            0,
+            task_hit_start.saturating_sub(1),
+            0,
+        ),
+        None
+    );
+    assert_eq!(
+        transcript_mouse_target_at(
+            &task_hit_layout,
+            Rect::new(0, 0, 120, 10),
+            0,
+            task_hit_start.saturating_add(task_hit_width),
+            0,
+        ),
+        None
+    );
+    let task_lines = task_render.lines;
+    let task_text = transcript_test_line_texts(task_lines).join("\n");
+    assert!(task_text.contains("│ Researcher Task — audit transcript parity"));
+    assert!(task_text.contains("Researcher Task — audit transcript parity"));
+    assert!(task_text.contains("3 toolcalls · 1.6s"));
+    assert!(!task_text.contains("Found the inline transcript path."));
+    assert!(!task_text.contains("Compat alias · task → agent.spawn"));
+    assert!(!task_text.contains("Task audit transcript parity"));
+
+    let expanded_task_section = build_transcript_tool_call_section(
+        &task_call,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        true,
+        false,
+        None,
+    );
+    let expanded_task_render =
+        append_tool_call_section_lines(&expanded_task_section, &theme, 120, theme.surface.panel);
+    let expanded_task_text = transcript_test_line_texts(expanded_task_render.lines).join("\n");
+    assert!(!expanded_task_text.contains("Found the inline transcript path."));
+
+    let mut fetch_call = transcript_section_model_test_tool_call("tc-fetch", "webfetch");
+    fetch_call.resolved_tool_identity = Some(harness_core::event::ResolvedToolIdentity {
+        invoked_tool_id: Some("webfetch".to_string()),
+        effective_tool_id: Some("web.fetch".to_string()),
+        canonical_tool_id: Some("web.fetch".to_string()),
+        alias_source_tool_id: Some("webfetch".to_string()),
+    });
+    fetch_call.args_summary =
+        r#"{"url":"https://example.test/report.pdf","format":"markdown"}"#.to_string();
+    fetch_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    fetch_call.status = ToolCallDisplayStatus::Succeeded;
+    fetch_call.output_summary =
+        Some("report ready\npage count: 2\nformat: pdf\nstored inline artifact".to_string());
+    fetch_call.truncated_output = fetch_call.output_summary.clone();
+    fetch_call.artifact_refs = vec![crate::app::ToolArtifactEntry {
+        path: "artifacts/toolcalls/tc-fetch/web.fetch.pdf".to_string(),
+        digest: Some("digest-fetch-artifact".to_string()),
+    }];
+    fetch_call.timing_elapsed_ms = Some(2400);
+    fetch_call.last_mono_ms = 2_400;
+    fetch_call.last_timestamp = Some("2026-03-22T14:37:12Z".to_string());
+
+    let fetch_section = build_transcript_tool_call_section(
+        &fetch_call,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(fetch_section.header.disclosure_state, None);
+    let mut fetch_lines = Vec::new();
+    {
+        let render =
+            append_tool_call_section_lines(&fetch_section, &theme, 120, theme.surface.panel);
+        fetch_lines.extend(render.lines);
+    }
+    let fetch_text = transcript_test_line_texts(fetch_lines).join("\n");
+    assert!(fetch_text.contains("% WebFetch https://example.test/report.pdf"));
+    assert!(!fetch_text.contains("report ready"));
+    assert!(!fetch_text.contains("stored inline artifact"));
+    assert!(!fetch_text.contains("Click to expand"));
+    assert!(!fetch_text.contains("Attachment ·"));
+    assert!(!fetch_text.contains("web.fetch.pdf"));
+    assert!(fetch_text.contains("Compat alias · webfetch → web.fetch"));
+
+    let mut generic_call = transcript_section_model_test_tool_call("tc-generic", "vendor.magic");
+    generic_call.resolved_tool_identity = Some(harness_core::event::ResolvedToolIdentity {
+        invoked_tool_id: Some("vendor.magic".to_string()),
+        effective_tool_id: Some("vendor.magic".to_string()),
+        canonical_tool_id: None,
+        alias_source_tool_id: None,
+    });
+    generic_call.args_summary =
+        r#"{"path":"notes.md","query":"child parity","limit":3}"#.to_string();
+    generic_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    generic_call.status = ToolCallDisplayStatus::Succeeded;
+    generic_call.timing_elapsed_ms = Some(800);
+    let generic_section = build_transcript_tool_call_section(
+        &generic_call,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(
+        generic_section.header.title,
+        "vendor.magic child parity [limit=3]"
+    );
+    assert_eq!(generic_section.header.subtitle, None);
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_mcp_tool_transcript_rows_use_effective_identity_without_generic_fallback()
+{
+    let theme = Theme::default();
+
+    let mut direct_call =
+        transcript_section_model_test_tool_call("tc-mcp-direct", "mcp.fixture.echo");
+    direct_call.resolved_tool_identity = Some(harness_core::event::ResolvedToolIdentity {
+        invoked_tool_id: Some("mcp.fixture.echo".to_string()),
+        effective_tool_id: Some("mcp.fixture.echo".to_string()),
+        canonical_tool_id: None,
+        alias_source_tool_id: None,
+    });
+    direct_call.args_summary = r#"{"text":"hello from direct"}"#.to_string();
+    direct_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    direct_call.status = ToolCallDisplayStatus::Succeeded;
+    direct_call.output_summary = Some("direct output summary".to_string());
+    direct_call.output_json = Some(serde_json::json!({
+        "server": {
+            "id": "fixture",
+            "transport": "stdio",
+        },
+        "protocolVersion": "2025-06-18",
+        "serverInfo": {
+            "name": "fixture",
+            "version": "1.0.0",
+        },
+        "payload": {
+            "tool": "echo",
+            "arguments": { "text": "hello from direct" },
+            "result": {
+                "content": [{ "type": "text", "text": "direct output summary" }],
+                "isError": false,
+            },
+        },
+    }));
+    direct_call.timing_elapsed_ms = Some(900);
+
+    let mut wrapper_call =
+        transcript_section_model_test_tool_call("tc-mcp-wrapper", "mcp.fixture.tool.call");
+    wrapper_call.resolved_tool_identity = Some(harness_core::event::ResolvedToolIdentity {
+        invoked_tool_id: Some("mcp.fixture.tool.call".to_string()),
+        effective_tool_id: Some("mcp.fixture.echo".to_string()),
+        canonical_tool_id: None,
+        alias_source_tool_id: None,
+    });
+    wrapper_call.args_summary =
+        r#"{"tool":"echo","arguments":{"text":"hello from wrapper"}}"#.to_string();
+    wrapper_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    wrapper_call.status = ToolCallDisplayStatus::Succeeded;
+    wrapper_call.output_summary = Some("wrapper output summary".to_string());
+    wrapper_call.output_json = Some(serde_json::json!({
+        "server": {
+            "id": "fixture",
+            "transport": "stdio",
+        },
+        "protocolVersion": "2025-06-18",
+        "serverInfo": {
+            "name": "fixture",
+            "version": "1.0.0",
+        },
+        "payload": {
+            "tool": "echo",
+            "arguments": { "text": "hello from wrapper" },
+            "result": {
+                "content": [{ "type": "text", "text": "wrapper output summary" }],
+                "isError": false,
+            },
+        },
+    }));
+    wrapper_call.timing_elapsed_ms = Some(900);
+
+    let direct_section = build_transcript_tool_call_section(
+        &direct_call,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    let wrapper_section = build_transcript_tool_call_section(
+        &wrapper_call,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+
+    assert_eq!(
+        direct_section.header.title,
+        "fixture_echo [text=hello from direct]"
+    );
+    assert_eq!(
+        wrapper_section.header.title,
+        "fixture_echo [text=hello from wrapper]"
+    );
+    assert_eq!(direct_section.header.icon, Some("⚙"));
+    assert_eq!(wrapper_section.header.icon, Some("⚙"));
+    assert_eq!(
+        direct_section.header.visual_style,
+        TranscriptToolCallVisualStyle::Inline
+    );
+    assert_eq!(
+        wrapper_section.header.visual_style,
+        direct_section.header.visual_style
+    );
+    assert_eq!(direct_section.header.disclosure_state, None);
+    assert_eq!(wrapper_section.header.disclosure_state, None);
+
+    let mut direct_lines = Vec::new();
+    {
+        let render =
+            append_tool_call_section_lines(&direct_section, &theme, 120, theme.surface.panel);
+        direct_lines.extend(render.lines);
+    }
+    let mut wrapper_lines = Vec::new();
+    {
+        let render =
+            append_tool_call_section_lines(&wrapper_section, &theme, 120, theme.surface.panel);
+        wrapper_lines.extend(render.lines);
+    }
+
+    let direct_text = transcript_test_line_texts(direct_lines).join("\n");
+    let wrapper_text = transcript_test_line_texts(wrapper_lines).join("\n");
+    assert!(direct_text.contains("fixture_echo"));
+    assert!(direct_text.contains("[text=hello from direct]"));
+    assert!(wrapper_text.contains("fixture_echo"));
+    assert!(wrapper_text.contains("[text=hello from wrapper]"));
+    assert!(!direct_text.contains("direct output summary"));
+    assert!(!wrapper_text.contains("wrapper output summary"));
+    assert!(!wrapper_text.contains("mcp.fixture.tool.call"));
+    assert!(!wrapper_text.contains("Compat alias"));
+
+    let expanded_wrapper = build_transcript_tool_call_section(
+        &wrapper_call,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        true,
+        false,
+        None,
+    );
+    let expanded_text = transcript_test_line_texts({
+        let mut lines = Vec::new();
+        {
+            let render =
+                append_tool_call_section_lines(&expanded_wrapper, &theme, 120, theme.surface.panel);
+            lines.extend(render.lines);
+        }
+        lines
+    })
+    .join("\n");
+    assert!(expanded_text.contains("wrapper output summary"));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_generic_tool_successful_output_prefers_inline_background_rows() {
+    let theme = Theme::default();
+    let mut tool_call = transcript_section_model_test_tool_call("tc-vendor-magic", "vendor.magic");
+    tool_call.args_summary = r#"{"path":"notes.md","query":"child parity","limit":3}"#.to_string();
+    tool_call.status = ToolCallDisplayStatus::Succeeded;
+    tool_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    tool_call.output_summary = Some("line 1\nline 2\nline 3\nline 4".to_string());
+    tool_call.timing_elapsed_ms = Some(250);
+
+    let section = build_transcript_tool_call_section(
+        &tool_call,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(
+        section.header.visual_style,
+        TranscriptToolCallVisualStyle::Inline
+    );
+    assert_eq!(section.header.disclosure_state, None);
+
+    let rendered = transcript_test_line_texts({
+        let mut lines = Vec::new();
+        {
+            let render = append_tool_call_section_lines(&section, &theme, 96, theme.surface.panel);
+            lines.extend(render.lines);
+        }
+        lines
+    });
+
+    assert!(rendered[0].contains("vendor.magic"));
+    assert!(rendered[0].contains("child parity"));
+    assert!(rendered[0].contains("[limit=3]"));
+    assert!(rendered.iter().all(|line| !line.contains("line 1")));
+    assert!(rendered
+        .iter()
+        .all(|line| !line.trim_start().starts_with('┃')));
+
+    let visible = build_transcript_tool_call_section(
+        &tool_call,
+        &AppState::default(),
+        None,
+        true,
+        true,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(
+        visible.header.visual_style,
+        TranscriptToolCallVisualStyle::Block
+    );
+    assert_eq!(
+        visible.header.disclosure_state,
+        Some(TranscriptToolCallDisclosureState::Collapsed)
+    );
+
+    let visible_rendered = transcript_test_line_texts({
+        let mut lines = Vec::new();
+        {
+            let render = append_tool_call_section_lines(&visible, &theme, 96, theme.surface.panel);
+            lines.extend(render.lines);
+        }
+        lines
+    });
+    let visible_text = visible_rendered.join("\n");
+    assert!(visible_text.contains("line 1"));
+    assert!(visible_text.contains("line 3"));
+    assert!(!visible_text.contains("line 4"));
+    assert!(visible_text.contains("Click to expand"));
+    assert!(visible_text.contains('…'));
+
+    let expanded = build_transcript_tool_call_section(
+        &tool_call,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        true,
+        false,
+        None,
+    );
+    let expanded_text = transcript_test_line_texts({
+        let mut lines = Vec::new();
+        {
+            let render = append_tool_call_section_lines(&expanded, &theme, 96, theme.surface.panel);
+            lines.extend(render.lines);
+        }
+        lines
+    })
+    .join("\n");
+    assert!(expanded_text.contains("line 4"));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_lsp_tool_successful_output_stays_hidden_until_generic_output_enabled() {
+    let theme = Theme::default();
+    let mut tool_call = transcript_section_model_test_tool_call("tc-lsp", "code.lsp");
+    tool_call.args_summary =
+        r#"{"operation":"goto_definition","filePath":"src/main.rs","line":12,"character":4}"#
+            .to_string();
+    tool_call.status = ToolCallDisplayStatus::Succeeded;
+    tool_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    tool_call.output_summary = Some("result 1\nresult 2\nresult 3\nresult 4".to_string());
+
+    let hidden = build_transcript_tool_call_section(
+        &tool_call,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(
+        hidden.header.visual_style,
+        TranscriptToolCallVisualStyle::Inline
+    );
+    assert_eq!(hidden.header.disclosure_state, None);
+
+    let hidden_text = transcript_test_line_texts({
+        let mut lines = Vec::new();
+        {
+            let render = append_tool_call_section_lines(&hidden, &theme, 96, theme.surface.panel);
+            lines.extend(render.lines);
+        }
+        lines
+    })
+    .join("\n");
+    assert!(hidden_text.contains("lsp"));
+    assert!(hidden_text.contains("src/main.rs"));
+    assert!(hidden_text.contains("[operation=goto_definition]"));
+    assert!(!hidden_text.contains("result 1"));
+
+    let visible = build_transcript_tool_call_section(
+        &tool_call,
+        &AppState::default(),
+        None,
+        true,
+        true,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(
+        visible.header.visual_style,
+        TranscriptToolCallVisualStyle::Block
+    );
+
+    let visible_text = transcript_test_line_texts({
+        let mut lines = Vec::new();
+        {
+            let render = append_tool_call_section_lines(&visible, &theme, 96, theme.surface.panel);
+            lines.extend(render.lines);
+        }
+        lines
+    })
+    .join("\n");
+    assert!(visible_text.contains("result 1"));
+    assert!(visible_text.contains("Click to expand"));
+    assert!(visible_text.contains('…'));
+    assert!(!visible_text.contains("result 4"));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
+    let app = AppState::new_live(None, false, None);
+    let theme = Theme::default();
+
+    let mut write_call = transcript_section_model_test_tool_call("tc-todo-write", "todo.write");
+    write_call.status = ToolCallDisplayStatus::Succeeded;
+    write_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    write_call.output_summary = Some("todo list updated".to_string());
+    write_call.output_json = Some(serde_json::json!({
+        "todos": [
+            {"content": "Plan work", "status": "completed", "priority": "high"},
+            {"content": "Implement UI", "status": "in_progress", "priority": "high"},
+            {"content": "Verify tests", "status": "pending", "priority": "medium"}
+        ]
+    }));
+
+    let mut read_call = transcript_section_model_test_tool_call("tc-todo-read", "todo.read");
+    read_call.status = ToolCallDisplayStatus::Succeeded;
+    read_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    read_call.output_summary = Some("[]".to_string());
+
+    let mut compat_read_call = transcript_section_model_test_tool_call("tc-todoread", "todoread");
+    compat_read_call.status = ToolCallDisplayStatus::Succeeded;
+    compat_read_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    compat_read_call.output_summary = Some("[]".to_string());
+
+    let write_section =
+        build_tool_call_section(&write_call, &app, false, false, false, false, false, None)
+            .expect("todo write should render in transcript");
+    assert_eq!(
+        write_section.header.visual_style,
+        TranscriptToolCallVisualStyle::Block
+    );
+    assert_eq!(write_section.header.title, "1 of 3 todos completed");
+    assert_eq!(write_section.header.disclosure_state, None);
+
+    let rendered = transcript_test_line_texts({
+        let render =
+            append_tool_call_section_lines(&write_section, &theme, 96, theme.surface.panel);
+        render.lines
+    })
+    .join("\n");
+    assert!(rendered.contains("1 of 3 todos completed"));
+    assert!(rendered.contains("[•] Implement UI"));
+    assert!(rendered.contains("[✓] Plan work"));
+    assert!(rendered.contains("[ ] Verify tests"));
+    let completed = rendered.find("[✓] Plan work").expect("completed todo row");
+    let active = rendered.find("[•] Implement UI").expect("active todo row");
+    assert!(
+        completed < active,
+        "todo rows should preserve tool-provided order\n{rendered}"
+    );
+
+    let mut cancelled_then_pending =
+        transcript_section_model_test_tool_call("tc-todo-cancelled-pending", "todowrite");
+    cancelled_then_pending.status = ToolCallDisplayStatus::Succeeded;
+    cancelled_then_pending.lifecycle_state =
+        Some(harness_core::event::ToolCallLifecycleState::Completed);
+    cancelled_then_pending.output_json = Some(serde_json::json!([
+        {"content": "Skip stale path", "status": "cancelled", "priority": "low"},
+        {"content": "Pick next path", "status": "pending", "priority": "high"}
+    ]));
+    let cancelled_then_pending_section = build_tool_call_section(
+        &cancelled_then_pending,
+        &app,
+        false,
+        false,
+        false,
+        false,
+        false,
+        None,
+    )
+    .expect("compat todo write should render bare-array output");
+    let cancelled_then_pending_rendered = transcript_test_line_texts({
+        let render = append_tool_call_section_lines(
+            &cancelled_then_pending_section,
+            &theme,
+            96,
+            theme.surface.panel,
+        );
+        render.lines
+    })
+    .join("\n");
+    let cancelled = cancelled_then_pending_rendered
+        .find("[✓] Skip stale path")
+        .expect("cancelled todo row");
+    let pending = cancelled_then_pending_rendered
+        .find("[ ] Pick next path")
+        .expect("pending todo row");
+    assert!(
+        cancelled < pending,
+        "todo rows should preserve cancelled/pending order\n{cancelled_then_pending_rendered}"
+    );
+
+    let mut structured_output =
+        transcript_section_model_test_tool_call("tc-todo-structured-output", "todo.write");
+    structured_output.status = ToolCallDisplayStatus::Succeeded;
+    structured_output.lifecycle_state =
+        Some(harness_core::event::ToolCallLifecycleState::Completed);
+    structured_output.output_json = Some(serde_json::json!({
+        "structured_output": {
+            "todos": [
+                {"content": "Render nested todos", "status": "pending", "priority": "medium"}
+            ]
+        }
+    }));
+    let structured_output_section = build_tool_call_section(
+        &structured_output,
+        &app,
+        false,
+        false,
+        false,
+        false,
+        false,
+        None,
+    )
+    .expect("todo write should render structured_output todos");
+    let structured_output_rendered = transcript_test_line_texts({
+        let render = append_tool_call_section_lines(
+            &structured_output_section,
+            &theme,
+            96,
+            theme.surface.panel,
+        );
+        render.lines
+    })
+    .join("\n");
+    assert!(structured_output_rendered.contains("[ ] Render nested todos"));
+
+    assert!(
+        build_tool_call_section(&read_call, &app, true, false, false, false, false, None).is_none(),
+        "todo reads should stay hidden because they do not update visible state"
+    );
+    assert!(build_tool_call_section(
+        &compat_read_call,
+        &app,
+        true,
+        false,
+        false,
+        false,
+        false,
+        None,
+    )
+    .is_none());
+}

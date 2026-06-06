@@ -5,10 +5,24 @@ use ratatui::{
 
 use crate::app::AppState;
 use crate::overlay::OverlayKind;
-use crate::theme::{LifecycleCardTokens, LiveShellLayout, ShellGeometryTarget, Theme};
+use crate::theme::{LiveShellLayout, Theme};
 
+mod overlays;
+mod surfaces;
+
+use overlays::{
+    command_palette_overlay_area, session_operator_overlay, slash_command_overlay_area,
+};
+pub(crate) use overlays::{completion_overlay_content_area, slash_command_overlay_content_area};
 #[cfg(test)]
-use crate::theme::LifecycleSurfaceLayout;
+use overlays::{fork_selector_overlay_height, lifecycle_overlay_area};
+#[cfg(test)]
+pub(crate) use surfaces::lifecycle_card_area;
+pub(crate) use surfaces::{
+    inset_rect, live_empty_state_area, pad_rect, permission_dock_layout,
+    runtime_state_surface_area, runtime_state_surface_width, secondary_surface_layout,
+    split_secondary_surface, startup_shell_area, ControlDockLayout, EdgeInsets,
+};
 
 const MIN_COMPOSER_LINES: u16 = 1;
 const MAX_COMPOSER_LINES: u16 = 6;
@@ -19,28 +33,18 @@ const LIVE_PROMPT_MIN_HEIGHT: u16 = 5;
 const DENSE_LIVE_PROMPT_MIN_HEIGHT: u16 = 4;
 const LIVE_PERMISSION_PROMPT_MIN_HEIGHT: u16 = 11;
 const LIVE_QUESTION_PROMPT_MIN_HEIGHT: u16 = 9;
-const LIVE_EMPTY_STATE_MIN_HEIGHT: u16 = 9;
 const LIVE_DETAILS_MIN_TRANSCRIPT_WIDTH: u16 = 48;
 const TERMINAL_PANEL_MIN_TRANSCRIPT_HEIGHT: u16 = 7;
 const TERMINAL_PANEL_MIN_HEIGHT: u16 = 5;
 const TERMINAL_PANEL_MAX_HEIGHT: u16 = 12;
-const SECONDARY_STACK_MAX_WIDTH: u16 = 72;
-const SECONDARY_STACK_MIN_HEIGHT: u16 = 18;
 pub(crate) const REVIEW_SURFACE_SPLIT_PERCENT: u16 = 34;
 const DENSE_SESSION_MAX_WIDTH: u16 = 60;
 const DENSE_SESSION_MAX_HEIGHT: u16 = 18;
 const COMPACT_SESSION_MAX_WIDTH: u16 = 80;
 const COMPACT_SESSION_MAX_HEIGHT: u16 = 24;
 const DENSE_SESSION_PALETTE_MAX_WIDTH: u16 = 46;
-const COMMAND_PALETTE_WIDTH: u16 = 60;
-const FORK_SELECTOR_WIDTH: u16 = 88;
 const PERSISTENT_SIDEBAR_MIN_WIDTH: u16 = 121;
 const STARTUP_COMPOSER_MAX_WIDTH: u16 = 75;
-const RUNTIME_STATE_SURFACE_HORIZONTAL_INSET: u16 = 6;
-const RUNTIME_STATE_SURFACE_MAX_WIDTH: u16 = 68;
-const RUNTIME_STATE_SURFACE_MIN_WIDTH: u16 = 32;
-const RUNTIME_STATE_SURFACE_MIN_HEIGHT: u16 = 5;
-const SLASH_COMMAND_OVERLAY_GAP_Y: u16 = 0;
 const STARTUP_LOGO_TO_COMPOSER_GAP: u16 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,58 +90,6 @@ pub struct WheelHitAreas {
     pub terminal_panel: Option<Rect>,
     pub overlay: Option<Rect>,
     pub inspector: Option<Rect>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct SecondarySurfaceLayout {
-    pub shell: Rect,
-    pub body: Rect,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ControlDockLayout {
-    pub shell: Rect,
-    pub status: Option<Rect>,
-    pub composer: Rect,
-    pub disclosure: Option<Rect>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct EdgeInsets {
-    pub left: u16,
-    pub right: u16,
-    pub top: u16,
-    pub bottom: u16,
-}
-
-impl EdgeInsets {
-    pub(crate) const ZERO: Self = Self {
-        left: 0,
-        right: 0,
-        top: 0,
-        bottom: 0,
-    };
-
-    pub(crate) const fn new(left: u16, right: u16, top: u16, bottom: u16) -> Self {
-        Self {
-            left,
-            right,
-            top,
-            bottom,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct PermissionDockLayout {
-    pub rail_width: u16,
-    pub tray_height: u16,
-    pub shell_padding: EdgeInsets,
-    pub body_padding: EdgeInsets,
-    pub tray_padding: EdgeInsets,
-    pub header_gap: u16,
-    pub stacked_hint_min_width: u16,
-    pub stacked_hint_min_action_width: u16,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -645,6 +597,19 @@ fn word_wrap_fit_end(chars: &[(char, usize)], start: usize, width: usize) -> usi
     chars.len()
 }
 
+fn wrapped_text_rows(text: &str, width: usize) -> u16 {
+    if width == 0 {
+        return 1;
+    }
+
+    let rows = text
+        .split('\n')
+        .map(|line| line.chars().count().max(1).div_ceil(width))
+        .sum::<usize>()
+        .max(1);
+    u16::try_from(rows).unwrap_or(u16::MAX)
+}
+
 fn permission_prompt_block_height(
     app: &AppState,
     width: u16,
@@ -682,237 +647,6 @@ fn permission_prompt_block_height(
     LIVE_PERMISSION_PROMPT_MIN_HEIGHT
         .saturating_add(draft_rows.saturating_sub(1))
         .clamp(LIVE_PERMISSION_PROMPT_MIN_HEIGHT, 12)
-}
-
-const PERMISSION_DOCK_RAIL_WIDTH: u16 = 1;
-const PERMISSION_DOCK_TRAY_HEIGHT: u16 = 3;
-const QUESTION_PERMISSION_DOCK_TRAY_HEIGHT: u16 = 2;
-const PERMISSION_DOCK_STACKED_HINT_MIN_WIDTH: u16 = 80;
-const PERMISSION_DOCK_STACKED_HINT_MIN_ACTION_WIDTH: u16 = 20;
-
-pub(crate) fn permission_dock_layout(area: Rect, is_question: bool) -> PermissionDockLayout {
-    let tray_height = if is_question {
-        QUESTION_PERMISSION_DOCK_TRAY_HEIGHT.min(area.height)
-    } else if area.height >= PERMISSION_DOCK_TRAY_HEIGHT {
-        PERMISSION_DOCK_TRAY_HEIGHT
-    } else {
-        1
-    };
-
-    if is_question {
-        PermissionDockLayout {
-            rail_width: PERMISSION_DOCK_RAIL_WIDTH,
-            tray_height,
-            shell_padding: EdgeInsets::new(1, 1, 0, 0),
-            body_padding: EdgeInsets::ZERO,
-            tray_padding: EdgeInsets::new(1, 1, 0, 0),
-            header_gap: 0,
-            stacked_hint_min_width: PERMISSION_DOCK_STACKED_HINT_MIN_WIDTH,
-            stacked_hint_min_action_width: PERMISSION_DOCK_STACKED_HINT_MIN_ACTION_WIDTH,
-        }
-    } else {
-        PermissionDockLayout {
-            rail_width: PERMISSION_DOCK_RAIL_WIDTH,
-            tray_height,
-            shell_padding: EdgeInsets::new(1, 3, 1, 1),
-            body_padding: EdgeInsets::new(1, 0, 0, 0),
-            tray_padding: EdgeInsets::new(2, 3, 1, 1),
-            header_gap: 1,
-            stacked_hint_min_width: PERMISSION_DOCK_STACKED_HINT_MIN_WIDTH,
-            stacked_hint_min_action_width: PERMISSION_DOCK_STACKED_HINT_MIN_ACTION_WIDTH,
-        }
-    }
-}
-
-fn wrapped_text_rows(text: &str, width: usize) -> u16 {
-    if width == 0 {
-        return 1;
-    }
-
-    let rows = text
-        .split('\n')
-        .map(|line| line.chars().count().max(1).div_ceil(width))
-        .sum::<usize>()
-        .max(1);
-    u16::try_from(rows).unwrap_or(u16::MAX)
-}
-
-pub(crate) fn inset_rect(area: Rect, horizontal: u16, vertical: u16) -> Rect {
-    let double_horizontal = horizontal.saturating_mul(2);
-    let double_vertical = vertical.saturating_mul(2);
-    Rect {
-        x: area.x.saturating_add(horizontal),
-        y: area.y.saturating_add(vertical),
-        width: area.width.saturating_sub(double_horizontal),
-        height: area.height.saturating_sub(double_vertical),
-    }
-}
-
-pub(crate) fn pad_rect(area: Rect, insets: EdgeInsets) -> Rect {
-    let horizontal = insets.left.saturating_add(insets.right);
-    let vertical = insets.top.saturating_add(insets.bottom);
-    Rect::new(
-        area.x.saturating_add(insets.left.min(area.width)),
-        area.y.saturating_add(insets.top.min(area.height)),
-        area.width.saturating_sub(horizontal),
-        area.height.saturating_sub(vertical),
-    )
-}
-
-pub(crate) fn secondary_surface_layout(area: Rect, theme: &Theme) -> SecondarySurfaceLayout {
-    let shell_tokens = theme.token_families().live_shell;
-    SecondarySurfaceLayout {
-        shell: area,
-        body: inset_rect(
-            area,
-            shell_tokens.spacing.rhythm.surface_margin_x,
-            shell_tokens.spacing.rhythm.surface_margin_y,
-        ),
-    }
-}
-
-pub(crate) fn split_secondary_surface(area: Rect, left_percent: u16, gap: u16) -> [Rect; 2] {
-    if area.width == 0 || area.height == 0 {
-        return [area, Rect::new(area.x, area.y, 0, area.height)];
-    }
-
-    if area.width <= SECONDARY_STACK_MAX_WIDTH && area.height >= SECONDARY_STACK_MIN_HEIGHT {
-        return split_secondary_surface_vertically(area, left_percent, gap);
-    }
-
-    if area.width <= 1 {
-        return [
-            area,
-            Rect::new(area.x.saturating_add(area.width), area.y, 0, area.height),
-        ];
-    }
-
-    let actual_gap = gap.min(area.width.saturating_sub(2));
-    let available_width = area.width.saturating_sub(actual_gap);
-    let left_width = available_width
-        .saturating_mul(left_percent)
-        .saturating_div(100)
-        .clamp(1, available_width.saturating_sub(1));
-    let right_x = area.x.saturating_add(left_width).saturating_add(actual_gap);
-    let right_width = available_width.saturating_sub(left_width);
-
-    [
-        Rect::new(area.x, area.y, left_width, area.height),
-        Rect::new(right_x, area.y, right_width, area.height),
-    ]
-}
-
-fn split_secondary_surface_vertically(area: Rect, top_percent: u16, gap: u16) -> [Rect; 2] {
-    if area.height <= 1 {
-        return [
-            area,
-            Rect::new(area.x, area.y.saturating_add(area.height), area.width, 0),
-        ];
-    }
-
-    let actual_gap = gap.min(area.height.saturating_sub(2));
-    let available_height = area.height.saturating_sub(actual_gap);
-    let top_height = available_height
-        .saturating_mul(top_percent)
-        .saturating_div(100)
-        .clamp(1, available_height.saturating_sub(1));
-    let bottom_y = area.y.saturating_add(top_height).saturating_add(actual_gap);
-    let bottom_height = available_height.saturating_sub(top_height);
-
-    [
-        Rect::new(area.x, area.y, area.width, top_height),
-        Rect::new(area.x, bottom_y, area.width, bottom_height),
-    ]
-}
-
-pub(crate) fn centered_block_area(area: Rect, width: u16, height: u16) -> Rect {
-    let width = width.min(area.width).max(1);
-    let height = height.min(area.height).max(1);
-    let x = area.x.saturating_add(area.width.saturating_sub(width) / 2);
-    let y = area
-        .y
-        .saturating_add(area.height.saturating_sub(height) / 2);
-    Rect::new(x, y, width, height)
-}
-
-pub(crate) fn startup_shell_area(area: Rect, theme: &Theme) -> Rect {
-    let lifecycle = theme.lifecycle_surface_layout(area.width, area.height);
-    stretch_split_startup_card_to_shell(
-        area,
-        lifecycle_card_area(area, theme, lifecycle.startup_card),
-        lifecycle.target,
-    )
-}
-
-fn stretch_split_startup_card_to_shell(
-    area: Rect,
-    card_area: Rect,
-    target: ShellGeometryTarget,
-) -> Rect {
-    if !matches!(target, ShellGeometryTarget::Split) {
-        return card_area;
-    }
-
-    Rect::new(area.x, card_area.y, area.width, card_area.height)
-}
-
-pub(crate) fn lifecycle_card_area(area: Rect, theme: &Theme, card: LifecycleCardTokens) -> Rect {
-    let shell_tokens = theme.token_families().live_shell;
-    let horizontal_margin = shell_tokens
-        .spacing
-        .rhythm
-        .surface_margin_x
-        .saturating_mul(2);
-    let vertical_margin = shell_tokens
-        .spacing
-        .rhythm
-        .surface_margin_y
-        .saturating_mul(2);
-    let width = area
-        .width
-        .saturating_sub(horizontal_margin)
-        .min(card.width)
-        .max(1);
-    let height = area
-        .height
-        .saturating_sub(vertical_margin)
-        .min(card.height)
-        .max(1);
-    let centered = centered_block_area(area, width, height);
-    let available_height = area.height.saturating_sub(height);
-    let downward_bias = available_height.div_ceil(8).min(1);
-    Rect::new(
-        centered.x,
-        centered.y.saturating_add(downward_bias),
-        centered.width,
-        centered.height,
-    )
-}
-
-pub(crate) fn live_empty_state_area(area: Rect, theme: &Theme) -> Rect {
-    let lifecycle = theme.lifecycle_surface_layout(area.width, area.height);
-    let shell_tokens = theme.token_families().live_shell;
-    let horizontal_margin = shell_tokens
-        .spacing
-        .rhythm
-        .surface_margin_x
-        .saturating_mul(2);
-    let max_width = area.width.saturating_sub(horizontal_margin).max(1);
-    let width = max_width
-        .min(
-            lifecycle
-                .post_run_card
-                .width
-                .max(shell_tokens.copy.empty_state.max_width.saturating_add(8)),
-        )
-        .max(1);
-    let height = lifecycle
-        .post_run_card
-        .height
-        .max(LIVE_EMPTY_STATE_MIN_HEIGHT)
-        .min(area.height)
-        .max(1);
-    centered_block_area(area, width, height)
 }
 
 fn live_prompt_block_height(
@@ -1082,284 +816,6 @@ fn centered_live_shell_area(area: Rect, shell: LiveShellLayout) -> Rect {
     };
     let x = area.x.saturating_add(area.width.saturating_sub(width) / 2);
     Rect::new(x, area.y, width, area.height)
-}
-
-pub(crate) fn runtime_state_surface_width(area: Rect) -> Option<u16> {
-    let width = area
-        .width
-        .saturating_sub(RUNTIME_STATE_SURFACE_HORIZONTAL_INSET)
-        .min(RUNTIME_STATE_SURFACE_MAX_WIDTH);
-    (width >= RUNTIME_STATE_SURFACE_MIN_WIDTH).then_some(width)
-}
-
-pub(crate) fn runtime_state_surface_area(area: Rect, width: u16, body_height: u16) -> Option<Rect> {
-    let height = area
-        .height
-        .saturating_sub(4)
-        .min(body_height.saturating_add(3));
-    if height < body_height.saturating_add(3) || height < RUNTIME_STATE_SURFACE_MIN_HEIGHT {
-        return None;
-    }
-
-    Some(Rect::new(
-        area.x
-            .saturating_add((area.width.saturating_sub(width)) / 2),
-        area.y
-            .saturating_add((area.height.saturating_sub(height)) / 2),
-        width,
-        height,
-    ))
-}
-
-fn session_operator_overlay(body: Rect, contract: SessionGeometryContract) -> Option<Rect> {
-    let SessionSidebarMode::Overlay { width } = contract.sidebar_mode else {
-        return None;
-    };
-
-    if body.width < 24 || body.height < 8 {
-        return None;
-    }
-
-    let width = width.min(body.width.saturating_sub(2)).max(1);
-    let height = body.height.max(1);
-    let x = body.x.saturating_add(body.width.saturating_sub(width));
-    Some(Rect::new(x, body.y, width, height))
-}
-
-fn command_palette_overlay_area(
-    area: Rect,
-    theme: &Theme,
-    shell: LiveShellLayout,
-    contract: SessionGeometryContract,
-    app: &AppState,
-) -> Option<Rect> {
-    if app.fork_selector_visible {
-        let popup_width = FORK_SELECTOR_WIDTH.min(area.width.saturating_sub(2));
-        let popup_height = fork_selector_overlay_height(app, area.height);
-        if popup_width == 0 || popup_height == 0 {
-            return None;
-        }
-
-        let popup_x = area
-            .x
-            .saturating_add((area.width.saturating_sub(popup_width)) / 2);
-        let popup_y = area.y.saturating_add(area.height / 4);
-        return Some(Rect::new(popup_x, popup_y, popup_width, popup_height));
-    }
-
-    if !app.session_history_visible && !app.model_switcher_visible {
-        let popup_width = COMMAND_PALETTE_WIDTH.min(area.width.saturating_sub(2));
-        let popup_height = command_palette_overlay_height(app, area.height)
-            .min(area.height.saturating_sub(area.height / 4));
-        if popup_width == 0 || popup_height == 0 {
-            return None;
-        }
-
-        let popup_x = area
-            .x
-            .saturating_add((area.width.saturating_sub(popup_width)) / 2);
-        let popup_y = area.y.saturating_add(area.height / 4);
-        return Some(Rect::new(popup_x, popup_y, popup_width, popup_height));
-    }
-
-    let shell_tokens = theme.token_families().live_shell;
-    let horizontal_margin = shell_tokens.spacing.rhythm.modal_margin.saturating_mul(2);
-    let vertical_margin = shell_tokens.spacing.rhythm.modal_margin.saturating_mul(2);
-    let popup_width = command_palette_overlay_width(shell, app)
-        .min(contract.palette_overlay_max_width.unwrap_or(u16::MAX))
-        .min(area.width.saturating_sub(horizontal_margin));
-    let popup_height = command_palette_overlay_height(app, area.height)
-        .min(area.height.saturating_sub(vertical_margin));
-
-    if popup_width == 0 || popup_height == 0 {
-        return None;
-    }
-
-    let popup_x = area
-        .x
-        .saturating_add((area.width.saturating_sub(popup_width)) / 2);
-    let popup_y = area
-        .y
-        .saturating_add((area.height.saturating_sub(popup_height)) / 2);
-    Some(Rect::new(popup_x, popup_y, popup_width, popup_height))
-}
-
-fn command_palette_overlay_width(shell: LiveShellLayout, app: &AppState) -> u16 {
-    if app.session_history_visible || app.model_switcher_visible {
-        shell.centered_content_width
-    } else {
-        COMMAND_PALETTE_WIDTH
-    }
-}
-
-fn command_palette_overlay_height(app: &AppState, terminal_height: u16) -> u16 {
-    const COMMAND_OVERLAY_ROWS: u16 = 6;
-    const SESSION_HISTORY_OVERLAY_ROWS: u16 = 8;
-    const MODEL_SWITCHER_OVERLAY_ROWS: u16 = 6;
-    const MAX_LIST_ROWS: usize = 7;
-
-    if app.session_history_visible {
-        let max_height_rows = usize::from(terminal_height.saturating_div(2).saturating_sub(6));
-        let history_rows = app
-            .session_history_visual_row_count()
-            .clamp(1, max_height_rows.max(1));
-        let history_rows = u16::try_from(history_rows).unwrap_or(u16::MAX);
-        SESSION_HISTORY_OVERLAY_ROWS.saturating_add(history_rows)
-    } else if app.model_switcher_visible {
-        let model_rows = app
-            .model_switcher_visual_row_count()
-            .clamp(1, MAX_LIST_ROWS + 2);
-        let model_rows = u16::try_from(model_rows).unwrap_or(u16::MAX);
-        MODEL_SWITCHER_OVERLAY_ROWS.saturating_add(model_rows)
-    } else if app.toggles_menu_visible {
-        let max_height_rows = usize::from(terminal_height.saturating_div(2).saturating_sub(6));
-        let toggle_rows = toggles_menu_visible_rows(app)
-            .max(1)
-            .min(max_height_rows.max(1));
-        let toggle_rows = u16::try_from(toggle_rows).unwrap_or(u16::MAX);
-        COMMAND_OVERLAY_ROWS.saturating_add(toggle_rows)
-    } else {
-        let max_height_rows = usize::from(terminal_height.saturating_div(2).saturating_sub(6));
-        let command_rows = command_palette_visible_rows(app)
-            .max(1)
-            .min(max_height_rows.max(1));
-        let command_rows = u16::try_from(command_rows).unwrap_or(u16::MAX);
-        COMMAND_OVERLAY_ROWS.saturating_add(command_rows)
-    }
-}
-
-fn fork_selector_overlay_height(app: &AppState, terminal_height: u16) -> u16 {
-    const DIALOG_SELECT_CHROME_ROWS: u16 = 6;
-
-    let max_rows = usize::from(terminal_height.saturating_div(2).saturating_sub(6)).max(1);
-    let rows = app.fork_selector_view_model().rows.len().clamp(1, max_rows);
-    let rows = u16::try_from(rows).unwrap_or(u16::MAX);
-    DIALOG_SELECT_CHROME_ROWS.saturating_add(rows)
-}
-
-fn slash_command_overlay_area(
-    composer: Rect,
-    theme: &Theme,
-    _contract: SessionGeometryContract,
-    app: &AppState,
-) -> Option<Rect> {
-    if !(app.slash_visible || app.file_mention_visible) || composer.width == 0 || composer.y == 0 {
-        return None;
-    }
-
-    let body_width = composer.width.saturating_sub(1);
-    let input_padding = theme
-        .live_shell
-        .rhythm
-        .composer_padding_x
-        .min(body_width.saturating_sub(1));
-    let input_x = composer.x.saturating_add(1).saturating_add(input_padding);
-    let input_width = body_width.saturating_sub(input_padding.saturating_mul(2));
-    if input_width == 0 {
-        return None;
-    }
-
-    let popup_width = input_width.max(1);
-    let popup_height = slash_command_overlay_height(app)
-        .min(composer.y.saturating_sub(SLASH_COMMAND_OVERLAY_GAP_Y));
-    if popup_height == 0 {
-        return None;
-    }
-
-    let popup_y = composer
-        .y
-        .saturating_sub(SLASH_COMMAND_OVERLAY_GAP_Y)
-        .saturating_sub(popup_height);
-    Some(Rect::new(input_x, popup_y, popup_width, popup_height))
-}
-
-pub(crate) fn slash_command_overlay_content_area(overlay: Rect) -> Rect {
-    completion_overlay_content_area(overlay)
-}
-
-pub(crate) fn completion_overlay_content_area(overlay: Rect) -> Rect {
-    overlay
-}
-
-fn slash_command_overlay_height(app: &AppState) -> u16 {
-    const MAX_ROWS: usize = 10;
-
-    let len = if app.file_mention_visible {
-        app.file_mention_entries.len()
-    } else {
-        app.slash_filtered.len()
-    };
-    let rows = len.clamp(1, MAX_ROWS);
-    u16::try_from(rows).unwrap_or(u16::MAX)
-}
-
-fn command_palette_visible_rows(app: &AppState) -> usize {
-    app.palette_filtered
-        .iter()
-        .fold((0usize, None), |(rows, last_section), command| {
-            let section = crate::Action::palette_command_section(command.as_str());
-            let section_rows = if section.is_some() && section != last_section {
-                if last_section.is_some() {
-                    2
-                } else {
-                    1
-                }
-            } else {
-                0
-            };
-            (rows.saturating_add(section_rows).saturating_add(1), section)
-        })
-        .0
-}
-
-fn toggles_menu_visible_rows(app: &AppState) -> usize {
-    app.toggle_menu_rows()
-        .iter()
-        .fold((0usize, None), |(rows, last_section), toggle| {
-            let section = Some(toggle.section);
-            let section_rows = if section != last_section {
-                if last_section.is_some() {
-                    2
-                } else {
-                    1
-                }
-            } else {
-                0
-            };
-            (rows.saturating_add(section_rows).saturating_add(1), section)
-        })
-        .0
-}
-
-#[cfg(test)]
-fn lifecycle_overlay_area(
-    area: Rect,
-    theme: &Theme,
-    lifecycle: LifecycleSurfaceLayout,
-) -> Option<Rect> {
-    let shell_tokens = theme.token_families().live_shell;
-    let horizontal_margin = shell_tokens.spacing.rhythm.modal_margin.saturating_mul(2);
-    let vertical_margin = shell_tokens.spacing.rhythm.modal_margin.saturating_mul(2);
-    let popup_width = lifecycle
-        .overlay
-        .width
-        .min(area.width.saturating_sub(horizontal_margin));
-    let popup_height = lifecycle
-        .overlay
-        .height
-        .min(area.height.saturating_sub(vertical_margin));
-
-    if popup_width == 0 || popup_height == 0 {
-        return None;
-    }
-
-    let popup_x = area
-        .x
-        .saturating_add((area.width.saturating_sub(popup_width)) / 2);
-    let popup_y = area
-        .y
-        .saturating_add((area.height.saturating_sub(popup_height)) / 2);
-    Some(Rect::new(popup_x, popup_y, popup_width, popup_height))
 }
 
 #[cfg(test)]

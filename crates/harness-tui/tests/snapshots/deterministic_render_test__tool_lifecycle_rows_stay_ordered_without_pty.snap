@@ -1,12 +1,13 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
+assertion_line: 77
 expression: rendered.as_str()
 ---
                                                                                                                                                                                     
   ┃                                                                                                                                         Inspect tool activity                   
   ┃  Inspect tool activity                                                                                                                                                          
   ┃                                                                                                                                         ▼ Subagents                             
-                                                                                                                                            • researcher ✓ audit tool lifecycle p…  
+                                                                                                                                            • ✓ Researcher Task                     
      → Read src/ui.rs [offset=1, limit=24]  ▸                                                                                                                                       
       ↳ Loaded src/ui.rs                                                                                                                    ▼ MCP                                   
       Compat alias · read → fs.read                                                                                                         • No MCP servers configured             
