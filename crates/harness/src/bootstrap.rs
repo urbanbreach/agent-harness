@@ -20,7 +20,10 @@ use harness_providers::openai::{
     OpenAiCompatibleProviderConfig,
 };
 use harness_providers::{Provider, ProviderRouter};
-use harness_tools::{coordinator_registry_with_mcp_and_editing, EditingToolSurfaceConfig};
+use harness_tools::{
+    coordinator_registry_with_mcp_and_editing, discover_skill_catalog_with_config,
+    EditingToolSurfaceConfig, SkillCatalogEntry, SkillCatalogStatus,
+};
 
 use crate::dynamic_prompt::{self, DynamicPromptContext};
 
@@ -53,6 +56,7 @@ pub fn build_interactive_coordinator_config(
         },
     );
     install_task_tool_subagent_descriptions(&mut tool_registry, cfg);
+    install_skill_tool_descriptions(&mut tool_registry, cfg);
     let auto_tool_ids = auto_mcp_tool_ids(&tool_registry);
     coordinator_config.tool_registry = Arc::new(tool_registry);
     coordinator_config.tool_concurrency = cfg.background_task.default_concurrency;
@@ -99,6 +103,68 @@ fn install_task_tool_subagent_descriptions(tool_registry: &mut ToolRegistry, cfg
         );
         tool_registry.set_profile_tool_description("task", parent_profile, description);
     }
+}
+
+fn install_skill_tool_descriptions(tool_registry: &mut ToolRegistry, cfg: &HarnessConfig) {
+    if tool_registry.get("skill").is_none() {
+        return;
+    }
+
+    let workspace_root = harness_core::workspace::WorkspaceEnvironment::current().workspace_root;
+    let available_skills = available_skills_prompt(cfg, &workspace_root);
+    let description = skill_tool_description(&available_skills);
+
+    for (profile_name, profile) in &cfg.agents {
+        if profile.tools.iter().any(|tool| tool == "skill") {
+            tool_registry.set_profile_tool_description("skill", profile_name, description.clone());
+        }
+    }
+}
+
+fn available_skills_prompt(cfg: &HarnessConfig, workspace_root: &std::path::Path) -> String {
+    let Ok(catalog) = discover_skill_catalog_with_config(workspace_root, &cfg.skills) else {
+        return "No skills are currently available.".to_string();
+    };
+    format_available_skills(catalog.entries.iter())
+}
+
+fn format_available_skills<'a>(entries: impl Iterator<Item = &'a SkillCatalogEntry>) -> String {
+    let mut skills = entries
+        .filter(|entry| entry.status == SkillCatalogStatus::Loadable)
+        .collect::<Vec<_>>();
+    skills.sort_by(|left, right| left.name.cmp(&right.name));
+
+    if skills.is_empty() {
+        return "No skills are currently available.".to_string();
+    }
+
+    let mut output = String::from("<available_skills>");
+    for skill in skills {
+        output.push_str("\n  <skill>\n    <name>");
+        output.push_str(&xml_escape(&skill.name));
+        output.push_str("</name>\n    <description>");
+        output.push_str(&xml_escape(&skill.description));
+        output.push_str("</description>\n  </skill>");
+    }
+    output.push_str("\n</available_skills>");
+    output
+}
+
+fn skill_tool_description(available_skills: &str) -> String {
+    [
+        "Load a specialized skill that provides domain-specific instructions and workflows.",
+        "Use this tool when the task at hand matches one of the skills listed in available_skills.",
+        "The `name` argument must be an exact skill name from available_skills.",
+        available_skills,
+    ]
+    .join("\n\n")
+}
+
+fn xml_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 fn task_tool_description_for_profile(
@@ -793,6 +859,23 @@ mod tests {
     }
 
     #[test]
+    fn skill_tool_description_lists_available_skills_for_build() {
+        let config_path = crate::cli_config::shipped_example_config_path();
+        let cfg = load_config_from_file(&config_path).expect("shipped example config should parse");
+        let coordinator_config =
+            build_interactive_coordinator_config(&cfg).expect("coordinator config");
+        let profile = &coordinator_config.agent_profiles["build"];
+        let skill_description = skill_description_for_profile(&coordinator_config, profile);
+
+        assert!(skill_description.contains("<available_skills>"));
+        assert!(skill_description.contains("<name>git-master</name>"));
+        assert!(skill_description.contains("<name>review-work</name>"));
+        assert!(skill_description.contains("<name>rust-best-practices</name>"));
+        assert!(skill_description.contains("The `name` argument must be an exact skill name"));
+        assert!(!skill_description.contains("user_message"));
+    }
+
+    #[test]
     fn task_tool_description_respects_plan_delegation_boundary() {
         let config_path = crate::cli_config::shipped_example_config_path();
         let cfg = load_config_from_file(&config_path).expect("shipped example config should parse");
@@ -858,5 +941,18 @@ mod tests {
             .expect("task tool")
             .description
             .expect("task description")
+    }
+
+    fn skill_description_for_profile(
+        coordinator_config: &CoordinatorConfig,
+        profile: &AgentProfile,
+    ) -> String {
+        build_provider_tool_defs(profile, coordinator_config.tool_registry.as_ref())
+            .expect("tool defs")
+            .into_iter()
+            .find(|tool| tool.tool_id == "skill")
+            .expect("skill tool")
+            .description
+            .expect("skill description")
     }
 }

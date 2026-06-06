@@ -220,7 +220,7 @@ cargo test -p harness-core --test extension_manifest_test
 
 Skills provide specialized instructions and workflows for specific tasks.
 Use the `skill` tool to load a skill when a task matches its description.
-The skill tool lists available project and global skills with their descriptions.
+The `skill` tool description lists available project and global skills with their descriptions. Call `skill` with one exact `name`; wildcards are not skill names.
 
 You are powered by the model named gpt-5.4-mini. The exact model ID is openai-codex/gpt-5.4-mini
 Here is some useful information about the environment you are running in:

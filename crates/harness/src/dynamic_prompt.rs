@@ -300,7 +300,7 @@ fn skills_prompt() -> String {
     [
         "Skills provide specialized instructions and workflows for specific tasks.",
         "Use the `skill` tool to load a skill when a task matches its description.",
-        "The skill tool lists available project and global skills with their descriptions.",
+        "The `skill` tool description lists available project and global skills with their descriptions. Call `skill` with one exact `name`; wildcards are not skill names.",
     ]
     .join("\n")
 }

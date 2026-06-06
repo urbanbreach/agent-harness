@@ -270,9 +270,8 @@ impl<'de> Deserialize<'de> for BatchArgs {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(super) struct SkillArgs {
+    #[schemars(description = "The name of the skill from available_skills")]
     pub(super) name: String,
-    #[serde(default)]
-    pub(super) user_message: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]

@@ -1,6 +1,6 @@
 use super::{
-    build_recursive_tree, AgentOpsExecutor, BackgroundOutputTool, BatchArgs, QuestionArgs,
-    TaskArgs, TaskTool,
+    build_recursive_tree, AgentOpsExecutor, BackgroundOutputTool, BatchArgs, ControlPlaneExecutor,
+    QuestionArgs, SkillArgs, SkillTool, TaskArgs, TaskTool,
 };
 use std::sync::Arc;
 
@@ -87,6 +87,30 @@ fn question_args_accept_allow_freeform_legacy_field() {
     assert_eq!(args.questions.len(), 1);
     assert_eq!(args.questions[0].question, "Choose a mode");
     assert_eq!(args.questions[0].options[1].label, "thorough");
+}
+
+#[test]
+fn skill_args_match_opencode_name_only_schema() {
+    let args: SkillArgs = serde_json::from_value(json!({
+        "name": "git-master"
+    }))
+    .expect("skill args should accept exact skill name");
+
+    assert_eq!(args.name, "git-master");
+
+    let err = serde_json::from_value::<SkillArgs>(json!({
+        "name": "git-master",
+        "user_message": "extra context"
+    }))
+    .expect_err("skill args should reject non-OpenCode user_message field");
+    assert!(err.to_string().contains("unknown field `user_message`"));
+
+    let skill = SkillTool::new(Arc::new(ControlPlaneExecutor::new()));
+    let schema = skill.parameters_json_schema();
+    assert_eq!(schema["required"], json!(["name"]));
+    assert_eq!(schema["additionalProperties"], json!(false));
+    assert!(schema["properties"].get("name").is_some());
+    assert!(schema["properties"].get("user_message").is_none());
 }
 
 #[test]

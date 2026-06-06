@@ -622,9 +622,7 @@ impl Tool for SkillTool {
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: SkillArgs = parse_tool_args(args_json)?;
-        self.executor
-            .load_skill(&ctx, &args.name, args.user_message)
-            .await
+        self.executor.load_skill(&ctx, &args.name).await
     }
 }
 

@@ -62,7 +62,6 @@ impl ControlPlaneExecutor {
         &self,
         ctx: &ToolContext,
         name: &str,
-        user_message: Option<String>,
     ) -> Result<ToolResult, ToolError> {
         let catalog = discover_skill_catalog(ctx.workspace_root.as_path())?;
         let metadata = resolve_loadable_skill_metadata(
@@ -73,14 +72,8 @@ impl ControlPlaneExecutor {
         )
         .await?;
         let skill = TaskSkillContext::from(activate_skill(metadata)?);
-        let mut output = render_task_skill_context(&skill);
-        if let Some(user_message) = user_message {
-            output.push_str(&format!(
-                "\n\n<skill_user_message>{user_message}</skill_user_message>"
-            ));
-        }
         Ok(crate::text_json_tool_result(
-            output,
+            render_task_skill_context(&skill),
             json!({
                 "name": skill.name,
                 "location": skill.location.display().to_string(),
