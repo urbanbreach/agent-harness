@@ -37,11 +37,7 @@ use crate::event::{
     ProviderRequestFinishedMetadata, ProviderRequestStartedMetadata, RunFailedEvent,
     RunFinishedEvent, RunStartedEvent, StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent,
     TaskCompletionMetadata, TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState,
-    TaskScheduledEvent, TaskTerminalScope, TeamBounds, TeamCreatedEvent, TeamDeletedEvent,
-    TeamMemberRole, TeamMemberSelector, TeamMemberSpawnedEvent, TeamMemberSpec, TeamMessage,
-    TeamMessageKind, TeamMessageSentEvent, TeamShutdownApprovedEvent, TeamShutdownRejectedEvent,
-    TeamShutdownRequestedEvent, TeamSpec, TeamTask, TeamTaskCreatedEvent, TeamTaskStatus,
-    TeamTaskUpdatedEvent, ToolCallMetadata, ToolCallStatus, ToolIdentityMetadata,
+    TaskScheduledEvent, TaskTerminalScope, ToolCallMetadata, ToolCallStatus, ToolIdentityMetadata,
     UserMessageSubmittedEvent,
 };
 use crate::perm::{
@@ -49,9 +45,8 @@ use crate::perm::{
     PermissionGrantScope, PermissionGrantSet, PermissionKind, PermissionPolicy, PolicyDecision,
 };
 use crate::proj::{
-    inspect_resume_plan, project_background_request, project_team_state,
-    resolve_background_request_ref, BackgroundRequestProjection, RecordedRuntimeContext,
-    RunMetadata, SessionModeSource, TeamProjection, TeamRunProjection,
+    inspect_resume_plan, project_background_request, resolve_background_request_ref,
+    BackgroundRequestProjection, RecordedRuntimeContext, RunMetadata, SessionModeSource,
 };
 use crate::provider_args::provider_tool_arguments_json;
 use crate::redact::Redactor;
@@ -87,8 +82,6 @@ mod run_lifecycle;
 mod state;
 mod task_category;
 mod task_lifecycle;
-mod team;
-mod team_lifecycle;
 mod tool_execution;
 mod tool_metadata;
 
@@ -197,12 +190,6 @@ const COORDINATOR_AGENT_ID: &str = "coordinator";
 const HASHLINE_APPLY_TOOL_ID: &str = "edit.hashline_apply";
 const BACKGROUND_TASK_NOTIFICATION_SUMMARY_MAX_CHARS: usize = 511;
 const BACKGROUND_TASK_NOTIFICATION_DESCRIPTION_MAX_CHARS: usize = 160;
-const TEAM_MESSAGE_BODY_MAX_BYTES: usize = 32 * 1024;
-const TEAM_TEXT_FIELD_MAX_CHARS: usize = 512;
-const TEAM_TASK_METADATA_MAX_ENTRIES: usize = 32;
-const TEAM_TASK_METADATA_MAX_CHARS: usize = 256;
-const TEAM_REFERENCE_LIMIT: usize = 32;
-const TEAM_MAX_MEMBERS: usize = 8;
 
 fn warn_oneshot_send_failure<T>(result: Result<(), T>, operation: &str) {
     if result.is_err() {
@@ -414,63 +401,6 @@ pub enum Command {
         selector_hint: Option<String>,
         reason: String,
         respond_to: oneshot::Sender<Result<BackgroundRequestProjection, CoordinatorError>>,
-    },
-    CreateTeam {
-        actor: EventActor,
-        spec: TeamSpec,
-        team_run_id: Option<String>,
-        respond_to: oneshot::Sender<Result<TeamRunProjection, CoordinatorError>>,
-    },
-    GetTeamProjection {
-        respond_to: oneshot::Sender<Result<TeamProjection, CoordinatorError>>,
-    },
-    SendTeamMessage {
-        actor: EventActor,
-        team_run_id: String,
-        message: TeamMessage,
-        respond_to: oneshot::Sender<Result<TeamRunProjection, CoordinatorError>>,
-    },
-    CreateTeamTask {
-        actor: EventActor,
-        team_run_id: String,
-        task: TeamTask,
-        respond_to: oneshot::Sender<Result<TeamRunProjection, CoordinatorError>>,
-    },
-    UpdateTeamTask {
-        actor: EventActor,
-        team_run_id: String,
-        task_id: String,
-        status: TeamTaskStatus,
-        owner: Option<String>,
-        metadata: BTreeMap<String, String>,
-        respond_to: oneshot::Sender<Result<TeamRunProjection, CoordinatorError>>,
-    },
-    RequestTeamShutdown {
-        actor: EventActor,
-        team_run_id: String,
-        member_name: String,
-        requester: String,
-        respond_to: oneshot::Sender<Result<TeamRunProjection, CoordinatorError>>,
-    },
-    ApproveTeamShutdown {
-        actor: EventActor,
-        team_run_id: String,
-        member_name: String,
-        approver: String,
-        respond_to: oneshot::Sender<Result<TeamRunProjection, CoordinatorError>>,
-    },
-    RejectTeamShutdown {
-        actor: EventActor,
-        team_run_id: String,
-        member_name: String,
-        rejecter: String,
-        reason: String,
-        respond_to: oneshot::Sender<Result<TeamRunProjection, CoordinatorError>>,
-    },
-    DeleteTeam {
-        actor: EventActor,
-        team_run_id: String,
-        respond_to: oneshot::Sender<Result<TeamRunProjection, CoordinatorError>>,
     },
     JobFinished {
         task_id: String,

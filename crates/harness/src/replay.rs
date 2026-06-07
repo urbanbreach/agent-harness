@@ -8,8 +8,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use clap::Args;
 use harness_core::event::{EventEnvelopeV1, EventV1, RunStartedEvent};
 use harness_core::proj::{
-    project_run_summary, project_session_catalog_entry, project_team_state,
-    ChildSessionTerminalState, RunStatus, SessionCatalogEntry, SessionCatalogMetadata,
+    project_run_summary, project_session_catalog_entry, ChildSessionTerminalState, RunStatus,
+    SessionCatalogEntry, SessionCatalogMetadata,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -119,26 +119,6 @@ pub struct ReplaySummary {
     pub artifacts: Vec<ReplayArtifactSummary>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub child_sessions: Vec<ReplayChildSessionSummary>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub teams: Vec<ReplayTeamSummary>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct ReplayTeamSummary {
-    pub team_run_id: String,
-    pub name: String,
-    pub status: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub lead_profile: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub lead_status: Option<String>,
-    pub member_count: usize,
-    pub running_members: u32,
-    pub pending_members: u32,
-    pub message_count: usize,
-    pub task_count: usize,
-    pub shutdown_request_count: usize,
-    pub member_turns: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -223,7 +203,6 @@ pub fn summarize_session(run_dir: &Path) -> Result<ReplaySummary, String> {
     .map_err(|err| err.to_string())?;
     let run_name = run_started_event(&events).map(|data| data.run_name.clone());
     let (artifacts, child_sessions) = summarize_recovery_story(run_dir, &events, &run_id);
-    let teams = summarize_teams(&events);
 
     Ok(ReplaySummary {
         run_id,
@@ -244,32 +223,7 @@ pub fn summarize_session(run_dir: &Path) -> Result<ReplaySummary, String> {
         last_error: projection.last_error,
         artifacts,
         child_sessions,
-        teams,
     })
-}
-
-fn summarize_teams(events: &[EventEnvelopeV1]) -> Vec<ReplayTeamSummary> {
-    let Ok(projection) = project_team_state(events.iter()) else {
-        return Vec::new();
-    };
-    projection
-        .teams
-        .into_iter()
-        .map(|(team_run_id, team)| ReplayTeamSummary {
-            team_run_id,
-            name: team.name,
-            status: format!("{:?}", team.status),
-            lead_profile: team.lead.as_ref().and_then(|lead| lead.profile.clone()),
-            lead_status: team.lead.as_ref().map(|lead| format!("{:?}", lead.status)),
-            member_count: team.members.len(),
-            running_members: team.bounds_consumption.running_members,
-            pending_members: team.bounds_consumption.pending_members,
-            message_count: team.messages.len(),
-            task_count: team.tasks.len(),
-            shutdown_request_count: team.shutdown_requests.len(),
-            member_turns: team.bounds_consumption.member_turns,
-        })
-        .collect()
 }
 
 pub fn inspect_session_catalog(session_dir: &Path) -> Result<Vec<SessionInspectionEntry>, String> {
@@ -522,7 +476,6 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary, out: &mut dyn std::io
     );
     line!("child_sessions: {}", summary.child_session_count);
     line!("artifacts: {}", summary.artifact_count);
-    line!("teams: {}", summary.teams.len());
     line!("total_events: {}", summary.total_events);
     if let Some(last_error) = &summary.last_error {
         line!("last_error: {}", sanitize_human_text(last_error));
@@ -676,37 +629,6 @@ pub(crate) fn print_human_summary(summary: &ReplaySummary, out: &mut dyn std::io
                 for action in &child.next_actions {
                     line!("      - {}", sanitize_human_text(action));
                 }
-            }
-        }
-    }
-
-    line!("teams: {}", summary.teams.len());
-    if summary.teams.is_empty() {
-        line!("  <none>");
-    } else {
-        for team in &summary.teams {
-            line!(
-                "  - {} ({})",
-                sanitize_human_text(&team.name),
-                sanitize_human_text(&team.team_run_id)
-            );
-            line!(
-                "    status={}, members={} (running={}, pending={}), messages={}, tasks={}, shutdown_requests={}, member_turns={}",
-                sanitize_human_text(&team.status),
-                team.member_count,
-                team.running_members,
-                team.pending_members,
-                team.message_count,
-                team.task_count,
-                team.shutdown_request_count,
-                team.member_turns
-            );
-            if let Some(lead_profile) = team.lead_profile.as_deref() {
-                line!(
-                    "    lead={} ({})",
-                    sanitize_human_text(lead_profile),
-                    sanitize_human_text(team.lead_status.as_deref().unwrap_or("unknown"))
-                );
             }
         }
     }

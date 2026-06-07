@@ -15,7 +15,6 @@ Harness borrows lessons from source-inspiration projects while intentionally not
 | browser/media automation | Non-goal for V1. |
 | OAuth MCP | Post-V1; config-backed MCP is the current safe seam. |
 | remote collaboration bots | Non-goal for V1. |
-| Team Mode | Only primitive event-sourced team surfaces ship; full Team Mode is post-V1. |
 | Ralph/continuation loops | Autonomous continuation loops are not a V1 runtime feature. |
 
 ## Supported migration path

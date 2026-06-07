@@ -329,21 +329,21 @@ fn active_plan_symlink_denial(workspace_root: &Path, active_plan: &str) -> Optio
 }
 
 fn task_agent_rule_selectors(args_json: &Value) -> Vec<PermissionRuleRequest> {
-    let mut team_selectors = Vec::new();
+    let mut nested_selectors = Vec::new();
     if let Some(members) = args_json.get("members").and_then(Value::as_array) {
         for member in members {
-            team_selectors.extend(task_agent_rule_selectors(member));
+            nested_selectors.extend(task_agent_rule_selectors(member));
         }
     }
     if let Some(lead) = args_json.get("lead") {
-        team_selectors.extend(task_agent_rule_selectors(lead));
+        nested_selectors.extend(task_agent_rule_selectors(lead));
     }
-    if !team_selectors.is_empty() {
-        team_selectors.sort_by(|left, right| {
+    if !nested_selectors.is_empty() {
+        nested_selectors.sort_by(|left, right| {
             permission_rule_request_key(left).cmp(permission_rule_request_key(right))
         });
-        team_selectors.dedup();
-        return team_selectors;
+        nested_selectors.dedup();
+        return nested_selectors;
     }
 
     let category = trimmed_arg(args_json, "category");

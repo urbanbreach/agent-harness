@@ -106,41 +106,6 @@ pub(super) fn orchestration_projection_resolves_owner_labels() {
     );
 }
 
-pub(super) fn replay_projection_surfaces_team_orchestration_rows() {
-    let events = vec![envelope(
-        1,
-        None,
-        harness_core::event::EventV1::TeamCreated(harness_core::event::TeamCreatedEvent {
-            team_run_id: "team_replay".to_string(),
-            spec: harness_core::event::TeamSpec {
-                version: 1,
-                name: "Replay Team".to_string(),
-                description: None,
-                lead: None,
-                members: vec![harness_core::event::TeamMemberSpec {
-                    name: "alpha".to_string(),
-                    role: harness_core::event::TeamMemberRole::Member,
-                    selector: harness_core::event::TeamMemberSelector::SubagentType {
-                        subagent_type: "alpha".to_string(),
-                    },
-                    prompt: None,
-                }],
-                bounds: harness_core::event::TeamBounds::default(),
-            },
-        }),
-    )];
-    let app = app::AppState::new_replay(std::path::PathBuf::from("/tmp/replay-team"), events);
-
-    let rows = app.orchestration_visible_rows();
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].task_id, "team:team_replay");
-    assert_eq!(rows[0].state, crate::app::OrchestrationTaskState::Running);
-    assert_eq!(
-        rows[0].result_summary.as_deref(),
-        Some("team Replay Team · 1 member(s)")
-    );
-}
-
 pub(super) fn orchestration_projection_ignores_duplicate_seq_events() {
     let mut app = app::AppState::new_live(None, false, None);
 

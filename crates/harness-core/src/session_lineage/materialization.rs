@@ -527,15 +527,6 @@ fn collect_referenced_artifacts(
             | EventV1::EditApplied(_)
             | EventV1::EditRejected(_)
             | EventV1::PolicyViolationDetected(_)
-            | EventV1::TeamCreated(_)
-            | EventV1::TeamMemberSpawned(_)
-            | EventV1::TeamMessageSent(_)
-            | EventV1::TeamTaskCreated(_)
-            | EventV1::TeamTaskUpdated(_)
-            | EventV1::TeamShutdownRequested(_)
-            | EventV1::TeamShutdownApproved(_)
-            | EventV1::TeamShutdownRejected(_)
-            | EventV1::TeamDeleted(_)
             | EventV1::UiIntentReceived(_) => {}
         }
     }

@@ -12,7 +12,6 @@ mod question_events;
 pub(crate) mod remote_search_env;
 mod repo_root;
 mod single_surface_live;
-mod team;
 mod tool_context;
 mod workspace;
 
@@ -33,7 +32,6 @@ pub(crate) use repo_root::repo_root;
 #[allow(unused_imports)]
 pub(crate) use single_surface_live::{SingleSurfaceShellRunner, SingleSurfaceWebFetchTransport};
 #[allow(unused_imports)]
-pub(crate) use team::team_coordinator;
 #[allow(unused_imports)]
 pub use tool_context::{test_context, test_context_with_tool_state};
 #[allow(unused_imports)]

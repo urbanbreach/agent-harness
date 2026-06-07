@@ -31,7 +31,6 @@ The V1 control plane adds native tools so a model can inspect prior Harness sess
 | `session_list` | Lists sessions from a workspace-safe session root with optional status/profile/resumable/filter/sort/limit fields. |
 | `session_read` | Reads a bounded redacted event/message window by run id or safe path selector. |
 | `session_search` | Searches safe replay-derived text such as user messages, assistant summaries, tool summaries, titles, and metadata. |
-| `session_info` | Reports metadata, lineage, status, event counts, artifact summary, team projection summary, and recovery notes for one session. |
 
 All four tools return structured JSON with `source: "event_replay"`, are redacted by default, cap inline output, spill large output to artifacts, and reject traversal or out-of-session-root selectors. Model tool calls cannot disable redaction unless a future operator-facing policy explicitly adds that ability.
 

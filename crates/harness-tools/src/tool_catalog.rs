@@ -129,15 +129,7 @@ fn mutation_status(tool_id: &str, capability: ToolCapability) -> &'static str {
     }
     if matches!(
         tool_id,
-        "session_list"
-            | "session_read"
-            | "session_search"
-            | "session_info"
-            | "team_list"
-            | "team_status"
-            | "team_task_get"
-            | "team_task_list"
-            | "todoread"
+        "session_list" | "session_read" | "session_search" | "session_info" | "todoread"
     ) {
         return "read_only";
     }
@@ -150,7 +142,7 @@ fn mutation_status(tool_id: &str, capability: ToolCapability) -> &'static str {
 fn replay_behavior(tool_id: &str, capability: ToolCapability) -> &'static str {
     if matches!(
         tool_id,
-        "session_list" | "session_read" | "session_search" | "session_info" | "team_list"
+        "session_list" | "session_read" | "session_search" | "session_info"
     ) {
         return "projection_read_only";
     }
@@ -191,7 +183,6 @@ mod tests {
             "task",
             "background_output",
             "background_cancel",
-            "team_list",
             "session_list",
             "session_read",
             "session_search",

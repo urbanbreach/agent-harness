@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 use crate::event::{EventEnvelopeV1, EventV1, TaskScheduleState, ToolCallStatus};
-use crate::text::non_empty_trimmed;
 
 mod helpers;
 mod model;
@@ -10,12 +9,11 @@ pub use model::*;
 
 use helpers::{
     append_or_extend_assistant_text, append_part_to_message, append_system_part, append_task_part,
-    append_team_part, apply_assistant_message_metadata, artifact_from_written,
-    artifacts_from_tool_metadata, ensure_assistant_message, ensure_strict_seq_order,
-    lineage_projection, permission_part_mut, placeholder_tool_call_part, provider_turn_request_id,
-    push_unique_artifact, push_unique_lineage, tool_call_part_mut,
-    update_tool_permission_resolution, upsert_compaction_checkpoint, AssistantTextKind,
-    PartLocation, RequestLocations,
+    apply_assistant_message_metadata, artifact_from_written, artifacts_from_tool_metadata,
+    ensure_assistant_message, ensure_strict_seq_order, lineage_projection, permission_part_mut,
+    placeholder_tool_call_part, provider_turn_request_id, push_unique_artifact,
+    push_unique_lineage, tool_call_part_mut, update_tool_permission_resolution,
+    upsert_compaction_checkpoint, AssistantTextKind, PartLocation, RequestLocations,
 };
 
 pub fn project_transcript(
@@ -726,161 +724,6 @@ pub fn project_transcript(
                         params: payload.params.clone(),
                         provenance: ProvenanceRange::from_event(event),
                     }),
-                );
-            }
-            EventV1::TeamCreated(payload) => {
-                append_team_part(
-                    &mut projection,
-                    event,
-                    ProjectedTeamPart {
-                        team_run_id: payload.team_run_id.clone(),
-                        event: ProjectedTeamEventKind::Created,
-                        participant: None,
-                        target: None,
-                        task_id: None,
-                        message_id: None,
-                        status: Some("active".to_string()),
-                        summary: Some(payload.spec.name.clone()),
-                        provenance: ProvenanceRange::from_event(event),
-                    },
-                );
-            }
-            EventV1::TeamMemberSpawned(payload) => {
-                append_team_part(
-                    &mut projection,
-                    event,
-                    ProjectedTeamPart {
-                        team_run_id: payload.team_run_id.clone(),
-                        event: ProjectedTeamEventKind::MemberSpawned,
-                        participant: Some(payload.member_name.clone()),
-                        target: Some(payload.agent_id.clone()),
-                        task_id: None,
-                        message_id: None,
-                        status: Some("running".to_string()),
-                        summary: Some(payload.profile.clone()),
-                        provenance: ProvenanceRange::from_event(event),
-                    },
-                );
-            }
-            EventV1::TeamMessageSent(payload) => {
-                append_team_part(
-                    &mut projection,
-                    event,
-                    ProjectedTeamPart {
-                        team_run_id: payload.team_run_id.clone(),
-                        event: ProjectedTeamEventKind::MessageSent,
-                        participant: Some(payload.message.from.clone()),
-                        target: Some(payload.message.to.clone()),
-                        task_id: None,
-                        message_id: Some(payload.message.message_id.clone()),
-                        status: Some(format!("{:?}", payload.message.kind)),
-                        summary: payload.message.summary.clone().or_else(|| {
-                            non_empty_trimmed(&payload.message.body).map(str::to_string)
-                        }),
-                        provenance: ProvenanceRange::from_event(event),
-                    },
-                );
-            }
-            EventV1::TeamTaskCreated(payload) => {
-                append_team_part(
-                    &mut projection,
-                    event,
-                    ProjectedTeamPart {
-                        team_run_id: payload.team_run_id.clone(),
-                        event: ProjectedTeamEventKind::TaskCreated,
-                        participant: payload.task.owner.clone(),
-                        target: None,
-                        task_id: Some(payload.task.task_id.clone()),
-                        message_id: None,
-                        status: Some(payload.task.status.as_str().to_string()),
-                        summary: Some(payload.task.subject.clone()),
-                        provenance: ProvenanceRange::from_event(event),
-                    },
-                );
-            }
-            EventV1::TeamTaskUpdated(payload) => {
-                append_team_part(
-                    &mut projection,
-                    event,
-                    ProjectedTeamPart {
-                        team_run_id: payload.team_run_id.clone(),
-                        event: ProjectedTeamEventKind::TaskUpdated,
-                        participant: payload.owner.clone(),
-                        target: None,
-                        task_id: Some(payload.task_id.clone()),
-                        message_id: None,
-                        status: Some(payload.status.as_str().to_string()),
-                        summary: None,
-                        provenance: ProvenanceRange::from_event(event),
-                    },
-                );
-            }
-            EventV1::TeamShutdownRequested(payload) => {
-                append_team_part(
-                    &mut projection,
-                    event,
-                    ProjectedTeamPart {
-                        team_run_id: payload.team_run_id.clone(),
-                        event: ProjectedTeamEventKind::ShutdownRequested,
-                        participant: Some(payload.requester.clone()),
-                        target: Some(payload.member_name.clone()),
-                        task_id: None,
-                        message_id: None,
-                        status: Some("shutdown_requested".to_string()),
-                        summary: None,
-                        provenance: ProvenanceRange::from_event(event),
-                    },
-                );
-            }
-            EventV1::TeamShutdownApproved(payload) => {
-                append_team_part(
-                    &mut projection,
-                    event,
-                    ProjectedTeamPart {
-                        team_run_id: payload.team_run_id.clone(),
-                        event: ProjectedTeamEventKind::ShutdownApproved,
-                        participant: Some(payload.approver.clone()),
-                        target: Some(payload.member_name.clone()),
-                        task_id: None,
-                        message_id: None,
-                        status: Some("shutdown_approved".to_string()),
-                        summary: None,
-                        provenance: ProvenanceRange::from_event(event),
-                    },
-                );
-            }
-            EventV1::TeamShutdownRejected(payload) => {
-                append_team_part(
-                    &mut projection,
-                    event,
-                    ProjectedTeamPart {
-                        team_run_id: payload.team_run_id.clone(),
-                        event: ProjectedTeamEventKind::ShutdownRejected,
-                        participant: Some(payload.rejecter.clone()),
-                        target: Some(payload.member_name.clone()),
-                        task_id: None,
-                        message_id: None,
-                        status: Some("running".to_string()),
-                        summary: Some(payload.reason.clone()),
-                        provenance: ProvenanceRange::from_event(event),
-                    },
-                );
-            }
-            EventV1::TeamDeleted(payload) => {
-                append_team_part(
-                    &mut projection,
-                    event,
-                    ProjectedTeamPart {
-                        team_run_id: payload.team_run_id.clone(),
-                        event: ProjectedTeamEventKind::Deleted,
-                        participant: None,
-                        target: None,
-                        task_id: None,
-                        message_id: None,
-                        status: Some("deleted".to_string()),
-                        summary: None,
-                        provenance: ProvenanceRange::from_event(event),
-                    },
                 );
             }
             EventV1::StaleDetected(_)

@@ -498,7 +498,6 @@ pub fn permission_kind_for_tool(tool_id: &str) -> Option<PermissionKind> {
         "plan_enter" | "plan_exit" => Some(PermissionKind::Question),
         "task" | "skill" => Some(PermissionKind::Task),
         "background_cancel" => Some(PermissionKind::Task),
-        "team_list" => Some(PermissionKind::Task),
         "todoread" | "todowrite" => Some(PermissionKind::Task),
         "webfetch" => Some(PermissionKind::WebFetch),
         "websearch" => Some(PermissionKind::WebSearch),

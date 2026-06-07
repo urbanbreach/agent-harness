@@ -11,18 +11,10 @@ use crate::perm::PermissionGrant;
 pub const SCHEMA_VERSION: u16 = 1;
 
 mod builder;
-mod team;
 #[cfg(test)]
 mod tests;
 
 pub use builder::{EventBuildError, EventBuilder};
-pub use team::{
-    TeamBounds, TeamCreatedEvent, TeamDeletedEvent, TeamMemberRole, TeamMemberSelector,
-    TeamMemberSpawnedEvent, TeamMemberSpec, TeamMessage, TeamMessageKind, TeamMessageSentEvent,
-    TeamReference, TeamShutdownApprovedEvent, TeamShutdownRejectedEvent,
-    TeamShutdownRequestedEvent, TeamSpec, TeamTask, TeamTaskCreatedEvent, TeamTaskStatus,
-    TeamTaskUpdatedEvent,
-};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EventEnvelopeV1 {
@@ -138,15 +130,6 @@ pub enum EventV1 {
     EditRejected(EditRejectedEvent),
     ArtifactWritten(ArtifactWrittenEvent),
     PolicyViolationDetected(PolicyViolationDetectedEvent),
-    TeamCreated(TeamCreatedEvent),
-    TeamMemberSpawned(TeamMemberSpawnedEvent),
-    TeamMessageSent(TeamMessageSentEvent),
-    TeamTaskCreated(TeamTaskCreatedEvent),
-    TeamTaskUpdated(TeamTaskUpdatedEvent),
-    TeamShutdownRequested(TeamShutdownRequestedEvent),
-    TeamShutdownApproved(TeamShutdownApprovedEvent),
-    TeamShutdownRejected(TeamShutdownRejectedEvent),
-    TeamDeleted(TeamDeletedEvent),
     UiIntentReceived(UiIntentReceivedEvent),
 }
 

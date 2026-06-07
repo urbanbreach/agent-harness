@@ -80,13 +80,6 @@ mod shell_safety;
 mod agent_ops;
 use agent_ops::AgentOpsExecutor;
 
-mod team_ops;
-use team_ops::{
-    TeamCreateTool, TeamDeleteTool, TeamListTool, TeamSendMessageTool, TeamShutdownApproveTool,
-    TeamShutdownRejectTool, TeamShutdownRequestTool, TeamStatusTool, TeamTaskCreateTool,
-    TeamTaskGetTool, TeamTaskListTool, TeamTaskUpdateTool,
-};
-
 mod code_lsp;
 use code_lsp::CodeLspExecutor;
 
@@ -442,18 +435,6 @@ fn coordinator_native_tool_surface(
         boxed_tool(SessionInfoTool),
         boxed_tool(ast_grep_tool),
         boxed_tool(ast_grep_replace_tool),
-        boxed_tool(TeamCreateTool),
-        boxed_tool(TeamListTool),
-        boxed_tool(TeamStatusTool),
-        boxed_tool(TeamSendMessageTool),
-        boxed_tool(TeamTaskCreateTool),
-        boxed_tool(TeamTaskListTool),
-        boxed_tool(TeamTaskGetTool),
-        boxed_tool(TeamTaskUpdateTool),
-        boxed_tool(TeamShutdownRequestTool),
-        boxed_tool(TeamShutdownApproveTool),
-        boxed_tool(TeamShutdownRejectTool),
-        boxed_tool(TeamDeleteTool),
         boxed_tool(PlanEnterTool::new(question_answer_source.clone())),
         boxed_tool(PlanExitTool::new(question_answer_source.clone())),
         boxed_tool(HashlineEditTool),
@@ -666,7 +647,6 @@ mod tests {
             "todoread",
             "todowrite",
             "task",
-            "team_list",
             "webfetch",
             "websearch",
         ] {

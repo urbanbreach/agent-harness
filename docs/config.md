@@ -572,17 +572,8 @@ remains restricted to the read-only `explore` profile by default; `general` and
 user-defined write-capable subagents are rejected before spawn unless a future
 profile deliberately adds parent-permission inheritance and tests for it.
 
-The shipped `build` agent also exposes the coordinator-owned `team_*` tools for
-lead-agent coordination. A team has four stable roles: supervisor/operator,
-lead, write-capable member, and read-only research member. `team_create.lead`
 selects an optional write-capable lead profile; when present, the coordinator
-spawns and projects it separately from members. Team member entries default to
 `role: "member"`; set `role: "research"` only for read-only profiles such as
-`explore`. Research members may appear in team status and complete shutdown
-handshakes, but coordinator validation denies their team message/task writes.
-Team member profiles that need to write shared team messages or tasks must
-include the relevant `team_*` tool ids in their toolset; worker calls are bound
-to the lead/member identity projected from the team event log.
 
 `harness doctor` validates the operator-facing orchestration surface without
 making provider or MCP network calls. It checks provider/model metadata,
@@ -689,7 +680,6 @@ all canonical public permission kinds: `bash`, `edit`, `question`, `task`,
 
 The V1 native tool catalog is documented in
 [`docs/native-tool-catalog.md`](native-tool-catalog.md). New control-plane tools
-map to the existing permission buckets: `background_cancel` and `team_list` use
 `task`; `ast_grep_search` uses `codesearch`; `ast_grep_replace` uses `edit`; `session_list`, `session_read`,
 `session_search`, and `session_info` are read-only replay/session inspectors with
 no additional public permission bucket. Legacy broad `network` remains a

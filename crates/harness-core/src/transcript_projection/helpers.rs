@@ -10,9 +10,9 @@ use super::model::{
     ArtifactProjectionSource, CompactionCheckpointProjection, ProjectedCompactionPart,
     ProjectedMessage, ProjectedMessageRole, ProjectedMessageState, ProjectedPart,
     ProjectedPermissionPart, ProjectedPermissionState, ProjectedProviderMessageMetadata,
-    ProjectedTaskPart, ProjectedTeamPart, ProjectedTextPart, ProjectedToolCallPart,
-    ProjectedToolCallState, ProvenanceRange, SessionLineageProjection, TranscriptArtifactRef,
-    TranscriptProjection, TranscriptProjectionError,
+    ProjectedTaskPart, ProjectedTextPart, ProjectedToolCallPart, ProjectedToolCallState,
+    ProvenanceRange, SessionLineageProjection, TranscriptArtifactRef, TranscriptProjection,
+    TranscriptProjectionError,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -72,14 +72,6 @@ pub(super) fn append_task_part(
     part: ProjectedTaskPart,
 ) {
     append_system_part(projection, event, ProjectedPart::Task(part));
-}
-
-pub(super) fn append_team_part(
-    projection: &mut TranscriptProjection,
-    event: &EventEnvelopeV1,
-    part: ProjectedTeamPart,
-) {
-    append_system_part(projection, event, ProjectedPart::Team(part));
 }
 
 pub(super) fn append_part_to_message(

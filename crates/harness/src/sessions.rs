@@ -686,7 +686,6 @@ mod tests {
                 last_error: None,
                 artifacts: Vec::new(),
                 child_sessions: Vec::new(),
-                teams: Vec::new(),
             },
             support: SessionExportSupport {
                 doctor_json: json!({}),

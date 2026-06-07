@@ -4,8 +4,7 @@ use std::path::Path;
 use harness_core::config::ShellAllowlist;
 use harness_core::event::{
     ActorKind, EventActor, EventEnvelopeV1, EventV1, RunFailedEvent, RunStartedEvent,
-    TaskCompletedEvent, TaskCompletionMetadata, TaskLineageMetadata, TeamBounds, TeamCreatedEvent,
-    TeamMemberRole, TeamMemberSelector, TeamMemberSpec, TeamSpec, SCHEMA_VERSION,
+    TaskCompletedEvent, TaskCompletionMetadata, TaskLineageMetadata, SCHEMA_VERSION,
 };
 use harness_tools::coordinator_registry;
 use serde_json::{json, Value};
@@ -71,31 +70,6 @@ fn run_started(run_id: &str, seq: u64, run_name: &str, workspace: &Path) -> Even
         EventV1::RunStarted(RunStartedEvent {
             run_name: run_name.to_string(),
             workspace_root: workspace.display().to_string(),
-        }),
-    )
-}
-
-fn team_created(run_id: &str, seq: u64, team_run_id: &str) -> EventEnvelopeV1 {
-    envelope(
-        run_id,
-        seq,
-        EventV1::TeamCreated(TeamCreatedEvent {
-            team_run_id: team_run_id.to_string(),
-            spec: TeamSpec {
-                version: 1,
-                name: team_run_id.to_string(),
-                description: None,
-                lead: None,
-                members: vec![TeamMemberSpec {
-                    name: "alpha".to_string(),
-                    role: TeamMemberRole::Member,
-                    selector: TeamMemberSelector::SubagentType {
-                        subagent_type: "general".to_string(),
-                    },
-                    prompt: None,
-                }],
-                bounds: TeamBounds::default(),
-            },
         }),
     )
 }
@@ -209,23 +183,9 @@ async fn session_info_reports_failed_replay_only_child_lineage_and_missing_sessi
 }
 
 #[tokio::test]
-async fn session_info_caps_team_projection_and_spills_large_payloads() {
+async fn session_info_spills_large_payloads() {
     // arrange
     let workspace = setup_workspace_fixture();
-    let mut team_events = vec![run_started(
-        "run_many_teams",
-        1,
-        "many teams",
-        workspace.workspace(),
-    )];
-    for index in 0..30 {
-        team_events.push(team_created(
-            "run_many_teams",
-            index + 2,
-            &format!("team_{index:02}"),
-        ));
-    }
-    write_session_events(workspace.workspace(), "run_many_teams", &team_events);
     write_session_events(
         workspace.workspace(),
         "run_large_info",
@@ -257,12 +217,6 @@ async fn session_info_caps_team_projection_and_spills_large_payloads() {
     );
 
     // act
-    let capped = session_info(
-        workspace.workspace(),
-        "run-session-info-cap",
-        "run_many_teams",
-    )
-    .await;
     let spilled = registry
         .get("session_info")
         .expect("session_info")
@@ -271,15 +225,6 @@ async fn session_info_caps_team_projection_and_spills_large_payloads() {
         .expect("spilled session_info");
 
     // assert
-    assert_eq!(capped.pointer("/team_count"), Some(&json!(30)));
-    assert_eq!(capped.pointer("/team_limit"), Some(&json!(25)));
-    assert_eq!(capped.pointer("/returned_team_count"), Some(&json!(25)));
-    assert_eq!(capped.pointer("/team_truncated_count"), Some(&json!(5)));
-    assert_eq!(capped.pointer("/teams_truncated"), Some(&json!(true)));
-    assert_eq!(
-        capped.get("teams").and_then(Value::as_array).map(Vec::len),
-        Some(25)
-    );
     assert_eq!(spilled.artifacts.len(), 1);
     let spill_json = spilled.structured_json.expect("spilled structured json");
     assert_eq!(spill_json.pointer("/spilled"), Some(&json!(true)));

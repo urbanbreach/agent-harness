@@ -124,7 +124,6 @@ pub enum ProjectedPart {
     Artifact(ProjectedArtifactPart),
     Lifecycle(ProjectedLifecyclePart),
     Task(ProjectedTaskPart),
-    Team(ProjectedTeamPart),
     PolicyViolation(ProjectedPolicyViolationPart),
     UiIntent(ProjectedUiIntentPart),
 }
@@ -279,39 +278,6 @@ pub enum ProjectedTaskState {
     Cancelled,
     Completed,
     LateResult,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProjectedTeamPart {
-    pub team_run_id: String,
-    pub event: ProjectedTeamEventKind,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub participant: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub task_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub message_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub summary: Option<String>,
-    pub provenance: ProvenanceRange,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ProjectedTeamEventKind {
-    Created,
-    MemberSpawned,
-    MessageSent,
-    TaskCreated,
-    TaskUpdated,
-    ShutdownRequested,
-    ShutdownApproved,
-    ShutdownRejected,
-    Deleted,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

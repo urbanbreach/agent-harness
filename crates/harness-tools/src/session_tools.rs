@@ -5,8 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use async_trait::async_trait;
 use harness_core::event::EventEnvelopeV1;
 use harness_core::proj::{
-    project_session_catalog_entry, project_team_state, RunStatus, SessionCatalogEntry,
-    SessionCatalogMetadata,
+    project_session_catalog_entry, RunStatus, SessionCatalogEntry, SessionCatalogMetadata,
 };
 use harness_core::redact::{redact_value, DefaultRedactor};
 use harness_core::tool::{ArtifactRef, Tool, ToolCapability, ToolContext, ToolError, ToolResult};
@@ -40,7 +39,6 @@ const DEFAULT_SEARCH_LIMIT: usize = 50;
 const MAX_SEARCH_LIMIT: usize = 200;
 const DEFAULT_SEARCH_CONTEXT_LIMIT: usize = 80;
 const MAX_SEARCH_CONTEXT_LIMIT: usize = 500;
-const SESSION_INFO_TEAM_LIMIT: usize = 25;
 const MAX_TOOL_INLINE_JSON_CHARS: usize = 24_000;
 
 pub(crate) struct SessionListTool;
@@ -371,7 +369,7 @@ impl Tool for SessionInfoTool {
     }
 
     fn description(&self) -> &str {
-        "Reports replay-derived metadata, lineage, status, event counts, artifacts, teams, and recovery notes for one Harness session without dumping whole logs."
+        "Reports replay-derived metadata, lineage, status, event counts, artifacts, and recovery notes for one Harness session without dumping whole logs."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -387,26 +385,6 @@ impl Tool for SessionInfoTool {
         let session_root = resolve_session_root(&ctx, args.session_root.as_deref())?;
         let entry = resolve_session_entry(&ctx, &session_root, &args.session)?;
         let event_counts = event_counts_by_type(&entry.events);
-        let teams = project_team_state(entry.events.iter())
-            .ok()
-            .map(|projection| projection.teams)
-            .unwrap_or_default();
-        let team_count = teams.len();
-        let returned_teams = teams
-            .values()
-            .take(SESSION_INFO_TEAM_LIMIT)
-            .map(|team| {
-                json!({
-                    "team_run_id": team.team_run_id,
-                    "name": team.name,
-                    "status": team.status,
-                    "member_count": team.members.len(),
-                    "message_count": team.messages.len(),
-                    "task_count": team.tasks.len(),
-                    "bounds_consumption": team.bounds_consumption,
-                })
-            })
-            .collect::<Vec<_>>();
         let artifact_summary = artifact_index_summary(&entry.run_dir)?;
 
         let payload = redact_json(json!({
@@ -430,12 +408,6 @@ impl Tool for SessionInfoTool {
             },
             "event_counts": event_counts,
             "artifact_index_summary": artifact_summary,
-            "team_count": team_count,
-            "team_limit": SESSION_INFO_TEAM_LIMIT,
-            "returned_team_count": returned_teams.len(),
-            "team_truncated_count": team_count.saturating_sub(returned_teams.len()),
-            "teams_truncated": team_count > returned_teams.len(),
-            "teams": returned_teams,
             "recovery": {
                 "is_resumable": entry.catalog.is_resumable,
                 "resume_disabled_reason": entry.catalog.resume_disabled_reason,

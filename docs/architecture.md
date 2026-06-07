@@ -78,8 +78,6 @@ Built-in tool implementations:
 - `session_list` / `session_read` / `session_search` / `session_info` - Replay-derived model-visible session inspection tools
 - `ast_grep_search` - Read-only ast-grep CLI structural search adapter with workspace path safety, hard caps, and artifact spill
 - `ast_grep_replace` - Edit-permission structural rewrite adapter that defaults to dry-run, uses ast-grep JSON rewrite output only, and applies through Harness path checks, atomic writes, and diff artifacts
-- `team_create` / `team_status` / `team_send_message` / `team_task_*` / `team_shutdown_*` / `team_delete` - Event-sourced team coordination workflows
-- `team_list` - Narrow primitive projection-reader for discovering event-sourced team runs without Team Mode expansion
 - `webfetch` / `websearch` / `codesearch` / `lsp` - Network and language-intelligence workflows
 
 Hashline editing is the only normal file-changing route. Agent profiles expose `read`
@@ -88,7 +86,6 @@ compatibility and focused test lanes.
 
 The active registry exposes a single native provider surface. Canonical ids such as
 `read`, `edit`, `bash`, `webfetch`, `websearch`, `codesearch`, `question`, `batch`, `task`,
-`background_output`, `team_*`, and `lsp` are the documented tool surface, while lower-level
 executors remain internal implementation details behind those tool ids.
 
 `harness-tools::tool_catalog` mirrors the active registry as metadata: stable
@@ -240,35 +237,13 @@ Field decisions:
 - `ArtifactWritten` - File stored to session
 - `PolicyViolationDetected` - Security rule triggered
 
-**Team Orchestration**
-- `TeamCreated` - Creates an event-sourced team run from a typed team spec, explicit member roles, optional lead selector, and bounds
-- `TeamMemberSpawned` - Links a team participant name to an ordinary coordinator-spawned child agent session; `member_name = "lead"` records the first-class lead runtime when configured
-- `TeamMessageSent` - Appends a shared team message, announcement, or shutdown notice
-- `TeamTaskCreated` - Adds a shared team checklist task, separate from scheduler `TaskScheduled` work
-- `TeamTaskUpdated` - Mutates shared team task status, owner, and metadata after coordinator validation
-- `TeamShutdownRequested` - Records a member shutdown request
-- `TeamShutdownApproved` - Records approval for a member shutdown request
-- `TeamShutdownRejected` - Records rejection and reason for a member shutdown request
-- `TeamDeleted` - Marks a fully shutdown-approved team run deleted
 
-Team orchestration state is replayed from these events by pure projections. The stable role model is
-operator/supervisor, lead, write-capable member, and read-only research member. The team spec lead is
-resolved and preflighted before `TeamCreated`; when present, it is spawned and projected separately
-from ordinary members. The team member role defaults to `member`; `research` allows read-only
-profiles to participate while coordinator validation denies team mailbox/task mutations for that
 role. Members remain ordinary child agents and their provider/tool work remains represented by the
-existing agent, task, tool, and background-notification events. The shared team task list is a
-coordination checklist and must not be confused with scheduler task ids. Team message and checklist
 timestamps are the enclosing event envelope timestamps. `blocks` is a projection-derived inverse of
 `blocked_by`; callers provide `blocked_by`, and replay recomputes `blocks` deterministically.
-Shutdown approval/deletion is a team coordination protocol; it does not by itself execute provider
 work, stop child sessions, or cancel scheduler tasks.
 
-Team bounds are runtime policy, not validation-only fields. `max_parallel_members` limits active
 non-lead member sessions; pending members activate after another active member is shutdown-approved.
-`max_member_turns` counts non-shutdown member writes from replayable team events and blocks further
-mailbox/task work after the bound. `max_wall_clock_minutes` blocks non-shutdown team writes after the
-deadline while still allowing shutdown and deletion cleanup. Duplicate team message ids and task ids
 are rejected by the coordinator; projections keep first-seen state if old logs contain duplicates.
 
 **UI Intent**
@@ -324,7 +299,6 @@ The native permission taxonomy is capability- and family-aware. The canonical pu
 | `edit` | `EditFs` | allow / deny / ask |
 | `bash` | `Shell` | allow / deny / ask |
 | `question` | interactive user question / confirmation flow | allow / deny / ask |
-| `task` | task / agent orchestration flow, including team coordination tools | allow / deny / ask |
 | `webfetch` | `webfetch` | allow / deny / ask |
 | `websearch` | `websearch` | allow / deny / ask |
 | `codesearch` | `codesearch` | allow / deny / ask |

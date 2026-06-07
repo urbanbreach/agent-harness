@@ -385,9 +385,7 @@ A roadmap box is excluded only if its text falls under one of these groups:
   add or run the measurement harness, and record fresh local artifacts.
 - **Post-V1 roadmap sections.** Exclude every checkbox under `## Post-V1 direction`,
   `## Explicitly post-V1 unless re-scoped`, and post-V1 portions of
-  `## Team and orchestration scope` beyond the primitive team surfaces that already ship.
 - **Non-V1 product areas.** Exclude boxes whose only purpose is broad upstream plugin
-  compatibility, arbitrary executable plugins, full Team Mode, browser/media automation,
   desktop/web/mobile clients, remote collaboration bots, OAuth MCP, server/share/
   enterprise surfaces, cloud/telemetry/billing, or autonomous continuation loops.
 
@@ -463,7 +461,6 @@ first.
 5. **`docs/migration-notes.md` (new).** Enumerate which source-inspiration areas are
    unsupported by design for V1 (HTTP server, web share, plugin host, autoupdate,
    enterprise, desktop/mobile/PWA, browser/media automation, OAuth MCP, remote
-   collaboration bots, Team Mode beyond primitives, Ralph/continuation loops). Map each
    to the roadmap's "Explicitly post-V1" / "non-goals" stance.
 6. **Raise thin docs to release quality.** `docs/agents-and-subagents.md`,
    `docs/sessions-and-replay.md`, `docs/native-tool-catalog.md`,
@@ -1198,7 +1195,6 @@ not copied from this PRD.
 - TUI visual signoff against `inspirations/` PNGs and the native-visual lane (final slice).
 - External compatibility skill-root adapters (`.external-editor`/`.assistant`/`.agents`).
 - Any item under roadmap "Post-V1 direction," "Explicitly post-V1 unless re-scoped," or
-  Team Mode beyond existing primitives.
 - New providers beyond the OpenAI-compatible path; OAuth/credential-store; auto-update;
   server/share/enterprise; desktop/mobile/web clients; browser/media automation.
 - Do not edit git state, do not push, do not touch anything outside the repo tree.

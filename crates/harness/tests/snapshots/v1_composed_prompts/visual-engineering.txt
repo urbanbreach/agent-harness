@@ -70,7 +70,7 @@ agent-harness/
 ├── crates/harness/           # CLI binary/library: auth, config, doctor, models, prompt, run, replay, sessions, TUI handoff
 ├── crates/harness-core/      # coordinator, events, permissions, config, projections, lineage, hashline edits
 ├── crates/harness-providers/ # provider trait, OpenAI-compatible transport, mock provider, cassettes
-├── crates/harness-tools/     # native tools: fs/edit/bash/task/web/code/lsp/mcp/session/team/control plane
+├── crates/harness-tools/     # native tools: fs/edit/bash/task/web/code/lsp/mcp/session/control plane
 ├── crates/harness-tui/       # Ratatui app state, layout, overlays, transcript renderer, terminal signoff
 ├── crates/harness-testkit/   # deterministic fakes, workspaces, simulation, PTY/live/native evidence helpers
 ├── configs/                  # generated schemas, starter examples, provider catalogs
@@ -85,7 +85,7 @@ agent-harness/
 | CLI behavior | `crates/harness/AGENTS.md` | `main.rs` stays a thin shim; command tests use `CliIo`/`CliDeps`. |
 | Runtime invariants | `crates/harness-core/AGENTS.md` | Read before changing events, coordinator, permissions, config, replay, lineage, or compaction. |
 | Provider protocol | `crates/harness-providers/AGENTS.md` | Read before changing `ProviderStreamEvent`, request metadata, cassettes, or transport code. |
-| Native tools | `crates/harness-tools/AGENTS.md` | Read before changing tool ids, schemas, path safety, bash, MCP, LSP, task/session/team tools. |
+| Native tools | `crates/harness-tools/AGENTS.md` | Read before changing tool ids, schemas, path safety, bash, MCP, LSP, task/session tools. |
 | TUI shell | `crates/harness-tui/AGENTS.md` | Read before touching app state, layout, transcript rendering, overlays, keybindings, or snapshots. |
 | Test helpers and signoff | `crates/harness-testkit/AGENTS.md`, `crates/harness-testkit/tests/AGENTS.md` | Deterministic fakes, simulation, PTY/live/native evidence, artifact provenance. |
 | Runtime prompt assets | `.agent-harness/AGENTS.md` | Runtime-loaded agent profiles, prompt-family fragments, and skill packages. |

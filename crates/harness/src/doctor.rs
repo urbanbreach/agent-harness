@@ -25,11 +25,7 @@ use crate::{CliDeps, CliIo};
 
 #[path = "doctor_metadata.rs"]
 mod doctor_metadata;
-#[path = "doctor_projection.rs"]
-mod doctor_projection;
-
 use self::doctor_metadata::{attach_doctor_model_metadata, skill_readiness_metadata};
-use self::doctor_projection::active_team_projection_summary;
 const REQUIRED_PRIMARY_AGENTS: [&str; 2] = ["build", "plan"];
 const REQUIRED_SUBAGENTS: [&str; 2] = ["explore", "general"];
 const REQUIRED_CATEGORY_ROUTES: [&str; 8] = [
@@ -310,7 +306,6 @@ fn check_native_tool_catalog(config: &HarnessConfig) -> DoctorCheck {
         "session_search",
         "session_info",
         "background_cancel",
-        "team_list",
         "ast_grep_search",
         "ast_grep_replace",
     ];
@@ -328,8 +323,6 @@ fn check_native_tool_catalog(config: &HarnessConfig) -> DoctorCheck {
         "readiness": {
             "session_tools": catalog.iter().filter(|entry| entry.canonical_id.starts_with("session_")).count(),
             "background_cancel": catalog.iter().any(|entry| entry.canonical_id == "background_cancel"),
-            "team_list": catalog.iter().any(|entry| entry.canonical_id == "team_list"),
-            "team_projection": active_team_projection_summary(&config.paths.session_dir),
             "ast_grep_search": catalog.iter().any(|entry| entry.canonical_id == "ast_grep_search"),
             "ast_grep_adapter": ast_grep_adapter_readiness(),
             "ast_grep_replace": "shipped_edit_safe",
@@ -393,7 +386,6 @@ fn check_extension_roadmap_readiness(config: &HarnessConfig) -> DoctorCheck {
             "ast_grep_replace": "shipped_descriptor",
             "desktop_mobile_web_clients": "post_v1",
             "browser_media_automation": "post_v1",
-            "team_mode": "primitive_only_v1",
         },
         "no_network_probes": true,
     });

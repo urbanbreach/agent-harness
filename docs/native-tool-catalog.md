@@ -33,18 +33,6 @@ Tool execution still goes through the coordinator permission path before the too
 | `shell.run` | `bash` | host command | Captured output and artifacts when large | Lower-level shell id kept canonical for compatibility tests. |
 | `skill` | `task` | prompt/control-plane read | Summary plus loaded skill content | Loads configured markdown skills under skill permission rules. |
 | `task` | `task` | child scheduling | Child session events and structured route/runtime metadata | Canonical subagent delegation tool. Aliases: `agent`, `subagent_type`. |
-| `team_create` | `task` | team mutation | Event-sourced projection output | Primitive team coordination tool. |
-| `team_delete` | `task` | team mutation | Event-sourced projection output | Deletes projected team state. |
-| `team_list` | `task` | read-only | Event-sourced primitive projection output | Narrow list-only primitive; no Team Mode worktrees/tmux/mailbox/file claims. |
-| `team_send_message` | `task` | team mutation | Event-sourced projection output | Appends team message events. |
-| `team_shutdown_approve` | `task` | team mutation | Event-sourced projection output | Approves team shutdown request. |
-| `team_shutdown_reject` | `task` | team mutation | Event-sourced projection output | Rejects team shutdown request. |
-| `team_shutdown_request` | `task` | team mutation | Event-sourced projection output | Requests team shutdown. |
-| `team_status` | `task` | read-only | Event-sourced detailed projection output | Detailed per-team inspection; `team_list` is only the narrow V1 discovery primitive. |
-| `team_task_create` | `task` | team mutation | Event-sourced projection output | Creates a team task. |
-| `team_task_get` | `task` | read-only | Event-sourced projection output | Reads one team task. |
-| `team_task_list` | `task` | read-only | Event-sourced projection output | Lists team tasks. |
-| `team_task_update` | `task` | team mutation | Event-sourced projection output | Updates team task state. |
 | `todoread` | `task` | read-only | Control-plane state output | Reads the run-local todo state. |
 | `todowrite` | `task` | control-plane mutation | Run-local state output | Writes validated todo state. |
 | `webfetch` | `webfetch` | network/read-only | External I/O when called | Fetches web content under permission policy. |
@@ -54,7 +42,6 @@ Tool execution still goes through the coordinator permission path before the too
 
 - `session_list`, `session_read`, `session_search`, and `session_info` are model-visible, redacted by default, capped, and side-effect free. They read existing session directories and event logs; they do not shell out to `harness sessions`, run providers, run tools, start MCP servers, or make network calls.
 - `background_cancel` is the canonical cancellation id for a background child request. `background_output(cancel=true)` remains documented compatibility.
-- `team_list` is intentionally only a primitive projection reader. Full Team Mode, worktrees, tmux visualization, mailbox artifacts, declared registries, and file claims remain out of V1 scope.
 - `ast_grep_search` is read-only and maps to `codesearch`. It invokes the local `ast-grep` CLI in read-only mode with strict args, workspace path checks, explicit/safely inferred language, hard result/context/per-match caps, and artifact spill.
 - `ast_grep_replace` maps to `edit` and defaults to dry-run. It invokes the local `ast-grep` CLI only for JSON rewrite planning, rejects traversal/unknown/unsupported args, refuses partial apply when results are truncated, validates adapter byte ranges against current file contents, and applies only through Harness workspace path checks, atomic writes, and diff artifacts.
 

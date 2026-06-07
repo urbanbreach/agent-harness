@@ -20,26 +20,26 @@ async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
         walk_to_git_root: false,
         permissions: std::collections::BTreeMap::from([
             ("*".to_string(), PermissionMode::Allow),
-            ("team-*".to_string(), PermissionMode::Allow),
-            ("team-secret".to_string(), PermissionMode::Ask),
+            ("custom-*".to_string(), PermissionMode::Allow),
+            ("custom-secret".to_string(), PermissionMode::Ask),
         ]),
     });
 
     write_skill(
         &app.join(".custom/skills"),
-        "team-visible",
-        "Team visible description",
-        "Team visible body",
+        "custom-visible",
+        "Custom visible description",
+        "Custom visible body",
     );
     write_skill(
         &app.join(".custom/skills"),
-        "team-secret",
-        "Team secret description",
-        "Team secret body",
+        "custom-secret",
+        "Custom secret description",
+        "Custom secret body",
     );
     write_skill(
         &repo.join(".custom/skills"),
-        "team-repo",
+        "custom-repo",
         "Repo-only description",
         "Repo-only body",
     );
@@ -56,18 +56,18 @@ async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
     let visible = skill_tool
         .call(
             tool_context(&app, "toolcall-custom-visible"),
-            json!({"name": "team-visible"}),
+            json!({"name": "custom-visible"}),
         )
         .await
-        .expect("team-visible skill");
-    assert!(visible.display_text.contains("Team visible description"));
+        .expect("custom-visible skill");
+    assert!(visible.display_text.contains("Custom visible description"));
     assert_eq!(
         visible
             .structured_json
             .as_ref()
             .and_then(|value| value.get("location")),
         Some(&json!(app
-            .join(".custom/skills/team-visible/SKILL.md")
+            .join(".custom/skills/custom-visible/SKILL.md")
             .display()
             .to_string()))
     );
@@ -83,7 +83,7 @@ async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
                     worker_actor(&worker_id),
                     Some("deep".to_string()),
                     "skill",
-                    json!({"name": "team-secret"}),
+                    json!({"name": "custom-secret"}),
                 )
                 .await
         })
@@ -97,24 +97,24 @@ async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
             Some(r#"[["Yes"]]"#.to_string()),
         )
         .await
-        .expect("approve team-secret skill");
+        .expect("approve custom-secret skill");
     let gated = gated_task
         .await
         .expect("join gated skill task")
         .expect("exact permission override should load after approval");
-    assert!(gated.display_text.contains("Team secret description"));
+    assert!(gated.display_text.contains("Custom secret description"));
     handle.stop_run().await.expect("stop custom roots run");
 
     let repo_hidden = skill_tool
         .call(
             tool_context(&app, "toolcall-custom-repo-hidden"),
-            json!({"name": "team-repo"}),
+            json!({"name": "custom-repo"}),
         )
         .await
         .expect_err("walk_to_git_root=false should skip repo-root skills from app cwd");
     assert!(repo_hidden
         .to_string()
-        .contains("Skill \"team-repo\" not found"));
+        .contains("Skill \"custom-repo\" not found"));
 
     let global_visible = skill_tool
         .call(

@@ -23,7 +23,7 @@ fn doctor_cli_json_reports_native_tool_catalog_readiness() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let report: Value = serde_json::from_slice(&output.stdout).expect("doctor json report");
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("doctor json report");
     let tool_check = report["checks"]
         .as_array()
         .expect("checks array")
@@ -40,7 +40,6 @@ fn doctor_cli_json_reports_native_tool_catalog_readiness() {
         tool_check["details"]["readiness"]["background_cancel"],
         true
     );
-    assert_eq!(tool_check["details"]["readiness"]["team_list"], true);
     assert_eq!(
         tool_check["details"]["readiness"]["ast_grep_search"],
         true
@@ -49,17 +48,7 @@ fn doctor_cli_json_reports_native_tool_catalog_readiness() {
         tool_check["details"]["readiness"]["ast_grep_replace"],
         "shipped_edit_safe"
     );
-    assert_eq!(
-        tool_check["details"]["readiness"]["team_projection"]["source"],
-        "event_replay"
-    );
-    assert_eq!(
-        tool_check["details"]["readiness"]["team_projection"]["no_network_probes"],
-        true
-    );
-    assert!(
-        tool_check["details"]["readiness"]["team_projection"]["active_team_count"].is_number()
-    );
+
     let tools = tool_check["details"]["tools"]
         .as_array()
         .expect("catalog tools");
@@ -69,14 +58,11 @@ fn doctor_cli_json_reports_native_tool_catalog_readiness() {
         "session_search",
         "session_info",
         "background_cancel",
-        "team_list",
         "ast_grep_search",
         "ast_grep_replace",
     ] {
         assert!(
-            tools
-                .iter()
-                .any(|tool| tool["canonical_id"] == tool_id),
+            tools.iter().any(|tool| tool["canonical_id"] == tool_id),
             "missing native tool catalog entry {tool_id}"
         );
     }
@@ -85,5 +71,5 @@ fn doctor_cli_json_reports_native_tool_catalog_readiness() {
         .iter()
         .find(|tool| tool["canonical_id"] == "session_info")
         .expect("session_info tool entry");
-    assert_eq!(session_info["artifact_behavior"], "spills_large_output");
+    assert_eq!(session_info["artifact_behavior"], serde_json::json!("spills_large_output"));
 }

@@ -510,7 +510,6 @@ fn v1_release_docs_cover_permissions_extension_privacy_migration_and_provider_su
         "browser/media automation",
         "OAuth MCP",
         "remote collaboration bots",
-        "Team Mode",
         "Ralph/continuation loops",
     ] {
         assert!(

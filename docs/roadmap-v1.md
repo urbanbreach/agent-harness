@@ -66,7 +66,6 @@ must still land before the roadmap can treat the surface as release-ready:
 
 Everything else from the heavy-orchestration references is post-V1 by default unless this document explicitly
 moves it into the release scope. That includes full specialist-agent catalogs,
-autonomous continuation loops, Team Mode, skill-embedded MCP/OAuth, browser or
 media automation, remote collaboration bots, and broad plugin compatibility.
 
 ## Post-V1 direction
@@ -79,7 +78,6 @@ reshape V1 around orchestration features. The expected order is:
   set.
 - [ ] Expand subagents only after the `AgentCatalog`, prompt snapshots, and
   permission fixtures are stable.
-- [ ] Turn Team Mode from primitive event tools into an optional orchestrated
   layer if it proves useful.
 - [ ] Add skill-embedded MCP and OAuth only after ordinary MCP, skills, and
   extension-state contracts are boring.
@@ -98,11 +96,9 @@ reshape V1 around orchestration features. The expected order is:
   sandbox-conscious Rust architecture, TUI snapshot rigor, and provider/tool
   execution ergonomics.
 - [x] The heavy-orchestration reference under `inspirations/` is available. Use it
-  for candidate skills, agents, hooks, task/team workflows, and MCP ideas, but do
   not treat complete agent-OS parity as a V1 goal.
 - [x] A workflow-layer reference under `inspirations/` is available for pairing a
   base harness with setup, doctor, real execution smoke tests, durable plans, and
-  optional tmux/team runtime.
 - [x] The TypeScript baseline under `inspirations/` is available for package seams,
   provider abstraction, configurable keybindings, interactive testing practice,
   and supply-chain hardening.
@@ -248,7 +244,6 @@ turns those working mechanisms into well-specified release behavior.
 - [x] Built-in skills are disableable by stable ids before V1 adds more of them.
 - [x] Built-in skill candidates are reviewed against the V1 stance before being
   checked: `git-master`, `review-work`, and `frontend-ui-ux` are useful; browser,
-  Team Mode, and skill-embedded MCP bundles remain post-V1 unless re-scoped.
 
 ### Built-in extension and state depth
 
@@ -614,20 +609,9 @@ V1 should be plugin-ready, not a broad arbitrary plugin host.
   keep core changes small, keep authority explicit, and require conformance
   evidence for every new extension surface.
 
-## Team and orchestration scope
 
-- [x] Event-sourced team primitives exist for
   create/status/message/task/shutdown/delete as primitive event tools, not as
-  full Team Mode.
-- [x] `team_list` exists.
-- [x] Team doctor checks exist.
-- [x] Team docs clearly label the current scope as a V1 primitive or post-V1
   optional layer.
-- [ ] Declared team registry support exists.
-- [ ] Team worktree support exists.
-- [ ] Team tmux visualization exists.
-- [ ] Team mailbox artifacts and resume semantics are documented and tested.
-- [x] Full Team Mode is treated as post-V1 unless deliberately pulled into the
   release scope.
 
 ## Explicitly post-V1 unless re-scoped
@@ -673,7 +657,6 @@ V1 should be plugin-ready, not a broad arbitrary plugin host.
 - [x] Do not add a second build system such as Bazel beside the Cargo workspace.
 - [x] Do not copy another harness architecture mechanically; extract behavior and
   reimplement it through Harness modules and event contracts.
-- [x] Do not use desktop/cloud/team features as V1 release blockers.
 - [x] Do not use source-brand parity claims as release claims without current
   Harness evidence.
 - [x] Do not add broad compatibility shims that bypass canonical Harness tool ids,
@@ -966,5 +949,4 @@ below are unchecked until backed by the PRD's cited evidence.
   hooks onto it or marking the extension strategy guide complete.
 - [x] Add doctor readiness checks once the prompt, skill, tool, and agent catalog
   contracts are stable enough for diagnostics to enforce.
-- [x] Keep Team Mode primitive-only for V1 unless the V1 release scope is
   deliberately re-opened; otherwise document it as a post-V1 optional layer.

@@ -9,16 +9,14 @@ use harness_core::event::{
     ProviderRequestFinishedEvent, ProviderRequestStartedEvent, ProviderStreamDeltaEvent,
     RunFailedEvent, RunFinishedEvent, RunStartedEvent, TaskCancelledEvent, TaskCompletedEvent,
     TaskCompletionMetadata, TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState,
-    TaskScheduledEvent, TeamBounds, TeamCreatedEvent, TeamMemberRole, TeamMemberSelector,
-    TeamMemberSpec, TeamMessage, TeamMessageKind, TeamMessageSentEvent, TeamSpec, TeamTask,
-    TeamTaskCreatedEvent, TeamTaskStatus, ToolCallFinishedEvent, ToolCallMetadata,
+    TaskScheduledEvent, ToolCallFinishedEvent, ToolCallMetadata,
     ToolCallRequestedEvent, ToolCallStartedEvent, ToolCallStatus, UiIntentReceivedEvent,
     UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use harness_core::transcript_projection::{
     project_transcript, ArtifactProjectionSource, CompactionCheckpointStatus, ProjectedMessageRole,
-    ProjectedPart, ProjectedPermissionState, ProjectedTaskState, ProjectedTeamEventKind,
-    ProjectedToolCallState, TranscriptProjectionError, TranscriptRunStatus,
+    ProjectedPart, ProjectedPermissionState, ProjectedTaskState, ProjectedToolCallState,
+    TranscriptProjectionError, TranscriptRunStatus,
 };
 
 fn assistant_message<'a>(

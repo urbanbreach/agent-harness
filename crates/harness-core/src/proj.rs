@@ -27,13 +27,6 @@ pub use session_catalog_projection::{
     SessionCatalogEntry, SessionCatalogMetadata, SessionModeSource,
 };
 
-mod team_projection;
-pub use team_projection::{
-    project_team_state, TeamBoundsConsumption, TeamLeadProjection, TeamMemberProjection,
-    TeamMemberStatus, TeamProjection, TeamRunProjection, TeamRunStatus,
-    TeamShutdownRequestProjection,
-};
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RunStatus {
