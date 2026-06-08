@@ -166,82 +166,151 @@ pub fn redact_map<R: Redactor + ?Sized>(
         .collect()
 }
 
+fn key_segments(key: &str) -> impl Iterator<Item = &str> + Clone {
+    key.split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|s| !s.is_empty())
+}
+
+fn normalized_contains(key: &str, needle: &str) -> bool {
+    let needle_bytes = needle.as_bytes();
+    if needle_bytes.is_empty() {
+        return true;
+    }
+
+    let mut chars = key.chars().filter(|c| c.is_ascii_alphanumeric());
+
+    while let Some(c) = chars.next() {
+        if c.to_ascii_lowercase() as u8 == needle_bytes[0] {
+            let mut match_len = 1;
+            let mut inner_chars = chars.clone();
+
+            while match_len < needle_bytes.len() {
+                if let Some(inner_c) = inner_chars.next() {
+                    if inner_c.to_ascii_lowercase() as u8 == needle_bytes[match_len] {
+                        match_len += 1;
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+            if match_len == needle_bytes.len() {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+fn normalized_eq(key: &str, target: &str) -> bool {
+    let target_bytes = target.as_bytes();
+    let mut i = 0;
+    for c in key.chars() {
+        if !c.is_ascii_alphanumeric() {
+            continue;
+        }
+        if i >= target_bytes.len() || c.to_ascii_lowercase() as u8 != target_bytes[i] {
+            return false;
+        }
+        i += 1;
+    }
+    i == target_bytes.len()
+}
+
+fn normalized_ends_with(key: &str, target: &str) -> bool {
+    let target_bytes = target.as_bytes();
+    if target_bytes.is_empty() {
+        return true;
+    }
+
+    let mut i = target_bytes.len();
+    for c in key.chars().rev() {
+        if !c.is_ascii_alphanumeric() {
+            continue;
+        }
+        if i == 0 {
+            break;
+        }
+        if c.to_ascii_lowercase() as u8 != target_bytes[i - 1] {
+            return false;
+        }
+        i -= 1;
+    }
+    i == 0
+}
+
+fn adjacent_segments(key: &str, left: &str, right: &str) -> bool {
+    let mut prev: Option<&str> = None;
+    for segment in key_segments(key) {
+        if let Some(p) = prev {
+            if p.eq_ignore_ascii_case(left) && segment.eq_ignore_ascii_case(right) {
+                return true;
+            }
+        }
+        prev = Some(segment);
+    }
+    false
+}
+
+fn key_segments_contain(key: &str, needle: &str) -> bool {
+    key_segments(key).any(|segment| segment.eq_ignore_ascii_case(needle))
+}
+
+fn credential_key_segments(key: &str) -> bool {
+    if !key_segments_contain(key, "key") {
+        return false;
+    }
+    key_segments(key).any(|segment| {
+        segment.eq_ignore_ascii_case("access")
+            || segment.eq_ignore_ascii_case("api")
+            || segment.eq_ignore_ascii_case("auth")
+            || segment.eq_ignore_ascii_case("bearer")
+            || segment.eq_ignore_ascii_case("client")
+            || segment.eq_ignore_ascii_case("credential")
+            || segment.eq_ignore_ascii_case("github")
+            || segment.eq_ignore_ascii_case("google")
+            || segment.eq_ignore_ascii_case("openai")
+            || segment.eq_ignore_ascii_case("private")
+            || segment.eq_ignore_ascii_case("provider")
+            || segment.eq_ignore_ascii_case("secret")
+            || segment.eq_ignore_ascii_case("token")
+            || segment.eq_ignore_ascii_case("aws")
+    })
+}
+
 fn redaction_marker_for_sensitive_key(key: &str) -> Option<&'static str> {
-    let normalized = key
-        .chars()
-        .filter(|character| character.is_ascii_alphanumeric())
-        .flat_map(|character| character.to_lowercase())
-        .collect::<String>();
-    if normalized == "credentials" {
+    if normalized_eq(key, "credentials") {
         return None;
     }
-    let segments = key
-        .split(|character: char| !character.is_ascii_alphanumeric())
-        .filter(|segment| !segment.is_empty())
-        .map(|segment| segment.to_ascii_lowercase())
-        .collect::<Vec<_>>();
 
-    if normalized == "apikey"
-        || normalized.ends_with("apikey")
-        || adjacent_segments(&segments, "api", "key")
+    if normalized_eq(key, "apikey")
+        || normalized_ends_with(key, "apikey")
+        || adjacent_segments(key, "api", "key")
     {
         return Some("[REDACTED_API_KEY]");
     }
-    if normalized == "auth" || normalized.contains("authorization") {
+    if normalized_eq(key, "auth") || normalized_contains(key, "authorization") {
         return Some("Bearer [REDACTED]");
     }
-    if normalized.contains("cookie") {
+    if normalized_contains(key, "cookie") {
         return Some("[REDACTED_COOKIE]");
     }
-    if normalized.contains("privatekey") || adjacent_segments(&segments, "private", "key") {
+    if normalized_contains(key, "privatekey") || adjacent_segments(key, "private", "key") {
         return Some("[REDACTED_PRIVATE_KEY]");
     }
-    if normalized.contains("password")
-        || normalized.contains("passwd")
-        || normalized.contains("secret")
-        || normalized.contains("token")
-        || normalized.contains("credential")
-        || credential_key_segments(&segments)
+    if normalized_contains(key, "password")
+        || normalized_contains(key, "passwd")
+        || normalized_contains(key, "secret")
+        || normalized_contains(key, "token")
+        || normalized_contains(key, "credential")
+        || credential_key_segments(key)
     {
         return Some("[REDACTED_SECRET]");
     }
 
     None
-}
-
-fn adjacent_segments(segments: &[String], left: &str, right: &str) -> bool {
-    segments
-        .windows(2)
-        .any(|window| window[0] == left && window[1] == right)
-}
-
-fn key_segments_contain(segments: &[String], needle: &str) -> bool {
-    segments.iter().any(|segment| segment == needle)
-}
-
-fn credential_key_segments(segments: &[String]) -> bool {
-    if !key_segments_contain(segments, "key") {
-        return false;
-    }
-    segments.iter().any(|segment| {
-        matches!(
-            segment.as_str(),
-            "access"
-                | "api"
-                | "auth"
-                | "bearer"
-                | "client"
-                | "credential"
-                | "github"
-                | "google"
-                | "openai"
-                | "private"
-                | "provider"
-                | "secret"
-                | "token"
-                | "aws"
-        )
-    })
 }
 
 #[cfg(test)]
