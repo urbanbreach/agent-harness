@@ -137,7 +137,7 @@ pub(super) fn legacy_three_row_composer_contract_removed() {
     );
 
     let quiet_shell = [
-        "Assistant · model-1",
+        "Grouped response",
         "┃",
         "┃",
         "┃  default · local/-",

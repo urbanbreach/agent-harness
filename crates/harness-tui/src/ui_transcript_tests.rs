@@ -97,7 +97,7 @@ fn transcript_pending_permission_stays_after_last_activity() {
 #[test]
 fn transcript_layout_cache_invalidates_when_animation_frame_changes() {
     let mut app = AppState::default();
-    app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
+    let mut activity = ActivityEntry {
         request_id: "request-streaming-cache".to_string(),
         profile_label: "default".to_string(),
         model_id: "gpt-5.4-mini".to_string(),
@@ -117,7 +117,9 @@ fn transcript_layout_cache_invalidates_when_animation_frame_changes() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
-    }]);
+    };
+    activity.thinking_text = "checking cache invalidation".to_string();
+    app.activities = std::collections::VecDeque::from(vec![activity]);
     app.selected_activity_index = 0;
 
     let initial_lines = transcript_test_line_texts(build_transcript_lines_for_width(
@@ -127,7 +129,7 @@ fn transcript_layout_cache_invalidates_when_animation_frame_changes() {
     ));
     assert!(initial_lines
         .iter()
-        .any(|line| line.contains("⠋ Assistant · gpt-5.4-mini · active")));
+        .any(|line| line.contains("⠋ Thinking: checking cache invalidation")));
 
     app.advance_transcript_animation_phase();
 
@@ -138,7 +140,7 @@ fn transcript_layout_cache_invalidates_when_animation_frame_changes() {
     ));
     assert!(updated_lines
         .iter()
-        .any(|line| line.contains("⠙ Assistant · gpt-5.4-mini · active")));
+        .any(|line| line.contains("⠙ Thinking: checking cache invalidation")));
 }
 
 #[test]
@@ -228,167 +230,14 @@ fn pending_permission_sections_render_warning_turn_container() {
 }
 
 #[test]
-fn streaming_assistant_footer_uses_reserved_active_label() {
-    let mut app = AppState::default();
-    app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
-        request_id: "request-streaming-header".to_string(),
-        profile_label: "default".to_string(),
-        model_id: "gpt-5.4-mini".to_string(),
-        provider_id: "openai".to_string(),
-        status: ActivityStatus::Streaming,
-        user_message: None,
-        user_timestamp: None,
-        request_data: None,
-        thinking_text: String::new(),
-        transcript_text: String::new(),
-        usage: None,
-        cache_usage: None,
-        error_message: None,
-        permissions: Vec::new(),
-        tool_calls: Vec::new(),
-        first_seq: 1,
-        last_seq: 1,
-        first_mono_ms: 1,
-        last_mono_ms: 1,
-    }]);
-    app.selected_activity_index = 0;
-
-    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
-        &app,
-        &Theme::default(),
-        80,
-    ));
-
-    let footer_row = lines
-        .iter()
-        .position(|line| line.contains("Assistant · gpt-5.4-mini · active"))
-        .expect("streaming assistant footer row");
-    assert_eq!(footer_row, 0);
-    assert_eq!(lines[footer_row], "   ⠋ Assistant · gpt-5.4-mini · active");
-}
-
-#[test]
-fn only_latest_turn_renders_footer_metadata() {
-    let mut app = AppState::default();
-    app.activities = std::collections::VecDeque::from(vec![
-        ActivityEntry {
-            request_id: "request-old-footer".to_string(),
-            profile_label: "default".to_string(),
-            model_id: "gpt-old".to_string(),
-            provider_id: "openai".to_string(),
-            status: ActivityStatus::Done,
-            user_message: Some(harness_core::event::UserMessageSubmittedEvent {
-                request_id: "request-old-footer".to_string(),
-                text: "first".to_string(),
-            }),
-            user_timestamp: Some("2026-03-19T09:44:00Z".to_string()),
-            request_data: None,
-            thinking_text: String::new(),
-            transcript_text: "first reply".to_string(),
-            usage: None,
-            cache_usage: None,
-            error_message: None,
-            permissions: Vec::new(),
-            tool_calls: Vec::new(),
-            first_seq: 1,
-            last_seq: 1,
-            first_mono_ms: 1,
-            last_mono_ms: 1,
-        },
-        ActivityEntry {
-            request_id: "request-new-footer".to_string(),
-            profile_label: "default".to_string(),
-            model_id: "gpt-new".to_string(),
-            provider_id: "openai".to_string(),
-            status: ActivityStatus::Done,
-            user_message: Some(harness_core::event::UserMessageSubmittedEvent {
-                request_id: "request-new-footer".to_string(),
-                text: "second".to_string(),
-            }),
-            user_timestamp: Some("2026-03-19T09:45:00Z".to_string()),
-            request_data: None,
-            thinking_text: String::new(),
-            transcript_text: "second reply".to_string(),
-            usage: None,
-            cache_usage: None,
-            error_message: None,
-            permissions: Vec::new(),
-            tool_calls: Vec::new(),
-            first_seq: 2,
-            last_seq: 2,
-            first_mono_ms: 2,
-            last_mono_ms: 2,
-        },
-    ]);
-    app.selected_activity_index = 1;
-    app.handle_key(crossterm::event::KeyEvent::new(
-        crossterm::event::KeyCode::Char('p'),
-        crossterm::event::KeyModifiers::CONTROL,
-    ));
-    for ch in "show timestamps".chars() {
-        app.handle_key(crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Char(ch),
-            crossterm::event::KeyModifiers::NONE,
-        ));
-    }
-    app.handle_key(crossterm::event::KeyEvent::new(
-        crossterm::event::KeyCode::Enter,
-        crossterm::event::KeyModifiers::NONE,
-    ));
-
-    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
-        &app,
-        &Theme::default(),
-        80,
-    ));
-
-    assert_eq!(
-        lines
-            .iter()
-            .filter(|line| line.contains("Assistant ·"))
-            .count(),
-        1
-    );
-    assert!(lines.iter().all(|line| !line.contains("gpt-old")));
-    assert!(lines.iter().any(|line| line.contains("gpt-new")));
-    assert!(lines.iter().all(|line| !line.contains("09:44")));
-    assert!(lines.iter().any(|line| line.contains("09:45")));
-}
-
-#[test]
-fn tool_only_turns_render_standalone_assistant_footer() {
+fn streaming_reasoning_keeps_active_thinking_label() {
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
-        "request-tool-only-footer",
-        ActivityStatus::Done,
+        "request-streaming-reasoning-label",
+        ActivityStatus::Streaming,
         "",
     );
-    entry.tool_calls.push(crate::app::ToolCallEntry {
-        tool_call_id: "call-tool-only-footer".to_string(),
-        tool_id: "fs.read".to_string(),
-        canonical_tool_id: None,
-        alias_source_tool_id: None,
-        resolved_tool_identity: None,
-        args_summary: r#"{"path":"src/ui.rs"}"#.to_string(),
-        args_digest: "digest-tool-only-footer".to_string(),
-        lifecycle_state: None,
-        status: ToolCallDisplayStatus::Succeeded,
-        output_summary: Some("24 lines read from src/ui.rs".to_string()),
-        output_digest: Some("digest-tool-only-output".to_string()),
-        output_json: None,
-        truncated_output: Some("24 lines read from src/ui.rs".to_string()),
-        edit: None,
-        lineage: None,
-        artifact_refs: Vec::new(),
-        timing_elapsed_ms: Some(2),
-        permissions: Vec::new(),
-        first_seq: 10,
-        last_seq: 11,
-        first_mono_ms: 10,
-        last_mono_ms: 11,
-        first_timestamp: None,
-        last_timestamp: None,
-    });
+    entry.thinking_text = "still working".to_string();
     app.activities = std::collections::VecDeque::from(vec![entry]);
     app.selected_activity_index = 0;
 
@@ -398,145 +247,16 @@ fn tool_only_turns_render_standalone_assistant_footer() {
         80,
     ));
 
-    assert!(lines.iter().any(|line| line.contains("Read src/ui.rs")));
-    assert!(lines.iter().any(|line| line.contains("Assistant ·")));
-}
-
-#[test]
-fn completed_latest_turn_keeps_footer_after_streaming_finishes() {
-    let mut app = AppState::default();
-    let mut entry = transcript_section_model_test_activity(
-        "request-footer-finish",
-        ActivityStatus::Streaming,
-        "completed reply",
-    );
-    entry.user_timestamp = Some("2026-03-19T09:45:00Z".to_string());
-    app.activities = std::collections::VecDeque::from(vec![entry]);
-    app.selected_activity_index = 0;
-    app.handle_key(crossterm::event::KeyEvent::new(
-        crossterm::event::KeyCode::Char('p'),
-        crossterm::event::KeyModifiers::CONTROL,
-    ));
-    for ch in "show timestamps".chars() {
-        app.handle_key(crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Char(ch),
-            crossterm::event::KeyModifiers::NONE,
-        ));
-    }
-    app.handle_key(crossterm::event::KeyEvent::new(
-        crossterm::event::KeyCode::Enter,
-        crossterm::event::KeyModifiers::NONE,
-    ));
-
-    let streaming_lines = transcript_test_line_texts(build_transcript_lines_for_width(
-        &app,
-        &Theme::default(),
-        80,
-    ));
-    assert!(streaming_lines
-        .iter()
-        .any(|line| line.contains("Assistant · gpt-5.4-mini · active")));
-
-    app.activities[0].status = ActivityStatus::Done;
-    app.mark_transcript_dirty_for_test();
-
-    let completed_lines = transcript_test_line_texts(build_transcript_lines_for_width(
-        &app,
-        &Theme::default(),
-        80,
-    ));
-
-    assert!(completed_lines
-        .iter()
-        .any(|line| line.contains("Assistant · gpt-5.4-mini")));
-    assert!(completed_lines.iter().any(|line| line.contains("09:45")));
-    assert!(completed_lines
-        .iter()
-        .all(|line| !line.contains("Assistant · gpt-5.4-mini · active")));
-}
-
-#[test]
-fn latest_completed_footer_follows_rendered_assistant_parts() {
-    fn event(
-        seq: u64,
-        correlation_id: &str,
-        payload: harness_core::event::EventV1,
-    ) -> harness_core::event::EventEnvelopeV1 {
-        harness_core::event::EventEnvelopeV1 {
-            schema_version: harness_core::event::SCHEMA_VERSION,
-            event_id: format!("evt_footer_rendered_parts_{seq:04}"),
-            seq,
-            run_id: "run_footer_rendered_parts".to_string(),
-            mono_ms: seq * 100,
-            ts: Some("2026-03-22T15:00:00Z".to_string()),
-            actor: harness_core::event::EventActor::new(
-                harness_core::event::ActorKind::Worker,
-                Some("agent_parent".to_string()),
-            ),
-            correlation_id: Some(correlation_id.to_string()),
-            causation_id: None,
-            stream_key: None,
-            payload,
-        }
-    }
-
-    let mut app = AppState::new_live(None, false, None);
-    app.ingest_event(event(
-        1,
-        "req_footer_rendered_parts",
-        harness_core::event::EventV1::ProviderRequestStarted(
-            harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_footer_rendered_parts".to_string(),
-                provider_id: "default".to_string(),
-                model_id: "gpt-5.4-mini".to_string(),
-                prompt_summary: "Keep footer visible".to_string(),
-                request_digest: "digest-footer-rendered-parts".to_string(),
-                metadata: None,
-            },
-        ),
-    ));
-    app.ingest_event(event(
-        2,
-        "req_footer_rendered_parts",
-        harness_core::event::EventV1::ProviderStreamDelta(
-            harness_core::event::ProviderStreamDeltaEvent {
-                request_id: "req_footer_rendered_parts".to_string(),
-                delta: "assistant reply from ordered events".to_string(),
-            },
-        ),
-    ));
-    app.ingest_event(event(
-        3,
-        "req_footer_rendered_parts",
-        harness_core::event::EventV1::ProviderRequestFinished(
-            harness_core::event::ProviderRequestFinishedEvent {
-                request_id: "req_footer_rendered_parts".to_string(),
-                finish_reason: "stop".to_string(),
-                output_digest: Some("digest-footer-rendered-parts-out".to_string()),
-                usage: None,
-                metadata: None,
-            },
-        ),
-    ));
-
-    app.activities[0].transcript_text.clear();
-
-    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
-        &app,
-        &Theme::default(),
-        96,
-    ));
-
     assert!(lines
         .iter()
-        .any(|line| line.contains("assistant reply from ordered events")));
+        .any(|line| line.contains("Thinking: still working")));
     assert!(lines
         .iter()
-        .any(|line| line.contains("Assistant · gpt-5.4-mini")));
+        .all(|line| !line.contains("Thought still working")));
 }
 
 #[test]
-fn user_message_surface_keeps_timestamp_in_latest_footer_only() {
+fn user_message_surface_does_not_reintroduce_assistant_footer_when_timestamps_are_visible() {
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "request-user-padding".to_string(),
@@ -587,10 +307,7 @@ fn user_message_surface_keeps_timestamp_in_latest_footer_only() {
     assert!(lines
         .iter()
         .all(|line| !(line.starts_with('┃') && line.contains("09:45"))));
-    assert!(lines.iter().any(|line| line.contains("09:45")));
-    assert!(lines
-        .iter()
-        .any(|line| line == "   ▪ Assistant · gpt-5.4-mini · 0ms · 09:45"));
+    assert!(lines.iter().all(|line| !line.contains("Assistant ·")));
     assert!(lines.iter().any(|line| line.contains("hello")));
     assert!(lines.iter().any(|line| line.contains("reply")));
 }
@@ -616,6 +333,10 @@ fn reasoning_summary_renders_as_nested_inset_block() {
     assert!(lines
         .iter()
         .any(|line| line.contains("Matching harness response spacing")));
+    assert!(lines
+        .iter()
+        .any(|line| line.contains("Thought: Matching harness response spacing · 0ms")));
+    assert!(lines.iter().all(|line| !line.contains("Thinking:")));
     assert!(lines.iter().any(|line| line.is_empty()));
     assert!(lines.iter().any(|line| line.contains("answer")));
 }
@@ -865,9 +586,9 @@ fn reasoning_to_answer_transition_uses_single_blank_row() {
 }
 
 #[test]
-fn streaming_assistant_footer_spinner_uses_deterministic_braille_frames() {
+fn streaming_reasoning_spinner_uses_deterministic_braille_frames() {
     let mut app = AppState::default();
-    app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
+    let mut activity = ActivityEntry {
         request_id: "request-streaming-spinner".to_string(),
         profile_label: "default".to_string(),
         model_id: "gpt-5.4-mini".to_string(),
@@ -887,7 +608,9 @@ fn streaming_assistant_footer_spinner_uses_deterministic_braille_frames() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
-    }]);
+    };
+    activity.thinking_text = "streaming thought".to_string();
+    app.activities = std::collections::VecDeque::from(vec![activity]);
     app.selected_activity_index = 0;
 
     let first = transcript_test_line_texts(build_transcript_lines_for_width(
@@ -902,8 +625,18 @@ fn streaming_assistant_footer_spinner_uses_deterministic_braille_frames() {
         80,
     ));
 
-    assert_eq!(first[0], "   ⠋ Assistant · gpt-5.4-mini · active");
-    assert_eq!(second[0], "   ⠙ Assistant · gpt-5.4-mini · active");
+    assert!(
+        first
+            .iter()
+            .any(|line| line.contains("⠋ Thinking: streaming thought")),
+        "first frame should use the first reasoning spinner frame: {first:#?}"
+    );
+    assert!(
+        second
+            .iter()
+            .any(|line| line.contains("⠙ Thinking: streaming thought")),
+        "second frame should use the second reasoning spinner frame: {second:#?}"
+    );
 }
 
 #[path = "ui_transcript_lifecycle_tests.rs"]

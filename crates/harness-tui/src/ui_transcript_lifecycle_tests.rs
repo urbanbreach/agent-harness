@@ -2,7 +2,7 @@ use super::super::*;
 use harness_core::event::UserMessageSubmittedEvent;
 
 #[test]
-fn queued_runtime_status_without_pending_assistant_does_not_render_user_badge_or_footer() {
+fn queued_runtime_status_without_pending_assistant_does_not_render_user_badge_or_assistant_row() {
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![
         ActivityEntry {
@@ -67,10 +67,8 @@ fn queued_runtime_status_without_pending_assistant_does_not_render_user_badge_or
         "runtime queued status alone should not show the Harness queued badge: {lines:#?}"
     );
     assert!(
-        lines
-            .iter()
-            .all(|line| !line.contains("Assistant · gpt-5.4-mini · queued")),
-        "runtime queued status alone should not render a queued assistant footer: {lines:#?}"
+        lines.iter().all(|line| !line.contains("Assistant ·")),
+        "runtime queued status alone should not render assistant metadata rows: {lines:#?}"
     );
 }
 
@@ -113,16 +111,17 @@ fn streaming_turn_with_own_user_message_does_not_render_queued_badge() {
         lines.iter().all(|line| !line.contains(" QUEUED ")),
         "a turn should not mark its own user message as queued once it is the active assistant turn: {lines:#?}"
     );
+    assert!(lines
+        .iter()
+        .any(|line| line.contains("follow up now running")));
     assert!(
-        lines
-            .iter()
-            .any(|line| line.contains("Assistant · gpt-5.4-mini · active")),
-        "streaming follow-up should keep the active assistant footer: {lines:#?}"
+        lines.iter().all(|line| !line.contains("Assistant ·")),
+        "streaming follow-up should not reintroduce assistant metadata rows: {lines:#?}"
     );
 }
 
 #[test]
-fn queued_user_followup_keeps_active_footer_on_streaming_turn() {
+fn queued_user_followup_keeps_user_badge_without_assistant_footer() {
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![
         ActivityEntry {
@@ -182,21 +181,14 @@ fn queued_user_followup_keeps_active_footer_on_streaming_turn() {
         80,
     ));
 
-    assert!(
-        lines
-            .iter()
-            .any(|line| line.contains("Assistant · gpt-5.4-mini · active")),
-        "active assistant footer should stay on the in-flight turn: {lines:#?}"
-    );
+    assert!(lines.iter().any(|line| line.contains("active turn")));
     assert!(
         lines.iter().any(|line| line.contains(" QUEUED ")),
         "queued follow-up should still show the user badge: {lines:#?}"
     );
     assert!(
-        lines
-            .iter()
-            .all(|line| !line.contains("Assistant · gpt-5.4-mini · queued")),
-        "queued follow-up should not steal the assistant footer: {lines:#?}"
+        lines.iter().all(|line| !line.contains("Assistant ·")),
+        "queued follow-up should not render assistant metadata rows: {lines:#?}"
     );
 }
 

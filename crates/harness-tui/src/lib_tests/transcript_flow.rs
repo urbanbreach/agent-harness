@@ -450,13 +450,13 @@ pub(super) fn transcript_shell_remains_scannable_without_bubble_cards() {
     assert!(!rendered.contains("(tool fs.read · succeeded)"));
 }
 
-pub(super) fn transcript_status_metadata_is_inline_not_chrome() {
+pub(super) fn transcript_status_metadata_stays_tool_inline_without_assistant_footer() {
     let app = rich_transcript_fixture_app();
 
     let rendered = render_live_lines(&app, 120, 30);
 
     assert!(!rendered.contains("req_rich_shell"));
-    assert!(rendered.contains("Assistant · model-1"));
+    assert!(!rendered.contains("Assistant ·"));
     assert!(rendered.contains("Read src/ui.rs [offset=1, limit=24]"));
     assert!(!rendered.contains("user ("));
     assert!(!rendered.contains("assistant ("));

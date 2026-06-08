@@ -417,12 +417,12 @@ fn nested_surface_prefix(indent: &str, rail_color: Color, surface: Color) -> Vec
         TRANSCRIPT_RAIL_GLYPH,
         Style::default().fg(rail_color).bg(surface),
     ));
-    spans.push(surface_span(" ", Style::default(), surface));
+    spans.push(surface_span("  ", Style::default(), surface));
     spans
 }
 
 pub(super) fn nested_surface_prefix_width(indent: &str) -> usize {
-    display_width(indent) + display_width(TRANSCRIPT_RAIL_GLYPH) + 1
+    display_width(indent) + display_width(TRANSCRIPT_RAIL_GLYPH) + 2
 }
 
 fn nested_surface_line(

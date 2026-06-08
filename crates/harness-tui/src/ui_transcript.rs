@@ -3,9 +3,8 @@ use std::path::Path;
 
 use super::*;
 
-use crate::text::{collapse_inline_whitespace, has_trimmed_content};
+use crate::text::collapse_inline_whitespace;
 use crate::theme::DIFF_SIDE_BY_SIDE_MIN_WIDTH;
-use crate::time_format::short_time_or_trimmed;
 
 use super::ui_diff::{render_structured_diff_lines_with_hunk_offsets, StructuredDiffRenderOptions};
 use super::ui_markdown::{append_rich_text_block, parse_inline_markdown_spans};
@@ -21,7 +20,7 @@ use super::ui_tool_diffs::{
 use super::ui_tool_error::{
     push_failed_tool_error_block, tool_call_denied, tool_error_subtitle, tool_error_text,
 };
-use super::ui_tool_metadata::tool_summary_string;
+use super::ui_tool_metadata::{tool_json_string, tool_summary_string};
 use super::ui_tool_output::{collapsible_bash_panel_preview, collapsible_output_preview};
 use super::ui_tool_paths::{
     context_group_tool_id, join_tool_subtitles, read_tool_input_suffix, search_result_count_suffix,
@@ -71,13 +70,11 @@ use super::ui_transcript_scrollbar::{
 };
 use super::ui_transcript_selection::{
     blank_selection_row, lifecycle_selection_snapshot, render_transcript_selection,
-    selection_rows_for_markdownish_text_block, selection_rows_for_rendered_line,
-    transcript_selection_line_rows, with_cached_transcript_selection_snapshot, TranscriptSelection,
-    TranscriptSelectionCacheKey, TranscriptSelectionCell, TranscriptSelectionRow,
-    TranscriptSelectionSnapshot,
+    selection_rows_for_markdownish_text_block, transcript_selection_line_rows,
+    with_cached_transcript_selection_snapshot, TranscriptSelection, TranscriptSelectionCacheKey,
+    TranscriptSelectionCell, TranscriptSelectionRow, TranscriptSelectionSnapshot,
 };
 use super::ui_transcript_style::{
-    activity_status_supports_footer_only, assistant_footer_label, assistant_primary_label_color,
     assistant_primary_rail_color, selected_foreground_for_badge, transcript_emphasized_surface,
     transcript_nested_rail_color, transcript_streaming_spinner_frame,
 };

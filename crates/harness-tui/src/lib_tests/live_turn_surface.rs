@@ -64,7 +64,7 @@ pub(super) fn live_shell_enter_submits_and_echoes_prompt_snapshot() {
     assert!(!rendered.contains("user (pending turn)"));
     assert!(rendered.contains("ship it"));
     assert!(!rendered.contains("   Waiting for response…"));
-    assert!(rendered.contains("⠋ Assistant"));
+    assert!(!rendered.contains("Assistant ·"));
     assert!(!rendered.contains('╭'));
 }
 
@@ -334,14 +334,15 @@ pub(super) fn narrow_transcript_wrapped_top_level_turns_keep_alignment() {
     let assistant_first =
         find_line_containing_from(&lines, user_continuation + 1, "assistant reply wraps")
             .expect("wrapped assistant first row");
-    let assistant_footer = find_line_containing_from(&lines, assistant_first + 1, "Assistant")
-        .expect("assistant footer row");
     let assistant_continuation = lines
         .iter()
         .enumerate()
         .skip(assistant_first + 1)
-        .take(assistant_footer.saturating_sub(assistant_first + 1))
-        .find_map(|(index, line)| line.chars().any(char::is_alphanumeric).then_some(index))
+        .take_while(|(_, line)| !line.contains("Ctrl+p commands"))
+        .find_map(|(index, line)| {
+            (line.contains("same left alignment") || line.contains("continuation row"))
+                .then_some(index)
+        })
         .expect("wrapped assistant continuation row");
 
     assert_eq!(

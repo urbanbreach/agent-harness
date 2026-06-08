@@ -176,55 +176,6 @@ pub(crate) fn exact_test_transcript_reasoning_precedes_answer_and_tool_rows() {
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_latest_assistant_footer_stays_after_trailing_tool_rows() {
-    let mut app = AppState::default();
-    let mut entry = transcript_section_model_test_activity(
-        "request-tool-after-body",
-        ActivityStatus::Done,
-        "I need to inspect the file first.",
-    );
-    let mut tool_call = transcript_section_model_test_tool_call("call-read", "fs.read");
-    tool_call.args_summary = r#"{"path":"src/ui.rs"}"#.to_string();
-    tool_call.status = ToolCallDisplayStatus::Succeeded;
-    tool_call.output_summary = Some("24 lines read".to_string());
-    tool_call.output_digest = Some("out-digest".to_string());
-    tool_call.truncated_output = Some("24 lines read".to_string());
-    tool_call.first_seq = 2;
-    tool_call.last_seq = 3;
-    entry.tool_calls.push(tool_call);
-    entry.last_seq = 3;
-    app.activities = std::collections::VecDeque::from(vec![entry]);
-
-    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
-        &app,
-        &Theme::default(),
-        96,
-    ));
-
-    let body_row = lines
-        .iter()
-        .position(|line| line.contains("I need to inspect the file first."))
-        .expect("assistant body row");
-    let tool_row = lines
-        .iter()
-        .position(|line| line.contains("Read src/ui.rs"))
-        .expect("tool row");
-    let footer_row = lines
-        .iter()
-        .position(|line| line.contains("Assistant · gpt-5.4-mini"))
-        .expect("assistant footer row");
-
-    assert!(
-        body_row < tool_row,
-        "tool row should render after the assistant prose\n{lines:#?}"
-    );
-    assert!(
-        tool_row < footer_row,
-        "assistant footer should stay pinned after trailing tool rows\n{lines:#?}"
-    );
-}
-
-#[cfg(test)]
 pub(crate) fn exact_test_transcript_tool_rows_follow_chronological_turn_order() {
     fn event(
         seq: u64,
@@ -804,7 +755,7 @@ fn task_row_hides_raw_task_result_payload_until_expanded() {
     let (title, icon, visual_style, _) =
         build_agent_spawn_tool_row(&tool_call, None, &mut detail_blocks, 0);
     assert_eq!(title, "Explore Task — review streaming states");
-    assert_eq!(icon, Some("│"));
+    assert_eq!(icon, Some("✓"));
     assert_eq!(visual_style, TranscriptToolCallVisualStyle::TaskInline);
     let detail_text = task_detail_blocks_text(&detail_blocks);
     assert!(detail_text.contains("└ 0 toolcalls · 4.0s"));

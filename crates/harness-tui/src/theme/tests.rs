@@ -378,5 +378,5 @@ fn layout_plan_shell_width_tracks_theme_contracts() {
 
 #[test]
 fn diff_side_by_side_threshold_matches_geometry_contract() {
-    assert_eq!(DIFF_SIDE_BY_SIDE_MIN_WIDTH, 96);
+    assert_eq!(DIFF_SIDE_BY_SIDE_MIN_WIDTH, 120);
 }

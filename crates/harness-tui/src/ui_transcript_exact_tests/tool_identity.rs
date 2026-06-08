@@ -82,6 +82,26 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
                 if text.contains("Compat alias · read → fs.read")
         )));
 
+    let mut raw_read = transcript_section_model_test_tool_call("tc-raw-read", "read");
+    raw_read.args_summary = native_read.args_summary.clone();
+    raw_read.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    raw_read.status = ToolCallDisplayStatus::Succeeded;
+    let raw_read_section = build_transcript_tool_call_section(
+        &raw_read,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(raw_read_section.header.icon, Some("→"));
+    assert_eq!(
+        raw_read_section.header.title,
+        "Read src/ui.rs [offset=12, limit=24]"
+    );
+
     let mut task_call = transcript_section_model_test_tool_call("tc-task", "task");
     task_call.resolved_tool_identity = Some(harness_core::event::ResolvedToolIdentity {
         invoked_tool_id: Some("task".to_string()),
@@ -130,7 +150,7 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
         task_section.child_session_id.as_deref(),
         Some("agent_worker")
     );
-    assert_eq!(task_section.header.icon, Some("│"));
+    assert_eq!(task_section.header.icon, Some("✓"));
     assert_eq!(
         task_section.header.visual_style,
         TranscriptToolCallVisualStyle::TaskInline
@@ -229,7 +249,7 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
     );
     let task_lines = task_render.lines;
     let task_text = transcript_test_line_texts(task_lines).join("\n");
-    assert!(task_text.contains("│ Researcher Task — audit transcript parity"));
+    assert!(task_text.contains("✓ Researcher Task — audit transcript parity"));
     assert!(task_text.contains("Researcher Task — audit transcript parity"));
     assert!(task_text.contains("3 toolcalls · 1.6s"));
     assert!(!task_text.contains("Found the inline transcript path."));
@@ -298,6 +318,271 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
     assert!(!fetch_text.contains("Attachment ·"));
     assert!(!fetch_text.contains("web.fetch.pdf"));
     assert!(fetch_text.contains("Compat alias · webfetch → web.fetch"));
+
+    let mut raw_webfetch = transcript_section_model_test_tool_call("tc-raw-webfetch", "webfetch");
+    raw_webfetch.args_summary = fetch_call.args_summary.clone();
+    raw_webfetch.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    raw_webfetch.status = ToolCallDisplayStatus::Succeeded;
+    let raw_webfetch_section = build_transcript_tool_call_section(
+        &raw_webfetch,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(raw_webfetch_section.header.icon, Some("%"));
+    assert_eq!(
+        raw_webfetch_section.header.title,
+        "WebFetch https://example.test/report.pdf"
+    );
+
+    let mut skill_call = transcript_section_model_test_tool_call("tc-skill", "skill");
+    skill_call.args_summary = r#"{"name":"karpathy-guidelines"}"#.to_string();
+    skill_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    skill_call.status = ToolCallDisplayStatus::Succeeded;
+    let skill_section = build_transcript_tool_call_section(
+        &skill_call,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(skill_section.header.icon, Some("→"));
+    assert_eq!(skill_section.header.title, "Load skill karpathy-guidelines");
+
+    let mut web_search_call =
+        transcript_section_model_test_tool_call("tc-search-web", "search.web");
+    web_search_call.args_summary = r#"{"query":"transcript parity"}"#.to_string();
+    web_search_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    web_search_call.status = ToolCallDisplayStatus::Succeeded;
+    web_search_call.output_json = Some(serde_json::json!({ "numResults": 2 }));
+
+    let web_search_section = build_transcript_tool_call_section(
+        &web_search_call,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(web_search_section.header.icon, Some("◈"));
+    assert_eq!(
+        web_search_section.header.title,
+        "Web Search \"transcript parity\" (2 results)"
+    );
+
+    web_search_call.args_summary = r#"{"query":"transcript parity","provider":"exa"}"#.to_string();
+    let exa_search_section = build_transcript_tool_call_section(
+        &web_search_call,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(
+        exa_search_section.header.title,
+        "Exa Web Search \"transcript parity\" (2 results)"
+    );
+
+    web_search_call.output_json = Some(serde_json::json!({
+        "provider": "parallel",
+        "numResults": 2
+    }));
+    let parallel_search_section = build_transcript_tool_call_section(
+        &web_search_call,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(
+        parallel_search_section.header.title,
+        "Parallel Web Search \"transcript parity\" (2 results)"
+    );
+
+    let mut canonical_web_search_call =
+        transcript_section_model_test_tool_call("tc-websearch", "websearch");
+    canonical_web_search_call.args_summary =
+        r#"{"query":"transcript parity","provider":"exa"}"#.to_string();
+    canonical_web_search_call.lifecycle_state =
+        Some(harness_core::event::ToolCallLifecycleState::Completed);
+    canonical_web_search_call.status = ToolCallDisplayStatus::Succeeded;
+    canonical_web_search_call.output_json = Some(serde_json::json!({
+        "provider": "exa",
+        "numResults": 2
+    }));
+    let canonical_web_search_section = build_transcript_tool_call_section(
+        &canonical_web_search_call,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(canonical_web_search_section.header.icon, Some("◈"));
+    assert_eq!(
+        canonical_web_search_section.header.title,
+        "Exa Web Search \"transcript parity\" (2 results)"
+    );
+
+    let mut code_search_call =
+        transcript_section_model_test_tool_call("tc-search-code", "search.code");
+    code_search_call.args_summary = r#"{"query":"render_tool"}"#.to_string();
+    code_search_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    code_search_call.status = ToolCallDisplayStatus::Succeeded;
+    code_search_call.output_json = Some(serde_json::json!({ "result_count": 1 }));
+    let code_search_section = build_transcript_tool_call_section(
+        &code_search_call,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(code_search_section.header.icon, Some("◇"));
+    assert_eq!(
+        code_search_section.header.title,
+        "Code Search \"render_tool\" (1 result)"
+    );
+
+    let mut raw_glob = transcript_section_model_test_tool_call("tc-raw-glob", "glob");
+    raw_glob.args_summary = r#"{"pattern":"*.rs","path":"src"}"#.to_string();
+    raw_glob.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    raw_glob.status = ToolCallDisplayStatus::Succeeded;
+    raw_glob.output_json = Some(serde_json::json!({ "total_count": 3 }));
+    let raw_glob_section = build_transcript_tool_call_section(
+        &raw_glob,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(raw_glob_section.header.icon, Some("✱"));
+    assert_eq!(
+        raw_glob_section.header.title,
+        "Glob \"*.rs\" in src (3 matches)"
+    );
+
+    let mut raw_grep = transcript_section_model_test_tool_call("tc-raw-grep", "grep");
+    raw_grep.args_summary = r#"{"pattern":"render_tool","path":"src"}"#.to_string();
+    raw_grep.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    raw_grep.status = ToolCallDisplayStatus::Succeeded;
+    raw_grep.output_json = Some(serde_json::json!({ "total_count": 1 }));
+    let raw_grep_section = build_transcript_tool_call_section(
+        &raw_grep,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(raw_grep_section.header.icon, Some("✱"));
+    assert_eq!(
+        raw_grep_section.header.title,
+        "Grep \"render_tool\" in src (1 match)"
+    );
+
+    let mut raw_codesearch =
+        transcript_section_model_test_tool_call("tc-raw-codesearch", "codesearch");
+    raw_codesearch.args_summary = r#"{"query":"render_tool"}"#.to_string();
+    raw_codesearch.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    raw_codesearch.status = ToolCallDisplayStatus::Succeeded;
+    raw_codesearch.output_json = Some(serde_json::json!({ "result_count": 1 }));
+    let raw_codesearch_section = build_transcript_tool_call_section(
+        &raw_codesearch,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(raw_codesearch_section.header.icon, Some("◇"));
+    assert_eq!(
+        raw_codesearch_section.header.title,
+        "Code Search \"render_tool\" (1 result)"
+    );
+
+    let mut raw_lsp = transcript_section_model_test_tool_call("tc-raw-lsp", "lsp");
+    raw_lsp.args_summary = r#"{"filePath":"src/lib.rs","action":"diagnostics"}"#.to_string();
+    raw_lsp.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    raw_lsp.status = ToolCallDisplayStatus::Succeeded;
+    let raw_lsp_section = build_transcript_tool_call_section(
+        &raw_lsp,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(raw_lsp_section.header.icon, Some("⌘"));
+    assert_eq!(
+        raw_lsp_section.header.title,
+        "lsp src/lib.rs [action=diagnostics]"
+    );
+
+    let mut raw_batch = transcript_section_model_test_tool_call("tc-raw-batch", "batch");
+    raw_batch.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    raw_batch.status = ToolCallDisplayStatus::Succeeded;
+    raw_batch.output_json = Some(serde_json::json!({ "requested_call_count": 2 }));
+    let raw_batch_section = build_transcript_tool_call_section(
+        &raw_batch,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(raw_batch_section.header.icon, Some("≋"));
+    assert_eq!(raw_batch_section.header.title, "Run batch · 2 tools");
+
+    let mut raw_question = transcript_section_model_test_tool_call("tc-raw-question", "question");
+    raw_question.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Running);
+    raw_question.status = ToolCallDisplayStatus::Running;
+    let raw_question_section = build_transcript_tool_call_section(
+        &raw_question,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(raw_question_section.header.icon, Some("?"));
+    assert_eq!(raw_question_section.header.title, "Ask question");
+    assert_eq!(
+        raw_question_section.header.visual_style,
+        TranscriptToolCallVisualStyle::Block
+    );
 
     let mut generic_call = transcript_section_model_test_tool_call("tc-generic", "vendor.magic");
     generic_call.resolved_tool_identity = Some(harness_core::event::ResolvedToolIdentity {

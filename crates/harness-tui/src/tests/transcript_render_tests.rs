@@ -21,7 +21,7 @@ pub(super) fn module_transcript_edit_snapshot_renders_inline_diff() {
     );
 }
 
-pub(super) fn module_inline_diff_does_not_leave_large_gap_before_active_footer() {
+pub(super) fn module_inline_diff_does_not_reintroduce_assistant_footer() {
     harness_core::config::clear_registered_integrations_config();
     harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
 
@@ -39,15 +39,19 @@ pub(super) fn module_inline_diff_does_not_leave_large_gap_before_active_footer()
         .iter()
         .rposition(|line| line.contains("gamma") || line.contains("BETA") || line.contains("beta"))
         .expect("inline diff row");
-    let footer_row = lines
+    let assistant_footer = lines
         .iter()
-        .position(|line| line.contains("Assistant") && line.contains("active"))
-        .expect("active assistant footer row");
+        .find(|line| line.contains("Assistant ·") && line.contains("active"));
 
-    assert_eq!(
-        footer_row,
-        diff_last_row + 2,
-        "inline diff should hand off to the active footer row with only one blank separator\n{lines:#?}"
+    assert!(
+        assistant_footer.is_none(),
+        "block diff cards should not hand off to a removed assistant footer\n{lines:#?}"
+    );
+    assert!(
+        lines[diff_last_row].contains("gamma")
+            || lines[diff_last_row].contains("BETA")
+            || lines[diff_last_row].contains("beta"),
+        "test setup should still locate the inline diff tail\n{lines:#?}"
     );
 }
 
@@ -162,15 +166,23 @@ pub(super) fn module_wide_diff_renderer_pairs_before_and_after_columns() {
     );
 }
 
-pub(super) fn module_diff_renderer_switches_to_side_by_side_at_primary_widths() {
+pub(super) fn module_diff_renderer_stacks_at_threshold_and_splits_wide() {
     let app = transcript_diff_block_app();
 
-    let rendered = render_live_lines(&app, 120, 30);
+    let threshold = render_live_lines(&app, crate::theme::DIFF_SIDE_BY_SIDE_MIN_WIDTH, 30);
     assert!(
-        rendered
+        !threshold
             .lines()
             .any(|line| line.contains("- beta") && line.contains("+ BETA")),
-        "primary-width layouts should pair before/after columns on one row\n{rendered}"
+        "threshold-width layouts should stay stacked; split starts above the threshold\n{threshold}"
+    );
+
+    let above_threshold = render_live_lines(&app, 220, 30);
+    assert!(
+        above_threshold
+            .lines()
+            .any(|line| line.contains("- beta") && line.contains("+ BETA")),
+        "wide layouts above the surface threshold should pair before/after columns on one row\n{above_threshold}"
     );
 }
 

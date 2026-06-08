@@ -74,7 +74,7 @@ pub(super) fn build_transcript_tool_call_section(
     let animation_phase = app.transcript_animation_phase();
 
     let (title, icon, visual_style, uses_generic_output_visibility) = match display_tool_id {
-        "fs.read" => {
+        "fs.read" | "read" => {
             let path = tool_path_display(tool_call);
             let title = path.as_ref().map_or_else(
                 || "Reading file...".to_string(),
@@ -96,7 +96,7 @@ pub(super) fn build_transcript_tool_call_section(
             };
             (title, icon, TranscriptToolCallVisualStyle::Inline, false)
         }
-        "fs.glob" => (
+        "fs.glob" | "glob" => (
             format!(
                 "Glob \"{}\"{}{}",
                 tool_summary_string(&tool_call.args_summary, &["pattern"])
@@ -108,7 +108,7 @@ pub(super) fn build_transcript_tool_call_section(
             TranscriptToolCallVisualStyle::Inline,
             false,
         ),
-        "fs.grep" => (
+        "fs.grep" | "grep" => (
             format!(
                 "Grep \"{}\"{}{}",
                 tool_summary_string(&tool_call.args_summary, &["pattern"])
@@ -288,7 +288,7 @@ pub(super) fn build_transcript_tool_call_section(
                 )
             }
         }
-        "web.fetch" => (
+        "web.fetch" | "webfetch" => (
             format!(
                 "WebFetch {}",
                 tool_summary_string(&tool_call.args_summary, &["url"])
@@ -298,19 +298,19 @@ pub(super) fn build_transcript_tool_call_section(
             TranscriptToolCallVisualStyle::Inline,
             true,
         ),
-        "search.web" | "search.code" => (
+        "search.web" | "websearch" | "search.code" | "codesearch" => (
             format!(
                 "{} \"{}\"{}",
-                if display_tool_id == "search.web" {
-                    "Exa Web Search"
+                if matches!(display_tool_id, "search.web" | "websearch") {
+                    web_search_provider_label(tool_call)
                 } else {
-                    "Exa Code Search"
+                    "Code Search".to_string()
                 },
                 tool_summary_string(&tool_call.args_summary, &["query"])
                     .unwrap_or_else(|| "query".to_string()),
                 search_result_count_suffix(tool_call, display_tool_id)
             ),
-            Some(if display_tool_id == "search.web" {
+            Some(if matches!(display_tool_id, "search.web" | "websearch") {
                 "◈"
             } else {
                 "◇"
@@ -337,17 +337,17 @@ pub(super) fn build_transcript_tool_call_section(
             TranscriptToolCallVisualStyle::Inline,
             false,
         ),
-        "skill.load" => (
+        "skill.load" | "skill" => (
             format!(
                 "Load skill {}",
                 tool_summary_string(&tool_call.args_summary, &["name"])
                     .unwrap_or_else(|| "skill".to_string())
             ),
-            Some("✦"),
+            Some("→"),
             TranscriptToolCallVisualStyle::Inline,
             false,
         ),
-        "user.question" => {
+        "user.question" | "question" => {
             if question_answers.is_empty() {
                 (
                     "Ask question".to_string(),
@@ -365,13 +365,13 @@ pub(super) fn build_transcript_tool_call_section(
                 )
             }
         }
-        "tool.batch" => (
+        "tool.batch" | "batch" => (
             batch_tool_title(tool_call),
             Some("≋"),
             generic_tool_visual_style(tool_call, generic_output_visible),
             true,
         ),
-        "code.lsp" => (
+        "code.lsp" | "lsp" => (
             generic_tool_title(tool_call, display_tool_id),
             Some("⌘"),
             generic_tool_visual_style(tool_call, generic_output_visible),
@@ -508,7 +508,7 @@ pub(super) fn build_transcript_tool_call_section(
                 default_subtitle
             } else if tool_call.status == ToolCallDisplayStatus::Failed {
                 join_tool_subtitles(default_subtitle, error_subtitle)
-            } else if display_tool_id == "user.question" {
+            } else if matches!(display_tool_id, "user.question" | "question") {
                 question_tool_subtitle(&question_answers)
             } else {
                 default_subtitle
@@ -522,6 +522,16 @@ pub(super) fn build_transcript_tool_call_section(
         },
         detail_blocks,
         expanded,
+    }
+}
+
+fn web_search_provider_label(tool_call: &crate::app::ToolCallEntry) -> String {
+    let provider = tool_json_string(tool_call.output_json.as_ref(), &["provider"])
+        .or_else(|| tool_summary_string(&tool_call.args_summary, &["provider"]));
+    match provider.as_deref() {
+        Some("parallel") => "Parallel Web Search".to_string(),
+        Some("exa") => "Exa Web Search".to_string(),
+        _ => "Web Search".to_string(),
     }
 }
 
@@ -769,11 +779,11 @@ pub(super) fn build_agent_spawn_tool_row(
         ToolCallDisplayStatus::Running if has_description => {
             Some(transcript_streaming_spinner_frame(animation_phase))
         }
+        ToolCallDisplayStatus::Succeeded => Some("✓"),
         _ if has_description => Some("│"),
         ToolCallDisplayStatus::PendingPermission
         | ToolCallDisplayStatus::Queued
         | ToolCallDisplayStatus::Running
-        | ToolCallDisplayStatus::Succeeded
         | ToolCallDisplayStatus::Failed => Some("~"),
     };
     (

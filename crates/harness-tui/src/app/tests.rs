@@ -801,7 +801,7 @@ delegate_test!(composer_metadata_deduplicates_provider_backend_source_label => m
 delegate_test!(live_switch_model_labels_next_turn_only => model_context_tests::live_switch_model_labels_next_turn_only);
 delegate_test!(tab_cycles_build_and_plan_primary_agents => model_context_tests::tab_cycles_build_and_plan_primary_agents);
 delegate_test!(agent_cycle_preserves_user_selected_provider_model_across_profiles => model_context_tests::agent_cycle_preserves_user_selected_provider_model_across_profiles);
-delegate_test!(switching_agent_after_submit_keeps_existing_turn_footer_agent => model_context_tests::switching_agent_after_submit_keeps_existing_turn_footer_agent);
+delegate_test!(switching_agent_after_submit_keeps_existing_turn_profile => model_context_tests::switching_agent_after_submit_keeps_existing_turn_profile);
 
 #[cfg(test)]
 #[path = "tests/interaction_tests.rs"]

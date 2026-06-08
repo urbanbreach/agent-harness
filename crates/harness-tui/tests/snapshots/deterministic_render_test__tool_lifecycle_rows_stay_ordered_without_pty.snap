@@ -1,6 +1,5 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
-assertion_line: 77
 expression: rendered.as_str()
 ---
                                                                                                                                                                                     
@@ -11,21 +10,21 @@ expression: rendered.as_str()
      → Read src/ui.rs [offset=1, limit=24]  ▸                                                                                                                                       
       ↳ Loaded src/ui.rs                                                                                                                    ▼ MCP                                   
       Compat alias · read → fs.read                                                                                                         • No MCP servers configured             
-     ← Patch · ui.rs  ▸                                                                                                                                                             
-      crates/harness-tui/src                                                                                                                ▼ LSP                                   
-      Remove diff review surface · Diff preview unavailable (artifacts/tool-lifecycle-inline.diff)                                          • No active LSP servers                 
-     │ Researcher Task — audit tool lifecycle parity                                                                                                                                
-      └ 2 toolcalls · 2ms                                                                                                                   ▼ Modified Files                        
-     $ cargo test -p harness-tui  ▸                                                                                                         • crates/harness-tui/src/ui.rs          
+                                                                                                                                                                                    
+     ┃                                                                                                                                      ▼ LSP                                   
+     ┃  ← Patch · ui.rs  ▸                                                                                                                  • No active LSP servers                 
+     ┃  crates/harness-tui/src                                                                                                                                                      
+     ┃                                                                                                                                      ▼ Modified Files                        
+     ┃  Remove diff review surface · Diff preview unavailable (artifacts/tool-lifecycle-inline.diff)                                        • crates/harness-tui/src/ui.rs          
+     ┃                                                                                                                                                                              
+     ✓ Researcher Task — audit tool lifecycle parity                                                                                                                                
+      └ 2 toolcalls · 2ms                                                                                                                                                           
+     $ cargo test -p harness-tui  ▸                                                                                                                                                 
       exit code: 1                                                                                                                                                                  
       stderr: snapshot mismatch                                                                                                                                                     
                                                                                                                                                                                     
      Tool summaries are now easier to scan, and edits stay inline.                                                                                                                  
      Ctrl+] view subagents                                                                                                                                                          
-                                                                                                                                                                                    
-     ▪ Assistant · model-1 · 17ms                                                                                                                                                   
-                                                                                                                                                                                    
-                                                                                                                                                                                    
                                                                                                                                                                                     
                                                                                                                                                                                     
                                                                                                                                                                                     

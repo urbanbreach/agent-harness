@@ -39,7 +39,6 @@ pub(in crate::ui) enum TranscriptRenderSurfaceKind {
     AssistantTool,
     AssistantCommandTool,
     AssistantError,
-    AssistantFooter,
 }
 
 #[derive(Debug, Clone)]
@@ -53,7 +52,6 @@ pub(super) struct BuildTurnSectionArgs<'a> {
     pub(super) activity: &'a ActivityEntry,
     pub(super) queued_user_message: bool,
     pub(super) is_selected: bool,
-    pub(super) is_latest: bool,
     pub(super) thinking_visible: bool,
     pub(super) timestamps_visible: bool,
     pub(super) show_tool_details: bool,
@@ -74,8 +72,6 @@ pub(super) struct TranscriptOrderedToolCallSection {
 pub(super) struct TranscriptTurnSection {
     pub(super) request_id: String,
     pub(super) user_message: Option<TranscriptUserMessageSection>,
-    pub(super) show_footer: bool,
-    pub(super) footer_timestamp: Option<String>,
     pub(super) animation_phase: usize,
     pub(super) header: TranscriptTurnHeader,
     pub(super) body_blocks: Vec<TranscriptBodyBlock>,
@@ -110,6 +106,9 @@ pub(super) enum TranscriptBodyBlock {
 pub(super) struct TranscriptLabeledTextSection {
     pub(super) label: &'static str,
     pub(super) text: String,
+    pub(super) status: ActivityStatus,
+    pub(super) started_mono_ms: Option<u64>,
+    pub(super) duration_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

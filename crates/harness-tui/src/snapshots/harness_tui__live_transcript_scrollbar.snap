@@ -1,8 +1,10 @@
 ---
-source: crates/harness-tui/src/lib_tests.rs
+source: crates/harness-tui/src/lib_tests/transcript_flow.rs
 expression: "render_live_lines(&app, 80, 24)"
 ---
                                                                                 
+    ┃                                                                           
+    ┃  question 9                                                               
     ┃                                                                           
                                                                                 
        reply 9 keeps wrapping through the transcript viewport so the            
@@ -12,13 +14,11 @@ expression: "render_live_lines(&app, 80, 24)"
     ┃  question 10                                                              
     ┃                                                                           
                                                                                 
-       reply 10 keeps wrapping through the transcript viewport so the           
-       scrollbar thumb has real room to move                                    
+       reply 10 keeps wrapping through the transcript viewport so the      █    
+       scrollbar thumb has real room to move                               █    
                                                                            █    
-    ┃                                                                      █    
-    ┃  question 11                                                         █    
     ┃                                                                           
-                                                                                
+    ┃  question 11                                                              
                                                                                 
   ┃                                                                             
   ┃                                                                             

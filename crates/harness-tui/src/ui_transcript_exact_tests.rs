@@ -20,6 +20,8 @@ mod edit_diffs;
 mod failure_shell;
 #[path = "ui_transcript_exact_tests/layout_permissions.rs"]
 mod layout_permissions;
+#[path = "ui_transcript_exact_tests/reasoning_blocks.rs"]
+mod reasoning_blocks;
 #[path = "ui_transcript_exact_tests/task_rows.rs"]
 mod task_rows;
 #[path = "ui_transcript_exact_tests/tool_identity.rs"]

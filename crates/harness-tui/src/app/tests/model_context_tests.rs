@@ -335,7 +335,7 @@ pub(super) fn agent_cycle_preserves_user_selected_provider_model_across_profiles
     assert_eq!(launch_metadata.variant(), Some("high"));
 }
 
-pub(super) fn switching_agent_after_submit_keeps_existing_turn_footer_agent() {
+pub(super) fn switching_agent_after_submit_keeps_existing_turn_profile() {
     let build_option =
         runtime_context_model_option("build", "default", "gpt-5.4-mini", None, "GPT-5.4 Mini");
     let plan_option =
@@ -348,20 +348,22 @@ pub(super) fn switching_agent_after_submit_keeps_existing_turn_footer_agent() {
             .with_switchable_profiles(vec!["build".to_string(), "plan".to_string()]),
     );
 
-    for ch in "keep footer agent".chars() {
+    for ch in "keep turn agent".chars() {
         app.handle_key(key(KeyCode::Char(ch)));
     }
     app.handle_key(key(KeyCode::Enter));
     app.handle_key(key(KeyCode::Tab));
 
     assert_eq!(app.active_profile(), "plan");
+    assert_eq!(
+        app.activities
+            .back()
+            .map(|activity| activity.profile_label.as_str()),
+        Some("build")
+    );
     let rendered = render_debug(&app, 100, 32);
     assert!(
-        rendered.contains("Build · active"),
-        "submitted turn footer should keep its original agent after switching\n{rendered}"
-    );
-    assert!(
-        !rendered.contains("Plan · active"),
-        "submitted turn footer must not follow the newly selected agent\n{rendered}"
+        !rendered.contains("Build · active") && !rendered.contains("Plan · active"),
+        "submitted turns should not render assistant metadata footers after switching\n{rendered}"
     );
 }

@@ -311,21 +311,6 @@ pub(super) fn transcript_selection_line_rows(
     rows
 }
 
-pub(super) fn selection_rows_for_rendered_line(
-    line: &Line<'static>,
-    width: u16,
-) -> Vec<TranscriptSelectionRow> {
-    transcript_selection_line_rows(line, usize::from(width.max(1)))
-        .into_iter()
-        .enumerate()
-        .map(|(idx, cells)| TranscriptSelectionRow {
-            cells,
-            continues_previous: idx > 0,
-            copy_offset: 0,
-        })
-        .collect()
-}
-
 pub(super) fn selection_rows_for_markdownish_text_block(
     text: &str,
     color: Color,

@@ -58,14 +58,8 @@ pub(super) fn block_tool_color(status: ToolCallDisplayStatus, theme: &Theme) -> 
     }
 }
 
-pub(super) fn block_tool_rail_color(status: ToolCallDisplayStatus, theme: &Theme) -> Color {
-    match status {
-        ToolCallDisplayStatus::PendingPermission => theme.status.warning,
-        ToolCallDisplayStatus::Failed => theme.status.error,
-        ToolCallDisplayStatus::Queued
-        | ToolCallDisplayStatus::Running
-        | ToolCallDisplayStatus::Succeeded => theme.text.accent,
-    }
+pub(super) fn block_tool_rail_color(_status: ToolCallDisplayStatus, theme: &Theme) -> Color {
+    theme.surface.shell
 }
 
 pub(super) fn tool_call_header_style(struck_out: bool, color: Color) -> Style {
