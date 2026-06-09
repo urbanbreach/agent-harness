@@ -484,6 +484,7 @@ pub(super) fn build_transcript_tool_call_section(
             metadata.leaf
         }),
         "background_output" => background_output_tool_subtitle(tool_call),
+        "agent.spawn" | "task" => agent_spawn_subtitle(tool_call),
         "apply_patch" => apply_patch_tool_header_metadata(tool_call).map(|metadata| {
             header_path_metadata = metadata.parent.clone();
             metadata.leaf
@@ -515,7 +516,11 @@ pub(super) fn build_transcript_tool_call_section(
             },
             path_metadata: header_path_metadata,
             icon,
-            status: tool_call.status,
+            status: if matches!(display_tool_id, "agent.spawn" | "task") {
+                agent_spawn_display_status(tool_call, task_row)
+            } else {
+                tool_call.status
+            },
             visual_style,
             struck_out,
             disclosure_state,
@@ -752,20 +757,11 @@ pub(super) fn build_agent_spawn_tool_row(
     TranscriptToolCallVisualStyle,
     bool,
 ) {
-    let description = agent_spawn_description(tool_call).or_else(|| {
-        task_row
-            .and_then(|row| row.result_summary.as_deref())
-            .map(collapse_inline_whitespace)
-            .filter(|value| !value.is_empty())
-    });
-    let has_description = description.is_some();
-    let title = if has_description {
-        agent_spawn_title(tool_call, description)
-    } else {
-        "Delegating...".to_string()
-    };
+    let description = agent_spawn_description(tool_call);
+    let title = agent_spawn_title(tool_call, description);
+    let display_status = agent_spawn_display_status(tool_call, task_row);
     if matches!(
-        tool_call.status,
+        display_status,
         ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Running
     ) {
         if let Some(line) = agent_spawn_context_line(tool_call, task_row) {
@@ -775,16 +771,13 @@ pub(super) fn build_agent_spawn_tool_row(
             });
         }
     }
-    let icon = match tool_call.status {
-        ToolCallDisplayStatus::Running if has_description => {
-            Some(transcript_streaming_spinner_frame(animation_phase))
-        }
-        ToolCallDisplayStatus::Succeeded => Some("✓"),
-        _ if has_description => Some("│"),
-        ToolCallDisplayStatus::PendingPermission
+    let _ = animation_phase;
+    let icon = match display_status {
+        ToolCallDisplayStatus::Failed => Some("✗"),
+        ToolCallDisplayStatus::Running
         | ToolCallDisplayStatus::Queued
-        | ToolCallDisplayStatus::Running
-        | ToolCallDisplayStatus::Failed => Some("~"),
+        | ToolCallDisplayStatus::PendingPermission => Some("•"),
+        ToolCallDisplayStatus::Succeeded => Some("✓"),
     };
     (
         title,
