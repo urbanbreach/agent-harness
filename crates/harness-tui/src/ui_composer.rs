@@ -126,6 +126,7 @@ pub(super) fn render_document_composer_content(
         && matches!(
             context.dock.variant,
             crate::view_model::ControlDockVariant::Startup
+                | crate::view_model::ControlDockVariant::Live
         );
     let body = if placeholder_visible {
         context.dock.composer_body.as_str()

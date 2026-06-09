@@ -826,7 +826,7 @@ impl AppState {
         }
 
         let composer_body = if self.prompt_buffer.is_empty() {
-            String::new()
+            runtime_state.composer_hint.clone()
         } else {
             self.prompt_buffer.clone()
         };
