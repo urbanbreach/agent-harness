@@ -45,6 +45,18 @@ pub(super) fn transcript_surface_leading_gap(
         {
             0
         }
+        Some(previous)
+            if matches!(
+                previous,
+                TranscriptRenderSurfaceKind::AssistantBody
+                    | TranscriptRenderSurfaceKind::AssistantReasoning
+                    | TranscriptRenderSurfaceKind::AssistantTool
+                    | TranscriptRenderSurfaceKind::AssistantCommandTool
+                    | TranscriptRenderSurfaceKind::AssistantError
+            ) && current == TranscriptRenderSurfaceKind::AssistantFooter =>
+        {
+            0
+        }
         Some(_) => 1,
         None => 0,
     }
@@ -161,7 +173,11 @@ pub(super) fn transcript_surface_render_width(
                 .saturating_sub(TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH)
                 .max(1)
         }
-        _ => width.max(1),
+        TranscriptRenderSurfaceKind::AssistantFooter
+        | TranscriptRenderSurfaceKind::AssistantReasoning
+        | TranscriptRenderSurfaceKind::AssistantBody
+        | TranscriptRenderSurfaceKind::AssistantTool
+        | TranscriptRenderSurfaceKind::AssistantError => width.max(1),
     }
 }
 

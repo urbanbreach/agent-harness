@@ -9,8 +9,9 @@ use crate::theme::DIFF_SIDE_BY_SIDE_MIN_WIDTH;
 use super::ui_diff::{render_structured_diff_lines_with_hunk_offsets, StructuredDiffRenderOptions};
 use super::ui_markdown::{append_rich_text_block, parse_inline_markdown_spans};
 use super::ui_tool_delegation::{
-    agent_spawn_context_line, agent_spawn_description, agent_spawn_title,
-    hidden_delegated_child_request_ids, task_tool_child_session_id,
+    agent_spawn_context_line, agent_spawn_description, agent_spawn_display_status,
+    agent_spawn_subtitle, agent_spawn_title, hidden_delegated_child_request_ids,
+    task_tool_child_session_id,
 };
 use super::ui_tool_diffs::{
     apply_patch_tool_header_metadata, collect_apply_patch_file_render_entries,
@@ -53,10 +54,9 @@ use super::ui_transcript_events::{
 use super::ui_transcript_interaction::{
     append_nested_surface_row_with_target, append_noninteractive_rows,
     append_surface_row_with_bounded_target, append_surface_row_with_target,
-    bounded_interaction_row, full_width_interaction_row, rect_contains, subagent_session_target,
-    tool_header_target, transcript_mouse_target_at, transcript_surface_focused,
-    transcript_target_is_hovered, NestedSurfaceChrome, TranscriptInteractionRow,
-    TranscriptMouseTarget,
+    bounded_interaction_row, full_width_interaction_row, rect_contains, tool_header_target,
+    transcript_mouse_target_at, transcript_surface_focused, NestedSurfaceChrome,
+    TranscriptInteractionRow, TranscriptMouseTarget,
 };
 use super::ui_transcript_layout::{
     measure_transcript_layout, render_transcript_layout_surfaces,
@@ -75,6 +75,7 @@ use super::ui_transcript_selection::{
     TranscriptSelectionCell, TranscriptSelectionRow, TranscriptSelectionSnapshot,
 };
 use super::ui_transcript_style::{
+    activity_status_supports_footer_only, assistant_footer_label, assistant_primary_label_color,
     assistant_primary_rail_color, selected_foreground_for_badge, transcript_emphasized_surface,
     transcript_nested_rail_color, transcript_streaming_spinner_frame,
 };
