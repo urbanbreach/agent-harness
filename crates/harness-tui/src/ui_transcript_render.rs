@@ -146,7 +146,125 @@ fn build_assistant_render_surfaces(
         ));
         index += 1;
     }
+    if let Some(footer) = turn.assistant_footer.as_ref() {
+        surfaces.push(build_assistant_footer_render_surface(
+            turn,
+            footer,
+            theme,
+            width,
+            base_surface,
+        ));
+    }
     surfaces
+}
+
+fn build_assistant_footer_render_surface(
+    turn: &TranscriptTurnSection,
+    footer: &TranscriptAssistantFooterSection,
+    theme: &Theme,
+    width: u16,
+    base_surface: Color,
+) -> TranscriptRenderSurface {
+    let agent_accent = theme.agent_accent(&turn.header.profile_label);
+    let active_status = matches!(
+        turn.header.status,
+        ActivityStatus::Queued | ActivityStatus::Streaming
+    );
+    let spans = if active_status {
+        let assistant_status = if matches!(turn.header.status, ActivityStatus::Queued) {
+            "queued"
+        } else {
+            "active"
+        };
+        let mut spans = vec![
+            Span::styled(
+                transcript_streaming_spinner_frame(turn.animation_phase).to_string(),
+                Style::default().fg(agent_accent),
+            ),
+            Span::styled(" ".to_string(), Style::default().fg(agent_accent)),
+            Span::styled(
+                footer.agent_label.clone(),
+                Style::default().fg(assistant_primary_label_color(turn.header.status, theme)),
+            ),
+        ];
+        if !footer.model_label.trim().is_empty() {
+            spans.push(Span::styled(" · ".to_string(), muted_meta_style(theme)));
+            spans.push(Span::styled(
+                footer.model_label.clone(),
+                muted_meta_style(theme),
+            ));
+        }
+        if let Some(provider_label) = footer.provider_label.as_deref() {
+            spans.push(Span::styled(
+                if footer.model_label.trim().is_empty() {
+                    " · ".to_string()
+                } else {
+                    " ".to_string()
+                },
+                muted_meta_style(theme),
+            ));
+            spans.push(Span::styled(
+                provider_label.to_string(),
+                muted_meta_style(theme),
+            ));
+        }
+        spans.push(Span::styled(" · ".to_string(), muted_meta_style(theme)));
+        spans.push(Span::styled(
+            assistant_status.to_string(),
+            Style::default().fg(agent_accent),
+        ));
+        spans
+    } else {
+        let duration = footer
+            .duration_ms
+            .map(format_duration_ms)
+            .unwrap_or_else(|| "0ms".to_string());
+        let mut spans = vec![
+            Span::styled("▣".to_string(), muted_meta_style(theme)),
+            Span::styled(" · ".to_string(), muted_meta_style(theme)),
+            Span::styled(duration, muted_meta_style(theme)),
+            Span::styled("  ".to_string(), muted_meta_style(theme)),
+            Span::styled(
+                footer.agent_label.clone(),
+                Style::default().fg(assistant_primary_label_color(turn.header.status, theme)),
+            ),
+            Span::styled(" · ".to_string(), muted_meta_style(theme)),
+            Span::styled(footer.model_label.clone(), muted_meta_style(theme)),
+        ];
+        if let Some(provider_label) = footer.provider_label.as_deref() {
+            spans.push(Span::styled(" ".to_string(), muted_meta_style(theme)));
+            spans.push(Span::styled(
+                provider_label.to_string(),
+                muted_meta_style(theme),
+            ));
+        }
+        if matches!(turn.header.status, ActivityStatus::Error) {
+            spans.push(Span::styled(" · ".to_string(), muted_meta_style(theme)));
+            spans.push(Span::styled(
+                "error".to_string(),
+                Style::default().fg(theme.status.error),
+            ));
+        }
+        spans
+    };
+    let mut lines = Vec::new();
+    append_surface_row(
+        &mut lines,
+        TRANSCRIPT_ASSISTANT_BODY_PREFIX,
+        base_surface,
+        spans,
+        transcript_surface_content_width(width, false),
+    );
+    TranscriptRenderSurface {
+        kind: TranscriptRenderSurfaceKind::AssistantFooter,
+        show_outer_rail: false,
+        rail_color: transcript_nested_rail_color(theme),
+        surface: base_surface,
+        lines,
+        interaction_rows: None,
+        selection_rows: None,
+        diff_hunk_offsets: Vec::new(),
+    }
 }
 
 fn assistant_part_needs_leading_gap(
@@ -282,24 +400,6 @@ fn build_assistant_part_render_surface(
                 render.diff_hunk_offsets,
             )
         }
-        TranscriptAssistantPart::SubagentHint => {
-            let hint_line_count =
-                append_subagent_hint_line(&mut lines, turn, theme, width, base_surface);
-            (
-                TranscriptRenderSurfaceKind::AssistantTool,
-                false,
-                transcript_nested_rail_color(theme),
-                base_surface,
-                Some(vec![
-                    Some(full_width_interaction_row(
-                        TranscriptMouseTarget::FirstSubagentSession
-                    ));
-                    hint_line_count
-                ]),
-                None,
-                Vec::new(),
-            )
-        }
         TranscriptAssistantPart::Error(error) => {
             append_assistant_error_box(&mut lines, &error.text, theme, width, base_surface);
             (
@@ -339,29 +439,6 @@ fn build_assistant_part_render_surface(
         selection_rows,
         diff_hunk_offsets,
     }
-}
-
-fn append_subagent_hint_line(
-    lines: &mut Vec<Line<'static>>,
-    turn: &TranscriptTurnSection,
-    theme: &Theme,
-    width: u16,
-    base_surface: Color,
-) -> usize {
-    let start = lines.len();
-    let keybind = turn.subagent_hint_key.as_str();
-    let spans = vec![
-        Span::styled(keybind.to_string(), Style::default().fg(theme.text.primary)),
-        Span::styled(" view subagents", muted_meta_style(theme)),
-    ];
-    append_surface_row(
-        lines,
-        TRANSCRIPT_ASSISTANT_BODY_PREFIX,
-        base_surface,
-        spans,
-        transcript_surface_content_width(width, false),
-    );
-    lines.len().saturating_sub(start)
 }
 
 fn append_reasoning_block(

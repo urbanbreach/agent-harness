@@ -121,6 +121,7 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
             is_selected,
             profile_label: activity.profile_label.clone(),
             model_id: activity.model_id.clone(),
+            provider_id: activity.provider_id.clone(),
             duration_ms: activity.duration_ms(),
         },
         body_blocks,
@@ -128,8 +129,49 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
         thinking,
         error,
         assistant_parts,
-        subagent_hint_key: app.keymap.get_binding_str(Action::SessionChildFirst),
+        assistant_footer: assistant_footer_section(activity),
     }
+}
+
+fn assistant_footer_section(activity: &ActivityEntry) -> Option<TranscriptAssistantFooterSection> {
+    if activity_status_supports_footer_only(activity.status) {
+        return active_activity_supports_footer(activity).then(|| {
+            TranscriptAssistantFooterSection {
+                agent_label: assistant_footer_label(&activity.profile_label),
+                model_label: activity.model_id.clone(),
+                provider_label: provider_footer_label(&activity.provider_id),
+                duration_ms: activity.duration_ms(),
+            }
+        });
+    }
+
+    if activity.transcript_text.is_empty()
+        && activity.thinking_text.is_empty()
+        && activity.tool_calls.is_empty()
+        && activity.error_message.is_none()
+    {
+        return None;
+    }
+    Some(TranscriptAssistantFooterSection {
+        agent_label: assistant_footer_label(&activity.profile_label),
+        model_label: activity.model_id.clone(),
+        provider_label: provider_footer_label(&activity.provider_id),
+        duration_ms: activity.duration_ms(),
+    })
+}
+
+fn active_activity_supports_footer(activity: &ActivityEntry) -> bool {
+    match activity.status {
+        ActivityStatus::Streaming => true,
+        ActivityStatus::Queued => activity.user_message.is_none(),
+        ActivityStatus::Done | ActivityStatus::Error => false,
+    }
+}
+
+fn provider_footer_label(provider_id: &str) -> Option<String> {
+    let provider = provider_id.trim();
+    (!provider.is_empty() && provider != "default" && provider != "local")
+        .then(|| provider.to_string())
 }
 
 fn build_ordered_assistant_parts(
@@ -158,7 +200,6 @@ fn build_ordered_assistant_parts(
                 .into_iter()
                 .map(|tool_call| TranscriptAssistantPart::ToolCall(Box::new(tool_call.section))),
         );
-        insert_subagent_hint_after_task_tools(&mut fallback_parts);
         if let Some(error) = error {
             fallback_parts.push(TranscriptAssistantPart::Error(error));
         }
@@ -166,36 +207,11 @@ fn build_ordered_assistant_parts(
     }
 
     sync_reasoning_parts_with_activity(&mut event_parts, activity, thinking_visible);
-    insert_subagent_hint_after_task_tools(&mut event_parts);
 
     if let Some(error) = error {
         event_parts.push(TranscriptAssistantPart::Error(error));
     }
     event_parts
-}
-
-fn insert_subagent_hint_after_task_tools(parts: &mut Vec<TranscriptAssistantPart>) {
-    if parts
-        .iter()
-        .any(|part| matches!(part, TranscriptAssistantPart::SubagentHint))
-    {
-        return;
-    }
-    let has_task_tool = parts.iter().any(|part| {
-        matches!(
-            part,
-            TranscriptAssistantPart::ToolCall(tool_call)
-                if matches!(tool_call.header.tool_id.as_str(), "agent.spawn" | "task")
-        )
-    });
-    if !has_task_tool {
-        return;
-    }
-    let insert_at = parts
-        .iter()
-        .position(|part| matches!(part, TranscriptAssistantPart::Error(_)))
-        .unwrap_or(parts.len());
-    parts.insert(insert_at, TranscriptAssistantPart::SubagentHint);
 }
 
 fn sync_reasoning_parts_with_activity(

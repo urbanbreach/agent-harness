@@ -1,5 +1,6 @@
 use ratatui::style::Color;
 
+use crate::app::humanize_profile_label;
 use crate::app::ActivityStatus;
 use crate::theme::Theme;
 
@@ -10,6 +11,22 @@ const TRANSCRIPT_BRAILLE_SPINNER_FRAMES: [&str; 10] =
 
 pub(super) fn transcript_streaming_spinner_frame(animation_phase: usize) -> &'static str {
     TRANSCRIPT_BRAILLE_SPINNER_FRAMES[animation_phase % TRANSCRIPT_BRAILLE_SPINNER_FRAMES.len()]
+}
+
+pub(super) fn assistant_footer_label(value: &str) -> String {
+    humanize_profile_label(value)
+}
+
+pub(super) fn assistant_primary_label_color(status: ActivityStatus, theme: &Theme) -> Color {
+    match status {
+        ActivityStatus::Queued => theme.text.secondary,
+        ActivityStatus::Streaming | ActivityStatus::Done => theme.text.primary,
+        ActivityStatus::Error => theme.status.error,
+    }
+}
+
+pub(super) fn activity_status_supports_footer_only(status: ActivityStatus) -> bool {
+    matches!(status, ActivityStatus::Queued | ActivityStatus::Streaming)
 }
 
 pub(super) fn selected_foreground_for_badge(background: Color, theme: &Theme) -> Color {
