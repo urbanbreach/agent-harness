@@ -81,13 +81,7 @@ fn append_task_inline_tool_section_lines(
     width: u16,
     base_surface: Color,
 ) {
-    let target = subagent_session_target(tool_call.child_session_id.as_deref()).or_else(|| {
-        Some(TranscriptMouseTarget::Tool {
-            tool_call_id: tool_call.tool_call_id.clone(),
-        })
-    });
-    let hovered = transcript_target_is_hovered(target.as_ref(), tool_call.hovered_target.as_ref());
-    let fg = task_inline_tool_color(tool_call.header.status, theme, hovered && target.is_some());
+    let fg = task_inline_tool_color(tool_call.header.status, theme, false);
     let style = tool_call_header_style(tool_call.header.struck_out, fg);
     let surface = base_surface;
     let mut spans = Vec::new();
@@ -96,11 +90,15 @@ fn append_task_inline_tool_section_lines(
         spans.push(Span::raw(" "));
     }
     spans.push(Span::styled(tool_call.header.title.clone(), style));
+    if let Some(subtitle) = tool_call.header.subtitle.as_deref() {
+        spans.push(Span::styled(" · ".to_string(), muted_meta_style(theme)));
+        spans.push(Span::styled(subtitle.to_string(), muted_meta_style(theme)));
+    }
 
     append_surface_row_with_bounded_target(
         &mut render.lines,
         &mut render.interaction_rows,
-        target.clone(),
+        None,
         TRANSCRIPT_ASSISTANT_BODY_PREFIX,
         surface,
         spans,
@@ -124,7 +122,7 @@ fn append_task_inline_tool_section_lines(
                     append_surface_row_with_bounded_target(
                         &mut render.lines,
                         &mut render.interaction_rows,
-                        target.clone(),
+                        None,
                         TRANSCRIPT_OPCODE_EDIT_INDENT,
                         surface,
                         spans,
@@ -167,7 +165,7 @@ fn append_block_tool_section_lines(
 
     let surface = theme.surface.panel;
     let card_shell = TranscriptToolCardShell {
-        indent: TRANSCRIPT_ASSISTANT_BODY_PREFIX,
+        indent: "",
         rail_color: block_tool_rail_color(tool_call.header.status, theme),
         surface,
     };

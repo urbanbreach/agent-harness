@@ -355,12 +355,6 @@ impl AppState {
         target: TranscriptMouseTarget,
     ) {
         match target {
-            TranscriptMouseTarget::FirstSubagentSession => {
-                self.navigate_to_first_child_session();
-            }
-            TranscriptMouseTarget::SubagentSession { session_id } => {
-                self.navigate_to_child_session_id(session_id);
-            }
             TranscriptMouseTarget::Tool { tool_call_id } => {
                 if let Some(child_session_id) = self.task_tool_child_session_id(&tool_call_id) {
                     self.navigate_to_child_session_id(child_session_id);
