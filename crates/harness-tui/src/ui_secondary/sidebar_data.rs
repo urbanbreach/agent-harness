@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use super::*;
@@ -123,9 +123,9 @@ fn operator_sidebar_todo_items(app: &AppState) -> Option<Vec<OperatorRailItem>> 
 
 fn operator_sidebar_subagent_groups(app: &AppState) -> Vec<SubagentRailGroup> {
     let mut groups: Vec<SubagentRailGroup> = Vec::new();
-    let mut parent_tool_call_ids = std::collections::BTreeSet::new();
-    let mut child_session_ids = std::collections::BTreeSet::new();
-    let mut child_request_ids = std::collections::BTreeSet::new();
+    let mut parent_tool_call_ids = BTreeSet::new();
+    let mut child_session_ids = BTreeSet::new();
+    let mut child_request_ids = BTreeSet::new();
     let mut unlinked_active_tool_counts: BTreeMap<String, usize> = BTreeMap::new();
     for activity in &app.activities {
         for tool_call in &activity.tool_calls {
@@ -184,18 +184,10 @@ fn operator_sidebar_subagent_groups(app: &AppState) -> Vec<SubagentRailGroup> {
             .as_ref()
             .is_some_and(|id| parent_tool_call_ids.contains(id))
         {
+            remember_subagent_row_identity(&row, &mut child_session_ids, &mut child_request_ids);
             continue;
         }
-        if row
-            .effective_child_session_id()
-            .is_some_and(|id| child_session_ids.contains(id))
-        {
-            continue;
-        }
-        if row
-            .effective_child_request_id()
-            .is_some_and(|id| child_request_ids.contains(id))
-        {
+        if subagent_row_identity_is_covered(&row, &child_session_ids, &child_request_ids) {
             continue;
         }
         let Some(agent_name) = row
@@ -212,6 +204,11 @@ fn operator_sidebar_subagent_groups(app: &AppState) -> Vec<SubagentRailGroup> {
             if let Some(count) = unlinked_active_tool_counts.get_mut(&agent_name) {
                 if *count > 0 {
                     *count -= 1;
+                    remember_subagent_row_identity(
+                        &row,
+                        &mut child_session_ids,
+                        &mut child_request_ids,
+                    );
                     continue;
                 }
             }
@@ -233,10 +230,36 @@ fn operator_sidebar_subagent_groups(app: &AppState) -> Vec<SubagentRailGroup> {
                 items: vec![item],
             });
         }
+        remember_subagent_row_identity(&row, &mut child_session_ids, &mut child_request_ids);
     }
 
     assign_subagent_task_labels(&mut groups);
     groups
+}
+
+fn subagent_row_identity_is_covered(
+    row: &crate::app::OrchestrationTaskRow,
+    child_session_ids: &BTreeSet<String>,
+    child_request_ids: &BTreeSet<String>,
+) -> bool {
+    row.effective_child_session_id()
+        .is_some_and(|id| child_session_ids.contains(id))
+        || row
+            .effective_child_request_id()
+            .is_some_and(|id| child_request_ids.contains(id))
+}
+
+fn remember_subagent_row_identity(
+    row: &crate::app::OrchestrationTaskRow,
+    child_session_ids: &mut BTreeSet<String>,
+    child_request_ids: &mut BTreeSet<String>,
+) {
+    if let Some(id) = row.effective_child_session_id() {
+        child_session_ids.insert(id.to_string());
+    }
+    if let Some(id) = row.effective_child_request_id() {
+        child_request_ids.insert(id.to_string());
+    }
 }
 
 fn assign_subagent_task_labels(groups: &mut [SubagentRailGroup]) {
@@ -345,34 +368,16 @@ fn subagent_status_from_app(
         return status;
     }
 
-    if let Some(row) = app.orchestration_visible_rows().into_iter().find(|row| {
+    let task_row = app.orchestration_visible_rows().into_iter().find(|row| {
         row.parent_tool_call_id.as_deref() == Some(tool_call.tool_call_id.as_str())
             || child_session_id.is_some_and(|child| {
                 row.effective_child_session_id() == Some(child) || row.task_id == child
             })
             || child_request_id.is_some_and(|child| row.effective_child_request_id() == Some(child))
-    }) {
-        return SubagentRailStatus::from_orchestration_state(row.state);
-    }
-
-    if let Some(status) = subagent_status_from_output_json(tool_call.output_json.as_ref()) {
-        return status;
-    }
-
-    SubagentRailStatus::from_tool_call_status(tool_call.status)
-}
-
-fn subagent_status_from_output_json(
-    output_json: Option<&serde_json::Value>,
-) -> Option<SubagentRailStatus> {
-    let status = trimmed_json_string_field(output_json, &["status", "final_status"])?;
-    match status.trim().to_ascii_lowercase().as_str() {
-        "queued" => Some(SubagentRailStatus::Queued),
-        "scheduled" | "running" | "in_progress" => Some(SubagentRailStatus::Running),
-        "completed" | "succeeded" | "success" => Some(SubagentRailStatus::Completed),
-        "cancelled" | "failed" | "timed_out" | "error" => Some(SubagentRailStatus::Error),
-        _ => None,
-    }
+    });
+    SubagentRailStatus::from_tool_call_status(
+        super::super::ui_tool_delegation::agent_spawn_display_status(tool_call, task_row.as_ref()),
+    )
 }
 
 fn subagent_status_from_background_notification(

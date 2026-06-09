@@ -518,6 +518,79 @@ pub(crate) fn exact_test_operator_rail_marks_background_subagent_terminal_from_n
     assert!(!completed_sidebar.contains("1 active"));
 }
 
+#[test]
+fn operator_rail_prefers_terminal_task_tool_over_stale_child_row() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        1,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::User, None),
+        "req_parent",
+        harness_core::event::EventV1::UserMessageSubmitted(
+            harness_core::event::UserMessageSubmittedEvent {
+                request_id: "req_parent".to_string(),
+                text: "Use a subagent".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        2,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+        "req_parent",
+        harness_core::event::EventV1::ToolCallRequested(
+            harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tool_call_sync_task".to_string(),
+                tool_id: "task".to_string(),
+                args_summary: serde_json::json!({
+                    "description": "Test subagent delegation",
+                    "subagent_type": "general"
+                })
+                .to_string(),
+                args_digest: "digest-sync-task".to_string(),
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    lineage: Some(harness_core::event::TaskLineageMetadata {
+                        child_session_id: Some("agent_child".to_string()),
+                        child_request_id: Some("req_child".to_string()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+            },
+        ),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        3,
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Worker,
+            Some("agent_child".to_string()),
+        ),
+        "req_child",
+        harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
+            task_id: "task_child".to_string(),
+            state: harness_core::event::TaskScheduleState::Started,
+            queue_key: Some("agent:running:general".to_string()),
+        }),
+    ));
+    app.ingest_event(operator_rail_test_event_with_correlation(
+        4,
+        harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
+        "req_parent",
+        harness_core::event::EventV1::ToolCallFinished(
+            harness_core::event::ToolCallFinishedEvent {
+                tool_call_id: "tool_call_sync_task".to_string(),
+                status: harness_core::event::ToolCallStatus::Succeeded,
+                output_summary: Some("Subagent result: delegation is working.".to_string()),
+                output_digest: Some("digest-sync-task-output".to_string()),
+                output_json: None,
+                metadata: None,
+            },
+        ),
+    ));
+
+    let sidebar = operator_sidebar_text_for_test(&app).join("\n");
+    assert!(sidebar.contains("• ✓ General Task"));
+    assert!(!sidebar.contains("• ⠋ General Task"));
+}
+
 #[cfg(test)]
 pub(crate) fn exact_test_operator_rail_uses_simple_subagent_task_labels() {
     let mut app = AppState::new_live(None, false, None);

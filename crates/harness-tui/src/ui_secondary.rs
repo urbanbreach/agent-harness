@@ -633,6 +633,10 @@ pub(crate) use operator_rail_todo_tests::{
 #[cfg(test)]
 #[path = "ui_secondary/subagent_tests.rs"]
 mod subagent_tests;
+
+#[cfg(test)]
+#[path = "ui_secondary/subagent_dedup_tests.rs"]
+mod subagent_dedup_tests;
 #[cfg(test)]
 pub(crate) use subagent_tests::{
     exact_test_operator_rail_keeps_subagents_visible_in_replay,
