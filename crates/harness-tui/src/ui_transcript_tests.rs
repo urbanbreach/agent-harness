@@ -144,6 +144,35 @@ fn transcript_layout_cache_invalidates_when_animation_frame_changes() {
 }
 
 #[test]
+fn transcript_queued_turn_renders_footer_spinner_before_completion() {
+    let mut app = AppState::default();
+    let mut activity =
+        transcript_section_model_test_activity("request-queued-footer", ActivityStatus::Queued, "");
+    activity.provider_id = "default".to_string();
+    app.activities = std::collections::VecDeque::from(vec![activity]);
+    app.selected_activity_index = 0;
+
+    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ));
+    let footer_line = lines
+        .iter()
+        .find(|line| line.contains("Default") && line.contains("queued"))
+        .expect("queued footer line");
+
+    assert!(
+        ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+            .iter()
+            .any(|frame| footer_line.contains(frame)),
+        "queued footer should show a spinner frame\n{footer_line}"
+    );
+    assert!(footer_line.contains("Default"));
+    assert!(footer_line.contains("queued"));
+}
+
+#[test]
 fn transcript_layout_cache_invalidates_when_theme_changes() {
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
@@ -256,7 +285,7 @@ fn streaming_reasoning_keeps_active_thinking_label() {
 }
 
 #[test]
-fn user_message_surface_does_not_reintroduce_assistant_footer_when_timestamps_are_visible() {
+fn user_message_surface_restores_assistant_footer_when_timestamps_are_visible() {
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "request-user-padding".to_string(),
@@ -309,7 +338,22 @@ fn user_message_surface_does_not_reintroduce_assistant_footer_when_timestamps_ar
         .all(|line| !(line.starts_with('┃') && line.contains("09:45"))));
     assert!(lines.iter().all(|line| !line.contains("Assistant ·")));
     assert!(lines.iter().any(|line| line.contains("hello")));
-    assert!(lines.iter().any(|line| line.contains("reply")));
+    let reply_row = lines
+        .iter()
+        .position(|line| line.contains("reply"))
+        .expect("assistant reply row");
+    let footer_row = lines
+        .iter()
+        .position(|line| {
+            line.contains("▣ · 0ms")
+                && line.contains("Default · gpt-5.4-mini")
+                && line.contains("openai")
+        })
+        .unwrap_or_else(|| panic!("assistant footer row should render below messages: {lines:#?}"));
+    assert!(
+        footer_row > reply_row,
+        "assistant footer should render below the assistant message body: {lines:#?}"
+    );
 }
 
 #[test]
@@ -513,6 +557,62 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
     assert!(copied.contains("$ printf 'bash smoke test ok"));
     assert!(copied.contains("bash smoke test ok"));
     assert!(!copied.contains(HARNESS_SPLIT_RAIL_GLYPH));
+}
+
+#[test]
+fn block_tool_cards_align_rail_with_message_box_edge() {
+    let theme = Theme::default();
+    let section = TranscriptToolCallSection {
+        tool_call_id: "tc-card-alignment".to_string(),
+        child_session_id: None,
+        hovered_target: None,
+        header: TranscriptToolCallHeader {
+            tool_id: "todo.write".to_string(),
+            title: "1 of 1 todos completed".to_string(),
+            subtitle: None,
+            path_metadata: None,
+            icon: Some("☑"),
+            status: ToolCallDisplayStatus::Succeeded,
+            visual_style: TranscriptToolCallVisualStyle::Block,
+            struck_out: false,
+            disclosure_state: None,
+        },
+        detail_blocks: vec![
+            TranscriptToolCallDetailBlock::TodoList {
+                items: vec![TranscriptTodoItem {
+                    content: "Align tool boxes with messages".to_string(),
+                    status: ui_tool_question_todo::TranscriptTodoStatus::Pending,
+                }],
+            },
+            TranscriptToolCallDetailBlock::StructuredDiff {
+                diff_content: "--- a/demo.txt\n+++ b/demo.txt\n@@ -1 +1 @@\n-old\n+new\n"
+                    .to_string(),
+                fallback_path: Some("demo.txt".to_string()),
+                force_stacked: false,
+                show_file_header: true,
+            },
+        ],
+        expanded: true,
+    };
+
+    let lines = transcript_test_line_texts(
+        append_tool_call_section_lines(&section, &theme, 96, theme.surface.panel).lines,
+    );
+
+    for marker in [
+        "1 of 1 todos completed",
+        "[ ] Align tool boxes with messages",
+        "+ new",
+    ] {
+        let row = lines
+            .iter()
+            .find(|line| line.contains(marker))
+            .unwrap_or_else(|| panic!("missing marker {marker:?}\n{lines:#?}"));
+        assert!(
+            row.starts_with(TRANSCRIPT_RAIL_GLYPH),
+            "tool card row should align its rail with the message box edge: {row:?}"
+        );
+    }
 }
 
 #[test]

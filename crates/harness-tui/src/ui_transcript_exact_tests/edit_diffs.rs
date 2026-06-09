@@ -400,14 +400,12 @@ pub(crate) fn exact_test_transcript_apply_patch_surfaces_rename_and_wrapped_inli
     );
     assert!(
         lines.iter().any(|line| {
-            line.contains("d across the transcript surface for operators reviewing compact wi")
+            line.contains("cross the transcript surface for operators reviewing compact windows")
         }),
         "added line wrapped continuation prefix missing\n{rendered}"
     );
     assert!(
-        lines
-            .iter()
-            .any(|line| line.contains("s and narrow shells")),
+        lines.iter().any(|line| line.contains("and narrow shells")),
         "added line wrapped continuation tail missing\n{rendered}"
     );
     assert!(
