@@ -157,33 +157,14 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
     );
     let task_render =
         append_tool_call_section_lines(&task_section, &theme, 120, theme.surface.panel);
-    assert!(task_render.interaction_rows.iter().any(|interaction| matches!(
-        interaction.as_ref().map(|row| &row.target),
-        Some(TranscriptMouseTarget::SubagentSession { session_id }) if session_id == "agent_worker"
-    )));
+    assert!(task_render
+        .interaction_rows
+        .iter()
+        .any(|interaction| matches!(interaction.as_ref().map(|row| &row.target), None)));
     assert!(
-        task_render.interaction_rows.iter().all(|interaction| matches!(
-            interaction.as_ref().map(|row| &row.target),
-            Some(TranscriptMouseTarget::SubagentSession { session_id }) if session_id == "agent_worker"
-        )),
-        "task inline rows should navigate to the child session, matching Harness's clickable task card"
+        task_render.interaction_rows.iter().all(Option::is_none),
+        "task inline rows should stay passive; subagents are opened from the sidebar"
     );
-    assert!(
-        task_render
-            .interaction_rows
-            .iter()
-            .flatten()
-            .all(|row| row.hit_width < 120),
-        "task inline hitboxes should stop at the rendered card text instead of spanning the transcript row"
-    );
-    let task_hit_width = task_render.interaction_rows[0]
-        .as_ref()
-        .expect("task header interaction")
-        .hit_width;
-    let task_hit_start = task_render.interaction_rows[0]
-        .as_ref()
-        .expect("task header interaction")
-        .hit_start;
     let task_hit_layout = MeasuredTranscriptLayout {
         sections: vec![MeasuredTranscriptSection {
             top_row: 0,
@@ -205,52 +186,18 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
         }],
         total_height: task_render.lines.len(),
     };
-    assert!(matches!(
-        transcript_mouse_target_at(
-            &task_hit_layout,
-            Rect::new(0, 0, 120, 10),
-            0,
-            task_hit_start,
-            0,
-        ),
-        Some(TranscriptMouseTarget::SubagentSession { session_id }) if session_id == "agent_worker"
-    ));
-    assert!(matches!(
-        transcript_mouse_target_at(
-            &task_hit_layout,
-            Rect::new(0, 0, 120, 10),
-            0,
-            task_hit_start
-                .saturating_add(task_hit_width)
-                .saturating_sub(1),
-            0,
-        ),
-        Some(TranscriptMouseTarget::SubagentSession { session_id }) if session_id == "agent_worker"
-    ));
     assert_eq!(
-        transcript_mouse_target_at(
-            &task_hit_layout,
-            Rect::new(0, 0, 120, 10),
-            0,
-            task_hit_start.saturating_sub(1),
-            0,
-        ),
+        transcript_mouse_target_at(&task_hit_layout, Rect::new(0, 0, 120, 10), 0, 0, 0,),
         None
     );
     assert_eq!(
-        transcript_mouse_target_at(
-            &task_hit_layout,
-            Rect::new(0, 0, 120, 10),
-            0,
-            task_hit_start.saturating_add(task_hit_width),
-            0,
-        ),
+        transcript_mouse_target_at(&task_hit_layout, Rect::new(0, 0, 120, 10), 0, 119, 0,),
         None
     );
     let task_lines = task_render.lines;
     let task_text = transcript_test_line_texts(task_lines).join("\n");
-    assert!(task_text.contains("✓ Researcher Task — audit transcript parity"));
-    assert!(task_text.contains("Researcher Task — audit transcript parity"));
+    assert!(task_text.contains("✓ audit transcript parity · Researcher Agent"));
+    assert!(!task_text.contains("Researcher Task — audit transcript parity"));
     assert!(task_text.contains("3 toolcalls · 1.6s"));
     assert!(!task_text.contains("Found the inline transcript path."));
     assert!(!task_text.contains("Compat alias · task → agent.spawn"));
