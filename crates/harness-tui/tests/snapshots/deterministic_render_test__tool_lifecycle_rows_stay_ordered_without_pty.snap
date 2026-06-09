@@ -11,20 +11,20 @@ expression: rendered.as_str()
       ↳ Loaded src/ui.rs                                                                                                                    ▼ MCP                                   
       Compat alias · read → fs.read                                                                                                         • No MCP servers configured             
                                                                                                                                                                                     
-     ┃                                                                                                                                      ▼ LSP                                   
-     ┃  ← Patch · ui.rs  ▸                                                                                                                  • No active LSP servers                 
-     ┃  crates/harness-tui/src                                                                                                                                                      
-     ┃                                                                                                                                      ▼ Modified Files                        
-     ┃  Remove diff review surface · Diff preview unavailable (artifacts/tool-lifecycle-inline.diff)                                        • crates/harness-tui/src/ui.rs          
-     ┃                                                                                                                                                                              
-     ✓ Researcher Task — audit tool lifecycle parity                                                                                                                                
+  ┃                                                                                                                                         ▼ LSP                                   
+  ┃  ← Patch · ui.rs  ▸                                                                                                                     • No active LSP servers                 
+  ┃  crates/harness-tui/src                                                                                                                                                         
+  ┃                                                                                                                                         ▼ Modified Files                        
+  ┃  Remove diff review surface · Diff preview unavailable (artifacts/tool-lifecycle-inline.diff)                                           • crates/harness-tui/src/ui.rs          
+  ┃                                                                                                                                                                                 
+     ✓ audit tool lifecycle parity · Researcher Agent                                                                                                                               
       └ 2 toolcalls · 2ms                                                                                                                                                           
      $ cargo test -p harness-tui  ▸                                                                                                                                                 
       exit code: 1                                                                                                                                                                  
       stderr: snapshot mismatch                                                                                                                                                     
                                                                                                                                                                                     
      Tool summaries are now easier to scan, and edits stay inline.                                                                                                                  
-     Ctrl+] view subagents                                                                                                                                                          
+     ▣ · 17ms  Default · model-1 mock                                                                                                                                               
                                                                                                                                                                                     
                                                                                                                                                                                     
                                                                                                                                                                                     
