@@ -5,8 +5,7 @@ use crate::theme::Theme;
 use crate::ui::{
     render_app, reset_transcript_selection_cache_metrics_for_test, transcript_mouse_target,
     transcript_selection_cache_build_count_for_test, transcript_selection_cell,
-    transcript_selection_debug_snapshot, TranscriptMouseTarget, TranscriptScrollbarHit,
-    WheelTarget,
+    transcript_selection_debug_snapshot, TranscriptScrollbarHit, WheelTarget,
 };
 use crossterm::event::{MouseButton, MouseEvent};
 use harness_core::event::{
@@ -235,15 +234,15 @@ delegate_test!(apply_patch_default_expansion_skips_deleted_files => tool_disclos
 #[path = "tests/subagent_navigation_tests.rs"]
 mod subagent_navigation_tests;
 
-delegate_test!(mouse_click_on_task_inline_row_opens_subagent_session => subagent_navigation_tests::keyboard_mouse_click_on_task_inline_row_opens_subagent_session);
+delegate_test!(transcript_task_inline_row_is_not_subagent_navigation => subagent_navigation_tests::keyboard_transcript_task_inline_row_is_not_subagent_navigation);
 delegate_test!(keyboard_sidebar_subagent_selection_opens_child_session => subagent_navigation_tests::keyboard_keyboard_sidebar_subagent_selection_opens_child_session);
-delegate_test!(live_subagent_hitbox_uses_rendered_transcript_area => subagent_navigation_tests::keyboard_live_subagent_hitbox_uses_rendered_transcript_area);
+delegate_test!(transcript_task_inline_row_has_no_subagent_hitbox => subagent_navigation_tests::keyboard_transcript_task_inline_row_has_no_subagent_hitbox);
 delegate_test!(disk_backed_child_navigation_stays_in_live_tui_stack => subagent_navigation_tests::keyboard_disk_backed_child_navigation_stays_in_live_tui_stack);
 delegate_test!(mouse_click_on_subagent_footer_navigates_parent_previous_and_next => subagent_navigation_tests::mouse_click_on_subagent_footer_navigates_parent_previous_and_next);
-delegate_test!(mouse_click_on_task_inline_row_uses_task_row_child_session => subagent_navigation_tests::mouse_click_on_task_inline_row_uses_task_row_child_session);
-delegate_test!(mouse_up_on_completed_general_task_row_opens_child_session => subagent_navigation_tests::mouse_up_on_completed_general_task_row_opens_child_session);
-delegate_test!(mouse_click_on_task_row_uses_harness_session_metadata => subagent_navigation_tests::mouse_click_on_task_row_uses_harness_session_metadata);
-delegate_test!(mouse_click_on_subagent_hint_opens_first_child_session => subagent_navigation_tests::mouse_click_on_subagent_hint_opens_first_child_session);
+delegate_test!(transcript_task_row_child_session_is_sidebar_only => subagent_navigation_tests::transcript_task_row_child_session_is_sidebar_only);
+delegate_test!(completed_general_task_row_is_passive => subagent_navigation_tests::completed_general_task_row_is_passive);
+delegate_test!(harness_metadata_task_row_is_passive => subagent_navigation_tests::harness_metadata_task_row_is_passive);
+delegate_test!(subagent_hint_is_absent_from_transcript => subagent_navigation_tests::subagent_hint_is_absent_from_transcript);
 delegate_test!(slash_exit_from_inline_subagent_restores_parent_before_quit => subagent_navigation_tests::slash_exit_from_inline_subagent_restores_parent_before_quit);
 
 fn write_events_jsonl(run_dir: &Path, events: &[EventEnvelopeV1]) {
