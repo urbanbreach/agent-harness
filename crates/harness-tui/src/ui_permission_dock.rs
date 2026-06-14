@@ -14,7 +14,8 @@ use crate::layout::{pad_rect, permission_dock_layout};
 use crate::theme::Theme;
 
 use super::super::ui_overlays::{
-    permission_modal_actions_text, permission_modal_draft_line, permission_modal_guidance,
+    permission_modal_actions_text, permission_modal_always_scope_line,
+    permission_modal_diff_preview_lines, permission_modal_draft_line, permission_modal_guidance,
     permission_modal_icon, permission_modal_metadata_line, permission_modal_subject_line,
     permission_modal_summary_line, permission_modal_title, question_permission_actions_text,
     question_permission_body_text,
@@ -41,7 +42,9 @@ pub(super) fn render_inline_permission_dock(
 
     let dock_layout = permission_dock_layout(area, is_question);
     let always_confirm = !is_question
-        && app.permission_modal_stage(&permission.permission_id)
+        && app
+            .permission_prompt
+            .permission_modal_stage(&permission.permission_id)
             == PermissionModalStage::AlwaysConfirm;
     let shell_surface = theme.surface.panel;
     let tray_surface = theme.surface.panel_elevated;
@@ -139,7 +142,7 @@ pub(super) fn render_inline_permission_dock(
             ),
             Span::styled(" ", Style::default().bg(shell_surface)),
             Span::styled(
-                "Always allow",
+                "Allow always",
                 Style::default().fg(theme.text.primary).bg(shell_surface),
             ),
         ])])
@@ -189,6 +192,10 @@ pub(super) fn render_inline_permission_dock(
     frame.render_widget(Paragraph::new(header), shell_rows[0]);
 
     if shell_rows[2].width > 0 && shell_rows[2].height > 0 {
+        let body_area = pad_rect(shell_rows[2], dock_layout.body_padding);
+        if body_area.width == 0 || body_area.height == 0 {
+            return;
+        }
         let metadata_style = Style::default().fg(theme.text.secondary).bg(shell_surface);
         let summary_style = Style::default().fg(theme.text.primary).bg(shell_surface);
         let guidance_style = Style::default().fg(theme.text.secondary).bg(shell_surface);
@@ -206,7 +213,7 @@ pub(super) fn render_inline_permission_dock(
         } else if always_confirm {
             Text::from(vec![
                 Line::from(vec![Span::styled(
-                    "This will allow this exact request until the harness is restarted.",
+                    permission_modal_always_scope_line(permission),
                     metadata_style,
                 )]),
                 Line::from(vec![Span::styled(
@@ -215,15 +222,23 @@ pub(super) fn render_inline_permission_dock(
                 )]),
             ])
         } else {
+            let diff_lines = permission_modal_diff_preview_lines(permission);
             let mut lines = vec![Line::from(vec![Span::styled(
                 permission_modal_summary_line(permission, false),
                 summary_style,
             )])];
-            lines.push(Line::from(vec![Span::styled(
-                permission_modal_metadata_line(permission),
-                metadata_style,
-            )]));
-            let draft = permission_modal_draft_line(app.prompt_buffer.as_str());
+            let compact_diff_body =
+                !diff_lines.is_empty() && usize::from(body_area.height) <= diff_lines.len() + 3;
+            if !compact_diff_body {
+                lines.push(Line::from(vec![Span::styled(
+                    permission_modal_metadata_line(permission),
+                    metadata_style,
+                )]));
+            }
+            for line in diff_lines {
+                lines.push(Line::from(vec![Span::styled(line, summary_style)]));
+            }
+            let draft = permission_modal_draft_line(app.composer.prompt_buffer.as_str());
             if !draft.is_empty() {
                 lines.push(Line::from(vec![Span::styled(draft, guidance_style)]));
             }
@@ -234,7 +249,7 @@ pub(super) fn render_inline_permission_dock(
             Paragraph::new(body)
                 .style(Style::default().bg(shell_surface))
                 .wrap(Wrap { trim: true }),
-            pad_rect(shell_rows[2], dock_layout.body_padding),
+            body_area,
         );
     }
 
@@ -286,18 +301,22 @@ pub(super) fn render_inline_permission_dock(
             &[
                 (
                     "Confirm",
-                    app.permission_modal_confirm_selection(&permission.permission_id)
+                    app.permission_prompt
+                        .permission_modal_confirm_selection(&permission.permission_id)
                         == PermissionConfirmSelection::Confirm,
                 ),
                 (
                     "Cancel",
-                    app.permission_modal_confirm_selection(&permission.permission_id)
+                    app.permission_prompt
+                        .permission_modal_confirm_selection(&permission.permission_id)
                         == PermissionConfirmSelection::Cancel,
                 ),
             ],
         )
     } else {
-        let selection = app.permission_modal_selection(&permission.permission_id);
+        let selection = app
+            .permission_prompt
+            .permission_modal_selection(&permission.permission_id);
         permission_prompt_action_line(
             theme,
             tray_surface,
@@ -318,6 +337,10 @@ pub(super) fn render_inline_permission_dock(
     let hint_width = u16::try_from(display_width("⇆ select  enter confirm")).unwrap_or(u16::MAX);
     let narrow = area.width < dock_layout.stacked_hint_min_width
         || tray_inner.width <= hint_width.saturating_add(dock_layout.stacked_hint_min_action_width);
+    let status_width = tray_inner
+        .width
+        .saturating_sub(dock_layout.stacked_hint_min_action_width.saturating_add(2));
+    let status_text = permission_dock_status_cluster_text(app, status_width);
 
     if narrow && tray_inner.height > 1 {
         let rows = Layout::default()
@@ -329,9 +352,44 @@ pub(super) fn render_inline_permission_dock(
             rows[0],
         );
         frame.render_widget(
-            Paragraph::new(hint_line).style(Style::default().bg(tray_surface)),
+            Paragraph::new(
+                status_text
+                    .as_deref()
+                    .map(|text| permission_dock_status_line(theme, tray_surface, text))
+                    .unwrap_or(hint_line),
+            )
+            .style(Style::default().bg(tray_surface))
+            .alignment(Alignment::Right),
             rows[1],
         );
+        return;
+    }
+
+    if let Some(status_text) = status_text {
+        let status_width = u16::try_from(display_width(&status_text)).unwrap_or(u16::MAX);
+        let footer_columns = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(status_width.min(tray_inner.width)),
+            ])
+            .split(tray_inner);
+        frame.render_widget(
+            Paragraph::new(action_line).style(Style::default().bg(tray_surface)),
+            footer_columns[0],
+        );
+        if footer_columns[1].width > 0 {
+            frame.render_widget(
+                Paragraph::new(permission_dock_status_line(
+                    theme,
+                    tray_surface,
+                    &status_text,
+                ))
+                .style(Style::default().bg(tray_surface))
+                .alignment(Alignment::Right),
+                footer_columns[1],
+            );
+        }
         return;
     }
 
@@ -354,6 +412,28 @@ pub(super) fn render_inline_permission_dock(
             footer_columns[1],
         );
     }
+}
+
+fn permission_dock_status_cluster_text(app: &AppState, max_width: u16) -> Option<String> {
+    let candidates = super::live_footer_status_cluster_candidates(app);
+    let full = candidates.first()?;
+    if !full.contains("LSP") && !full.contains("MCP") {
+        return None;
+    }
+
+    let max_width = usize::from(max_width);
+    let first_candidate = candidates.first().cloned();
+    candidates
+        .into_iter()
+        .find(|text| display_width(text) <= max_width)
+        .or_else(|| first_candidate.map(|text| super::truncate_plain_text(&text, max_width)))
+}
+
+fn permission_dock_status_line(theme: &Theme, surface: Color, text: &str) -> Line<'static> {
+    Line::from(Span::styled(
+        text.to_string(),
+        Style::default().fg(theme.text.tertiary).bg(surface),
+    ))
 }
 
 fn render_question_permission_dock(

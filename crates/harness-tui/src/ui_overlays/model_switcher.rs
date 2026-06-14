@@ -9,41 +9,34 @@ pub(super) fn render_model_switcher_overlay(
     overlay: Rect,
     title: &str,
 ) {
-    if overlay.width <= 8 || overlay.height <= 5 {
+    let Some(layout) = super::select_dialog::select_dialog_layout(overlay) else {
         return;
-    }
-
-    let header = Rect::new(
-        overlay.x.saturating_add(4),
-        overlay.y.saturating_add(1),
-        overlay.width.saturating_sub(8),
-        1,
-    );
-    let input = Rect::new(
-        overlay.x.saturating_add(4),
-        overlay.y.saturating_add(3),
-        overlay.width.saturating_sub(8),
-        1,
-    );
-    let list = Rect::new(
-        overlay.x.saturating_add(1),
-        overlay.y.saturating_add(5),
-        overlay.width.saturating_sub(2),
-        overlay.height.saturating_sub(6),
-    );
+    };
     let visible_model_rows = u16::try_from(app.model_switcher_visual_row_count())
         .unwrap_or(u16::MAX)
-        .min(list.height.saturating_sub(1));
+        .min(layout.list.height.saturating_sub(1));
     let status = Rect::new(
         overlay.x.saturating_add(4),
-        list.y.saturating_add(visible_model_rows).saturating_add(1),
+        layout
+            .list
+            .y
+            .saturating_add(visible_model_rows)
+            .saturating_add(1),
         overlay.width.saturating_sub(8),
         1,
     );
 
-    render_model_select_header(frame, theme, header, title);
-    render_model_select_input(frame, app, theme, input);
-    render_model_switcher_list(frame, app, theme, list);
+    super::select_dialog::render_select_dialog_header(frame, theme, layout.header, title);
+    super::select_dialog::render_select_dialog_input(
+        frame,
+        theme,
+        layout.input,
+        &app.palette_input,
+        app.palette_cursor,
+        app.model_dialog_placeholder(),
+        model_select_primary(theme),
+    );
+    render_model_switcher_list(frame, app, theme, layout.list);
     render_model_switcher_status(frame, app, theme, status);
 }
 
@@ -86,13 +79,7 @@ fn render_model_switcher_list(frame: &mut Frame, app: &AppState, theme: &Theme, 
         );
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
-                if app.launch_metadata().available_models().is_empty()
-                    && app.launch_metadata().model().is_none()
-                {
-                    "Connect a provider to list models"
-                } else {
-                    "No results found"
-                },
+                app.model_dialog_empty_message(),
                 Style::default().fg(model_select_muted(theme)).bg(surface),
             ))),
             empty_area,
@@ -157,8 +144,7 @@ fn render_model_switcher_list(frame: &mut Frame, app: &AppState, theme: &Theme, 
 }
 
 pub(super) fn model_switcher_overlay_title(app: &AppState) -> String {
-    let _ = app;
-    "Select model".to_string()
+    app.model_dialog_title().to_string()
 }
 
 fn model_switcher_row(
@@ -187,7 +173,8 @@ fn model_switcher_row(
     let row_width = usize::from(width);
     let mut spans = Vec::new();
     let is_current = app.is_current_model_option(option);
-    let leading_padding = if is_current { 1 } else { 3 }.min(row_width);
+    let is_favorite = app.model_option_is_favorite(option);
+    let leading_padding = if is_current || is_favorite { 1 } else { 3 }.min(row_width);
     if leading_padding > 0 {
         spans.push(Span::styled(" ".repeat(leading_padding), row_style));
     }
@@ -202,6 +189,24 @@ fn model_switcher_row(
         spans.push(Span::styled("●", marker_style));
         used_width = used_width.saturating_add(1);
     }
+    if is_current && is_favorite && used_width < row_width {
+        let marker_style = if is_selected {
+            row_style.fg(selected_fg)
+        } else {
+            row_style.fg(model_select_primary(theme))
+        };
+        spans.push(Span::styled("★", marker_style));
+        used_width = used_width.saturating_add(1);
+    }
+    if !is_current && is_favorite && used_width < row_width {
+        let marker_style = if is_selected {
+            row_style.fg(selected_fg)
+        } else {
+            row_style.fg(model_select_primary(theme))
+        };
+        spans.push(Span::styled("★", marker_style));
+        used_width = used_width.saturating_add(1);
+    }
 
     let title_padding = 3.min(row_width.saturating_sub(used_width));
     if title_padding > 0 {
@@ -209,14 +214,16 @@ fn model_switcher_row(
         used_width = used_width.saturating_add(title_padding);
     }
 
-    let footer = flatten.then(|| option.selector_category());
+    let title_text = app.model_dialog_option_title(option);
+    let footer_text = app.model_dialog_option_footer(option);
+    let footer = flatten.then_some(footer_text.as_str());
     let footer_width = footer.map(str::chars).map(Iterator::count).unwrap_or(0);
     let title_budget = row_width
         .saturating_sub(used_width)
         .saturating_sub(footer_width)
         .saturating_sub(usize::from(footer_width > 0))
         .min(61);
-    let title = truncate_plain_text(option.selector_title(), title_budget);
+    let title = truncate_plain_text(&title_text, title_budget);
     used_width = used_width.saturating_add(title.chars().count());
     spans.push(Span::styled(title, title_style));
 
@@ -261,7 +268,7 @@ fn model_switcher_rows(app: &AppState) -> Vec<ModelSwitcherRow> {
             let Some(option) = app.model_options.get(option_index) else {
                 continue;
             };
-            let category = option.selector_category().to_string();
+            let category = app.model_dialog_group_label(option);
             if previous_category.as_deref() != Some(category.as_str()) {
                 if previous_category.is_some() {
                     rows.push(ModelSwitcherRow::Spacer);
@@ -289,94 +296,7 @@ fn model_switcher_rows(app: &AppState) -> Vec<ModelSwitcherRow> {
 }
 
 pub(super) fn paint_model_select_panel(frame: &mut Frame, theme: &Theme, overlay: Rect) -> bool {
-    if overlay.width == 0 || overlay.height == 0 {
-        return false;
-    }
-
-    frame.render_widget(Clear, overlay);
-    frame.render_widget(
-        Block::default().style(Style::default().bg(model_select_surface(theme))),
-        overlay,
-    );
-    true
-}
-
-fn render_model_select_header(frame: &mut Frame, theme: &Theme, area: Rect, title: &str) {
-    if area.width == 0 || area.height == 0 {
-        return;
-    }
-
-    let surface = model_select_surface(theme);
-    let esc = "esc";
-    let columns = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Min(0),
-            Constraint::Length(esc.chars().count() as u16),
-        ])
-        .split(area);
-
-    frame.render_widget(
-        Paragraph::new(title.to_string()).style(
-            Style::default()
-                .fg(model_select_text(theme))
-                .bg(surface)
-                .add_modifier(Modifier::BOLD),
-        ),
-        columns[0],
-    );
-    frame.render_widget(
-        Paragraph::new(esc)
-            .alignment(Alignment::Right)
-            .style(Style::default().fg(model_select_muted(theme)).bg(surface)),
-        columns[1],
-    );
-}
-
-fn render_model_select_input(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
-    if area.width == 0 || area.height == 0 {
-        return;
-    }
-
-    let surface = model_select_surface(theme);
-    frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
-
-    let line = if app.palette_input.is_empty() {
-        Line::from(vec![
-            Span::styled(
-                "█",
-                Style::default().fg(model_select_primary(theme)).bg(surface),
-            ),
-            Span::styled(
-                " Search",
-                Style::default().fg(model_select_muted(theme)).bg(surface),
-            ),
-        ])
-    } else {
-        let cursor_byte = app
-            .palette_input
-            .char_indices()
-            .nth(app.palette_cursor)
-            .map(|(index, _)| index)
-            .unwrap_or(app.palette_input.len());
-        let before = &app.palette_input[..cursor_byte];
-        let after = &app.palette_input[cursor_byte..];
-        Line::from(vec![
-            Span::styled(
-                before.to_string(),
-                Style::default().fg(model_select_muted(theme)).bg(surface),
-            ),
-            Span::styled(
-                "█",
-                Style::default().fg(model_select_primary(theme)).bg(surface),
-            ),
-            Span::styled(
-                after.to_string(),
-                Style::default().fg(model_select_muted(theme)).bg(surface),
-            ),
-        ])
-    };
-    frame.render_widget(Paragraph::new(line), area);
+    super::select_dialog::paint_select_dialog_panel(frame, theme, overlay)
 }
 
 fn model_switcher_category_row(category: &str, theme: &Theme, width: u16) -> Line<'static> {

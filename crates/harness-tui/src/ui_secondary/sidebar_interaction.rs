@@ -12,7 +12,7 @@ fn build_operator_sidebar_selection_snapshot(
         &rail.body,
         theme,
         body_area.width,
-        app.transcript_animation_phase(),
+        app.transcript_view.transcript_animation_phase(),
     );
     Some(OperatorSidebarSelectionSnapshot {
         viewport: body_area,
@@ -417,8 +417,12 @@ pub(crate) fn operator_sidebar_keyboard_targets(
             operator_sidebar_body_width_for_frame(app, area, theme, rail.title.as_ref())
         })
         .unwrap_or(80);
-    let layout =
-        build_operator_rail_body_layout(&rail.body, theme, width, app.transcript_animation_phase());
+    let layout = build_operator_rail_body_layout(
+        &rail.body,
+        theme,
+        width,
+        app.transcript_view.transcript_animation_phase(),
+    );
 
     operator_sidebar_keyboard_targets_from_layout(&layout)
 }
@@ -550,7 +554,7 @@ fn operator_sidebar_section_hit_target_in_surface(
         &rail.body,
         theme,
         body_area.width,
-        app.transcript_animation_phase(),
+        app.transcript_view.transcript_animation_phase(),
     );
     let visual_row =
         usize::from(row.saturating_sub(body_area.y)).saturating_add(app.details_scroll.into());
@@ -582,7 +586,7 @@ pub(super) fn operator_sidebar_subagent_session_hit_target_in_surface(
         &rail.body,
         theme,
         body_area.width,
-        app.transcript_animation_phase(),
+        app.transcript_view.transcript_animation_phase(),
     );
     let visual_row =
         usize::from(row.saturating_sub(body_area.y)).saturating_add(app.details_scroll.into());
@@ -614,7 +618,7 @@ pub(super) fn operator_sidebar_subagent_group_hit_target_in_surface(
         &rail.body,
         theme,
         body_area.width,
-        app.transcript_animation_phase(),
+        app.transcript_view.transcript_animation_phase(),
     );
     let visual_row =
         usize::from(row.saturating_sub(body_area.y)).saturating_add(app.details_scroll.into());
@@ -651,13 +655,16 @@ pub(super) fn operator_sidebar_body_area(
 }
 
 pub(super) fn operator_sidebar_footer_height(app: &AppState, theme: &Theme, width: u16) -> u16 {
-    app.sidebar_directory_branch_label()
+    let directory_height = app
+        .sidebar_directory_branch_label()
         .map(|label| {
             operator_sidebar_directory_footer_text(label, theme, width, theme.surface.panel)
                 .height()
-                .min(usize::from(u16::MAX)) as u16
         })
-        .unwrap_or(0)
+        .unwrap_or(0);
+    directory_height
+        .saturating_add(1)
+        .min(usize::from(u16::MAX)) as u16
 }
 
 pub(super) fn operator_sidebar_inner_area(

@@ -87,6 +87,22 @@ mod ui_transcript_surface;
 #[path = "ui_transcript_test_helpers.rs"]
 mod ui_transcript_test_helpers;
 
+#[cfg(debug_assertions)]
+pub(crate) fn reset_transcript_perf_counters_for_test() {
+    ui_transcript::reset_transcript_layout_measurement_metrics_for_test();
+    ui_transcript_selection::reset_transcript_selection_cache_metrics_for_test();
+}
+
+#[cfg(debug_assertions)]
+pub(crate) fn transcript_layout_section_build_count_for_test() -> usize {
+    ui_transcript::transcript_layout_section_build_count_for_test()
+}
+
+#[cfg(debug_assertions)]
+pub(crate) fn transcript_selection_snapshot_build_count_for_test() -> usize {
+    ui_transcript_selection::transcript_selection_cache_build_count_for_test()
+}
+
 pub(crate) use ui_chrome::subagent_footer_mouse_target;
 use ui_chrome::{
     compact_inline_payload, display_width, elevated_card_surface, interruptive_modal_block,
@@ -136,6 +152,7 @@ pub(crate) use ui_transcript_selection::{TranscriptSelection, TranscriptSelectio
 
 #[cfg(test)]
 pub(crate) use ui_chrome::{
+    exact_test_composer_viewport_keeps_combining_grapheme_unbroken,
     exact_test_composer_viewport_wraps_at_word_boundaries,
     exact_test_composer_viewport_wraps_by_display_width,
     exact_test_live_composer_disclosure_summarizes_compaction_metrics,
@@ -143,6 +160,7 @@ pub(crate) use ui_chrome::{
     exact_test_live_composer_reserves_right_gap,
     exact_test_live_control_dock_collapses_disclosure_before_status,
     exact_test_live_control_dock_renders_shared_surface,
+    exact_test_shell_mode_composer_renders_affordance,
     exact_test_startup_disclosure_matches_harness_hint_row,
     exact_test_tool_status_summary_uses_effective_tool_identity,
 };
@@ -193,6 +211,8 @@ pub(crate) use ui_secondary::{
 };
 #[cfg(test)]
 use ui_transcript::build_transcript_lines;
+#[cfg(test)]
+pub(crate) use ui_transcript::transcript_message_top_rows;
 #[cfg(test)]
 pub(crate) use ui_transcript::{
     exact_test_block_tool_cards_skip_empty_subtitle_rows,

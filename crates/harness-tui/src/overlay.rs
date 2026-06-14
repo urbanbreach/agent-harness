@@ -7,6 +7,10 @@ pub enum OverlayKind {
     TogglesMenu,
     LineageBrowser,
     ForkSelector,
+    ChildSessions,
+    ErrorDetails,
+    PromptStash,
+    QueuedPrompts,
     StatusDialog,
     PermissionModal,
 }
@@ -18,11 +22,15 @@ pub struct OverlayState {
     pub file_mention_visible: bool,
     pub palette_visible: bool,
     pub status_dialog_visible: bool,
+    pub prompt_stash_visible: bool,
+    pub queued_prompts_visible: bool,
     pub session_history_visible: bool,
     pub model_switcher_visible: bool,
     pub toggles_menu_visible: bool,
     pub lineage_browser_visible: bool,
     pub fork_selector_visible: bool,
+    pub child_sessions_visible: bool,
+    pub error_details_visible: bool,
     pub permission_pending: bool,
 }
 
@@ -34,6 +42,7 @@ impl OverlayState {
             || self.toggles_menu_visible
             || self.lineage_browser_visible
             || self.fork_selector_visible
+            || self.child_sessions_visible
     }
 }
 
@@ -61,9 +70,20 @@ impl OverlayStack {
                 overlays.push(OverlayKind::LineageBrowser);
             } else if state.fork_selector_visible {
                 overlays.push(OverlayKind::ForkSelector);
+            } else if state.child_sessions_visible {
+                overlays.push(OverlayKind::ChildSessions);
             } else {
                 overlays.push(OverlayKind::CommandPalette);
             }
+        }
+        if state.error_details_visible && !state.permission_pending {
+            overlays.push(OverlayKind::ErrorDetails);
+        }
+        if state.prompt_stash_visible && !state.permission_pending {
+            overlays.push(OverlayKind::PromptStash);
+        }
+        if state.queued_prompts_visible && !state.permission_pending {
+            overlays.push(OverlayKind::QueuedPrompts);
         }
         if state.status_dialog_visible && !state.permission_pending {
             overlays.push(OverlayKind::StatusDialog);
@@ -92,6 +112,10 @@ impl OverlayStack {
                     | OverlayKind::TogglesMenu
                     | OverlayKind::LineageBrowser
                     | OverlayKind::ForkSelector
+                    | OverlayKind::ChildSessions
+                    | OverlayKind::ErrorDetails
+                    | OverlayKind::PromptStash
+                    | OverlayKind::QueuedPrompts
                     | OverlayKind::StatusDialog
                     | OverlayKind::PermissionModal
             )
@@ -144,6 +168,10 @@ mod tests {
             },
             OverlayState {
                 fork_selector_visible: true,
+                ..Default::default()
+            },
+            OverlayState {
+                child_sessions_visible: true,
                 ..Default::default()
             },
         ];
@@ -231,8 +259,15 @@ mod tests {
             &[OverlayKind::ForkSelector]
         );
 
-        // CommandPalette is the default for the remaining command-palette channels.
         state.fork_selector_visible = false;
+        state.child_sessions_visible = true;
+        assert_eq!(
+            OverlayStack::from_state(state).ordered(),
+            &[OverlayKind::ChildSessions]
+        );
+
+        // CommandPalette is the default for the remaining command-palette channels.
+        state.child_sessions_visible = false;
         assert_eq!(
             OverlayStack::from_state(state).ordered(),
             &[OverlayKind::CommandPalette]

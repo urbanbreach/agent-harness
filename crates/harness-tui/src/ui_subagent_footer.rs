@@ -195,7 +195,7 @@ pub(super) fn render_subagent_footer(
         );
     }
     if columns[1].width > 0 {
-        let hover = app.hovered_subagent_footer_target();
+        let hover = app.transcript_view.hovered_subagent_footer_target();
         let parent_surface =
             subagent_footer_button_surface(hover, SubagentFooterTarget::Parent, theme);
         let previous_surface =

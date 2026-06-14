@@ -1,4 +1,7 @@
+use std::ops::Range;
+
 use super::*;
+use unicode_segmentation::UnicodeSegmentation;
 
 pub(super) const COMPOSER_RAIL_GLYPH: &str = "┃";
 pub(super) const COMPOSER_RAIL_CAP_GLYPH: &str = "╹";
@@ -12,9 +15,10 @@ pub(super) struct ComposerViewport {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct ComposerVisualChar {
-    index: usize,
-    ch: char,
+struct ComposerVisualUnit<'a> {
+    start: usize,
+    end: usize,
+    text: &'a str,
     width: usize,
 }
 
@@ -122,7 +126,10 @@ pub(super) fn render_document_composer_content(
         .split(body_inner);
     let input_area = rows[1];
     let input_width = usize::from(input_area.width);
-    let placeholder_visible = app.prompt_buffer.is_empty()
+    let shell_mode =
+        app.composer.mode() == crate::app::ComposerMode::Shell && !context.dock.composer_disabled;
+    let placeholder_visible = !shell_mode
+        && app.composer.prompt_buffer.is_empty()
         && matches!(
             context.dock.variant,
             crate::view_model::ControlDockVariant::Startup
@@ -130,18 +137,22 @@ pub(super) fn render_document_composer_content(
         );
     let body = if placeholder_visible {
         context.dock.composer_body.as_str()
+    } else if shell_mode && app.composer.prompt_buffer.is_empty() {
+        "shell command"
     } else {
-        app.prompt_buffer.as_str()
+        app.composer.prompt_buffer.as_str()
     };
     let body_color = if context.dock.composer_disabled {
         theme.status.disabled
-    } else if placeholder_visible {
+    } else if placeholder_visible || (shell_mode && app.composer.prompt_buffer.is_empty()) {
         composer_input_muted(theme)
     } else {
         composer_input_text(theme)
     };
     let rail_color = if context.dock.composer_disabled {
         theme.status.disabled
+    } else if shell_mode {
+        theme.status.warning
     } else {
         composer_agent_accent(theme, app)
     };
@@ -188,7 +199,7 @@ pub(super) fn render_document_composer_content(
             .then_some(if placeholder_visible {
                 0
             } else {
-                app.prompt_cursor
+                app.composer.prompt_cursor
             }),
     );
     if !context.dock.composer_focused || context.dock.composer_disabled {
@@ -199,6 +210,11 @@ pub(super) fn render_document_composer_content(
         .fg(theme.status.warning)
         .bg(composer_surface)
         .add_modifier(Modifier::BOLD);
+    let selection_range = app.composer.selection_range();
+    let selection_style = Style::default()
+        .fg(theme.text.inverse)
+        .bg(composer_agent_accent(theme, app));
+    let selected_tag_style = selection_style.add_modifier(Modifier::BOLD);
     let body_lines = viewport
         .lines
         .iter()
@@ -211,8 +227,11 @@ pub(super) fn render_document_composer_content(
                     line,
                     start,
                     &app.file_mention_tags,
+                    selection_range.as_ref(),
                     base_style,
                     tag_style,
+                    selection_style,
+                    selected_tag_style,
                 )
             }
         })
@@ -240,7 +259,7 @@ pub(super) fn render_document_composer_content(
                 context.disclosure_visible,
                 usize::from(rows[3].width),
                 theme,
-                composer_agent_accent(theme, app),
+                rail_color,
                 composer_surface,
             ))
             .style(Style::default().bg(composer_surface)),
@@ -317,6 +336,28 @@ pub(super) fn composer_metadata_candidates(
     app: &AppState,
     dock: &crate::view_model::ControlDockViewModel,
 ) -> Vec<Vec<(String, ComposerMetadataTone)>> {
+    if app.composer.mode() == crate::app::ComposerMode::Shell {
+        return vec![
+            vec![
+                ("Shell".to_string(), ComposerMetadataTone::Accent),
+                (" · ".to_string(), ComposerMetadataTone::Secondary),
+                (
+                    "runs through Harness bash permissions".to_string(),
+                    ComposerMetadataTone::Secondary,
+                ),
+            ],
+            vec![("Shell".to_string(), ComposerMetadataTone::Accent)],
+            vec![(
+                "Esc exits shell mode".to_string(),
+                ComposerMetadataTone::Secondary,
+            )],
+            vec![(
+                dock.primary_summary.clone(),
+                ComposerMetadataTone::Secondary,
+            )],
+        ];
+    }
+
     let profile = active_turn_profile_label(app).or_else(|| app.current_agent_label());
     let model = app.current_model_base_label().to_string();
     let source = app.current_source_label();
@@ -416,6 +457,9 @@ fn composer_metadata_text(
     if max_width == 0 {
         return String::new();
     }
+    if app.composer.mode() == crate::app::ComposerMode::Shell {
+        return truncate_plain_text("Shell · runs through Harness bash permissions", max_width);
+    }
 
     best_fit_text(
         &[
@@ -495,26 +539,29 @@ fn composer_visual_lines(
     let width = width.max(1);
     let mut lines = Vec::new();
     let mut cursor = None;
-    let chars = text
-        .chars()
-        .enumerate()
-        .map(|(index, ch)| ComposerVisualChar {
-            index,
-            ch,
-            width: display_width(&ch.to_string()).max(1),
+    let units = text
+        .grapheme_indices(true)
+        .map(|(byte, grapheme)| {
+            let start = text[..byte].chars().count();
+            ComposerVisualUnit {
+                start,
+                end: start + grapheme.chars().count(),
+                text: grapheme,
+                width: display_width(grapheme).max(1),
+            }
         })
         .collect::<Vec<_>>();
 
     let mut segment_start = 0usize;
     let mut fallback_start = 0usize;
-    for position in 0..=chars.len() {
-        let hard_break = position == chars.len() || chars[position].ch == '\n';
+    for position in 0..=units.len() {
+        let hard_break = position == units.len() || units[position].text == "\n";
         if !hard_break {
             continue;
         }
 
         wrap_composer_visual_segment(
-            &chars[segment_start..position],
+            &units[segment_start..position],
             fallback_start,
             width,
             cursor_char_index,
@@ -522,8 +569,8 @@ fn composer_visual_lines(
             &mut lines,
         );
 
-        if position < chars.len() {
-            if cursor_char_index == Some(chars[position].index) {
+        if position < units.len() {
+            if cursor_char_index == Some(units[position].start) {
                 let row = lines.len().saturating_sub(1);
                 let column = lines
                     .last()
@@ -531,7 +578,7 @@ fn composer_visual_lines(
                     .unwrap_or(0);
                 cursor = Some((row, column));
             }
-            fallback_start = chars[position].index + 1;
+            fallback_start = units[position].end;
             segment_start = position + 1;
         }
     }
@@ -549,25 +596,25 @@ fn composer_visual_lines(
 }
 
 fn wrap_composer_visual_segment(
-    chars: &[ComposerVisualChar],
+    units: &[ComposerVisualUnit<'_>],
     fallback_start: usize,
     width: usize,
     cursor_char_index: Option<usize>,
     cursor: &mut Option<(usize, usize)>,
     lines: &mut Vec<(String, usize)>,
 ) {
-    if chars.is_empty() {
-        emit_composer_visual_line(chars, fallback_start, cursor_char_index, cursor, lines);
+    if units.is_empty() {
+        emit_composer_visual_line(units, fallback_start, cursor_char_index, cursor, lines);
         return;
     }
 
     let mut start = 0usize;
-    while start < chars.len() {
-        let fit_end = composer_fit_end(chars, start, width);
-        if fit_end >= chars.len() {
+    while start < units.len() {
+        let fit_end = composer_fit_end(units, start, width);
+        if fit_end >= units.len() {
             emit_composer_visual_line(
-                &chars[start..],
-                chars[start].index,
+                &units[start..],
+                units[start].start,
                 cursor_char_index,
                 cursor,
                 lines,
@@ -575,16 +622,16 @@ fn wrap_composer_visual_segment(
             break;
         }
 
-        if let Some(break_at) = chars[start..fit_end]
+        if let Some(break_at) = units[start..fit_end]
             .iter()
-            .rposition(|visual_char| visual_char.ch.is_whitespace())
+            .rposition(|visual_unit| visual_unit.text.chars().all(char::is_whitespace))
             .map(|offset| start + offset)
             .filter(|break_at| *break_at > start)
         {
             let end = break_at + 1;
             emit_composer_visual_line(
-                &chars[start..end],
-                chars[start].index,
+                &units[start..end],
+                units[start].start,
                 cursor_char_index,
                 cursor,
                 lines,
@@ -593,15 +640,15 @@ fn wrap_composer_visual_segment(
             continue;
         }
 
-        if chars[fit_end].ch.is_whitespace() {
+        if units[fit_end].text.chars().all(char::is_whitespace) {
             emit_composer_visual_line(
-                &chars[start..fit_end],
-                chars[start].index,
+                &units[start..fit_end],
+                units[start].start,
                 cursor_char_index,
                 cursor,
                 lines,
             );
-            if cursor_char_index == Some(chars[fit_end].index) {
+            if cursor_char_index == Some(units[fit_end].start) {
                 let row = lines.len().saturating_sub(1);
                 let column = lines
                     .last()
@@ -615,8 +662,8 @@ fn wrap_composer_visual_segment(
 
         let end = fit_end.max(start + 1);
         emit_composer_visual_line(
-            &chars[start..end],
-            chars[start].index,
+            &units[start..end],
+            units[start].start,
             cursor_char_index,
             cursor,
             lines,
@@ -625,37 +672,37 @@ fn wrap_composer_visual_segment(
     }
 }
 
-fn composer_fit_end(chars: &[ComposerVisualChar], start: usize, width: usize) -> usize {
+fn composer_fit_end(units: &[ComposerVisualUnit<'_>], start: usize, width: usize) -> usize {
     let mut used = 0usize;
-    for (position, visual_char) in chars.iter().enumerate().skip(start) {
-        if position > start && used.saturating_add(visual_char.width) > width {
+    for (position, visual_unit) in units.iter().enumerate().skip(start) {
+        if position > start && used.saturating_add(visual_unit.width) > width {
             return position;
         }
-        used = used.saturating_add(visual_char.width);
+        used = used.saturating_add(visual_unit.width);
     }
-    chars.len()
+    units.len()
 }
 
 fn emit_composer_visual_line(
-    chars: &[ComposerVisualChar],
+    units: &[ComposerVisualUnit<'_>],
     fallback_start: usize,
     cursor_char_index: Option<usize>,
     cursor: &mut Option<(usize, usize)>,
     lines: &mut Vec<(String, usize)>,
 ) {
     let row = lines.len();
-    let line_start = chars
+    let line_start = units
         .first()
-        .map(|visual_char| visual_char.index)
+        .map(|visual_unit| visual_unit.start)
         .unwrap_or(fallback_start);
     if let Some(cursor_index) = cursor_char_index {
-        if let Some(last) = chars.last() {
-            let line_end = last.index + 1;
+        if let Some(last) = units.last() {
+            let line_end = last.end;
             if cursor_index >= line_start && cursor_index < line_end {
-                let column = chars
+                let column = units
                     .iter()
-                    .take_while(|visual_char| visual_char.index < cursor_index)
-                    .map(|visual_char| visual_char.width)
+                    .take_while(|visual_unit| visual_unit.end <= cursor_index)
+                    .map(|visual_unit| visual_unit.width)
                     .sum();
                 *cursor = Some((row, column));
             }
@@ -665,17 +712,21 @@ fn emit_composer_visual_line(
     }
 
     lines.push((
-        chars.iter().map(|visual_char| visual_char.ch).collect(),
+        units.iter().map(|visual_unit| visual_unit.text).collect(),
         line_start,
     ));
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn composer_line_with_file_tags(
     line: &str,
     line_start: usize,
     tags: &[crate::app::FileMentionTag],
+    selection_range: Option<&Range<usize>>,
     base_style: Style,
     tag_style: Style,
+    selection_style: Style,
+    selected_tag_style: Style,
 ) -> Line<'static> {
     if line.is_empty() {
         return Line::from(Span::styled(String::new(), base_style));
@@ -686,10 +737,17 @@ pub(super) fn composer_line_with_file_tags(
     let mut current_style = None;
     for (offset, ch) in line.chars().enumerate() {
         let char_index = line_start + offset;
-        let style = if tags
+        let tagged = tags
             .iter()
-            .any(|tag| char_index >= tag.start && char_index < tag.end)
-        {
+            .any(|tag| char_index >= tag.start && char_index < tag.end);
+        let selected = selection_range
+            .as_ref()
+            .is_some_and(|range| char_index >= range.start && char_index < range.end);
+        let style = if selected && tagged {
+            selected_tag_style
+        } else if selected {
+            selection_style
+        } else if tagged {
             tag_style
         } else {
             base_style

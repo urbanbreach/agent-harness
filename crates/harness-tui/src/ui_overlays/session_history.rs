@@ -2,8 +2,7 @@ use harness_core::proj::RunStatus;
 
 use super::*;
 use crate::app::session_navigation::{
-    session_history_category_label, session_history_current_marker, session_history_display_title,
-    session_history_footer_label,
+    session_history_current_marker, session_history_footer_label,
 };
 use crate::time_format::short_time_or_trimmed;
 
@@ -84,6 +83,10 @@ fn render_lineage_browser_list(frame: &mut Frame, app: &AppState, theme: &Theme,
 
     let vm = app.lineage_browser_view_model();
     if let Some(message) = vm.empty_message {
+        if !app.fork_selector_view_model().rows.is_empty() {
+            render_message_timeline_list(frame, app, theme, list_area);
+            return;
+        }
         render_palette_empty_message(frame, theme, list_area, &message);
         return;
     }
@@ -106,6 +109,31 @@ fn render_lineage_browser_list(frame: &mut Frame, app: &AppState, theme: &Theme,
         );
         frame.render_widget(
             Paragraph::new(lineage_browser_row(row, theme, row_area.width)),
+            row_area,
+        );
+    }
+}
+
+fn render_message_timeline_list(frame: &mut Frame, app: &AppState, theme: &Theme, list_area: Rect) {
+    let vm = app.fork_selector_view_model();
+    let selected = vm.rows.iter().position(|row| row.selected).unwrap_or(0);
+    let visible_rows = usize::from(list_area.height);
+    let scroll = selected.saturating_sub(visible_rows.saturating_sub(1));
+    for (row_index, row) in vm.rows.iter().enumerate().skip(scroll).take(visible_rows) {
+        let row_area = Rect::new(
+            list_area.x,
+            list_area
+                .y
+                .saturating_add(u16::try_from(row_index - scroll).unwrap_or(u16::MAX)),
+            list_area.width,
+            1,
+        );
+        frame.render_widget(
+            Block::default().style(lineage_row_style(theme, row.selected)),
+            row_area,
+        );
+        frame.render_widget(
+            Paragraph::new(fork_selector_row(row, theme, row_area.width)),
             row_area,
         );
     }
@@ -246,12 +274,14 @@ fn fork_selector_row(
     };
     let status = row.status.map(run_status_label).unwrap_or("stable");
     let meta = if row.event_id.is_none() {
-        String::new()
+        format!("stable cutoff {}", row.cutoff_seq)
     } else {
-        row.timestamp
+        let time = row
+            .timestamp
             .as_deref()
             .map(short_time_or_trimmed)
-            .unwrap_or_else(|| status.to_string())
+            .unwrap_or_else(|| status.to_string());
+        format!("stable cutoff {} · {time}", row.cutoff_seq)
     };
 
     let row_width = usize::from(width);
@@ -475,7 +505,7 @@ fn session_history_visual_rows(app: &AppState) -> Vec<SessionHistoryVisualRow> {
         let Some(entry) = app.session_history_entries.get(*entry_index) else {
             continue;
         };
-        let category = session_history_category_label(entry);
+        let category = app.session_history_entry_category_label(entry);
         if previous_category.as_deref() != Some(category.as_str()) {
             if previous_category.is_some() {
                 rows.push(SessionHistoryVisualRow::Gap);
@@ -539,7 +569,7 @@ fn session_history_row(
         .saturating_add(title_padding)
         .saturating_add(footer_width);
     let title_width = row_width.saturating_sub(fixed_width).min(61);
-    let display_title = session_history_display_title(entry);
+    let display_title = app.session_history_entry_display_title(entry);
     let title = truncate_plain_text(&display_title, title_width);
     let used_width = fixed_width.saturating_add(title.chars().count());
     let gap_width = row_width.saturating_sub(used_width);
@@ -617,7 +647,7 @@ mod tests {
         assert_eq!(line.spans[1].content.as_ref(), "Fork this prompt");
         assert_eq!(line.spans[1].style.fg, Some(theme.text.inverse));
         assert!(line.spans[1].style.add_modifier.contains(Modifier::BOLD));
-        assert_eq!(line.spans[3].content.as_ref(), "12:34");
+        assert_eq!(line.spans[3].content.as_ref(), "stable cutoff 2 · 12:34");
         assert_eq!(line.spans[3].style.fg, Some(theme.text.inverse));
         assert_eq!(line.spans[4].content.as_ref(), "   ");
     }

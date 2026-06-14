@@ -11,6 +11,7 @@ use crate::theme::{ChromeMode, DividerIntensity};
 mod ui_chrome_exact_tests;
 #[cfg(test)]
 pub(crate) use ui_chrome_exact_tests::{
+    exact_test_composer_viewport_keeps_combining_grapheme_unbroken,
     exact_test_composer_viewport_wraps_at_word_boundaries,
     exact_test_composer_viewport_wraps_by_display_width,
     exact_test_live_composer_disclosure_summarizes_compaction_metrics,
@@ -18,6 +19,7 @@ pub(crate) use ui_chrome_exact_tests::{
     exact_test_live_composer_reserves_right_gap,
     exact_test_live_control_dock_collapses_disclosure_before_status,
     exact_test_live_control_dock_renders_shared_surface,
+    exact_test_shell_mode_composer_renders_affordance,
     exact_test_startup_disclosure_matches_harness_hint_row,
     exact_test_subagent_footer_matches_harness_layout,
     exact_test_subagent_replay_suppresses_parent_replay_dock,
@@ -251,8 +253,9 @@ fn render_live_footer_row(
 
     let max_width = usize::from(area.width);
     let hint_width = hint_text.chars().count();
-    let status_gap = usize::from(hint_width > 0 && !status_candidates.is_empty()) * 2;
-    let status_width = max_width.saturating_sub(hint_width.saturating_add(status_gap));
+    let reserved_hint_width = hint_width.min(max_width / 2);
+    let reserved_gap = usize::from(reserved_hint_width > 0 && !status_candidates.is_empty()) * 2;
+    let status_width = max_width.saturating_sub(reserved_hint_width.saturating_add(reserved_gap));
     let status_text = if status_width == 0 {
         String::new()
     } else {
@@ -263,6 +266,11 @@ fn render_live_footer_row(
             .or_else(|| first_candidate.map(|text| truncate_plain_text(&text, status_width)))
             .unwrap_or_default()
     };
+    let status_text_width = status_text.chars().count();
+    let hint_gap = usize::from(status_text_width > 0 && hint_width > 0) * 2;
+    let available_hint_width = max_width.saturating_sub(status_text_width.saturating_add(hint_gap));
+    let hint_text = truncate_plain_text(&hint_text, available_hint_width);
+    let hint_width = hint_text.chars().count();
 
     let columns = Layout::default()
         .direction(Direction::Horizontal)
@@ -350,8 +358,75 @@ fn live_footer_status_candidates(app: &AppState, max_width: usize, theme: &Theme
             ),
         );
     }
+    let status_cluster = live_footer_status_cluster_candidates(app);
+    options.splice(0..0, status_cluster);
 
     options
+}
+
+fn live_footer_status_cluster_candidates(app: &AppState) -> Vec<String> {
+    let permission_count = app.transcript_pending_permissions().len();
+    let lsp_count = configured_lsp_server_count();
+    let mcp_count = configured_mcp_server_count();
+
+    let mut full = Vec::new();
+    if permission_count > 0 {
+        full.push(format!(
+            "△ {permission_count} {}",
+            pluralize(permission_count, "Permission", "Permissions")
+        ));
+    }
+    if lsp_count > 0 {
+        full.push(format!("• {lsp_count} LSP"));
+    }
+    if mcp_count > 0 {
+        full.push(format!("⊙ {mcp_count} MCP"));
+    }
+    full.push("/status".to_string());
+
+    let mut candidates = vec![full.join("  ")];
+    if permission_count > 0 {
+        candidates.push(format!(
+            "△ {permission_count} {}  /status",
+            pluralize(permission_count, "Permission", "Permissions")
+        ));
+        candidates.push(format!(
+            "△ {permission_count} {}",
+            pluralize(permission_count, "Permission", "Permissions")
+        ));
+    }
+    candidates.push("/status".to_string());
+    candidates.dedup();
+    candidates
+}
+
+fn configured_lsp_server_count() -> usize {
+    harness_core::config::registered_lsp_config()
+        .servers
+        .values()
+        .filter(|server| !server.disabled)
+        .count()
+}
+
+fn configured_mcp_server_count() -> usize {
+    harness_core::config::registered_integrations_config()
+        .map(|integrations| {
+            integrations
+                .mcp
+                .servers
+                .values()
+                .filter(|server| server.enabled())
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+fn pluralize(count: usize, singular: &'static str, plural: &'static str) -> &'static str {
+    if count == 1 {
+        singular
+    } else {
+        plural
+    }
 }
 
 fn header_identity_text(app: &AppState, header_mode: SessionHeaderMode) -> String {
@@ -470,7 +545,8 @@ pub(super) fn render_unified_bottom_dock(
         render_control_dock_disclosure(frame, disclosure_area, app, theme, &dock);
     }
 
-    let composer_lines = composer_input_height(&app.prompt_buffer, dock_layout.composer.width);
+    let composer_lines =
+        composer_input_height(&app.composer.prompt_buffer, dock_layout.composer.width);
     render_document_composer_content(
         frame,
         app,

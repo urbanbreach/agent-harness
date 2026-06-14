@@ -758,6 +758,7 @@ fn control_dock_runtime_fixture(
 fn runtime_tool_identity_fixture(status: ToolCallDisplayStatus) -> ActivityEntry {
     ActivityEntry {
         request_id: "req_tool_identity".to_string(),
+        revision: 1,
         profile_label: "build".to_string(),
         model_id: "gpt-5.4".to_string(),
         provider_id: "default".to_string(),
