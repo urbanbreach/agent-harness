@@ -120,6 +120,7 @@ impl Coordinator {
             run_state,
             self.config.hook_runtime_config.clone(),
             self.config.compaction.clone(),
+            self.config.provider_retry,
             ScheduleAgentTurnArgs {
                 provider: self.config.provider.clone(),
                 tool_registry: self.config.tool_registry.clone(),
@@ -277,6 +278,7 @@ pub(in crate::coord) async fn schedule_agent_turn<C, R>(
     run_state: &mut RunState,
     hook_runtime_config: HookRuntimeConfig,
     compaction_config: CompactionRuntimeConfig,
+    provider_retry_config: ProviderRetryRuntimeConfig,
     args: ScheduleAgentTurnArgs,
 ) -> Result<(), CoordinatorError>
 where
@@ -366,6 +368,7 @@ where
                 run_state,
                 hook_runtime_config,
                 compaction_config,
+                provider_retry_config,
                 provider,
                 tool_registry,
                 QueuedAgentTurn {
@@ -572,6 +575,7 @@ pub(in crate::coord) async fn start_agent_turn_execution<C, R>(
     run_state: &mut RunState,
     hook_runtime_config: HookRuntimeConfig,
     compaction_config: CompactionRuntimeConfig,
+    provider_retry_config: ProviderRetryRuntimeConfig,
     provider: Arc<dyn Provider>,
     tool_registry: Arc<ToolRegistry>,
     task: QueuedAgentTurn,
@@ -673,6 +677,7 @@ where
                         prior_context: &prior_context,
                         job_tx: job_tx.clone(),
                         cancellation_token: cancellation_token.clone(),
+                        provider_retry: provider_retry_config,
                     })
                     .await;
 

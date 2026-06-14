@@ -21,7 +21,7 @@ use crate::agent::{
 use crate::clock::Clock;
 use crate::config::{
     registered_hook_runtime_config, CompactionRuntimeConfig, HookLifecycleEvent, HookRuntimeConfig,
-    LifecycleHookConfig, ShellAllowlist, ToolFailureMode,
+    LifecycleHookConfig, ProviderRetryRuntimeConfig, ShellAllowlist, ToolFailureMode,
 };
 use crate::conversation::{
     ConversationAssistantMessage, ConversationMessage, ConversationToolCall,
@@ -34,10 +34,11 @@ use crate::event::{
     CompactionRequestedEvent, CompactionWrittenEvent, EventActor, EventBuildError, EventEnvelopeV1,
     EventV1, HookExecutionMetadata, PermissionDecision as EventPermissionDecision,
     PolicyViolationDetectedEvent, ProviderAssistantMessageMetadata, ProviderReasoningDeltaEvent,
-    ProviderRequestFinishedMetadata, ProviderRequestStartedMetadata, RunFailedEvent,
-    RunFinishedEvent, RunStartedEvent, StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent,
-    TaskCompletionMetadata, TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState,
-    TaskScheduledEvent, TaskTerminalScope, ToolCallMetadata, ToolCallStatus, ToolIdentityMetadata,
+    ProviderRequestFinishedMetadata, ProviderRequestRetryMetadata, ProviderRequestStartedMetadata,
+    RunFailedEvent, RunFinishedEvent, RunStartedEvent, SessionTitleUpdatedEvent,
+    StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskCompletionMetadata,
+    TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState, TaskScheduledEvent,
+    TaskTerminalScope, ToolCallMetadata, ToolCallStatus, ToolIdentityMetadata,
     UserMessageSubmittedEvent,
 };
 use crate::perm::{
@@ -62,7 +63,7 @@ use crate::text::{non_empty_trimmed, truncate_with_ellipsis};
 use crate::tool::{ToolContext, ToolRegistry, ToolResult, ToolRunState};
 use harness_providers::{
     AssistantToolCall, CompletionMessage, CompletionRequest, MessageRole, Provider,
-    ProviderStreamEvent, ToolDef,
+    ProviderErrorCategory, ProviderStreamEvent, ToolDef,
 };
 
 mod agent_turn_completion;
@@ -227,6 +228,7 @@ pub struct CoordinatorConfig {
     pub hook_runtime_config: HookRuntimeConfig,
     pub hook_command_executor: Arc<dyn LifecycleHookCommandExecutor + Send + Sync>,
     pub compaction: CompactionRuntimeConfig,
+    pub provider_retry: ProviderRetryRuntimeConfig,
     pub config_digest: String,
     pub harness_version: String,
     pub session_mode_source: Option<SessionModeSource>,
@@ -251,6 +253,7 @@ impl CoordinatorConfig {
             hook_runtime_config: registered_hook_runtime_config(),
             hook_command_executor: Arc::new(TokioLifecycleHookCommandExecutor),
             compaction: CompactionRuntimeConfig::default(),
+            provider_retry: ProviderRetryRuntimeConfig::default(),
             config_digest: "none".to_string(),
             harness_version: env!("CARGO_PKG_VERSION").to_string(),
             session_mode_source: None,
@@ -313,6 +316,13 @@ pub enum Command {
     },
     GetEventStore {
         respond_to: oneshot::Sender<Result<Arc<JsonlFileEventStore>, CoordinatorError>>,
+    },
+    GetRunInfo {
+        respond_to: oneshot::Sender<Result<RunInfo, CoordinatorError>>,
+    },
+    UpdateSessionTitle {
+        title: String,
+        respond_to: oneshot::Sender<Result<RunInfo, CoordinatorError>>,
     },
     GetAgentRuntimeInfo {
         agent_id: String,
@@ -498,6 +508,8 @@ pub enum CoordinatorError {
     RunAlreadyStarted,
     #[error("run is not started")]
     RunNotStarted,
+    #[error("session title must not be empty")]
+    InvalidSessionTitle,
     #[error("failed to create session directory {path}: {source}")]
     CreateSessionDirectory {
         path: String,

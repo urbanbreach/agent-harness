@@ -1,6 +1,40 @@
 use super::*;
 
 impl Coordinator {
+    pub(in crate::coord) fn current_run_info_internal(&self) -> Result<RunInfo, CoordinatorError> {
+        self.run_state
+            .as_ref()
+            .map(|run_state| run_state.info.clone())
+            .ok_or(CoordinatorError::RunNotStarted)
+    }
+
+    pub(in crate::coord) fn update_session_title_internal(
+        &mut self,
+        title: String,
+    ) -> Result<RunInfo, CoordinatorError> {
+        let title = non_empty_trimmed(&title)
+            .ok_or(CoordinatorError::InvalidSessionTitle)?
+            .to_string();
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        let run_stream_key = format!("run:{}", run_state.info.run_id);
+        append_payload_event(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            system_actor(),
+            Some(run_stream_key),
+            EventV1::SessionTitleUpdated(SessionTitleUpdatedEvent {
+                title: title.clone(),
+            }),
+        )?;
+        run_state.info.run_name = title;
+        write_run_metadata(run_state, &self.config, self.clock.as_ref())?;
+        Ok(run_state.info.clone())
+    }
+
     #[cfg(test)]
     pub(in crate::coord) fn start_run_internal(
         &mut self,
@@ -654,6 +688,7 @@ impl Coordinator {
                 run_state,
                 self.config.hook_runtime_config.clone(),
                 self.config.compaction.clone(),
+                self.config.provider_retry,
                 ScheduleAgentTurnArgs {
                     provider: self.config.provider.clone(),
                     tool_registry: self.config.tool_registry.clone(),

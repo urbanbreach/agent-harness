@@ -107,6 +107,14 @@ impl Coordinator {
                 let result = self.get_event_store_internal();
                 warn_oneshot_send_failure(respond_to.send(result), "get_event_store");
             }
+            Command::GetRunInfo { respond_to } => {
+                let result = self.current_run_info_internal();
+                warn_oneshot_send_failure(respond_to.send(result), "get_run_info");
+            }
+            Command::UpdateSessionTitle { title, respond_to } => {
+                let result = self.update_session_title_internal(title);
+                warn_oneshot_send_failure(respond_to.send(result), "update_session_title");
+            }
             Command::GetAgentRuntimeInfo {
                 agent_id,
                 respond_to,

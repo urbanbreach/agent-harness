@@ -129,6 +129,7 @@ pub(in crate::coord) async fn append_background_task_notification_and_schedule<C
     run_state: &mut RunState,
     hook_runtime_config: HookRuntimeConfig,
     compaction_config: CompactionRuntimeConfig,
+    provider_retry_config: ProviderRetryRuntimeConfig,
     provider: Arc<dyn Provider>,
     tool_registry: Arc<ToolRegistry>,
     child_task: Option<ChildTaskTurnState>,
@@ -222,6 +223,7 @@ where
         run_state,
         hook_runtime_config,
         compaction_config,
+        provider_retry_config,
         ScheduleAgentTurnArgs {
             provider,
             tool_registry,
@@ -255,6 +257,7 @@ pub(in crate::coord) async fn schedule_pending_agent_wakeups_for_idle_agent<C, R
     run_state: &mut RunState,
     hook_runtime_config: HookRuntimeConfig,
     compaction_config: CompactionRuntimeConfig,
+    provider_retry_config: ProviderRetryRuntimeConfig,
     provider: Arc<dyn Provider>,
     tool_registry: Arc<ToolRegistry>,
     agent_id: &str,
@@ -283,6 +286,7 @@ where
             run_state,
             hook_runtime_config.clone(),
             compaction_config.clone(),
+            provider_retry_config,
             ScheduleAgentTurnArgs {
                 provider: provider.clone(),
                 tool_registry: tool_registry.clone(),

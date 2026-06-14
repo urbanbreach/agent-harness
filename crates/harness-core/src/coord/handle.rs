@@ -97,6 +97,22 @@ impl CoordinatorHandle {
         Ok(store)
     }
 
+    pub async fn run_info(&self) -> Result<RunInfo, CoordinatorError> {
+        self.request(|respond_to| Command::GetRunInfo { respond_to })
+            .await
+    }
+
+    pub async fn update_session_title(
+        &self,
+        title: impl Into<String>,
+    ) -> Result<RunInfo, CoordinatorError> {
+        self.request(|respond_to| Command::UpdateSessionTitle {
+            title: title.into(),
+            respond_to,
+        })
+        .await
+    }
+
     pub async fn agent_runtime_info(
         &self,
         agent_id: impl Into<String>,

@@ -1,4 +1,5 @@
 use super::*;
+use std::time::Duration;
 use tokio_stream::StreamExt;
 
 pub(in crate::coord) struct AgentTurnPhaseLoopRequest<'a> {
@@ -8,6 +9,7 @@ pub(in crate::coord) struct AgentTurnPhaseLoopRequest<'a> {
     pub(in crate::coord) prior_context: &'a ProviderContext,
     pub(in crate::coord) job_tx: mpsc::Sender<Command>,
     pub(in crate::coord) cancellation_token: CancellationToken,
+    pub(in crate::coord) provider_retry: ProviderRetryRuntimeConfig,
 }
 
 struct AgentProviderTurnState {
@@ -31,6 +33,7 @@ struct ProviderStreamPhaseRequest<'a> {
     model: AgentModelRef,
     messages: &'a [CompletionMessage],
     tool_defs: &'a [ToolDef],
+    retry_metadata: ProviderRequestRetryMetadata,
     job_tx: mpsc::Sender<Command>,
     task_id: &'a str,
     agent_id: &'a str,
@@ -47,6 +50,7 @@ pub(in crate::coord) async fn run_agent_turn_phase_loop(
         prior_context,
         job_tx,
         cancellation_token,
+        provider_retry,
     } = request;
 
     let mut turn_state = match prepare_provider_transform_phase(
@@ -74,25 +78,14 @@ pub(in crate::coord) async fn run_agent_turn_phase_loop(
             );
         }
 
-        let provider_request_id = match allocate_provider_request_id_phase(&job_tx).await {
-            Ok(request_id) => request_id,
-            Err(reason) => return AgentTurnOutcome::failed(reason),
-        };
-
-        let assistant_response = match run_provider_stream_phase(ProviderStreamPhaseRequest {
-            provider: provider.clone(),
-            profile: &task.profile,
-            request: &task.request,
-            turn_request_id: &task.request_id,
-            provider_request_id,
-            model: turn_state.model.clone(),
-            messages: &turn_state.messages,
-            tool_defs: &turn_state.tool_defs,
-            job_tx: job_tx.clone(),
-            task_id: &task.task_id,
-            agent_id: &task.agent_id,
-            session_id: &task.session_id,
-        })
+        let assistant_response = match run_provider_with_retry_phase(
+            &provider,
+            &turn_state,
+            task,
+            &job_tx,
+            &cancellation_token,
+            &provider_retry,
+        )
         .await
         {
             Ok(response) => response,
@@ -287,6 +280,121 @@ async fn allocate_provider_request_id_phase(
         .map_err(|err| err.to_string())
 }
 
+async fn run_provider_with_retry_phase(
+    provider: &Arc<dyn Provider>,
+    turn_state: &AgentProviderTurnState,
+    task: &QueuedAgentTurn,
+    job_tx: &mpsc::Sender<Command>,
+    cancellation_token: &CancellationToken,
+    provider_retry: &ProviderRetryRuntimeConfig,
+) -> Result<AssistantResponse, AgentTurnFailure> {
+    let max_attempts = provider_retry.max_retries.saturating_add(1);
+    let mut attempt = 0_u32;
+    let mut prior_retry_category = None;
+    let mut prior_retry_delay_ms = 0_u64;
+    let mut last_provider_request_id = None;
+
+    loop {
+        wait_provider_retry_backoff(
+            prior_retry_delay_ms,
+            cancellation_token,
+            last_provider_request_id.clone(),
+        )
+        .await?;
+
+        let provider_request_id = allocate_provider_request_id_phase(job_tx)
+            .await
+            .map_err(AgentTurnFailure::message)?;
+        last_provider_request_id = Some(provider_request_id.clone());
+        let retry_metadata = ProviderRequestRetryMetadata {
+            attempt,
+            max_attempts,
+            delay_ms: Some(prior_retry_delay_ms),
+            category: prior_retry_category,
+        };
+        let result = run_provider_stream_phase(ProviderStreamPhaseRequest {
+            provider: provider.clone(),
+            profile: &task.profile,
+            request: &task.request,
+            turn_request_id: &task.request_id,
+            provider_request_id,
+            model: turn_state.model.clone(),
+            messages: &turn_state.messages,
+            tool_defs: &turn_state.tool_defs,
+            retry_metadata,
+            job_tx: job_tx.clone(),
+            task_id: &task.task_id,
+            agent_id: &task.agent_id,
+            session_id: &task.session_id,
+        })
+        .await;
+
+        match result {
+            Ok(response) => return Ok(response),
+            Err(failure) if should_retry_provider_failure(&failure, provider_retry, attempt) => {
+                attempt = attempt.saturating_add(1);
+                prior_retry_category = failure.provider_error_category;
+                prior_retry_delay_ms =
+                    provider_retry_delay_ms(provider_retry, attempt, failure.retry_after_ms);
+            }
+            Err(failure) => return Err(failure),
+        }
+    }
+}
+
+async fn wait_provider_retry_backoff(
+    delay_ms: u64,
+    cancellation_token: &CancellationToken,
+    provider_request_id: Option<String>,
+) -> Result<(), AgentTurnFailure> {
+    if delay_ms == 0 {
+        return Ok(());
+    }
+
+    tokio::select! {
+        _ = cancellation_token.cancelled() => Err(AgentTurnFailure::new(
+            ProviderConversationTurnStatus::Aborted,
+            "cancelled",
+            "job cancelled",
+            "",
+            provider_request_id,
+        )),
+        _ = tokio::time::sleep(Duration::from_millis(delay_ms)) => Ok(()),
+    }
+}
+
+fn should_retry_provider_failure(
+    failure: &AgentTurnFailure,
+    provider_retry: &ProviderRetryRuntimeConfig,
+    attempt: u32,
+) -> bool {
+    failure.failure_stage == "provider_error"
+        && failure.partial_assistant_output.is_empty()
+        && attempt < provider_retry.max_retries
+        && matches!(
+            failure.provider_error_category,
+            Some(ProviderErrorCategory::RateLimited | ProviderErrorCategory::TransportFailure)
+        )
+}
+
+fn provider_retry_delay_ms(
+    provider_retry: &ProviderRetryRuntimeConfig,
+    retry_attempt: u32,
+    retry_after_ms: Option<u64>,
+) -> u64 {
+    let max_delay = provider_retry.max_delay_ms;
+    if let Some(delay) = retry_after_ms {
+        return delay.min(max_delay);
+    }
+
+    let exponent = retry_attempt.saturating_sub(1).min(31);
+    let multiplier = 1_u64 << exponent;
+    provider_retry
+        .base_delay_ms
+        .saturating_mul(multiplier)
+        .min(max_delay)
+}
+
 async fn run_provider_stream_phase(
     request: ProviderStreamPhaseRequest<'_>,
 ) -> Result<AssistantResponse, AgentTurnFailure> {
@@ -299,6 +407,7 @@ async fn run_provider_stream_phase(
         model,
         messages,
         tool_defs,
+        retry_metadata,
         job_tx,
         task_id,
         agent_id,
@@ -317,6 +426,7 @@ async fn run_provider_stream_phase(
             provider_request_id,
             session_id: Some(session_id.to_string()),
             prompt_summary: &request.prompt,
+            retry_metadata: Some(retry_metadata),
             context: ProviderBoundaryContext::ProviderMessages { messages },
             tool_defs,
         },
