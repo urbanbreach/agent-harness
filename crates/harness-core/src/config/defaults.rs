@@ -79,6 +79,18 @@ pub(super) fn default_compaction_fallback_input_tokens() -> u32 {
     32_768
 }
 
+pub(super) fn default_provider_retry_max_retries() -> u32 {
+    2
+}
+
+pub(super) fn default_provider_retry_base_delay_ms() -> u64 {
+    2_000
+}
+
+pub(super) fn default_provider_retry_max_delay_ms() -> u64 {
+    30_000
+}
+
 pub(super) fn default_hook_timeout_ms() -> u64 {
     5_000
 }

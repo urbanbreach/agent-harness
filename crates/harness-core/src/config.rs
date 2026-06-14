@@ -29,10 +29,12 @@ use self::defaults::{
     default_compaction_estimated_token_triggers, default_compaction_fallback_input_tokens,
     default_compaction_structured_summary_contract, default_hashline_edit, default_hook_timeout_ms,
     default_logging_level, default_max_events_in_memory, default_max_transcript_chars_in_memory,
-    default_prompt_wait_timeout_ms, default_runtime_ask_timeout_ms,
-    default_runtime_tool_failure_mode, default_session_dir, default_skills_global_roots,
-    default_skills_permissions, default_skills_project_roots, default_skills_walk_to_git_root,
-    default_ui_child_session_navigation_enabled, default_ui_variant_cycle_enabled,
+    default_prompt_wait_timeout_ms, default_provider_retry_base_delay_ms,
+    default_provider_retry_max_delay_ms, default_provider_retry_max_retries,
+    default_runtime_ask_timeout_ms, default_runtime_tool_failure_mode, default_session_dir,
+    default_skills_global_roots, default_skills_permissions, default_skills_project_roots,
+    default_skills_walk_to_git_root, default_ui_child_session_navigation_enabled,
+    default_ui_variant_cycle_enabled,
 };
 pub use self::defaults::{
     DEFAULT_REMOTE_SEARCH_ENDPOINT, DEFAULT_REMOTE_SEARCH_MAX_RETRIES,
@@ -440,6 +442,32 @@ pub struct RuntimeConfig {
     pub deterministic: DeterministicConfig,
     #[serde(default)]
     pub compaction: CompactionRuntimeConfig,
+    #[serde(default, alias = "providerRetry")]
+    pub provider_retry: ProviderRetryRuntimeConfig,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ProviderRetryRuntimeConfig {
+    #[serde(default = "default_provider_retry_max_retries", alias = "maxRetries")]
+    pub max_retries: u32,
+    #[serde(
+        default = "default_provider_retry_base_delay_ms",
+        alias = "baseDelayMs"
+    )]
+    pub base_delay_ms: u64,
+    #[serde(default = "default_provider_retry_max_delay_ms", alias = "maxDelayMs")]
+    pub max_delay_ms: u64,
+}
+
+impl Default for ProviderRetryRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            max_retries: default_provider_retry_max_retries(),
+            base_delay_ms: default_provider_retry_base_delay_ms(),
+            max_delay_ms: default_provider_retry_max_delay_ms(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

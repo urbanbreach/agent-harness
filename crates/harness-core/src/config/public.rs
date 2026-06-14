@@ -96,6 +96,8 @@ pub struct PublicRuntimeConfig {
 pub struct PublicRuntimeSettingsConfig {
     #[serde(default)]
     pub compaction: CompactionRuntimeConfig,
+    #[serde(default, alias = "providerRetry")]
+    pub provider_retry: ProviderRetryRuntimeConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
