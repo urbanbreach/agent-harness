@@ -76,22 +76,33 @@ pub struct ActivePermissionView {
 
 impl AppState {
     fn permission_modal_is_active(&self, permission_id: &str) -> bool {
-        self.permission_modal_permission_id.as_deref() == Some(permission_id)
+        self.permission_prompt
+            .permission_modal_permission_id
+            .as_deref()
+            == Some(permission_id)
     }
 
     fn question_answer_is_active(&self, permission_id: &str) -> bool {
-        self.question_answer_permission_id.as_deref() == Some(permission_id)
+        self.question_prompt
+            .question_answer_permission_id
+            .as_deref()
+            == Some(permission_id)
     }
 
     pub(super) fn submitted_permission_is_active(&self, permission_id: &str) -> bool {
-        self.submitted_permission_id.as_deref() == Some(permission_id)
+        self.permission_prompt.submitted_permission_id.as_deref() == Some(permission_id)
     }
 
     pub fn active_permission(&self) -> Option<(String, String)> {
         self.projection
             .pending_permissions
             .iter()
-            .filter(|(permission_id, _)| !self.dismissed_permissions.contains(*permission_id))
+            .filter(|(permission_id, _)| {
+                !self
+                    .permission_prompt
+                    .dismissed_permissions
+                    .contains(*permission_id)
+            })
             .min_by_key(|(_, pending)| pending.seq)
             .map(|(permission_id, pending)| (permission_id.clone(), pending.summary.clone()))
     }
@@ -100,7 +111,12 @@ impl AppState {
         self.projection
             .pending_permissions
             .iter()
-            .filter(|(permission_id, _)| !self.dismissed_permissions.contains(*permission_id))
+            .filter(|(permission_id, _)| {
+                !self
+                    .permission_prompt
+                    .dismissed_permissions
+                    .contains(*permission_id)
+            })
             .min_by_key(|(_, pending)| pending.seq)
             .map(|(permission_id, pending)| ActivePermissionView {
                 permission_id: permission_id.clone(),
@@ -131,7 +147,12 @@ impl AppState {
             .projection
             .pending_permissions
             .iter()
-            .filter(|(permission_id, _)| !self.dismissed_permissions.contains(*permission_id))
+            .filter(|(permission_id, _)| {
+                !self
+                    .permission_prompt
+                    .dismissed_permissions
+                    .contains(*permission_id)
+            })
             .map(|(permission_id, permission)| {
                 let summary = if permission.kind.eq_ignore_ascii_case("question") {
                     "Question requested".to_string()
@@ -152,109 +173,50 @@ impl AppState {
         self.submitted_permission_is_active(permission_id)
     }
 
-    pub(crate) fn permission_modal_selection(
-        &self,
-        permission_id: &str,
-    ) -> PermissionModalSelection {
-        if self.permission_modal_is_active(permission_id) {
-            self.permission_modal_selection
-        } else {
-            PermissionModalSelection::AllowOnce
-        }
-    }
-
-    pub(crate) fn permission_modal_stage(&self, permission_id: &str) -> PermissionModalStage {
-        if self.permission_modal_is_active(permission_id) {
-            self.permission_modal_stage
-        } else {
-            PermissionModalStage::Decision
-        }
-    }
-
-    pub(crate) fn permission_modal_confirm_selection(
-        &self,
-        permission_id: &str,
-    ) -> PermissionConfirmSelection {
-        if self.permission_modal_is_active(permission_id) {
-            self.permission_modal_confirm_selection
-        } else {
-            PermissionConfirmSelection::Confirm
-        }
-    }
-
-    pub(crate) fn question_prompt_tab(&self, permission_id: &str) -> usize {
-        if self.question_answer_is_active(permission_id) {
-            self.question_prompt_tab
-        } else {
-            0
-        }
-    }
-
-    pub(crate) fn question_prompt_selection(&self, permission_id: &str) -> usize {
-        if self.question_answer_is_active(permission_id) {
-            self.question_prompt_selection
-        } else {
-            0
-        }
-    }
-
-    pub(crate) fn question_prompt_editing(&self, permission_id: &str) -> bool {
-        self.question_answer_is_active(permission_id) && self.question_prompt_editing
-    }
-
-    pub(crate) fn question_prompt_answers(&self, permission_id: &str) -> Vec<Vec<String>> {
-        if self.question_answer_is_active(permission_id) {
-            self.question_prompt_answers.clone()
-        } else {
-            Vec::new()
-        }
-    }
-
-    pub(crate) fn question_prompt_custom(&self, permission_id: &str, index: usize) -> Option<&str> {
-        if !self.question_answer_is_active(permission_id) {
-            return None;
-        }
-
-        self.question_prompt_custom.get(index).map(String::as_str)
-    }
-
     fn cycle_permission_modal_selection(
         &mut self,
         permission_id: &str,
         forward: bool,
         allow_always: bool,
     ) {
-        let current = self.permission_modal_selection(permission_id);
-        self.permission_modal_permission_id = Some(permission_id.to_string());
-        self.permission_modal_stage = PermissionModalStage::Decision;
-        self.permission_modal_selection = current.cycle(forward, allow_always);
+        let current = self
+            .permission_prompt
+            .permission_modal_selection(permission_id);
+        self.permission_prompt.permission_modal_permission_id = Some(permission_id.to_string());
+        self.permission_prompt.permission_modal_stage = PermissionModalStage::Decision;
+        self.permission_prompt.permission_modal_selection = current.cycle(forward, allow_always);
     }
 
     fn cycle_permission_modal_confirm_selection(&mut self, permission_id: &str, forward: bool) {
-        let current = self.permission_modal_confirm_selection(permission_id);
-        self.permission_modal_permission_id = Some(permission_id.to_string());
-        self.permission_modal_stage = PermissionModalStage::AlwaysConfirm;
-        self.permission_modal_confirm_selection = current.cycle(forward);
+        let current = self
+            .permission_prompt
+            .permission_modal_confirm_selection(permission_id);
+        self.permission_prompt.permission_modal_permission_id = Some(permission_id.to_string());
+        self.permission_prompt.permission_modal_stage = PermissionModalStage::AlwaysConfirm;
+        self.permission_prompt.permission_modal_confirm_selection = current.cycle(forward);
     }
 
     fn open_permission_allow_always_confirm(&mut self, permission_id: &str) {
-        self.permission_modal_permission_id = Some(permission_id.to_string());
-        self.permission_modal_stage = PermissionModalStage::AlwaysConfirm;
-        self.permission_modal_confirm_selection = PermissionConfirmSelection::Confirm;
+        self.permission_prompt.permission_modal_permission_id = Some(permission_id.to_string());
+        self.permission_prompt.permission_modal_stage = PermissionModalStage::AlwaysConfirm;
+        self.permission_prompt.permission_modal_confirm_selection =
+            PermissionConfirmSelection::Confirm;
     }
 
     fn close_permission_allow_always_confirm(&mut self, permission_id: &str) {
-        self.permission_modal_permission_id = Some(permission_id.to_string());
-        self.permission_modal_stage = PermissionModalStage::Decision;
-        self.permission_modal_confirm_selection = PermissionConfirmSelection::Confirm;
+        self.permission_prompt.permission_modal_permission_id = Some(permission_id.to_string());
+        self.permission_prompt.permission_modal_stage = PermissionModalStage::Decision;
+        self.permission_prompt.permission_modal_confirm_selection =
+            PermissionConfirmSelection::Confirm;
     }
 
     pub(super) fn clear_permission_modal_selection(&mut self, permission_id: &str) {
         if self.permission_modal_is_active(permission_id) {
-            self.permission_modal_permission_id = None;
-            self.permission_modal_stage = PermissionModalStage::Decision;
-            self.permission_modal_selection = PermissionModalSelection::AllowOnce;
-            self.permission_modal_confirm_selection = PermissionConfirmSelection::Confirm;
+            self.permission_prompt.permission_modal_permission_id = None;
+            self.permission_prompt.permission_modal_stage = PermissionModalStage::Decision;
+            self.permission_prompt.permission_modal_selection = PermissionModalSelection::AllowOnce;
+            self.permission_prompt.permission_modal_confirm_selection =
+                PermissionConfirmSelection::Confirm;
         }
     }
 
@@ -306,11 +268,11 @@ impl AppState {
             palette_app.overlay_stack().top(),
             Some(OverlayKind::PermissionModal)
         );
-        assert!(!palette_app.palette_visible);
+        assert!(!palette_app.overlay_state.palette_visible);
 
         let mut slash_app = AppState::new_live(None, false, None);
         slash_app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
-        assert!(slash_app.slash_visible);
+        assert!(slash_app.overlay_state.slash_visible);
         assert_eq!(
             slash_app.overlay_stack().top(),
             Some(OverlayKind::SlashCommands)
@@ -322,15 +284,15 @@ impl AppState {
             "tc_overlay_priority_slash",
         ));
 
-        assert!(!slash_app.slash_visible);
+        assert!(!slash_app.overlay_state.slash_visible);
         assert_eq!(
             slash_app.overlay_stack().top(),
             Some(OverlayKind::PermissionModal)
         );
 
         slash_app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
-        assert_eq!(slash_app.prompt_buffer, "/");
-        assert!(!slash_app.slash_visible);
+        assert_eq!(slash_app.composer.prompt_buffer, "/");
+        assert!(!slash_app.overlay_state.slash_visible);
         assert_eq!(
             slash_app.overlay_stack().top(),
             Some(OverlayKind::PermissionModal)
@@ -350,7 +312,9 @@ impl AppState {
         if !key.modifiers.contains(KeyModifiers::CONTROL)
             && !key.modifiers.contains(KeyModifiers::ALT)
         {
-            if self.permission_modal_stage(&permission.permission_id)
+            if self
+                .permission_prompt
+                .permission_modal_stage(&permission.permission_id)
                 == PermissionModalStage::AlwaysConfirm
             {
                 match key.code {
@@ -369,7 +333,9 @@ impl AppState {
                         return;
                     }
                     KeyCode::Enter => {
-                        if self.permission_modal_confirm_selection(&permission.permission_id)
+                        if self
+                            .permission_prompt
+                            .permission_modal_confirm_selection(&permission.permission_id)
                             == PermissionConfirmSelection::Confirm
                         {
                             self.clear_permission_modal_selection(&permission.permission_id);
@@ -393,6 +359,12 @@ impl AppState {
                 }
             }
 
+            if key.code == KeyCode::Esc {
+                self.execute_action(Action::DismissModal);
+                self.maybe_auto_exit();
+                return;
+            }
+
             match key.code {
                 KeyCode::Left | KeyCode::Char('h') => {
                     self.cycle_permission_modal_selection(&permission.permission_id, false, true);
@@ -403,7 +375,10 @@ impl AppState {
                     return;
                 }
                 KeyCode::Enter => {
-                    match self.permission_modal_selection(&permission.permission_id) {
+                    match self
+                        .permission_prompt
+                        .permission_modal_selection(&permission.permission_id)
+                    {
                         PermissionModalSelection::AllowOnce => {
                             self.execute_action(Action::AllowPermission);
                         }
@@ -442,17 +417,18 @@ impl AppState {
         self.ensure_question_answer_state(&permission.permission_id, prompts);
         let single = question_prompt_is_single_select(prompts);
         let tab_count = question_prompt_tab_count(prompts);
-        let confirm = question_prompt_confirm_active(self.question_prompt_tab, prompts);
+        let confirm =
+            question_prompt_confirm_active(self.question_prompt.question_prompt_tab, prompts);
 
         if !self.composer_disabled()
             && !key
                 .modifiers
                 .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
         {
-            if self.question_prompt_editing {
+            if self.question_prompt.question_prompt_editing {
                 match key.code {
                     KeyCode::Esc => {
-                        self.question_prompt_editing = false;
+                        self.question_prompt.question_prompt_editing = false;
                         return;
                     }
                     KeyCode::Enter => {
@@ -471,22 +447,27 @@ impl AppState {
                         return;
                     }
                     KeyCode::Left => {
-                        self.question_answer_cursor = self.question_answer_cursor.saturating_sub(1);
+                        self.question_prompt.question_answer_cursor = self
+                            .question_prompt
+                            .question_answer_cursor
+                            .saturating_sub(1);
                         return;
                     }
                     KeyCode::Right => {
-                        self.question_answer_cursor = self
+                        self.question_prompt.question_answer_cursor = self
+                            .question_prompt
                             .question_answer_cursor
                             .saturating_add(1)
                             .min(self.question_answer_char_count());
                         return;
                     }
                     KeyCode::Home => {
-                        self.question_answer_cursor = 0;
+                        self.question_prompt.question_answer_cursor = 0;
                         return;
                     }
                     KeyCode::End => {
-                        self.question_answer_cursor = self.question_answer_char_count();
+                        self.question_prompt.question_answer_cursor =
+                            self.question_answer_char_count();
                         return;
                     }
                     KeyCode::Char(c) => {
@@ -502,21 +483,23 @@ impl AppState {
                 KeyCode::Left | KeyCode::Char('h') => {
                     if !single {
                         self.select_question_tab(
-                            (self.question_prompt_tab + tab_count - 1) % tab_count,
+                            (self.question_prompt.question_prompt_tab + tab_count - 1) % tab_count,
                         );
                         return;
                     }
                 }
                 KeyCode::Right | KeyCode::Char('l') | KeyCode::Tab => {
                     if !single {
-                        self.select_question_tab((self.question_prompt_tab + 1) % tab_count);
+                        self.select_question_tab(
+                            (self.question_prompt.question_prompt_tab + 1) % tab_count,
+                        );
                         return;
                     }
                 }
                 KeyCode::BackTab => {
                     if !single {
                         self.select_question_tab(
-                            (self.question_prompt_tab + tab_count - 1) % tab_count,
+                            (self.question_prompt.question_prompt_tab + tab_count - 1) % tab_count,
                         );
                         return;
                     }
@@ -536,14 +519,15 @@ impl AppState {
                 KeyCode::Char(c @ '1'..='9') => {
                     if !confirm {
                         let index = usize::from((c as u8).saturating_sub(b'1'));
-                        let Some(prompt) = prompts.get(self.question_prompt_tab) else {
+                        let Some(prompt) = prompts.get(self.question_prompt.question_prompt_tab)
+                        else {
                             return;
                         };
                         let max = question_prompt_choice_count(prompt).min(9);
                         if index >= max {
                             return;
                         }
-                        self.question_prompt_selection = index;
+                        self.question_prompt.question_prompt_selection = index;
                         self.activate_question_selection(&permission.permission_id, prompts);
                         self.maybe_auto_exit();
                         return;
@@ -647,71 +631,75 @@ impl AppState {
             return;
         }
 
-        self.question_answer_permission_id = Some(permission_id.to_string());
-        self.question_prompt_tab = 0;
-        self.question_prompt_selection = 0;
-        self.question_prompt_answers = vec![Vec::new(); prompts.len()];
-        self.question_prompt_custom = vec![String::new(); prompts.len()];
-        self.question_prompt_editing = false;
-        self.question_answer_buffer.clear();
-        self.question_answer_cursor = 0;
-        self.question_answer_error = None;
+        self.question_prompt.question_answer_permission_id = Some(permission_id.to_string());
+        self.question_prompt.question_prompt_tab = 0;
+        self.question_prompt.question_prompt_selection = 0;
+        self.question_prompt.question_prompt_answers = vec![Vec::new(); prompts.len()];
+        self.question_prompt.question_prompt_custom = vec![String::new(); prompts.len()];
+        self.question_prompt.question_prompt_editing = false;
+        self.question_prompt.question_answer_buffer.clear();
+        self.question_prompt.question_answer_cursor = 0;
+        self.question_prompt.question_answer_error = None;
     }
 
     fn select_question_tab(&mut self, tab: usize) {
-        self.question_prompt_tab = tab;
-        self.question_prompt_selection = 0;
-        self.question_prompt_editing = false;
-        self.question_answer_buffer.clear();
-        self.question_answer_cursor = 0;
-        self.question_answer_error = None;
+        self.question_prompt.question_prompt_tab = tab;
+        self.question_prompt.question_prompt_selection = 0;
+        self.question_prompt.question_prompt_editing = false;
+        self.question_prompt.question_answer_buffer.clear();
+        self.question_prompt.question_answer_cursor = 0;
+        self.question_prompt.question_answer_error = None;
     }
 
     fn move_question_selection(&mut self, prompts: &[QuestionPromptView], delta: isize) {
-        let Some(prompt) = prompts.get(self.question_prompt_tab) else {
+        let Some(prompt) = prompts.get(self.question_prompt.question_prompt_tab) else {
             return;
         };
         let total = question_prompt_choice_count(prompt);
         if total == 0 {
-            self.question_prompt_selection = 0;
+            self.question_prompt.question_prompt_selection = 0;
             return;
         }
-        self.question_prompt_selection = if delta < 0 {
-            if self.question_prompt_selection == 0 {
+        self.question_prompt.question_prompt_selection = if delta < 0 {
+            if self.question_prompt.question_prompt_selection == 0 {
                 total.saturating_sub(1)
             } else {
-                self.question_prompt_selection - 1
+                self.question_prompt.question_prompt_selection - 1
             }
-        } else if self.question_prompt_selection + 1 >= total {
+        } else if self.question_prompt.question_prompt_selection + 1 >= total {
             0
         } else {
-            self.question_prompt_selection + 1
+            self.question_prompt.question_prompt_selection + 1
         };
     }
 
     fn activate_question_selection(&mut self, permission_id: &str, prompts: &[QuestionPromptView]) {
-        let Some(prompt) = prompts.get(self.question_prompt_tab) else {
+        let Some(prompt) = prompts.get(self.question_prompt.question_prompt_tab) else {
             return;
         };
         let total = question_prompt_choice_count(prompt);
         if total == 0 {
             return;
         }
-        self.question_prompt_selection =
-            self.question_prompt_selection.min(total.saturating_sub(1));
-        if prompt.custom && self.question_prompt_selection == prompt.options.len() {
+        self.question_prompt.question_prompt_selection = self
+            .question_prompt
+            .question_prompt_selection
+            .min(total.saturating_sub(1));
+        if prompt.custom && self.question_prompt.question_prompt_selection == prompt.options.len() {
             if prompt.multiple {
                 let current = self
+                    .question_prompt
                     .question_prompt_custom
-                    .get(self.question_prompt_tab)
+                    .get(self.question_prompt.question_prompt_tab)
                     .cloned()
                     .unwrap_or_default();
                 if !current.is_empty()
-                    && self.question_prompt_answers[self.question_prompt_tab]
+                    && self.question_prompt.question_prompt_answers
+                        [self.question_prompt.question_prompt_tab]
                         .iter()
                         .any(|value| value == &current)
                 {
-                    self.toggle_question_answer(self.question_prompt_tab, &current);
+                    self.toggle_question_answer(self.question_prompt.question_prompt_tab, &current);
                     return;
                 }
             }
@@ -719,40 +707,45 @@ impl AppState {
             return;
         }
 
-        let Some(option) = prompt.options.get(self.question_prompt_selection) else {
+        let Some(option) = prompt
+            .options
+            .get(self.question_prompt.question_prompt_selection)
+        else {
             return;
         };
         let answer = option.label.clone();
         if prompt.multiple {
-            self.toggle_question_answer(self.question_prompt_tab, &answer);
+            self.toggle_question_answer(self.question_prompt.question_prompt_tab, &answer);
             return;
         }
 
-        self.question_prompt_answers[self.question_prompt_tab] = vec![answer];
+        self.question_prompt.question_prompt_answers[self.question_prompt.question_prompt_tab] =
+            vec![answer];
         if question_prompt_is_single_select(prompts) {
             self.execute_action(Action::AllowPermission);
             return;
         }
 
         self.select_question_tab(
-            (self.question_prompt_tab + 1)
+            (self.question_prompt.question_prompt_tab + 1)
                 .min(question_prompt_tab_count(prompts).saturating_sub(1)),
         );
     }
 
     fn start_question_custom_edit(&mut self, permission_id: &str) {
         let Some(current) = self
+            .question_prompt
             .question_prompt_custom
-            .get(self.question_prompt_tab)
+            .get(self.question_prompt.question_prompt_tab)
             .cloned()
         else {
             return;
         };
-        self.question_answer_permission_id = Some(permission_id.to_string());
-        self.question_prompt_editing = true;
-        self.question_answer_buffer = current;
-        self.question_answer_cursor = self.question_answer_char_count();
-        self.question_answer_error = None;
+        self.question_prompt.question_answer_permission_id = Some(permission_id.to_string());
+        self.question_prompt.question_prompt_editing = true;
+        self.question_prompt.question_answer_buffer = current;
+        self.question_prompt.question_answer_cursor = self.question_answer_char_count();
+        self.question_prompt.question_answer_error = None;
     }
 
     fn commit_question_custom_answer(
@@ -760,44 +753,55 @@ impl AppState {
         permission_id: &str,
         prompts: &[QuestionPromptView],
     ) {
-        let Some(prompt) = prompts.get(self.question_prompt_tab) else {
+        let Some(prompt) = prompts.get(self.question_prompt.question_prompt_tab) else {
             return;
         };
-        let answer = self.question_answer_buffer.trim().to_string();
+        let answer = self
+            .question_prompt
+            .question_answer_buffer
+            .trim()
+            .to_string();
         let previous = self
+            .question_prompt
             .question_prompt_custom
-            .get(self.question_prompt_tab)
+            .get(self.question_prompt.question_prompt_tab)
             .cloned()
             .unwrap_or_default();
-        self.question_prompt_editing = false;
-        self.question_answer_error = None;
+        self.question_prompt.question_prompt_editing = false;
+        self.question_prompt.question_answer_error = None;
 
         if answer.is_empty() {
-            self.clear_question_custom_answer(self.question_prompt_tab, &previous);
+            self.clear_question_custom_answer(self.question_prompt.question_prompt_tab, &previous);
             return;
         }
 
-        self.question_prompt_custom[self.question_prompt_tab] = answer.clone();
+        self.question_prompt.question_prompt_custom[self.question_prompt.question_prompt_tab] =
+            answer.clone();
         if prompt.multiple {
-            self.replace_question_custom_answer(self.question_prompt_tab, &previous, answer);
+            self.replace_question_custom_answer(
+                self.question_prompt.question_prompt_tab,
+                &previous,
+                answer,
+            );
             return;
         }
 
-        self.question_prompt_answers[self.question_prompt_tab] = vec![answer];
+        self.question_prompt.question_prompt_answers[self.question_prompt.question_prompt_tab] =
+            vec![answer];
         if question_prompt_is_single_select(prompts) {
             self.execute_action(Action::AllowPermission);
             return;
         }
 
         self.select_question_tab(
-            (self.question_prompt_tab + 1)
+            (self.question_prompt.question_prompt_tab + 1)
                 .min(question_prompt_tab_count(prompts).saturating_sub(1)),
         );
-        self.question_answer_permission_id = Some(permission_id.to_string());
+        self.question_prompt.question_answer_permission_id = Some(permission_id.to_string());
     }
 
     fn toggle_question_answer(&mut self, index: usize, answer: &str) {
-        let Some(values) = self.question_prompt_answers.get_mut(index) else {
+        let Some(values) = self.question_prompt.question_prompt_answers.get_mut(index) else {
             return;
         };
         if let Some(position) = values.iter().position(|value| value == answer) {
@@ -808,19 +812,19 @@ impl AppState {
     }
 
     fn clear_question_custom_answer(&mut self, index: usize, previous: &str) {
-        if let Some(value) = self.question_prompt_custom.get_mut(index) {
+        if let Some(value) = self.question_prompt.question_prompt_custom.get_mut(index) {
             value.clear();
         }
         if previous.is_empty() {
             return;
         }
-        if let Some(values) = self.question_prompt_answers.get_mut(index) {
+        if let Some(values) = self.question_prompt.question_prompt_answers.get_mut(index) {
             values.retain(|value| value != previous);
         }
     }
 
     fn replace_question_custom_answer(&mut self, index: usize, previous: &str, answer: String) {
-        let Some(values) = self.question_prompt_answers.get_mut(index) else {
+        let Some(values) = self.question_prompt.question_prompt_answers.get_mut(index) else {
             return;
         };
         values.retain(|value| value != previous);
@@ -830,43 +834,46 @@ impl AppState {
     }
 
     fn question_answer_char_count(&self) -> usize {
-        self.question_answer_buffer.chars().count()
+        self.question_prompt.question_answer_buffer.chars().count()
     }
 
     fn question_answer_cursor_byte_index(&self) -> usize {
-        self.question_answer_buffer
+        self.question_prompt
+            .question_answer_buffer
             .char_indices()
-            .nth(self.question_answer_cursor)
+            .nth(self.question_prompt.question_answer_cursor)
             .map(|(index, _)| index)
-            .unwrap_or(self.question_answer_buffer.len())
+            .unwrap_or(self.question_prompt.question_answer_buffer.len())
     }
 
     fn insert_question_answer_char(&mut self, c: char) {
         let byte_idx = self.question_answer_cursor_byte_index();
-        self.question_answer_buffer.insert(byte_idx, c);
-        self.question_answer_cursor += 1;
-        self.question_answer_error = None;
+        self.question_prompt
+            .question_answer_buffer
+            .insert(byte_idx, c);
+        self.question_prompt.question_answer_cursor += 1;
+        self.question_prompt.question_answer_error = None;
     }
 
     fn backspace_question_answer_char(&mut self) {
-        if self.question_answer_cursor == 0 {
+        if self.question_prompt.question_answer_cursor == 0 {
             return;
         }
 
-        self.question_answer_cursor -= 1;
+        self.question_prompt.question_answer_cursor -= 1;
         let byte_idx = self.question_answer_cursor_byte_index();
-        self.question_answer_buffer.remove(byte_idx);
-        self.question_answer_error = None;
+        self.question_prompt.question_answer_buffer.remove(byte_idx);
+        self.question_prompt.question_answer_error = None;
     }
 
     fn delete_question_answer_char(&mut self) {
-        if self.question_answer_cursor >= self.question_answer_char_count() {
+        if self.question_prompt.question_answer_cursor >= self.question_answer_char_count() {
             return;
         }
 
         let byte_idx = self.question_answer_cursor_byte_index();
-        self.question_answer_buffer.remove(byte_idx);
-        self.question_answer_error = None;
+        self.question_prompt.question_answer_buffer.remove(byte_idx);
+        self.question_prompt.question_answer_error = None;
     }
 
     fn build_question_permission_reason(
@@ -874,13 +881,13 @@ impl AppState {
         permission: &ActivePermissionView,
     ) -> Option<String> {
         let prompts = permission.question_prompts.as_ref()?;
-        match build_question_answers(prompts, &self.question_prompt_answers) {
+        match build_question_answers(prompts, &self.question_prompt.question_prompt_answers) {
             Ok(answers) => {
-                self.question_answer_error = None;
+                self.question_prompt.question_answer_error = None;
                 serde_json::to_string(&answers).ok()
             }
             Err(err) => {
-                self.question_answer_error = Some(err);
+                self.question_prompt.question_answer_error = Some(err);
                 None
             }
         }
@@ -891,28 +898,23 @@ impl AppState {
             return String::new();
         }
 
-        if !self.question_prompt_editing {
+        if !self.question_prompt.question_prompt_editing {
             return self
+                .question_prompt
                 .question_prompt_custom
-                .get(self.question_prompt_tab)
+                .get(self.question_prompt.question_prompt_tab)
                 .cloned()
                 .unwrap_or_default();
         }
 
-        let mut preview = self.question_answer_buffer.clone();
+        let mut preview = self.question_prompt.question_answer_buffer.clone();
         let byte_idx = preview
             .char_indices()
-            .nth(self.question_answer_cursor)
+            .nth(self.question_prompt.question_answer_cursor)
             .map(|(index, _)| index)
             .unwrap_or(preview.len());
         preview.insert(byte_idx, '█');
         preview
-    }
-
-    pub(crate) fn question_answer_error(&self, permission_id: &str) -> Option<&str> {
-        self.question_answer_is_active(permission_id)
-            .then_some(self.question_answer_error.as_deref())
-            .flatten()
     }
 
     pub(super) fn clear_question_answer_state(&mut self, permission_id: &str) {
@@ -920,15 +922,15 @@ impl AppState {
             return;
         }
 
-        self.question_answer_permission_id = None;
-        self.question_prompt_tab = 0;
-        self.question_prompt_selection = 0;
-        self.question_prompt_answers.clear();
-        self.question_prompt_custom.clear();
-        self.question_prompt_editing = false;
-        self.question_answer_buffer.clear();
-        self.question_answer_cursor = 0;
-        self.question_answer_error = None;
+        self.question_prompt.question_answer_permission_id = None;
+        self.question_prompt.question_prompt_tab = 0;
+        self.question_prompt.question_prompt_selection = 0;
+        self.question_prompt.question_prompt_answers.clear();
+        self.question_prompt.question_prompt_custom.clear();
+        self.question_prompt.question_prompt_editing = false;
+        self.question_prompt.question_answer_buffer.clear();
+        self.question_prompt.question_answer_cursor = 0;
+        self.question_prompt.question_answer_error = None;
     }
 
     pub(super) fn send_permission_intent(
@@ -948,6 +950,6 @@ impl AppState {
             reason,
             grant_scope,
         });
-        self.submitted_permission_id = Some(permission_id);
+        self.permission_prompt.submitted_permission_id = Some(permission_id);
     }
 }

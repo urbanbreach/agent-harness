@@ -130,15 +130,15 @@ impl AppState {
     }
 
     pub(in crate::app) fn open_toggles_menu(&mut self) {
-        if !self.palette_visible {
+        if !self.overlay_state.palette_visible {
             self.palette_focus_return = Some(self.focus);
         }
-        self.palette_visible = true;
-        self.session_history_visible = false;
-        self.model_switcher_visible = false;
-        self.lineage_browser_visible = false;
-        self.fork_selector_visible = false;
-        self.toggles_menu_visible = true;
+        self.overlay_state.palette_visible = true;
+        self.overlay_state.session_history_visible = false;
+        self.overlay_state.model_switcher_visible = false;
+        self.overlay_state.lineage_browser_visible = false;
+        self.overlay_state.fork_selector_visible = false;
+        self.overlay_state.toggles_menu_visible = true;
         self.toggles_yolo_confirm_visible = false;
         self.palette_input.clear();
         self.palette_cursor = 0;

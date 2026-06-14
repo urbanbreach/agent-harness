@@ -3,10 +3,11 @@ use std::collections::BTreeSet;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::child_session::provider_label_includes_backend;
+use super::model_dialog_state::ModelDialogKind;
 use super::model_metadata::{LaunchMetadata, ModelOption};
 use super::session_history::{fuzzy_subsequence_score, session_history_profile_label};
-use super::{set_pending_live_launch_metadata, AppState, UiIntent};
-use crate::text::{has_trimmed_content, non_empty_trimmed};
+use super::AppState;
+use crate::text::has_trimmed_content;
 
 fn non_empty_str(value: &str) -> Option<&str> {
     has_trimmed_content(value).then_some(value)
@@ -17,75 +18,6 @@ fn activity_provider_model(activity: &super::ActivityEntry) -> Option<(&str, &st
         non_empty_str(&activity.provider_id)?,
         non_empty_str(&activity.model_id)?,
     ))
-}
-
-fn model_variant_cycle_cmp(left: &ModelOption, right: &ModelOption) -> std::cmp::Ordering {
-    left.provider
-        .cmp(&right.provider)
-        .then_with(|| left.model.cmp(&right.model))
-        .then_with(|| variant_cycle_rank(left).cmp(&variant_cycle_rank(right)))
-        .then_with(|| left.variant.cmp(&right.variant))
-        .then_with(|| left.profile.cmp(&right.profile))
-}
-
-fn model_variant_cycle_none_option(seed: &ModelOption) -> ModelOption {
-    let mut option = seed.clone();
-    let base_label = option.model_display_label.clone().or_else(|| {
-        option
-            .display_label
-            .as_deref()
-            .and_then(|label| label.split_once(" · ").map(|(base, _)| base.trim()))
-            .filter(|base| !base.is_empty())
-            .map(str::to_string)
-    });
-    option.variant = None;
-    option.variant_display_label = None;
-    if option.model_display_label.is_none() {
-        option.model_display_label = base_label.clone();
-    }
-    option.display_label = base_label;
-    option.token_window_label = None;
-    option.max_input_tokens = None;
-    option.max_output_tokens = None;
-    option.description = None;
-    option.reasoning_effort = None;
-    option.text_verbosity = None;
-    option.recommended_for = None;
-    option
-}
-
-fn model_variant_cycle_option_matches_current(
-    option: &ModelOption,
-    profile_id: &str,
-    provider_id: &str,
-    model_id: &str,
-    variant: Option<&str>,
-) -> bool {
-    option.profile == profile_id
-        && option.provider == provider_id
-        && option.model == model_id
-        && option.variant() == variant
-}
-
-fn variant_cycle_rank(option: &ModelOption) -> u8 {
-    option
-        .reasoning_effort()
-        .or_else(|| option.variant())
-        .map(reasoning_variant_rank)
-        .unwrap_or(0)
-}
-
-fn reasoning_variant_rank(label: &str) -> u8 {
-    match label.trim().to_ascii_lowercase().as_str() {
-        "none" => 1,
-        "minimal" => 2,
-        "low" => 3,
-        "medium" => 4,
-        "high" => 5,
-        "xhigh" | "x-high" | "extra-high" => 6,
-        "max" => 7,
-        _ => u8::MAX,
-    }
 }
 
 fn model_selector_fuzzy_score(option: &ModelOption, needle: &str) -> Option<usize> {
@@ -360,6 +292,14 @@ impl AppState {
                 self.move_model_selection(1);
                 true
             }
+            KeyCode::Char('f') if ctrl_only => {
+                self.toggle_selected_model_favorite();
+                true
+            }
+            KeyCode::Char('a') if ctrl_only => {
+                self.open_provider_dialog();
+                true
+            }
             KeyCode::Char(c) => {
                 if key.modifiers.contains(KeyModifiers::CONTROL)
                     || key.modifiers.contains(KeyModifiers::ALT)
@@ -416,12 +356,18 @@ impl AppState {
             || self.runtime_context_metadata.is_none()
             || (self.events.is_empty() && self.activities.is_empty());
         self.launch_metadata = launch_metadata.clone();
+        if let Some(option) = self.launch_metadata.to_model_option() {
+            self.model_dialog_state.record_recent(&option);
+        }
         self.seed_toggles_from_launch_metadata();
         if refresh_runtime_context {
             self.runtime_context_metadata = Some(launch_metadata);
         }
     }
-    fn build_launch_metadata_for_option(&self, selected_model: &ModelOption) -> LaunchMetadata {
+    pub(in crate::app) fn build_launch_metadata_for_option(
+        &self,
+        selected_model: &ModelOption,
+    ) -> LaunchMetadata {
         let mut launch_metadata = LaunchMetadata::from_model_option(selected_model)
             .with_available_models(self.launch_metadata.available_models().to_vec())
             .with_switchable_profiles(self.launch_metadata.switchable_profiles().to_vec());
@@ -431,208 +377,52 @@ impl AppState {
         launch_metadata
     }
 
-    fn apply_selected_model_option(&mut self, selected_model: ModelOption, emit_intent: bool) {
-        let launch_metadata = self.build_launch_metadata_for_option(&selected_model);
-        self.launch_metadata = launch_metadata.clone();
-
-        if emit_intent {
-            set_pending_live_launch_metadata(launch_metadata.clone());
-            self.emit_ui_intent(UiIntent::SwitchModel {
-                profile: selected_model.profile,
-                launch_metadata,
-            });
-        }
+    pub(crate) fn model_option_is_favorite(&self, option: &ModelOption) -> bool {
+        self.model_dialog_state.is_favorite(option)
     }
 
-    pub(super) fn cycle_variant(&mut self) {
+    fn toggle_selected_model_favorite(&mut self) {
+        if self.active_model_dialog_kind() != ModelDialogKind::Model {
+            return;
+        }
+        let Some(selected_index) = self.model_filtered.get(self.model_selected).copied() else {
+            return;
+        };
+        let Some(selected_model) = self.model_options.get(selected_index).cloned() else {
+            return;
+        };
+        self.model_dialog_state.toggle_favorite(&selected_model);
+        self.update_model_filter();
+    }
+
+    pub(in crate::app) fn cycle_recent_model(&mut self, reverse: bool) {
         if self.replay_mode {
             return;
         }
-
-        let profile_id = self.launch_metadata.profile().to_string();
-        let Some(model_id) = self.launch_metadata.model().map(str::to_owned) else {
+        self.rebuild_model_options();
+        let recents = self.model_dialog_state.recent_options(&self.model_options);
+        if recents.len() < 2 {
             return;
-        };
-        let provider_id = self.launch_metadata.provider().to_string();
-        let mut variants = self
-            .launch_metadata
-            .available_models()
+        }
+        let current_index = recents
             .iter()
-            .filter(|option| {
-                option.profile == profile_id
-                    && option.provider == provider_id
-                    && option.model == model_id
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-
-        let explicit_variants_exist = variants.iter().any(|option| option.variant().is_some());
-        let base_variant_exists = variants.iter().any(|option| option.variant().is_none());
-        if explicit_variants_exist && !base_variant_exists {
-            let none_seed = self
-                .launch_metadata
-                .to_model_option()
-                .or_else(|| variants.first().cloned());
-            if let Some(none_seed) = none_seed {
-                variants.push(model_variant_cycle_none_option(&none_seed));
-            }
-        }
-
-        if let Some(current_option) = self.launch_metadata.to_model_option() {
-            let current_variant = current_option.variant();
-            if current_option.profile == profile_id
-                && current_option.provider == provider_id
-                && current_option.model == model_id
-                && !variants.iter().any(|option| {
-                    model_variant_cycle_option_matches_current(
-                        option,
-                        &profile_id,
-                        &provider_id,
-                        &model_id,
-                        current_variant,
-                    )
-                })
-            {
-                variants.push(current_option);
-            }
-        }
-
-        variants.sort_by(model_variant_cycle_cmp);
-        variants.dedup();
-        if variants.is_empty() {
-            return;
-        }
-
-        let selected_model = match variants.iter().position(|option| {
-            model_variant_cycle_option_matches_current(
-                option,
-                &profile_id,
-                &provider_id,
-                &model_id,
-                self.current_model_variant(),
-            )
-        }) {
-            Some(_) if variants.len() < 2 => return,
-            Some(current_index) => {
-                let next_index = (current_index + 1) % variants.len();
-                variants[next_index].clone()
-            }
-            None => variants[0].clone(),
-        };
-        self.apply_selected_model_option(selected_model, !self.replay_mode);
-    }
-
-    pub(super) fn cycle_agent(&mut self, reverse: bool) {
-        if self.replay_mode {
-            return;
-        }
-
-        let profiles = self.switchable_agent_profiles();
-        if profiles.len() < 2 {
-            return;
-        }
-
-        let current_profile = self.active_profile();
-        let current_index = profiles
-            .iter()
-            .position(|profile| profile == current_profile)
+            .position(|option| self.is_current_model_option(option))
             .unwrap_or(0);
         let next_index = if reverse {
             current_index
                 .checked_sub(1)
-                .unwrap_or_else(|| profiles.len().saturating_sub(1))
+                .unwrap_or_else(|| recents.len().saturating_sub(1))
         } else {
-            (current_index + 1) % profiles.len()
+            (current_index + 1) % recents.len()
         };
-
-        let Some(selected_model) = self.model_option_for_agent_profile(&profiles[next_index])
-        else {
-            return;
-        };
-        self.apply_selected_model_option(selected_model, true);
+        self.apply_selected_model_option(recents[next_index].clone(), true);
     }
 
-    fn switchable_agent_profiles(&self) -> Vec<String> {
-        let mut profiles = self
-            .launch_metadata
-            .switchable_profiles()
-            .iter()
-            .filter_map(|profile| non_empty_trimmed(profile))
-            .filter(|profile| self.primary_agent_enabled(profile))
-            .map(str::to_string)
-            .collect::<Vec<_>>();
-
-        if profiles.is_empty() {
-            for candidate in ["build", "plan"] {
-                if self
-                    .launch_metadata
-                    .available_models()
-                    .iter()
-                    .any(|option| option.profile == candidate)
-                    && self.primary_agent_enabled(candidate)
-                {
-                    profiles.push(candidate.to_string());
-                }
-            }
-        }
-
-        if profiles.is_empty() {
-            profiles.push(self.active_profile().to_string());
-        }
-
-        let mut deduped = Vec::new();
-        for profile in profiles {
-            if !deduped.contains(&profile) {
-                deduped.push(profile);
-            }
-        }
-        deduped
-    }
-
-    fn model_option_for_agent_profile(&self, profile: &str) -> Option<ModelOption> {
-        let available = self.launch_metadata.available_models();
-        let provider = self.launch_metadata.provider();
-        let model = self.launch_metadata.model();
-        let variant = self.current_model_variant();
-
-        available
-            .iter()
-            .find(|option| {
-                option.profile == profile
-                    && option.provider == provider
-                    && Some(option.model.as_str()) == model
-                    && option.variant() == variant
-            })
-            .cloned()
-            .or_else(|| {
-                available
-                    .iter()
-                    .find(|option| {
-                        option.profile == profile
-                            && option.provider == provider
-                            && Some(option.model.as_str()) == model
-                    })
-                    .cloned()
-            })
-            .or_else(|| {
-                self.launch_metadata
-                    .to_model_option()
-                    .map(|option| option.with_profile(profile.to_string()))
-            })
-            .or_else(|| {
-                available
-                    .iter()
-                    .find(|option| option.profile == profile)
-                    .cloned()
-            })
-    }
     pub(crate) fn is_current_model_option(&self, option: &ModelOption) -> bool {
         option.profile == self.active_profile()
             && option.provider == self.active_provider()
             && option.model == self.current_model_id()
-            && option
-                .variant()
-                .is_none_or(|variant| Some(variant) == self.current_model_variant())
+            && option.variant() == self.current_model_variant()
     }
 
     pub(crate) fn model_switcher_visual_row_count(&self) -> usize {
@@ -645,13 +435,13 @@ impl AppState {
 
         let mut rows = 0usize;
         let mut groups = 0usize;
-        let mut previous_category: Option<&str> = None;
+        let mut previous_category: Option<String> = None;
         for option_index in &self.model_filtered {
             let Some(option) = self.model_options.get(*option_index) else {
                 continue;
             };
-            let category = option.selector_category();
-            if previous_category != Some(category) {
+            let category = self.model_dialog_group_label(option);
+            if previous_category.as_deref() != Some(category.as_str()) {
                 rows = rows.saturating_add(if groups == 0 { 1 } else { 2 });
                 groups = groups.saturating_add(1);
                 previous_category = Some(category);
@@ -662,10 +452,10 @@ impl AppState {
     }
 
     pub(in crate::app) fn rebuild_model_options(&mut self) {
-        self.model_options = self.collect_model_options().into_iter().collect();
+        self.model_options = self.collect_model_dialog_options();
     }
 
-    fn collect_model_options(&self) -> BTreeSet<ModelOption> {
+    pub(in crate::app) fn collect_model_options(&self) -> BTreeSet<ModelOption> {
         let mut options = BTreeSet::new();
 
         options.extend(
@@ -740,7 +530,10 @@ impl AppState {
         options
     }
 
-    fn model_option_for_active_profile(&self, option: &ModelOption) -> ModelOption {
+    pub(in crate::app) fn model_option_for_active_profile(
+        &self,
+        option: &ModelOption,
+    ) -> ModelOption {
         let mut option = option.clone();
         option.profile = self.active_profile().to_string();
         option.profile_description = self
@@ -768,9 +561,8 @@ impl AppState {
             filtered.sort_by(|left, right| {
                 let left_option = &self.model_options[*left];
                 let right_option = &self.model_options[*right];
-                left_option
-                    .selector_category()
-                    .cmp(right_option.selector_category())
+                self.model_dialog_group_label(left_option)
+                    .cmp(&self.model_dialog_group_label(right_option))
                     .then_with(|| {
                         left_option
                             .selector_title()
@@ -819,39 +611,13 @@ impl AppState {
 
     pub(super) fn open_model_switcher(&mut self) {
         if !self.model_switcher_supported() {
-            self.model_switcher_visible = false;
+            self.overlay_state.model_switcher_visible = false;
             return;
         }
-        if !self.model_switcher_visible {
-            self.palette_focus_return.get_or_insert(self.focus);
-        }
-        self.palette_visible = false;
-        self.session_history_visible = false;
-        self.model_switcher_visible = true;
-        self.palette_input.clear();
-        self.palette_cursor = 0;
-        self.rebuild_model_options();
-        self.update_model_filter();
-        self.sync_slash_overlay();
+        self.open_model_dialog(ModelDialogKind::Model);
     }
 
     pub(super) fn execute_selected_model(&mut self) {
-        let Some(selected_index) = self.model_filtered.get(self.model_selected).copied() else {
-            self.close_palette();
-            return;
-        };
-
-        if self.replay_mode {
-            self.close_palette();
-            return;
-        }
-
-        let Some(selected_model) = self.model_options.get(selected_index).cloned() else {
-            self.close_palette();
-            return;
-        };
-
-        self.apply_selected_model_option(selected_model, true);
-        self.close_palette();
+        self.execute_selected_model_dialog_option();
     }
 }

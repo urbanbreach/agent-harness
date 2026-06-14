@@ -3,9 +3,10 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_core::session_lineage::{latest_clone_stable_prefix, StableSessionPrefix};
 
+#[cfg(test)]
+pub(crate) use super::session_history::session_history_display_title;
 pub(crate) use super::session_history::{
-    session_history_category_label, session_history_current_marker, session_history_display_title,
-    session_history_footer_label,
+    session_history_current_marker, session_history_footer_label,
 };
 use super::session_slash::{
     auth_slash_args_from_prompt, slash_command_display_width, slash_command_match_rank,
@@ -82,27 +83,39 @@ impl AppState {
     }
 
     pub(in crate::app) fn handle_navigation_overlay_key(&mut self, key: &KeyEvent) -> bool {
-        if self.lineage_browser_visible {
+        if self.composer.stash_dialog_visible() {
+            return self.handle_prompt_stash_key(key);
+        }
+
+        if self.composer.queued_prompt_dialog_visible() {
+            return self.handle_queued_prompts_key(key);
+        }
+
+        if self.overlay_state.lineage_browser_visible {
             return self.handle_lineage_browser_key(key);
         }
 
-        if self.fork_selector_visible {
+        if self.overlay_state.fork_selector_visible {
             return self.handle_fork_selector_key(key);
         }
 
-        if self.session_history_visible {
+        if self.overlay_state.child_sessions_visible {
+            return self.handle_child_session_dialog_key(*key);
+        }
+
+        if self.overlay_state.session_history_visible {
             return self.handle_session_history_key(key);
         }
 
-        if self.model_switcher_visible {
+        if self.overlay_state.model_switcher_visible {
             return self.handle_model_key(key);
         }
 
-        if self.toggles_menu_visible {
+        if self.overlay_state.toggles_menu_visible {
             return self.handle_toggles_key(key);
         }
 
-        if self.palette_visible {
+        if self.overlay_state.palette_visible {
             return self.handle_palette_key(key);
         }
 
@@ -114,36 +127,38 @@ impl AppState {
     }
 
     fn active_slash_query(&self) -> Option<&str> {
-        if self.prompt_cursor == 0 || self.prompt_buffer.chars().any(char::is_whitespace) {
+        if self.composer.prompt_cursor == 0
+            || self.composer.prompt_buffer.chars().any(char::is_whitespace)
+        {
             return None;
         }
 
         let cursor_byte = self.prompt_cursor_byte_index();
-        let query = self.prompt_buffer[..cursor_byte].strip_prefix('/')?;
+        let query = self.composer.prompt_buffer[..cursor_byte].strip_prefix('/')?;
         (!query.chars().any(char::is_whitespace)).then_some(query)
     }
 
     pub(in crate::app) fn clear_slash_menu(&mut self) {
-        self.slash_visible = false;
+        self.overlay_state.slash_visible = false;
         self.slash_filtered.clear();
         self.slash_selected = 0;
     }
 
     pub(in crate::app) fn slash_overlay_should_render(&self) -> bool {
-        self.slash_visible
+        self.overlay_state.slash_visible
     }
 
     pub(in crate::app) fn sync_slash_overlay(&mut self) {
         if self.focus != Focus::Prompt
             || self.composer_disabled()
             || self.active_slash_query().is_none()
-            || self.palette_visible
-            || self.session_history_visible
-            || self.model_switcher_visible
-            || self.toggles_menu_visible
+            || self.overlay_state.palette_visible
+            || self.overlay_state.session_history_visible
+            || self.overlay_state.model_switcher_visible
+            || self.overlay_state.toggles_menu_visible
             || self.active_permission().is_some()
         {
-            if !self.prompt_buffer.starts_with('/') {
+            if !self.composer.prompt_buffer.starts_with('/') {
                 self.slash_draft_snapshot = None;
             }
             self.clear_slash_menu();
@@ -152,7 +167,7 @@ impl AppState {
 
         let slash_query = self.active_slash_query().unwrap_or_default().to_lowercase();
 
-        self.slash_visible = true;
+        self.overlay_state.slash_visible = true;
         let mut filtered = keybindings::slash_commands()
             .iter()
             .filter(|command| self.slash_command_available(command.id))
@@ -175,7 +190,8 @@ impl AppState {
     }
 
     pub(in crate::app) fn typed_slash_command(&self) -> Option<&'static str> {
-        self.prompt_buffer
+        self.composer
+            .prompt_buffer
             .trim()
             .strip_prefix('/')
             .and_then(|command| {
@@ -222,48 +238,49 @@ impl AppState {
         self.projection.reset();
         self.selected_event_index = 0;
         self.selected_activity_index = 0;
-        self.follow_mode = true;
+        self.transcript_view.follow_mode = true;
         self.active_tab = Tab::Run;
         self.live_details_drawer_open = false;
         self.startup_mode = true;
         self.startup_launcher_action = StartupLauncherAction::NewSession;
         self.status_banner = None;
         self.details_scroll = 0;
-        self.transcript_scroll = 0;
-        self.prompt_history.clear();
-        self.prompt_history_index = None;
+        self.transcript_view.transcript_scroll = 0;
+        self.composer.prompt_history.clear();
+        self.composer.prompt_history_index = None;
         self.replay_mode = false;
         self.session_path = None;
-        self.palette_visible = false;
+        self.overlay_state.palette_visible = false;
         self.palette_input.clear();
         self.palette_cursor = 0;
         self.palette_filtered.clear();
         self.palette_selected = 0;
         self.palette_focus_return = None;
-        self.session_history_visible = false;
+        self.overlay_state.session_history_visible = false;
         self.session_history_selected = 0;
-        self.model_switcher_visible = false;
+        self.overlay_state.model_switcher_visible = false;
         self.model_filtered.clear();
         self.model_selected = 0;
-        self.toggles_menu_visible = false;
+        self.overlay_state.toggles_menu_visible = false;
         self.toggles_selected = 0;
         self.toggles_yolo_confirm_visible = false;
-        self.lineage_browser_visible = false;
-        self.fork_selector_visible = false;
+        self.overlay_state.lineage_browser_visible = false;
+        self.overlay_state.fork_selector_visible = false;
         self.continued_post_run_handoff_active = false;
         self.continued_live_reopen_surface_active = false;
         self.continue_disabled_banner = None;
-        self.dismissed_permissions.clear();
-        self.submitted_permission_id = None;
-        self.permission_modal_permission_id = None;
-        self.permission_modal_stage = PermissionModalStage::Decision;
-        self.permission_modal_selection = PermissionModalSelection::AllowOnce;
-        self.permission_modal_confirm_selection = PermissionConfirmSelection::Confirm;
-        self.question_prompt_tab = 0;
-        self.question_prompt_selection = 0;
-        self.question_prompt_answers.clear();
-        self.question_prompt_custom.clear();
-        self.question_prompt_editing = false;
+        self.permission_prompt.dismissed_permissions.clear();
+        self.permission_prompt.submitted_permission_id = None;
+        self.permission_prompt.permission_modal_permission_id = None;
+        self.permission_prompt.permission_modal_stage = PermissionModalStage::Decision;
+        self.permission_prompt.permission_modal_selection = PermissionModalSelection::AllowOnce;
+        self.permission_prompt.permission_modal_confirm_selection =
+            PermissionConfirmSelection::Confirm;
+        self.question_prompt.question_prompt_tab = 0;
+        self.question_prompt.question_prompt_selection = 0;
+        self.question_prompt.question_prompt_answers.clear();
+        self.question_prompt.question_prompt_custom.clear();
+        self.question_prompt.question_prompt_editing = false;
         self.reload_requested = false;
         self.should_quit = false;
         self.focus = Focus::Prompt;
@@ -295,7 +312,7 @@ impl AppState {
                 self.open_toggles_menu();
             }
             "auth" => {
-                let auth_args = auth_slash_args_from_prompt(&self.prompt_buffer);
+                let auth_args = auth_slash_args_from_prompt(&self.composer.prompt_buffer);
                 self.restore_slash_draft(preserved_draft);
                 self.status_banner = Some(auth_status_banner(&auth_args));
                 self.emit_ui_intent(UiIntent::OpenAuthManager {
@@ -305,7 +322,7 @@ impl AppState {
             }
             "status" => {
                 self.restore_slash_draft(preserved_draft);
-                self.status_dialog_visible = true;
+                self.overlay_state.status_dialog_visible = true;
             }
             "events" => {
                 self.restore_slash_draft(preserved_draft);
@@ -558,19 +575,27 @@ impl AppState {
                 let id = palette_command.id.to_lowercase();
                 let description =
                     Action::palette_command_description(palette_command.id).to_lowercase();
-                let section = palette_command.section.label().to_lowercase();
+                let section = if input.is_empty()
+                    || palette_command.section
+                        != crate::keybindings::PaletteCommandSection::Suggested
+                {
+                    palette_command.section
+                } else {
+                    crate::keybindings::PaletteCommandSection::Session
+                };
+                let section_label = section.label().to_lowercase();
                 let prefix_match = input.is_empty()
                     || label.starts_with(&input)
                     || id.starts_with(&input)
-                    || section.starts_with(&input);
+                    || section_label.starts_with(&input);
                 let contains_match = prefix_match
                     || label.contains(&input)
                     || id.contains(&input)
                     || description.contains(&input)
-                    || section.contains(&input);
+                    || section_label.contains(&input);
                 contains_match.then_some((
                     prefix_match,
-                    palette_command.section,
+                    section,
                     index,
                     palette_command.id.to_string(),
                 ))
@@ -652,43 +677,49 @@ impl AppState {
                 });
             }
             "cycle_variant" => self.execute_action(Action::VariantCycle),
+            "variant_list" => self.execute_action(Action::OpenVariantDialog),
+            "agent_list" => self.execute_action(Action::OpenAgentDialog),
             "close_review_surface" => self.execute_action(Action::CloseReviewSurface),
             "open_event_log" => self.execute_action(Action::OpenEventLog),
             "toggle_terminal_panel" => self.execute_action(Action::ToggleTerminalPanel),
             "toggle_follow" => self.execute_action(Action::ToggleFollow),
-            "show_thinking" => self.show_transcript_thinking = true,
-            "hide_thinking" => self.show_transcript_thinking = false,
-            "show_timestamps" => self.show_transcript_timestamps = true,
-            "hide_timestamps" => self.show_transcript_timestamps = false,
-            "show_tool_details" => self.show_tool_details = true,
-            "hide_tool_details" => self.show_tool_details = false,
-            "show_generic_tool_output" => self.show_generic_tool_output = true,
-            "hide_generic_tool_output" => self.show_generic_tool_output = false,
+            "show_last_error" => self.open_error_details(),
+            "child_sessions" => self.open_child_session_dialog(),
+            "show_thinking" => self.transcript_view.show_transcript_thinking = true,
+            "hide_thinking" => self.transcript_view.show_transcript_thinking = false,
+            "show_timestamps" => self.transcript_view.show_transcript_timestamps = true,
+            "hide_timestamps" => self.transcript_view.show_transcript_timestamps = false,
+            "show_tool_details" => self.transcript_view.show_tool_details = true,
+            "hide_tool_details" => self.transcript_view.show_tool_details = false,
+            "show_generic_tool_output" => self.transcript_view.show_generic_tool_output = true,
+            "hide_generic_tool_output" => self.transcript_view.show_generic_tool_output = false,
             "expand_selected_turn_results" => self.set_selected_activity_expandable_outputs(true),
             "collapse_selected_turn_results" => {
                 self.set_selected_activity_expandable_outputs(false)
             }
-            "stack_transcript_diffs" => self.stacked_transcript_diffs = true,
-            "split_transcript_diffs" => self.stacked_transcript_diffs = false,
+            "stack_transcript_diffs" => self.transcript_view.stacked_transcript_diffs = true,
+            "split_transcript_diffs" => self.transcript_view.stacked_transcript_diffs = false,
             "help" => self.execute_action(Action::Help),
             "quit" => self.execute_action(Action::Quit),
             _ => {}
         }
-        if !self.session_history_visible
-            && !self.model_switcher_visible
-            && !self.toggles_menu_visible
+        if !self.overlay_state.session_history_visible
+            && !self.overlay_state.model_switcher_visible
+            && !self.overlay_state.toggles_menu_visible
+            && !self.overlay_state.child_sessions_visible
         {
             self.close_palette();
         }
     }
 
     pub(in crate::app) fn close_palette(&mut self) {
-        self.palette_visible = false;
-        self.session_history_visible = false;
-        self.model_switcher_visible = false;
-        self.toggles_menu_visible = false;
-        self.lineage_browser_visible = false;
-        self.fork_selector_visible = false;
+        self.overlay_state.palette_visible = false;
+        self.overlay_state.session_history_visible = false;
+        self.overlay_state.model_switcher_visible = false;
+        self.overlay_state.toggles_menu_visible = false;
+        self.overlay_state.lineage_browser_visible = false;
+        self.overlay_state.fork_selector_visible = false;
+        self.overlay_state.child_sessions_visible = false;
         self.palette_input.clear();
         self.palette_cursor = 0;
         self.palette_filtered.clear();
@@ -699,6 +730,7 @@ impl AppState {
         self.palette_selected = 0;
         self.session_history_selected = 0;
         self.model_selected = 0;
+        self.reset_model_dialog_kind();
         if let Some(previous_focus) = self.palette_focus_return.take() {
             self.focus = previous_focus;
         }
@@ -707,13 +739,14 @@ impl AppState {
     }
 
     pub(in crate::app) fn open_palette(&mut self) {
-        if !self.palette_visible {
+        if !self.overlay_state.palette_visible {
             self.palette_focus_return = Some(self.focus);
         }
-        self.palette_visible = true;
-        self.session_history_visible = false;
-        self.model_switcher_visible = false;
-        self.toggles_menu_visible = false;
+        self.overlay_state.palette_visible = true;
+        self.overlay_state.session_history_visible = false;
+        self.overlay_state.model_switcher_visible = false;
+        self.overlay_state.toggles_menu_visible = false;
+        self.overlay_state.child_sessions_visible = false;
         self.toggles_yolo_confirm_visible = false;
         self.palette_input.clear();
         self.palette_cursor = 0;
@@ -742,8 +775,12 @@ impl AppState {
             return self.model_switcher_supported();
         }
 
-        if command_id == "cycle_variant" {
-            return !self.replay_mode;
+        if matches!(command_id, "cycle_variant" | "variant_list" | "agent_list") {
+            return !self.replay_mode && !self.startup_shell_visible();
+        }
+
+        if command_id == "child_sessions" {
+            return !self.startup_shell_visible();
         }
 
         if self.startup_shell_visible() {
@@ -760,23 +797,23 @@ impl AppState {
         } else if matches!(command_id, "show_timestamps" | "hide_timestamps") {
             self.active_review_surface.is_none()
                 && if command_id == "show_timestamps" {
-                    !self.show_transcript_timestamps
+                    !self.transcript_view.show_transcript_timestamps
                 } else {
-                    self.show_transcript_timestamps
+                    self.transcript_view.show_transcript_timestamps
                 }
         } else if matches!(command_id, "show_thinking" | "hide_thinking") {
             self.active_review_surface.is_none()
                 && if command_id == "show_thinking" {
-                    !self.show_transcript_thinking
+                    !self.transcript_view.show_transcript_thinking
                 } else {
-                    self.show_transcript_thinking
+                    self.transcript_view.show_transcript_thinking
                 }
         } else if matches!(command_id, "show_tool_details" | "hide_tool_details") {
             self.active_review_surface.is_none()
                 && if command_id == "show_tool_details" {
-                    !self.show_tool_details
+                    !self.transcript_view.show_tool_details
                 } else {
-                    self.show_tool_details
+                    self.transcript_view.show_tool_details
                 }
         } else if matches!(
             command_id,
@@ -784,9 +821,9 @@ impl AppState {
         ) {
             self.active_review_surface.is_none()
                 && if command_id == "show_generic_tool_output" {
-                    !self.show_generic_tool_output
+                    !self.transcript_view.show_generic_tool_output
                 } else {
-                    self.show_generic_tool_output
+                    self.transcript_view.show_generic_tool_output
                 }
         } else if matches!(
             command_id,
@@ -796,13 +833,18 @@ impl AppState {
             self.active_review_surface.is_none()
                 && !expandable_ids.is_empty()
                 && if command_id == "expand_selected_turn_results" {
-                    expandable_ids
-                        .iter()
-                        .any(|tool_call_id| !self.expanded_tool_outputs.contains(tool_call_id))
+                    expandable_ids.iter().any(|tool_call_id| {
+                        !self
+                            .transcript_view
+                            .expanded_tool_outputs
+                            .contains(tool_call_id)
+                    })
                 } else {
-                    expandable_ids
-                        .iter()
-                        .any(|tool_call_id| self.expanded_tool_outputs.contains(tool_call_id))
+                    expandable_ids.iter().any(|tool_call_id| {
+                        self.transcript_view
+                            .expanded_tool_outputs
+                            .contains(tool_call_id)
+                    })
                 }
         } else if matches!(
             command_id,
@@ -810,9 +852,9 @@ impl AppState {
         ) {
             self.active_review_surface.is_none()
                 && if command_id == "stack_transcript_diffs" {
-                    !self.stacked_transcript_diffs
+                    !self.transcript_view.stacked_transcript_diffs
                 } else {
-                    self.stacked_transcript_diffs
+                    self.transcript_view.stacked_transcript_diffs
                 }
         } else if command_id == "close_review_surface" {
             self.active_review_surface.is_some()
@@ -829,31 +871,32 @@ impl AppState {
         let lifecycle_exit = self.startup_mode
             || self.post_run_handoff_visible()
             || self.completed_session_shell_active();
-        let prompt_buffer = self.prompt_buffer.clone();
-        let prompt_cursor = self.prompt_cursor;
+        let prompt_buffer = self.composer.prompt_buffer.clone();
+        let prompt_cursor = self.composer.prompt_cursor;
         set_pending_live_prompt_draft(Some(prompt_buffer.clone()));
         set_pending_live_launch_metadata(self.launch_metadata.clone());
 
         self.projection.reset();
         self.selected_event_index = 0;
         self.selected_activity_index = 0;
-        self.follow_mode = true;
+        self.transcript_view.follow_mode = true;
         self.details_scroll = 0;
-        self.transcript_scroll = 0;
+        self.transcript_view.transcript_scroll = 0;
         self.status_banner = None;
-        self.dismissed_permissions.clear();
-        self.submitted_permission_id = None;
-        self.permission_modal_permission_id = None;
-        self.permission_modal_stage = PermissionModalStage::Decision;
-        self.permission_modal_selection = PermissionModalSelection::AllowOnce;
-        self.permission_modal_confirm_selection = PermissionConfirmSelection::Confirm;
-        self.question_prompt_tab = 0;
-        self.question_prompt_selection = 0;
-        self.question_prompt_answers.clear();
-        self.question_prompt_custom.clear();
-        self.question_prompt_editing = false;
-        self.prompt_history.clear();
-        self.prompt_history_index = None;
+        self.permission_prompt.dismissed_permissions.clear();
+        self.permission_prompt.submitted_permission_id = None;
+        self.permission_prompt.permission_modal_permission_id = None;
+        self.permission_prompt.permission_modal_stage = PermissionModalStage::Decision;
+        self.permission_prompt.permission_modal_selection = PermissionModalSelection::AllowOnce;
+        self.permission_prompt.permission_modal_confirm_selection =
+            PermissionConfirmSelection::Confirm;
+        self.question_prompt.question_prompt_tab = 0;
+        self.question_prompt.question_prompt_selection = 0;
+        self.question_prompt.question_prompt_answers.clear();
+        self.question_prompt.question_prompt_custom.clear();
+        self.question_prompt.question_prompt_editing = false;
+        self.composer.prompt_history.clear();
+        self.composer.prompt_history_index = None;
         self.replay_mode = false;
         self.session_path = None;
         self.continued_post_run_handoff_active = false;
@@ -862,8 +905,9 @@ impl AppState {
         self.live_details_drawer_open = false;
         self.continue_disabled_banner = None;
 
-        self.prompt_buffer = prompt_buffer;
-        self.prompt_cursor = prompt_cursor.min(self.prompt_buffer.chars().count());
+        self.composer.prompt_buffer = prompt_buffer;
+        self.composer.prompt_cursor =
+            prompt_cursor.min(self.composer.prompt_buffer.chars().count());
 
         self.close_session_history();
         self.emit_ui_intent(UiIntent::NewSession);
@@ -938,7 +982,7 @@ impl AppState {
                     self.reset_post_run_handoff_selection();
                     return;
                 };
-                set_pending_live_prompt_draft(Some(self.prompt_buffer.clone()));
+                set_pending_live_prompt_draft(Some(self.composer.prompt_buffer.clone()));
                 self.emit_ui_intent(UiIntent::ContinueSession {
                     run_id: run_id.to_string(),
                     run_dir: run_dir.clone(),
@@ -950,7 +994,7 @@ impl AppState {
                     self.reset_post_run_handoff_selection();
                     return;
                 };
-                set_pending_live_prompt_draft(Some(self.prompt_buffer.clone()));
+                set_pending_live_prompt_draft(Some(self.composer.prompt_buffer.clone()));
                 self.emit_ui_intent(UiIntent::ReplaySession {
                     run_id: run_id.to_string(),
                     run_dir: run_dir.clone(),

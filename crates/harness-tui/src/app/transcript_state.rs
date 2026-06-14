@@ -1,6 +1,8 @@
 use std::collections::{hash_map::DefaultHasher, BTreeSet};
 use std::hash::{Hash, Hasher};
 
+#[cfg(test)]
+use super::transcript_cache::TranscriptRenderCache;
 use super::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,32 +20,21 @@ pub(crate) struct ToastState {
 
 impl AppState {
     pub(crate) fn transcript_thinking_visible(&self) -> bool {
-        self.show_transcript_thinking
+        self.transcript_view.show_transcript_thinking
     }
 
     pub(crate) fn transcript_timestamps_visible(&self) -> bool {
-        self.show_transcript_timestamps
-    }
-
-    pub(crate) fn transcript_animation_phase(&self) -> usize {
-        self.transcript_animation_phase
-    }
-
-    pub(crate) fn hovered_transcript_target(&self) -> Option<&TranscriptMouseTarget> {
-        self.hovered_transcript_target.as_ref()
-    }
-
-    pub(crate) fn hovered_subagent_footer_target(&self) -> Option<SubagentFooterTarget> {
-        self.hovered_subagent_footer_target
+        self.transcript_view.show_transcript_timestamps
     }
 
     pub(crate) fn transcript_cache_instance_id(&self) -> u64 {
-        self.transcript_cache.instance_id()
+        self.transcript_view.transcript_cache.instance_id()
     }
 
     pub(crate) fn transcript_render_cache_key(&self) -> u64 {
         let stamp = self.transcript_render_cache_stamp();
-        self.transcript_cache
+        self.transcript_view
+            .transcript_cache
             .cache_key(stamp, || self.compute_transcript_render_cache_key())
     }
 
@@ -51,6 +42,7 @@ impl AppState {
         let mut hasher = DefaultHasher::new();
 
         self.hash_transcript_render_settings(&mut hasher);
+        self.hash_transcript_content(&mut hasher);
         self.hash_transcript_render_expansions(&mut hasher);
 
         hasher.finish()
@@ -74,87 +66,29 @@ impl AppState {
     fn hash_transcript_render_settings(&self, hasher: &mut impl Hasher) {
         self.replay_mode.hash(hasher);
         self.selected_activity_index.hash(hasher);
-        self.show_transcript_thinking.hash(hasher);
-        self.show_transcript_timestamps.hash(hasher);
-        self.show_tool_details.hash(hasher);
-        self.show_generic_tool_output.hash(hasher);
-        self.stacked_transcript_diffs.hash(hasher);
-        self.transcript_animation_phase.hash(hasher);
-        self.hovered_transcript_target.hash(hasher);
-        self.transcript_cache.epoch().hash(hasher);
+        self.transcript_view.show_transcript_thinking.hash(hasher);
+        self.transcript_view.show_transcript_timestamps.hash(hasher);
+        self.transcript_view.show_tool_details.hash(hasher);
+        self.transcript_view.show_generic_tool_output.hash(hasher);
+        self.transcript_view.stacked_transcript_diffs.hash(hasher);
+        self.transcript_view.transcript_cache.epoch().hash(hasher);
         self.active_profile().hash(hasher);
         self.session_path.hash(hasher);
     }
 
     fn hash_transcript_content(&self, hasher: &mut impl Hasher) {
+        self.activities.len().hash(hasher);
         for activity in &self.activities {
             activity.request_id.hash(hasher);
-            activity.profile_label.hash(hasher);
-            activity.model_id.hash(hasher);
-            activity.provider_id.hash(hasher);
-            activity.status.hash(hasher);
-            activity.user_timestamp.hash(hasher);
-            activity.thinking_text.hash(hasher);
-            activity.transcript_text.hash(hasher);
-            activity.error_message.hash(hasher);
-            activity.first_seq.hash(hasher);
-            activity.last_seq.hash(hasher);
-
-            if let Some(user_message) = activity.user_message.as_ref() {
-                user_message.request_id.hash(hasher);
-                user_message.text.hash(hasher);
-            }
-
-            for permission in &activity.permissions {
-                permission.permission_id.hash(hasher);
-                permission.kind.hash(hasher);
-                permission.tool_call_id.hash(hasher);
-                permission.summary.hash(hasher);
-                permission.request_digest.hash(hasher);
-                permission.timeout_ms.hash(hasher);
-                std::mem::discriminant(&permission.default_decision).hash(hasher);
-                permission.resolution_reason.hash(hasher);
-                permission.first_seq.hash(hasher);
-                permission.last_seq.hash(hasher);
-            }
-
-            for tool_call in &activity.tool_calls {
-                tool_call.tool_call_id.hash(hasher);
-                tool_call.tool_id.hash(hasher);
-                tool_call.canonical_tool_id.hash(hasher);
-                tool_call.alias_source_tool_id.hash(hasher);
-                tool_call.args_digest.hash(hasher);
-                tool_call.output_digest.hash(hasher);
-                tool_call.output_summary.hash(hasher);
-                tool_call.first_seq.hash(hasher);
-                tool_call.last_seq.hash(hasher);
-                std::mem::discriminant(&tool_call.status).hash(hasher);
-
-                if let Some(edit) = tool_call.edit.as_ref() {
-                    edit.edit_id.hash(hasher);
-                    edit.path.hash(hasher);
-                    std::mem::discriminant(&edit.status).hash(hasher);
-                    edit.summary.hash(hasher);
-                    edit.patch_digest.hash(hasher);
-                    edit.new_file_digest.hash(hasher);
-                    edit.diff_rel_path.hash(hasher);
-                    edit.diff_digest.hash(hasher);
-                    edit.rejection_reason.hash(hasher);
-                }
-
-                for artifact in &tool_call.artifact_refs {
-                    artifact.path.hash(hasher);
-                    artifact.digest.hash(hasher);
-                }
-            }
+            activity.revision.hash(hasher);
         }
     }
 
     fn hash_transcript_render_expansions(&self, hasher: &mut impl Hasher) {
-        for tool_call_id in &self.expanded_tool_outputs {
+        for tool_call_id in &self.transcript_view.expanded_tool_outputs {
             tool_call_id.hash(hasher);
         }
-        for file_key in &self.expanded_patch_file_outputs {
+        for file_key in &self.transcript_view.expanded_patch_file_outputs {
             file_key.hash(hasher);
         }
     }
@@ -169,8 +103,61 @@ impl AppState {
         TranscriptRenderCache::build_count_for_test()
     }
 
+    #[doc(hidden)]
+    pub fn transcript_render_cache_key_for_test(&self) -> u64 {
+        self.transcript_render_cache_key()
+    }
+
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn reset_transcript_perf_counters_for_test() {
+        crate::ui::reset_transcript_perf_counters_for_test();
+    }
+
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn transcript_layout_section_build_count_for_test() -> usize {
+        crate::ui::transcript_layout_section_build_count_for_test()
+    }
+
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn transcript_selection_cache_build_count_for_test() -> usize {
+        crate::ui::transcript_selection_snapshot_build_count_for_test()
+    }
+
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn set_transcript_selection_for_test(
+        &mut self,
+        anchor_row: usize,
+        anchor_column: usize,
+        focus_row: usize,
+        focus_column: usize,
+    ) {
+        self.transcript_view.transcript_selection = Some(TranscriptSelection {
+            anchor: TranscriptSelectionCell {
+                row: anchor_row,
+                column: anchor_column,
+            },
+            focus: TranscriptSelectionCell {
+                row: focus_row,
+                column: focus_column,
+            },
+        });
+    }
+
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn set_frame_area_for_test(&mut self, area: Rect) {
+        self.set_frame_area(area);
+    }
+
     pub(crate) fn advance_transcript_animation_phase(&mut self) {
-        self.transcript_animation_phase = self.transcript_animation_phase.wrapping_add(1);
+        self.transcript_view.transcript_animation_phase = self
+            .transcript_view
+            .transcript_animation_phase
+            .wrapping_add(1);
         self.clear_expired_interrupt_confirmation();
         if let Some(toast) = self.toast.as_mut() {
             toast.remaining_frames = toast.remaining_frames.saturating_sub(1);
@@ -187,27 +174,26 @@ impl AppState {
     }
 
     pub(in crate::app) fn bump_transcript_render_epoch(&mut self) {
-        self.transcript_cache.bump_epoch();
+        self.transcript_view.transcript_cache.bump_epoch();
     }
 
     pub(crate) fn tool_details_visible(&self) -> bool {
-        self.show_tool_details
+        self.transcript_view.show_tool_details
     }
 
     pub(crate) fn generic_tool_output_visible(&self) -> bool {
-        self.show_generic_tool_output
-    }
-
-    pub(crate) fn stacked_transcript_diffs(&self) -> bool {
-        self.stacked_transcript_diffs
+        self.transcript_view.show_generic_tool_output
     }
 
     pub(crate) fn tool_output_expanded(&self, tool_call: &ToolCallEntry) -> bool {
-        self.expanded_tool_outputs.contains(&tool_call.tool_call_id)
+        self.transcript_view
+            .expanded_tool_outputs
+            .contains(&tool_call.tool_call_id)
     }
 
     pub(crate) fn patch_file_output_expanded(&self, tool_call_id: &str, file_path: &str) -> bool {
-        self.expanded_patch_file_outputs
+        self.transcript_view
+            .expanded_patch_file_outputs
             .contains(&Self::patch_file_disclosure_key(tool_call_id, file_path))
     }
 
@@ -216,26 +202,39 @@ impl AppState {
     }
 
     fn toggle_tool_output(&mut self, tool_call_id: &str) {
-        if !self.expanded_tool_outputs.insert(tool_call_id.to_string()) {
-            self.expanded_tool_outputs.remove(tool_call_id);
+        if !self
+            .transcript_view
+            .expanded_tool_outputs
+            .insert(tool_call_id.to_string())
+        {
+            self.transcript_view
+                .expanded_tool_outputs
+                .remove(tool_call_id);
         }
     }
 
     fn set_tool_output_expanded(&mut self, tool_call_id: &str, expanded: bool) {
         if expanded {
-            self.expanded_tool_outputs.insert(tool_call_id.to_string());
+            self.transcript_view
+                .expanded_tool_outputs
+                .insert(tool_call_id.to_string());
         } else {
-            self.expanded_tool_outputs.remove(tool_call_id);
+            self.transcript_view
+                .expanded_tool_outputs
+                .remove(tool_call_id);
         }
     }
 
     fn toggle_patch_file_output(&mut self, tool_call_id: &str, file_path: &str) {
         let disclosure_key = Self::patch_file_disclosure_key(tool_call_id, file_path);
         if !self
+            .transcript_view
             .expanded_patch_file_outputs
             .insert(disclosure_key.clone())
         {
-            self.expanded_patch_file_outputs.remove(&disclosure_key);
+            self.transcript_view
+                .expanded_patch_file_outputs
+                .remove(&disclosure_key);
         }
     }
 
@@ -330,7 +329,8 @@ impl AppState {
             .map(Self::apply_patch_default_expanded_files)
             .unwrap_or_default();
         for file_path in files {
-            self.expanded_patch_file_outputs
+            self.transcript_view
+                .expanded_patch_file_outputs
                 .insert(Self::patch_file_disclosure_key(tool_call_id, &file_path));
         }
     }
@@ -344,9 +344,13 @@ impl AppState {
     ) {
         let disclosure_key = Self::patch_file_disclosure_key(tool_call_id, file_path);
         if expanded {
-            self.expanded_patch_file_outputs.insert(disclosure_key);
+            self.transcript_view
+                .expanded_patch_file_outputs
+                .insert(disclosure_key);
         } else {
-            self.expanded_patch_file_outputs.remove(&disclosure_key);
+            self.transcript_view
+                .expanded_patch_file_outputs
+                .remove(&disclosure_key);
         }
     }
 
@@ -372,9 +376,12 @@ impl AppState {
                 self.toggle_tool_output(&tool_call_id);
             }
             TranscriptMouseTarget::ToolGroup { tool_call_ids } => {
-                let expand_group = tool_call_ids
-                    .iter()
-                    .any(|tool_call_id| !self.expanded_tool_outputs.contains(tool_call_id));
+                let expand_group = tool_call_ids.iter().any(|tool_call_id| {
+                    !self
+                        .transcript_view
+                        .expanded_tool_outputs
+                        .contains(tool_call_id)
+                });
                 self.set_tool_group_outputs_expanded(&tool_call_ids, expand_group);
             }
             TranscriptMouseTarget::PatchFile {
@@ -426,9 +433,13 @@ impl AppState {
     pub(in crate::app) fn set_selected_activity_expandable_outputs(&mut self, expanded: bool) {
         for tool_call_id in self.selected_activity_expandable_tool_ids() {
             if expanded {
-                self.expanded_tool_outputs.insert(tool_call_id);
+                self.transcript_view
+                    .expanded_tool_outputs
+                    .insert(tool_call_id);
             } else {
-                self.expanded_tool_outputs.remove(&tool_call_id);
+                self.transcript_view
+                    .expanded_tool_outputs
+                    .remove(&tool_call_id);
             }
         }
     }
@@ -461,15 +472,18 @@ impl AppState {
             return false;
         }
 
-        let max_scroll = self.last_transcript_max_scroll.get();
-        let current_top = if self.follow_mode {
+        let max_scroll = self.transcript_view.last_transcript_max_scroll.get();
+        let current_top = if self.transcript_view.follow_mode {
             max_scroll
         } else {
             max_scroll
-                .saturating_sub(self.transcript_scroll)
+                .saturating_sub(self.transcript_view.transcript_scroll)
                 .min(max_scroll)
         };
-        let anchor = self.selected_diff_hunk_row.unwrap_or(current_top);
+        let anchor = self
+            .transcript_view
+            .selected_diff_hunk_row
+            .unwrap_or(current_top);
         let target = if reverse {
             hunk_rows
                 .iter()
@@ -485,31 +499,226 @@ impl AppState {
                 .unwrap_or_else(|| *hunk_rows.last().expect("non-empty hunk rows"))
         };
 
-        self.selected_diff_hunk_row = Some(target);
-        self.follow_mode = false;
+        self.transcript_view.selected_diff_hunk_row = Some(target);
+        self.transcript_view.follow_mode = false;
         let target_top = target.min(max_scroll);
-        self.transcript_scroll = max_scroll.saturating_sub(target_top);
+        self.transcript_view.transcript_scroll = max_scroll.saturating_sub(target_top);
         true
     }
 
     #[cfg(test)]
     pub(crate) fn selected_diff_hunk_row_for_test(&self) -> Option<usize> {
-        self.selected_diff_hunk_row
+        self.transcript_view.selected_diff_hunk_row
+    }
+
+    pub(in crate::app) fn page_transcript_up(&mut self) {
+        self.scroll_transcript_up(self.transcript_page_amount());
+    }
+
+    pub(in crate::app) fn page_transcript_down(&mut self) {
+        self.scroll_transcript_down(self.transcript_page_amount());
+    }
+
+    pub(in crate::app) fn half_page_transcript_up(&mut self) {
+        self.scroll_transcript_up((self.transcript_page_amount() / 2).max(1));
+    }
+
+    pub(in crate::app) fn half_page_transcript_down(&mut self) {
+        self.scroll_transcript_down((self.transcript_page_amount() / 2).max(1));
+    }
+
+    fn transcript_page_amount(&self) -> u16 {
+        self.last_frame_area
+            .map(|area| (area.height / 2).max(1))
+            .unwrap_or(10)
+    }
+
+    pub(in crate::app) fn jump_to_first_message(&mut self) -> bool {
+        self.jump_to_message_index(0)
+    }
+
+    pub(in crate::app) fn jump_to_last_message(&mut self) -> bool {
+        if self.message_top_rows().is_empty() {
+            return false;
+        }
+
+        self.selected_activity_index = self.activities.len().saturating_sub(1);
+        self.transcript_view.follow_mode = true;
+        self.transcript_view.transcript_scroll = 0;
+        true
+    }
+
+    pub(in crate::app) fn jump_to_previous_message(&mut self) -> bool {
+        let rows = self.message_top_rows();
+        if rows.is_empty() {
+            return false;
+        }
+
+        if self.transcript_view.follow_mode {
+            return self.jump_to_message_index(rows.len().saturating_sub(1));
+        }
+
+        let current_top = self.current_transcript_top_row();
+        let target_index = rows.iter().rposition(|row| *row < current_top).unwrap_or(0);
+        self.jump_to_message_index(target_index)
+    }
+
+    pub(in crate::app) fn jump_to_next_message(&mut self) -> bool {
+        let rows = self.message_top_rows();
+        if rows.is_empty() {
+            return false;
+        }
+
+        let current_top = self.current_transcript_top_row();
+        let target_index = rows
+            .iter()
+            .position(|row| *row > current_top)
+            .unwrap_or_else(|| rows.len().saturating_sub(1));
+        self.jump_to_message_index(target_index)
+    }
+
+    pub(in crate::app) fn jump_to_last_user_message(&mut self) -> bool {
+        let rows = self.message_top_rows();
+        if rows.is_empty() {
+            return false;
+        }
+
+        let Some(index) = self
+            .activities
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(index, activity)| activity.user_message.is_some().then_some(index))
+        else {
+            return false;
+        };
+
+        self.jump_to_message_index(index.min(rows.len().saturating_sub(1)))
+    }
+
+    fn jump_to_message_index(&mut self, index: usize) -> bool {
+        let rows = self.message_top_rows();
+        let Some(target_top) = rows.get(index).copied() else {
+            return false;
+        };
+
+        self.selected_activity_index = index.min(self.activities.len().saturating_sub(1));
+        self.transcript_view.follow_mode = false;
+        let max_scroll = self.transcript_view.last_transcript_max_scroll.get();
+        self.transcript_view.transcript_scroll = max_scroll.saturating_sub(target_top);
+        true
+    }
+
+    fn message_top_rows(&self) -> Vec<usize> {
+        self.transcript_view.transcript_message_top_rows()
+    }
+
+    fn current_transcript_top_row(&self) -> usize {
+        let max_scroll = self.transcript_view.last_transcript_max_scroll.get();
+        if self.transcript_view.follow_mode {
+            max_scroll
+        } else {
+            max_scroll
+                .saturating_sub(self.transcript_view.transcript_scroll)
+                .min(max_scroll)
+        }
+    }
+
+    pub(in crate::app) fn copy_selected_message(&mut self) {
+        let Some(activity) = self.activities.get(self.selected_activity_index) else {
+            self.show_toast("No transcript message to copy", ToastVariant::Info);
+            return;
+        };
+        let text = if activity.transcript_text.trim().is_empty() {
+            activity
+                .user_message
+                .as_ref()
+                .map(|message| message.text.as_str())
+                .unwrap_or("")
+        } else {
+            activity.transcript_text.as_str()
+        }
+        .to_string();
+        self.copy_text_with_toast(&text, "Copied message to clipboard");
+    }
+
+    pub(in crate::app) fn copy_session_transcript(&mut self) {
+        let text = self.session_transcript_plain_text();
+        if text.trim().is_empty() {
+            self.show_toast("No session transcript to copy", ToastVariant::Info);
+            return;
+        }
+        self.copy_text_with_toast(&text, "Copied session to clipboard");
+    }
+
+    pub(in crate::app) fn export_session_transcript(&mut self) {
+        if self.replay_mode {
+            return;
+        }
+        let Some((session, output)) = self.export_session_target() else {
+            self.show_toast("No session to export", ToastVariant::Info);
+            return;
+        };
+
+        self.show_toast(
+            format!("Exporting session to {}", output.display()),
+            ToastVariant::Info,
+        );
+        self.emit_ui_intent(UiIntent::ExportSession { session, output });
+    }
+
+    fn export_session_target(&self) -> Option<(String, PathBuf)> {
+        if let Some(path) = self.session_path.as_ref() {
+            let session = path.file_name()?.to_string_lossy().into_owned();
+            return Some((session, path.with_extension("export.json")));
+        }
+
+        let session = self.run_id()?.to_string();
+        Some((
+            session.clone(),
+            PathBuf::from(format!("{session}.export.json")),
+        ))
+    }
+
+    fn copy_text_with_toast(&mut self, text: &str, success_message: &str) {
+        match clipboard::copy(text) {
+            Ok(()) => self.show_toast(success_message, ToastVariant::Info),
+            Err(err) => {
+                self.show_toast(format!("clipboard copy failed: {err}"), ToastVariant::Error)
+            }
+        }
+    }
+
+    fn session_transcript_plain_text(&self) -> String {
+        let mut lines = Vec::new();
+        for activity in &self.activities {
+            if let Some(user_message) = activity.user_message.as_ref() {
+                if !user_message.text.trim().is_empty() {
+                    lines.push(format!("User: {}", user_message.text));
+                }
+            }
+            if !activity.transcript_text.trim().is_empty() {
+                lines.push(format!("Assistant: {}", activity.transcript_text));
+            }
+        }
+        lines.join("\n")
     }
 
     pub(in crate::app) fn scroll_transcript_up(&mut self, amount: u16) {
-        self.follow_mode = false;
-        self.transcript_scroll = self
+        self.transcript_view.follow_mode = false;
+        self.transcript_view.transcript_scroll = self
+            .transcript_view
             .transcript_scroll
             .saturating_add(usize::from(amount.max(1)));
     }
 
     pub(in crate::app) fn scroll_transcript_down(&mut self, amount: u16) {
-        self.transcript_scroll = self
+        self.transcript_view.transcript_scroll = self
+            .transcript_view
             .transcript_scroll
             .saturating_sub(usize::from(amount.max(1)));
-        if self.transcript_scroll == 0 {
-            self.follow_mode = true;
+        if self.transcript_view.transcript_scroll == 0 {
+            self.transcript_view.follow_mode = true;
         }
     }
 }

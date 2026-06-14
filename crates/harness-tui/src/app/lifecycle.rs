@@ -1,3 +1,4 @@
+use super::prompt_editor::PromptStashEntry;
 use super::*;
 
 #[derive(Debug, Clone)]
@@ -113,6 +114,15 @@ pub enum UiIntent {
         run_id: String,
         run_dir: PathBuf,
     },
+    DeleteSession {
+        run_id: String,
+        run_dir: PathBuf,
+    },
+    UpdateSessionTitle {
+        run_id: String,
+        run_dir: PathBuf,
+        title: String,
+    },
     SubmitPrompt {
         text: String,
         selected_file_tags: Vec<harness_core::file_tag::SelectedFileTag>,
@@ -120,7 +130,17 @@ pub enum UiIntent {
         selected_resource_tags: Vec<harness_core::file_tag::SelectedResourceTag>,
         launch_metadata: LaunchMetadata,
     },
+    RunShellCommand {
+        command: String,
+    },
+    CancelQueuedPrompt {
+        task_id: String,
+    },
     CompactSession,
+    ExportSession {
+        session: String,
+        output: PathBuf,
+    },
     OpenAuthManager {
         args: Vec<String>,
         stdin: Option<String>,
@@ -291,6 +311,7 @@ impl AppState {
         state.focus = Focus::Prompt;
         state.live_details_drawer_open = false;
         state.session_path = session_path;
+        state.configure_tui_state_paths_from_session_path();
         state.auto_exit_on_finish = auto_exit_on_finish;
         state.on_ui_intent = on_ui_intent;
         state.set_prompt_history_path(prompt_history_path);
@@ -338,6 +359,7 @@ impl AppState {
         state.startup_mode = true;
         state.on_ui_intent = on_ui_intent;
         state.set_prompt_history_path(prompt_history_path);
+        state.configure_tui_state_paths_from_session_history();
         if let Some(launch_metadata) = take_pending_live_launch_metadata() {
             state.set_launch_metadata(launch_metadata);
         }
@@ -351,13 +373,29 @@ impl AppState {
 
 impl AppState {
     fn set_prompt_history_path(&mut self, path: Option<PathBuf>) {
-        self.prompt_history_path = path;
-        let Some(path) = self.prompt_history_path.as_deref() else {
+        self.composer.prompt_history_path = path;
+        let Some(path) = self.composer.prompt_history_path.as_deref() else {
             return;
         };
+        self.composer.prompt_stash_path =
+            Some(prompt_history::prompt_stash_path_for_history_path(path));
         match prompt_history::load_prompt_history(path) {
             Ok(history) => {
-                self.prompt_history = history;
+                self.composer.prompt_history = history;
+            }
+            Err(err) => {
+                self.status_banner = Some(err);
+            }
+        }
+        let Some(stash_path) = self.composer.prompt_stash_path.as_deref() else {
+            return;
+        };
+        match prompt_history::load_prompt_stash(stash_path) {
+            Ok(stash) => {
+                self.composer.prompt_stash = stash
+                    .into_iter()
+                    .map(|entry| PromptStashEntry::persisted(entry.text, entry.cursor))
+                    .collect();
             }
             Err(err) => {
                 self.status_banner = Some(err);
@@ -557,19 +595,12 @@ impl AppState {
     }
 
     pub fn overlay_stack(&self) -> OverlayStack {
-        OverlayStack::from_state(OverlayState {
-            details_drawer_open: self.details_drawer_open(),
-            slash_visible: self.slash_overlay_should_render(),
-            file_mention_visible: self.file_mention_overlay_should_render(),
-            palette_visible: self.palette_visible,
-            status_dialog_visible: self.status_dialog_visible,
-            session_history_visible: self.session_history_visible,
-            model_switcher_visible: self.model_switcher_visible,
-            toggles_menu_visible: self.toggles_menu_visible,
-            lineage_browser_visible: self.lineage_browser_visible,
-            fork_selector_visible: self.fork_selector_visible,
-            permission_pending: self.active_permission().is_some(),
-        })
+        OverlayStack::from_state(self.overlay_state.to_overlay_state(
+            self.details_drawer_open(),
+            self.composer.stash_dialog_visible,
+            self.composer.queued_prompt_dialog_visible,
+            self.active_permission().is_some(),
+        ))
     }
 
     pub fn take_reload_requested(&mut self) -> bool {
@@ -612,7 +643,7 @@ impl AppState {
         !self.replay_mode
             && !self.startup_shell_visible()
             && !self.composer_disabled()
-            && !self.slash_visible
+            && !self.overlay_state.slash_visible
             && self.active_interrupt_task_id().is_some()
     }
 

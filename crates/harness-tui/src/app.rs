@@ -18,7 +18,7 @@ use harness_core::workspace::WorkspaceEnvironment;
 use ratatui::layout::Rect;
 
 use crate::keybindings::{Action, KeyMap};
-use crate::overlay::{OverlayKind, OverlayStack, OverlayState};
+use crate::overlay::{OverlayKind, OverlayStack};
 use crate::text::{non_empty_trimmed, trimmed_json_string_field};
 use crate::theme::Theme;
 use crate::ui::{
@@ -32,25 +32,35 @@ use crate::{clipboard, ui};
 mod activity;
 mod auth_display;
 mod child_session;
+mod child_session_dialog;
+mod error_details;
 #[cfg(test)]
 mod exact_tests;
 mod file_mentions;
 mod key_interaction;
+mod key_sequence;
 mod lifecycle;
 mod lineage;
+mod model_dialog;
+mod model_dialog_state;
 mod model_metadata;
 mod model_switcher;
 mod mouse_interaction;
 mod onboarding;
 mod pending_live;
 pub(crate) mod permissions;
+mod prompt_editor;
 mod prompt_history;
 mod prompt_input;
+mod prompt_management_keys;
+mod queued_prompts;
 pub(crate) mod session_history;
+mod session_history_state;
 pub(crate) mod session_navigation;
 mod session_projection;
 mod session_slash;
 mod session_stack;
+mod state;
 mod terminal_panel;
 #[cfg(test)]
 mod tests;
@@ -87,6 +97,11 @@ use self::permissions::{
 pub use self::session_history::SessionHistoryEntry;
 use self::session_projection::SessionProjection;
 use self::session_stack::SessionNavigationSnapshot;
+pub(crate) use self::state::TranscriptScrollbarDragState;
+pub(crate) use self::state::{
+    ComposerState, KeySequenceState, OverlayStateHolder, PermissionPromptState,
+    QuestionPromptState, TranscriptViewState,
+};
 use self::terminal_panel::terminal_panel_event_is_shell;
 pub use self::terminal_panel::{TerminalPanelEntry, TerminalPanelStatus};
 pub(in crate::app) use self::tool_call::{
@@ -100,10 +115,11 @@ use self::tool_output::{
     json_string_field, task_child_request_id_from_output, task_child_session_id_from_output,
     tool_call_has_expandable_output,
 };
-use self::transcript_cache::TranscriptRenderCache;
 pub(crate) use self::transcript_state::{ToastState, ToastVariant};
 use self::workspace_display::{directory_branch_label, workspace_context_labels};
 pub use crate::view_model::{ForkSelectorViewModel, LineageBrowserViewModel};
+pub use child_session_dialog::{ChildSessionDialogRow, ChildSessionDialogViewModel};
+pub use error_details::ErrorDetailsViewModel;
 #[cfg(test)]
 pub(crate) use file_mentions::FileMentionSelectedTag;
 pub(crate) use file_mentions::{
@@ -112,6 +128,7 @@ pub(crate) use file_mentions::{
     SystemFileMentionWorkspaceScanner,
 };
 pub use lineage::{ForkSelectorState, LineageBrowserState};
+use model_dialog_state::ModelDialogState;
 pub use model_metadata::{LaunchMetadata, McpResourceOption, ModelOption};
 pub use onboarding::{OnboardingScreen, OnboardingStep};
 pub use pending_live::{
@@ -125,8 +142,11 @@ use permissions::permission_display_summary;
 pub use permissions::{
     ActivePermissionView, PermissionEntry, QuestionOptionView, QuestionPromptView,
 };
+pub(in crate::app) use prompt_editor::is_prompt_editor_action;
+pub use prompt_editor::ComposerMode;
 pub use prompt_history::prompt_history_path_for_session_dir;
 use prompt_history::PromptHistoryDraft;
+use session_history_state::SessionHistoryUiState;
 pub use toggles::{ToggleEntryConfig, ToggleEntryKind, ToggleMenuRow, TogglesConfig};
 
 /// Truncation limit for tool output display in the TUI (chars)
@@ -159,14 +179,6 @@ pub(crate) enum SubagentFooterTarget {
     Next,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct TranscriptScrollbarDragState {
-    track: Rect,
-    thumb_height: u16,
-    pointer_offset_y: u16,
-    max_scroll: usize,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum OperatorSidebarPendingClick {
     Section(OperatorSidebarSection),
@@ -184,7 +196,6 @@ fn rect_contains(area: Rect, column: u16, row: u16) -> bool {
 pub struct AppState {
     pub selected_event_index: usize,
     pub focus: Focus,
-    pub follow_mode: bool,
     pub active_tab: Tab,
     pub(crate) active_review_surface: Option<ReviewSurface>,
     pub(crate) live_details_drawer_open: bool,
@@ -195,53 +206,28 @@ pub struct AppState {
     pub status_banner: Option<String>,
     toast: Option<ToastState>,
     pub details_scroll: u16,
-    pub transcript_scroll: usize,
     pub terminal_panel_scroll: usize,
     pub terminal_panel_follow: bool,
-    pub(crate) last_transcript_max_scroll: Cell<usize>,
     pub(crate) last_terminal_panel_max_scroll: Cell<usize>,
     last_frame_area: Option<Rect>,
-    transcript_scrollbar_drag: Option<TranscriptScrollbarDragState>,
-    selected_diff_hunk_row: Option<usize>,
-    hovered_transcript_target: Option<TranscriptMouseTarget>,
-    hovered_subagent_footer_target: Option<SubagentFooterTarget>,
-    transcript_click_activated_on_down: bool,
-    transcript_selection: Option<TranscriptSelection>,
-    transcript_selection_dragging: bool,
     operator_sidebar_selection: Option<OperatorSidebarSelection>,
     selected_operator_sidebar_keyboard_index: Option<usize>,
     operator_sidebar_selection_dragging: bool,
     operator_sidebar_pending_click: Option<OperatorSidebarPendingClick>,
-    transcript_cache: TranscriptRenderCache,
-    transcript_animation_phase: usize,
+    pub transcript_view: TranscriptViewState,
     pub auto_exit_on_finish: bool,
-    pub prompt_buffer: String,
-    pub prompt_cursor: usize,
-    pub prompt_history: Vec<String>,
-    pub prompt_history_index: Option<usize>,
-    prompt_history_path: Option<PathBuf>,
-    prompt_history_draft: Option<PromptHistoryDraft>,
+    pub composer: ComposerState,
     pub selected_activity_index: usize,
-    pub palette_visible: bool,
     pub palette_input: String,
     pub palette_cursor: usize,
     pub palette_filtered: Vec<String>,
     pub palette_selected: usize,
     palette_focus_return: Option<Focus>,
-    pub(crate) status_dialog_visible: bool,
-    show_transcript_thinking: bool,
-    show_transcript_timestamps: bool,
-    show_tool_details: bool,
-    show_generic_tool_output: bool,
     terminal_panel_visible: bool,
-    stacked_transcript_diffs: bool,
-    expanded_tool_outputs: BTreeSet<String>,
-    expanded_patch_file_outputs: BTreeSet<String>,
     collapsed_operator_sidebar_sections: BTreeSet<OperatorSidebarSection>,
     expanded_operator_sidebar_subagent_groups: BTreeSet<String>,
     pub startup_mode: bool,
     pub startup_launcher_action: StartupLauncherAction,
-    pub(crate) onboarding_visible: bool,
     pub(crate) onboarding_step: OnboardingStep,
     pub(crate) onboarding_selected: usize,
     pub(crate) onboarding_skipped_for_launch: bool,
@@ -250,27 +236,23 @@ pub struct AppState {
     post_run_handoff_action: PostRunHandoffAction,
     continued_post_run_handoff_active: bool,
     continued_live_reopen_surface_active: bool,
-    pub session_history_visible: bool,
-    pub model_switcher_visible: bool,
+    pub overlay_state: OverlayStateHolder,
     pub session_history_entries: Vec<SessionHistoryEntry>,
     pub session_history_filtered: Vec<usize>,
     pub session_history_selected: usize,
+    session_history_ui: SessionHistoryUiState,
+    model_dialog_state: ModelDialogState,
     pub model_options: Vec<ModelOption>,
     pub model_filtered: Vec<usize>,
     pub model_selected: usize,
-    pub toggles_menu_visible: bool,
     pub toggles_selected: usize,
     toggles_yolo_confirm_visible: bool,
     runtime_toggles: toggles::RuntimeTogglesState,
     pub lineage_browser: LineageBrowserState,
-    pub lineage_browser_visible: bool,
     pub fork_selector: ForkSelectorState,
-    pub fork_selector_visible: bool,
-    pub slash_visible: bool,
     pub slash_filtered: Vec<String>,
     pub slash_selected: usize,
     slash_draft_snapshot: Option<String>,
-    pub(crate) file_mention_visible: bool,
     pub(crate) file_mention_entries: Vec<FileMentionEntry>,
     pub(crate) file_mention_selected: usize,
     file_mention_trigger: Option<usize>,
@@ -284,25 +266,13 @@ pub struct AppState {
     file_mention_frecency: BTreeMap<String, FileMentionFrecency>,
     pub continue_disabled_banner: Option<String>,
     pub keymap: KeyMap,
+    key_sequence_state: KeySequenceState,
     theme: Theme,
     launch_metadata: LaunchMetadata,
     runtime_context_metadata: Option<LaunchMetadata>,
     session_navigation_stack: Vec<SessionNavigationSnapshot>,
-    dismissed_permissions: BTreeSet<String>,
-    submitted_permission_id: Option<String>,
-    permission_modal_permission_id: Option<String>,
-    permission_modal_stage: PermissionModalStage,
-    permission_modal_selection: PermissionModalSelection,
-    permission_modal_confirm_selection: PermissionConfirmSelection,
-    question_answer_permission_id: Option<String>,
-    question_prompt_tab: usize,
-    question_prompt_selection: usize,
-    question_prompt_answers: Vec<Vec<String>>,
-    question_prompt_custom: Vec<String>,
-    question_prompt_editing: bool,
-    question_answer_buffer: String,
-    question_answer_cursor: usize,
-    question_answer_error: Option<String>,
+    pub(crate) permission_prompt: PermissionPromptState,
+    pub(crate) question_prompt: QuestionPromptState,
     reload_requested: bool,
     compact_session_supported: bool,
     replay_navigation_handoff_enabled: bool,
@@ -316,7 +286,6 @@ impl Default for AppState {
         Self {
             selected_event_index: 0,
             focus: Focus::default(),
-            follow_mode: true,
             active_tab: Tab::default(),
             active_review_surface: None,
             live_details_drawer_open: false,
@@ -327,55 +296,30 @@ impl Default for AppState {
             status_banner: None,
             toast: None,
             details_scroll: 0,
-            transcript_scroll: 0,
             terminal_panel_scroll: 0,
             terminal_panel_follow: true,
-            last_transcript_max_scroll: Cell::new(0),
             last_terminal_panel_max_scroll: Cell::new(0),
             last_frame_area: None,
-            transcript_scrollbar_drag: None,
-            selected_diff_hunk_row: None,
-            hovered_transcript_target: None,
-            hovered_subagent_footer_target: None,
-            transcript_click_activated_on_down: false,
-            transcript_selection: None,
-            transcript_selection_dragging: false,
             operator_sidebar_selection: None,
             selected_operator_sidebar_keyboard_index: None,
             operator_sidebar_selection_dragging: false,
             operator_sidebar_pending_click: None,
-            transcript_cache: TranscriptRenderCache::default(),
-            transcript_animation_phase: 0,
+            transcript_view: TranscriptViewState::default(),
             auto_exit_on_finish: false,
-            prompt_buffer: String::new(),
-            prompt_cursor: 0,
-            prompt_history: Vec::new(),
-            prompt_history_index: None,
-            prompt_history_path: None,
-            prompt_history_draft: None,
+            composer: ComposerState::default(),
             selected_activity_index: 0,
-            palette_visible: false,
             palette_input: String::new(),
             palette_cursor: 0,
             palette_filtered: Vec::new(),
             palette_selected: 0,
             palette_focus_return: None,
-            status_dialog_visible: false,
-            show_transcript_thinking: true,
-            show_transcript_timestamps: false,
-            show_tool_details: true,
-            show_generic_tool_output: false,
             terminal_panel_visible: false,
-            stacked_transcript_diffs: false,
-            expanded_tool_outputs: BTreeSet::new(),
-            expanded_patch_file_outputs: BTreeSet::new(),
             collapsed_operator_sidebar_sections: BTreeSet::from([
                 OperatorSidebarSection::ModifiedFiles,
             ]),
             expanded_operator_sidebar_subagent_groups: BTreeSet::new(),
             startup_mode: false,
             startup_launcher_action: StartupLauncherAction::default(),
-            onboarding_visible: false,
             onboarding_step: OnboardingStep::StartSplash,
             onboarding_selected: 0,
             onboarding_skipped_for_launch: false,
@@ -384,27 +328,23 @@ impl Default for AppState {
             post_run_handoff_action: PostRunHandoffAction::default(),
             continued_post_run_handoff_active: false,
             continued_live_reopen_surface_active: false,
-            session_history_visible: false,
-            model_switcher_visible: false,
+            overlay_state: OverlayStateHolder::default(),
             session_history_entries: Vec::new(),
             session_history_filtered: Vec::new(),
             session_history_selected: 0,
+            session_history_ui: SessionHistoryUiState::default(),
+            model_dialog_state: ModelDialogState::default(),
             model_options: Vec::new(),
             model_filtered: Vec::new(),
             model_selected: 0,
-            toggles_menu_visible: false,
             toggles_selected: 0,
             toggles_yolo_confirm_visible: false,
             runtime_toggles: toggles::RuntimeTogglesState::default(),
             lineage_browser: LineageBrowserState::default(),
-            lineage_browser_visible: false,
             fork_selector: ForkSelectorState::default(),
-            fork_selector_visible: false,
-            slash_visible: false,
             slash_filtered: Vec::new(),
             slash_selected: 0,
             slash_draft_snapshot: None,
-            file_mention_visible: false,
             file_mention_entries: Vec::new(),
             file_mention_selected: 0,
             file_mention_trigger: None,
@@ -418,25 +358,13 @@ impl Default for AppState {
             file_mention_frecency: BTreeMap::new(),
             continue_disabled_banner: None,
             keymap: KeyMap::default(),
+            key_sequence_state: KeySequenceState::default(),
             theme: Theme::default(),
             launch_metadata: LaunchMetadata::default(),
             runtime_context_metadata: None,
             session_navigation_stack: Vec::new(),
-            dismissed_permissions: BTreeSet::new(),
-            submitted_permission_id: None,
-            permission_modal_permission_id: None,
-            permission_modal_stage: PermissionModalStage::default(),
-            permission_modal_selection: PermissionModalSelection::default(),
-            permission_modal_confirm_selection: PermissionConfirmSelection::default(),
-            question_answer_permission_id: None,
-            question_prompt_tab: 0,
-            question_prompt_selection: 0,
-            question_prompt_answers: Vec::new(),
-            question_prompt_custom: Vec::new(),
-            question_prompt_editing: false,
-            question_answer_buffer: String::new(),
-            question_answer_cursor: 0,
-            question_answer_error: None,
+            permission_prompt: PermissionPromptState::default(),
+            question_prompt: QuestionPromptState::default(),
             reload_requested: false,
             compact_session_supported: false,
             replay_navigation_handoff_enabled: false,
@@ -463,8 +391,8 @@ impl DerefMut for AppState {
 
 impl AppState {
     pub fn set_onboarding_required(&mut self, required: bool) {
-        self.onboarding_visible = required && !self.onboarding_skipped_for_launch;
-        if self.onboarding_visible {
+        self.overlay_state.onboarding_visible = required && !self.onboarding_skipped_for_launch;
+        if self.overlay_state.onboarding_visible {
             self.focus = Focus::List;
             self.onboarding_step = OnboardingStep::StartSplash;
             self.onboarding_selected = 0;
@@ -474,12 +402,13 @@ impl AppState {
     }
 
     pub fn onboarding_screen(&self) -> Option<OnboardingScreen> {
-        self.onboarding_visible
+        self.overlay_state
+            .onboarding_visible
             .then(|| onboarding::screen_for(self.onboarding_step, self.onboarding_selected))
     }
 
     pub fn set_onboarding_step_for_test(&mut self, step: OnboardingStep) {
-        self.onboarding_visible = true;
+        self.overlay_state.onboarding_visible = true;
         self.onboarding_step = step;
         self.onboarding_selected = 0;
         self.onboarding_auth_in_progress = false;
@@ -488,7 +417,7 @@ impl AppState {
     }
 
     pub fn apply_auth_backend_result(&mut self, success: bool) {
-        if !self.onboarding_visible || !self.onboarding_auth_in_progress {
+        if !self.overlay_state.onboarding_visible || !self.onboarding_auth_in_progress {
             return;
         }
         self.onboarding_auth_in_progress = false;
@@ -503,7 +432,7 @@ impl AppState {
     }
 
     fn onboarding_accepts_hidden_text(&self) -> bool {
-        self.onboarding_visible
+        self.overlay_state.onboarding_visible
             && matches!(
                 self.onboarding_step,
                 OnboardingStep::ApiKeyEntry | OnboardingStep::CopilotEnterpriseDevice
@@ -532,19 +461,20 @@ impl AppState {
     pub fn replace_events(&mut self, events: Vec<EventEnvelopeV1>) {
         self.bump_transcript_render_epoch();
         self.projection.reset();
-        self.dismissed_permissions.clear();
-        self.submitted_permission_id = None;
-        self.permission_modal_permission_id = None;
-        self.permission_modal_stage = PermissionModalStage::Decision;
-        self.permission_modal_selection = PermissionModalSelection::AllowOnce;
-        self.permission_modal_confirm_selection = PermissionConfirmSelection::Confirm;
-        self.question_prompt_tab = 0;
-        self.question_prompt_selection = 0;
-        self.question_prompt_answers.clear();
-        self.question_prompt_custom.clear();
-        self.question_prompt_editing = false;
-        self.expanded_tool_outputs.clear();
-        self.expanded_patch_file_outputs.clear();
+        self.permission_prompt.dismissed_permissions.clear();
+        self.permission_prompt.submitted_permission_id = None;
+        self.permission_prompt.permission_modal_permission_id = None;
+        self.permission_prompt.permission_modal_stage = PermissionModalStage::Decision;
+        self.permission_prompt.permission_modal_selection = PermissionModalSelection::AllowOnce;
+        self.permission_prompt.permission_modal_confirm_selection =
+            PermissionConfirmSelection::Confirm;
+        self.question_prompt.question_prompt_tab = 0;
+        self.question_prompt.question_prompt_selection = 0;
+        self.question_prompt.question_prompt_answers.clear();
+        self.question_prompt.question_prompt_custom.clear();
+        self.question_prompt.question_prompt_editing = false;
+        self.transcript_view.expanded_tool_outputs.clear();
+        self.transcript_view.expanded_patch_file_outputs.clear();
 
         for event in events {
             self.ingest_event(event);
@@ -558,7 +488,7 @@ impl AppState {
                 .min(self.projection.events.len() - 1);
         }
         self.details_scroll = 0;
-        self.transcript_scroll = 0;
+        self.transcript_view.transcript_scroll = 0;
         self.terminal_panel_scroll = 0;
         self.terminal_panel_follow = true;
         self.maybe_auto_exit();
@@ -576,8 +506,6 @@ impl AppState {
         if self.projection.has_seen_seq(event.seq) {
             return;
         }
-
-        self.bump_transcript_render_epoch();
 
         if matches!(&event.payload, EventV1::PermissionRequested(_)) {
             self.close_palette();
@@ -598,6 +526,7 @@ impl AppState {
             self.file_mention_index = None;
         }
 
+        let queued_prompt_event = queued_prompts::queued_prompt_runtime_event(&event);
         let terminal_panel_follow_event = terminal_panel_event_is_shell(&event.payload);
 
         let terminal_event = matches!(
@@ -615,6 +544,11 @@ impl AppState {
         };
         self.update_transient_state_for_event(&event);
         let trimmed_events = self.projection.ingest_event(event, historical);
+        if !historical {
+            if let Some(event) = queued_prompt_event {
+                self.apply_queued_prompt_runtime_event(event);
+            }
+        }
         self.selected_activity_index = self
             .selected_activity_index
             .min(self.projection.activities.len().saturating_sub(1));
@@ -629,11 +563,11 @@ impl AppState {
             }
         }
 
-        if self.follow_mode && !self.projection.events.is_empty() {
+        if self.transcript_view.follow_mode && !self.projection.events.is_empty() {
             self.selected_event_index = self.projection.events.len() - 1;
             self.selected_activity_index = self.projection.activities.len().saturating_sub(1);
             self.details_scroll = 0;
-            self.transcript_scroll = 0;
+            self.transcript_view.transcript_scroll = 0;
         }
 
         if terminal_panel_follow_event && self.terminal_panel_follow {
@@ -687,10 +621,12 @@ impl AppState {
 
     fn update_transient_state_for_event(&mut self, event: &EventEnvelopeV1) {
         if let EventV1::PermissionResolved(data) = &event.payload {
-            self.dismissed_permissions.remove(&data.permission_id);
+            self.permission_prompt
+                .dismissed_permissions
+                .remove(&data.permission_id);
             self.clear_permission_modal_selection(&data.permission_id);
             if self.submitted_permission_is_active(&data.permission_id) {
-                self.submitted_permission_id = None;
+                self.permission_prompt.submitted_permission_id = None;
             }
             self.clear_question_answer_state(&data.permission_id);
         }

@@ -239,7 +239,7 @@ impl AppState {
 
     fn live_switch_to_session(&mut self, session_id: String, session_path: PathBuf) {
         let resume_plan = inspect_resume_plan(&session_path);
-        set_pending_live_prompt_draft(Some(self.prompt_buffer.clone()));
+        set_pending_live_prompt_draft(Some(self.composer.prompt_buffer.clone()));
         if resume_plan.is_resumable {
             self.emit_ui_intent(UiIntent::ContinueSession {
                 run_id: session_id,

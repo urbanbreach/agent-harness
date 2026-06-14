@@ -27,16 +27,23 @@ impl AppState {
             return;
         }
 
+        if self.overlay_stack().top() == Some(OverlayKind::ErrorDetails) {
+            self.handle_error_details_key(key);
+            self.maybe_auto_exit();
+            return;
+        }
+
         if self.overlay_stack().top() == Some(OverlayKind::StatusDialog) {
             if key.code == KeyCode::Esc {
-                self.status_dialog_visible = false;
+                self.overlay_state.status_dialog_visible = false;
             }
             self.maybe_auto_exit();
             return;
         }
 
         if clipboard::copy_on_select_disabled()
-            && (self.transcript_selection.is_some() || self.operator_sidebar_selection.is_some())
+            && (self.transcript_view.transcript_selection.is_some()
+                || self.operator_sidebar_selection.is_some())
         {
             if key.modifiers.contains(KeyModifiers::CONTROL)
                 && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('C'))
@@ -84,6 +91,11 @@ impl AppState {
         }
 
         if key.code == KeyCode::Esc && self.handle_interrupt_escape() {
+            self.maybe_auto_exit();
+            return;
+        }
+
+        if self.handle_leader_key_event(key) {
             self.maybe_auto_exit();
             return;
         }
@@ -553,14 +565,14 @@ impl AppState {
                 self.execute_onboarding_auth_step();
             }
             OnboardingStep::SkipConfirmation if self.onboarding_selected == 0 => {
-                self.onboarding_visible = false;
+                self.overlay_state.onboarding_visible = false;
                 self.onboarding_skipped_for_launch = true;
                 self.status_banner = Some(
                     "onboarding skipped for this launch; no credential was written".to_string(),
                 );
             }
             OnboardingStep::FirstPromptSuccess => {
-                self.onboarding_visible = false;
+                self.overlay_state.onboarding_visible = false;
                 self.apply_new_session_launcher_selection();
             }
             _ => {
@@ -571,7 +583,7 @@ impl AppState {
     }
 
     fn handle_onboarding_text_action(&mut self, action: Action) -> bool {
-        if !self.onboarding_visible
+        if !self.overlay_state.onboarding_visible
             || self.onboarding_auth_in_progress
             || !matches!(
                 self.onboarding_step,
@@ -609,7 +621,7 @@ impl AppState {
             return;
         }
 
-        if self.onboarding_visible && self.focus == Focus::List {
+        if self.overlay_state.onboarding_visible && self.focus == Focus::List {
             match action {
                 Action::SubmitPrompt => {
                     self.execute_onboarding_selection();
@@ -693,6 +705,13 @@ impl AppState {
                     | Action::Char(_) => return,
                     _ => {}
                 }
+                if is_prompt_editor_action(action) {
+                    return;
+                }
+            }
+
+            if self.execute_prompt_editor_action(action) {
+                return;
             }
 
             match action {
@@ -731,15 +750,15 @@ impl AppState {
                     return;
                 }
                 Action::CursorLeft => {
-                    if self.prompt_cursor > 0 {
-                        self.prompt_cursor -= 1;
+                    if self.composer.prompt_cursor > 0 {
+                        self.composer.prompt_cursor -= 1;
                     }
                     self.sync_file_mention_overlay();
                     return;
                 }
                 Action::CursorRight => {
-                    if self.prompt_cursor < self.prompt_char_count() {
-                        self.prompt_cursor += 1;
+                    if self.composer.prompt_cursor < self.prompt_char_count() {
+                        self.composer.prompt_cursor += 1;
                     }
                     self.sync_file_mention_overlay();
                     return;
@@ -762,6 +781,43 @@ impl AppState {
 
         // Handle global actions
         match action {
+            Action::NewSession if !self.replay_mode => {
+                self.startup_launcher_action = StartupLauncherAction::NewSession;
+                self.apply_new_session_launcher_selection();
+            }
+            Action::ResumeSession if !self.replay_mode => {
+                self.begin_session_history_picker(StartupLauncherAction::ContinueSession);
+            }
+            Action::ReplaySession if !self.replay_mode => {
+                self.begin_session_history_picker(StartupLauncherAction::ReplaySession);
+            }
+            Action::SwitchModel if !self.replay_mode => {
+                self.open_model_switcher();
+            }
+            Action::OpenVariantDialog if !self.replay_mode => {
+                self.open_variant_dialog();
+            }
+            Action::OpenAgentDialog if !self.replay_mode => {
+                self.open_agent_dialog();
+            }
+            Action::OpenToggles => {
+                self.open_toggles_menu();
+            }
+            Action::OpenStatusDialog => {
+                self.overlay_state.status_dialog_visible = true;
+            }
+            Action::OpenLineageBrowser if !self.startup_mode => {
+                self.open_lineage_browser();
+            }
+            Action::OpenChildSessions if !self.startup_mode => {
+                self.open_child_session_dialog();
+            }
+            Action::ShowLastError => {
+                self.open_error_details();
+            }
+            Action::CompactSession if self.compact_session_supported => {
+                self.emit_ui_intent(UiIntent::CompactSession);
+            }
             Action::Quit => {
                 self.restore_parent_session_for_quit();
                 self.should_quit = true;
@@ -778,9 +834,9 @@ impl AppState {
                 }
             }
             Action::ToggleFollow => {
-                self.follow_mode = !self.follow_mode;
-                if self.follow_mode {
-                    self.transcript_scroll = 0;
+                self.transcript_view.follow_mode = !self.transcript_view.follow_mode;
+                if self.transcript_view.follow_mode {
+                    self.transcript_view.transcript_scroll = 0;
                 }
             }
             Action::ToggleOperatorSidebar
@@ -823,6 +879,51 @@ impl AppState {
             Action::DiffHunkPrevious => {
                 self.navigate_diff_hunk(true);
             }
+            Action::MessagesPageUp => {
+                self.page_transcript_up();
+            }
+            Action::MessagesPageDown => {
+                self.page_transcript_down();
+            }
+            Action::MessagesHalfPageUp => {
+                self.half_page_transcript_up();
+            }
+            Action::MessagesHalfPageDown => {
+                self.half_page_transcript_down();
+            }
+            Action::MessagesLineUp => {
+                self.scroll_transcript_up(1);
+            }
+            Action::MessagesLineDown => {
+                self.scroll_transcript_down(1);
+            }
+            Action::MessagesFirst => {
+                self.jump_to_first_message();
+            }
+            Action::MessagesLast => {
+                self.jump_to_last_message();
+            }
+            Action::MessagesPrevious => {
+                self.jump_to_previous_message();
+            }
+            Action::MessagesNext => {
+                self.jump_to_next_message();
+            }
+            Action::MessagesLastUserMessage => {
+                self.jump_to_last_user_message();
+            }
+            Action::CopyMessage => {
+                self.copy_selected_message();
+            }
+            Action::CopySession => {
+                self.copy_session_transcript();
+            }
+            Action::ExportSession => {
+                self.export_session_transcript();
+            }
+            Action::ToggleTranscriptScrollbar => {
+                self.transcript_view.toggle_transcript_scrollbar();
+            }
             Action::AgentCycle => {
                 self.cycle_agent(false);
             }
@@ -831,6 +932,12 @@ impl AppState {
             }
             Action::VariantCycle => {
                 self.cycle_variant();
+            }
+            Action::RecentModelNext => {
+                self.cycle_recent_model(false);
+            }
+            Action::RecentModelPrevious => {
+                self.cycle_recent_model(true);
             }
             Action::MoveDown if self.focus != Focus::Prompt => {
                 if self.active_review_surface.is_none() && self.focus == Focus::List {
@@ -879,7 +986,7 @@ impl AppState {
     pub fn next_event(&mut self) {
         if !self.events.is_empty() && self.selected_event_index < self.events.len() - 1 {
             self.selected_event_index += 1;
-            self.follow_mode = false;
+            self.transcript_view.follow_mode = false;
             self.details_scroll = 0;
         }
     }
@@ -887,7 +994,7 @@ impl AppState {
     pub fn previous_event(&mut self) {
         if self.selected_event_index > 0 {
             self.selected_event_index -= 1;
-            self.follow_mode = false;
+            self.transcript_view.follow_mode = false;
             self.details_scroll = 0;
         }
     }
@@ -895,18 +1002,18 @@ impl AppState {
     fn next_activity(&mut self) {
         if !self.activities.is_empty() && self.selected_activity_index < self.activities.len() - 1 {
             self.selected_activity_index += 1;
-            self.follow_mode = false;
+            self.transcript_view.follow_mode = false;
             self.details_scroll = 0;
-            self.transcript_scroll = 0;
+            self.transcript_view.transcript_scroll = 0;
         }
     }
 
     fn previous_activity(&mut self) {
         if self.selected_activity_index > 0 {
             self.selected_activity_index -= 1;
-            self.follow_mode = false;
+            self.transcript_view.follow_mode = false;
             self.details_scroll = 0;
-            self.transcript_scroll = 0;
+            self.transcript_view.transcript_scroll = 0;
         }
     }
 
@@ -955,13 +1062,14 @@ impl AppState {
                 true
             }
             KeyCode::Home => {
-                self.follow_mode = false;
-                self.transcript_scroll = self.last_transcript_max_scroll.get();
+                self.transcript_view.follow_mode = false;
+                self.transcript_view.transcript_scroll =
+                    self.transcript_view.last_transcript_max_scroll.get();
                 true
             }
             KeyCode::End => {
-                self.follow_mode = true;
-                self.transcript_scroll = 0;
+                self.transcript_view.follow_mode = true;
+                self.transcript_view.transcript_scroll = 0;
                 true
             }
             _ => false,

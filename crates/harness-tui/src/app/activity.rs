@@ -2,6 +2,7 @@ use super::*;
 
 pub struct ActivityEntry {
     pub request_id: String,
+    pub revision: u64,
     pub profile_label: String,
     pub model_id: String,
     pub provider_id: String,
@@ -114,6 +115,7 @@ pub(in crate::app) fn new_streaming_activity_entry(
     } = args;
     ActivityEntry {
         request_id,
+        revision: 1,
         profile_label,
         model_id,
         provider_id,
@@ -140,6 +142,10 @@ impl ActivityEntry {
         (self.last_mono_ms >= self.first_mono_ms)
             .then_some(self.last_mono_ms.saturating_sub(self.first_mono_ms))
     }
+
+    pub(in crate::app) fn bump_revision(&mut self) {
+        self.revision = self.revision.saturating_add(1);
+    }
 }
 
 pub(crate) fn humanize_profile_label(profile: &str) -> String {
@@ -161,6 +167,7 @@ pub(crate) fn humanize_profile_label(profile: &str) -> String {
 }
 
 pub(in crate::app) fn mark_activity_event(entry: &mut ActivityEntry, seq: u64, mono_ms: u64) {
+    entry.bump_revision();
     if entry.first_seq == 0 {
         entry.first_seq = seq;
     }
