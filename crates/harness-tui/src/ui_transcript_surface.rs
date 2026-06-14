@@ -11,6 +11,7 @@ use crate::theme::Theme;
 use super::ui_chrome::{display_width, panel_style, take_width_prefix};
 use super::ui_transcript::{TranscriptRenderSurface, TranscriptRenderSurfaceKind};
 use super::ui_transcript_layout::MeasuredTranscriptSurface;
+use super::ui_transcript_style::decorate_transcript_spinner_line;
 
 const TRANSCRIPT_SURFACE_RAIL_WIDTH: u16 = 1;
 const TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH: u16 = 2;
@@ -55,7 +56,7 @@ pub(super) fn transcript_surface_leading_gap(
                     | TranscriptRenderSurfaceKind::AssistantError
             ) && current == TranscriptRenderSurfaceKind::AssistantFooter =>
         {
-            0
+            1
         }
         Some(_) => 1,
         None => 0,
@@ -76,6 +77,7 @@ pub(super) fn render_transcript_surface(
     area: Rect,
     local_scroll: usize,
     theme: &Theme,
+    animation_phase: usize,
 ) {
     if area.width == 0 || area.height == 0 {
         return;
@@ -114,8 +116,12 @@ pub(super) fn render_transcript_surface(
         area.width.saturating_sub(rail_width),
         area.height,
     );
-    let visible_lines =
-        visible_surface_lines(surface, local_scroll, usize::from(content_rect.height));
+    let visible_lines = visible_surface_lines(
+        surface,
+        local_scroll,
+        usize::from(content_rect.height),
+        animation_phase,
+    );
     let paragraph = Paragraph::new(Text::from(visible_lines))
         .style(panel_style(surface.surface, theme.text.primary));
     frame.render_widget(paragraph, content_rect);
@@ -125,6 +131,7 @@ pub(super) fn visible_surface_lines(
     surface: &MeasuredTranscriptSurface,
     local_scroll: usize,
     visible_height: usize,
+    animation_phase: usize,
 ) -> Vec<Line<'static>> {
     if visible_height == 0 {
         return Vec::new();
@@ -136,6 +143,7 @@ pub(super) fn visible_surface_lines(
         .skip(local_scroll)
         .take(visible_height)
         .cloned()
+        .map(|line| decorate_transcript_spinner_line(line, animation_phase))
         .collect()
 }
 

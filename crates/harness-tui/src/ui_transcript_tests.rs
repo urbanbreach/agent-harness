@@ -1,5 +1,8 @@
 use super::*;
-use harness_core::event::UserMessageSubmittedEvent;
+use harness_core::event::{
+    ActorKind, EventActor, EventEnvelopeV1, EventV1, ProviderStreamDeltaEvent,
+    UserMessageSubmittedEvent, SCHEMA_VERSION,
+};
 
 #[test]
 fn transcript_test_activity_helper_has_required_defaults() {
@@ -95,10 +98,11 @@ fn transcript_pending_permission_stays_after_last_activity() {
 }
 
 #[test]
-fn transcript_layout_cache_invalidates_when_animation_frame_changes() {
+fn transcript_layout_cache_reuses_measurement_when_animation_frame_changes() {
     let mut app = AppState::default();
     let mut activity = ActivityEntry {
         request_id: "request-streaming-cache".to_string(),
+        revision: 1,
         profile_label: "default".to_string(),
         model_id: "gpt-5.4-mini".to_string(),
         provider_id: "openai".to_string(),
@@ -131,7 +135,14 @@ fn transcript_layout_cache_invalidates_when_animation_frame_changes() {
         .iter()
         .any(|line| line.contains("⠋ Thinking: checking cache invalidation")));
 
+    let initial_key = app.transcript_render_cache_key();
+    reset_transcript_layout_measurement_counter_for_test();
     app.advance_transcript_animation_phase();
+    let updated_key = app.transcript_render_cache_key();
+    assert_eq!(
+        initial_key, updated_key,
+        "animation-only changes must not change the transcript render key"
+    );
 
     let updated_lines = transcript_test_line_texts(build_transcript_lines_for_width(
         &app,
@@ -141,6 +152,11 @@ fn transcript_layout_cache_invalidates_when_animation_frame_changes() {
     assert!(updated_lines
         .iter()
         .any(|line| line.contains("⠙ Thinking: checking cache invalidation")));
+    assert_eq!(
+        transcript_layout_section_build_count_for_test(),
+        0,
+        "animation-only changes must repaint decoration without remeasuring transcript sections"
+    );
 }
 
 #[test]
@@ -177,6 +193,7 @@ fn transcript_layout_cache_invalidates_when_theme_changes() {
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "request-theme-cache".to_string(),
+        revision: 1,
         profile_label: "default".to_string(),
         model_id: "gpt-5.4-mini".to_string(),
         provider_id: "openai".to_string(),
@@ -213,6 +230,246 @@ fn transcript_layout_cache_invalidates_when_theme_changes() {
 
     assert_ne!(initial_surface, updated_surface);
     assert_eq!(updated_surface, alternate_theme.surface.panel);
+}
+
+#[test]
+fn wrap_measurement_property_holds() {
+    let theme = Theme::default();
+    let mut app = transcript_cache_fixture_app(4);
+    app.activities[1].transcript_text =
+        "supercalifragilisticexpialidocious-supercalifragilisticexpialidocious ".repeat(3);
+    app.activities[2].transcript_text =
+        "plain words wrap before the edge and keep measured rows stable ".repeat(6);
+
+    for width in [28, 80, 159] {
+        let layout = uncached_transcript_layout_for_width(&app, &theme, width);
+        for (section_index, section) in layout.sections.iter().enumerate() {
+            for (surface_index, surface) in section.surfaces.iter().enumerate() {
+                assert_eq!(
+                    surface.height,
+                    surface.lines.len(),
+                    "prewrapped surface rows should match measured rows at width {width}, section {section_index}, surface {surface_index}"
+                );
+                let content_width = usize::from(transcript_surface_content_width(
+                    surface.width,
+                    surface.show_outer_rail,
+                ));
+                for line in &surface.lines {
+                    assert!(
+                        line.width() <= content_width,
+                        "wrapped line width {} should fit content width {content_width} at transcript width {width}",
+                        line.width()
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn transcript_cache_on_off_equivalence() {
+    let app = transcript_cache_fixture_app(5);
+    let theme = Theme::default();
+
+    for width in [28, 80, 159] {
+        let cached = build_measured_transcript_layout_for_width(&app, &theme, width);
+        let uncached = uncached_transcript_layout_for_width(&app, &theme, width);
+
+        assert_eq!(cached.total_height, uncached.total_height);
+        assert_eq!(
+            layout_texts(&cached, &theme),
+            layout_texts(&uncached, &theme)
+        );
+    }
+}
+
+#[test]
+fn transcript_cache_invalidation_rebuilds_just_changed_section() {
+    let theme = Theme::default();
+    let mut app = transcript_cache_fixture_app(4);
+    reset_transcript_layout_measurement_metrics_for_test();
+
+    let _ = build_measured_transcript_layout_for_width(&app, &theme, 80);
+    let warmed_builds = transcript_layout_section_build_count_for_test();
+    assert_eq!(warmed_builds, 4);
+
+    ingest_transcript_delta(
+        &mut app,
+        100,
+        "request-transcript-cache-3",
+        " changed measured component",
+    );
+    let _ = build_measured_transcript_layout_for_width(&app, &theme, 80);
+    let rebuilt_sections = transcript_layout_section_build_count_for_test() - warmed_builds;
+
+    assert_eq!(
+        rebuilt_sections, 1,
+        "changing one measured section should rebuild only that section"
+    );
+}
+
+#[test]
+fn perf_long_session_perf_s1_s7_budget_table() {
+    let theme = Theme::default();
+    let mut rows = Vec::new();
+
+    let s1_app = transcript_cache_fixture_app(500);
+    reset_transcript_layout_measurement_metrics_for_test();
+    let started = std::time::Instant::now();
+    let s1_layout = build_measured_transcript_layout_for_width(&s1_app, &theme, 159);
+    let s1_ms = started.elapsed().as_millis();
+    std::hint::black_box(s1_layout.total_height);
+    let s1_builds = transcript_layout_section_build_count_for_test();
+    let warmed_builds = s1_builds;
+    let started = std::time::Instant::now();
+    let s1_second = build_measured_transcript_layout_for_width(&s1_app, &theme, 159);
+    let s1_second_ms = started.elapsed().as_millis();
+    std::hint::black_box(s1_second.total_height);
+    let s1_second_rebuilds = transcript_layout_section_build_count_for_test() - warmed_builds;
+    assert_eq!(s1_second_rebuilds, 0);
+    rows.push(transcript_perf_row(
+        "S1",
+        "500-message conversation, cold render",
+        s1_ms,
+        5_000,
+        serde_json::json!({
+            "initial_section_rebuilds": s1_builds,
+            "second_render_ms": s1_second_ms,
+            "second_render_section_rebuilds": s1_second_rebuilds,
+        }),
+    ));
+
+    let s2_app = large_tool_output_perf_app();
+    reset_transcript_layout_measurement_metrics_for_test();
+    let started = std::time::Instant::now();
+    let s2_layout = build_measured_transcript_layout_for_width(&s2_app, &theme, 120);
+    let s2_ms = started.elapsed().as_millis();
+    std::hint::black_box(s2_layout.total_height);
+    rows.push(transcript_perf_row(
+        "S2",
+        "large tool output with artifacts",
+        s2_ms,
+        5_000,
+        serde_json::json!({
+            "section_rebuilds": transcript_layout_section_build_count_for_test(),
+        }),
+    ));
+
+    let mut s3_app = transcript_cache_fixture_app(500);
+    reset_transcript_layout_measurement_metrics_for_test();
+    let _ = build_measured_transcript_layout_for_width(&s3_app, &theme, 159);
+    let before_s3_stream = transcript_layout_section_build_count_for_test();
+    let started = std::time::Instant::now();
+    for idx in 0..20 {
+        ingest_transcript_delta(
+            &mut s3_app,
+            1_000 + idx,
+            "request-transcript-cache-499",
+            " streaming delta",
+        );
+        let layout = build_measured_transcript_layout_for_width(&s3_app, &theme, 159);
+        std::hint::black_box(layout.total_height);
+    }
+    rows.push(transcript_perf_row(
+        "S3",
+        "streaming assistant output",
+        started.elapsed().as_millis(),
+        5_000,
+        serde_json::json!({
+            "streaming_deltas": 20,
+            "section_rebuilds": transcript_layout_section_build_count_for_test() - before_s3_stream,
+        }),
+    ));
+
+    let mut s4_app = transcript_cache_fixture_app(1);
+    reset_transcript_layout_measurement_metrics_for_test();
+    let started = std::time::Instant::now();
+    for batch in 0..125 {
+        for delta in 0..16 {
+            ingest_transcript_delta(
+                &mut s4_app,
+                2_000 + (batch * 16) + delta,
+                "request-transcript-cache-0",
+                " x",
+            );
+        }
+        let layout = build_measured_transcript_layout_for_width(&s4_app, &theme, 80);
+        std::hint::black_box(layout.total_height);
+    }
+    rows.push(transcript_perf_row(
+        "S4",
+        "many small provider deltas",
+        started.elapsed().as_millis(),
+        5_000,
+        serde_json::json!({
+            "deltas": 2_000,
+            "drain_batches": 125,
+            "section_rebuilds": transcript_layout_section_build_count_for_test(),
+        }),
+    ));
+
+    let s5_app = transcript_cache_fixture_app(500);
+    reset_transcript_layout_measurement_metrics_for_test();
+    let started = std::time::Instant::now();
+    for width in [159, 80, 159] {
+        let layout = build_measured_transcript_layout_for_width(&s5_app, &theme, width);
+        std::hint::black_box(layout.total_height);
+    }
+    rows.push(transcript_perf_row(
+        "S5",
+        "wide/narrow resize",
+        started.elapsed().as_millis(),
+        5_000,
+        serde_json::json!({
+            "widths": [159, 80, 159],
+            "section_rebuilds": transcript_layout_section_build_count_for_test(),
+        }),
+    ));
+
+    let s6_app = transcript_cache_fixture_app(500);
+    let started = std::time::Instant::now();
+    let snapshot = transcript_selection_debug_snapshot(&s6_app, Rect::new(0, 0, 140, 40))
+        .expect("long transcript selection snapshot");
+    std::hint::black_box(snapshot.rows.len());
+    rows.push(transcript_perf_row(
+        "S6",
+        "selection over long transcript",
+        started.elapsed().as_millis(),
+        5_000,
+        serde_json::json!({
+            "visible_rows": snapshot.rows.len(),
+        }),
+    ));
+
+    let mut s7_app = transcript_cache_fixture_app(500);
+    s7_app.transcript_view.follow_mode = false;
+    s7_app.transcript_view.transcript_scroll = 120;
+    reset_transcript_layout_measurement_metrics_for_test();
+    let _ = build_measured_transcript_layout_for_width(&s7_app, &theme, 159);
+    let before_s7 = transcript_layout_section_build_count_for_test();
+    let started = std::time::Instant::now();
+    ingest_transcript_delta(
+        &mut s7_app,
+        10_000,
+        "request-transcript-cache-499",
+        " scroll while streaming",
+    );
+    let s7_layout = build_measured_transcript_layout_for_width(&s7_app, &theme, 159);
+    std::hint::black_box(s7_layout.total_height);
+    rows.push(transcript_perf_row(
+        "S7",
+        "scroll while streaming",
+        started.elapsed().as_millis(),
+        5_000,
+        serde_json::json!({
+            "section_rebuilds": transcript_layout_section_build_count_for_test() - before_s7,
+            "follow_mode": s7_app.transcript_view.follow_mode,
+            "transcript_scroll": s7_app.transcript_view.transcript_scroll,
+        }),
+    ));
+
+    assert_eq!(rows.len(), 7);
+    write_transcript_perf_budget_artifact(&rows);
 }
 
 #[test]
@@ -258,6 +515,160 @@ fn pending_permission_sections_render_warning_turn_container() {
             && !line.contains("Apply hashline edit to demo.txt")));
 }
 
+fn transcript_cache_fixture_app(turns: usize) -> AppState {
+    let mut app = AppState::default();
+    app.activities = std::collections::VecDeque::from(
+        (0..turns)
+            .map(|idx| {
+                let request_id = format!("request-transcript-cache-{idx}");
+                let mut activity = transcript_section_model_test_activity(
+                    &request_id,
+                    ActivityStatus::Done,
+                    &format!(
+                        "assistant reply {idx} {}",
+                        "keeps wrapping measurement stable ".repeat(3)
+                    ),
+                );
+                activity.user_message = Some(UserMessageSubmittedEvent {
+                    request_id,
+                    text: format!("user prompt {idx}"),
+                });
+                activity.first_seq = u64::try_from(idx).expect("fixture index fits") * 2 + 1;
+                activity.last_seq = activity.first_seq + 1;
+                activity
+            })
+            .collect::<Vec<_>>(),
+    );
+    app.selected_activity_index = turns.saturating_sub(1);
+    app
+}
+
+fn uncached_transcript_layout_for_width(
+    app: &AppState,
+    theme: &Theme,
+    width: u16,
+) -> MeasuredTranscriptLayout {
+    let sections = build_transcript_sections(app);
+    measure_transcript_layout_without_cache(
+        &sections,
+        theme,
+        width,
+        theme.surface.shell,
+        build_transcript_render_surfaces,
+    )
+}
+
+fn layout_texts(layout: &MeasuredTranscriptLayout, theme: &Theme) -> Vec<String> {
+    transcript_test_line_texts(transcript_layout_lines(layout, theme, 0))
+}
+
+fn ingest_transcript_delta(app: &mut AppState, seq: u64, request_id: &str, delta: &str) {
+    app.ingest_event(EventEnvelopeV1 {
+        schema_version: SCHEMA_VERSION,
+        event_id: format!("evt_transcript_cache_{seq:04}"),
+        seq,
+        run_id: "run_transcript_cache".to_string(),
+        mono_ms: seq,
+        ts: None,
+        actor: EventActor::new(
+            ActorKind::Worker,
+            Some("agent_transcript_cache".to_string()),
+        ),
+        correlation_id: Some(request_id.to_string()),
+        causation_id: None,
+        stream_key: Some(request_id.to_string()),
+        payload: EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+            request_id: request_id.to_string(),
+            delta: delta.to_string(),
+        }),
+    });
+}
+
+fn transcript_perf_row(
+    scenario: &str,
+    name: &str,
+    elapsed_ms: u128,
+    budget_ms: u128,
+    details: serde_json::Value,
+) -> serde_json::Value {
+    assert!(
+        elapsed_ms <= budget_ms,
+        "{scenario} transcript perf budget exceeded: {elapsed_ms}ms > {budget_ms}ms"
+    );
+
+    serde_json::json!({
+        "scenario": scenario,
+        "name": name,
+        "elapsed_ms": u64::try_from(elapsed_ms).expect("elapsed milliseconds fit u64"),
+        "budget_ms": u64::try_from(budget_ms).expect("budget milliseconds fit u64"),
+        "details": details,
+    })
+}
+
+fn large_tool_output_perf_app() -> AppState {
+    let mut app = AppState::default();
+    let mut activity = transcript_section_model_test_activity(
+        "request-transcript-cache-large-tool",
+        ActivityStatus::Done,
+        "Summarized the generated tool artifacts.",
+    );
+    activity.user_message = Some(UserMessageSubmittedEvent {
+        request_id: "request-transcript-cache-large-tool".to_string(),
+        text: "produce a large tool output and keep artifacts visible".to_string(),
+    });
+
+    for idx in 0..5 {
+        let mut tool_call = transcript_section_model_test_tool_call(
+            &format!("tool-call-large-output-{idx}"),
+            "bash",
+        );
+        tool_call.status = ToolCallDisplayStatus::Succeeded;
+        tool_call.args_summary = format!(
+            r#"{{"command":"printf large-output-{idx}","description":"large output {idx}"}}"#
+        );
+        tool_call.output_summary = Some(format!(
+            "large output {idx}: {}",
+            "0123456789abcdef ".repeat(3_000)
+        ));
+        tool_call.output_digest = Some(format!("digest-large-output-{idx}"));
+        tool_call.artifact_refs = vec![crate::app::ToolArtifactEntry {
+            path: format!("artifacts/tool-large-output-{idx}.txt"),
+            digest: Some(format!("artifact-digest-large-output-{idx}")),
+        }];
+        tool_call.first_seq = u64::try_from(idx).expect("fixture index fits") + 10;
+        tool_call.last_seq = tool_call.first_seq + 1;
+        activity.tool_calls.push(tool_call);
+    }
+
+    app.activities = std::collections::VecDeque::from(vec![activity]);
+    app.selected_activity_index = 0;
+    app
+}
+
+fn write_transcript_perf_budget_artifact(rows: &[serde_json::Value]) {
+    let Ok(artifact_dir) = std::env::var("HARNESS_PERF_ARTIFACT_DIR") else {
+        return;
+    };
+    let artifact_root = std::path::PathBuf::from(artifact_dir);
+    std::fs::create_dir_all(&artifact_root).expect("create transcript perf artifact directory");
+    let timestamp_unix_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system time is after unix epoch")
+        .as_millis();
+    let artifact = serde_json::json!({
+        "schema_version": "harness-tui-transcript-long-session-perf-v1",
+        "timestamp_unix_ms": u64::try_from(timestamp_unix_ms).expect("timestamp milliseconds fit u64"),
+        "rows": rows,
+        "provenance": {
+            "command_hint": "scripts/test-lanes.sh perf",
+            "artifact_root_env": artifact_root,
+        },
+    });
+    let artifact_path = artifact_root.join("transcript-long-session-budget-table.json");
+    let encoded = serde_json::to_string_pretty(&artifact).expect("encode transcript perf artifact");
+    std::fs::write(artifact_path, encoded).expect("write transcript perf artifact");
+}
+
 #[test]
 fn streaming_reasoning_keeps_active_thinking_label() {
     let mut app = AppState::default();
@@ -289,6 +700,7 @@ fn user_message_surface_restores_assistant_footer_when_timestamps_are_visible() 
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "request-user-padding".to_string(),
+        revision: 1,
         profile_label: "default".to_string(),
         model_id: "gpt-5.4-mini".to_string(),
         provider_id: "openai".to_string(),
@@ -652,6 +1064,50 @@ fn assistant_tool_surface_spacing_matches_shell_rhythm() {
 }
 
 #[test]
+fn assistant_body_to_footer_gap_is_one_row() {
+    assert_eq!(
+        transcript_surface_leading_gap(
+            Some(TranscriptRenderSurfaceKind::AssistantBody),
+            TranscriptRenderSurfaceKind::AssistantFooter,
+        ),
+        1,
+        "assistant body text should be separated from the footer by exactly one blank terminal row"
+    );
+    assert_eq!(
+        transcript_surface_leading_gap(
+            Some(TranscriptRenderSurfaceKind::AssistantReasoning),
+            TranscriptRenderSurfaceKind::AssistantFooter,
+        ),
+        1,
+        "assistant reasoning block should be separated from the footer by exactly one blank terminal row"
+    );
+    assert_eq!(
+        transcript_surface_leading_gap(
+            Some(TranscriptRenderSurfaceKind::AssistantTool),
+            TranscriptRenderSurfaceKind::AssistantFooter,
+        ),
+        1,
+        "assistant tool surface should be separated from the footer by exactly one blank terminal row"
+    );
+    assert_eq!(
+        transcript_surface_leading_gap(
+            Some(TranscriptRenderSurfaceKind::AssistantError),
+            TranscriptRenderSurfaceKind::AssistantFooter,
+        ),
+        1,
+        "assistant error surface should be separated from the footer by exactly one blank terminal row"
+    );
+    assert_eq!(
+        transcript_surface_leading_gap(
+            Some(TranscriptRenderSurfaceKind::AssistantCommandTool),
+            TranscriptRenderSurfaceKind::AssistantFooter,
+        ),
+        1,
+        "assistant command tool surface should be separated from the footer by exactly one blank terminal row"
+    );
+}
+
+#[test]
 fn reasoning_to_answer_transition_uses_single_blank_row() {
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
@@ -690,6 +1146,7 @@ fn streaming_reasoning_spinner_uses_deterministic_braille_frames() {
     let mut app = AppState::default();
     let mut activity = ActivityEntry {
         request_id: "request-streaming-spinner".to_string(),
+        revision: 1,
         profile_label: "default".to_string(),
         model_id: "gpt-5.4-mini".to_string(),
         provider_id: "openai".to_string(),
