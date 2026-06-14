@@ -51,6 +51,28 @@ fn public_runtime_config_accepts_new_compaction_settings() {
     assert!(parsed.runtime.compaction.estimated_token_triggers);
     assert_eq!(parsed.runtime.compaction.fallback_input_tokens, 32_768);
 }
+
+#[test]
+fn public_runtime_config_accepts_provider_retry_settings() {
+    let parsed: PublicRuntimeConfig = json5::from_str(
+        r#"
+        {
+          runtime: {
+            provider_retry: {
+              max_retries: 3,
+              base_delay_ms: 125,
+              max_delay_ms: 4000,
+            }
+          }
+        }
+        "#,
+    )
+    .expect("parse runtime provider retry config");
+
+    assert_eq!(parsed.runtime.provider_retry.max_retries, 3);
+    assert_eq!(parsed.runtime.provider_retry.base_delay_ms, 125);
+    assert_eq!(parsed.runtime.provider_retry.max_delay_ms, 4_000);
+}
 #[test]
 fn root_runtime_example_uses_canonical_public_keys() {
     let root_example =

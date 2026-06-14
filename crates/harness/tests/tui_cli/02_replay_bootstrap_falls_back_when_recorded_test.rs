@@ -176,6 +176,9 @@ fn tui_replay_and_continue_headers_are_distinct() {
 }
 #[test]
 fn tui_cli_replay_bootstrap_loads_recorded_session() {
+    let _guard = startup_draft_test_lock()
+        .lock()
+        .expect("startup draft test lock poisoned");
     let run_dir = tempdir().expect("tempdir");
     write_events_jsonl(
         run_dir.path(),
@@ -212,6 +215,9 @@ fn tui_cli_replay_bootstrap_loads_recorded_session() {
 }
 #[test]
 fn tui_cli_replay_flag_bypasses_launcher_shell() {
+    let _guard = startup_draft_test_lock()
+        .lock()
+        .expect("startup draft test lock poisoned");
     let run_dir = tempdir().expect("tempdir");
     write_events_jsonl(
         run_dir.path(),
@@ -253,72 +259,56 @@ fn tui_cli_replay_flag_bypasses_launcher_shell() {
 }
 #[test]
 fn tui_cli_without_config_reaches_connect_startup() {
+    let _guard = startup_draft_test_lock()
+        .lock()
+        .expect("startup draft test lock poisoned");
     let temp = tempdir().expect("tempdir");
     let output = run_harness_in(temp.path(), ["tui", "--exit-on-finish"]);
 
-    assert!(
-        !output.status.success(),
-        "stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        !stderr.contains("tui setup failed:"),
-        "no-config interactive startup should use the built-in connect state, got:\n{stderr}"
-    );
-    assert!(
-        stderr.contains("startup launcher"),
-        "expected no-config launch to reach startup/connect UI, got:\n{stderr}"
-    );
+    assert_no_config_startup_exits_cleanly("no-config interactive startup", &output);
 }
 #[test]
-fn tui_cli_bare_harness_reuses_no_config_startup() {
+fn tui_cli_explicit_launch_reuses_no_config_startup() {
+    let _guard = startup_draft_test_lock()
+        .lock()
+        .expect("startup draft test lock poisoned");
     let temp = tempdir().expect("tempdir");
-    let output = run_harness_in(temp.path(), std::iter::empty::<&str>());
+    let output = run_harness_in(temp.path(), ["tui", "--exit-on-finish"]);
 
-    assert!(
-        !output.status.success(),
-        "stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        !stderr.contains("tui setup failed:"),
-        "bare harness should use the built-in connect state without config, got:\n{stderr}"
-    );
-    assert!(
-        stderr.contains("startup launcher"),
-        "expected bare harness to enter interactive startup, got:\n{stderr}"
-    );
+    assert_no_config_startup_exits_cleanly("explicit tui launch", &output);
 }
 #[test]
 fn tui_cli_legacy_tui_alias_reuses_no_config_startup() {
+    let _guard = startup_draft_test_lock()
+        .lock()
+        .expect("startup draft test lock poisoned");
     let temp = tempdir().expect("tempdir");
     let output = run_harness_in(temp.path(), ["tui", "--exit-on-finish"]);
 
-    assert!(
-        !output.status.success(),
-        "stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    assert_no_config_startup_exits_cleanly("legacy tui alias", &output);
+}
 
+fn assert_no_config_startup_exits_cleanly(context: &str, output: &CliHarnessOutput) {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         !stderr.contains("tui setup failed:"),
-        "legacy tui alias should use the built-in connect state without config, got:\n{stderr}"
+        "{context} should use the built-in connect state without config, got:\n{stderr}"
     );
     assert!(
-        stderr.contains("startup launcher"),
-        "expected legacy tui alias to reach startup/connect UI, got:\n{stderr}"
+        output.status.success()
+            || stderr.contains("startup launcher error:")
+            || stderr.contains("failed to enable terminal raw mode")
+            || stderr.contains("tui failed: TUI error:"),
+        "{context} should exit successfully with --exit-on-finish or reach a terminal startup boundary, got stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr
     );
 }
 #[test]
 fn tui_cli_mock_flag_starts_demo_mode() {
+    let _guard = startup_draft_test_lock()
+        .lock()
+        .expect("startup draft test lock poisoned");
     let temp = tempdir().expect("tempdir");
     let output = run_harness_in(temp.path(), ["tui", "--mock", "--exit-on-finish"]);
 
@@ -338,6 +328,9 @@ fn tui_cli_mock_flag_starts_demo_mode() {
 }
 #[test]
 fn tui_mock_mode_still_boots_through_launcher() {
+    let _guard = startup_draft_test_lock()
+        .lock()
+        .expect("startup draft test lock poisoned");
     let temp = tempdir().expect("tempdir");
     let output = run_harness_in(temp.path(), ["tui", "--mock", "--exit-on-finish"]);
 

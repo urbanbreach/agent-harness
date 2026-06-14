@@ -311,6 +311,9 @@ fn prompt_cli_config(base_url: &str, session_dir: &std::path::Path, tools: &[&st
                 "stale_timeout_ms": 30000,
                 "message_staleness_timeout_ms": 10000
             },
+            "provider_retry": {
+                "max_retries": 0
+            },
             "session_dir": session_dir,
             "deterministic": {
                 "enabled": false,
