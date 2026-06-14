@@ -13,8 +13,8 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
         "Grouped response",
     )]);
     app.selected_activity_index = 0;
-    app.follow_mode = false;
-    app.transcript_scroll = usize::MAX;
+    app.transcript_view.follow_mode = false;
+    app.transcript_view.transcript_scroll = usize::MAX;
 
     let rendered = render_live_lines(&app, 80, 24);
     let buffer = render_live_cells(&app, 80, 24);
@@ -75,8 +75,8 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
     plan_activity.profile_label = "plan".to_string();
     plan_app.activities = std::collections::VecDeque::from(vec![plan_activity]);
     plan_app.selected_activity_index = 0;
-    plan_app.follow_mode = false;
-    plan_app.transcript_scroll = usize::MAX;
+    plan_app.transcript_view.follow_mode = false;
+    plan_app.transcript_view.transcript_scroll = usize::MAX;
 
     let plan_rendered = render_live_lines(&plan_app, 80, 24);
     let plan_lines = plan_rendered.lines().collect::<Vec<_>>();
@@ -124,7 +124,7 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
             .collect::<Vec<_>>(),
     );
     follow_app.selected_activity_index = 7;
-    follow_app.follow_mode = true;
+    follow_app.transcript_view.follow_mode = true;
 
     let followed = render_live_lines(&follow_app, 60, 18);
     assert!(
@@ -136,8 +136,8 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
         "follow mode should scroll past the earliest grouped turn\n{followed}"
     );
 
-    follow_app.follow_mode = false;
-    follow_app.transcript_scroll = usize::MAX;
+    follow_app.transcript_view.follow_mode = false;
+    follow_app.transcript_view.transcript_scroll = usize::MAX;
 
     let scrolled_back = render_live_lines(&follow_app, 60, 18);
     assert!(
@@ -189,7 +189,7 @@ pub(super) fn transcript_turn_sections_keep_nested_tool_details() {
     });
     app.activities = std::collections::VecDeque::from(vec![activity]);
     app.selected_activity_index = 0;
-    app.transcript_scroll = usize::MAX;
+    app.transcript_view.transcript_scroll = usize::MAX;
 
     let rendered = render_live_lines(&app, 100, 24);
     let buffer = render_live_cells(&app, 100, 24);

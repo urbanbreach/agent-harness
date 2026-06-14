@@ -37,6 +37,54 @@ pub(super) fn overlay_stack_orders_permission_above_commands_and_slash() {
     AppState::exact_test_overlay_stack_orders_permission_above_commands_and_slash();
 }
 
+pub(super) fn overlay_stack_is_single_source_of_visibility() {
+    let mut app = AppState::new_live(None, false, None);
+    app.live_details_drawer_open = true;
+    app.overlay_state.slash_visible = true;
+    app.overlay_state.palette_visible = true;
+    app.overlay_state.status_dialog_visible = true;
+
+    app.replay_mode = true;
+    assert_eq!(
+        app.overlay_stack().ordered(),
+        &[
+            OverlayKind::SlashCommands,
+            OverlayKind::CommandPalette,
+            OverlayKind::StatusDialog,
+        ]
+    );
+
+    app.replay_mode = false;
+    assert_eq!(
+        app.overlay_stack().ordered(),
+        &[
+            OverlayKind::DetailsDrawer,
+            OverlayKind::SlashCommands,
+            OverlayKind::CommandPalette,
+            OverlayKind::StatusDialog,
+        ]
+    );
+
+    app.ingest_event(envelope(
+        1,
+        "req_overlay_stack_single_source",
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_overlay_stack_single_source".to_string(),
+            kind: "edit_fs".to_string(),
+            tool_call_id: Some("tc_overlay_stack_single_source".to_string()),
+            summary: "permission summary".to_string(),
+            request_digest: "digest-overlay-stack-single-source".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    ));
+
+    assert_eq!(
+        app.overlay_stack().ordered(),
+        &[OverlayKind::DetailsDrawer, OverlayKind::PermissionModal]
+    );
+}
+
 pub(super) fn permission_modal_preempts_palette() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let intent_sink = {
@@ -72,7 +120,7 @@ pub(super) fn permission_modal_preempts_palette() {
         KeyModifiers::CONTROL,
     ));
 
-    assert!(!app.palette_visible);
+    assert!(!app.overlay_state.palette_visible);
     assert!(app.palette_input.is_empty());
     assert_eq!(
         app.overlay_stack().top(),
@@ -100,8 +148,8 @@ pub(super) fn permission_modal_ignores_unmapped_chars_without_buffering() {
     };
 
     let mut app = AppState::new_live(None, false, Some(intent_sink));
-    app.prompt_buffer = "keep this draft".to_string();
-    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.composer.prompt_buffer = "keep this draft".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
     app.ingest_event(envelope(
         1,
         "req_modal_quit",
@@ -119,7 +167,7 @@ pub(super) fn permission_modal_ignores_unmapped_chars_without_buffering() {
     app.handle_key(key(KeyCode::Char('q')));
 
     assert!(!app.should_quit);
-    assert_eq!(app.prompt_buffer, "keep this draft");
+    assert_eq!(app.composer.prompt_buffer, "keep this draft");
     let intents = intents.lock().expect("lock intents");
     assert!(intents.is_empty());
     assert!(app.active_permission().is_some());
@@ -178,8 +226,8 @@ pub(super) fn permission_modal_ctrl_n_emits_deny_intent_without_hiding_pending_p
     };
 
     let mut app = AppState::new_live(None, false, Some(intent_sink));
-    app.prompt_buffer = "keep this draft".to_string();
-    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.composer.prompt_buffer = "keep this draft".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
     app.ingest_event(envelope(
         1,
         "req_modal_ctrl_n",
@@ -201,7 +249,7 @@ pub(super) fn permission_modal_ctrl_n_emits_deny_intent_without_hiding_pending_p
     ));
 
     // assert
-    assert_eq!(app.prompt_buffer, "keep this draft");
+    assert_eq!(app.composer.prompt_buffer, "keep this draft");
     assert_eq!(
         intents.lock().expect("lock intents").as_slice(),
         &[UiIntent::ResolvePermission {
@@ -301,9 +349,17 @@ pub(super) fn question_permission_modal_multi_question_uses_tabs_before_submit()
     ));
 
     app.handle_key(key(KeyCode::Enter));
-    assert_eq!(app.question_prompt_tab("perm_question_tabs"), 1);
+    assert_eq!(
+        app.question_prompt
+            .question_prompt_tab("perm_question_tabs"),
+        1
+    );
     app.handle_key(key(KeyCode::Enter));
-    assert_eq!(app.question_prompt_tab("perm_question_tabs"), 2);
+    assert_eq!(
+        app.question_prompt
+            .question_prompt_tab("perm_question_tabs"),
+        2
+    );
     app.handle_key(key(KeyCode::Enter));
 
     assert_eq!(
@@ -347,17 +403,22 @@ pub(super) fn question_modal_ignores_digits_past_visible_choices() {
 
     app.handle_key(key(KeyCode::Down));
     assert_eq!(
-        app.question_prompt_selection("perm_question_digit_bounds"),
+        app.question_prompt
+            .question_prompt_selection("perm_question_digit_bounds"),
         1
     );
 
     app.handle_key(key(KeyCode::Char('9')));
 
     assert_eq!(
-        app.question_prompt_selection("perm_question_digit_bounds"),
+        app.question_prompt
+            .question_prompt_selection("perm_question_digit_bounds"),
         1
     );
-    assert!(app.question_prompt_answers("perm_question_digit_bounds")[0].is_empty());
+    assert!(app
+        .question_prompt
+        .question_prompt_answers("perm_question_digit_bounds")[0]
+        .is_empty());
 }
 
 pub(super) fn question_modal_multi_custom_selection_toggles_saved_custom_answer() {
@@ -386,21 +447,31 @@ pub(super) fn question_modal_multi_custom_selection_toggles_saved_custom_answer(
 
     app.handle_key(key(KeyCode::Down));
     app.handle_key(key(KeyCode::Enter));
-    assert!(app.question_prompt_editing("perm_question_multi_custom"));
+    assert!(app
+        .question_prompt
+        .question_prompt_editing("perm_question_multi_custom"));
 
     app.handle_key(key(KeyCode::Char('x')));
     app.handle_key(key(KeyCode::Enter));
 
-    assert!(!app.question_prompt_editing("perm_question_multi_custom"));
+    assert!(!app
+        .question_prompt
+        .question_prompt_editing("perm_question_multi_custom"));
     assert_eq!(
-        app.question_prompt_answers("perm_question_multi_custom"),
+        app.question_prompt
+            .question_prompt_answers("perm_question_multi_custom"),
         vec![vec!["x".to_string()]]
     );
 
     app.handle_key(key(KeyCode::Enter));
 
-    assert!(!app.question_prompt_editing("perm_question_multi_custom"));
-    assert!(app.question_prompt_answers("perm_question_multi_custom")[0].is_empty());
+    assert!(!app
+        .question_prompt
+        .question_prompt_editing("perm_question_multi_custom"));
+    assert!(app
+        .question_prompt
+        .question_prompt_answers("perm_question_multi_custom")[0]
+        .is_empty());
 }
 
 pub(super) fn question_modal_submit_allows_unanswered_questions_on_confirm() {
@@ -483,13 +554,15 @@ pub(super) fn permission_modal_allow_always_requests_durable_run_grant() {
 
     app.handle_key(key(KeyCode::Right));
     assert_eq!(
-        app.permission_modal_selection("perm_modal_allow_always_1"),
+        app.permission_prompt
+            .permission_modal_selection("perm_modal_allow_always_1"),
         PermissionModalSelection::AllowAlways
     );
 
     app.handle_key(key(KeyCode::Enter));
     assert_eq!(
-        app.permission_modal_stage("perm_modal_allow_always_1"),
+        app.permission_prompt
+            .permission_modal_stage("perm_modal_allow_always_1"),
         PermissionModalStage::AlwaysConfirm
     );
 

@@ -17,7 +17,7 @@ pub(super) fn toggles_slash_command_opens_command_styled_menu() {
     }
     app.handle_key(key(KeyCode::Enter));
 
-    assert!(app.toggles_menu_visible);
+    assert!(app.overlay_state.toggles_menu_visible);
     assert_eq!(app.overlay_stack().top(), Some(OverlayKind::TogglesMenu));
     let rendered = render_debug(&app, 100, 40);
     assert!(rendered.contains("Built-in dynamic prompts"));

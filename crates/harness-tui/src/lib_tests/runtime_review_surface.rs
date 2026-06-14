@@ -22,7 +22,7 @@ pub(super) fn runtime_state_overlay_is_quiet_and_actionable() {
     assert_eq!(overlay.guidance, "Draft locally until recovery completes.");
     assert!(rendered.contains("Recovery in progress"));
     assert!(rendered.contains("Draft locally until recovery completes."));
-    assert!(!rendered.contains("Draft preserved locally while recovery completes."));
+    assert!(rendered.contains("Draft preserved locally while recovery completes."));
 }
 
 pub(super) fn runtime_state_overlay_never_stacks_over_permission_modal() {

@@ -53,7 +53,7 @@ pub(super) fn permission_modal_preempts_palette_and_slash() {
         crossterm::event::KeyModifiers::CONTROL,
     ));
     palette_app.handle_key(key(crossterm::event::KeyCode::Char('d')));
-    assert!(palette_app.palette_visible);
+    assert!(palette_app.overlay_state.palette_visible);
 
     palette_app.ingest_event(permission_requested_event(
         1,
@@ -68,7 +68,7 @@ pub(super) fn permission_modal_preempts_palette_and_slash() {
     let palette_render = render_live_lines(&palette_app, 100, 24);
     assert!(palette_render.contains("Permission required"));
     assert!(!palette_render.contains("Commands"));
-    assert!(!palette_app.palette_visible);
+    assert!(!palette_app.overlay_state.palette_visible);
     assert_eq!(
         palette_app.overlay_stack().ordered(),
         &[overlay::OverlayKind::PermissionModal]
@@ -76,7 +76,7 @@ pub(super) fn permission_modal_preempts_palette_and_slash() {
 
     let mut slash_app = app::AppState::new_live(None, false, None);
     slash_app.handle_key(key(crossterm::event::KeyCode::Char('/')));
-    assert!(slash_app.slash_visible);
+    assert!(slash_app.overlay_state.slash_visible);
 
     slash_app.ingest_event(permission_requested_event(
         1,
@@ -88,8 +88,8 @@ pub(super) fn permission_modal_preempts_palette_and_slash() {
     let slash_render = render_live_lines(&slash_app, 100, 24);
     assert!(slash_render.contains("Permission required"));
     assert!(!slash_render.contains("Slash commands"));
-    assert_eq!(slash_app.prompt_buffer, "/");
-    assert!(!slash_app.slash_visible);
+    assert_eq!(slash_app.composer.prompt_buffer, "/");
+    assert!(!slash_app.overlay_state.slash_visible);
     assert_eq!(
         slash_app.overlay_stack().ordered(),
         &[overlay::OverlayKind::PermissionModal]
@@ -143,7 +143,14 @@ pub(super) fn live_shell_uses_single_chrome_path() {
     degraded.set_status_banner(Some(
         "live stream lagged by 2; replaying from seq 1".to_string(),
     ));
-    assert_live_shell_document_composer_contract(&degraded, 100, 24, None, None, "Degraded");
+    assert_live_shell_document_composer_contract(
+        &degraded,
+        100,
+        24,
+        Some("Draft preserved locally while recovery completes."),
+        None,
+        "Degraded",
+    );
 }
 
 pub(super) fn live_shell_status_strip_has_single_priority_order() {
@@ -225,8 +232,8 @@ pub(super) fn slash_overlay_uses_reference_navigation_keys() {
     assert_eq!(app.slash_selected, 0);
 
     app.handle_key(key(crossterm::event::KeyCode::Esc));
-    assert_eq!(app.prompt_buffer, "");
-    assert!(!app.slash_visible);
+    assert_eq!(app.composer.prompt_buffer, "");
+    assert!(!app.overlay_state.slash_visible);
 }
 
 pub(super) fn slash_overlay_uses_input_width_aligned_rows_and_accent_selection() {
@@ -277,7 +284,7 @@ pub(super) fn new_session_preserves_unsent_draft_across_home_navigation() {
     app::set_pending_live_prompt_draft(Some("draft from home".to_string()));
 
     let mut startup = app::AppState::new_startup(Vec::new(), None);
-    assert_eq!(startup.prompt_buffer, "draft from home");
+    assert_eq!(startup.composer.prompt_buffer, "draft from home");
 
     startup.handle_key(exact_test_key_with_modifiers(
         crossterm::event::KeyCode::Char('p'),
@@ -290,8 +297,11 @@ pub(super) fn new_session_preserves_unsent_draft_across_home_navigation() {
     assert!(startup.should_quit);
 
     let live = app::AppState::new_live(None, false, None);
-    assert_eq!(live.prompt_buffer, "draft from home");
-    assert_eq!(live.prompt_cursor, "draft from home".chars().count());
+    assert_eq!(live.composer.prompt_buffer, "draft from home");
+    assert_eq!(
+        live.composer.prompt_cursor,
+        "draft from home".chars().count()
+    );
 }
 
 pub(super) fn command_driven_session_switch_emits_correct_ui_intent() {
@@ -431,7 +441,7 @@ pub(super) fn live_shell_redesign_preserves_replay_overlay_and_permission_parity
 
     let mut replay =
         app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), session_view_events());
-    replay.transcript_scroll = usize::MAX;
+    replay.transcript_view.transcript_scroll = usize::MAX;
     let replay_plan = FrameLayoutPlan::for_app(&replay, ratatui::layout::Rect::new(0, 0, 100, 30));
     let replay_render = render_live_lines(&replay, 100, 30);
     let replay_buffer = render_live_cells(&replay, 100, 30);
@@ -544,7 +554,7 @@ pub(super) fn permission_modal_remains_visually_dominant_and_fail_closed() {
         app.overlay_stack().ordered(),
         &[overlay::OverlayKind::PermissionModal]
     );
-    assert!(!app.palette_visible);
+    assert!(!app.overlay_state.palette_visible);
     assert!(rendered.contains("Permission required"));
     assert!(rendered.contains("Allow once"));
     assert!(rendered.contains("Allow always"));

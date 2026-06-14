@@ -38,7 +38,7 @@ fn model_switcher_ui_opens_from_slash_command() {
     }
     app.handle_key(key(KeyCode::Enter));
 
-    assert!(app.model_switcher_visible);
+    assert!(app.overlay_state.model_switcher_visible);
     assert_eq!(app.model_options.len(), 1);
     assert_eq!(app.model_options[0].variant(), None);
     assert!(intents.lock().expect("lock intents").is_empty());
@@ -70,7 +70,7 @@ fn model_switcher_populates_options_from_launch_metadata() {
     }
     app.handle_key(key(KeyCode::Enter));
 
-    assert!(app.model_switcher_visible);
+    assert!(app.overlay_state.model_switcher_visible);
     assert_eq!(app.model_options.len(), 1);
     assert_eq!(app.model_filtered.len(), 1);
     assert_eq!(app.model_options[0].display_label(), Some("GPT-5.4 Mini"));
@@ -92,7 +92,7 @@ fn model_switcher_shows_base_models_without_variant_rows() {
     }
     app.handle_key(key(KeyCode::Enter));
 
-    assert!(app.model_switcher_visible);
+    assert!(app.overlay_state.model_switcher_visible);
     assert_eq!(app.model_options.len(), 1);
     assert_eq!(app.model_options[0].display_label(), Some("GPT-5.4 Mini"));
     assert_eq!(app.model_options[0].variant(), None);
@@ -230,7 +230,7 @@ fn model_switcher_enter_emits_switch_intent_for_selected_model() {
     app.handle_key(key(KeyCode::Enter));
     app.handle_key(key(KeyCode::Enter));
 
-    assert!(!app.model_switcher_visible);
+    assert!(!app.overlay_state.model_switcher_visible);
     assert_eq!(app.active_profile(), "build");
     assert_eq!(app.launch_mode_label(), Some("Continued"));
     let intents = intents.lock().expect("lock intents");
@@ -300,7 +300,7 @@ fn model_switcher_opens_no_provider_connect_state() {
     }
     app.handle_key(key(KeyCode::Enter));
 
-    assert!(app.model_switcher_visible);
+    assert!(app.overlay_state.model_switcher_visible);
     assert!(app.model_options.is_empty());
 
     let backend = TestBackend::new(100, 30);
@@ -415,7 +415,7 @@ fn auth_catalog_refresh_opens_model_picker_with_connected_models() {
         LaunchMetadata::from_model_option(&models[0]).with_available_models(models),
     );
 
-    assert!(app.model_switcher_visible);
+    assert!(app.overlay_state.model_switcher_visible);
     assert_eq!(
         app.status_banner.as_deref(),
         Some("Provider connected; choose a model")

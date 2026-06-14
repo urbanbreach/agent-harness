@@ -199,6 +199,7 @@ pub(super) fn module_transcript_edit_tool_wide_diff_uses_syntax_highlighting_and
     let mut app = AppState::new_live(Some(run_dir.path().to_path_buf()), false, None);
     let mut entry = ActivityEntry {
         request_id: "request-edit-inline-wide".to_string(),
+        revision: 1,
         profile_label: "build".to_string(),
         model_id: "model-1".to_string(),
         provider_id: "default".to_string(),

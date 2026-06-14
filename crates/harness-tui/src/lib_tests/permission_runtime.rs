@@ -74,7 +74,7 @@ pub(super) fn permission_modal_preempts_palette() {
         crossterm::event::KeyModifiers::CONTROL,
     ));
 
-    assert!(!app.palette_visible);
+    assert!(!app.overlay_state.palette_visible);
     assert!(app.palette_input.is_empty());
     assert_eq!(
         app.overlay_stack().top(),
@@ -96,25 +96,28 @@ pub(super) fn permission_modal_preempts_palette() {
 pub(super) fn focus_returns_after_palette_close() {
     let mut app = app::AppState::new_live(None, false, None);
     app.focus = app::Focus::Details;
-    app.prompt_buffer = "keep prompt draft".to_string();
-    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.composer.prompt_buffer = "keep prompt draft".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
 
     app.handle_key(key_with_modifiers(
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
     app.handle_key(key(crossterm::event::KeyCode::Char('d')));
-    assert!(app.palette_visible);
+    assert!(app.overlay_state.palette_visible);
     assert_eq!(app.focus, app::Focus::Details);
-    assert_eq!(app.prompt_buffer, "keep prompt draft");
+    assert_eq!(app.composer.prompt_buffer, "keep prompt draft");
     let open_debug = render_live_screen(&app, 120, 36);
     println!("PALETTE_OPEN\n{open_debug}");
 
     app.handle_key(key(crossterm::event::KeyCode::Esc));
-    assert!(!app.palette_visible);
+    assert!(!app.overlay_state.palette_visible);
     assert_eq!(app.focus, app::Focus::Details);
-    assert_eq!(app.prompt_buffer, "keep prompt draft");
-    assert_eq!(app.prompt_cursor, "keep prompt draft".chars().count());
+    assert_eq!(app.composer.prompt_buffer, "keep prompt draft");
+    assert_eq!(
+        app.composer.prompt_cursor,
+        "keep prompt draft".chars().count()
+    );
     let closed_debug = render_live_screen(&app, 100, 24);
     println!("PALETTE_CLOSED\n{closed_debug}");
 }
@@ -261,7 +264,7 @@ pub(super) fn live_status_strip_distinguishes_terminal_states() {
     assert!(degraded_debug.contains("Degraded"));
     assert!(degraded_debug.contains("replaying from seq 1"));
     assert!(!degraded_debug.contains("Composer ·"));
-    assert!(!degraded_debug.contains("Draft preserved locally"));
+    assert!(degraded_debug.contains("Draft preserved locally while recovery completes."));
     assert!(degraded_debug.contains("Draft locally until recovery completes."));
     assert!(degraded_debug.contains("Recovery in progress"));
 
@@ -270,6 +273,6 @@ pub(super) fn live_status_strip_distinguishes_terminal_states() {
     let disconnected_debug = render_live_buffer(&disconnected, 80, 24);
     assert!(disconnected_debug.contains("Disconnected"));
     assert!(!disconnected_debug.contains("Composer ·"));
-    assert!(!disconnected_debug.contains("Draft preserved locally"));
+    assert!(disconnected_debug.contains("Draft preserved locally — reopen the TUI to reconnect."));
     assert!(disconnected_debug.contains("Reopen the TUI, then continue from the transcript."));
 }

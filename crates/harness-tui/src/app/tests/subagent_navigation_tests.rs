@@ -323,7 +323,7 @@ pub(super) fn completed_general_task_row_is_passive() {
         None,
         None,
     );
-    assert_eq!(app.hovered_transcript_target(), None);
+    assert_eq!(app.transcript_view.hovered_transcript_target(), None);
 
     app.handle_mouse(
         MouseEvent {

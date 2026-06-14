@@ -151,22 +151,22 @@ pub(super) fn footer_shortcuts_collapse_without_overlap() {
 pub(super) fn slash_commands_only_track_leading_slash_input() {
     let mut plain = app::AppState::new_live(None, false, None);
     plain.handle_key(key(crossterm::event::KeyCode::Char('h')));
-    assert!(!plain.slash_visible);
+    assert!(!plain.overlay_state.slash_visible);
 
     let mut app = app::AppState::new_live(None, false, None);
     app.handle_key(key(crossterm::event::KeyCode::Char('/')));
-    assert!(app.slash_visible);
+    assert!(app.overlay_state.slash_visible);
     assert_eq!(
         app.overlay_stack().top(),
         Some(overlay::OverlayKind::SlashCommands)
     );
 
     app.handle_key(key(crossterm::event::KeyCode::Char('h')));
-    assert!(app.slash_visible);
+    assert!(app.overlay_state.slash_visible);
 
     let mut non_leading = app::AppState::new_live(None, false, None);
     for ch in "hi/there".chars() {
         non_leading.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
-    assert!(!non_leading.slash_visible);
+    assert!(!non_leading.overlay_state.slash_visible);
 }

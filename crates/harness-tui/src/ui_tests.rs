@@ -35,8 +35,8 @@ fn copied_to_clipboard_toast_renders_in_live_shell() {
 #[test]
 fn manual_compaction_toast_remains_visible_in_dense_live_shell() {
     let mut app = AppState::new_live(None, false, None);
-    app.prompt_buffer = "draft".to_string();
-    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.composer.prompt_buffer = "draft".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
     app.set_toast_for_test(
         "manual compaction skipped: need at least two completed turns",
         crate::app::ToastVariant::Info,

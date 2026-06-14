@@ -1,5 +1,6 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
+assertion_line: 77
 expression: rendered.as_str()
 ---
                                                                                                                                                                                     
@@ -24,6 +25,7 @@ expression: rendered.as_str()
       stderr: snapshot mismatch                                                                                                                                                     
                                                                                                                                                                                     
      Tool summaries are now easier to scan, and edits stay inline.                                                                                                                  
+                                                                                                                                                                                    
      ▣ · 17ms  Default · model-1 mock                                                                                                                                               
                                                                                                                                                                                     
                                                                                                                                                                                     
@@ -31,10 +33,9 @@ expression: rendered.as_str()
                                                                                                                                                                                     
                                                                                                                                                                                     
                                                                                                                                                                                     
-                                                                                                                                                                                    
 ┃                                                                                                                                                                                   
-┃                                                                                                                                                                                   
+┃  Type a prompt for the next turn…                                                                                                                                                 
 ┃                                                                                                                                                                                   
 ┃  model-1 mock                                                                                                                                                                     
-╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀                                            
+╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    • Harness 0.1.0                         
                                                                                                                  live 0  Ctrl+p commands

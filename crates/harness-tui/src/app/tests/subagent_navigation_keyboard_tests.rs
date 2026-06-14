@@ -60,7 +60,7 @@ pub(crate) fn transcript_task_inline_row_is_not_subagent_navigation() {
         None,
         None,
     );
-    assert_eq!(app.hovered_transcript_target(), None);
+    assert_eq!(app.transcript_view.hovered_transcript_target(), None);
     assert_ne!(
         rendered_cell_bg(&app, column, row),
         Theme::default().surface.panel_elevated,
@@ -259,7 +259,7 @@ pub(crate) fn disk_backed_child_navigation_stays_in_live_tui_stack() {
     assert!(!app.replay_mode);
     assert!(!app.should_quit);
     app.handle_key(key(KeyCode::Char('x')));
-    assert_eq!(app.prompt_buffer, "x");
+    assert_eq!(app.composer.prompt_buffer, "x");
     let intents = intents.lock().expect("lock intents");
     assert!(intents.is_empty());
 }

@@ -363,7 +363,13 @@ pub(super) fn switching_agent_after_submit_keeps_existing_turn_profile() {
     );
     let rendered = render_debug(&app, 100, 32);
     assert!(
-        !rendered.contains("Build · active") && !rendered.contains("Plan · active"),
-        "submitted turns should not render assistant metadata footers after switching\n{rendered}"
+        rendered.contains("Build · active")
+            && rendered.contains("Build gpt-5.4-mini default · sending"),
+        "submitted turn should keep the original profile after switching\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("Plan · active")
+            && !rendered.contains("Plan gpt-5.4-mini default · sending"),
+        "switching the active profile must not retag the submitted turn\n{rendered}"
     );
 }

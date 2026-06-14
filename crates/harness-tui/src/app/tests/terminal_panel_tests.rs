@@ -209,7 +209,7 @@ pub(super) fn terminal_panel_focus_scrolls_independently_from_transcript() {
     app.handle_key(key(KeyCode::PageUp));
     assert_eq!(app.terminal_panel_scroll(), 10);
     assert!(!app.terminal_panel_follow());
-    assert_eq!(app.transcript_scroll, 0);
+    assert_eq!(app.transcript_view.transcript_scroll, 0);
 
     app.handle_key(key(KeyCode::End));
     assert_eq!(app.terminal_panel_scroll(), 0);

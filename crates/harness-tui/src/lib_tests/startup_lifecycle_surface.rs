@@ -32,13 +32,13 @@ pub(super) fn startup_typing_moves_to_quick_start_prompt() {
     let mut app = app::AppState::new_startup(Vec::new(), None);
 
     assert_eq!(app.focus, app::Focus::List);
-    assert!(app.prompt_buffer.is_empty());
+    assert!(app.composer.prompt_buffer.is_empty());
 
     app.handle_key(key(crossterm::event::KeyCode::Char('x')));
 
     assert_eq!(app.focus, app::Focus::Prompt);
-    assert_eq!(app.prompt_buffer, "x");
-    assert_eq!(app.prompt_cursor, 1);
+    assert_eq!(app.composer.prompt_buffer, "x");
+    assert_eq!(app.composer.prompt_cursor, 1);
 
     let rendered = render_live_lines(&app, 100, 24);
     assert!(!rendered.contains("Composer"));
@@ -67,7 +67,7 @@ pub(super) fn startup_palette_remains_secondary_and_draft_safe() {
     let rendered = render_live_lines(&app, 100, 24);
     assert!(!rendered.contains("Dispatch a new run, reopen live work, or inspect saved history."));
     assert!(!rendered.contains("Actions:"));
-    assert_eq!(app.prompt_buffer, "keep this draft");
+    assert_eq!(app.composer.prompt_buffer, "keep this draft");
     assert_eq!(app.focus, app::Focus::Prompt);
 
     app.handle_key(key_with_modifiers(
@@ -75,7 +75,7 @@ pub(super) fn startup_palette_remains_secondary_and_draft_safe() {
         crossterm::event::KeyModifiers::CONTROL,
     ));
 
-    assert!(app.palette_visible);
+    assert!(app.overlay_state.palette_visible);
     let overlay_render = render_live_lines(&app, 100, 24);
     assert!(overlay_render.contains("Commands"));
     assert!(overlay_render.contains("New session"));
@@ -83,9 +83,12 @@ pub(super) fn startup_palette_remains_secondary_and_draft_safe() {
 
     app.handle_key(key(crossterm::event::KeyCode::Esc));
 
-    assert!(!app.palette_visible);
-    assert_eq!(app.prompt_buffer, "keep this draft");
-    assert_eq!(app.prompt_cursor, "keep this draft".chars().count());
+    assert!(!app.overlay_state.palette_visible);
+    assert_eq!(app.composer.prompt_buffer, "keep this draft");
+    assert_eq!(
+        app.composer.prompt_cursor,
+        "keep this draft".chars().count()
+    );
     assert_eq!(app.focus, app::Focus::Prompt);
 }
 
@@ -97,8 +100,8 @@ pub(super) fn post_run_handoff_renders_next_actions() {
     );
     app.active_review_surface = Some(app::ReviewSurface::Events);
     app.focus = app::Focus::Prompt;
-    app.prompt_buffer = "keep this draft".to_string();
-    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.composer.prompt_buffer = "keep this draft".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
 
     app.ingest_event(envelope(
         1,
@@ -155,8 +158,8 @@ pub(super) fn post_run_handoff_disables_prompt_submission() {
         })
     };
     let mut app = app::AppState::new_live(None, false, Some(intent_sink));
-    app.prompt_buffer = "blocked prompt".to_string();
-    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.composer.prompt_buffer = "blocked prompt".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
 
     app.ingest_event(envelope(
         1,
@@ -174,7 +177,7 @@ pub(super) fn post_run_handoff_disables_prompt_submission() {
 
     app.focus = app::Focus::Prompt;
     app.handle_key(key(crossterm::event::KeyCode::Enter));
-    assert!(app.prompt_buffer.is_empty());
+    assert!(app.composer.prompt_buffer.is_empty());
 
     app.focus = app::Focus::List;
     app.handle_key(key(crossterm::event::KeyCode::Enter));
@@ -346,8 +349,8 @@ pub(super) fn continued_quiescent_bootstrap_shows_handoff_before_reopening_live_
 
 pub(super) fn lifecycle_shell_state_transitions() {
     let mut startup = app::AppState::new_startup(Vec::new(), None);
-    startup.prompt_buffer = "draft prompt".to_string();
-    startup.prompt_cursor = startup.prompt_buffer.chars().count();
+    startup.composer.prompt_buffer = "draft prompt".to_string();
+    startup.composer.prompt_cursor = startup.composer.prompt_buffer.chars().count();
 
     assert_eq!(
         startup.lifecycle_shell_state(),
@@ -481,7 +484,7 @@ pub(super) fn lifecycle_shell_snapshots_preserve_startup_and_handoff_contracts()
     for ch in "keep this draft".chars() {
         picker.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
-    assert_eq!(picker.prompt_buffer, "keep this draft");
+    assert_eq!(picker.composer.prompt_buffer, "keep this draft");
     assert_eq!(picker.focus, app::Focus::Prompt);
 
     picker.handle_key(key_with_modifiers(
@@ -494,8 +497,8 @@ pub(super) fn lifecycle_shell_snapshots_preserve_startup_and_handoff_contracts()
     picker.handle_key(key(crossterm::event::KeyCode::Enter));
 
     let continue_render = render_live_lines(&picker, 120, 30);
-    assert!(picker.session_history_visible);
-    assert_eq!(picker.prompt_buffer, "keep this draft");
+    assert!(picker.overlay_state.session_history_visible);
+    assert_eq!(picker.composer.prompt_buffer, "keep this draft");
     assert!(continue_render.contains("Continue session"));
     assert!(continue_render.contains("continue ready"));
     assert!(continue_render.contains("run is still active"));
@@ -513,8 +516,8 @@ pub(super) fn lifecycle_shell_snapshots_preserve_startup_and_handoff_contracts()
     picker.handle_key(key(crossterm::event::KeyCode::Enter));
 
     let replay_render = render_live_lines(&picker, 120, 30);
-    assert!(picker.session_history_visible);
-    assert_eq!(picker.prompt_buffer, "keep this draft");
+    assert!(picker.overlay_state.session_history_visible);
+    assert_eq!(picker.composer.prompt_buffer, "keep this draft");
     assert!(replay_render.contains("Replay session"));
     assert!(replay_render.contains("beta-prompt"));
     assert!(replay_render.contains("replay ready"));
@@ -527,8 +530,8 @@ pub(super) fn lifecycle_shell_snapshots_preserve_startup_and_handoff_contracts()
     );
     completed_shell.active_review_surface = Some(app::ReviewSurface::Events);
     completed_shell.focus = app::Focus::Prompt;
-    completed_shell.prompt_buffer = "keep this draft".to_string();
-    completed_shell.prompt_cursor = completed_shell.prompt_buffer.chars().count();
+    completed_shell.composer.prompt_buffer = "keep this draft".to_string();
+    completed_shell.composer.prompt_cursor = completed_shell.composer.prompt_buffer.chars().count();
     completed_shell.ingest_event(envelope(
         1,
         Some("req_post_run"),
@@ -590,8 +593,8 @@ pub(super) fn session_history_browse_preserves_draft() {
     for c in "startup draft".chars() {
         app.handle_key(key(crossterm::event::KeyCode::Char(c)));
     }
-    let before = app.prompt_buffer.clone();
-    let cursor_before = app.prompt_cursor;
+    let before = app.composer.prompt_buffer.clone();
+    let cursor_before = app.composer.prompt_cursor;
 
     app.handle_key(key_with_modifiers(
         crossterm::event::KeyCode::Char('p'),
@@ -602,17 +605,17 @@ pub(super) fn session_history_browse_preserves_draft() {
     }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
 
-    assert!(app.session_history_visible);
-    assert_eq!(app.prompt_buffer, before);
-    assert_eq!(app.prompt_cursor, cursor_before);
+    assert!(app.overlay_state.session_history_visible);
+    assert_eq!(app.composer.prompt_buffer, before);
+    assert_eq!(app.composer.prompt_cursor, cursor_before);
 
     app.handle_key(key(crossterm::event::KeyCode::Down));
     assert_eq!(app.session_history_selected, 1);
 
     app.handle_key(key(crossterm::event::KeyCode::Esc));
-    assert!(!app.session_history_visible);
-    assert_eq!(app.prompt_buffer, before);
-    assert_eq!(app.prompt_cursor, cursor_before);
+    assert!(!app.overlay_state.session_history_visible);
+    assert_eq!(app.composer.prompt_buffer, before);
+    assert_eq!(app.composer.prompt_cursor, cursor_before);
 }
 
 pub(super) fn new_session_resets_transcript_but_keeps_unsent_draft() {
@@ -639,9 +642,11 @@ pub(super) fn new_session_resets_transcript_but_keeps_unsent_draft() {
             },
         ),
     ));
-    app.prompt_history.push("older sent prompt".to_string());
-    app.prompt_buffer = "unsent startup draft".to_string();
-    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.composer
+        .prompt_history
+        .push("older sent prompt".to_string());
+    app.composer.prompt_buffer = "unsent startup draft".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
 
     app.handle_key(key_with_modifiers(
         crossterm::event::KeyCode::Char('p'),
@@ -651,7 +656,10 @@ pub(super) fn new_session_resets_transcript_but_keeps_unsent_draft() {
 
     assert!(app.events.is_empty());
     assert!(app.activities.is_empty());
-    assert!(app.prompt_history.is_empty());
-    assert_eq!(app.prompt_buffer, "unsent startup draft");
-    assert_eq!(app.prompt_cursor, "unsent startup draft".chars().count());
+    assert!(app.composer.prompt_history.is_empty());
+    assert_eq!(app.composer.prompt_buffer, "unsent startup draft");
+    assert_eq!(
+        app.composer.prompt_cursor,
+        "unsent startup draft".chars().count()
+    );
 }

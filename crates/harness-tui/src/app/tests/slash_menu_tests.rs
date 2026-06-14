@@ -5,12 +5,12 @@ pub(super) fn slash_menu_closes_after_whitespace() {
 
     app.handle_key(key(KeyCode::Char('/')));
     app.handle_key(key(KeyCode::Char('n')));
-    assert!(app.slash_visible);
+    assert!(app.overlay_state.slash_visible);
 
     app.handle_key(key(KeyCode::Char(' ')));
 
-    assert!(!app.slash_visible);
-    assert_eq!(app.prompt_buffer, "/n ");
+    assert!(!app.overlay_state.slash_visible);
+    assert_eq!(app.composer.prompt_buffer, "/n ");
 }
 
 pub(super) fn slash_menu_resets_selection_when_filter_changes() {
@@ -94,8 +94,11 @@ pub(super) fn slash_help_opens_help_surface_and_preserves_draft() {
 
     // assert
     assert_eq!(app.review_surface(), Some(ReviewSurface::Help));
-    assert_eq!(app.prompt_buffer, "preserved draft");
-    assert_eq!(app.prompt_cursor, "preserved draft".chars().count());
+    assert_eq!(app.composer.prompt_buffer, "preserved draft");
+    assert_eq!(
+        app.composer.prompt_cursor,
+        "preserved draft".chars().count()
+    );
     assert!(!app.should_quit);
 }
 
@@ -107,20 +110,20 @@ pub(super) fn slash_escape_clears_token_or_restores_prior_draft() {
 
     fresh.handle_key(key(KeyCode::Esc));
 
-    assert_eq!(fresh.prompt_buffer, "");
-    assert_eq!(fresh.prompt_cursor, 0);
-    assert!(!fresh.slash_visible);
+    assert_eq!(fresh.composer.prompt_buffer, "");
+    assert_eq!(fresh.composer.prompt_cursor, 0);
+    assert!(!fresh.overlay_state.slash_visible);
 
     let mut with_draft = AppState::new_startup(Vec::new(), None);
-    with_draft.prompt_buffer = "draft".to_string();
-    with_draft.prompt_cursor = 0;
+    with_draft.composer.prompt_buffer = "draft".to_string();
+    with_draft.composer.prompt_cursor = 0;
     with_draft.handle_key(key(KeyCode::Char('/')));
 
     with_draft.handle_key(key(KeyCode::Esc));
 
-    assert_eq!(with_draft.prompt_buffer, "draft");
-    assert_eq!(with_draft.prompt_cursor, "draft".chars().count());
-    assert!(!with_draft.slash_visible);
+    assert_eq!(with_draft.composer.prompt_buffer, "draft");
+    assert_eq!(with_draft.composer.prompt_cursor, "draft".chars().count());
+    assert!(!with_draft.overlay_state.slash_visible);
 }
 
 pub(super) fn slash_exit_matches_quit_requested_behavior() {
@@ -181,7 +184,7 @@ pub(super) fn resume_history_surface_uses_meaningful_session_title() {
     app.handle_key(key(KeyCode::Enter));
 
     // assert
-    assert!(app.session_history_visible);
+    assert!(app.overlay_state.session_history_visible);
     assert_eq!(
         app.startup_launcher_action,
         StartupLauncherAction::ContinueSession

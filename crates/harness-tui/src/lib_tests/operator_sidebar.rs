@@ -116,3 +116,14 @@ pub(super) fn operator_sidebar_width_stays_fixed_when_todo_or_modified_files_exi
         replay_empty_width,
     );
 }
+
+pub(super) fn operator_sidebar_footer_includes_harness_brand_version() {
+    let sidebar = operator_sidebar_text(&operator_sidebar_empty_live_app());
+    let expected = format!("• Harness {}", env!("CARGO_PKG_VERSION"));
+
+    assert!(
+        sidebar.contains(&expected),
+        "operator sidebar footer should include brand/version line {expected:?}\n{sidebar}"
+    );
+    assert_markers_in_order(&sidebar, &["▼ MCP", "▼ LSP", &expected]);
+}

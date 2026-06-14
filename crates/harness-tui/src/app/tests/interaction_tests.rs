@@ -8,11 +8,11 @@ pub(super) fn focus_returns_after_palette_close() {
         KeyCode::Char('p'),
         KeyModifiers::CONTROL,
     ));
-    assert!(app.palette_visible);
+    assert!(app.overlay_state.palette_visible);
     assert_eq!(app.focus, Focus::Details);
 
     app.handle_key(key(KeyCode::Esc));
-    assert!(!app.palette_visible);
+    assert!(!app.overlay_state.palette_visible);
     assert_eq!(app.focus, Focus::Details);
 }
 
@@ -60,7 +60,7 @@ pub(super) fn details_drawer_toggles_without_stealing_transcript_state() {
         }),
     ));
 
-    app.follow_mode = false;
+    app.transcript_view.follow_mode = false;
     app.focus = Focus::Details;
     app.selected_activity_index = 0;
     app.details_scroll = 7;
@@ -69,7 +69,7 @@ pub(super) fn details_drawer_toggles_without_stealing_transcript_state() {
     assert!(app.details_drawer_open());
     assert_eq!(app.active_tab, Tab::Run);
     assert_eq!(app.focus, Focus::Details);
-    assert!(!app.follow_mode);
+    assert!(!app.transcript_view.follow_mode);
     assert_eq!(app.selected_activity_index, 0);
     assert_eq!(app.details_scroll, 7);
 
@@ -77,7 +77,7 @@ pub(super) fn details_drawer_toggles_without_stealing_transcript_state() {
     assert!(!app.details_drawer_open());
     assert_eq!(app.active_tab, Tab::Run);
     assert_eq!(app.focus, Focus::Details);
-    assert!(!app.follow_mode);
+    assert!(!app.transcript_view.follow_mode);
     assert_eq!(app.selected_activity_index, 0);
     assert_eq!(app.details_scroll, 7);
 }
@@ -98,8 +98,8 @@ pub(super) fn mouse_wheel_scrolls_transcript_without_stealing_focus() {
         None,
         None,
     );
-    assert!(!app.follow_mode);
-    assert_eq!(app.transcript_scroll, 3);
+    assert!(!app.transcript_view.follow_mode);
+    assert_eq!(app.transcript_view.transcript_scroll, 3);
     assert_eq!(app.focus, Focus::Prompt);
 
     app.handle_mouse(
@@ -114,42 +114,42 @@ pub(super) fn mouse_wheel_scrolls_transcript_without_stealing_focus() {
         None,
         None,
     );
-    assert_eq!(app.transcript_scroll, 0);
-    assert!(app.follow_mode);
+    assert_eq!(app.transcript_view.transcript_scroll, 0);
+    assert!(app.transcript_view.follow_mode);
     assert_eq!(app.focus, Focus::Prompt);
 }
 
 pub(super) fn transcript_navigation_keys_match_scroll_expectations() {
     let mut app = AppState::new_live(None, false, None);
     app.focus = Focus::Details;
-    app.last_transcript_max_scroll.set(42);
+    app.transcript_view.last_transcript_max_scroll.set(42);
 
     app.handle_key(key(KeyCode::PageUp));
-    assert_eq!(app.transcript_scroll, 10);
-    assert!(!app.follow_mode);
+    assert_eq!(app.transcript_view.transcript_scroll, 10);
+    assert!(!app.transcript_view.follow_mode);
 
     app.handle_key(key(KeyCode::PageDown));
-    assert_eq!(app.transcript_scroll, 0);
-    assert!(app.follow_mode);
+    assert_eq!(app.transcript_view.transcript_scroll, 0);
+    assert!(app.transcript_view.follow_mode);
 
     app.handle_key(key(KeyCode::Home));
-    assert_eq!(app.transcript_scroll, 42);
-    assert!(!app.follow_mode);
+    assert_eq!(app.transcript_view.transcript_scroll, 42);
+    assert!(!app.transcript_view.follow_mode);
 
     app.handle_key(key(KeyCode::PageDown));
-    assert_eq!(app.transcript_scroll, 32);
-    assert!(!app.follow_mode);
+    assert_eq!(app.transcript_view.transcript_scroll, 32);
+    assert!(!app.transcript_view.follow_mode);
 
     app.handle_key(key(KeyCode::End));
-    assert_eq!(app.transcript_scroll, 0);
-    assert!(app.follow_mode);
+    assert_eq!(app.transcript_view.transcript_scroll, 0);
+    assert!(app.transcript_view.follow_mode);
 }
 
 pub(super) fn mouse_wheel_scrolls_inspector_when_hovered() {
     let mut app = AppState::new_live(None, false, None);
     app.focus = Focus::List;
     app.details_scroll = 2;
-    app.transcript_scroll = 4;
+    app.transcript_view.transcript_scroll = 4;
 
     app.handle_mouse(
         MouseEvent {
@@ -164,7 +164,7 @@ pub(super) fn mouse_wheel_scrolls_inspector_when_hovered() {
         None,
     );
     assert_eq!(app.details_scroll, 5);
-    assert_eq!(app.transcript_scroll, 4);
+    assert_eq!(app.transcript_view.transcript_scroll, 4);
     assert_eq!(app.focus, Focus::List);
 
     app.handle_mouse(
@@ -180,7 +180,7 @@ pub(super) fn mouse_wheel_scrolls_inspector_when_hovered() {
         None,
     );
     assert_eq!(app.details_scroll, 2);
-    assert_eq!(app.transcript_scroll, 4);
+    assert_eq!(app.transcript_view.transcript_scroll, 4);
     assert_eq!(app.focus, Focus::List);
 }
 
@@ -188,8 +188,8 @@ pub(super) fn mouse_wheel_ignores_non_scrollable_areas() {
     let mut app = AppState::new_live(None, false, None);
     app.focus = Focus::Prompt;
     app.details_scroll = 6;
-    app.transcript_scroll = 2;
-    app.follow_mode = false;
+    app.transcript_view.transcript_scroll = 2;
+    app.transcript_view.follow_mode = false;
 
     app.handle_mouse(
         MouseEvent {
@@ -205,8 +205,8 @@ pub(super) fn mouse_wheel_ignores_non_scrollable_areas() {
     );
 
     assert_eq!(app.details_scroll, 6);
-    assert_eq!(app.transcript_scroll, 2);
-    assert!(!app.follow_mode);
+    assert_eq!(app.transcript_view.transcript_scroll, 2);
+    assert!(!app.transcript_view.follow_mode);
     assert_eq!(app.focus, Focus::Prompt);
 }
 
@@ -321,15 +321,15 @@ pub(super) fn diff_hunk_navigation_advances_and_retreats_between_hunks() {
     let _rendered = render_debug(&app, frame_area.width, frame_area.height);
     let hunk_rows = crate::ui::transcript_diff_hunk_rows(&app, frame_area);
     assert_eq!(hunk_rows.len(), 2, "expected two navigable diff hunks");
-    app.follow_mode = false;
-    app.transcript_scroll = app.last_transcript_max_scroll.get();
+    app.transcript_view.follow_mode = false;
+    app.transcript_view.transcript_scroll = app.transcript_view.last_transcript_max_scroll.get();
 
     // act
     app.handle_key(key_with_modifiers(KeyCode::Char('n'), KeyModifiers::ALT));
     let first_hunk = app
         .selected_diff_hunk_row_for_test()
         .expect("first hunk selected");
-    assert!(!app.follow_mode);
+    assert!(!app.transcript_view.follow_mode);
 
     app.handle_key(key_with_modifiers(KeyCode::Char('n'), KeyModifiers::ALT));
     let second_hunk = app
@@ -347,9 +347,9 @@ pub(super) fn diff_hunk_navigation_advances_and_retreats_between_hunks() {
 
 pub(super) fn dragging_transcript_scrollbar_updates_scroll_position() {
     let mut app = AppState::new_live(None, false, None);
-    app.last_transcript_max_scroll.set(100);
-    app.follow_mode = false;
-    app.transcript_scroll = 50;
+    app.transcript_view.last_transcript_max_scroll.set(100);
+    app.transcript_view.follow_mode = false;
+    app.transcript_view.transcript_scroll = 50;
 
     let scrollbar = TranscriptScrollbarHit {
         lane: Rect::new(72, 1, 2, 20),
@@ -385,8 +385,8 @@ pub(super) fn dragging_transcript_scrollbar_updates_scroll_position() {
         None,
     );
 
-    assert!(!app.follow_mode);
-    assert_eq!(app.transcript_scroll, 21);
+    assert!(!app.transcript_view.follow_mode);
+    assert_eq!(app.transcript_view.transcript_scroll, 21);
 
     app.handle_mouse(
         MouseEvent {
@@ -405,7 +405,7 @@ pub(super) fn dragging_transcript_scrollbar_updates_scroll_position() {
 
 pub(super) fn clicking_transcript_scrollbar_track_without_thumb_does_not_start_drag() {
     let mut app = AppState::new_live(None, false, None);
-    app.last_transcript_max_scroll.set(80);
+    app.transcript_view.last_transcript_max_scroll.set(80);
 
     let scrollbar = TranscriptScrollbarHit {
         lane: Rect::new(72, 1, 2, 20),
@@ -428,6 +428,6 @@ pub(super) fn clicking_transcript_scrollbar_track_without_thumb_does_not_start_d
     );
 
     assert!(!app.transcript_scrollbar_dragging());
-    assert!(app.follow_mode);
-    assert_eq!(app.transcript_scroll, 0);
+    assert!(app.transcript_view.follow_mode);
+    assert_eq!(app.transcript_view.transcript_scroll, 0);
 }

@@ -99,8 +99,8 @@ pub(super) fn startup_composer_width_stays_capped_for_shell() {
 
 pub(super) fn dense_live_composer_uses_full_height_without_metadata_row() {
     let mut ready = app::AppState::new_live(None, false, None);
-    ready.prompt_buffer = "draft".to_string();
-    ready.prompt_cursor = ready.prompt_buffer.chars().count();
+    ready.composer.prompt_buffer = "draft".to_string();
+    ready.composer.prompt_cursor = ready.composer.prompt_buffer.chars().count();
     let rendered = render_live_lines(&ready, 60, 18);
     let lines = rendered.lines().collect::<Vec<_>>();
     let (composer_first_row, composer_input_row, composer_last_row) =
@@ -123,8 +123,8 @@ pub(super) fn dense_live_composer_uses_full_height_without_metadata_row() {
 
 pub(super) fn dense_live_compaction_feedback_uses_toast_when_metadata_row_is_absent() {
     let mut ready = app::AppState::new_live(None, false, None);
-    ready.prompt_buffer = "draft".to_string();
-    ready.prompt_cursor = ready.prompt_buffer.chars().count();
+    ready.composer.prompt_buffer = "draft".to_string();
+    ready.composer.prompt_cursor = ready.composer.prompt_buffer.chars().count();
     ready.set_toast_for_test(
         "manual compaction skipped: need at least two completed turns",
         app::ToastVariant::Info,
