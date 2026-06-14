@@ -63,6 +63,16 @@ const COMMAND_METADATA: &[CommandMetadata] = &[
         description: "Browse available provider/model options",
     },
     CommandMetadata {
+        id: "palette",
+        label: "Commands",
+        description: "Open the command palette",
+    },
+    CommandMetadata {
+        id: "toggle_operator_sidebar",
+        label: "Operator sidebar",
+        description: "Toggle the operator sidebar",
+    },
+    CommandMetadata {
         id: "agent_cycle",
         label: "Next agent",
         description: "Cycle to the next primary agent",
@@ -76,6 +86,26 @@ const COMMAND_METADATA: &[CommandMetadata] = &[
         id: "cycle_variant",
         label: "Cycle reasoning preset",
         description: "Cycle the configured model variant/reasoning preset",
+    },
+    CommandMetadata {
+        id: "variant_list",
+        label: "Select variant",
+        description: "Choose the default or a named model variant",
+    },
+    CommandMetadata {
+        id: "agent_list",
+        label: "Select agent",
+        description: "Choose the primary agent for the next turn",
+    },
+    CommandMetadata {
+        id: "recent_model_next",
+        label: "Next recent model",
+        description: "Cycle to the next recently used model",
+    },
+    CommandMetadata {
+        id: "recent_model_previous",
+        label: "Previous recent model",
+        description: "Cycle to the previous recently used model",
     },
     CommandMetadata {
         id: "toggles",
@@ -176,6 +206,91 @@ const COMMAND_METADATA: &[CommandMetadata] = &[
         id: "diff_hunk_previous",
         label: "Previous diff hunk",
         description: "Jump to the previous transcript diff hunk",
+    },
+    CommandMetadata {
+        id: "messages_page_up",
+        label: "Messages page up",
+        description: "Page upward through the transcript",
+    },
+    CommandMetadata {
+        id: "messages_page_down",
+        label: "Messages page down",
+        description: "Page downward through the transcript",
+    },
+    CommandMetadata {
+        id: "messages_half_page_up",
+        label: "Messages half page up",
+        description: "Move a half page upward through the transcript",
+    },
+    CommandMetadata {
+        id: "messages_half_page_down",
+        label: "Messages half page down",
+        description: "Move a half page downward through the transcript",
+    },
+    CommandMetadata {
+        id: "messages_line_up",
+        label: "Messages line up",
+        description: "Move one transcript line upward",
+    },
+    CommandMetadata {
+        id: "messages_line_down",
+        label: "Messages line down",
+        description: "Move one transcript line downward",
+    },
+    CommandMetadata {
+        id: "messages_first",
+        label: "First message",
+        description: "Jump to the first transcript message",
+    },
+    CommandMetadata {
+        id: "messages_last",
+        label: "Last message",
+        description: "Jump to the latest transcript message",
+    },
+    CommandMetadata {
+        id: "messages_previous",
+        label: "Previous message",
+        description: "Jump to the previous transcript message",
+    },
+    CommandMetadata {
+        id: "messages_next",
+        label: "Next message",
+        description: "Jump to the next transcript message",
+    },
+    CommandMetadata {
+        id: "messages_last_user_message",
+        label: "Last user message",
+        description: "Jump to the latest user-authored transcript message",
+    },
+    CommandMetadata {
+        id: "copy_message",
+        label: "Copy message",
+        description: "Copy the selected transcript message",
+    },
+    CommandMetadata {
+        id: "copy_session",
+        label: "Copy session",
+        description: "Copy the visible session transcript",
+    },
+    CommandMetadata {
+        id: "export_session",
+        label: "Export session",
+        description: "Export the current session as a JSON bundle",
+    },
+    CommandMetadata {
+        id: "toggle_transcript_scrollbar",
+        label: "Transcript scrollbar",
+        description: "Show or hide the transcript scrollbar",
+    },
+    CommandMetadata {
+        id: "show_last_error",
+        label: "Show last error",
+        description: "Inspect the last failed provider turn",
+    },
+    CommandMetadata {
+        id: "child_sessions",
+        label: "Child sessions",
+        description: "Open child subagent sessions",
     },
     CommandMetadata {
         id: "focus_next",
@@ -419,6 +534,12 @@ const PALETTE_COMMANDS: &[PaletteCommand] = &[
         section: PaletteCommandSection::Suggested,
     },
     PaletteCommand {
+        id: "show_last_error",
+        metadata_id: "show_last_error",
+        shortcut: "error",
+        section: PaletteCommandSection::Suggested,
+    },
+    PaletteCommand {
         id: "resume_session",
         metadata_id: "resume_session",
         shortcut: "resume",
@@ -461,6 +582,18 @@ const PALETTE_COMMANDS: &[PaletteCommand] = &[
         section: PaletteCommandSection::Agent,
     },
     PaletteCommand {
+        id: "variant_list",
+        metadata_id: "variant_list",
+        shortcut: "ctrl+v",
+        section: PaletteCommandSection::Agent,
+    },
+    PaletteCommand {
+        id: "agent_list",
+        metadata_id: "agent_list",
+        shortcut: "ctrl+x a",
+        section: PaletteCommandSection::Agent,
+    },
+    PaletteCommand {
         id: "auth",
         metadata_id: "auth",
         shortcut: "auth",
@@ -489,6 +622,36 @@ const PALETTE_COMMANDS: &[PaletteCommand] = &[
         metadata_id: "toggle_follow",
         shortcut: "space",
         section: PaletteCommandSection::Agent,
+    },
+    PaletteCommand {
+        id: "child_sessions",
+        metadata_id: "child_sessions",
+        shortcut: "child",
+        section: PaletteCommandSection::Session,
+    },
+    PaletteCommand {
+        id: "copy_message",
+        metadata_id: "copy_message",
+        shortcut: "ctrl+x y",
+        section: PaletteCommandSection::Session,
+    },
+    PaletteCommand {
+        id: "copy_session",
+        metadata_id: "copy_session",
+        shortcut: "ctrl+x shift+y",
+        section: PaletteCommandSection::Session,
+    },
+    PaletteCommand {
+        id: "export_session",
+        metadata_id: "export_session",
+        shortcut: "ctrl+x x",
+        section: PaletteCommandSection::Session,
+    },
+    PaletteCommand {
+        id: "toggle_transcript_scrollbar",
+        metadata_id: "toggle_transcript_scrollbar",
+        shortcut: "ctrl+x z",
+        section: PaletteCommandSection::Session,
     },
     PaletteCommand {
         id: "show_thinking",

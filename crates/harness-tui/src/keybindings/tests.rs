@@ -73,13 +73,15 @@ fn slash_and_palette_shared_commands_use_same_metadata() {
 }
 
 #[test]
-fn help_actions_use_shared_command_metadata() {
+fn ui_actions_use_shared_command_metadata() {
     // arrange
-    let help_actions = [
+    let ui_actions = [
+        Action::Palette,
         Action::MoveDown,
         Action::MoveUp,
         Action::FocusNext,
         Action::FocusPrev,
+        Action::ToggleOperatorSidebar,
         Action::ToggleFollow,
         Action::Reload,
         Action::CloseReviewSurface,
@@ -99,7 +101,7 @@ fn help_actions_use_shared_command_metadata() {
     ];
 
     // act
-    for action in help_actions {
+    for action in ui_actions {
         let metadata_label = action.metadata_label();
         let metadata_description = action.metadata_description();
 
@@ -208,6 +210,100 @@ fn keymap_binds_alt_enter_to_insert_newline() {
 }
 
 #[test]
+fn harness_input_keybindings_cover_selection_word_line_and_undo_actions() {
+    let keymap = KeyMap::default();
+
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(KeyCode::Left, KeyModifiers::SHIFT)),
+        Some(Action::InputSelectLeft)
+    );
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(
+            KeyCode::Char('a'),
+            KeyModifiers::CONTROL | KeyModifiers::SHIFT
+        )),
+        Some(Action::InputSelectLineStart)
+    );
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(KeyCode::Left, KeyModifiers::ALT)),
+        Some(Action::InputWordBackward)
+    );
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(
+            KeyCode::Left,
+            KeyModifiers::ALT | KeyModifiers::SHIFT
+        )),
+        Some(Action::InputSelectWordBackward)
+    );
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(KeyCode::Backspace, KeyModifiers::ALT)),
+        Some(Action::InputDeleteWordBackward)
+    );
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(
+            KeyCode::Char('d'),
+            KeyModifiers::CONTROL | KeyModifiers::SHIFT
+        )),
+        Some(Action::InputDeleteLine)
+    );
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(KeyCode::Char('-'), KeyModifiers::CONTROL)),
+        Some(Action::InputUndo)
+    );
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(KeyCode::Char('.'), KeyModifiers::CONTROL)),
+        Some(Action::InputRedo)
+    );
+}
+
+#[test]
+fn keybindings_parse_combined_modifiers_and_prompt_management_actions() {
+    let mut keymap = KeyMap::default();
+    keymap
+        .try_apply_overrides(&BTreeMap::from([
+            ("prompt_stash".to_string(), "ctrl+shift+s".to_string()),
+            ("prompt_stash_pop".to_string(), "alt+shift+s".to_string()),
+            ("prompt_stash_list".to_string(), "ctrl+alt+s".to_string()),
+            (
+                "prompt_stash_delete_selected".to_string(),
+                "ctrl+d".to_string(),
+            ),
+            ("queued_prompts".to_string(), "<leader>q".to_string()),
+        ]))
+        .expect("prompt management keybindings should parse");
+
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(
+            KeyCode::Char('s'),
+            KeyModifiers::CONTROL | KeyModifiers::SHIFT
+        )),
+        Some(Action::PromptStash)
+    );
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(
+            KeyCode::Char('s'),
+            KeyModifiers::ALT | KeyModifiers::SHIFT
+        )),
+        Some(Action::PromptStashPop)
+    );
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(
+            KeyCode::Char('s'),
+            KeyModifiers::CONTROL | KeyModifiers::ALT
+        )),
+        Some(Action::PromptStashList)
+    );
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL)),
+        Some(Action::PromptStashDeleteSelected)
+    );
+    assert_eq!(
+        keymap.get_leader_action(&KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)),
+        Some(Action::QueuedPrompts)
+    );
+}
+
+#[test]
 fn keymap_uses_ctrl_y_and_ctrl_n_for_permission_decisions() {
     let keymap = KeyMap::with_defaults();
 
@@ -275,6 +371,69 @@ fn keymap_binds_diff_hunk_navigation_to_default_bindings() {
         Action::from_str("diff_hunk_previous"),
         Ok(Action::DiffHunkPrevious)
     );
+}
+
+#[test]
+fn keymap_binds_transcript_navigation_copy_export_defaults() {
+    let keymap = KeyMap::with_defaults();
+
+    let expected = [
+        ("messages_page_up", Action::MessagesPageUp, "Ctrl+b"),
+        ("messages_page_down", Action::MessagesPageDown, "Ctrl+f"),
+        (
+            "messages_half_page_up",
+            Action::MessagesHalfPageUp,
+            "Alt+PageUp",
+        ),
+        (
+            "messages_half_page_down",
+            Action::MessagesHalfPageDown,
+            "Alt+PageDown",
+        ),
+        ("messages_line_up", Action::MessagesLineUp, "Alt+k"),
+        ("messages_line_down", Action::MessagesLineDown, "Alt+j"),
+        ("messages_first", Action::MessagesFirst, "Ctrl+g"),
+        ("messages_last", Action::MessagesLast, "Ctrl+Alt+g"),
+        ("messages_previous", Action::MessagesPrevious, "Alt+Up"),
+        ("messages_next", Action::MessagesNext, "Alt+Down"),
+        (
+            "messages_last_user_message",
+            Action::MessagesLastUserMessage,
+            "Ctrl+Alt+u",
+        ),
+        ("copy_message", Action::CopyMessage, "Ctrl+x y"),
+        ("copy_session", Action::CopySession, "Ctrl+x Shift+y"),
+        ("export_session", Action::ExportSession, "Ctrl+x x"),
+        (
+            "toggle_transcript_scrollbar",
+            Action::ToggleTranscriptScrollbar,
+            "Ctrl+x z",
+        ),
+    ];
+
+    for (id, action, default_binding) in expected {
+        assert_eq!(Action::from_str(id), Ok(action), "{id} should parse");
+        assert_eq!(action.as_str(), id);
+        assert_eq!(
+            keymap.get_binding_str(action),
+            default_binding,
+            "{id} should expose the Harness-style default binding"
+        );
+        assert!(
+            !action.metadata_label().is_empty(),
+            "{id} should have command metadata"
+        );
+    }
+
+    assert_eq!(
+        Action::from_palette_command("copy_message"),
+        Some(Action::CopyMessage)
+    );
+    assert_eq!(
+        Action::from_palette_command("export_session"),
+        Some(Action::ExportSession)
+    );
+    assert_eq!(keymap.palette_command_shortcut("copy_message"), "Ctrl+x y");
 }
 
 #[test]
