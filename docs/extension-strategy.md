@@ -108,6 +108,14 @@ extension package or executing extension code. Any future extension-provided
 behavior must enter through the existing native registry, coordinator-owned
 permission checks, artifact/redaction paths, and replay side-effect boundaries.
 
+Extension tool descriptors declare public permission names, but extension-provided
+  tools are not registered or executed in V1 and no runtime permission path
+  exists yet.
+Replay support for extension manifests is limited to static descriptor/config
+  metadata; it does not render extension tool events or load extension code.
+Extension-provided tools are not registered or executed in V1; no runtime permission path exists yet.
+Replay support is descriptor/config metadata only and does not render extension tool events.
+
 ## Core runtime behavior vs disableable built-in capabilities
 
 | Surface | Classification | Stable id | Default state |

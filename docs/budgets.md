@@ -42,4 +42,4 @@ Budgets are checked against current commands and artifacts. Do not add JSON base
 
 ## Progress-log requirement
 
-When a budget command passes, record the command, elapsed or measured value, artifact path, timestamp, and environment in `docs/v1-release-readiness-slice-progress.md` before checking any PRD or roadmap box.
+When a budget command passes, record the command, elapsed or measured value, artifact path, timestamp, and environment in `docs/claim-evidence-matrix.md` before checking any PRD or roadmap box.
