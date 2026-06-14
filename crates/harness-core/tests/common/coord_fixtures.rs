@@ -25,10 +25,10 @@ use harness_core::event::{
     ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1, ExecutionTimingMetadata,
     HookExecutionMetadata, HookExecutionStatus, PermissionDecision as EventPermissionDecision,
     PermissionRequestedEvent, PermissionResolvedEvent, ProviderRequestStartedEvent,
-    RunFinishedEvent, RunStartedEvent, TaskCancelledEvent, TaskCompletedEvent,
-    TaskCompletionMetadata, TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState,
-    TaskScheduledEvent, ToolCallFinishedEvent, ToolCallMetadata, ToolCallRequestedEvent,
-    ToolCallStatus, SCHEMA_VERSION,
+    ProviderRequestStartedMetadata, RunFinishedEvent, RunStartedEvent, TaskCancelledEvent,
+    TaskCompletedEvent, TaskCompletionMetadata, TaskLineageMetadata, TaskResultLateEvent,
+    TaskScheduleState, TaskScheduledEvent, ToolCallFinishedEvent, ToolCallMetadata,
+    ToolCallRequestedEvent, ToolCallStatus, SCHEMA_VERSION,
 };
 use harness_core::perm::{PermissionDecision as RuntimePermissionDecision, PermissionPolicy};
 use harness_core::proj::{inspect_resume_plan, ChildSessionTerminalState, LifecycleSegmentStatus};

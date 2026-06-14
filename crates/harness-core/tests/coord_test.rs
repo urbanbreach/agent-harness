@@ -104,3 +104,18 @@ mod part_20_provider_cache_context_uses_run_session_test {
     use super::*;
     include!("coord/20_provider_cache_context_uses_run_session_test.rs");
 }
+
+mod part_21_manual_session_title_update_test {
+    use super::*;
+    include!("coord/21_manual_session_title_update_test.rs");
+}
+
+mod part_22_provider_retry_metadata_test {
+    use super::*;
+    include!("coord/22_provider_retry_metadata_test.rs");
+}
+
+mod part_22b_provider_retry_hardening_test {
+    use super::*;
+    include!("coord/22b_provider_retry_hardening_test.rs");
+}

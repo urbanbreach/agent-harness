@@ -338,6 +338,7 @@ fn replay_new_loop_metadata_is_non_semantic_for_run_summary() {
                     provider_call_id: Some("provider-call-redacted".to_string()),
                     provider_session_id: Some("provider-session-digest".to_string()),
                     provider_cache_id: Some("provider-cache-digest".to_string()),
+                    retry: None,
                 }),
             }),
         ),

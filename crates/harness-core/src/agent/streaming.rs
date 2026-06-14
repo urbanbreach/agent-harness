@@ -5,9 +5,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use harness_providers::{
-    CompletionRequest, CompletionUsage, Provider, ProviderEventStream, ProviderStreamEvent,
-    ProviderStreamFinishedMetadata, ProviderStreamStartMetadata, ProviderStreamThinkingMetadata,
-    ToolChoice, ToolDef,
+    CompletionRequest, CompletionUsage, Provider, ProviderErrorCategory, ProviderEventStream,
+    ProviderStreamEvent, ProviderStreamFinishedMetadata, ProviderStreamStartMetadata,
+    ProviderStreamThinkingMetadata, ToolChoice, ToolDef,
 };
 use serde_json::Value;
 use tokio_stream::StreamExt;
@@ -24,7 +24,7 @@ use crate::conversation::ConversationMessage;
 use crate::digest::{digest12, digest12_json};
 use crate::event::{
     ProviderAssistantMessageMetadata, ProviderRequestFinishedMetadata,
-    ProviderRequestStartedMetadata, ProviderThinkingMetadata,
+    ProviderRequestRetryMetadata, ProviderRequestStartedMetadata, ProviderThinkingMetadata,
 };
 use crate::text::{non_empty_trimmed, truncate_with_ellipsis};
 use crate::tool::{ToolRegistry, ToolResult};
@@ -124,6 +124,9 @@ pub struct AgentTurnFailure {
     pub reason: String,
     pub partial_assistant_output: String,
     pub provider_request_id: Option<String>,
+    pub provider_error_category: Option<ProviderErrorCategory>,
+    pub provider_error_remediation: Option<String>,
+    pub retry_after_ms: Option<u64>,
 }
 
 impl AgentTurnFailure {
@@ -140,6 +143,9 @@ impl AgentTurnFailure {
             reason: reason.into(),
             partial_assistant_output: partial_assistant_output.into(),
             provider_request_id,
+            provider_error_category: None,
+            provider_error_remediation: None,
+            retry_after_ms: None,
         }
     }
 
@@ -147,14 +153,21 @@ impl AgentTurnFailure {
         reason: impl Into<String>,
         partial_assistant_output: impl Into<String>,
         provider_request_id: String,
+        category: Option<ProviderErrorCategory>,
+        remediation: Option<String>,
+        retry_after_ms: Option<u64>,
     ) -> Self {
-        Self::new(
+        let mut failure = Self::new(
             ProviderConversationTurnStatus::Failed,
             "provider_error",
             reason,
             partial_assistant_output,
             Some(provider_request_id),
-        )
+        );
+        failure.provider_error_category = category;
+        failure.provider_error_remediation = remediation;
+        failure.retry_after_ms = retry_after_ms;
+        failure
     }
 
     pub fn message(reason: impl Into<String>) -> Self {
@@ -198,6 +211,7 @@ pub struct StreamAssistantResponseOnceRequest<'a> {
     pub provider_request_id: String,
     pub session_id: Option<String>,
     pub prompt_summary: &'a str,
+    pub retry_metadata: Option<ProviderRequestRetryMetadata>,
     pub context: ProviderBoundaryContext<'a>,
     pub tool_defs: &'a [ToolDef],
 }
@@ -276,6 +290,7 @@ where
                 &request_id,
                 &request_id,
                 provider_start_metadata.as_ref(),
+                None,
             )),
         },
     )))
@@ -360,6 +375,7 @@ where
                 message,
                 category,
                 remediation,
+                retry_after_ms,
             } => {
                 let mut metadata = provider_finished_metadata(
                     &request_id,
@@ -370,7 +386,7 @@ where
                     None,
                 );
                 metadata.provider_error_category = category;
-                metadata.provider_error_remediation = remediation;
+                metadata.provider_error_remediation = remediation.clone();
                 emit(AgentRuntimeEvent::ProviderRequestFinished(Box::new(
                     ProviderRequestFinished {
                         request_id: request_id.clone(),
@@ -384,7 +400,14 @@ where
 
                 return AgentTurnOutcome::failed_with_memory(
                     message.clone(),
-                    AgentTurnFailure::provider_error(message, output, request_id.clone()),
+                    AgentTurnFailure::provider_error(
+                        message,
+                        output,
+                        request_id.clone(),
+                        category,
+                        remediation,
+                        retry_after_ms,
+                    ),
                 );
             }
         }
@@ -431,6 +454,7 @@ where
         provider_request_id,
         session_id,
         prompt_summary,
+        retry_metadata,
         context,
         tool_defs,
     } = request;
@@ -463,6 +487,7 @@ where
         &turn_request_id,
         &provider_request_id,
         provider_start_metadata.as_ref(),
+        retry_metadata,
     );
 
     emit(AgentRuntimeEvent::ProviderRequestStarted(Box::new(
@@ -488,6 +513,7 @@ where
     let mut finished_provider_metadata = None;
     let mut finished_provider_error_category = None;
     let mut finished_provider_error_remediation = None;
+    let mut provider_retry_after_ms = None;
 
     loop {
         let Some(event) = next_provider_event(&mut pending_event, &mut stream).await else {
@@ -554,11 +580,13 @@ where
                 message,
                 category,
                 remediation,
+                retry_after_ms,
             } => {
                 stop_reason = "error".to_string();
                 provider_error = Some(message);
                 finished_provider_error_category = category;
                 finished_provider_error_remediation = remediation;
+                provider_retry_after_ms = retry_after_ms;
                 break;
             }
         }
@@ -574,7 +602,7 @@ where
     );
     let mut finished_metadata = finished_metadata;
     finished_metadata.provider_error_category = finished_provider_error_category;
-    finished_metadata.provider_error_remediation = finished_provider_error_remediation;
+    finished_metadata.provider_error_remediation = finished_provider_error_remediation.clone();
     let output_digest = if stop_reason == "error" {
         None
     } else {
@@ -596,6 +624,9 @@ where
             reason,
             output,
             provider_request_id,
+            finished_provider_error_category,
+            finished_provider_error_remediation,
+            provider_retry_after_ms,
         ));
     }
 
@@ -669,6 +700,7 @@ where
             provider_request_id,
             session_id: None,
             prompt_summary: &request.prompt,
+            retry_metadata: None,
             context: ProviderBoundaryContext::ProjectedHarness {
                 messages: &projected_context,
                 checkpoint: prior_context.checkpoint.as_ref(),
@@ -790,6 +822,7 @@ fn provider_request_started_metadata(
     turn_request_id: &str,
     provider_request_id: &str,
     provider_metadata: Option<&ProviderStreamStartMetadata>,
+    retry_metadata: Option<ProviderRequestRetryMetadata>,
 ) -> ProviderRequestStartedMetadata {
     ProviderRequestStartedMetadata {
         turn_id: Some(turn_request_id.to_string()),
@@ -808,6 +841,7 @@ fn provider_request_started_metadata(
                 .and_then(non_empty_trimmed)
                 .map(str::to_string)
         }),
+        retry: retry_metadata,
     }
 }
 
