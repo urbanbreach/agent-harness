@@ -7,6 +7,7 @@ fn queued_runtime_status_without_pending_assistant_does_not_render_user_badge_or
     app.activities = std::collections::VecDeque::from(vec![
         ActivityEntry {
             request_id: "request-complete".to_string(),
+            revision: 1,
             profile_label: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             provider_id: "openai".to_string(),
@@ -31,6 +32,7 @@ fn queued_runtime_status_without_pending_assistant_does_not_render_user_badge_or
         },
         ActivityEntry {
             request_id: "request-queued-followup".to_string(),
+            revision: 1,
             profile_label: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             provider_id: "openai".to_string(),
@@ -77,6 +79,7 @@ fn streaming_turn_with_own_user_message_renders_active_footer_without_queued_bad
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "request-started-followup".to_string(),
+        revision: 1,
         profile_label: "default".to_string(),
         model_id: "gpt-5.4-mini".to_string(),
         provider_id: "openai".to_string(),
@@ -139,6 +142,7 @@ fn queued_user_followup_keeps_user_badge_without_assistant_footer() {
     app.activities = std::collections::VecDeque::from(vec![
         ActivityEntry {
             request_id: "request-active".to_string(),
+            revision: 1,
             profile_label: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             provider_id: "openai".to_string(),
@@ -163,6 +167,7 @@ fn queued_user_followup_keeps_user_badge_without_assistant_footer() {
         },
         ActivityEntry {
             request_id: "request-queued-followup".to_string(),
+            revision: 1,
             profile_label: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             provider_id: "openai".to_string(),
@@ -216,6 +221,7 @@ fn transcript_wrapping_respects_display_width_for_wide_glyphs() {
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "request-wide-wrap".to_string(),
+        revision: 1,
         profile_label: "default".to_string(),
         model_id: "gpt-5.4-mini".to_string(),
         provider_id: "openai".to_string(),
@@ -260,6 +266,7 @@ fn transcript_selection_snapshot_cache_reuses_repeated_hit_tests() {
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "req_selection_cache".to_string(),
+        revision: 1,
         profile_label: "default".to_string(),
         model_id: "model-1".to_string(),
         provider_id: "default".to_string(),

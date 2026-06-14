@@ -71,7 +71,7 @@ pub(super) fn build_transcript_tool_call_section(
     let todo_items = todo_items_from_tool_call(tool_call, session_path);
     let mut header_path_metadata = None;
 
-    let animation_phase = app.transcript_animation_phase();
+    let animation_phase = app.transcript_view.transcript_animation_phase();
 
     let (title, icon, visual_style, uses_generic_output_visibility) = match display_tool_id {
         "fs.read" | "read" => {
@@ -495,7 +495,7 @@ pub(super) fn build_transcript_tool_call_section(
     TranscriptToolCallSection {
         tool_call_id: tool_call.tool_call_id.clone(),
         child_session_id,
-        hovered_target: app.hovered_transcript_target().cloned(),
+        hovered_target: app.transcript_view.hovered_transcript_target().cloned(),
         header: TranscriptToolCallHeader {
             tool_id: if matches!(display_tool_id, "shell.run" | "bash") {
                 display_tool_id.to_string()

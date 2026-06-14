@@ -160,7 +160,7 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
     assert!(task_render
         .interaction_rows
         .iter()
-        .any(|interaction| matches!(interaction.as_ref().map(|row| &row.target), None)));
+        .any(|interaction| interaction.as_ref().map(|row| &row.target).is_none()));
     assert!(
         task_render.interaction_rows.iter().all(Option::is_none),
         "task inline rows should stay passive; subagents are opened from the sidebar"

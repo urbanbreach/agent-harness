@@ -25,7 +25,7 @@ pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSec
             timestamps_visible: app.transcript_timestamps_visible(),
             show_tool_details: app.tool_details_visible(),
             show_generic_tool_output: app.generic_tool_output_visible(),
-            stacked_diffs: app.stacked_transcript_diffs(),
+            stacked_diffs: app.transcript_view.stacked_transcript_diffs(),
             session_path: app.session_path.as_deref(),
             app,
         }));
@@ -115,7 +115,7 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
     TranscriptTurnSection {
         request_id: activity.request_id.clone(),
         user_message,
-        animation_phase: app.transcript_animation_phase(),
+        animation_phase: app.transcript_view.transcript_animation_phase(),
         header: TranscriptTurnHeader {
             status: activity.status,
             is_selected,

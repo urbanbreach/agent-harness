@@ -1,4 +1,6 @@
-use ratatui::style::Color;
+use std::borrow::Cow;
+
+use ratatui::{style::Color, text::Line};
 
 use crate::app::humanize_profile_label;
 use crate::app::ActivityStatus;
@@ -11,6 +13,19 @@ const TRANSCRIPT_BRAILLE_SPINNER_FRAMES: [&str; 10] =
 
 pub(super) fn transcript_streaming_spinner_frame(animation_phase: usize) -> &'static str {
     TRANSCRIPT_BRAILLE_SPINNER_FRAMES[animation_phase % TRANSCRIPT_BRAILLE_SPINNER_FRAMES.len()]
+}
+
+pub(super) fn decorate_transcript_spinner_line(
+    mut line: Line<'static>,
+    animation_phase: usize,
+) -> Line<'static> {
+    let frame = transcript_streaming_spinner_frame(animation_phase);
+    for span in &mut line.spans {
+        if TRANSCRIPT_BRAILLE_SPINNER_FRAMES.contains(&span.content.as_ref()) {
+            span.content = Cow::Borrowed(frame);
+        }
+    }
+    line
 }
 
 pub(super) fn assistant_footer_label(value: &str) -> String {

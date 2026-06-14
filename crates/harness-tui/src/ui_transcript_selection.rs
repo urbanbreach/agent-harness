@@ -1,4 +1,4 @@
-#[cfg(test)]
+#[cfg(debug_assertions)]
 use std::cell::Cell;
 use std::cell::RefCell;
 
@@ -23,7 +23,7 @@ const TRANSCRIPT_SELECTION_RAIL_GLYPH: &str = "┃";
 thread_local! {
     static TRANSCRIPT_SELECTION_CACHE: RefCell<Vec<TranscriptSelectionCacheEntry>> = const { RefCell::new(Vec::new()) };
 
-    #[cfg(test)]
+    #[cfg(debug_assertions)]
     static TRANSCRIPT_SELECTION_CACHE_BUILD_COUNT: Cell<usize> = const { Cell::new(0) };
 }
 
@@ -87,9 +87,84 @@ impl TranscriptSelectionCacheKey {
 
 #[derive(Debug, Clone)]
 pub(super) struct TranscriptSelectionRow {
-    pub(super) cells: Vec<String>,
+    text: String,
+    cell_byte_offsets: Vec<u16>,
     pub(super) continues_previous: bool,
     pub(super) copy_offset: usize,
+}
+
+impl TranscriptSelectionRow {
+    pub(super) fn blank(width: usize) -> Self {
+        let width = width.max(1);
+        let text = " ".repeat(width);
+        let cell_byte_offsets = (0..width)
+            .map(|offset| u16::try_from(offset).unwrap_or(u16::MAX))
+            .collect();
+        Self {
+            text,
+            cell_byte_offsets,
+            continues_previous: false,
+            copy_offset: 0,
+        }
+    }
+
+    pub(super) fn from_cells(
+        cells: Vec<String>,
+        continues_previous: bool,
+        copy_offset: usize,
+    ) -> Self {
+        let mut text = String::new();
+        let mut cell_byte_offsets = Vec::with_capacity(cells.len());
+        for cell in cells {
+            cell_byte_offsets.push(u16::try_from(text.len()).unwrap_or(u16::MAX));
+            text.push_str(&cell);
+        }
+        Self {
+            text,
+            cell_byte_offsets,
+            continues_previous,
+            copy_offset,
+        }
+    }
+
+    pub(super) fn width(&self) -> usize {
+        self.cell_byte_offsets.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.cell_byte_offsets.is_empty()
+    }
+
+    fn cell_text(&self, column: usize) -> &str {
+        let Some(start) = self.cell_byte_offsets.get(column).copied() else {
+            return "";
+        };
+        let end = self
+            .cell_byte_offsets
+            .get(column.saturating_add(1))
+            .copied()
+            .map_or(self.text.len(), usize::from);
+        let start = usize::from(start).min(self.text.len());
+        let end = end.min(self.text.len()).max(start);
+        &self.text[start..end]
+    }
+
+    #[cfg(test)]
+    pub(super) fn visible_text(&self) -> String {
+        self.text.clone()
+    }
+
+    pub(super) fn copy_prefix_from(&mut self, source: &Self, width: usize) {
+        let copy_width = source.width().min(width);
+        let mut cells = Vec::with_capacity(width);
+        for column in 0..copy_width {
+            cells.push(source.cell_text(column).to_string());
+        }
+        if cells.len() < width {
+            cells.resize(width, " ".to_string());
+        }
+        *self = Self::from_cells(cells, source.continues_previous, source.copy_offset);
+    }
 }
 
 #[cfg(test)]
@@ -129,7 +204,7 @@ impl TranscriptSelectionSnapshot {
         let mut lines = Vec::new();
         for row_idx in start_row..=end_row {
             let row = self.rows.get(row_idx)?;
-            if row.cells.is_empty() {
+            if row.is_empty() {
                 lines.push(String::new());
                 continue;
             }
@@ -145,7 +220,7 @@ impl TranscriptSelectionSnapshot {
                 start
                     .column
                     .max(content_start.max(row.copy_offset))
-                    .min(row.cells.len().saturating_sub(1))
+                    .min(row.width().saturating_sub(1))
             } else {
                 content_start.max(row.copy_offset)
             };
@@ -160,13 +235,8 @@ impl TranscriptSelectionSnapshot {
             }
 
             let mut text = String::new();
-            for cell in row
-                .cells
-                .iter()
-                .skip(row_start)
-                .take(row_end - row_start + 1)
-            {
-                text.push_str(cell);
+            for column in row_start..=row_end {
+                text.push_str(row.cell_text(column));
             }
             if row_idx != start_row && row.continues_previous && !lines.is_empty() {
                 let continuation = text.trim_start_matches(' ');
@@ -189,23 +259,15 @@ impl TranscriptSelectionSnapshot {
             .iter()
             .skip(self.scroll_top)
             .take(usize::from(self.viewport.height))
-            .map(|row| row.cells.join(""))
+            .map(TranscriptSelectionRow::visible_text)
             .collect()
     }
 }
 
 fn selection_row_content_start(row: &TranscriptSelectionRow) -> usize {
-    let mut index = usize::from(
-        row.cells
-            .first()
-            .is_some_and(|cell| cell.as_str() == TRANSCRIPT_SELECTION_RAIL_GLYPH),
-    );
+    let mut index = usize::from(row.cell_text(0) == TRANSCRIPT_SELECTION_RAIL_GLYPH);
     if index > 0 {
-        while row
-            .cells
-            .get(index)
-            .is_some_and(|cell| cell.as_str() == " ")
-        {
+        while index < row.width() && row.cell_text(index) == " " {
             index += 1;
         }
     }
@@ -213,12 +275,10 @@ fn selection_row_content_start(row: &TranscriptSelectionRow) -> usize {
 }
 
 fn selection_row_content_end(row: &TranscriptSelectionRow, content_start: usize) -> Option<usize> {
-    row.cells
-        .iter()
-        .enumerate()
-        .rev()
-        .find(|(idx, cell)| *idx >= content_start && !cell.is_empty() && cell.as_str() != " ")
-        .map(|(idx, _)| idx)
+    (content_start..row.width()).rev().find(|idx| {
+        let cell = row.cell_text(*idx);
+        !cell.is_empty() && cell != " "
+    })
 }
 
 pub(super) fn with_cached_transcript_selection_snapshot<R>(
@@ -240,7 +300,7 @@ pub(super) fn with_cached_transcript_selection_snapshot<R>(
 
         let snapshot = build_snapshot.take().expect("builder is available")()?;
 
-        #[cfg(test)]
+        #[cfg(debug_assertions)]
         TRANSCRIPT_SELECTION_CACHE_BUILD_COUNT
             .with(|count| count.set(count.get().saturating_add(1)));
 
@@ -457,23 +517,21 @@ fn selection_rows_for_prefixed_wrapped_spans(
     rendered_lines
         .into_iter()
         .enumerate()
-        .map(|(idx, row)| TranscriptSelectionRow {
-            cells: transcript_selection_line_rows(&row, usize::from(width))
+        .map(|(idx, row)| {
+            let selection_rows = transcript_selection_line_rows(&row, usize::from(width));
+            let cells = selection_rows
                 .into_iter()
                 .next()
-                .unwrap_or_else(|| vec![" ".to_string(); usize::from(width)]),
-            continues_previous: idx > 0,
-            copy_offset,
+                .unwrap_or_else(|| vec![" ".to_string(); usize::from(width)]);
+            let mut selection_row = TranscriptSelectionRow::from_cells(cells, false, copy_offset);
+            selection_row.continues_previous = idx > 0;
+            selection_row
         })
         .collect()
 }
 
 pub(super) fn blank_selection_row(width: u16) -> TranscriptSelectionRow {
-    TranscriptSelectionRow {
-        cells: vec![" ".to_string(); usize::from(width.max(1))],
-        continues_previous: false,
-        copy_offset: 0,
-    }
+    TranscriptSelectionRow::blank(usize::from(width.max(1)))
 }
 
 pub(super) fn lifecycle_selection_snapshot(
@@ -485,14 +543,7 @@ pub(super) fn lifecycle_selection_snapshot(
         return None;
     }
 
-    let mut rows = vec![
-        TranscriptSelectionRow {
-            cells: vec![" ".to_string(); width],
-            continues_previous: false,
-            copy_offset: 0,
-        };
-        height
-    ];
+    let mut rows = vec![TranscriptSelectionRow::blank(width); height];
 
     for text in surface.text_rows {
         let rendered_rows = aligned_selection_rows_for_line(&text.line, width, text.alignment);
@@ -529,11 +580,7 @@ fn aligned_selection_rows_for_line(
 
     rows.into_iter()
         .enumerate()
-        .map(|(idx, cells)| TranscriptSelectionRow {
-            cells,
-            continues_previous: idx > 0,
-            copy_offset: copy_offsets[idx],
-        })
+        .map(|(idx, cells)| TranscriptSelectionRow::from_cells(cells, idx > 0, copy_offsets[idx]))
         .collect()
 }
 
@@ -602,14 +649,14 @@ pub(super) fn render_transcript_selection(
 
         let row = &snapshot.rows[absolute_row];
         let row_start = if absolute_row == start_row {
-            start.column.min(row.cells.len().saturating_sub(1))
+            start.column.min(row.width().saturating_sub(1))
         } else {
             0
         };
         let row_end = if absolute_row == end_row {
-            end.column.min(row.cells.len().saturating_sub(1))
+            end.column.min(row.width().saturating_sub(1))
         } else {
-            row.cells.len().saturating_sub(1)
+            row.width().saturating_sub(1)
         };
         if row_start > row_end {
             continue;
@@ -640,13 +687,13 @@ fn rect_contains(area: Rect, column: u16, row: u16) -> bool {
         && row < area.y.saturating_add(area.height)
 }
 
-#[cfg(test)]
+#[cfg(debug_assertions)]
 pub(crate) fn reset_transcript_selection_cache_metrics_for_test() {
     TRANSCRIPT_SELECTION_CACHE.with(|cache| cache.borrow_mut().clear());
     TRANSCRIPT_SELECTION_CACHE_BUILD_COUNT.with(|count| count.set(0));
 }
 
-#[cfg(test)]
+#[cfg(debug_assertions)]
 pub(crate) fn transcript_selection_cache_build_count_for_test() -> usize {
     TRANSCRIPT_SELECTION_CACHE_BUILD_COUNT.with(Cell::get)
 }
