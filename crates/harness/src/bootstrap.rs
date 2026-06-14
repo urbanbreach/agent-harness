@@ -63,6 +63,7 @@ pub fn build_interactive_coordinator_config(
     coordinator_config.provider_model_concurrency = cfg.background_task.model_concurrency;
     coordinator_config.stale_timeout_ms = cfg.background_task.stale_timeout_ms;
     coordinator_config.compaction = cfg.runtime.compaction.clone();
+    coordinator_config.provider_retry = cfg.runtime.provider_retry;
     coordinator_config.provider = Arc::new(build_provider_router(cfg)?);
     coordinator_config.agent_profiles =
         interactive_agent_profiles_with_extra_tools(cfg, &auto_tool_ids)?;

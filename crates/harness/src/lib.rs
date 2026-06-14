@@ -76,6 +76,29 @@ pub fn execute_auth_backend_args_with_io(
     auth_cmd::execute_backend_args_with_io(args, config_path, session_dir, io, deps)
 }
 
+#[doc(hidden)]
+pub fn execute_session_export_with_io(
+    session: String,
+    output: PathBuf,
+    config_path: Option<PathBuf>,
+    session_dir: Option<PathBuf>,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+    deps: &CliDeps,
+) -> i32 {
+    sessions::execute_with_io(
+        SessionsCommand::Export(sessions::ExportSessionCommand {
+            session,
+            output: Some(output),
+        }),
+        config_path,
+        session_dir,
+        stdout,
+        stderr,
+        deps,
+    )
+}
+
 #[derive(Debug, Parser)]
 #[command(name = "harness")]
 #[command(version)]

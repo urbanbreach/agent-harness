@@ -84,6 +84,8 @@ mod replay;
 mod runtime_toggles;
 #[path = "tui/session_history.rs"]
 mod session_history;
+#[path = "tui/session_trash.rs"]
+mod session_trash;
 #[path = "tui/workflow.rs"]
 mod workflow;
 

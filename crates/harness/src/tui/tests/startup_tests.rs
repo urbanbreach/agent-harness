@@ -45,7 +45,7 @@ fn tui_startup_carries_unsent_draft_into_new_live_session() {
     set_pending_live_prompt_draft(Some("draft to keep".to_string()));
 
     let live = AppState::new_live(None, false, None);
-    assert_eq!(live.prompt_buffer, "draft to keep");
+    assert_eq!(live.composer.prompt_buffer, "draft to keep");
 
     set_pending_live_prompt_draft(None);
 }
