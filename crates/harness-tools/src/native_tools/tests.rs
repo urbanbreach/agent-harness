@@ -90,7 +90,7 @@ fn question_args_accept_allow_freeform_legacy_field() {
 }
 
 #[test]
-fn skill_args_match_opencode_name_only_schema() {
+fn skill_args_match_harness_name_only_schema() {
     let args: SkillArgs = serde_json::from_value(json!({
         "name": "git-master"
     }))
@@ -102,7 +102,7 @@ fn skill_args_match_opencode_name_only_schema() {
         "name": "git-master",
         "user_message": "extra context"
     }))
-    .expect_err("skill args should reject non-OpenCode user_message field");
+    .expect_err("skill args should reject non-Harness user_message field");
     assert!(err.to_string().contains("unknown field `user_message`"));
 
     let skill = SkillTool::new(Arc::new(ControlPlaneExecutor::new()));

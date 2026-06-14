@@ -32,7 +32,6 @@ pub(crate) use repo_root::repo_root;
 #[allow(unused_imports)]
 pub(crate) use single_surface_live::{SingleSurfaceShellRunner, SingleSurfaceWebFetchTransport};
 #[allow(unused_imports)]
-#[allow(unused_imports)]
 pub use tool_context::{test_context, test_context_with_tool_state};
 #[allow(unused_imports)]
 pub use workspace::{setup_workspace, setup_workspace_fixture};
