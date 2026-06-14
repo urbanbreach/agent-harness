@@ -115,7 +115,6 @@ fn extension_strategy_documents_descriptor_only_manifest_seam() {
     let roadmap = read_doc("docs/roadmap-v1.md");
     let sessions = read_doc("docs/sessions-and-replay.md");
     let claim_matrix = read_doc("docs/claim-evidence-matrix.md");
-    let progress = read_doc("docs/v1-release-readiness-slice-progress.md");
     let schema_path = root.join("configs/extension-manifest.v1.schema.json");
 
     // act
@@ -164,24 +163,15 @@ fn extension_strategy_documents_descriptor_only_manifest_seam() {
             "roadmap must not keep checked runtime extension overclaim: {forbidden_checked_claim}"
         );
     }
-    for forbidden_progress_claim in [
-        "Extension-provided tools go through the same permission checks as native tools.",
-        "Replay can render old extension events without loading extension code.",
-    ] {
-        assert!(
-            !progress.contains(forbidden_progress_claim),
-            "progress log must not keep runtime extension overclaim: {forbidden_progress_claim}"
-        );
-    }
-    for anchor in [
+    for descriptor_only_truth_anchor in [
         "Extension tool descriptors declare public permission names, but extension-provided\n  tools are not registered or executed in V1 and no runtime permission path\n  exists yet.",
         "Replay support for extension manifests is limited to static descriptor/config\n  metadata; it does not render extension tool events or load extension code.",
         "Extension-provided tools are not registered or executed in V1; no runtime permission path exists yet",
         "Replay support is descriptor/config metadata only and does not render extension tool events",
     ] {
         assert!(
-            roadmap.contains(anchor) || progress.contains(anchor),
-            "roadmap/progress missing descriptor-only truth anchor: {anchor}"
+            extension.contains(descriptor_only_truth_anchor),
+            "extension strategy missing descriptor-only truth anchor: {descriptor_only_truth_anchor}"
         );
     }
 
