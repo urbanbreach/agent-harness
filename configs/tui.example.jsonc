@@ -1,6 +1,15 @@
 {
   "$schema": "./tui.json",
   "keybinds": {
+    "leader": "ctrl+x",
+    "palette": "ctrl+p, <leader>p",
+    "new_session": "<leader>n",
+    "resume_session": "<leader>l",
+    "switch_model": "<leader>m",
+    "open_status_dialog": "<leader>s",
+    "toggle_operator_sidebar": "<leader>b, 2",
+    "open_lineage_browser": "<leader>g",
+    "compact_session": "<leader>c",
     "agent_cycle": "tab",
     "agent_cycle_reverse": "shift-tab",
     "variant_cycle": "ctrl+t",

@@ -345,7 +345,7 @@ for those settings instead of mixing them into runtime config.
 | `permission` | Default permission policy for the supported tool subset plus optional shell allowlist. |
 | `plugin` | Upstream plugin list; accepted only when empty because plugins are not loaded by the harness. |
 | `provider` | Provider definitions keyed by provider id. |
-| `runtime` | Runtime knobs that are not provider/model/agent definitions, currently including provider-context compaction settings. |
+| `runtime` | Runtime knobs that are not provider/model/agent definitions, currently including provider-context compaction settings and provider retry policy. |
 | `server` | Upstream server configuration; accepted only when empty because server commands are outside this runtime config. |
 | `share` | Upstream sharing mode; only `disabled` is accepted. |
 | `shell` | Upstream-compatible default-shell setting accepted as inert compatibility input. |
@@ -379,6 +379,60 @@ metadata.
 | --- | --- |
 | `$schema` | Optional schema URI for editor integration. |
 | `keybinds` | Supported TUI keybinding overrides. |
+
+## TUI default bindings
+
+`tui.json{,c}` `keybinds` overrides use the action ids below. The table records
+the primary shipped binding for each default-bound action; some surfaces also
+keep secondary aliases for compatibility.
+
+Set the special `leader` key to change the two-step leader prefix. The default
+leader is `Ctrl+x`. Action values can be comma-separated to keep multiple
+bindings, and `<leader>` expands to the configured leader key, for example
+`"switch_model": "<leader>m, ctrl+m"`.
+
+| Action | Primary binding | Purpose |
+| --- | --- | --- |
+| `palette` | `Ctrl+p` | Open the command palette. |
+| `new_session` | `Ctrl+x n` | Start a fresh live session. |
+| `resume_session` | `Ctrl+x l` | Continue a prior session. |
+| `switch_model` | `Ctrl+x m` | Open the model switcher. |
+| `open_status_dialog` | `Ctrl+x s` | Open the status dialog. |
+| `open_lineage_browser` | `Ctrl+x g` | Open the lineage browser. |
+| `compact_session` | `Ctrl+x c` | Request session compaction when available. |
+| `help` | `?` | Open the shortcuts/help surface. |
+| `quit` | `q` | Quit the TUI. |
+| `agent_cycle` | `Tab` | Cycle to the next primary agent. |
+| `agent_cycle_reverse` | `Shift-Tab` | Cycle to the previous primary agent. |
+| `focus_next` | `Ctrl+Tab` | Move focus forward. |
+| `focus_prev` | `Ctrl+Shift-Tab` | Move focus backward. |
+| `toggle_operator_sidebar` | `Ctrl+x b` | Show or hide the operator sidebar/drawer. |
+| `toggle_terminal_panel` | `4` | Show or hide terminal output. |
+| `toggle_follow` | ` ` | Toggle transcript follow mode. |
+| `reload` | `r` | Reload replay/session state. |
+| `close_review_surface` | `1` | Return to the transcript-first session shell. |
+| `open_event_log` | `3` | Open the event log review surface. |
+| `session_child_first` | `Ctrl+]` | Jump to the first child session. |
+| `session_child_cycle` | `]` | Cycle to the next child session. |
+| `session_child_cycle_reverse` | `[` | Cycle to the previous child session. |
+| `session_parent` | `Ctrl+[` | Return to the parent session. |
+| `diff_hunk_next` | `Alt+n` | Jump to the next diff hunk. |
+| `diff_hunk_previous` | `Alt+p` | Jump to the previous diff hunk. |
+| `move_down` | `j` | Move down in the active list. |
+| `move_up` | `k` | Move up in the active list. |
+| `submit_prompt` | `Enter` | Submit the prompt. |
+| `insert_newline` | `Shift+Enter` | Insert a prompt newline. |
+| `clear_prompt` | `Esc` | Clear the prompt. |
+| `history_up` | `Up` | Recall the previous prompt history item. |
+| `history_down` | `Down` | Recall the next prompt history item. |
+| `cursor_left` | `Left` | Move the prompt cursor left. |
+| `cursor_right` | `Right` | Move the prompt cursor right. |
+| `backspace` | `Backspace` | Delete before the prompt cursor. |
+| `delete` | `Del` | Delete after the prompt cursor. |
+| `allow_permission` | `Ctrl+y` | Allow a pending permission request. |
+| `deny_permission` | `Ctrl+n` | Deny a pending permission request. |
+| `dismiss_modal` | `Esc` | Dismiss or reject the active modal. |
+| `variant_cycle` | `Ctrl+t` | Cycle the active model variant/reasoning preset. |
 
 TUI prompt history is runtime state, not config. Interactive startup and live
 sessions load and append prompt history at `<session-dir>/tui/prompt-history.json`
@@ -803,3 +857,29 @@ Failed or aborted provider turns can be preserved in active context and checkpoi
 Operational memory is derived from persisted events and checkpoint artifacts, not from live filesystem scans. It records capped read-file facts, modified-file facts, compact operation facts, and metadata counts that help operators understand what context survived compaction.
 
 TUI memory or transcript caps are separate presentation settings. They affect what the operator sees on screen, not the persisted provider context used for resume or overflow-retry compaction. The TUI distinguishes active context estimate from cumulative provider tokens spent: active context may decrease after `CompactionApplied`, while total spend remains cumulative and never decreases.
+
+## Provider retry policy
+
+Provider-request retries are bounded and automatic only for transient provider-side failures (`TransportFailure` and `RateLimited`). Retries happen before the provider response is committed to the session as a completed assistant turn. Each retry issues a fresh provider request id and records the attempt in `ProviderRequestStartedMetadata.retry`. To avoid masking cancellation, an operator or coordinator cancellation attempt wins over an in-flight retry and short-circuits the backoff.
+
+Public retry knobs live under `runtime.provider_retry`:
+
+| Key | Default | Purpose |
+| --- | --- | --- |
+| `maxRetries` / `max_retries` | `2` | Maximum automatic retry attempts for a single provider request. Set `0` to disable automatic retries entirely (equivalent to the pre-retry headless path). |
+| `baseDelayMs` / `base_delay_ms` | `2000` | Initial retry delay in milliseconds. Exponential backoff doubles this value per attempt, clamped to `maxDelayMs`. |
+| `maxDelayMs` / `max_delay_ms` | `30000` | Maximum retry delay in milliseconds. Backoff delays never exceed this value. |
+
+```jsonc
+{
+  "runtime": {
+    "provider_retry": {
+      "max_retries": 2,
+      "base_delay_ms": 2000,
+      "max_delay_ms": 30000
+    }
+  }
+}
+```
+
+When a provider response includes a `Retry-After` header, the harness records the value as `retry_after_ms` in the `Error` event metadata. Retry scheduling prefers the provider hint when present, falling back to exponential backoff. Partial provider stream failures and failures after the first committed content chunk are not retried; they are recorded as terminal provider errors instead. Old session logs that lack `ProviderRequestStartedMetadata.retry` replay identically because the coordinator derives retry state from persisted metadata and treats absent retry metadata as the first attempt.

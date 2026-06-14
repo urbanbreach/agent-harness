@@ -155,6 +155,11 @@ Troubleshooting starts with the local checks before live provider execution:
   `edit_rejected`, and failed tool output while leaving the workspace unchanged.
 - Terminal rendering issues: retry with `--mock`, use `/help` or `Ctrl+p` for the
   command palette, and attach the redacted support bundle plus terminal details.
+- Mock provider fixture miss: if `harness run --mock "..."` reports a missing
+  mock fixture, confirm the request shape matches a stored cassette, generate or
+  copy the cassette with the same request digest, or fall back to a live prompt
+  lane; the mock provider surfaces the missing digest and expected path so the
+  cassette index can be updated without guessing.
 
 Shared runtime defaults can live at `$XDG_CONFIG_HOME/harness/harness.jsonc`
 (fallback: `~/.config/harness/harness.jsonc`) or `$XDG_CONFIG_HOME/harness/harness.json`.
@@ -243,7 +248,7 @@ LSP probes, and absolute-path workspace reads.
 
 The shipped `openai-codex` provider uses `authProvider: "codex"` with an `OPENAI_API_KEY` fallback so default live runs exercise the Codex OAuth-backed path instead of a local proxy bridge. The starter catalog intentionally defines only GPT 5.5 and GPT 5.4 Mini; broader generated provider catalogs live in `configs/provider-catalog.reference.jsonc`.
 
-The TUI exposes workflow slash commands for `/model`, `/status`, `/toggles`, `/resume`, `/new`, `/tree`, `/fork`, and `/clone`. `/model` switches the agent/model used for subsequent turns, `/status` opens the system status dialog, `/toggles` opens the session-local Toggles menu for configured agents, prompts, hooks, MCP servers, tools, skills, and YOLO menu state, `/resume` opens the saved-session picker, and `/new` starts a clean live run. `/tree` shows the Harness session lineage tree for saved sessions. `/fork` creates a child Harness session from the current session at an explicit stable event cutoff. `/clone` creates a child Harness session from the latest stable prefix of the selected source session.
+The TUI exposes workflow slash commands for `/model`, `/status`, `/toggles`, `/resume`, `/new`, `/tree`, `/fork`, `/clone`, and `/rename`. `/model` switches the agent/model used for subsequent turns, `/status` opens the system status dialog, `/toggles` opens the session-local Toggles menu for configured agents, prompts, hooks, MCP servers, tools, skills, and YOLO menu state, `/resume` opens the saved-session picker, and `/new` starts a clean live run. `/tree` shows the Harness session lineage tree for saved sessions. `/fork` creates a child Harness session from the current session at an explicit stable event cutoff. `/clone` creates a child Harness session from the latest stable prefix of the selected source session. `/rename` (`/title`) renames the current session by emitting an `UpdateSessionTitle` event, which is replayed by session inspection tools.
 
 The same lineage surface is available from the terminal through `harness sessions tree`, `harness sessions fork`, and `harness sessions clone`. `harness sessions tree` prints the saved Harness session lineage and accepts `--json`, `--root RUN_ID_OR_PATH`, and `--filter TEXT`. `harness sessions fork --source RUN_ID_OR_PATH --cutoff SEQ` writes a child session from a validated stable prefix. `harness sessions clone --source RUN_ID_OR_PATH` writes a child session from the latest stable completed prefix. Both write commands accept `--json`, reject active or writer locked sources, and print the child run id, source cutoff, event count, and copied artifact count when they succeed.
 

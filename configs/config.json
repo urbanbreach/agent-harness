@@ -745,6 +745,30 @@
         }
       ]
     },
+    "ProviderRetryRuntimeConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "base_delay_ms": {
+          "default": 2000,
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_delay_ms": {
+          "default": 30000,
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "max_retries": {
+          "default": 2,
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "PublicAgentConfig": {
       "additionalProperties": true,
       "description": "Agent override or custom agent definition.",
@@ -1338,6 +1362,18 @@
             "split_oversized_turns": false,
             "structured_summary_contract": true
           }
+        },
+        "provider_retry": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ProviderRetryRuntimeConfig"
+            }
+          ],
+          "default": {
+            "base_delay_ms": 2000,
+            "max_delay_ms": 30000,
+            "max_retries": 2
+          }
         }
       },
       "type": "object"
@@ -1616,6 +1652,11 @@
           "model_ref": null,
           "split_oversized_turns": false,
           "structured_summary_contract": true
+        },
+        "provider_retry": {
+          "base_delay_ms": 2000,
+          "max_delay_ms": 30000,
+          "max_retries": 2
         }
       }
     },

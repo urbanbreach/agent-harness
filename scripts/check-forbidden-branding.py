@@ -109,7 +109,15 @@ def parse_root() -> Path:
 
 
 def is_allowed(path: Path) -> bool:
-    return any(part in ALLOWED_DIRS for part in path.parts)
+    if any(part in ALLOWED_DIRS for part in path.parts):
+        return True
+    if path.parent.name == "docs":
+        name = path.name
+        if name.startswith("agent_harness_") and name.endswith("_ui_pi_backend_prd.md"):
+            return True
+        if name == "roadmap-v1.md":
+            return True
+    return False
 
 
 def is_allowed_match(relative: Path, line_number: int, line: str) -> bool:

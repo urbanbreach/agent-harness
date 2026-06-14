@@ -215,6 +215,8 @@ Field decisions:
 | Stop reason | Existing `finish_reason`; optional finish `metadata.provider_stop_reason` | Durable as a summary string. Provider-specific raw finish payloads are omitted. |
 | Usage and cache read/write counts | Existing `usage`; optional finish `metadata.cache_read_tokens` / `metadata.cache_write_tokens` | Durable aggregate accounting. Counts are advisory and must be safe to omit from old logs. |
 | Assistant message barrier ids/digests | `assistant_message` on `AssistantMessageFinished`; compatibility-only mirror in optional finish `metadata.assistant_message` | Carries redacted message ids or text/reasoning digests for audit boundaries. New logs should use `AssistantMessageFinished` as the explicit assistant boundary; old logs may only have the provider-finish metadata mirror. |
+| Retry attempt counter and policy | Optional start `metadata.retry` with `{ attempt, max_attempts, delay_ms, category }` | Additive, serde-defaulted counter used for bounded retry before the final provider response is committed. Absent on old logs; the coordinator treats missing retry metadata as the first attempt. |
+| Transient error server hint | Optional `retry_after_ms` in Error event metadata (provider-lifecycle finish events) | Records provider Retry-After header values in milliseconds when present. Advisory; scheduling falls back to exponential backoff when absent. Old logs without the field replay identically. |
 | Thinking or reasoning signatures | Optional finish `metadata.thinking` | Store only summaries, digests, or signature ids. Never store raw hidden thinking text. |
 | Provider payloads and secrets | Never durable | Raw requests, raw responses, auth headers, and unredacted reasoning are excluded from event logs. |
 
@@ -237,14 +239,17 @@ Field decisions:
 - `ArtifactWritten` - File stored to session
 - `PolicyViolationDetected` - Security rule triggered
 
-
-role. Members remain ordinary child agents and their provider/tool work remains represented by the
-timestamps are the enclosing event envelope timestamps. `blocks` is a projection-derived inverse of
-`blocked_by`; callers provide `blocked_by`, and replay recomputes `blocks` deterministically.
-work, stop child sessions, or cancel scheduler tasks.
-
-non-lead member sessions; pending members activate after another active member is shutdown-approved.
-are rejected by the coordinator; projections keep first-seen state if old logs contain duplicates.
+Team membership events record the team role, dependency edges, and shutdown
+state for child sessions. Members remain ordinary child agents: their
+provider/tool work is represented by the same task and provider lifecycle
+events as standalone agents, and event timestamps come from the enclosing
+event envelope. `blocks` is a projection-derived inverse of `blocked_by`;
+callers provide `blocked_by`, and replay recomputes `blocks`
+deterministically. Shutdown approval can stop child sessions or cancel
+scheduler tasks; non-lead member sessions stay pending until another active
+member is shutdown-approved. Duplicate team membership events are rejected by
+the coordinator, and projections keep first-seen state if old logs contain
+duplicates.
 
 **UI Intent**
 - `UiIntentReceived` - Live UI intent recorded before coordinator handling
