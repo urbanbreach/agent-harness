@@ -93,6 +93,17 @@ pub(super) fn categorize_non_success_status(
     }
 }
 
+pub(super) fn retry_after_ms(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    let seconds = headers
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse::<u64>()
+        .ok()?;
+    seconds.checked_mul(1_000)
+}
+
 fn extract_provider_error_detail(body: &str) -> Option<String> {
     let parsed: serde_json::Value = serde_json::from_str(body).ok()?;
     parsed

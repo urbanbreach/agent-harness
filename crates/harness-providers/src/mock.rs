@@ -39,23 +39,28 @@ pub enum MockProviderError {
 #[derive(Debug, Default, Clone)]
 pub struct MockProvider {
     scripted_events: BTreeMap<String, Vec<ProviderStreamEvent>>,
+    fixture_path: Option<String>,
 }
 
 impl MockProvider {
     pub fn new(scripted_events: BTreeMap<String, Vec<ProviderStreamEvent>>) -> Self {
-        Self { scripted_events }
+        Self {
+            scripted_events,
+            fixture_path: None,
+        }
     }
 
     pub fn from_fixture_dir(path: impl AsRef<Path>) -> Result<Self, MockProviderError> {
         let path = path.as_ref();
+        let path_string = path.display().to_string();
         let mut entries = fs::read_dir(path)
             .map_err(|source| MockProviderError::ReadFixtureDir {
-                path: path.display().to_string(),
+                path: path_string.clone(),
                 source,
             })?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|source| MockProviderError::ReadFixtureDir {
-                path: path.display().to_string(),
+                path: path_string.clone(),
                 source,
             })?;
 
@@ -85,7 +90,10 @@ impl MockProvider {
             scripted_events.insert(digest, fixture.events.into_iter().map(Into::into).collect());
         }
 
-        Ok(Self { scripted_events })
+        Ok(Self {
+            scripted_events,
+            fixture_path: Some(path_string),
+        })
     }
 }
 
@@ -93,15 +101,17 @@ impl MockProvider {
 impl Provider for MockProvider {
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
         let digest = request_digest(&req);
-        let events = self
-            .scripted_events
-            .get(&digest)
-            .cloned()
-            .unwrap_or_else(|| {
-                vec![ProviderStreamEvent::error(format!(
-                    "mock fixture missing for request_digest={digest}"
-                ))]
-            });
+        let events = self.scripted_events.get(&digest).cloned().unwrap_or_else(|| {
+            let message = match &self.fixture_path {
+                Some(fixture_path) => format!(
+                    "mock fixture missing for request_digest={digest}; fixture_path={fixture_path}; add a fixture JSON whose normalized request hashes to this digest, or run with fixture recording enabled to capture the request shape"
+                ),
+                None => format!(
+                    "mock fixture missing for request_digest={digest}; add a fixture JSON whose normalized request hashes to this digest, or run with fixture recording enabled to capture the request shape"
+                ),
+            };
+            vec![ProviderStreamEvent::error(message)]
+        });
 
         Box::pin(stream::iter(events).map(|event| event))
     }
@@ -343,11 +353,25 @@ mod tests {
 
         let digest = request_digest(&request);
         let events: Vec<_> = provider.stream_completion(request).await.collect().await;
-        assert_eq!(
-            events,
-            vec![ProviderStreamEvent::error(format!(
-                "mock fixture missing for request_digest={digest}"
-            ))]
+        assert_eq!(events.len(), 1);
+        let ProviderStreamEvent::Error {
+            message, category, ..
+        } = &events[0]
+        else {
+            panic!("expected error event, got {:?}", events[0]);
+        };
+        assert_eq!(*category, None);
+        assert!(
+            message.contains(&format!("request_digest={digest}")),
+            "error should name missing digest: {message}"
+        );
+        assert!(
+            message.contains("fixture_path="),
+            "error should include configured fixture path: {message}"
+        );
+        assert!(
+            message.contains("add a fixture JSON"),
+            "error should be actionable: {message}"
         );
     }
 

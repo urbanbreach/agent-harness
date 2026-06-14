@@ -330,6 +330,8 @@ pub enum ProviderStreamEvent {
         category: Option<ProviderErrorCategory>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         remediation: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        retry_after_ms: Option<u64>,
     },
 }
 
@@ -339,15 +341,25 @@ impl ProviderStreamEvent {
             message: message.into(),
             category: None,
             remediation: None,
+            retry_after_ms: None,
         }
     }
 
     pub fn categorized_error(message: impl Into<String>, category: ProviderErrorCategory) -> Self {
+        Self::categorized_error_with_retry_after_ms(message, category, None)
+    }
+
+    pub fn categorized_error_with_retry_after_ms(
+        message: impl Into<String>,
+        category: ProviderErrorCategory,
+        retry_after_ms: Option<u64>,
+    ) -> Self {
         let message = message.into();
         Self::Error {
             message: format!("{}: {message}", category.as_str()),
             category: Some(category),
             remediation: Some(category.remediation().to_string()),
+            retry_after_ms,
         }
     }
 }

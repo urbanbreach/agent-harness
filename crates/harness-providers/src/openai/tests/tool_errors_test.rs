@@ -218,6 +218,33 @@ async fn openai_non_success_responses_map_to_stable_error_categories() {
 }
 
 #[tokio::test]
+async fn openai_rate_limit_error_includes_retry_after_ms_metadata() {
+    let mut response = ScriptedOpenAiResponse::text(
+        429,
+        json!({"error": {"message": "rate limit exceeded"}}).to_string(),
+    );
+    response.headers.insert(
+        reqwest::header::RETRY_AFTER,
+        reqwest::header::HeaderValue::from_static("2"),
+    );
+    let transport = ScriptedOpenAiTransport::new([response]);
+    let provider = provider_for_transport(transport, "test-secret-key");
+
+    let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
+
+    let [ProviderStreamEvent::Error {
+        category,
+        retry_after_ms,
+        ..
+    }] = events.as_slice()
+    else {
+        panic!("expected one provider error event: {events:?}");
+    };
+    assert_eq!(*category, Some(ProviderErrorCategory::RateLimited));
+    assert_eq!(*retry_after_ms, Some(2_000));
+}
+
+#[tokio::test]
 async fn openai_malformed_stream_and_transport_failures_have_stable_categories() {
     // arrange
     let malformed_transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(

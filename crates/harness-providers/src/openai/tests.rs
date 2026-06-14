@@ -36,6 +36,7 @@ struct RecordedOpenAiRequest {
 #[derive(Debug, Clone)]
 struct ScriptedOpenAiResponse {
     status: u16,
+    headers: HeaderMap,
     chunks: Vec<Result<Vec<u8>, String>>,
 }
 
@@ -43,6 +44,7 @@ impl ScriptedOpenAiResponse {
     fn sse(body: String) -> Self {
         Self {
             status: 200,
+            headers: HeaderMap::new(),
             chunks: vec![Ok(body.into_bytes())],
         }
     }
@@ -50,6 +52,7 @@ impl ScriptedOpenAiResponse {
     fn sse_chunks(chunks: Vec<Vec<u8>>) -> Self {
         Self {
             status: 200,
+            headers: HeaderMap::new(),
             chunks: chunks.into_iter().map(Ok).collect(),
         }
     }
@@ -57,6 +60,7 @@ impl ScriptedOpenAiResponse {
     fn text(status: u16, body: impl Into<String>) -> Self {
         Self {
             status,
+            headers: HeaderMap::new(),
             chunks: vec![Ok(body.into().into_bytes())],
         }
     }
@@ -128,6 +132,7 @@ impl OpenAiHttpTransport for ScriptedOpenAiTransport {
             .pop_front()
             .expect("scripted OpenAI response");
         let mut headers = HeaderMap::new();
+        headers.extend(response.headers.clone());
         if response.status == 200 {
             headers.insert(
                 reqwest::header::CONTENT_TYPE,
@@ -172,6 +177,7 @@ fn assert_single_error_category(events: &[ProviderStreamEvent], expected: Provid
         message,
         category,
         remediation,
+        ..
     } = error_events[0]
     else {
         panic!("expected provider error event: {events:?}");

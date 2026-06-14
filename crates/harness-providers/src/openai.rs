@@ -34,6 +34,7 @@ use self::endpoint::{
 };
 use self::error::{
     categorize_non_success_status, format_non_success_status_message, format_transport_error,
+    retry_after_ms,
 };
 use self::header::{insert_static_header, parse_headers, remove_header_case_insensitive};
 use self::request::{OpenAiChatCompletionsRequest, OpenAiResponsesRequest};
@@ -400,10 +401,15 @@ impl OpenAiCompatibleProvider {
         bearer_token: &str,
     ) -> ProviderStreamEvent {
         let status = response.status;
+        let retry_after_ms = retry_after_ms(&response.headers);
         let body = collect_body_text(response.body).await.ok();
         let message = format_non_success_status_message(status, body.as_deref(), bearer_token);
         let category = categorize_non_success_status(status, body.as_deref(), bearer_token);
-        ProviderStreamEvent::categorized_error(message, category)
+        ProviderStreamEvent::categorized_error_with_retry_after_ms(
+            message,
+            category,
+            retry_after_ms,
+        )
     }
 }
 
