@@ -368,6 +368,14 @@ fn validate_shell_path_arguments(
         let candidate = if token.starts_with('-') {
             if let Some((_, value)) = token.split_once('=') {
                 value
+            } else if token.starts_with("--") {
+                continue;
+            } else if token.chars().count() > 2 {
+                let mut chars = token.chars();
+                chars.next();
+                chars.next();
+                let offset = token.len() - chars.as_str().len();
+                &token[offset..]
             } else {
                 continue;
             }
@@ -564,6 +572,20 @@ mod tests {
             .validate_bash_command("ls foo/../../../etc/pas*", tempdir.path(), tempdir.path())
             .expect_err("external relative path with glob should be blocked");
         assert!(matches!(err4, ToolError::PathEscapesWorkspace { .. }));
+
+        let err5 = safety
+            .validate_bash_command("ls -I/tmp", tempdir.path(), tempdir.path())
+            .expect_err("external absolute path inside short flag should be blocked");
+        assert!(matches!(err5, ToolError::PathEscapesWorkspace { .. }));
+
+        let err6 = safety
+            .validate_bash_command(
+                "ls -Ifoo/../../../etc/passwd",
+                tempdir.path(),
+                tempdir.path(),
+            )
+            .expect_err("external relative path inside short flag should be blocked");
+        assert!(matches!(err6, ToolError::PathEscapesWorkspace { .. }));
     }
 
     #[test]
