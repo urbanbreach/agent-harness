@@ -4,14 +4,12 @@ use std::sync::{Arc, Mutex};
 use harness_core::coord::{CoordinatorError, CoordinatorHandle, ManualCompactionOutcome};
 use harness_core::event::{EventActor, EventEnvelopeV1, EventV1};
 use harness_tui::{LiveUpdate, OperatorNoticeLevel, UiIntent};
-use serde_json::json;
 use tokio::sync::mpsc;
 
 use super::auth_backend::{spawn_tui_auth_backend_task, TuiAuthBackendContext};
 use super::launch_metadata::{launch_metadata_model_ref, launch_metadata_model_settings};
 use super::lineage::{materialize_tui_fork_child, materialize_tui_lineage_child};
 use super::recover_mutex_lock;
-use super::session_trash::trash_session_run_dir_for_tui;
 use crate::scenarios::supervisor_actor;
 
 pub(super) type LiveAgentTargetState = Arc<Mutex<LiveAgentTarget>>;
@@ -163,116 +161,6 @@ pub(super) async fn handle_ui_intents(
                 };
                 let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
             }
-            UiIntent::ExportSession { session, output } => {
-                let mut stdout = Vec::new();
-                let mut stderr = Vec::new();
-                let exit_code = harness::execute_session_export_with_io(
-                    session,
-                    output.clone(),
-                    auth_backend.config_path.clone(),
-                    auth_backend.session_dir.clone(),
-                    &mut stdout,
-                    &mut stderr,
-                    &harness::CliDeps::real(),
-                );
-                let message = if exit_code == 0 {
-                    format!("session export written: {}", output.display())
-                } else {
-                    let stderr = String::from_utf8_lossy(&stderr);
-                    format!("session export failed: {}", stderr.trim())
-                };
-                let level = if exit_code == 0 {
-                    OperatorNoticeLevel::Info
-                } else {
-                    OperatorNoticeLevel::Error
-                };
-                let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
-            }
-            UiIntent::RunShellCommand { command } => {
-                if let Err(err) = coordinator
-                    .request_tool_call(
-                        supervisor_actor(),
-                        Some("terminal".to_string()),
-                        "bash",
-                        json!({
-                            "command": command,
-                            "description": "Run command from TUI shell mode",
-                        }),
-                    )
-                    .await
-                {
-                    let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
-                        message: format!("shell command failed to start: {err}"),
-                        level: OperatorNoticeLevel::Error,
-                    });
-                }
-            }
-            UiIntent::CancelQueuedPrompt { task_id } => {
-                if let Err(err) = coordinator
-                    .cancel_task(task_id, "queued prompt removed before scheduling")
-                    .await
-                {
-                    let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
-                        message: format!("queued prompt removal failed: {err}"),
-                        level: OperatorNoticeLevel::Error,
-                    });
-                }
-            }
-            UiIntent::DeleteSession { run_id, run_dir } => {
-                let current_run_dir = coordinator.run_info().await.ok().map(|run| run.run_dir);
-                let notice = match trash_session_run_dir_for_tui(
-                    &run_id,
-                    &run_dir,
-                    auth_backend.session_dir.as_deref(),
-                    current_run_dir.as_deref(),
-                ) {
-                    Ok(report) => LiveUpdate::OperatorNotice {
-                        message: format!(
-                            "session moved to trash: {} -> {}",
-                            report.source_run_dir.display(),
-                            report.trash_run_dir.display()
-                        ),
-                        level: OperatorNoticeLevel::Info,
-                    },
-                    Err(err) => LiveUpdate::OperatorNotice {
-                        message: err,
-                        level: OperatorNoticeLevel::Error,
-                    },
-                };
-                let _ = live_update_tx.send(notice);
-            }
-            UiIntent::UpdateSessionTitle {
-                run_id,
-                run_dir,
-                title,
-            } => {
-                let notice = match coordinator.run_info().await {
-                    Ok(current) if current.run_id == run_id && same_run_dir(&current.run_dir, &run_dir) => {
-                        match coordinator.update_session_title(title).await {
-                            Ok(updated) => LiveUpdate::OperatorNotice {
-                                message: format!("session renamed: {}", updated.run_name),
-                                level: OperatorNoticeLevel::Info,
-                            },
-                            Err(err) => LiveUpdate::OperatorNotice {
-                                message: format!("session rename failed: {err}"),
-                                level: OperatorNoticeLevel::Error,
-                            },
-                        }
-                    }
-                    Ok(current) => LiveUpdate::OperatorNotice {
-                        message: format!(
-                            "session rename failed: selected run `{run_id}` is not the current run `{}`",
-                            current.run_id
-                        ),
-                        level: OperatorNoticeLevel::Error,
-                    },
-                    Err(err) => LiveUpdate::OperatorNotice {
-                        message: format!("session rename failed: {err}"),
-                        level: OperatorNoticeLevel::Error,
-                    },
-                };
-                let _ = live_update_tx.send(notice);
-            }
             UiIntent::OpenAuthManager { args, stdin } => {
                 spawn_tui_auth_backend_task(
                     args,
@@ -352,13 +240,6 @@ pub(super) async fn handle_ui_intents(
         }
     }
     Ok(())
-}
-
-fn same_run_dir(left: &std::path::Path, right: &std::path::Path) -> bool {
-    match (left.canonicalize(), right.canonicalize()) {
-        (Ok(left), Ok(right)) => left == right,
-        _ => left == right,
-    }
 }
 
 pub(super) fn manual_compaction_success_message(

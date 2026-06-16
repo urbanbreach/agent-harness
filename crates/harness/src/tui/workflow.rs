@@ -112,11 +112,6 @@ pub(super) fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> Intera
         | Some(UiIntent::ResolvePermission { .. })
         | Some(UiIntent::OpenAuthManager { .. })
         | Some(UiIntent::CompactSession)
-        | Some(UiIntent::ExportSession { .. })
-        | Some(UiIntent::RunShellCommand { .. })
-        | Some(UiIntent::CancelQueuedPrompt { .. })
-        | Some(UiIntent::DeleteSession { .. })
-        | Some(UiIntent::UpdateSessionTitle { .. })
         | Some(UiIntent::InterruptSession { .. })
         | Some(UiIntent::ForkSession { .. })
         | Some(UiIntent::CloneSession { .. })
@@ -157,13 +152,8 @@ pub(super) fn live_workflow_from_intent(intent: &UiIntent) -> Option<Interactive
         UiIntent::QuitRequested => Some(InteractiveWorkflow::Quit),
         UiIntent::ResolvePermission { .. }
         | UiIntent::SubmitPrompt { .. }
-        | UiIntent::RunShellCommand { .. }
-        | UiIntent::CancelQueuedPrompt { .. }
-        | UiIntent::DeleteSession { .. }
-        | UiIntent::UpdateSessionTitle { .. }
         | UiIntent::OpenAuthManager { .. }
         | UiIntent::CompactSession
-        | UiIntent::ExportSession { .. }
         | UiIntent::InterruptSession { .. }
         | UiIntent::ForkSession { .. }
         | UiIntent::CloneSession { .. }
@@ -176,13 +166,8 @@ fn forward_intent_to_live_run(intent: &UiIntent) -> bool {
         intent,
         UiIntent::ResolvePermission { .. }
             | UiIntent::SubmitPrompt { .. }
-            | UiIntent::RunShellCommand { .. }
-            | UiIntent::CancelQueuedPrompt { .. }
-            | UiIntent::DeleteSession { .. }
-            | UiIntent::UpdateSessionTitle { .. }
             | UiIntent::OpenAuthManager { .. }
             | UiIntent::CompactSession
-            | UiIntent::ExportSession { .. }
             | UiIntent::InterruptSession { .. }
             | UiIntent::ForkSession { .. }
             | UiIntent::CloneSession { .. }

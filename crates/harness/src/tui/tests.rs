@@ -8,8 +8,6 @@ mod launch_metadata_tests;
 mod lineage_tests;
 #[path = "tests/live_intent_tests.rs"]
 mod live_intent_tests;
-#[path = "tests/live_queued_prompt_cancel_tests.rs"]
-mod live_queued_prompt_cancel_tests;
 #[path = "tests/live_settings_tests.rs"]
 mod live_settings_tests;
 #[path = "tests/model_selection_tests.rs"]
