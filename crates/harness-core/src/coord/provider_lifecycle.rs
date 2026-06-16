@@ -271,7 +271,7 @@ impl Coordinator {
         Ok(())
     }
 
-    pub(in crate::coord) fn agent_assistant_message_finished_internal(
+    pub(in crate::coord) async fn agent_assistant_message_finished_internal(
         &mut self,
         task_id: String,
         agent_id: String,
@@ -300,7 +300,7 @@ impl Coordinator {
             Some(format!("agent:{agent_id}")),
             Some(turn_request_id),
             EventV1::AssistantMessageFinished(crate::event::AssistantMessageFinishedEvent {
-                request_id,
+                request_id: request_id.clone(),
                 tool_call_count,
                 assistant_message,
             }),
@@ -308,6 +308,12 @@ impl Coordinator {
 
         if let Some(running) = run_state.running_agent_turns.get_mut(&task_id) {
             running.latest_assistant_output = Some(assistant_output);
+        }
+
+        if tool_call_count > 0 {
+            if let Err(err) = self.snapshot_workspace_internal(request_id.clone()).await {
+                tracing::warn!(error = %err, request_id, "failed to snapshot workspace before tool batch");
+            }
         }
 
         Ok(())

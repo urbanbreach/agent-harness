@@ -11,13 +11,14 @@ use super::*;
 const REQUIRED_INTERNAL_CONFIG_SECTIONS: [&str; 4] =
     ["integrations", "permissions", "providers", "runtime"];
 
-const ALLOWED_INTERNAL_TOP_LEVEL_CONFIG_KEYS: [&str; 20] = [
+const ALLOWED_INTERNAL_TOP_LEVEL_CONFIG_KEYS: [&str; 21] = [
     "$schema",
     "agents",
     "defaultAgent",
     "default_agent",
     "disabled_providers",
     "enabled_providers",
+    "formatter",
     "hooks",
     "hashlineEdit",
     "hashline_edit",

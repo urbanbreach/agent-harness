@@ -278,6 +278,10 @@ fn resolve_mock_settings(
         coordinator_config.provider = provider;
     }
     coordinator_config.agent_profiles = golden_path_profiles();
+    coordinator_config.formatter = logging_config
+        .as_ref()
+        .map(|config| config.formatter.clone())
+        .unwrap_or_default();
 
     Ok(PromptSettings {
         logging_config,

@@ -67,6 +67,7 @@ pub fn build_interactive_coordinator_config(
     coordinator_config.provider = Arc::new(build_provider_router(cfg)?);
     coordinator_config.agent_profiles =
         interactive_agent_profiles_with_extra_tools(cfg, &auto_tool_ids)?;
+    coordinator_config.formatter = cfg.formatter.clone();
     Ok(coordinator_config)
 }
 

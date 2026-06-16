@@ -442,4 +442,26 @@ impl CoordinatorHandle {
         })
         .await
     }
+
+    pub async fn snapshot_workspace(
+        &self,
+        request_id: impl Into<String>,
+    ) -> Result<WorkspaceSnapshotSummary, CoordinatorError> {
+        self.request(|respond_to| Command::SnapshotWorkspace {
+            request_id: request_id.into(),
+            respond_to,
+        })
+        .await
+    }
+
+    pub async fn revert_workspace(
+        &self,
+        snapshot_request_id: impl Into<String>,
+    ) -> Result<WorkspaceRevertSummary, CoordinatorError> {
+        self.request(|respond_to| Command::RevertWorkspace {
+            snapshot_request_id: snapshot_request_id.into(),
+            respond_to,
+        })
+        .await
+    }
 }

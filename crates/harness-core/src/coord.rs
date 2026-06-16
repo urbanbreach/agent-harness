@@ -20,8 +20,9 @@ use crate::agent::{
 };
 use crate::clock::Clock;
 use crate::config::{
-    registered_hook_runtime_config, CompactionRuntimeConfig, HookLifecycleEvent, HookRuntimeConfig,
-    LifecycleHookConfig, ProviderRetryRuntimeConfig, ShellAllowlist, ToolFailureMode,
+    registered_hook_runtime_config, CompactionRuntimeConfig, FormatterConfig, HookLifecycleEvent,
+    HookRuntimeConfig, LifecycleHookConfig, ProviderRetryRuntimeConfig, ShellAllowlist,
+    ToolFailureMode,
 };
 use crate::conversation::{
     ConversationAssistantMessage, ConversationMessage, ConversationToolCall,
@@ -73,13 +74,16 @@ mod background_notifications;
 mod child_session;
 mod command_loop;
 mod event_helpers;
+mod formatter;
 mod handle;
 mod hooks;
 mod permission;
 mod provider_context;
 mod provider_lifecycle;
 mod question;
+mod revert;
 mod run_lifecycle;
+mod snapshot;
 mod state;
 mod task_category;
 mod task_lifecycle;
@@ -229,6 +233,7 @@ pub struct CoordinatorConfig {
     pub hook_command_executor: Arc<dyn LifecycleHookCommandExecutor + Send + Sync>,
     pub compaction: CompactionRuntimeConfig,
     pub provider_retry: ProviderRetryRuntimeConfig,
+    pub formatter: FormatterConfig,
     pub config_digest: String,
     pub harness_version: String,
     pub session_mode_source: Option<SessionModeSource>,
@@ -254,6 +259,7 @@ impl CoordinatorConfig {
             hook_command_executor: Arc::new(TokioLifecycleHookCommandExecutor),
             compaction: CompactionRuntimeConfig::default(),
             provider_retry: ProviderRetryRuntimeConfig::default(),
+            formatter: FormatterConfig::default(),
             config_digest: "none".to_string(),
             harness_version: env!("CARGO_PKG_VERSION").to_string(),
             session_mode_source: None,
@@ -280,6 +286,21 @@ pub struct RunInfo {
     pub run_dir: PathBuf,
     pub artifacts_dir: PathBuf,
     pub events_path: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceSnapshotSummary {
+    pub request_id: String,
+    pub artifact_path: String,
+    pub file_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceRevertSummary {
+    pub request_id: String,
+    pub restored_paths: Vec<String>,
+    pub removed_paths: Vec<String>,
+    pub failed_paths: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -474,6 +495,14 @@ pub enum Command {
         request_id: String,
         outcome: AgentTurnTaskOutcome,
     },
+    SnapshotWorkspace {
+        request_id: String,
+        respond_to: oneshot::Sender<Result<WorkspaceSnapshotSummary, CoordinatorError>>,
+    },
+    RevertWorkspace {
+        snapshot_request_id: String,
+        respond_to: oneshot::Sender<Result<WorkspaceRevertSummary, CoordinatorError>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -548,6 +577,12 @@ pub enum CoordinatorError {
     CompactionFailed(String),
     #[error("lifecycle hook failed: {0}")]
     LifecycleHookFailed(String),
+    #[error("workspace snapshot failed: {0}")]
+    SnapshotFailed(String),
+    #[error("workspace revert failed: {0}")]
+    RevertFailed(String),
+    #[error("snapshot `{0}` not found")]
+    SnapshotNotFound(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

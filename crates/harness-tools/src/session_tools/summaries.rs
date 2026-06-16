@@ -266,5 +266,7 @@ fn event_type_label(event: &EventV1) -> &'static str {
         EventV1::ArtifactWritten(_) => "artifact_written",
         EventV1::PolicyViolationDetected(_) => "policy_violation_detected",
         EventV1::UiIntentReceived(_) => "ui_intent_received",
+        EventV1::WorkspaceSnapshot(_) => "workspace_snapshot",
+        EventV1::WorkspaceReverted(_) => "workspace_reverted",
     }
 }

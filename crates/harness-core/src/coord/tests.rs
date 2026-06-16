@@ -782,6 +782,18 @@ delegate_test!(run_state_turn_queue_methods_own_agent_turn_lifecycle_state => ru
 delegate_test!(run_state_permission_methods_own_pending_and_grant_state => run_state_method_tests::run_state_permission_methods_own_pending_and_grant_state);
 delegate_test!(run_state_compaction_methods_own_overflow_retry_attempt_state => run_state_method_tests::run_state_compaction_methods_own_overflow_retry_attempt_state);
 
+#[cfg(test)]
+#[path = "tests/workspace_snapshot_tests.rs"]
+mod workspace_snapshot_tests;
+
+delegate_tokio_test!(snapshot_captures_workspace_and_emits_event => workspace_snapshot_tests::snapshot_captures_workspace_and_emits_event);
+delegate_tokio_test!(revert_restores_workspace_from_snapshot => workspace_snapshot_tests::revert_restores_workspace_from_snapshot);
+delegate_tokio_test!(replay_of_reverted_session_does_not_restore_files => workspace_snapshot_tests::replay_of_reverted_session_does_not_restore_files);
+delegate_tokio_test!(formatter_runs_configured_command_on_edited_file => workspace_snapshot_tests::formatter_runs_configured_command_on_edited_file);
+delegate_tokio_test!(formatter_disabled_skips_command => workspace_snapshot_tests::formatter_disabled_skips_command);
+delegate_tokio_test!(formatter_missing_language_is_no_op => workspace_snapshot_tests::formatter_missing_language_is_no_op);
+delegate_tokio_test!(formatter_failure_returns_warning_without_panic => workspace_snapshot_tests::formatter_failure_returns_warning_without_panic);
+
 fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
     let event_store =
         Arc::new(JsonlFileEventStore::open(session_dir, run_id, true).expect("open event store"));

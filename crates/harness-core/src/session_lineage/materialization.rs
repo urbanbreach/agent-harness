@@ -527,7 +527,9 @@ fn collect_referenced_artifacts(
             | EventV1::EditApplied(_)
             | EventV1::EditRejected(_)
             | EventV1::PolicyViolationDetected(_)
-            | EventV1::UiIntentReceived(_) => {}
+            | EventV1::UiIntentReceived(_)
+            | EventV1::WorkspaceSnapshot(_)
+            | EventV1::WorkspaceReverted(_) => {}
         }
     }
     Ok(specs)

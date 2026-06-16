@@ -611,6 +611,21 @@ fn normalize_public_mcp_servers(value: serde_json::Value) -> serde_json::Value {
     serde_json::Value::Object(normalized_servers)
 }
 
+fn translate_public_formatter_config(
+    value: Option<&serde_json::Value>,
+) -> Result<FormatterConfig, ConfigError> {
+    match value {
+        None => Ok(FormatterConfig::default()),
+        Some(serde_json::Value::Bool(false)) => Ok(FormatterConfig {
+            enabled: false,
+            languages: BTreeMap::new(),
+        }),
+        Some(serde_json::Value::Bool(true)) => Ok(FormatterConfig::default()),
+        Some(value) => serde_json::from_value(value.clone())
+            .map_err(|err| ConfigError::ParseJson5(err.to_string())),
+    }
+}
+
 fn normalize_public_lsp_config(value: &serde_json::Value) -> Option<serde_json::Value> {
     match value {
         serde_json::Value::Bool(false) => Some(serde_json::json!({ "disabled": true })),
@@ -881,6 +896,12 @@ pub(super) fn translate_public_runtime_root(
     if let Some(value) = object.get("lsp").and_then(normalize_public_lsp_config) {
         translated.insert("lsp".to_string(), value);
     }
+
+    let formatter = translate_public_formatter_config(object.get("formatter"))?;
+    translated.insert(
+        "formatter".to_string(),
+        serde_json::to_value(formatter).map_err(|err| ConfigError::ParseJson5(err.to_string()))?,
+    );
 
     let instructions = object
         .get("instructions")

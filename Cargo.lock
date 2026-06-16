@@ -1269,7 +1269,6 @@ dependencies = [
  "serde_json",
  "syntect",
  "tempfile",
- "unicode-segmentation",
  "vt100",
 ]
 

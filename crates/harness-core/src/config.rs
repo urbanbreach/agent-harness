@@ -182,6 +182,8 @@ pub struct HarnessConfig {
     #[serde(default, alias = "defaultAgent")]
     pub default_agent: Option<String>,
     #[serde(default)]
+    pub formatter: FormatterConfig,
+    #[serde(default)]
     #[serde(skip)]
     #[schemars(skip)]
     pub instruction_files: Vec<InstructionFile>,
@@ -266,6 +268,34 @@ pub struct UiParityKeybindingsConfig {
     pub session_parent: Option<String>,
     #[serde(default, alias = "variantCycle")]
     pub variant_cycle: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FormatterConfig {
+    #[serde(default = "default_formatter_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub languages: BTreeMap<String, FormatterLanguageConfig>,
+}
+
+impl Default for FormatterConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_formatter_enabled(),
+            languages: BTreeMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FormatterLanguageConfig {
+    pub command: Vec<String>,
+}
+
+fn default_formatter_enabled() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

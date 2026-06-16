@@ -303,7 +303,9 @@ impl PrefixState {
             | EventV1::PermissionGrantRecorded(_)
             | EventV1::ArtifactWritten(_)
             | EventV1::PolicyViolationDetected(_)
-            | EventV1::UiIntentReceived(_) => {}
+            | EventV1::UiIntentReceived(_)
+            | EventV1::WorkspaceSnapshot(_)
+            | EventV1::WorkspaceReverted(_) => {}
         }
     }
 

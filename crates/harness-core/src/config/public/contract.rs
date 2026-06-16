@@ -224,7 +224,7 @@ const PUBLIC_RUNTIME_TOP_LEVEL_CONFIG_KEYS: &[PublicConfigTopLevelKey] = &[
         inactive = EmptyObject
     ),
     runtime_key!("experimental", InertCompatibility, schema, docs),
-    runtime_key!("formatter", InertCompatibility, schema, docs),
+    runtime_key!("formatter", Canonical, schema, docs),
     runtime_key!("instructions", Canonical, schema, docs),
     runtime_key!("layout", InertCompatibility, schema, docs),
     runtime_key!("logLevel", InertCompatibility, schema, docs),

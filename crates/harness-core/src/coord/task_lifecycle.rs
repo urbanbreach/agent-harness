@@ -340,18 +340,19 @@ impl Coordinator {
         match outcome {
             JobOutcome::Succeeded { result } => {
                 let result_for_response = result.clone();
-                for applied_edit in applied_tool_edit_metadata(
+                let applied_edits = applied_tool_edit_metadata(
                     &task_hook_state.tool_id,
                     &result_for_response,
                     task.hashline_edit.as_ref(),
-                ) {
+                );
+                for applied_edit in &applied_edits {
                     let AppliedToolEditMetadata {
                         metadata,
                         diff_rel_path,
                         diff_digest,
                         deleted,
                     } = applied_edit;
-                    let new_file_digest = if deleted {
+                    let new_file_digest = if *deleted {
                         digest12(b"")
                     } else {
                         match workspace_file_digest(&run_state.info.workspace_root, &metadata.path)
@@ -363,7 +364,7 @@ impl Coordinator {
                                     self.redactor.as_ref(),
                                     run_state,
                                     &task.tool_call_id,
-                                    &metadata,
+                                    metadata,
                                     format!("failed to compute file digest: {reason}"),
                                     request_correlation_id.as_deref(),
                                 )?;
@@ -377,16 +378,44 @@ impl Coordinator {
                         run_state,
                         EditAppliedEventArgs {
                             tool_call_id: &task.tool_call_id,
-                            metadata: &metadata,
+                            metadata,
                             new_file_digest,
-                            diff_rel_path,
-                            diff_digest,
+                            diff_rel_path: diff_rel_path.clone(),
+                            diff_digest: diff_digest.clone(),
                             request_correlation_id: request_correlation_id.as_deref(),
                         },
                     )?;
                 }
 
-                let result_summary = result.display_text;
+                let mut formatter_warnings = Vec::new();
+                let mut formatted_paths = std::collections::BTreeSet::new();
+                for applied_edit in &applied_edits {
+                    if applied_edit.deleted {
+                        continue;
+                    }
+                    let path = &applied_edit.metadata.path;
+                    if !formatted_paths.insert(path.clone()) {
+                        continue;
+                    }
+                    if let Err(warning) = formatter::run_formatter_for_path(
+                        &self.config.formatter,
+                        &run_state.info.workspace_root,
+                        path,
+                    )
+                    .await
+                    {
+                        formatter_warnings.push(format!("{path}: {warning}"));
+                    }
+                }
+
+                let mut result_summary = result.display_text.clone();
+                if !formatter_warnings.is_empty() {
+                    result_summary.push_str("\n\nFormatter warnings:\n");
+                    for warning in formatter_warnings {
+                        result_summary.push_str(&warning);
+                        result_summary.push('\n');
+                    }
+                }
                 let artifact_refs = event_artifact_refs(&result.artifacts);
                 let lineage = tool_task_lineage_metadata(
                     &task.tool_call_id,

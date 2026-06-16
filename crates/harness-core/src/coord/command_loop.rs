@@ -360,14 +360,16 @@ impl Coordinator {
                 assistant_message,
                 respond_to,
             } => {
-                let result = self.agent_assistant_message_finished_internal(
-                    task_id,
-                    agent_id,
-                    request_id,
-                    assistant_output,
-                    tool_call_count,
-                    assistant_message,
-                );
+                let result = self
+                    .agent_assistant_message_finished_internal(
+                        task_id,
+                        agent_id,
+                        request_id,
+                        assistant_output,
+                        tool_call_count,
+                        assistant_message,
+                    )
+                    .await;
                 warn_oneshot_send_failure(
                     respond_to.send(result),
                     "agent_assistant_message_finished",
@@ -424,6 +426,20 @@ impl Coordinator {
                 let _ = self
                     .agent_turn_finished_internal(task_id, agent_id, request_id, outcome)
                     .await;
+            }
+            Command::SnapshotWorkspace {
+                request_id,
+                respond_to,
+            } => {
+                let result = self.snapshot_workspace_internal(request_id).await;
+                warn_oneshot_send_failure(respond_to.send(result), "snapshot_workspace");
+            }
+            Command::RevertWorkspace {
+                snapshot_request_id,
+                respond_to,
+            } => {
+                let result = self.revert_workspace_internal(snapshot_request_id).await;
+                warn_oneshot_send_failure(respond_to.send(result), "revert_workspace");
             }
         }
     }

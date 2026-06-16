@@ -731,7 +731,9 @@ pub fn project_transcript(
             | EventV1::PermissionGrantRecorded(_)
             | EventV1::EditProposed(_)
             | EventV1::EditApplied(_)
-            | EventV1::EditRejected(_) => {}
+            | EventV1::EditRejected(_)
+            | EventV1::WorkspaceSnapshot(_)
+            | EventV1::WorkspaceReverted(_) => {}
         }
     }
 

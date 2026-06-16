@@ -131,6 +131,8 @@ pub enum EventV1 {
     ArtifactWritten(ArtifactWrittenEvent),
     PolicyViolationDetected(PolicyViolationDetectedEvent),
     UiIntentReceived(UiIntentReceivedEvent),
+    WorkspaceSnapshot(WorkspaceSnapshotEvent),
+    WorkspaceReverted(WorkspaceRevertedEvent),
 }
 
 impl EventV1 {
@@ -848,4 +850,27 @@ pub struct UiIntentReceivedEvent {
     pub intent: String,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub params: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceSnapshotEvent {
+    pub request_id: String,
+    pub artifact_path: String,
+    pub artifact_digest: String,
+    pub file_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceRevertedEvent {
+    pub request_id: String,
+    pub snapshot_request_id: String,
+    pub restored_paths: Vec<String>,
+    pub removed_paths: Vec<String>,
+    pub failed_paths: Vec<WorkspaceRevertFailure>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceRevertFailure {
+    pub path: String,
+    pub reason: String,
 }

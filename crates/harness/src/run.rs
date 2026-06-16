@@ -411,6 +411,11 @@ async fn run_once(
         .unwrap_or_else(|| Arc::new(golden_path_provider()));
     coordinator_config.agent_profiles = golden_path_profiles();
     coordinator_config.run_id_override = deterministic_run_id;
+    coordinator_config.formatter = settings
+        .config
+        .as_ref()
+        .map(|config| config.formatter.clone())
+        .unwrap_or_default();
     apply_runtime_metadata(
         &mut coordinator_config,
         settings.deterministic,
