@@ -108,7 +108,7 @@ pub(super) fn live_empty_state_visible(app: &AppState) -> bool {
         && app.activities.is_empty()
         && app.active_permission_view().is_none()
         && app.transcript_pending_permissions().is_empty()
-        && app.composer.prompt_buffer.is_empty()
+        && app.prompt_buffer.is_empty()
 }
 
 pub(super) fn startup_shell_visible(app: &AppState) -> bool {

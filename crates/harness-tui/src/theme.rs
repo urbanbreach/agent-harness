@@ -1,6 +1,6 @@
 use ratatui::style::Color;
 
-pub const DIFF_SIDE_BY_SIDE_MIN_WIDTH: u16 = 120;
+pub const DIFF_SIDE_BY_SIDE_MIN_WIDTH: u16 = 96;
 
 const fn rgb(red: u8, green: u8, blue: u8) -> Color {
     Color::Rgb(red, green, blue)

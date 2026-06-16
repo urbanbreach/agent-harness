@@ -363,7 +363,7 @@ fn lineage_tree_navigation_filters_and_folds() {
     );
 
     app.handle_key(key(KeyCode::Esc));
-    assert!(!app.overlay_state.lineage_browser_visible);
+    assert!(!app.lineage_browser_visible);
 }
 
 #[test]
@@ -408,7 +408,7 @@ fn fork_selector_lists_user_messages_like_reference_selector() {
         .expect("reference-style selected user message confirmed");
     assert_eq!(confirmed.cutoff_seq, 5);
     assert_eq!(confirmed.event_count, 5);
-    assert!(!app.overlay_state.fork_selector_visible);
+    assert!(!app.fork_selector_visible);
 
     app.open_fork_selector();
 
@@ -425,7 +425,7 @@ fn fork_selector_lists_user_messages_like_reference_selector() {
         .expect("stable cutoff confirmed");
     assert_eq!(confirmed.cutoff_seq, 10);
     assert_eq!(confirmed.event_count, 10);
-    assert!(!app.overlay_state.fork_selector_visible);
+    assert!(!app.fork_selector_visible);
 }
 
 #[test]

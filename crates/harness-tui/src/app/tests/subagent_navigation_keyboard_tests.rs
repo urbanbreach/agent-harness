@@ -1,6 +1,6 @@
 use super::*;
 
-pub(crate) fn transcript_task_inline_row_is_not_subagent_navigation() {
+pub(crate) fn mouse_click_on_task_inline_row_opens_subagent_session() {
     let run_dir = tempfile::tempdir().expect("create run dir");
     let parent_path = run_dir.path().join("parent_run");
     fs::create_dir_all(&parent_path).expect("create parent run dir");
@@ -38,10 +38,12 @@ pub(crate) fn transcript_task_inline_row_is_not_subagent_navigation() {
         }),
     ));
 
-    let (column, row) = transcript_click_position(&app, "inspect child · Explore Agent");
+    let (column, row) = transcript_click_position(&app, "Explore Task — inspect child");
     assert_eq!(
         transcript_mouse_target(&app, TEST_FRAME_AREA, column, row),
-        None
+        Some(TranscriptMouseTarget::SubagentSession {
+            session_id: "agent_child".to_string(),
+        })
     );
     assert_ne!(
         rendered_cell_bg(&app, column, row),
@@ -60,7 +62,12 @@ pub(crate) fn transcript_task_inline_row_is_not_subagent_navigation() {
         None,
         None,
     );
-    assert_eq!(app.transcript_view.hovered_transcript_target(), None);
+    assert_eq!(
+        app.hovered_transcript_target(),
+        Some(&TranscriptMouseTarget::SubagentSession {
+            session_id: "agent_child".to_string(),
+        })
+    );
     assert_ne!(
         rendered_cell_bg(&app, column, row),
         Theme::default().surface.panel_elevated,
@@ -80,8 +87,8 @@ pub(crate) fn transcript_task_inline_row_is_not_subagent_navigation() {
         None,
     );
 
-    assert_eq!(app.current_session_id(), Some("parent_run"));
-    assert!(!app.replay_mode, "in-chat task rows are passive");
+    assert_eq!(app.current_session_id(), Some("agent_child"));
+    assert!(app.replay_mode, "inline child sessions open read-only");
 }
 
 pub(crate) fn keyboard_sidebar_subagent_selection_opens_child_session() {
@@ -154,7 +161,7 @@ pub(crate) fn keyboard_sidebar_subagent_selection_opens_child_session() {
     );
 }
 
-pub(crate) fn transcript_task_inline_row_has_no_subagent_hitbox() {
+pub(crate) fn live_subagent_hitbox_uses_rendered_transcript_area() {
     let run_dir = tempfile::tempdir().expect("create run dir");
     let parent_path = run_dir.path().join("parent_run");
     fs::create_dir_all(&parent_path).expect("create parent run dir");
@@ -180,10 +187,12 @@ pub(crate) fn transcript_task_inline_row_has_no_subagent_hitbox() {
     app.ingest_event(child_agent_spawned(5, "agent_child", "explore", "parent"));
 
     let compact_area = Rect::new(0, 0, 80, 24);
-    let (column, row) = transcript_click_position_in_area(&app, compact_area, "inspect child");
+    let (column, row) = transcript_click_position_in_area(&app, compact_area, "Explore Task");
     assert_eq!(
         transcript_mouse_target(&app, compact_area, column, row),
-        None
+        Some(TranscriptMouseTarget::SubagentSession {
+            session_id: "agent_child".to_string(),
+        })
     );
     assert_eq!(
         transcript_mouse_target(
@@ -259,7 +268,7 @@ pub(crate) fn disk_backed_child_navigation_stays_in_live_tui_stack() {
     assert!(!app.replay_mode);
     assert!(!app.should_quit);
     app.handle_key(key(KeyCode::Char('x')));
-    assert_eq!(app.composer.prompt_buffer, "x");
+    assert_eq!(app.prompt_buffer, "x");
     let intents = intents.lock().expect("lock intents");
     assert!(intents.is_empty());
 }

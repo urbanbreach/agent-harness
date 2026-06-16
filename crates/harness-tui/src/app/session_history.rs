@@ -5,8 +5,6 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_core::proj::{SessionCatalogEntry, SessionModeSource};
 use harness_core::session_title::is_parent_default_title;
 
-use super::model_dialog_state::model_dialog_state_path_for_session_dir;
-use super::session_history_state::session_history_state_path_for_session_dir;
 use super::{set_pending_live_prompt_draft, AppState, StartupLauncherAction, UiIntent};
 use crate::time_format::short_time_or_trimmed;
 
@@ -312,45 +310,11 @@ pub(super) fn fuzzy_subsequence_score(haystack: &str, needle: &str) -> Option<us
 }
 
 impl AppState {
-    pub(in crate::app) fn configure_tui_state_paths_from_session_path(&mut self) {
-        let session_dir = self
-            .session_path
-            .as_deref()
-            .and_then(|path| path.parent())
-            .map(PathBuf::from);
-        self.set_tui_state_paths(session_dir);
-    }
-
-    pub(in crate::app) fn configure_tui_state_paths_from_session_history(&mut self) {
-        let session_dir = self
-            .session_history_entries
-            .first()
-            .and_then(|entry| entry.run_dir.parent())
-            .map(PathBuf::from);
-        self.set_tui_state_paths(session_dir);
-    }
-
-    fn set_tui_state_paths(&mut self, session_dir: Option<PathBuf>) {
-        self.session_history_ui.set_path(
-            session_dir
-                .as_deref()
-                .map(session_history_state_path_for_session_dir),
-        );
-        self.model_dialog_state.set_path(
-            session_dir
-                .as_deref()
-                .map(model_dialog_state_path_for_session_dir),
-        );
-    }
-
     pub fn set_session_history_entries(&mut self, entries: Vec<SessionHistoryEntry>) {
         self.session_history_entries = entries;
-        if self.session_history_ui_path_missing() {
-            self.configure_tui_state_paths_from_session_history();
-        }
         self.update_session_history_filter();
         self.rebuild_model_options();
-        if self.overlay_state.lineage_browser_visible {
+        if self.lineage_browser_visible {
             let current_run_id = self.current_session_id().map(str::to_string);
             let entries = self
                 .session_history_entries
@@ -371,40 +335,8 @@ impl AppState {
             .and_then(|index| self.session_history_entries.get(*index))
     }
 
-    pub(crate) fn session_history_entry_category_label(
-        &self,
-        entry: &SessionHistoryEntry,
-    ) -> String {
-        if self.session_history_ui.is_pinned(entry) {
-            "Pinned".to_string()
-        } else {
-            session_history_category_label(entry)
-        }
-    }
-
-    pub(crate) fn session_history_entry_display_title<'a>(
-        &self,
-        entry: &'a SessionHistoryEntry,
-    ) -> Cow<'a, str> {
-        if self.session_history_ui.delete_armed(&entry.catalog.run_id) {
-            Cow::Borrowed("Press ctrl+d again to confirm")
-        } else {
-            session_history_display_title(entry)
-        }
-    }
-
-    fn session_history_ui_path_missing(&self) -> bool {
-        self.session_history_entries
-            .first()
-            .is_some_and(|entry| entry.run_dir.parent().is_some())
-    }
-
     pub(in crate::app) fn handle_session_history_key(&mut self, key: &KeyEvent) -> bool {
         let ctrl_only = key.modifiers == KeyModifiers::CONTROL;
-        let is_delete_key = matches!(key.code, KeyCode::Char('d')) && ctrl_only;
-        if !is_delete_key {
-            self.session_history_ui.disarm_delete();
-        }
         match key.code {
             KeyCode::Esc => {
                 self.close_session_history();
@@ -453,17 +385,6 @@ impl AppState {
             }
             KeyCode::Char('n') if ctrl_only => {
                 self.move_session_history_selection(1);
-                true
-            }
-            KeyCode::Char('f') if ctrl_only => {
-                if let Some(entry) = self.selected_session_history_entry().cloned() {
-                    self.session_history_ui.toggle_pin(&entry);
-                    self.update_session_history_filter();
-                }
-                true
-            }
-            KeyCode::Char('d') if ctrl_only => {
-                self.delete_selected_session_history_entry();
                 true
             }
             KeyCode::Char(c) => {
@@ -525,11 +446,8 @@ impl AppState {
         filtered.sort_by(|(left_index, left_bucket), (right_index, right_bucket)| {
             let left_entry = &self.session_history_entries[*left_index];
             let right_entry = &self.session_history_entries[*right_index];
-            let left_pinned = self.session_history_ui.is_pinned(left_entry);
-            let right_pinned = self.session_history_ui.is_pinned(right_entry);
-            right_pinned
-                .cmp(&left_pinned)
-                .then_with(|| left_bucket.cmp(right_bucket))
+            left_bucket
+                .cmp(right_bucket)
                 .then_with(|| {
                     right_entry
                         .catalog
@@ -555,7 +473,7 @@ impl AppState {
             let Some(entry) = self.session_history_entries.get(*entry_index) else {
                 continue;
             };
-            let category = self.session_history_entry_category_label(entry);
+            let category = session_history_category_label(entry);
             if previous_category.as_deref() != Some(category.as_str()) {
                 if previous_category.is_some() {
                     rows = rows.saturating_add(1);
@@ -568,35 +486,11 @@ impl AppState {
         rows
     }
 
-    fn delete_selected_session_history_entry(&mut self) {
-        let Some(selected) = self.selected_session_history_entry().cloned() else {
-            return;
-        };
-        if !self
-            .session_history_ui
-            .delete_armed(&selected.catalog.run_id)
-        {
-            self.session_history_ui.arm_delete(&selected.catalog.run_id);
-            return;
-        }
-
-        let run_id = selected.catalog.run_id.clone();
-        let run_dir = selected.run_dir.clone();
-        self.emit_ui_intent(UiIntent::DeleteSession {
-            run_id: run_id.clone(),
-            run_dir,
-        });
-        self.session_history_entries
-            .retain(|entry| entry.catalog.run_id != run_id);
-        self.session_history_ui.disarm_delete();
-        self.update_session_history_filter();
-    }
-
     pub(in crate::app) fn begin_session_history_picker(&mut self, action: StartupLauncherAction) {
         self.startup_launcher_action = action;
         self.continue_disabled_banner = None;
-        self.overlay_state.palette_visible = true;
-        self.overlay_state.model_switcher_visible = false;
+        self.palette_visible = true;
+        self.model_switcher_visible = false;
         self.palette_input.clear();
         self.palette_cursor = 0;
         self.update_session_history_filter();
@@ -604,14 +498,14 @@ impl AppState {
     }
 
     fn open_session_history(&mut self) {
-        if !self.overlay_state.session_history_visible {
+        if !self.session_history_visible {
             self.palette_focus_return.get_or_insert(self.focus);
         }
-        self.overlay_state.palette_visible = true;
+        self.palette_visible = true;
         self.session_history_selected = self
             .session_history_selected
             .min(self.session_history_filtered.len().saturating_sub(1));
-        self.overlay_state.session_history_visible = true;
+        self.session_history_visible = true;
         self.sync_slash_overlay();
     }
 
@@ -657,7 +551,7 @@ impl AppState {
             StartupLauncherAction::ReplaySession => {
                 self.continue_disabled_banner = None;
                 self.replay_mode = true;
-                set_pending_live_prompt_draft(Some(self.composer.prompt_buffer.clone()));
+                set_pending_live_prompt_draft(Some(self.prompt_buffer.clone()));
                 self.emit_ui_intent(UiIntent::ReplaySession {
                     run_id: selected_run_id,
                     run_dir: selected_run_dir,
@@ -679,7 +573,7 @@ impl AppState {
 
                 self.continue_disabled_banner = None;
                 self.replay_mode = false;
-                set_pending_live_prompt_draft(Some(self.composer.prompt_buffer.clone()));
+                set_pending_live_prompt_draft(Some(self.prompt_buffer.clone()));
                 self.emit_ui_intent(UiIntent::ContinueSession {
                     run_id: selected_run_id,
                     run_dir: selected_run_dir,

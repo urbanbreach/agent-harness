@@ -2,12 +2,11 @@ use super::super::*;
 use harness_core::event::UserMessageSubmittedEvent;
 
 #[test]
-fn queued_runtime_status_without_pending_assistant_does_not_render_user_badge_or_assistant_row() {
+fn queued_runtime_status_without_pending_assistant_does_not_render_user_badge_or_footer() {
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![
         ActivityEntry {
             request_id: "request-complete".to_string(),
-            revision: 1,
             profile_label: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             provider_id: "openai".to_string(),
@@ -32,7 +31,6 @@ fn queued_runtime_status_without_pending_assistant_does_not_render_user_badge_or
         },
         ActivityEntry {
             request_id: "request-queued-followup".to_string(),
-            revision: 1,
             profile_label: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             provider_id: "openai".to_string(),
@@ -69,17 +67,18 @@ fn queued_runtime_status_without_pending_assistant_does_not_render_user_badge_or
         "runtime queued status alone should not show the Harness queued badge: {lines:#?}"
     );
     assert!(
-        lines.iter().all(|line| !line.contains("Assistant ·")),
-        "runtime queued status alone should not render assistant metadata rows: {lines:#?}"
+        lines
+            .iter()
+            .all(|line| !line.contains("Assistant · gpt-5.4-mini · queued")),
+        "runtime queued status alone should not render a queued assistant footer: {lines:#?}"
     );
 }
 
 #[test]
-fn streaming_turn_with_own_user_message_renders_active_footer_without_queued_badge() {
+fn streaming_turn_with_own_user_message_does_not_render_queued_badge() {
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "request-started-followup".to_string(),
-        revision: 1,
         profile_label: "default".to_string(),
         model_id: "gpt-5.4-mini".to_string(),
         provider_id: "openai".to_string(),
@@ -114,35 +113,20 @@ fn streaming_turn_with_own_user_message_renders_active_footer_without_queued_bad
         lines.iter().all(|line| !line.contains(" QUEUED ")),
         "a turn should not mark its own user message as queued once it is the active assistant turn: {lines:#?}"
     );
-    assert!(lines
-        .iter()
-        .any(|line| line.contains("follow up now running")));
-    let footer_line = lines
-        .iter()
-        .find(|line| {
-            line.contains("Default")
-                && line.contains("gpt-5.4-mini")
-                && line.contains("openai")
-                && line.contains("active")
-        })
-        .unwrap_or_else(|| {
-            panic!("active footer should render for streaming user turn: {lines:#?}")
-        });
     assert!(
-        ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        lines
             .iter()
-            .any(|frame| footer_line.contains(frame)),
-        "active footer should show a spinner frame: {footer_line}"
+            .any(|line| line.contains("Assistant · gpt-5.4-mini · active")),
+        "streaming follow-up should keep the active assistant footer: {lines:#?}"
     );
 }
 
 #[test]
-fn queued_user_followup_keeps_user_badge_without_assistant_footer() {
+fn queued_user_followup_keeps_active_footer_on_streaming_turn() {
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![
         ActivityEntry {
             request_id: "request-active".to_string(),
-            revision: 1,
             profile_label: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             provider_id: "openai".to_string(),
@@ -167,7 +151,6 @@ fn queued_user_followup_keeps_user_badge_without_assistant_footer() {
         },
         ActivityEntry {
             request_id: "request-queued-followup".to_string(),
-            revision: 1,
             profile_label: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             provider_id: "openai".to_string(),
@@ -199,20 +182,21 @@ fn queued_user_followup_keeps_user_badge_without_assistant_footer() {
         80,
     ));
 
-    assert!(lines.iter().any(|line| line.contains("active turn")));
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.contains("Assistant · gpt-5.4-mini · active")),
+        "active assistant footer should stay on the in-flight turn: {lines:#?}"
+    );
     assert!(
         lines.iter().any(|line| line.contains(" QUEUED ")),
         "queued follow-up should still show the user badge: {lines:#?}"
     );
     assert!(
-        lines.iter().all(|line| !line.contains("Assistant ·")),
-        "queued follow-up should not render assistant metadata rows: {lines:#?}"
-    );
-    assert!(
         lines
             .iter()
-            .all(|line| !(line.contains("gpt-5.4-mini") && line.contains("queued"))),
-        "queued follow-up should not render its own assistant footer: {lines:#?}"
+            .all(|line| !line.contains("Assistant · gpt-5.4-mini · queued")),
+        "queued follow-up should not steal the assistant footer: {lines:#?}"
     );
 }
 
@@ -221,7 +205,6 @@ fn transcript_wrapping_respects_display_width_for_wide_glyphs() {
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "request-wide-wrap".to_string(),
-        revision: 1,
         profile_label: "default".to_string(),
         model_id: "gpt-5.4-mini".to_string(),
         provider_id: "openai".to_string(),
@@ -266,7 +249,6 @@ fn transcript_selection_snapshot_cache_reuses_repeated_hit_tests() {
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "req_selection_cache".to_string(),
-        revision: 1,
         profile_label: "default".to_string(),
         model_id: "model-1".to_string(),
         provider_id: "default".to_string(),

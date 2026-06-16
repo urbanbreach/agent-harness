@@ -16,7 +16,7 @@ pub(crate) fn exact_test_transcript_follow_mode_uses_measured_surface_heights() 
         ),
     ]);
     app.selected_activity_index = 1;
-    app.transcript_view.follow_mode = true;
+    app.follow_mode = true;
 
     let width = 28;
     let viewport_height = 6;
@@ -40,8 +40,8 @@ pub(crate) fn exact_test_transcript_follow_mode_uses_measured_surface_heights() 
     assert_eq!(layout.total_height, measured_total_height);
 
     let scroll = transcript_scroll_offset(
-        app.transcript_view.follow_mode,
-        app.transcript_view.transcript_scroll,
+        app.follow_mode,
+        app.transcript_scroll,
         layout.total_height,
         viewport_height,
     );
@@ -59,8 +59,8 @@ pub(crate) fn exact_test_transcript_follow_mode_uses_measured_surface_heights() 
 #[cfg(test)]
 pub(crate) fn exact_test_transcript_scroll_offset_preserves_large_overflow() {
     let mut app = AppState::default();
-    app.transcript_view.follow_mode = false;
-    app.transcript_view.transcript_scroll = 17;
+    app.follow_mode = false;
+    app.transcript_scroll = 17;
 
     let layout = MeasuredTranscriptLayout {
         sections: Vec::new(),
@@ -68,15 +68,15 @@ pub(crate) fn exact_test_transcript_scroll_offset_preserves_large_overflow() {
     };
 
     let scroll = transcript_scroll_offset(
-        app.transcript_view.follow_mode,
-        app.transcript_view.transcript_scroll,
+        app.follow_mode,
+        app.transcript_scroll,
         layout.total_height,
         12,
     );
     let expected = layout
         .total_height
         .saturating_sub(12)
-        .saturating_sub(app.transcript_view.transcript_scroll);
+        .saturating_sub(app.transcript_scroll);
 
     assert_eq!(scroll, expected);
     assert!(
@@ -102,7 +102,7 @@ pub(crate) fn exact_test_visible_surface_lines_support_large_offsets() {
         diff_hunk_offsets: Vec::new(),
     };
 
-    let visible = visible_surface_lines(&surface, usize::from(u16::MAX) + 7, 3, 0)
+    let visible = visible_surface_lines(&surface, usize::from(u16::MAX) + 7, 3)
         .into_iter()
         .map(|line| {
             line.spans

@@ -5,7 +5,8 @@ use crate::theme::Theme;
 use crate::ui::{
     render_app, reset_transcript_selection_cache_metrics_for_test, transcript_mouse_target,
     transcript_selection_cache_build_count_for_test, transcript_selection_cell,
-    transcript_selection_debug_snapshot, TranscriptScrollbarHit, WheelTarget,
+    transcript_selection_debug_snapshot, TranscriptMouseTarget, TranscriptScrollbarHit,
+    WheelTarget,
 };
 use crossterm::event::{MouseButton, MouseEvent};
 use harness_core::event::{
@@ -234,15 +235,15 @@ delegate_test!(apply_patch_default_expansion_skips_deleted_files => tool_disclos
 #[path = "tests/subagent_navigation_tests.rs"]
 mod subagent_navigation_tests;
 
-delegate_test!(transcript_task_inline_row_is_not_subagent_navigation => subagent_navigation_tests::keyboard_transcript_task_inline_row_is_not_subagent_navigation);
+delegate_test!(mouse_click_on_task_inline_row_opens_subagent_session => subagent_navigation_tests::keyboard_mouse_click_on_task_inline_row_opens_subagent_session);
 delegate_test!(keyboard_sidebar_subagent_selection_opens_child_session => subagent_navigation_tests::keyboard_keyboard_sidebar_subagent_selection_opens_child_session);
-delegate_test!(transcript_task_inline_row_has_no_subagent_hitbox => subagent_navigation_tests::keyboard_transcript_task_inline_row_has_no_subagent_hitbox);
+delegate_test!(live_subagent_hitbox_uses_rendered_transcript_area => subagent_navigation_tests::keyboard_live_subagent_hitbox_uses_rendered_transcript_area);
 delegate_test!(disk_backed_child_navigation_stays_in_live_tui_stack => subagent_navigation_tests::keyboard_disk_backed_child_navigation_stays_in_live_tui_stack);
 delegate_test!(mouse_click_on_subagent_footer_navigates_parent_previous_and_next => subagent_navigation_tests::mouse_click_on_subagent_footer_navigates_parent_previous_and_next);
-delegate_test!(transcript_task_row_child_session_is_sidebar_only => subagent_navigation_tests::transcript_task_row_child_session_is_sidebar_only);
-delegate_test!(completed_general_task_row_is_passive => subagent_navigation_tests::completed_general_task_row_is_passive);
-delegate_test!(harness_metadata_task_row_is_passive => subagent_navigation_tests::harness_metadata_task_row_is_passive);
-delegate_test!(subagent_hint_is_absent_from_transcript => subagent_navigation_tests::subagent_hint_is_absent_from_transcript);
+delegate_test!(mouse_click_on_task_inline_row_uses_task_row_child_session => subagent_navigation_tests::mouse_click_on_task_inline_row_uses_task_row_child_session);
+delegate_test!(mouse_up_on_completed_general_task_row_opens_child_session => subagent_navigation_tests::mouse_up_on_completed_general_task_row_opens_child_session);
+delegate_test!(mouse_click_on_task_row_uses_harness_session_metadata => subagent_navigation_tests::mouse_click_on_task_row_uses_harness_session_metadata);
+delegate_test!(mouse_click_on_subagent_hint_opens_first_child_session => subagent_navigation_tests::mouse_click_on_subagent_hint_opens_first_child_session);
 delegate_test!(slash_exit_from_inline_subagent_restores_parent_before_quit => subagent_navigation_tests::slash_exit_from_inline_subagent_restores_parent_before_quit);
 
 fn write_events_jsonl(run_dir: &Path, events: &[EventEnvelopeV1]) {
@@ -259,7 +260,6 @@ fn transcript_selection_test_app_with_text(transcript_text: &str) -> AppState {
     let mut app = AppState::new_live(None, false, None);
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "req_copy_select".to_string(),
-        revision: 1,
         profile_label: "build".to_string(),
         model_id: "model-1".to_string(),
         provider_id: "default".to_string(),
@@ -780,7 +780,6 @@ mod permission_modal_tests;
 
 delegate_test!(overlay_stack_orders_details_palette_permission => permission_modal_tests::overlay_stack_orders_details_palette_permission);
 delegate_test!(overlay_stack_orders_permission_above_commands_and_slash => permission_modal_tests::overlay_stack_orders_permission_above_commands_and_slash);
-delegate_test!(overlay_stack_is_single_source_of_visibility => permission_modal_tests::overlay_stack_is_single_source_of_visibility);
 delegate_test!(permission_modal_preempts_palette => permission_modal_tests::permission_modal_preempts_palette);
 delegate_test!(permission_modal_ignores_unmapped_chars_without_buffering => permission_modal_tests::permission_modal_ignores_unmapped_chars_without_buffering);
 delegate_test!(permission_modal_escape_rejects_without_hiding_pending_permission => permission_modal_tests::permission_modal_escape_rejects_without_hiding_pending_permission);
@@ -802,7 +801,7 @@ delegate_test!(composer_metadata_deduplicates_provider_backend_source_label => m
 delegate_test!(live_switch_model_labels_next_turn_only => model_context_tests::live_switch_model_labels_next_turn_only);
 delegate_test!(tab_cycles_build_and_plan_primary_agents => model_context_tests::tab_cycles_build_and_plan_primary_agents);
 delegate_test!(agent_cycle_preserves_user_selected_provider_model_across_profiles => model_context_tests::agent_cycle_preserves_user_selected_provider_model_across_profiles);
-delegate_test!(switching_agent_after_submit_keeps_existing_turn_profile => model_context_tests::switching_agent_after_submit_keeps_existing_turn_profile);
+delegate_test!(switching_agent_after_submit_keeps_existing_turn_footer_agent => model_context_tests::switching_agent_after_submit_keeps_existing_turn_footer_agent);
 
 #[cfg(test)]
 #[path = "tests/interaction_tests.rs"]
@@ -840,10 +839,6 @@ delegate_test!(clicking_transcript_scrollbar_track_without_thumb_does_not_start_
 #[path = "tests/transcript_selection_tests.rs"]
 mod transcript_selection_tests;
 
-#[cfg(test)]
-#[path = "tests/transcript_navigation_tests.rs"]
-mod transcript_navigation_tests;
-
 #[cfg(not(windows))]
 delegate_test!(mouse_drag_copy_on_select_copies_transcript_text_and_clears_selection => transcript_selection_tests::mouse_drag_copy_on_select_copies_transcript_text_and_clears_selection);
 #[cfg(not(windows))]
@@ -863,10 +858,6 @@ delegate_test!(transcript_selection_render_reuses_cached_snapshot => transcript_
 delegate_test!(transcript_selection_render_stays_aligned_after_large_reasoning_block => transcript_selection_tests::transcript_selection_render_stays_aligned_after_large_reasoning_block);
 delegate_test!(transcript_render_key_is_cached_across_selection_drag_path => transcript_selection_tests::transcript_render_key_is_cached_across_selection_drag_path);
 delegate_test!(transcript_render_key_reuses_cache_until_marked_dirty => transcript_selection_tests::transcript_render_key_reuses_cache_until_marked_dirty);
-delegate_test!(transcript_message_jumps_use_cached_measured_section_top_rows => transcript_navigation_tests::transcript_message_jumps_use_cached_measured_section_top_rows);
-delegate_test!(transcript_copy_message_session_and_export_emit_exact_outputs => transcript_navigation_tests::transcript_copy_message_session_and_export_emit_exact_outputs);
-delegate_test!(transcript_scrollbar_toggle_persists_and_replay_blocks_live_export => transcript_navigation_tests::transcript_scrollbar_toggle_persists_and_replay_blocks_live_export);
-delegate_test!(transcript_navigation_edges_clamp_empty_and_stale_rows_without_rebuilds => transcript_navigation_tests::transcript_navigation_edges_clamp_empty_and_stale_rows_without_rebuilds);
 
 delegate_test!(historical_task_completed_marks_turn_done_and_unblocks_first_resumed_submit => lifecycle_shell_tests::historical_task_completed_marks_turn_done_and_unblocks_first_resumed_submit);
 
@@ -909,31 +900,16 @@ delegate_test!(replay_terminal_only_turn_cancellation_scope_marks_activity_error
 delegate_test!(replay_terminal_only_tool_cancellation_scope_does_not_fail_activity_or_runtime_state => activity_lifecycle_tests::terminal_replay_terminal_only_tool_cancellation_scope_does_not_fail_activity_or_runtime_state);
 
 #[cfg(test)]
-#[path = "tests/prompt_input_a_test.rs"]
-mod prompt_input_a_test;
+#[path = "tests/prompt_input_tests.rs"]
+mod prompt_input_tests;
 
-#[cfg(test)]
-#[path = "tests/prompt_input_b_test.rs"]
-mod prompt_input_b_test;
-
-delegate_test!(ctrl_j_inserts_newline_without_submitting => prompt_input_a_test::ctrl_j_inserts_newline_without_submitting);
-delegate_test!(paste_multiline_text_inserts_newlines_without_submitting => prompt_input_a_test::paste_multiline_text_inserts_newlines_without_submitting);
-delegate_test!(multiline_history_keys_move_cursor_before_recalling_history => prompt_input_a_test::multiline_history_keys_move_cursor_before_recalling_history);
-delegate_test!(prompt_history_persists_and_restores_draft_after_recall => prompt_input_a_test::prompt_history_persists_and_restores_draft_after_recall);
-delegate_test!(startup_auto_submit_persists_prompt_history_once => prompt_input_a_test::startup_auto_submit_persists_prompt_history_once);
-delegate_test!(live_bootstrap_auto_submit_echoes_and_emits_first_prompt => prompt_input_a_test::live_bootstrap_auto_submit_echoes_and_emits_first_prompt);
-delegate_test!(submit_prompt_while_turn_streams_echoes_as_queued_and_emits_intent => prompt_input_a_test::submit_prompt_while_turn_streams_echoes_as_queued_and_emits_intent);
-delegate_test!(composer_word_delete_undo_redo_preserves_graphemes_and_file_tags => prompt_input_a_test::composer_word_delete_undo_redo_preserves_graphemes_and_file_tags);
-delegate_test!(composer_selection_line_and_buffer_actions_are_grapheme_safe => prompt_input_a_test::composer_selection_line_and_buffer_actions_are_grapheme_safe);
-delegate_test!(shell_mode_routes_submit_through_bash_intent_and_exits_at_edges => prompt_input_a_test::shell_mode_routes_submit_through_bash_intent_and_exits_at_edges);
-delegate_test!(shell_mode_is_unavailable_in_startup_and_replay => prompt_input_b_test::shell_mode_is_unavailable_in_startup_and_replay);
-delegate_test!(prompt_stash_save_pop_list_delete_and_queue_indicator_work => prompt_input_b_test::prompt_stash_save_pop_list_delete_and_queue_indicator_work);
-delegate_test!(prompt_stash_overlay_renders_prompt_previews => prompt_input_b_test::prompt_stash_overlay_renders_prompt_previews);
-delegate_test!(prompt_stash_overlay_renders_empty_state => prompt_input_b_test::prompt_stash_overlay_renders_empty_state);
-delegate_test!(queued_prompt_overlay_renders_queued_previews => prompt_input_b_test::queued_prompt_overlay_renders_queued_previews);
-delegate_test!(queued_prompt_delete_cancels_scheduled_turn => prompt_input_b_test::queued_prompt_delete_cancels_scheduled_turn);
-delegate_test!(queued_prompt_delete_before_task_id_cancels_when_scheduled => prompt_input_b_test::queued_prompt_delete_before_task_id_cancels_when_scheduled);
-delegate_test!(queued_prompt_overlay_renders_empty_state => prompt_input_b_test::queued_prompt_overlay_renders_empty_state);
+delegate_test!(ctrl_j_inserts_newline_without_submitting => prompt_input_tests::ctrl_j_inserts_newline_without_submitting);
+delegate_test!(paste_multiline_text_inserts_newlines_without_submitting => prompt_input_tests::paste_multiline_text_inserts_newlines_without_submitting);
+delegate_test!(multiline_history_keys_move_cursor_before_recalling_history => prompt_input_tests::multiline_history_keys_move_cursor_before_recalling_history);
+delegate_test!(prompt_history_persists_and_restores_draft_after_recall => prompt_input_tests::prompt_history_persists_and_restores_draft_after_recall);
+delegate_test!(startup_auto_submit_persists_prompt_history_once => prompt_input_tests::startup_auto_submit_persists_prompt_history_once);
+delegate_test!(live_bootstrap_auto_submit_echoes_and_emits_first_prompt => prompt_input_tests::live_bootstrap_auto_submit_echoes_and_emits_first_prompt);
+delegate_test!(submit_prompt_while_turn_streams_echoes_as_queued_and_emits_intent => prompt_input_tests::submit_prompt_while_turn_streams_echoes_as_queued_and_emits_intent);
 
 #[cfg(test)]
 #[path = "tests/file_mention_tests.rs"]
@@ -947,7 +923,6 @@ delegate_test!(submitting_selected_file_mention_emits_structured_file_part => fi
 delegate_test!(file_mention_picker_selects_agent_parts_from_launch_metadata => file_mention_tests::file_mention_picker_selects_agent_parts_from_launch_metadata);
 delegate_test!(file_mention_picker_selects_mcp_resource_parts_from_launch_metadata => file_mention_tests::file_mention_picker_selects_mcp_resource_parts_from_launch_metadata);
 delegate_test!(file_mention_tag_is_removed_when_user_edits_inside_it => file_mention_tests::file_mention_tag_is_removed_when_user_edits_inside_it);
-delegate_test!(unknown_file_mention_submits_as_plain_text_without_structured_tag => file_mention_tests::unknown_file_mention_submits_as_plain_text_without_structured_tag);
 
 delegate_test!(queued_turn_schedule_keeps_activity_queued_until_provider_starts => activity_lifecycle_tests::terminal_queued_turn_schedule_keeps_activity_queued_until_provider_starts);
 

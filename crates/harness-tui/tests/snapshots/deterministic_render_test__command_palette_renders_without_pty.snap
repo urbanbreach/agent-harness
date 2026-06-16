@@ -1,5 +1,6 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
+assertion_line: 110
 expression: snapshot.as_str()
 ---
 
@@ -18,15 +19,14 @@ expression: snapshot.as_str()
                                   █ Search
 
                                   Suggested
-                                     New session Start a fresh live session   ctrl+x n
-                                     Show last error Inspect the last failed p…  error
-                           “in                                                            test
-                                  Sessions
-                                     Continue session Continue a prior sess…  ctrl+x l
+                                     New session Start a fresh live session        new
+
+                           “in    Sessions                                                test
+                                     Continue session Continue a prior sessio…  resume
                                      Replay session Replay a previous session…  replay
 
                                   Agents
-                                     Switch model Browse available provider…  ctrl+x m
+                                     Switch model Browse available provider/mo…  model
                                      Next agent Cycle to the next primary agent    tab
                                      Previous agent Cycle to the previous …  shift+tab
                                      Cycle reasoning preset Cycle the configu…  ctrl+t
@@ -36,8 +36,9 @@ expression: snapshot.as_str()
 
 
 
+
 ┃
-┃  Type a prompt for the next turn…
+┃
 ┃
 ┃
 ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀

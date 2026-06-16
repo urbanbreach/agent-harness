@@ -161,8 +161,8 @@ pub(super) fn startup_prompt_enter_echoes_prompt_and_selects_new_session() {
     assert!(app.should_quit, "startup submit should leave the launcher");
     assert!(!app.startup_shell_visible());
     assert_eq!(app.focus, Focus::Prompt);
-    assert_eq!(app.composer.prompt_buffer, "");
-    assert_eq!(app.composer.prompt_history, vec!["ship it".to_string()]);
+    assert_eq!(app.prompt_buffer, "");
+    assert_eq!(app.prompt_history, vec!["ship it".to_string()]);
     assert_eq!(
         app.activities
             .back()
@@ -178,10 +178,7 @@ pub(super) fn startup_prompt_enter_echoes_prompt_and_selects_new_session() {
         ),
         "startup submit should select a fresh session after the local prompt echo"
     );
-    assert_eq!(
-        next_live.composer.prompt_history,
-        vec!["ship it".to_string()]
-    );
+    assert_eq!(next_live.prompt_history, vec!["ship it".to_string()]);
     assert_eq!(
         next_live
             .activities
@@ -225,11 +222,8 @@ pub(super) fn slash_new_then_submit_bootstraps_fresh_session_instead_of_live_tur
     );
 
     let relaunched = AppState::new_live(None, false, None);
-    assert_eq!(relaunched.composer.prompt_buffer, "");
-    assert_eq!(
-        relaunched.composer.prompt_history,
-        vec!["fresh run".to_string()]
-    );
+    assert_eq!(relaunched.prompt_buffer, "");
+    assert_eq!(relaunched.prompt_history, vec!["fresh run".to_string()]);
     assert_eq!(
         relaunched
             .activities
@@ -255,7 +249,7 @@ pub(super) fn startup_mode_uses_pending_launch_metadata() {
 
 pub(super) fn lifecycle_shell_state_transitions() {
     let mut startup = AppState::new_startup(Vec::new(), None);
-    startup.composer.prompt_buffer = "draft prompt".to_string();
+    startup.prompt_buffer = "draft prompt".to_string();
 
     assert_eq!(
         startup.lifecycle_shell_state(),

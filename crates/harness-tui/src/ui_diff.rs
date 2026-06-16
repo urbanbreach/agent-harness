@@ -29,7 +29,6 @@ use ui_diff_syntax::{diff_path_is_plain_prose, highlight_diff_line_chunks};
 #[derive(Debug, Clone, Copy)]
 pub(super) struct StructuredDiffRenderOptions {
     pub force_stacked: bool,
-    pub auto_split_width: Option<u16>,
     pub highlight_intraline: bool,
     pub highlight_syntax: bool,
     pub show_file_header: bool,
@@ -51,7 +50,6 @@ pub(super) fn render_structured_diff_lines(
         width,
         StructuredDiffRenderOptions {
             force_stacked,
-            auto_split_width: None,
             highlight_intraline: true,
             highlight_syntax: false,
             show_file_header: true,
@@ -95,7 +93,6 @@ pub(super) fn render_structured_diff_lines_with_hunk_offsets(
         prefix,
         width,
         options.force_stacked,
-        options.auto_split_width,
         options.highlight_syntax,
         options.show_file_header,
         options.show_hunk_header,
@@ -150,7 +147,6 @@ mod tests {
             80,
             StructuredDiffRenderOptions {
                 force_stacked: true,
-                auto_split_width: None,
                 highlight_intraline: false,
                 highlight_syntax: false,
                 show_file_header: true,
@@ -347,7 +343,6 @@ mod tests {
             96,
             StructuredDiffRenderOptions {
                 force_stacked: true,
-                auto_split_width: None,
                 highlight_intraline: false,
                 highlight_syntax: false,
                 show_file_header: true,
@@ -378,7 +373,6 @@ mod tests {
             84,
             StructuredDiffRenderOptions {
                 force_stacked: true,
-                auto_split_width: None,
                 highlight_intraline: false,
                 highlight_syntax: false,
                 show_file_header: true,

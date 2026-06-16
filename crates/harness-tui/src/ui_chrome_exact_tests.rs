@@ -304,7 +304,6 @@ pub(crate) fn exact_test_tool_status_summary_uses_effective_tool_identity() {
     let mut app = AppState::new_live(None, false, None);
     app.activities.push_front(ActivityEntry {
         request_id: "req_tool_identity".to_string(),
-        revision: 1,
         profile_label: "build".to_string(),
         model_id: "gpt-5.4".to_string(),
         provider_id: "default".to_string(),
@@ -506,25 +505,6 @@ pub(crate) fn exact_test_composer_viewport_wraps_by_display_width() {
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_composer_viewport_keeps_combining_grapheme_unbroken() {
-    let viewport = composer_viewport("e\u{301}clair", 1, 8, Some(2));
-
-    assert_eq!(
-        viewport.lines,
-        vec![
-            "e\u{301}".to_string(),
-            "c".to_string(),
-            "l".to_string(),
-            "a".to_string(),
-            "i".to_string(),
-            "r".to_string(),
-        ]
-    );
-    assert_eq!(viewport.line_starts, vec![0, 2, 3, 4, 5, 6]);
-    assert_eq!(viewport.cursor, Some((1, 0)));
-}
-
-#[cfg(test)]
 pub(crate) fn exact_test_composer_viewport_wraps_at_word_boundaries() {
     let viewport = composer_viewport("alpha beta", 8, 6, Some(6));
 
@@ -569,9 +549,6 @@ fn composer_file_tag_line_uses_warning_bold_style() {
                 },
             ),
         }],
-        None,
-        base,
-        tag,
         base,
         tag,
     );
@@ -583,90 +560,4 @@ fn composer_file_tag_line_uses_warning_bold_style() {
     assert_eq!(line.spans[1].style, tag);
     assert_eq!(line.spans[2].content.as_ref(), " now");
     assert_eq!(line.spans[2].style, base);
-}
-
-#[test]
-fn composer_file_tag_line_renders_selection_by_prompt_char_range() {
-    let app = AppState::new_startup(Vec::new(), None);
-    let theme = app.theme();
-    let base = Style::default()
-        .fg(theme.text.primary)
-        .bg(theme.surface.panel_elevated);
-    let tag = Style::default()
-        .fg(theme.status.warning)
-        .bg(theme.surface.panel_elevated)
-        .add_modifier(Modifier::BOLD);
-    let selection = Style::default()
-        .fg(theme.text.inverse)
-        .bg(theme.status.info);
-    let selected_tag = selection.add_modifier(Modifier::BOLD);
-
-    let line = composer_line_with_file_tags(
-        "use @docs/ now",
-        0,
-        &[crate::app::FileMentionTag {
-            start: 4,
-            end: 10,
-            part: crate::app::FileMentionSelectedTag::File(
-                harness_core::file_tag::SelectedFileTag {
-                    path: "docs/".to_string(),
-                    filename: "docs/".to_string(),
-                    url: "file:///workspace/docs/".to_string(),
-                    mime: "application/x-directory".to_string(),
-                    source: harness_core::file_tag::FileTagSource {
-                        start: 4,
-                        end: 10,
-                        value: "@docs/".to_string(),
-                    },
-                    line_range: None,
-                },
-            ),
-        }],
-        Some(&(4..12)),
-        base,
-        tag,
-        selection,
-        selected_tag,
-    );
-
-    assert_eq!(line.spans.len(), 4);
-    assert_eq!(line.spans[0].content.as_ref(), "use ");
-    assert_eq!(line.spans[0].style, base);
-    assert_eq!(line.spans[1].content.as_ref(), "@docs/");
-    assert_eq!(line.spans[1].style, selected_tag);
-    assert_eq!(line.spans[2].content.as_ref(), " n");
-    assert_eq!(line.spans[2].style, selection);
-    assert_eq!(line.spans[3].content.as_ref(), "ow");
-    assert_eq!(line.spans[3].style, base);
-}
-
-#[cfg(test)]
-pub(crate) fn exact_test_shell_mode_composer_renders_affordance() {
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use ratatui::{backend::TestBackend, Terminal};
-
-    let mut app = AppState::new_live(Some(std::path::PathBuf::from("/tmp/session")), false, None);
-    app.focus = Focus::Prompt;
-    app.handle_key(KeyEvent::new(KeyCode::Char('!'), KeyModifiers::NONE));
-
-    let backend = TestBackend::new(100, 30);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
-    terminal
-        .draw(|frame| super::super::render_app(frame, &app))
-        .expect("draw shell mode frame");
-    let rendered = terminal
-        .backend()
-        .buffer()
-        .content
-        .chunks(100)
-        .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    assert!(rendered.contains("shell command"), "{rendered}");
-    assert!(rendered.contains("Shell"), "{rendered}");
-    assert!(
-        !rendered.contains("Ask Harness"),
-        "shell mode should not render the normal prompt placeholder\n{rendered}"
-    );
 }

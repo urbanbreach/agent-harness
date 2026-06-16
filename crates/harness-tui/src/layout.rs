@@ -189,9 +189,6 @@ impl FrameLayoutPlan {
                     | OverlayKind::TogglesMenu
                     | OverlayKind::LineageBrowser
                     | OverlayKind::ForkSelector
-                    | OverlayKind::ChildSessions
-                    | OverlayKind::PromptStash
-                    | OverlayKind::QueuedPrompts
             )
         )
         .then(|| command_palette_overlay_area(content, theme, shell_layout, session_contract, app))
@@ -638,8 +635,7 @@ fn permission_prompt_block_height(
                 inner_width,
             ))
             .saturating_add(u16::from(
-                app.question_prompt
-                    .question_answer_error(&permission.permission_id)
+                app.question_answer_error(&permission.permission_id)
                     .is_some(),
             ))
             .saturating_add(3);
@@ -647,7 +643,7 @@ fn permission_prompt_block_height(
         return rows.clamp(LIVE_QUESTION_PROMPT_MIN_HEIGHT, 16);
     }
 
-    let draft_rows = wrapped_text_rows(app.composer.prompt_buffer.as_str(), inner_width).min(2);
+    let draft_rows = wrapped_text_rows(app.prompt_buffer.as_str(), inner_width).min(2);
     LIVE_PERMISSION_PROMPT_MIN_HEIGHT
         .saturating_add(draft_rows.saturating_sub(1))
         .clamp(LIVE_PERMISSION_PROMPT_MIN_HEIGHT, 12)
@@ -693,7 +689,7 @@ fn live_prompt_block_height(
         LIVE_PROMPT_STANDARD_CHROME_ROWS
     };
     let disclosure_rows = u16::from(startup_shell);
-    let natural_height = composer_input_height(&app.composer.prompt_buffer, area.width)
+    let natural_height = composer_input_height(&app.prompt_buffer, area.width)
         .saturating_add(chrome_rows)
         .saturating_add(disclosure_rows)
         .max(min_height);
@@ -904,7 +900,7 @@ mod tests {
         let mut app = AppState::new_live(None, false, None);
         app.open_fork_selector();
 
-        assert!(app.overlay_state.fork_selector_visible);
+        assert!(app.fork_selector_visible);
         assert_eq!(app.overlay_stack().top(), Some(OverlayKind::ForkSelector));
 
         let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 100, 40));

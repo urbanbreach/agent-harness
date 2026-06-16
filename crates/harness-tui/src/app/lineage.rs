@@ -363,10 +363,8 @@ impl AppState {
             .collect::<Vec<_>>();
         self.lineage_browser
             .rebuild(entries, current_run_id, &self.palette_input);
-        let events = self.events.clone();
-        self.fork_selector.rebuild(&events, &self.palette_input);
-        self.overlay_state.lineage_browser_visible = true;
-        self.overlay_state.fork_selector_visible = false;
+        self.lineage_browser_visible = true;
+        self.fork_selector_visible = false;
     }
 
     pub fn open_fork_selector(&mut self) {
@@ -377,13 +375,13 @@ impl AppState {
         let events = self.events.clone();
         let filter_input = self.palette_input.clone();
         self.fork_selector.rebuild(&events, &filter_input);
-        self.overlay_state.fork_selector_visible = true;
-        self.overlay_state.lineage_browser_visible = false;
+        self.fork_selector_visible = true;
+        self.lineage_browser_visible = false;
     }
 
     pub fn close_lineage_surfaces(&mut self) {
-        self.overlay_state.lineage_browser_visible = false;
-        self.overlay_state.fork_selector_visible = false;
+        self.lineage_browser_visible = false;
+        self.fork_selector_visible = false;
         self.palette_input.clear();
         self.palette_cursor = 0;
         if let Some(previous_focus) = self.palette_focus_return.take() {
@@ -491,7 +489,7 @@ impl AppState {
                     let prompt_text = self.fork_selector.confirmed_prompt_text();
                     match self.emit_fork_session_intent(prefix, prompt_text) {
                         Ok(()) => {
-                            self.overlay_state.fork_selector_visible = false;
+                            self.fork_selector_visible = false;
                         }
                         Err(err) => self.set_status_banner(Some(err)),
                     }
@@ -681,6 +679,8 @@ fn event_kind_label(event: &EventV1) -> &'static str {
         EventV1::EditRejected(_) => "edit_rejected",
         EventV1::ArtifactWritten(_) => "artifact_written",
         EventV1::PolicyViolationDetected(_) => "policy_violation_detected",
+        EventV1::WorkspaceSnapshot(_) => "workspace_snapshot",
+        EventV1::WorkspaceReverted(_) => "workspace_reverted",
         EventV1::UiIntentReceived(_) => "ui_intent_received",
     }
 }

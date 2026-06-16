@@ -1,17 +1,15 @@
 use std::collections::BTreeSet;
 
-use crate::app::{AppState, OrchestrationTaskRow, ToolCallDisplayStatus, ToolCallEntry};
+use crate::app::{
+    AppState, OrchestrationTaskRow, OrchestrationTaskState, ToolCallDisplayStatus, ToolCallEntry,
+};
 use crate::text::{collapse_inline_whitespace, non_empty_trimmed};
 
 use super::ui_tool_metadata::{
     task_tool_child_request_id_from_output, task_tool_child_session_id_from_output,
-    tool_json_string_ref, tool_summary_string,
+    tool_json_string, tool_json_string_ref, tool_summary_string,
 };
 use super::ui_tool_titles::format_duration_ms;
-
-#[path = "ui_tool_delegation_status.rs"]
-mod status;
-pub(super) use status::agent_spawn_display_status;
 
 pub(super) fn task_tool_child_request_id(tool_call: &ToolCallEntry) -> Option<&str> {
     tool_call
@@ -54,15 +52,6 @@ pub(super) fn hidden_delegated_child_request_ids(app: &AppState) -> BTreeSet<&st
 }
 
 pub(super) fn agent_spawn_title(tool_call: &ToolCallEntry, description: Option<String>) -> String {
-    description.unwrap_or_else(|| format!("{} Task", agent_spawn_kind_label(tool_call)))
-}
-
-pub(super) fn agent_spawn_subtitle(tool_call: &ToolCallEntry) -> Option<String> {
-    agent_spawn_description(tool_call)
-        .map(|_| format!("{} Agent", agent_spawn_kind_label(tool_call)))
-}
-
-fn agent_spawn_kind_label(tool_call: &ToolCallEntry) -> String {
     let profile = tool_call
         .output_json
         .as_ref()
@@ -75,7 +64,16 @@ fn agent_spawn_kind_label(tool_call: &ToolCallEntry) -> String {
                 &["profile_name", "profile", "subagent_type"],
             )
         });
-    subagent_profile_label(profile.as_deref().unwrap_or("General"))
+
+    let prefix = format!(
+        "{} Task",
+        subagent_profile_label(profile.as_deref().unwrap_or("General"))
+    );
+
+    match description {
+        Some(description) => format!("{prefix} — {description}"),
+        None => prefix,
+    }
 }
 
 pub(super) fn agent_spawn_description(tool_call: &ToolCallEntry) -> Option<String> {
@@ -112,12 +110,13 @@ pub(super) fn agent_spawn_context_line(
     tool_call: &ToolCallEntry,
     task_row: Option<&OrchestrationTaskRow>,
 ) -> Option<String> {
-    let display_status = agent_spawn_display_status(tool_call, task_row);
-    let completed = matches!(display_status, ToolCallDisplayStatus::Succeeded);
-    let running = matches!(
-        display_status,
-        ToolCallDisplayStatus::Queued | ToolCallDisplayStatus::Running
-    );
+    let status = task_row
+        .map(|row| orchestration_task_state_label(row.state).to_string())
+        .or_else(|| tool_json_string(tool_call.output_json.as_ref(), &["status"]));
+    let completed = matches!(tool_call.status, ToolCallDisplayStatus::Succeeded)
+        || status.as_deref() == Some("completed");
+    let running = matches!(tool_call.status, ToolCallDisplayStatus::Running)
+        || status.as_deref() == Some("running");
     let child_tool_call_count = task_row
         .map(|row| row.child_tool_call_count as u64)
         .or_else(|| {
@@ -223,6 +222,19 @@ fn tool_output_indicates_background_task(output_json: Option<&serde_json::Value>
         .and_then(|value| value.get("background"))
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(false)
+}
+
+fn orchestration_task_state_label(state: OrchestrationTaskState) -> &'static str {
+    match state {
+        OrchestrationTaskState::Queued => "queued",
+        OrchestrationTaskState::Running => "running",
+        OrchestrationTaskState::Stale => "stale",
+        OrchestrationTaskState::Completed => "completed",
+        OrchestrationTaskState::Cancelled => "cancelled",
+        OrchestrationTaskState::Failed => "failed",
+        OrchestrationTaskState::TimedOut => "timed out",
+        OrchestrationTaskState::LateResult => "late result",
+    }
 }
 
 fn collapsed_inline_non_empty(text: &str) -> Option<String> {

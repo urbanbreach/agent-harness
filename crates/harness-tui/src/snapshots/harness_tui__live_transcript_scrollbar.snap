@@ -1,10 +1,12 @@
 ---
-source: crates/harness-tui/src/lib_tests/transcript_flow.rs
+source: crates/harness-tui/src/lib_tests.rs
 expression: "render_live_lines(&app, 80, 24)"
 ---
                                                                                 
+    ┃                                                                           
+                                                                                
+       reply 9 keeps wrapping through the transcript viewport so the            
        scrollbar thumb has real room to move                                    
-       ▣ · 0ms  Default · gpt-5.4-mini openai                                   
                                                                                 
     ┃                                                                           
     ┃  question 10                                                              
@@ -12,13 +14,11 @@ expression: "render_live_lines(&app, 80, 24)"
                                                                                 
        reply 10 keeps wrapping through the transcript viewport so the           
        scrollbar thumb has real room to move                                    
-       ▣ · 0ms  Default · gpt-5.4-mini openai                                   
-                                                                                
+                                                                           █    
     ┃                                                                      █    
     ┃  question 11                                                         █    
-    ┃                                                                      █    
+    ┃                                                                           
                                                                                 
-       reply 11 keeps wrapping through the transcript viewport so the           
                                                                                 
   ┃                                                                             
   ┃                                                                             

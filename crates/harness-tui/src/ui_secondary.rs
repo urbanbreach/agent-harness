@@ -633,10 +633,6 @@ pub(crate) use operator_rail_todo_tests::{
 #[cfg(test)]
 #[path = "ui_secondary/subagent_tests.rs"]
 mod subagent_tests;
-
-#[cfg(test)]
-#[path = "ui_secondary/subagent_dedup_tests.rs"]
-mod subagent_dedup_tests;
 #[cfg(test)]
 pub(crate) use subagent_tests::{
     exact_test_operator_rail_keeps_subagents_visible_in_replay,
@@ -686,12 +682,16 @@ fn render_operator_sidebar_surface(
         &rail.body,
         theme,
         inner.width,
-        app.transcript_view.transcript_animation_phase(),
+        app.transcript_animation_phase(),
     );
-    let directory_label = app.sidebar_directory_branch_label();
-    let footer = operator_sidebar_footer_text(directory_label, theme, inner.width, surface);
+    let footer = app
+        .sidebar_directory_branch_label()
+        .map(|label| operator_sidebar_directory_footer_text(label, theme, inner.width, surface));
     let title_height = title_text.lines.len().min(usize::from(u16::MAX)) as u16;
-    let footer_height = footer.height().min(usize::from(u16::MAX)) as u16;
+    let footer_height = footer
+        .as_ref()
+        .map(|footer| footer.height().min(usize::from(u16::MAX)) as u16)
+        .unwrap_or(0);
     let sections = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -725,12 +725,14 @@ fn render_operator_sidebar_surface(
         body_area,
         theme,
     );
-    frame.render_widget(
-        Paragraph::new(footer)
-            .style(Style::default().bg(surface))
-            .wrap(Wrap { trim: false }),
-        footer_area,
-    );
+    if let Some(footer) = footer {
+        frame.render_widget(
+            Paragraph::new(footer)
+                .style(Style::default().bg(surface))
+                .wrap(Wrap { trim: false }),
+            footer_area,
+        );
+    }
 }
 
 #[cfg(test)]
@@ -738,24 +740,12 @@ fn build_operator_sidebar_content(app: &AppState, theme: &Theme) -> Text<'static
     let rail = build_operator_rail_model(app);
     let mut lines = build_operator_rail_title_text(rail.title.as_ref(), theme, 80).lines;
     lines.extend(build_operator_rail_body_layout(&rail.body, theme, 80, 0).lines);
-    let directory_label = app.sidebar_directory_branch_label();
-    lines.extend(
-        operator_sidebar_footer_text(directory_label, theme, 80, theme.surface.panel).lines,
-    );
+    if let Some(label) = app.sidebar_directory_branch_label() {
+        lines.extend(
+            operator_sidebar_directory_footer_text(label, theme, 80, theme.surface.panel).lines,
+        );
+    }
 
-    Text::from(lines)
-}
-
-fn operator_sidebar_footer_text(
-    label: Option<&str>,
-    theme: &Theme,
-    width: u16,
-    surface: ratatui::style::Color,
-) -> Text<'static> {
-    let mut lines = label
-        .map(|label| operator_sidebar_directory_footer_text(label, theme, width, surface).lines)
-        .unwrap_or_default();
-    lines.push(operator_sidebar_brand_line(theme, surface));
     Text::from(lines)
 }
 
@@ -775,13 +765,6 @@ fn operator_sidebar_directory_footer_text(
     ]);
     let wrapped_lines = wrap_line_preserving_spans(line, usize::from(width.max(1)));
     Text::from(wrapped_lines)
-}
-
-fn operator_sidebar_brand_line(theme: &Theme, surface: ratatui::style::Color) -> Line<'static> {
-    Line::from(Span::styled(
-        format!("• Harness {}", env!("CARGO_PKG_VERSION")),
-        Style::default().fg(theme.text.tertiary).bg(surface),
-    ))
 }
 
 fn harness_sidebar_path_parts(text: &str) -> (String, String) {

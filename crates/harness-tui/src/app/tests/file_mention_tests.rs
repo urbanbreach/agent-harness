@@ -29,7 +29,7 @@ pub(super) fn file_mention_tab_expands_directory_without_closing_menu() {
 
     app.handle_key(key(KeyCode::Tab));
 
-    assert_eq!(app.composer.prompt_buffer, "@src/");
+    assert_eq!(app.prompt_buffer, "@src/");
     assert!(app.file_mention_overlay_should_render());
     assert!(app
         .file_mention_entries
@@ -51,7 +51,7 @@ pub(super) fn file_mention_enter_inserts_selected_file_with_space() {
 
     app.handle_key(key(KeyCode::Enter));
 
-    assert_eq!(app.composer.prompt_buffer, "@src/main.rs ");
+    assert_eq!(app.prompt_buffer, "@src/main.rs ");
     assert_eq!(app.file_mention_tags.len(), 1);
     assert_eq!(app.file_mention_tags[0].start, 0);
     assert_eq!(app.file_mention_tags[0].end, "@src/main.rs".chars().count());
@@ -148,7 +148,7 @@ pub(super) fn file_mention_picker_selects_agent_parts_from_launch_metadata() {
     }
     app.handle_key(key(KeyCode::Enter));
 
-    assert_eq!(app.composer.prompt_buffer, "@plan ");
+    assert_eq!(app.prompt_buffer, "@plan ");
     assert!(app.selected_file_tags().is_empty());
     assert!(app.selected_resource_tags().is_empty());
     let selected = app.selected_agent_tags();
@@ -176,7 +176,7 @@ pub(super) fn file_mention_picker_selects_mcp_resource_parts_from_launch_metadat
     }
     app.handle_key(key(KeyCode::Enter));
 
-    assert_eq!(app.composer.prompt_buffer, "@mcp://docs/guide ");
+    assert_eq!(app.prompt_buffer, "@mcp://docs/guide ");
     assert!(app.selected_file_tags().is_empty());
     assert!(app.selected_agent_tags().is_empty());
     let selected = app.selected_resource_tags();
@@ -204,47 +204,8 @@ pub(super) fn file_mention_tag_is_removed_when_user_edits_inside_it() {
     }
     app.handle_key(key(KeyCode::Enter));
 
-    app.composer.prompt_cursor = 2;
+    app.prompt_cursor = 2;
     app.handle_key(key(KeyCode::Char('x')));
 
     assert!(app.file_mention_tags.is_empty());
-}
-
-pub(super) fn unknown_file_mention_submits_as_plain_text_without_structured_tag() {
-    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
-    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
-        let intents = Arc::clone(&intents);
-        Arc::new(move |intent| intents.lock().expect("lock intents").push(intent))
-    };
-    let mut app = AppState::new_live(None, false, Some(sink));
-    app.set_file_mention_collaborators_for_test(PathBuf::from("/virtual/workspace"), Vec::new(), 0);
-    app.focus = Focus::Prompt;
-
-    for ch in "@missing-file".chars() {
-        app.handle_key(key(KeyCode::Char(ch)));
-    }
-    assert!(app.file_mention_overlay_should_render());
-    assert!(app.file_mention_entries.is_empty());
-
-    app.handle_key(key(KeyCode::Enter));
-    assert!(intents.lock().expect("lock intents").is_empty());
-    assert_eq!(app.composer.prompt_buffer, "@missing-file");
-
-    app.handle_key(key(KeyCode::Esc));
-    app.handle_key(key(KeyCode::Enter));
-    let intents = intents.lock().expect("lock intents");
-    let [UiIntent::SubmitPrompt {
-        text,
-        selected_file_tags,
-        selected_agent_tags,
-        selected_resource_tags,
-        ..
-    }] = intents.as_slice()
-    else {
-        panic!("expected one submit prompt intent: {intents:?}");
-    };
-    assert_eq!(text, "@missing-file");
-    assert!(selected_file_tags.is_empty());
-    assert!(selected_agent_tags.is_empty());
-    assert!(selected_resource_tags.is_empty());
 }

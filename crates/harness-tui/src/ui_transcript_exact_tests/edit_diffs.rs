@@ -400,12 +400,14 @@ pub(crate) fn exact_test_transcript_apply_patch_surfaces_rename_and_wrapped_inli
     );
     assert!(
         lines.iter().any(|line| {
-            line.contains("cross the transcript surface for operators reviewing compact windows")
+            line.contains("across the transcript surface for operators reviewing compact wind")
         }),
         "added line wrapped continuation prefix missing\n{rendered}"
     );
     assert!(
-        lines.iter().any(|line| line.contains("and narrow shells")),
+        lines
+            .iter()
+            .any(|line| line.contains("s and narrow shells")),
         "added line wrapped continuation tail missing\n{rendered}"
     );
     assert!(
@@ -561,7 +563,7 @@ pub(crate) fn exact_test_transcript_inline_diff_stays_compact_between_tool_rows(
             .iter()
             .filter(|line| line.trim().is_empty() || line.trim() == "┃")
             .count()
-            <= 2,
+            <= 1,
         "tool-to-diff spacing should stay compact\n{rendered}"
     );
     assert!(

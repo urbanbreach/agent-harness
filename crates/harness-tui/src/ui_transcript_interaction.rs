@@ -6,6 +6,7 @@ use ratatui::{
 
 use crate::app::{AppState, Focus, Tab};
 use crate::layout::FrameLayoutPlan;
+use crate::text::has_trimmed_content;
 
 use super::ui_transcript_layout::MeasuredTranscriptLayout;
 use super::ui_transcript_surface::{append_nested_surface_row, append_surface_row};
@@ -13,6 +14,10 @@ use super::WheelTarget;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum TranscriptMouseTarget {
+    FirstSubagentSession,
+    SubagentSession {
+        session_id: String,
+    },
     Tool {
         tool_call_id: String,
     },
@@ -39,6 +44,13 @@ pub(super) struct NestedSurfaceChrome<'a> {
     pub(super) surface: Color,
 }
 
+pub(super) fn transcript_target_is_hovered(
+    target: Option<&TranscriptMouseTarget>,
+    hovered: Option<&TranscriptMouseTarget>,
+) -> bool {
+    matches!((target, hovered), (Some(target), Some(hovered)) if target == hovered)
+}
+
 pub(super) fn transcript_surface_focused(app: &AppState) -> bool {
     !app.replay_mode
         && app.active_tab == Tab::Run
@@ -53,6 +65,16 @@ pub(super) fn tool_header_target(
     has_disclosure.then(|| TranscriptMouseTarget::Tool {
         tool_call_id: tool_call_id.to_string(),
     })
+}
+
+pub(super) fn subagent_session_target(
+    child_session_id: Option<&str>,
+) -> Option<TranscriptMouseTarget> {
+    child_session_id
+        .filter(|session_id| has_trimmed_content(session_id))
+        .map(|session_id| TranscriptMouseTarget::SubagentSession {
+            session_id: session_id.to_string(),
+        })
 }
 
 pub fn hovered_wheel_target(

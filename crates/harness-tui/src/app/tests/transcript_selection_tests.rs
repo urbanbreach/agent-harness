@@ -16,7 +16,7 @@ pub(super) fn mouse_drag_copy_on_select_copies_transcript_text_and_clears_select
         copied.lock().expect("lock copied text").clone(),
         Some("Copy this exact reply".to_string())
     );
-    assert!(app.transcript_view.transcript_selection().is_none());
+    assert!(app.transcript_selection().is_none());
     assert_eq!(
         app.toast()
             .map(|toast| (toast.message.as_str(), toast.variant)),
@@ -47,7 +47,7 @@ pub(super) fn mouse_drag_copy_on_select_copies_shell_card_text() {
         copied.lock().expect("lock copied text").clone(),
         Some("copy target output".to_string())
     );
-    assert!(app.transcript_view.transcript_selection().is_none());
+    assert!(app.transcript_selection().is_none());
     assert_eq!(
         app.toast()
             .map(|toast| (toast.message.as_str(), toast.variant)),
@@ -131,7 +131,7 @@ pub(super) fn mouse_drag_copy_on_select_surfaces_error_toast_when_copy_fails() {
     let mut app = transcript_selection_test_app();
     drag_transcript_selection(&mut app, "Copy this exact reply");
 
-    assert!(app.transcript_view.transcript_selection().is_none());
+    assert!(app.transcript_selection().is_none());
     assert_eq!(
         app.toast()
             .map(|toast| (toast.message.as_str(), toast.variant)),
@@ -175,7 +175,7 @@ pub(super) fn mouse_drag_copy_on_select_preserves_multiline_text_without_render_
         copied.lock().expect("lock copied text").clone(),
         Some(expected)
     );
-    assert!(app.transcript_view.transcript_selection().is_none());
+    assert!(app.transcript_selection().is_none());
 
     crate::clipboard::set_copy_override(None);
 }
@@ -192,7 +192,7 @@ pub(super) fn disabled_copy_on_select_keeps_selection_until_right_click_copy() {
     let mut app = transcript_selection_test_app();
     let (column, row, _) = drag_transcript_selection(&mut app, "Copy this exact reply");
 
-    assert!(app.transcript_view.transcript_selection().is_some());
+    assert!(app.transcript_selection().is_some());
     assert!(copied.lock().expect("lock copied text").is_none());
 
     app.handle_mouse(
@@ -212,7 +212,7 @@ pub(super) fn disabled_copy_on_select_keeps_selection_until_right_click_copy() {
         copied.lock().expect("lock copied text").clone(),
         Some("Copy this exact reply".to_string())
     );
-    assert!(app.transcript_view.transcript_selection().is_none());
+    assert!(app.transcript_selection().is_none());
     assert_eq!(
         app.toast()
             .map(|toast| (toast.message.as_str(), toast.variant)),
@@ -233,7 +233,7 @@ pub(super) fn disabled_copy_on_select_supports_ctrl_c_and_escape() {
 
     let mut copy_app = transcript_selection_test_app();
     drag_transcript_selection(&mut copy_app, "Copy this exact reply");
-    assert!(copy_app.transcript_view.transcript_selection().is_some());
+    assert!(copy_app.transcript_selection().is_some());
 
     copy_app.set_frame_area(TEST_FRAME_AREA);
     copy_app.handle_key(key_with_modifiers(
@@ -245,15 +245,15 @@ pub(super) fn disabled_copy_on_select_supports_ctrl_c_and_escape() {
         copied.lock().expect("lock copied text").as_slice(),
         ["Copy this exact reply"]
     );
-    assert!(copy_app.transcript_view.transcript_selection().is_none());
+    assert!(copy_app.transcript_selection().is_none());
 
     let mut escape_app = transcript_selection_test_app();
     drag_transcript_selection(&mut escape_app, "Copy this exact reply");
-    assert!(escape_app.transcript_view.transcript_selection().is_some());
+    assert!(escape_app.transcript_selection().is_some());
 
     escape_app.handle_key(key(KeyCode::Esc));
 
-    assert!(escape_app.transcript_view.transcript_selection().is_none());
+    assert!(escape_app.transcript_selection().is_none());
     assert_eq!(
         copied.lock().expect("lock copied text").as_slice(),
         ["Copy this exact reply"]
@@ -279,7 +279,7 @@ pub(super) fn mouse_drag_copy_on_select_keeps_body_rows_aligned_after_reasoning_
         copied.lock().expect("lock copied text").clone(),
         Some("Copy this exact reply".to_string())
     );
-    assert!(app.transcript_view.transcript_selection().is_none());
+    assert!(app.transcript_selection().is_none());
 
     crate::clipboard::set_copy_override(None);
 }

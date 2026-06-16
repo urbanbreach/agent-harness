@@ -35,149 +35,6 @@ pub(super) fn live_shell_footer_is_shortcuts_only() {
     assert!(!replay_footer_row.contains("/status"));
 }
 
-pub(super) fn live_footer_status_cluster_renders_and_degrades_without_losing_permissions() {
-    let app = live_footer_status_cluster_fixture_app();
-
-    let standard_render = render_live_lines(&app, 100, 30);
-    let standard_lines = standard_render.lines().collect::<Vec<_>>();
-    let standard_footer = standard_lines
-        .iter()
-        .rev()
-        .find(|line| line.contains("/status"))
-        .expect("live footer cluster row");
-    assert_markers_in_order(
-        standard_footer,
-        &["△ 1 Permission", "• 1 LSP", "⊙ 1 MCP", "/status"],
-    );
-
-    let minimal_render = render_live_lines(&app, 60, 20);
-    let minimal_footer = minimal_render
-        .lines()
-        .rev()
-        .find(|line| line.contains("△ 1 Permission"))
-        .expect("minimal live footer keeps permission count");
-    assert!(
-        !minimal_footer.contains("• 1 LSP"),
-        "minimal footer should drop LSP before permission count\n{minimal_render}"
-    );
-    assert!(
-        !minimal_footer.contains("⊙ 1 MCP"),
-        "minimal footer should drop MCP before permission count\n{minimal_render}"
-    );
-
-    clear_live_footer_status_cluster_fixture();
-}
-
-pub(super) fn live_footer_status_cluster_visual_probe_geometries() {
-    let app = live_footer_status_cluster_fixture_app();
-
-    for (width, height) in [(159, 40), (100, 30), (60, 20)] {
-        let rendered = render_live_lines(&app, width, height);
-        if std::env::var_os("HARNESS_TUI_G010_VISUAL_PROBE").is_some() {
-            println!("G010_VISUAL_CAPTURE {width}x{height}\n{rendered}\nEND_G010_VISUAL_CAPTURE");
-        }
-        for (index, line) in rendered.lines().enumerate() {
-            assert!(
-                line.chars().count() <= usize::from(width),
-                "rendered line {} exceeds {} columns\n{}",
-                index + 1,
-                width,
-                rendered
-            );
-        }
-        if width > 60 {
-            assert!(rendered.contains("△ 1 Permission"));
-            assert!(rendered.contains("• 1 LSP"));
-            assert!(rendered.contains("⊙ 1 MCP"));
-            assert!(rendered.contains("/status"));
-        } else {
-            assert!(rendered.contains("△ 1 Permission"));
-            assert!(!rendered.contains("• 1 LSP"));
-            assert!(!rendered.contains("⊙ 1 MCP"));
-        }
-    }
-
-    clear_live_footer_status_cluster_fixture();
-}
-
-fn live_footer_status_cluster_fixture_app() -> app::AppState {
-    let mut lsp_servers = std::collections::BTreeMap::new();
-    lsp_servers.insert(
-        "rust".to_string(),
-        harness_core::config::LspServerConfig::default(),
-    );
-    harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig {
-        disabled: false,
-        servers: lsp_servers,
-    });
-
-    let mut integrations = harness_core::config::IntegrationsConfig::default();
-    integrations.mcp.servers.insert(
-        "docs".to_string(),
-        harness_core::config::McpServerConfig::Stdio {
-            command: vec!["docs-mcp".to_string()],
-            env: std::collections::BTreeMap::new(),
-            cwd: None,
-            timeout_secs: 30,
-            enabled: true,
-        },
-    );
-    harness_core::config::set_registered_integrations_config(integrations);
-    harness_core::config::set_registered_mcp_server_connection_states(
-        std::collections::BTreeMap::from([(
-            "docs".to_string(),
-            harness_core::config::McpServerConnectionState::Failed("offline".to_string()),
-        )]),
-    );
-
-    let mut app = app::AppState::new_live(None, false, None);
-    app.ingest_event(envelope(
-        1,
-        Some("req_footer"),
-        harness_core::event::EventV1::UserMessageSubmitted(
-            harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req_footer".to_string(),
-                text: "Need permission".to_string(),
-            },
-        ),
-    ));
-    app.ingest_event(envelope(
-        2,
-        Some("req_footer"),
-        harness_core::event::EventV1::ProviderRequestStarted(
-            harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_footer".to_string(),
-                provider_id: "openai".to_string(),
-                model_id: "gpt-5".to_string(),
-                prompt_summary: "Need permission".to_string(),
-                request_digest: "digest-footer".to_string(),
-                metadata: None,
-            },
-        ),
-    ));
-    app.ingest_event(envelope(
-        3,
-        Some("req_footer"),
-        harness_core::event::EventV1::ToolCallRequested(
-            harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_footer".to_string(),
-                tool_id: "edit".to_string(),
-                args_summary: r#"{"path":"demo.txt"}"#.to_string(),
-                args_digest: "digest-footer-tool".to_string(),
-                metadata: None,
-            },
-        ),
-    ));
-    app.ingest_event(permission_requested_event(4, "perm_footer", "tool_footer"));
-
-    app
-}
-
-fn clear_live_footer_status_cluster_fixture() {
-    harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
-    harness_core::config::clear_registered_integrations_config();
-}
-
 pub(super) fn primary_and_wide_live_shells_hide_metadata_header() {
     let mut app = app::AppState::new_live(None, false, None);
     app.set_launch_metadata(
@@ -219,8 +76,8 @@ pub(super) fn completed_shell_bottom_rows_do_not_duplicate_command_help_footers(
     );
     app.active_review_surface = Some(app::ReviewSurface::Events);
     app.focus = app::Focus::Prompt;
-    app.composer.prompt_buffer = "keep this draft".to_string();
-    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.prompt_buffer = "keep this draft".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
     app.ingest_event(envelope(
         1,
         Some("req_completed_decrowded_footer"),
@@ -319,14 +176,7 @@ pub(super) fn live_state_matrix_preserves_shell_structure() {
     degraded.set_status_banner(Some(
         "live stream lagged by 2; replaying from seq 1".to_string(),
     ));
-    assert_live_shell_document_composer_contract(
-        &degraded,
-        100,
-        24,
-        Some("Draft preserved locally while recovery completes."),
-        None,
-        "Degraded",
-    );
+    assert_live_shell_document_composer_contract(&degraded, 100, 24, None, None, "Degraded");
 
     let mut disconnected = app::AppState::new_live(None, false, None);
     disconnected.set_status_banner(Some("live event stream disconnected".to_string()));
@@ -334,7 +184,7 @@ pub(super) fn live_state_matrix_preserves_shell_structure() {
         &disconnected,
         100,
         24,
-        Some("Draft preserved locally — reopen the TUI to reconnect."),
+        None,
         None,
         "Disconnected",
     );

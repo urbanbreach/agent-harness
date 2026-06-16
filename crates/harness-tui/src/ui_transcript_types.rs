@@ -38,8 +38,8 @@ pub(in crate::ui) enum TranscriptRenderSurfaceKind {
     AssistantBody,
     AssistantTool,
     AssistantCommandTool,
-    AssistantFooter,
     AssistantError,
+    AssistantFooter,
 }
 
 #[derive(Debug, Clone)]
@@ -53,6 +53,7 @@ pub(super) struct BuildTurnSectionArgs<'a> {
     pub(super) activity: &'a ActivityEntry,
     pub(super) queued_user_message: bool,
     pub(super) is_selected: bool,
+    pub(super) is_latest: bool,
     pub(super) thinking_visible: bool,
     pub(super) timestamps_visible: bool,
     pub(super) show_tool_details: bool,
@@ -73,6 +74,8 @@ pub(super) struct TranscriptOrderedToolCallSection {
 pub(super) struct TranscriptTurnSection {
     pub(super) request_id: String,
     pub(super) user_message: Option<TranscriptUserMessageSection>,
+    pub(super) show_footer: bool,
+    pub(super) footer_timestamp: Option<String>,
     pub(super) animation_phase: usize,
     pub(super) header: TranscriptTurnHeader,
     pub(super) body_blocks: Vec<TranscriptBodyBlock>,
@@ -80,7 +83,7 @@ pub(super) struct TranscriptTurnSection {
     pub(super) thinking: Option<TranscriptLabeledTextSection>,
     pub(super) error: Option<TranscriptErrorSection>,
     pub(super) assistant_parts: Vec<TranscriptAssistantPart>,
-    pub(super) assistant_footer: Option<TranscriptAssistantFooterSection>,
+    pub(super) subagent_hint_key: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,15 +98,6 @@ pub(super) struct TranscriptTurnHeader {
     pub(super) is_selected: bool,
     pub(super) profile_label: String,
     pub(super) model_id: String,
-    pub(super) provider_id: String,
-    pub(super) duration_ms: Option<u64>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct TranscriptAssistantFooterSection {
-    pub(super) agent_label: String,
-    pub(super) model_label: String,
-    pub(super) provider_label: Option<String>,
     pub(super) duration_ms: Option<u64>,
 }
 
@@ -116,9 +110,6 @@ pub(super) enum TranscriptBodyBlock {
 pub(super) struct TranscriptLabeledTextSection {
     pub(super) label: &'static str,
     pub(super) text: String,
-    pub(super) status: ActivityStatus,
-    pub(super) started_mono_ms: Option<u64>,
-    pub(super) duration_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -196,6 +187,7 @@ pub(super) enum TranscriptAssistantPart {
     Reasoning(TranscriptLabeledTextSection),
     Body(TranscriptBodyBlock),
     ToolCall(Box<TranscriptToolCallSection>),
+    SubagentHint,
     Error(TranscriptErrorSection),
 }
 

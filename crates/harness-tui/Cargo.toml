@@ -13,7 +13,6 @@ imara-diff = "0.2"
 serde.workspace = true
 serde_json.workspace = true
 syntect = { version = "5.3", default-features = false, features = ["default-fancy"] }
-unicode-segmentation = "1.12"
 
 [dev-dependencies]
 font8x8 = "0.3"

@@ -5,8 +5,8 @@ mod subagent_navigation_keyboard_tests;
 pub(super) use subagent_navigation_keyboard_tests::{
     disk_backed_child_navigation_stays_in_live_tui_stack as keyboard_disk_backed_child_navigation_stays_in_live_tui_stack,
     keyboard_sidebar_subagent_selection_opens_child_session as keyboard_keyboard_sidebar_subagent_selection_opens_child_session,
-    transcript_task_inline_row_has_no_subagent_hitbox as keyboard_transcript_task_inline_row_has_no_subagent_hitbox,
-    transcript_task_inline_row_is_not_subagent_navigation as keyboard_transcript_task_inline_row_is_not_subagent_navigation,
+    live_subagent_hitbox_uses_rendered_transcript_area as keyboard_live_subagent_hitbox_uses_rendered_transcript_area,
+    mouse_click_on_task_inline_row_opens_subagent_session as keyboard_mouse_click_on_task_inline_row_opens_subagent_session,
 };
 
 pub(super) fn mouse_click_on_subagent_footer_navigates_parent_previous_and_next() {
@@ -124,7 +124,7 @@ pub(super) fn mouse_click_on_subagent_footer_navigates_parent_previous_and_next(
     assert!(!app.replay_mode);
 }
 
-pub(super) fn transcript_task_row_child_session_is_sidebar_only() {
+pub(super) fn mouse_click_on_task_inline_row_uses_task_row_child_session() {
     let run_dir = tempfile::tempdir().expect("create run dir");
     let parent_path = run_dir.path().join("parent_run");
     fs::create_dir_all(&parent_path).expect("create parent run dir");
@@ -179,10 +179,12 @@ pub(super) fn transcript_task_row_child_session_is_sidebar_only() {
         }),
     ));
 
-    let (column, row) = transcript_click_position(&app, "inspect child · Explore Agent");
+    let (column, row) = transcript_click_position(&app, "Explore Task — inspect child");
     assert_eq!(
         transcript_mouse_target(&app, TEST_FRAME_AREA, column, row),
-        None
+        Some(TranscriptMouseTarget::SubagentSession {
+            session_id: "agent_child".to_string(),
+        })
     );
 
     app.handle_mouse(
@@ -198,11 +200,11 @@ pub(super) fn transcript_task_row_child_session_is_sidebar_only() {
         None,
     );
 
-    assert_eq!(app.current_session_id(), Some("parent_run"));
-    assert!(!app.replay_mode, "in-chat task rows are passive");
+    assert_eq!(app.current_session_id(), Some("agent_child"));
+    assert!(app.replay_mode, "inline child sessions open read-only");
 }
 
-pub(super) fn completed_general_task_row_is_passive() {
+pub(super) fn mouse_up_on_completed_general_task_row_opens_child_session() {
     let run_dir = tempfile::tempdir().expect("create run dir");
     let parent_path = run_dir.path().join("parent_run");
     fs::create_dir_all(&parent_path).expect("create parent run dir");
@@ -303,10 +305,12 @@ pub(super) fn completed_general_task_row_is_passive() {
     ));
 
     let (column, row) =
-        transcript_click_position(&app, "Subagent functionality smoke test · General Agent");
+        transcript_click_position(&app, "General Task — Subagent functionality smoke test");
     assert_eq!(
         transcript_mouse_target(&app, TEST_FRAME_AREA, column, row),
-        None
+        Some(TranscriptMouseTarget::SubagentSession {
+            session_id: "agent_child".to_string(),
+        })
     );
     let (_, detail_row) = transcript_click_position(&app, "└ 0 toolcalls · 16ms");
     assert_eq!(detail_row, row + 1);
@@ -323,7 +327,12 @@ pub(super) fn completed_general_task_row_is_passive() {
         None,
         None,
     );
-    assert_eq!(app.transcript_view.hovered_transcript_target(), None);
+    assert_eq!(
+        app.hovered_transcript_target(),
+        Some(&TranscriptMouseTarget::SubagentSession {
+            session_id: "agent_child".to_string(),
+        })
+    );
 
     app.handle_mouse(
         MouseEvent {
@@ -338,11 +347,14 @@ pub(super) fn completed_general_task_row_is_passive() {
         None,
     );
 
-    assert_eq!(app.current_session_id(), Some("parent_run"));
-    assert!(!app.replay_mode, "in-chat task rows are passive");
+    assert_eq!(app.current_session_id(), Some("agent_child"));
+    assert!(
+        app.replay_mode,
+        "mouse-up opens inline child sessions read-only"
+    );
 }
 
-pub(super) fn harness_metadata_task_row_is_passive() {
+pub(super) fn mouse_click_on_task_row_uses_harness_session_metadata() {
     let run_dir = tempfile::tempdir().expect("create run dir");
     let parent_path = run_dir.path().join("parent_run");
     fs::create_dir_all(&parent_path).expect("create parent run dir");
@@ -412,11 +424,12 @@ pub(super) fn harness_metadata_task_row_is_passive() {
         }),
     ));
 
-    let (column, row) =
-        transcript_click_position(&app, "Smoke test subagent dispatch · Plan Agent");
+    let (column, row) = transcript_click_position(&app, "Plan Task — Smoke test subagent dispatch");
     assert_eq!(
         transcript_mouse_target(&app, TEST_FRAME_AREA, column, row),
-        None
+        Some(TranscriptMouseTarget::SubagentSession {
+            session_id: "agent_child".to_string(),
+        })
     );
 
     app.handle_mouse(
@@ -432,11 +445,11 @@ pub(super) fn harness_metadata_task_row_is_passive() {
         None,
     );
 
-    assert_eq!(app.current_session_id(), Some("parent_run"));
-    assert!(!app.replay_mode, "in-chat task rows are passive");
+    assert_eq!(app.current_session_id(), Some("agent_child"));
+    assert!(app.replay_mode, "inline child sessions open read-only");
 }
 
-pub(super) fn subagent_hint_is_absent_from_transcript() {
+pub(super) fn mouse_click_on_subagent_hint_opens_first_child_session() {
     let run_dir = tempfile::tempdir().expect("create run dir");
     let parent_path = run_dir.path().join("parent_run");
     fs::create_dir_all(&parent_path).expect("create parent run dir");
@@ -474,22 +487,34 @@ pub(super) fn subagent_hint_is_absent_from_transcript() {
         }),
     ));
 
-    let backend = TestBackend::new(TEST_FRAME_AREA.width, TEST_FRAME_AREA.height);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
-    terminal
-        .draw(|frame| render_app(frame, &app))
-        .expect("draw transcript frame");
-    let buffer = terminal.backend().buffer();
-    let transcript = (0..TEST_FRAME_AREA.height)
-        .map(|y| {
-            (0..TEST_FRAME_AREA.width)
-                .map(|x| buffer[(x, y)].symbol())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let hint = format!(
+        "{} view subagents",
+        app.keymap.get_binding_str(Action::SessionChildFirst)
+    );
+    let (column, row) = transcript_click_position(&app, &hint);
+    assert_eq!(
+        transcript_mouse_target(&app, TEST_FRAME_AREA, column, row),
+        Some(TranscriptMouseTarget::FirstSubagentSession)
+    );
 
-    assert!(!transcript.contains("view subagents"));
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+
+    assert_eq!(app.current_session_id(), Some("agent_child"));
+    assert!(
+        app.replay_mode,
+        "hint opens inline child sessions read-only"
+    );
 }
 
 pub(super) fn slash_exit_from_inline_subagent_restores_parent_before_quit() {

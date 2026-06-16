@@ -306,7 +306,7 @@ pub(super) fn replay_and_completed_states_preserve_read_only_and_session_preserv
     replay.handle_key(key(crossterm::event::KeyCode::Enter));
 
     let replay_render = render_live_lines(&replay, 100, 24);
-    assert!(replay.composer.prompt_buffer.is_empty());
+    assert!(replay.prompt_buffer.is_empty());
     assert!(replay_render.contains("Replay · read-only"));
     assert!(replay_render.contains("Replay is read-only"));
     assert!(!replay_render.contains("blocked in replay"));

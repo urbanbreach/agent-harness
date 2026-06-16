@@ -36,8 +36,8 @@ pub(super) fn live_shell_shift_enter_keeps_draft_multiline() {
         app.handle_key(key(crossterm::event::KeyCode::Char(c)));
     }
 
-    assert_eq!(app.composer.prompt_history.len(), 0);
-    assert_eq!(app.composer.prompt_buffer, "first line\nsecond line");
+    assert_eq!(app.prompt_history.len(), 0);
+    assert_eq!(app.prompt_buffer, "first line\nsecond line");
     assert_live_shell_contains(&app, 80, 24, &["first line", "second line"]);
     let rendered = render_live_lines(&app, 80, 24);
     assert!(!rendered.contains("Composer ·"));
@@ -53,9 +53,9 @@ pub(super) fn live_shell_enter_submits_and_echoes_prompt_snapshot() {
 
     app.handle_key(key(crossterm::event::KeyCode::Enter));
 
-    assert_eq!(app.composer.prompt_buffer, "");
+    assert_eq!(app.prompt_buffer, "");
     assert_eq!(
-        app.composer.prompt_history.last().map(String::as_str),
+        app.prompt_history.last().map(String::as_str),
         Some("ship it")
     );
     let rendered = render_live_lines(&app, 80, 24);
@@ -64,7 +64,7 @@ pub(super) fn live_shell_enter_submits_and_echoes_prompt_snapshot() {
     assert!(!rendered.contains("user (pending turn)"));
     assert!(rendered.contains("ship it"));
     assert!(!rendered.contains("   Waiting for response…"));
-    assert!(!rendered.contains("Assistant ·"));
+    assert!(rendered.contains("⠋ Assistant"));
     assert!(!rendered.contains('╭'));
 }
 
@@ -86,7 +86,7 @@ pub(super) fn live_submitted_event_merges_duplicate_local_echo_before_rendering_
             "Ack.",
         ));
     app.selected_activity_index = 1;
-    app.transcript_view.follow_mode = false;
+    app.follow_mode = false;
 
     app.ingest_event(envelope(
         1,
@@ -334,15 +334,14 @@ pub(super) fn narrow_transcript_wrapped_top_level_turns_keep_alignment() {
     let assistant_first =
         find_line_containing_from(&lines, user_continuation + 1, "assistant reply wraps")
             .expect("wrapped assistant first row");
+    let assistant_footer = find_line_containing_from(&lines, assistant_first + 1, "Assistant")
+        .expect("assistant footer row");
     let assistant_continuation = lines
         .iter()
         .enumerate()
         .skip(assistant_first + 1)
-        .take_while(|(_, line)| !line.contains("Ctrl+p commands"))
-        .find_map(|(index, line)| {
-            (line.contains("same left alignment") || line.contains("continuation row"))
-                .then_some(index)
-        })
+        .take(assistant_footer.saturating_sub(assistant_first + 1))
+        .find_map(|(index, line)| line.chars().any(char::is_alphanumeric).then_some(index))
         .expect("wrapped assistant continuation row");
 
     assert_eq!(
@@ -402,7 +401,7 @@ pub(super) fn live_shell_degraded_bootstrap_snapshot() {
             "Draft locally until recovery completes.",
         ],
     );
-    assert!(render_live_lines(&app, 80, 24)
+    assert!(!render_live_lines(&app, 80, 24)
         .contains("Draft preserved locally while recovery completes."));
 }
 
@@ -421,7 +420,7 @@ pub(super) fn live_shell_disconnected_stream_snapshot() {
             "Reopen the TUI, then continue from the transcript.",
         ],
     );
-    assert!(render_live_lines(&app, 80, 24)
+    assert!(!render_live_lines(&app, 80, 24)
         .contains("Draft preserved locally — reopen the TUI to reconnect."));
 }
 

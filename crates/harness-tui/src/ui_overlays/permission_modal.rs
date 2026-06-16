@@ -1,4 +1,3 @@
-use super::permission_request_summary::permission_modal_typed_subject_line;
 use super::*;
 
 pub(in crate::ui) fn permission_modal_metadata_line(
@@ -79,10 +78,6 @@ pub(in crate::ui) fn permission_modal_subject_line(
     let summary = permission.summary.trim();
     if !summary.is_empty() && !summary.starts_with('{') && !summary.starts_with('[') {
         return summary.to_string();
-    }
-
-    if let Some(subject) = permission_modal_typed_subject_line(permission) {
-        return subject;
     }
 
     permission
@@ -220,18 +215,11 @@ pub(in crate::ui) fn question_permission_actions_text(
     let primary_style = Style::default().fg(theme.text.primary).bg(surface);
     let metadata_style = Style::default().fg(theme.text.secondary).bg(surface);
     let single = prompts.len() == 1 && !prompts[0].multiple;
-    let confirm = !single
-        && app
-            .question_prompt
-            .question_prompt_tab(&permission.permission_id)
-            >= prompts.len();
+    let confirm = !single && app.question_prompt_tab(&permission.permission_id) >= prompts.len();
     let submit_label = if confirm {
         "submit"
     } else if prompts
-        .get(
-            app.question_prompt
-                .question_prompt_tab(&permission.permission_id),
-        )
+        .get(app.question_prompt_tab(&permission.permission_id))
         .is_some_and(|prompt| prompt.multiple)
     {
         "toggle"
@@ -288,13 +276,10 @@ pub(in crate::ui) fn question_permission_body_text(
     let error_style = Style::default().fg(theme.status.error).bg(surface);
     let single = prompts.len() == 1 && !prompts[0].multiple;
     let tab = app
-        .question_prompt
         .question_prompt_tab(&permission.permission_id)
         .min(prompts.len());
     let confirm = !single && tab >= prompts.len();
-    let answers = app
-        .question_prompt
-        .question_prompt_answers(&permission.permission_id);
+    let answers = app.question_prompt_answers(&permission.permission_id);
     let mut lines = Vec::new();
 
     if !single {
@@ -351,9 +336,7 @@ pub(in crate::ui) fn question_permission_body_text(
     }
 
     let prompt = &prompts[tab.min(prompts.len().saturating_sub(1))];
-    let selected = app
-        .question_prompt
-        .question_prompt_selection(&permission.permission_id);
+    let selected = app.question_prompt_selection(&permission.permission_id);
     let current_answers = answers.get(tab).cloned().unwrap_or_default();
 
     lines.push(Line::from(vec![Span::styled(
@@ -407,7 +390,6 @@ pub(in crate::ui) fn question_permission_body_text(
 
     if prompt.custom {
         let custom_value = app
-            .question_prompt
             .question_prompt_custom(&permission.permission_id, tab)
             .unwrap_or_default();
         let picked =
@@ -444,10 +426,7 @@ pub(in crate::ui) fn question_permission_body_text(
         }
         lines.push(Line::from(row));
 
-        let editing = app
-            .question_prompt
-            .question_prompt_editing(&permission.permission_id)
-            && active;
+        let editing = app.question_prompt_editing(&permission.permission_id) && active;
         if editing {
             let preview = app.question_answer_preview(&permission.permission_id);
             let (text, style) = if preview == "█" {
@@ -464,10 +443,7 @@ pub(in crate::ui) fn question_permission_body_text(
         }
     }
 
-    if let Some(error) = app
-        .question_prompt
-        .question_answer_error(&permission.permission_id)
-    {
+    if let Some(error) = app.question_answer_error(&permission.permission_id) {
         lines.push(Line::default());
         lines.push(Line::from(vec![Span::styled(
             error.to_string(),

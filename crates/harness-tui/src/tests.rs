@@ -99,8 +99,8 @@ pub(super) fn module_transcript_edit_snapshot_renders_inline_diff() {
 }
 
 #[test]
-pub(super) fn module_inline_diff_does_not_reintroduce_assistant_footer() {
-    transcript_render_tests::module_inline_diff_does_not_reintroduce_assistant_footer();
+pub(super) fn module_inline_diff_does_not_leave_large_gap_before_active_footer() {
+    transcript_render_tests::module_inline_diff_does_not_leave_large_gap_before_active_footer();
 }
 
 pub(super) fn module_fenced_code_highlighting_uses_syntect_styles_for_known_languages() {
@@ -121,8 +121,8 @@ pub(super) fn module_wide_diff_renderer_pairs_before_and_after_columns() {
 }
 
 #[test]
-pub(super) fn module_diff_renderer_stacks_at_threshold_and_splits_wide() {
-    transcript_render_tests::module_diff_renderer_stacks_at_threshold_and_splits_wide();
+pub(super) fn module_diff_renderer_switches_to_side_by_side_at_primary_widths() {
+    transcript_render_tests::module_diff_renderer_switches_to_side_by_side_at_primary_widths();
 }
 
 pub(super) fn module_transcript_edit_tool_wide_diff_uses_syntax_highlighting_and_split_palettes() {

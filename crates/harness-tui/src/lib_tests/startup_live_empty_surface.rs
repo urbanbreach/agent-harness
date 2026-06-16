@@ -138,14 +138,8 @@ pub(super) fn live_empty_state_snapshot_renders_input_first_shell() {
     assert!(!rendered.contains("Enter send · Shift+Enter/Ctrl+j newline · ↑/↓ history"));
     assert!(!rendered.contains("Type to start a new session."));
 
-    assert_live_shell_document_composer_contract(
-        &app,
-        80,
-        24,
-        Some("Type a prompt for the next turn…"),
-        None,
-        "Ctrl+p commands",
-    );
+    assert_live_shell_document_composer_contract(&app, 80, 24, None, None, "Ctrl+p commands");
+    assert!(!rendered.contains("Ask Harness to inspect, edit, or explain…"));
 }
 
 pub(super) fn live_empty_state_disappears_after_first_activity() {

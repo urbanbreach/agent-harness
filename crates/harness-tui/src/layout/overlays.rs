@@ -36,7 +36,7 @@ pub(super) fn command_palette_overlay_area(
     contract: SessionGeometryContract,
     app: &AppState,
 ) -> Option<Rect> {
-    if app.overlay_state.fork_selector_visible {
+    if app.fork_selector_visible {
         let popup_width = FORK_SELECTOR_WIDTH.min(area.width.saturating_sub(2));
         let popup_height = fork_selector_overlay_height(app, area.height);
         if popup_width == 0 || popup_height == 0 {
@@ -50,7 +50,7 @@ pub(super) fn command_palette_overlay_area(
         return Some(Rect::new(popup_x, popup_y, popup_width, popup_height));
     }
 
-    if !app.overlay_state.session_history_visible && !app.overlay_state.model_switcher_visible {
+    if !app.session_history_visible && !app.model_switcher_visible {
         let popup_width = COMMAND_PALETTE_WIDTH.min(area.width.saturating_sub(2));
         let popup_height = command_palette_overlay_height(app, area.height)
             .min(area.height.saturating_sub(area.height / 4));
@@ -88,7 +88,7 @@ pub(super) fn command_palette_overlay_area(
 }
 
 fn command_palette_overlay_width(shell: LiveShellLayout, app: &AppState) -> u16 {
-    if app.overlay_state.session_history_visible || app.overlay_state.model_switcher_visible {
+    if app.session_history_visible || app.model_switcher_visible {
         shell.centered_content_width
     } else {
         COMMAND_PALETTE_WIDTH
@@ -101,40 +101,26 @@ fn command_palette_overlay_height(app: &AppState, terminal_height: u16) -> u16 {
     const MODEL_SWITCHER_OVERLAY_ROWS: u16 = 6;
     const MAX_LIST_ROWS: usize = 7;
 
-    if app.overlay_state.session_history_visible {
+    if app.session_history_visible {
         let max_height_rows = usize::from(terminal_height.saturating_div(2).saturating_sub(6));
         let history_rows = app
             .session_history_visual_row_count()
             .clamp(1, max_height_rows.max(1));
         let history_rows = u16::try_from(history_rows).unwrap_or(u16::MAX);
         SESSION_HISTORY_OVERLAY_ROWS.saturating_add(history_rows)
-    } else if app.overlay_state.model_switcher_visible {
+    } else if app.model_switcher_visible {
         let model_rows = app
             .model_switcher_visual_row_count()
             .clamp(1, MAX_LIST_ROWS + 2);
         let model_rows = u16::try_from(model_rows).unwrap_or(u16::MAX);
         MODEL_SWITCHER_OVERLAY_ROWS.saturating_add(model_rows)
-    } else if app.overlay_state.toggles_menu_visible {
+    } else if app.toggles_menu_visible {
         let max_height_rows = usize::from(terminal_height.saturating_div(2).saturating_sub(6));
         let toggle_rows = toggles_menu_visible_rows(app)
             .max(1)
             .min(max_height_rows.max(1));
         let toggle_rows = u16::try_from(toggle_rows).unwrap_or(u16::MAX);
         COMMAND_OVERLAY_ROWS.saturating_add(toggle_rows)
-    } else if app.composer.stash_dialog_visible() {
-        let max_height_rows = usize::from(terminal_height.saturating_div(2).saturating_sub(6));
-        let stash_rows = app
-            .prompt_stash_visual_row_count()
-            .min(max_height_rows.max(1));
-        let stash_rows = u16::try_from(stash_rows).unwrap_or(u16::MAX);
-        COMMAND_OVERLAY_ROWS.saturating_add(stash_rows)
-    } else if app.composer.queued_prompt_dialog_visible() {
-        let max_height_rows = usize::from(terminal_height.saturating_div(2).saturating_sub(6));
-        let queued_rows = app
-            .queued_prompts_visual_row_count()
-            .min(max_height_rows.max(1));
-        let queued_rows = u16::try_from(queued_rows).unwrap_or(u16::MAX);
-        COMMAND_OVERLAY_ROWS.saturating_add(queued_rows)
     } else {
         let max_height_rows = usize::from(terminal_height.saturating_div(2).saturating_sub(6));
         let command_rows = command_palette_visible_rows(app)
@@ -160,10 +146,7 @@ pub(super) fn slash_command_overlay_area(
     _contract: SessionGeometryContract,
     app: &AppState,
 ) -> Option<Rect> {
-    if !(app.overlay_state.slash_visible || app.overlay_state.file_mention_visible)
-        || composer.width == 0
-        || composer.y == 0
-    {
+    if !(app.slash_visible || app.file_mention_visible) || composer.width == 0 || composer.y == 0 {
         return None;
     }
 
@@ -204,7 +187,7 @@ pub(crate) fn completion_overlay_content_area(overlay: Rect) -> Rect {
 fn slash_command_overlay_height(app: &AppState) -> u16 {
     const MAX_ROWS: usize = 10;
 
-    let len = if app.overlay_state.file_mention_visible {
+    let len = if app.file_mention_visible {
         app.file_mention_entries.len()
     } else {
         app.slash_filtered.len()

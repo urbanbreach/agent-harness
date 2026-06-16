@@ -51,10 +51,7 @@ pub(super) fn mouse_click_toggles_transcript_tool_disclosure() {
         None,
         None,
     );
-    assert!(app
-        .transcript_view
-        .expanded_tool_outputs
-        .contains("tc_shell_toggle"));
+    assert!(app.expanded_tool_outputs.contains("tc_shell_toggle"));
 
     app.handle_mouse(
         MouseEvent {
@@ -68,10 +65,7 @@ pub(super) fn mouse_click_toggles_transcript_tool_disclosure() {
         None,
         None,
     );
-    assert!(!app
-        .transcript_view
-        .expanded_tool_outputs
-        .contains("tc_shell_toggle"));
+    assert!(!app.expanded_tool_outputs.contains("tc_shell_toggle"));
 }
 pub(super) fn mouse_click_toggles_apply_patch_file_disclosure() {
     let run_dir = tempfile::tempdir().expect("create run dir");

@@ -1,9 +1,7 @@
-use std::borrow::Cow;
+use ratatui::style::Color;
 
-use ratatui::{style::Color, text::Line};
-
-use crate::app::humanize_profile_label;
 use crate::app::ActivityStatus;
+use crate::text::has_trimmed_content;
 use crate::theme::Theme;
 
 use super::ui_chrome::elevated_card_surface;
@@ -15,33 +13,35 @@ pub(super) fn transcript_streaming_spinner_frame(animation_phase: usize) -> &'st
     TRANSCRIPT_BRAILLE_SPINNER_FRAMES[animation_phase % TRANSCRIPT_BRAILLE_SPINNER_FRAMES.len()]
 }
 
-pub(super) fn decorate_transcript_spinner_line(
-    mut line: Line<'static>,
-    animation_phase: usize,
-) -> Line<'static> {
-    let frame = transcript_streaming_spinner_frame(animation_phase);
-    for span in &mut line.spans {
-        if TRANSCRIPT_BRAILLE_SPINNER_FRAMES.contains(&span.content.as_ref()) {
-            span.content = Cow::Borrowed(frame);
-        }
+pub(super) fn assistant_footer_label(value: &str) -> String {
+    if !has_trimmed_content(value)
+        || value.eq_ignore_ascii_case("unknown")
+        || value.eq_ignore_ascii_case("default")
+    {
+        return "Assistant".to_string();
     }
-    line
+    titlecase_label(value)
 }
 
-pub(super) fn assistant_footer_label(value: &str) -> String {
-    humanize_profile_label(value)
+fn titlecase_label(value: &str) -> String {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return String::new();
+    };
+    format!("{}{}", first.to_uppercase(), chars.as_str())
 }
 
 pub(super) fn assistant_primary_label_color(status: ActivityStatus, theme: &Theme) -> Color {
     match status {
         ActivityStatus::Queued => theme.text.secondary,
-        ActivityStatus::Streaming | ActivityStatus::Done => theme.text.primary,
+        ActivityStatus::Streaming => theme.text.primary,
+        ActivityStatus::Done => theme.text.primary,
         ActivityStatus::Error => theme.status.error,
     }
 }
 
 pub(super) fn activity_status_supports_footer_only(status: ActivityStatus) -> bool {
-    matches!(status, ActivityStatus::Queued | ActivityStatus::Streaming)
+    matches!(status, ActivityStatus::Streaming)
 }
 
 pub(super) fn selected_foreground_for_badge(background: Color, theme: &Theme) -> Color {

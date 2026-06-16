@@ -158,8 +158,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         running_lines.extend(render.lines);
     }
     let running_text = transcript_test_line_texts(running_lines).join("\n");
-    assert!(running_text.contains("• audit transcript parity · Researcher Agent"));
-    assert!(!running_text.contains("Researcher Task — audit transcript parity"));
+    assert!(running_text.contains("Researcher Task — audit transcript parity"));
     assert!(
         running_text.contains("↳ Read src/ui.rs"),
         "running task row should keep child-session context inline\n{running_text}"
@@ -230,30 +229,6 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
             }),
         }),
     ));
-
-    let task_completed_tool = &app.activities[0].tool_calls[0];
-    let task_completed_row = app.transcript_task_row_for_tool_call(task_completed_tool);
-    let task_completed_section = build_transcript_tool_call_section(
-        task_completed_tool,
-        &AppState::default(),
-        task_completed_row.as_ref(),
-        true,
-        false,
-        false,
-        false,
-        None,
-    );
-    let task_completed_render = append_tool_call_section_lines(
-        &task_completed_section,
-        &Theme::default(),
-        120,
-        Theme::default().surface.panel,
-    );
-    let task_completed_text = transcript_test_line_texts(task_completed_render.lines).join("\n");
-    assert!(
-        task_completed_text.contains("✓ audit transcript parity · Researcher Agent"),
-        "task row should stop spinning as soon as child task completion is projected\n{task_completed_text}"
-    );
     app.ingest_event(event(
         10,
         "2026-03-22T14:36:08Z",
@@ -300,8 +275,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         completed_lines.extend(render.lines);
     }
     let completed_text = transcript_test_line_texts(completed_lines).join("\n");
-    assert!(completed_text.contains("✓ audit transcript parity · Researcher Agent"));
-    assert!(!completed_text.contains("Researcher Task — audit transcript parity"));
+    assert!(completed_text.contains("Researcher Task — audit transcript parity"));
     assert!(
         completed_text.contains("2 toolcalls · 1.6s"),
         "completed task row should keep child-session context inline\n{completed_text}"
@@ -338,11 +312,15 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         120,
     ))
     .join("\n");
-    assert!(parent_transcript_text.contains("✓ audit transcript parity · Researcher Agent"));
+    assert!(parent_transcript_text.contains("Researcher Task — audit transcript parity"));
     assert!(parent_transcript_text.contains("2 toolcalls · 1.6s"));
     assert!(parent_transcript_text.contains("details background_output(request_id=\"req_child\")"));
     assert!(parent_transcript_text.contains("task(session_id=\"agent_worker\")"));
-    assert!(!parent_transcript_text.contains("view subagents"));
+    let subagent_hint = format!(
+        "{} view subagents",
+        app.keymap.get_binding_str(Action::SessionChildFirst)
+    );
+    assert!(parent_transcript_text.contains(&subagent_hint));
     assert!(
         !parent_transcript_text.contains("CHILD SUBAGENT DETAILS SHOULD STAY OUT OF PARENT"),
         "parent transcript should keep delegated child turns behind the task row\n{parent_transcript_text}"

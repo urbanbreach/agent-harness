@@ -101,7 +101,20 @@ fn build_assistant_render_surfaces(
     width: u16,
     base_surface: Color,
 ) -> Vec<TranscriptRenderSurface> {
+    let agent_accent = theme.agent_accent(&turn.header.profile_label);
+    let (assistant_icon, assistant_color, assistant_status) = match turn.header.status {
+        ActivityStatus::Queued => ("◇", agent_accent, "queued"),
+        ActivityStatus::Streaming => (
+            transcript_streaming_spinner_frame(turn.animation_phase),
+            agent_accent,
+            "active",
+        ),
+        ActivityStatus::Done => ("▪", agent_accent, "done"),
+        ActivityStatus::Error => (theme.live_shell.glyphs.error, theme.status.error, "error"),
+    };
+
     let mut surfaces = Vec::new();
+    let footer_target = assistant_footer_target_index(turn);
     let mut index = 0;
 
     while index < turn.assistant_parts.len() {
@@ -127,15 +140,23 @@ fn build_assistant_render_surfaces(
                 })
                 .collect::<Vec<_>>();
             surfaces.push(build_context_tool_group_render_surface(
+                turn,
                 &tool_calls,
                 theme,
                 width,
                 base_surface,
+                footer_target
+                    .map(|target| target >= index && target < index + group_len)
+                    .unwrap_or(false),
+                assistant_icon,
+                assistant_color,
+                assistant_status,
             ));
             index += group_len;
             continue;
         }
 
+        let append_footer = footer_target == Some(index);
         surfaces.push(build_assistant_part_render_surface(
             turn,
             part,
@@ -143,128 +164,38 @@ fn build_assistant_render_surfaces(
             width,
             base_surface,
             assistant_part_needs_leading_gap(previous, part),
+            append_footer,
+            assistant_icon,
+            assistant_color,
+            assistant_status,
         ));
         index += 1;
     }
-    if let Some(footer) = turn.assistant_footer.as_ref() {
-        surfaces.push(build_assistant_footer_render_surface(
+
+    if footer_target == Some(turn.assistant_parts.len()) {
+        surfaces.push(build_footer_only_render_surface(
             turn,
-            footer,
             theme,
-            width,
             base_surface,
+            assistant_icon,
+            assistant_color,
+            assistant_status,
         ));
     }
     surfaces
 }
 
-fn build_assistant_footer_render_surface(
-    turn: &TranscriptTurnSection,
-    footer: &TranscriptAssistantFooterSection,
-    theme: &Theme,
-    width: u16,
-    base_surface: Color,
-) -> TranscriptRenderSurface {
-    let agent_accent = theme.agent_accent(&turn.header.profile_label);
-    let active_status = matches!(
-        turn.header.status,
-        ActivityStatus::Queued | ActivityStatus::Streaming
-    );
-    let spans = if active_status {
-        let assistant_status = if matches!(turn.header.status, ActivityStatus::Queued) {
-            "queued"
-        } else {
-            "active"
-        };
-        let mut spans = vec![
-            Span::styled(
-                transcript_streaming_spinner_frame(turn.animation_phase).to_string(),
-                Style::default().fg(agent_accent),
-            ),
-            Span::styled(" ".to_string(), Style::default().fg(agent_accent)),
-            Span::styled(
-                footer.agent_label.clone(),
-                Style::default().fg(assistant_primary_label_color(turn.header.status, theme)),
-            ),
-        ];
-        if !footer.model_label.trim().is_empty() {
-            spans.push(Span::styled(" · ".to_string(), muted_meta_style(theme)));
-            spans.push(Span::styled(
-                footer.model_label.clone(),
-                muted_meta_style(theme),
-            ));
-        }
-        if let Some(provider_label) = footer.provider_label.as_deref() {
-            spans.push(Span::styled(
-                if footer.model_label.trim().is_empty() {
-                    " · ".to_string()
-                } else {
-                    " ".to_string()
-                },
-                muted_meta_style(theme),
-            ));
-            spans.push(Span::styled(
-                provider_label.to_string(),
-                muted_meta_style(theme),
-            ));
-        }
-        spans.push(Span::styled(" · ".to_string(), muted_meta_style(theme)));
-        spans.push(Span::styled(
-            assistant_status.to_string(),
-            Style::default().fg(agent_accent),
-        ));
-        spans
-    } else {
-        let duration = footer
-            .duration_ms
-            .map(format_duration_ms)
-            .unwrap_or_else(|| "0ms".to_string());
-        let mut spans = vec![
-            Span::styled("▣".to_string(), muted_meta_style(theme)),
-            Span::styled(" · ".to_string(), muted_meta_style(theme)),
-            Span::styled(duration, muted_meta_style(theme)),
-            Span::styled("  ".to_string(), muted_meta_style(theme)),
-            Span::styled(
-                footer.agent_label.clone(),
-                Style::default().fg(assistant_primary_label_color(turn.header.status, theme)),
-            ),
-            Span::styled(" · ".to_string(), muted_meta_style(theme)),
-            Span::styled(footer.model_label.clone(), muted_meta_style(theme)),
-        ];
-        if let Some(provider_label) = footer.provider_label.as_deref() {
-            spans.push(Span::styled(" ".to_string(), muted_meta_style(theme)));
-            spans.push(Span::styled(
-                provider_label.to_string(),
-                muted_meta_style(theme),
-            ));
-        }
-        if matches!(turn.header.status, ActivityStatus::Error) {
-            spans.push(Span::styled(" · ".to_string(), muted_meta_style(theme)));
-            spans.push(Span::styled(
-                "error".to_string(),
-                Style::default().fg(theme.status.error),
-            ));
-        }
-        spans
-    };
-    let mut lines = Vec::new();
-    append_surface_row(
-        &mut lines,
-        TRANSCRIPT_ASSISTANT_BODY_PREFIX,
-        base_surface,
-        spans,
-        transcript_surface_content_width(width, false),
-    );
-    TranscriptRenderSurface {
-        kind: TranscriptRenderSurfaceKind::AssistantFooter,
-        show_outer_rail: false,
-        rail_color: transcript_nested_rail_color(theme),
-        surface: base_surface,
-        lines,
-        interaction_rows: None,
-        selection_rows: None,
-        diff_hunk_offsets: Vec::new(),
+fn assistant_footer_target_index(turn: &TranscriptTurnSection) -> Option<usize> {
+    if !turn.show_footer {
+        return None;
     }
+    if turn.assistant_parts.is_empty() {
+        return (turn.user_message.is_some()
+            || activity_status_supports_footer_only(turn.header.status))
+        .then_some(0);
+    }
+
+    Some(turn.assistant_parts.len() - 1)
 }
 
 fn assistant_part_needs_leading_gap(
@@ -306,6 +237,10 @@ fn context_tool_group_complete(parts: &[TranscriptAssistantPart]) -> bool {
     })
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "assistant turn surface assembly needs the footer styling inputs in one place"
+)]
 fn build_assistant_part_render_surface(
     turn: &TranscriptTurnSection,
     part: &TranscriptAssistantPart,
@@ -313,6 +248,10 @@ fn build_assistant_part_render_surface(
     width: u16,
     base_surface: Color,
     prepend_gap: bool,
+    append_footer: bool,
+    assistant_icon: &str,
+    assistant_color: Color,
+    assistant_status: &str,
 ) -> TranscriptRenderSurface {
     let mut lines = Vec::new();
     let (
@@ -331,7 +270,6 @@ fn build_assistant_part_render_surface(
             append_reasoning_block(
                 &mut lines,
                 thinking,
-                turn.animation_phase,
                 theme,
                 transcript_surface_content_width(width, true),
             );
@@ -400,6 +338,24 @@ fn build_assistant_part_render_surface(
                 render.diff_hunk_offsets,
             )
         }
+        TranscriptAssistantPart::SubagentHint => {
+            let hint_line_count =
+                append_subagent_hint_line(&mut lines, turn, theme, width, base_surface);
+            (
+                TranscriptRenderSurfaceKind::AssistantTool,
+                false,
+                transcript_nested_rail_color(theme),
+                base_surface,
+                Some(vec![
+                    Some(full_width_interaction_row(
+                        TranscriptMouseTarget::FirstSubagentSession
+                    ));
+                    hint_line_count
+                ]),
+                None,
+                Vec::new(),
+            )
+        }
         TranscriptAssistantPart::Error(error) => {
             append_assistant_error_box(&mut lines, &error.text, theme, width, base_surface);
             (
@@ -429,6 +385,32 @@ fn build_assistant_part_render_surface(
         }
     }
 
+    if append_footer {
+        if !lines.is_empty() && !lines.last().is_some_and(|line| line.spans.is_empty()) {
+            lines.push(Line::default());
+            if let Some(rows) = interaction_rows.as_mut() {
+                rows.push(None);
+            }
+            if let Some(rows) = selection_rows.as_mut() {
+                rows.push(blank_selection_row(width));
+            }
+        }
+        let footer_line = build_assistant_footer_line(
+            turn,
+            assistant_icon,
+            assistant_color,
+            assistant_status,
+            theme,
+        );
+        if let Some(rows) = selection_rows.as_mut() {
+            rows.extend(selection_rows_for_rendered_line(&footer_line, width));
+        }
+        if let Some(rows) = interaction_rows.as_mut() {
+            rows.push(None);
+        }
+        lines.push(footer_line);
+    }
+
     TranscriptRenderSurface {
         kind,
         show_outer_rail,
@@ -441,51 +423,78 @@ fn build_assistant_part_render_surface(
     }
 }
 
+fn append_subagent_hint_line(
+    lines: &mut Vec<Line<'static>>,
+    turn: &TranscriptTurnSection,
+    theme: &Theme,
+    width: u16,
+    base_surface: Color,
+) -> usize {
+    let start = lines.len();
+    let keybind = turn.subagent_hint_key.as_str();
+    let spans = vec![
+        Span::styled(keybind.to_string(), Style::default().fg(theme.text.primary)),
+        Span::styled(" view subagents", muted_meta_style(theme)),
+    ];
+    append_surface_row(
+        lines,
+        TRANSCRIPT_ASSISTANT_BODY_PREFIX,
+        base_surface,
+        spans,
+        transcript_surface_content_width(width, false),
+    );
+    lines.len().saturating_sub(start)
+}
+
+fn build_footer_only_render_surface(
+    turn: &TranscriptTurnSection,
+    theme: &Theme,
+    base_surface: Color,
+    assistant_icon: &str,
+    assistant_color: Color,
+    assistant_status: &str,
+) -> TranscriptRenderSurface {
+    TranscriptRenderSurface {
+        kind: TranscriptRenderSurfaceKind::AssistantFooter,
+        show_outer_rail: false,
+        rail_color: assistant_primary_rail_color(
+            turn.header.status,
+            &turn.header.profile_label,
+            theme,
+        ),
+        surface: base_surface,
+        lines: vec![build_assistant_footer_line(
+            turn,
+            assistant_icon,
+            assistant_color,
+            assistant_status,
+            theme,
+        )],
+        interaction_rows: None,
+        selection_rows: None,
+        diff_hunk_offsets: Vec::new(),
+    }
+}
+
 fn append_reasoning_block(
     lines: &mut Vec<Line<'static>>,
     thinking: &TranscriptLabeledTextSection,
-    animation_phase: usize,
     theme: &Theme,
     width: u16,
 ) {
-    let status = thinking.status;
-    let label_color = match status {
-        ActivityStatus::Error => theme.status.error,
-        ActivityStatus::Queued | ActivityStatus::Streaming | ActivityStatus::Done => {
-            theme.status.warning
-        }
-    };
-    let label_style = Style::default().fg(label_color);
+    let label_style = Style::default()
+        .fg(theme.text.secondary)
+        .add_modifier(Modifier::DIM)
+        .add_modifier(Modifier::ITALIC);
     let reasoning_style = Style::default()
         .fg(theme.text.secondary)
         .add_modifier(Modifier::DIM);
-    let header_label = match status {
-        ActivityStatus::Queued | ActivityStatus::Streaming => {
-            if thinking.text.is_empty() {
-                "Thinking"
-            } else {
-                "Thinking:"
-            }
-        }
-        ActivityStatus::Done | ActivityStatus::Error => "Thought",
-    };
-    let spinner = matches!(status, ActivityStatus::Queued | ActivityStatus::Streaming)
-        .then(|| transcript_streaming_spinner_frame(animation_phase));
     let mut rendered_any_line = false;
 
     for (index, row) in thinking.text.lines().enumerate() {
         let mut spans = Vec::new();
         if index == 0 {
-            if let Some(spinner) = spinner {
-                spans.push(Span::styled(spinner.to_string(), label_style));
-                spans.push(Span::styled(" ".to_string(), reasoning_style));
-            }
-            spans.push(Span::styled(header_label.to_string(), label_style));
-            if matches!(status, ActivityStatus::Done | ActivityStatus::Error)
-                && (!row.is_empty() || thinking.duration_ms.is_some())
-            {
-                spans.push(Span::styled(":".to_string(), label_style));
-            }
+            spans.push(Span::styled(thinking.label.to_string(), label_style));
             if !row.is_empty() {
                 spans.push(Span::styled(" ".to_string(), reasoning_style));
             }
@@ -498,18 +507,6 @@ fn append_reasoning_block(
                 theme,
             ));
         }
-        if index == 0 && matches!(status, ActivityStatus::Done | ActivityStatus::Error) {
-            if let Some(duration_ms) = thinking.duration_ms {
-                spans.push(Span::styled(
-                    if row.is_empty() { " " } else { " · " }.to_string(),
-                    muted_meta_style(theme),
-                ));
-                spans.push(Span::styled(
-                    format_duration_ms(duration_ms),
-                    muted_meta_style(theme),
-                ));
-            }
-        }
         append_prefixed_wrapped_spans_line(
             lines,
             TRANSCRIPT_REASONING_BODY_PREFIX,
@@ -521,37 +518,30 @@ fn append_reasoning_block(
     }
 
     if !rendered_any_line {
-        let mut spans = Vec::new();
-        if let Some(spinner) = spinner {
-            spans.push(Span::styled(spinner.to_string(), label_style));
-            spans.push(Span::styled(" ".to_string(), reasoning_style));
-        }
-        spans.push(Span::styled(header_label.to_string(), label_style));
-        if let (ActivityStatus::Done | ActivityStatus::Error, Some(duration_ms)) =
-            (status, thinking.duration_ms)
-        {
-            spans.push(Span::styled(":".to_string(), label_style));
-            spans.push(Span::styled(" ".to_string(), muted_meta_style(theme)));
-            spans.push(Span::styled(
-                format_duration_ms(duration_ms),
-                muted_meta_style(theme),
-            ));
-        }
         append_prefixed_wrapped_spans_line(
             lines,
             TRANSCRIPT_REASONING_BODY_PREFIX,
             reasoning_style,
-            spans,
+            vec![Span::styled(thinking.label.to_string(), label_style)],
             width,
         );
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "context tool grouping needs the same surface/footer inputs as other transcript builders"
+)]
 fn build_context_tool_group_render_surface(
+    turn: &TranscriptTurnSection,
     tool_calls: &[&TranscriptToolCallSection],
     theme: &Theme,
     width: u16,
     base_surface: Color,
+    append_footer: bool,
+    assistant_icon: &str,
+    assistant_color: Color,
+    assistant_status: &str,
 ) -> TranscriptRenderSurface {
     let surface = base_surface;
     let mut lines = Vec::new();
@@ -640,6 +630,19 @@ fn build_context_tool_group_render_surface(
         }
     }
 
+    if append_footer {
+        if !lines.is_empty() && !lines.last().is_some_and(|line| line.spans.is_empty()) {
+            lines.push(Line::default());
+        }
+        lines.push(build_assistant_footer_line(
+            turn,
+            assistant_icon,
+            assistant_color,
+            assistant_status,
+            theme,
+        ));
+    }
+
     let mut interaction_rows = vec![None; lines.len()];
     if !interaction_rows.is_empty() {
         interaction_rows[0] = Some(full_width_interaction_row(
@@ -662,4 +665,53 @@ fn build_context_tool_group_render_surface(
         selection_rows: None,
         diff_hunk_offsets: Vec::new(),
     }
+}
+
+fn build_assistant_footer_line(
+    turn: &TranscriptTurnSection,
+    assistant_icon: &str,
+    assistant_color: Color,
+    assistant_status: &str,
+    theme: &Theme,
+) -> Line<'static> {
+    let mut spans = vec![Span::raw(TRANSCRIPT_ASSISTANT_BODY_PREFIX.to_string())];
+    spans.push(Span::styled(
+        format!("{} ", assistant_icon),
+        Style::default().fg(assistant_color),
+    ));
+    spans.push(Span::styled(
+        assistant_footer_label(&turn.header.profile_label),
+        Style::default().fg(assistant_primary_label_color(turn.header.status, theme)),
+    ));
+    if has_trimmed_content(&turn.header.model_id) {
+        spans.push(Span::styled(" · ", muted_meta_style(theme)));
+        spans.push(Span::styled(
+            turn.header.model_id.clone(),
+            muted_meta_style(theme),
+        ));
+    }
+    if matches!(
+        turn.header.status,
+        ActivityStatus::Done | ActivityStatus::Error
+    ) {
+        if let Some(duration_ms) = turn.header.duration_ms {
+            spans.push(Span::styled(" · ", muted_meta_style(theme)));
+            spans.push(Span::styled(
+                format_duration_ms(duration_ms),
+                muted_meta_style(theme),
+            ));
+        }
+    }
+    if turn.header.status != ActivityStatus::Done {
+        spans.push(Span::styled(" · ", muted_meta_style(theme)));
+        spans.push(Span::styled(
+            assistant_status.to_string(),
+            Style::default().fg(assistant_color),
+        ));
+    }
+    if let Some(timestamp) = turn.footer_timestamp.as_deref() {
+        spans.push(Span::styled(" · ", muted_meta_style(theme)));
+        spans.push(Span::styled(timestamp.to_string(), muted_meta_style(theme)));
+    }
+    Line::from(spans)
 }

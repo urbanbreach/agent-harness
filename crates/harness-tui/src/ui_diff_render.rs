@@ -29,7 +29,6 @@ pub(super) fn render_structured_diff_model(
     prefix: &str,
     width: u16,
     force_stacked: bool,
-    auto_split_width: Option<u16>,
     highlight_syntax: bool,
     show_file_header: bool,
     show_hunk_header: bool,
@@ -37,8 +36,7 @@ pub(super) fn render_structured_diff_model(
 ) -> (Vec<Line<'static>>, Vec<usize>) {
     let prefix_width = display_width(prefix);
     let content_width = usize::from(width).saturating_sub(prefix_width).max(1);
-    let split_width = auto_split_width.unwrap_or(width);
-    let wide = !force_stacked && split_width > DIFF_SIDE_BY_SIDE_MIN_WIDTH;
+    let wide = !force_stacked && content_width >= usize::from(DIFF_SIDE_BY_SIDE_MIN_WIDTH);
     let mut lines = Vec::new();
     let mut hunk_offsets = Vec::new();
 

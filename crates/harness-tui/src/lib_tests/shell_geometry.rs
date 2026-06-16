@@ -428,7 +428,7 @@ pub(super) fn live_shell_redesign_guardrails_preserve_primary_contract() {
         "replay read-only redesign guardrail must preserve the operator sidebar when primary geometry allows"
     );
     assert!(
-        replay.composer.prompt_buffer.is_empty(),
+        replay.prompt_buffer.is_empty(),
         "replay read-only redesign guardrail must drop typed draft text after submit attempts"
     );
     let replay_lines = replay_render.lines().collect::<Vec<_>>();

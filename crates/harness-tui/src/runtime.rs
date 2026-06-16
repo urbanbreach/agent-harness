@@ -1,4 +1,3 @@
-use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -41,83 +40,6 @@ struct PreservedTerminalSession {
     mouse_capture_enabled: bool,
     bracketed_paste_enabled: bool,
     buffer: Option<Buffer>,
-}
-
-struct TerminalRestoreGuard<W: std::io::Write> {
-    terminal: Terminal<CrosstermBackend<W>>,
-    raw_mode_enabled: bool,
-    keyboard_enhancements_enabled: bool,
-    mouse_capture_enabled: bool,
-    bracketed_paste_enabled: bool,
-    restored: bool,
-}
-
-impl<W: std::io::Write> TerminalRestoreGuard<W> {
-    fn new(
-        terminal: Terminal<CrosstermBackend<W>>,
-        raw_mode_enabled: bool,
-        keyboard_enhancements_enabled: bool,
-        mouse_capture_enabled: bool,
-        bracketed_paste_enabled: bool,
-    ) -> Self {
-        Self {
-            terminal,
-            raw_mode_enabled,
-            keyboard_enhancements_enabled,
-            mouse_capture_enabled,
-            bracketed_paste_enabled,
-            restored: false,
-        }
-    }
-
-    fn restore(&mut self) -> Result<()> {
-        if self.restored {
-            return Ok(());
-        }
-        teardown_terminal_session(
-            self.terminal.backend_mut(),
-            self.keyboard_enhancements_enabled,
-            self.mouse_capture_enabled,
-            self.bracketed_paste_enabled,
-        )?;
-        self.restored = true;
-        Ok(())
-    }
-}
-
-impl<W: std::io::Write> Drop for TerminalRestoreGuard<W> {
-    fn drop(&mut self) {
-        if self.restored {
-            return;
-        }
-        let writer = self.terminal.backend_mut();
-        if self.raw_mode_enabled {
-            let _ = crossterm::terminal::disable_raw_mode();
-        }
-        if self.mouse_capture_enabled {
-            let _ = crossterm::execute!(writer, DisableMouseCapture);
-        }
-        if self.bracketed_paste_enabled {
-            let _ = crossterm::execute!(writer, DisableBracketedPaste);
-        }
-        if self.keyboard_enhancements_enabled {
-            let _ = crossterm::execute!(writer, PopKeyboardEnhancementFlags);
-        }
-        let _ = crossterm::execute!(writer, crossterm::terminal::LeaveAlternateScreen);
-    }
-}
-
-impl<W: std::io::Write> Deref for TerminalRestoreGuard<W> {
-    type Target = Terminal<CrosstermBackend<W>>;
-    fn deref(&self) -> &Self::Target {
-        &self.terminal
-    }
-}
-
-impl<W: std::io::Write> DerefMut for TerminalRestoreGuard<W> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.terminal
-    }
 }
 
 fn recover_mutex_lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -289,8 +211,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
     let mut mouse_capture_enabled = preserved_terminal.mouse_capture_enabled;
     let mut bracketed_paste_enabled = preserved_terminal.bracketed_paste_enabled;
 
-    let raw_mode_enabled = !reusing_terminal;
-    if raw_mode_enabled {
+    if !reusing_terminal {
         crossterm::terminal::enable_raw_mode().context("failed to enable terminal raw mode")?;
     }
     let mut stdout = std::io::stdout();
@@ -338,14 +259,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
     }
 
     let backend = CrosstermBackend::new(stdout);
-    let terminal = Terminal::new(backend)?;
-    let mut terminal = TerminalRestoreGuard::new(
-        terminal,
-        raw_mode_enabled,
-        keyboard_enhancements_enabled,
-        mouse_capture_enabled,
-        bracketed_paste_enabled,
-    );
+    let mut terminal = Terminal::new(backend)?;
     if let Some(buffer) = preserved_terminal.buffer.as_ref() {
         if terminal.current_buffer_mut().area == buffer.area {
             *terminal.current_buffer_mut() = buffer.clone();
@@ -448,10 +362,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                         true
                     }
                     event::TuiEvent::Mouse(mouse) => {
-                        if !mouse_event_requires_handling(
-                            mouse.kind,
-                            app.overlay_state.slash_visible,
-                        ) {
+                        if !mouse_event_requires_handling(mouse.kind, app.slash_visible) {
                             continue;
                         }
 
@@ -511,12 +422,16 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             bracketed_paste_enabled,
             buffer: Some(terminal.current_buffer_mut().clone()),
         };
-        terminal.restored = true;
         return run_result;
     }
 
     *recover_mutex_lock(preserved_terminal_session()) = PreservedTerminalSession::default();
-    terminal.restore()?;
+    teardown_terminal_session(
+        terminal.backend_mut(),
+        keyboard_enhancements_enabled,
+        mouse_capture_enabled,
+        bracketed_paste_enabled,
+    )?;
 
     run_result
 }
@@ -712,33 +627,9 @@ fn transient_live_status_banner(status: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
-    use std::rc::Rc;
-
     use super::*;
     use crate::app::{AppState, ToastVariant};
     use harness_core::proj::{RunStatus, SessionCatalogEntry, SessionModeSource};
-    use ratatui::{Terminal, TerminalOptions, Viewport};
-
-    #[derive(Clone)]
-    struct RecordingWriter(Rc<RefCell<Vec<u8>>>);
-
-    impl std::io::Write for RecordingWriter {
-        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            self.0.borrow_mut().extend_from_slice(buf);
-            Ok(buf.len())
-        }
-
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-
-    fn encode_command(cmd: impl crossterm::Command) -> Vec<u8> {
-        let mut buf = Vec::new();
-        let _ = crossterm::queue!(buf, cmd);
-        buf
-    }
 
     #[test]
     fn poll_timeout_blocks_when_idle_and_live_updates_are_gone() {
@@ -995,71 +886,6 @@ mod tests {
         assert_eq!(
             app.status_banner.as_deref(),
             Some(format!("status {LIVE_UPDATE_DRAIN_MAX_PER_FRAME}").as_str())
-        );
-    }
-
-    #[test]
-    fn terminal_restore_guard_emits_restore_commands_on_drop() {
-        // arrange
-        let writer = RecordingWriter(Rc::new(RefCell::new(Vec::new())));
-        let backend = CrosstermBackend::new(writer.clone());
-        let terminal = Terminal::with_options(
-            backend,
-            TerminalOptions {
-                viewport: Viewport::Fixed(ratatui::layout::Rect::new(0, 0, 10, 10)),
-            },
-        )
-        .expect("create terminal with fixed viewport");
-        let guard: TerminalRestoreGuard<RecordingWriter> =
-            TerminalRestoreGuard::new(terminal, false, true, true, true);
-
-        // act
-        drop(guard);
-
-        // assert
-        let recorded = writer.0.borrow();
-        for expected in [
-            encode_command(DisableMouseCapture),
-            encode_command(DisableBracketedPaste),
-            encode_command(PopKeyboardEnhancementFlags),
-            encode_command(crossterm::terminal::LeaveAlternateScreen),
-        ] {
-            assert!(
-                recorded
-                    .windows(expected.len())
-                    .any(|w| w == expected.as_slice()),
-                "terminal restore drop did not emit expected command: {expected:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn terminal_restore_guard_skips_restore_when_restored() {
-        // arrange
-        let writer = RecordingWriter(Rc::new(RefCell::new(Vec::new())));
-        let backend = CrosstermBackend::new(writer.clone());
-        let terminal = Terminal::with_options(
-            backend,
-            TerminalOptions {
-                viewport: Viewport::Fixed(ratatui::layout::Rect::new(0, 0, 10, 10)),
-            },
-        )
-        .expect("create terminal with fixed viewport");
-        let mut guard: TerminalRestoreGuard<RecordingWriter> =
-            TerminalRestoreGuard::new(terminal, false, true, true, true);
-        guard.restored = true;
-
-        // act
-        drop(guard);
-
-        // assert
-        let recorded = writer.0.borrow();
-        let expected = encode_command(crossterm::terminal::LeaveAlternateScreen);
-        assert!(
-            !recorded
-                .windows(expected.len())
-                .any(|w| w == expected.as_slice()),
-            "restored guard should not emit restore commands, got: {recorded:?}"
         );
     }
 }

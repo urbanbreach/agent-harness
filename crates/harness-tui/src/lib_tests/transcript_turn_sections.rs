@@ -13,8 +13,8 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
         "Grouped response",
     )]);
     app.selected_activity_index = 0;
-    app.transcript_view.follow_mode = false;
-    app.transcript_view.transcript_scroll = usize::MAX;
+    app.follow_mode = false;
+    app.transcript_scroll = usize::MAX;
 
     let rendered = render_live_lines(&app, 80, 24);
     let buffer = render_live_cells(&app, 80, 24);
@@ -24,11 +24,14 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
         .unwrap_or_else(|| panic!("user body line\n{rendered}"));
     let assistant_body = find_line_containing_from(&lines, user_body + 1, "Grouped response")
         .unwrap_or_else(|| panic!("assistant body line\n{rendered}"));
+    let assistant_footer = find_line_containing_from(&lines, assistant_body + 1, "Assistant")
+        .unwrap_or_else(|| panic!("assistant footer\n{rendered}"));
 
     assert!(
         user_body < assistant_body,
         "assistant turn should remain ordered after the user turn content\n{rendered}"
     );
+    assert!(assistant_body < assistant_footer);
 
     let user_body_rail = first_non_whitespace_column(lines[user_body]);
     let assistant_body_rail = first_non_whitespace_column(lines[assistant_body]);
@@ -56,8 +59,8 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
     );
     let (user_body_row, user_body_fgs, user_body_bgs) =
         row_at(&buffer, 80, user_body).expect("user body palette row");
-    let (assistant_body_row, assistant_body_fgs, assistant_body_bgs) =
-        row_at(&buffer, 80, assistant_body).expect("assistant body palette row");
+    let (assistant_footer_row, assistant_footer_fgs, assistant_footer_bgs) =
+        row_at(&buffer, 80, assistant_footer).expect("assistant footer palette row");
     let user_rail_column = user_body_row.find('┃').expect("user rail");
     assert_eq!(user_body_fgs[user_rail_column], theme.agent_accent("build"));
 
@@ -75,8 +78,8 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
     plan_activity.profile_label = "plan".to_string();
     plan_app.activities = std::collections::VecDeque::from(vec![plan_activity]);
     plan_app.selected_activity_index = 0;
-    plan_app.transcript_view.follow_mode = false;
-    plan_app.transcript_view.transcript_scroll = usize::MAX;
+    plan_app.follow_mode = false;
+    plan_app.transcript_scroll = usize::MAX;
 
     let plan_rendered = render_live_lines(&plan_app, 80, 24);
     let plan_lines = plan_rendered.lines().collect::<Vec<_>>();
@@ -90,16 +93,16 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
         plan_user_body_fgs[plan_user_rail_column],
         theme.agent_accent("plan")
     );
-    assert!(!assistant_body_row.contains('┃'));
+    assert!(!assistant_footer_row.contains('┃'));
     assert_eq!(
-        assistant_body_fgs[assistant_body_column],
+        assistant_footer_fgs[first_alphanumeric_column(lines[assistant_footer])],
         theme.text.primary
     );
     assert!(user_body_bgs[user_body_column..user_body_column + 4]
         .iter()
         .all(|color| *color == theme.surface.panel));
     assert!(
-        assistant_body_bgs[assistant_body_column..assistant_body_column + 9]
+        assistant_footer_bgs[assistant_body_column..assistant_body_column + 9]
             .iter()
             .all(|color| *color == theme.surface.shell)
     );
@@ -107,7 +110,6 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
         assistant_body - user_body <= 3,
         "turn stacking should stay compact\n{rendered}"
     );
-    assert!(!rendered.contains("Assistant ·"));
     assert!(!rendered.contains('╭') && !rendered.contains('╰') && !rendered.contains('│'));
 
     let mut follow_app = app::AppState::new_live(None, false, None);
@@ -124,7 +126,7 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
             .collect::<Vec<_>>(),
     );
     follow_app.selected_activity_index = 7;
-    follow_app.transcript_view.follow_mode = true;
+    follow_app.follow_mode = true;
 
     let followed = render_live_lines(&follow_app, 60, 18);
     assert!(
@@ -136,8 +138,8 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
         "follow mode should scroll past the earliest grouped turn\n{followed}"
     );
 
-    follow_app.transcript_view.follow_mode = false;
-    follow_app.transcript_view.transcript_scroll = usize::MAX;
+    follow_app.follow_mode = false;
+    follow_app.transcript_scroll = usize::MAX;
 
     let scrolled_back = render_live_lines(&follow_app, 60, 18);
     assert!(
@@ -189,7 +191,7 @@ pub(super) fn transcript_turn_sections_keep_nested_tool_details() {
     });
     app.activities = std::collections::VecDeque::from(vec![activity]);
     app.selected_activity_index = 0;
-    app.transcript_view.transcript_scroll = usize::MAX;
+    app.transcript_scroll = usize::MAX;
 
     let rendered = render_live_lines(&app, 100, 24);
     let buffer = render_live_cells(&app, 100, 24);
@@ -203,13 +205,18 @@ pub(super) fn transcript_turn_sections_keep_nested_tool_details() {
         .unwrap_or_else(|| panic!("tool row\n{rendered}"));
     let error_row = find_line_containing_from(&lines, tool_row + 1, "tool call failed")
         .unwrap_or_else(|| panic!("tool error row\n{rendered}"));
+    let assistant_footer = find_line_containing_from(&lines, error_row + 1, "Assistant")
+        .unwrap_or_else(|| panic!("assistant footer\n{rendered}"));
 
     assert!(reasoning_row < body_row);
     assert!(body_row >= reasoning_row + 2);
     assert!(body_row < tool_row);
     assert!(tool_row < error_row);
+    assert!(error_row < assistant_footer);
 
     let assistant_body_column = first_alphanumeric_column(lines[body_row]);
+    let assistant_body_rail = first_non_whitespace_column(lines[body_row]);
+    let assistant_footer_column = first_alphanumeric_column(lines[assistant_footer]);
     let (reasoning_row_text, reasoning_row_fgs, _) =
         row_at(&buffer, 100, reasoning_row).expect("reasoning palette row");
     let reasoning_rail_column = reasoning_row_text.find('┃').expect("reasoning rail");
@@ -240,11 +247,11 @@ pub(super) fn transcript_turn_sections_keep_nested_tool_details() {
         .map(|row| first_alphanumeric_column(lines[row]))
         .collect::<Vec<_>>();
 
+    assert!(assistant_footer_column >= assistant_body_rail);
     assert!(
         nested_detail_columns
             .iter()
             .all(|column| *column > assistant_body_column),
         "nested tool details and error rows should remain deeper than the assistant body rail\n{rendered}"
     );
-    assert!(!rendered.contains("Assistant ·"));
 }

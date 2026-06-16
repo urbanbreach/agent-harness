@@ -43,7 +43,6 @@ impl SessionProjection {
                 if let Some(entry) = self.activities.back_mut() {
                     entry.status = ActivityStatus::Error;
                     entry.error_message = Some(data.error.clone());
-                    entry.bump_revision();
                 }
             }
             EventV1::AgentSpawned(data) => {
@@ -250,7 +249,8 @@ impl SessionProjection {
                                 usage.prompt_tokens.saturating_add(usage.completion_tokens),
                             ));
                         }
-                        mark_activity_event(entry, event.seq, event.mono_ms);
+                        entry.last_seq = event.seq;
+                        entry.last_mono_ms = event.mono_ms;
                     }
                 }
             }
@@ -347,7 +347,7 @@ impl SessionProjection {
                                     entry.transcript_text = result_summary;
                                 }
                             }
-                            mark_activity_event(entry, event.seq, event.mono_ms);
+                            entry.last_seq = event.seq;
                         }
                     }
                 }
@@ -521,7 +521,7 @@ impl SessionProjection {
                     merge_tool_call_metadata(&mut tool_entry, data.metadata.as_ref());
                     tool_entry.sync_display_status();
                     entry.tool_calls.push(tool_entry);
-                    mark_activity_event(entry, event.seq, event.mono_ms);
+                    entry.last_seq = event.seq;
                 }
                 self.note_child_task_tool_call(event, data);
             }

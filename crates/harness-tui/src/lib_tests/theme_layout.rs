@@ -166,7 +166,7 @@ pub(super) fn command_palette_state_filters_existing_commands() {
     ));
     app.handle_key(key(crossterm::event::KeyCode::Char('n')));
 
-    assert!(app.overlay_state.palette_visible);
+    assert!(app.palette_visible);
     assert_eq!(app.palette_input, "n");
     assert_eq!(app.palette_cursor, 1);
     assert_eq!(

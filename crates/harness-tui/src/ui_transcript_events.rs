@@ -16,9 +16,6 @@ pub(super) fn turn_event_matches_activity(
         harness_core::event::EventV1::ProviderStreamDelta(data) => {
             provider_event_matches_activity(event, &data.request_id, request_id)
         }
-        harness_core::event::EventV1::ProviderRequestFinished(data) => {
-            provider_event_matches_activity(event, &data.request_id, request_id)
-        }
         harness_core::event::EventV1::TaskCompleted(_)
         | harness_core::event::EventV1::ToolCallRequested(_) => {
             event.correlation_id.as_deref() == Some(request_id)

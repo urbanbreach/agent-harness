@@ -31,95 +31,6 @@ fn ctrl_t_cycles_reasoning_variants_in_semantic_order() {
 }
 
 #[test]
-fn model_switcher_favorites_persist_and_sort_first() {
-    let root = tempfile::tempdir().expect("temp model state root");
-    let run_dir = root.path().join("run_current");
-    std::fs::create_dir_all(&run_dir).expect("run dir");
-    let mut app = AppState::new_live(Some(run_dir.clone()), false, None);
-    app.set_launch_metadata(
-        LaunchMetadata::from_model_option(&multi_provider_models()[1])
-            .with_available_models(multi_provider_models()),
-    );
-
-    for ch in "/model".chars() {
-        app.handle_key(key(KeyCode::Char(ch)));
-    }
-    app.handle_key(key(KeyCode::Enter));
-    assert_eq!(
-        app.model_options[app.model_filtered[0]].provider,
-        "anthropic"
-    );
-    app.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL));
-
-    let mut restarted = AppState::new_live(Some(run_dir), false, None);
-    restarted.set_launch_metadata(
-        LaunchMetadata::from_model_option(&multi_provider_models()[1])
-            .with_available_models(multi_provider_models()),
-    );
-    for ch in "/model".chars() {
-        restarted.handle_key(key(KeyCode::Char(ch)));
-    }
-    restarted.handle_key(key(KeyCode::Enter));
-
-    assert_eq!(
-        restarted.model_options[restarted.model_filtered[0]].provider,
-        "anthropic"
-    );
-    let rendered = {
-        let backend = ratatui::backend::TestBackend::new(100, 30);
-        let mut terminal = ratatui::Terminal::new(backend).expect("create terminal");
-        terminal
-            .draw(|frame| harness_tui::ui::render_app(frame, &restarted))
-            .expect("draw frame");
-        format!("{:?}", terminal.backend().buffer())
-    };
-    assert!(rendered.contains("Favorites"), "{rendered}");
-    assert!(rendered.contains("★"), "{rendered}");
-}
-
-#[test]
-fn f2_cycles_recent_models_without_opening_dialog() {
-    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
-    let sink = {
-        let intents = Arc::clone(&intents);
-        Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
-        })
-    };
-    let root = tempfile::tempdir().expect("temp model state root");
-    let run_dir = root.path().join("run_current");
-    std::fs::create_dir_all(&run_dir).expect("run dir");
-    let mut app = AppState::new_live(Some(run_dir), false, Some(sink));
-    app.set_launch_metadata(
-        LaunchMetadata::from_model_option(&multi_provider_models()[1])
-            .with_available_models(multi_provider_models()),
-    );
-
-    for ch in "/model".chars() {
-        app.handle_key(key(KeyCode::Char(ch)));
-    }
-    app.handle_key(key(KeyCode::Enter));
-    app.handle_key(key(KeyCode::Down));
-    app.handle_key(key(KeyCode::Enter));
-    assert!(!app.overlay_state.model_switcher_visible);
-
-    app.handle_key(KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE));
-
-    let intents = intents.lock().expect("lock intents");
-    let UiIntent::SwitchModel {
-        profile,
-        launch_metadata,
-    } = intents.last().expect("recent cycle emits switch")
-    else {
-        panic!("expected switch model intent");
-    };
-    assert_eq!(profile, "build");
-    assert_eq!(launch_metadata.provider(), "default");
-    assert_eq!(launch_metadata.model(), Some("gpt-5.4-mini"));
-    assert!(!app.overlay_state.model_switcher_visible);
-}
-
-#[test]
 fn launch_mode_label_is_not_used_as_model_reasoning_fallback() {
     let mut live = AppState::new_live(None, false, None);
     live.set_launch_metadata(
@@ -152,7 +63,7 @@ fn model_switcher_deduplicates_agent_rows_and_preserves_current_agent() {
     }
     app.handle_key(key(KeyCode::Enter));
 
-    assert!(app.overlay_state.model_switcher_visible);
+    assert!(app.model_switcher_visible);
     assert_eq!(app.model_options.len(), 1);
     assert_eq!(app.model_options[0].profile, "build");
 

@@ -17,7 +17,7 @@ pub(super) fn replay_mode_focus_cycle_skips_prompt_and_blocks_draft_edits() {
 
     app.focus = Focus::Prompt;
     app.handle_key(key(KeyCode::Char('x')));
-    assert!(app.composer.prompt_buffer.is_empty());
+    assert!(app.prompt_buffer.is_empty());
 }
 
 pub(super) fn child_session_navigation_keybinds_follow_default_contract() {
@@ -88,7 +88,7 @@ pub(super) fn child_session_navigation_keybinds_follow_default_contract() {
         KeyCode::Char(']'),
         KeyModifiers::CONTROL,
     ));
-    assert!(parent_app.composer.prompt_buffer.is_empty());
+    assert!(parent_app.prompt_buffer.is_empty());
     assert_eq!(
         parent_app.session_path.as_deref(),
         Some(child_a_dir.as_path())
@@ -116,7 +116,7 @@ pub(super) fn child_session_navigation_keybinds_follow_default_contract() {
         KeyCode::Char('['),
         KeyModifiers::CONTROL,
     ));
-    assert!(child_app.composer.prompt_buffer.is_empty());
+    assert!(child_app.prompt_buffer.is_empty());
 
     let mut reverse_app = AppState::new_live(Some(child_b_dir.clone()), false, Some(sink));
     reverse_app.apply_keybindings(default_navigation_keybindings());
@@ -125,7 +125,7 @@ pub(super) fn child_session_navigation_keybinds_follow_default_contract() {
     }
     reverse_app.focus = Focus::Prompt;
     reverse_app.handle_key(key(KeyCode::Char('[')));
-    assert!(reverse_app.composer.prompt_buffer.is_empty());
+    assert!(reverse_app.prompt_buffer.is_empty());
 
     assert_eq!(
         intents.lock().expect("lock intents").as_slice(),
@@ -201,7 +201,7 @@ pub(super) fn replay_child_navigation_does_not_emit_live_intents() {
     assert_eq!(app.session_path.as_deref(), Some(child_a_dir.as_path()));
     assert_eq!(app.active_profile(), "worker-a");
     assert!(app.replay_mode);
-    assert!(app.composer.prompt_buffer.is_empty());
+    assert!(app.prompt_buffer.is_empty());
 
     app.handle_key(key(KeyCode::Char(']')));
     assert_eq!(app.session_path.as_deref(), Some(child_b_dir.as_path()));
@@ -503,5 +503,5 @@ pub(super) fn live_inline_child_navigation_restores_live_parent_mode() {
     assert!(!app.replay_mode);
     app.focus = Focus::Prompt;
     app.handle_key(key(KeyCode::Char('x')));
-    assert_eq!(app.composer.prompt_buffer, "x");
+    assert_eq!(app.prompt_buffer, "x");
 }

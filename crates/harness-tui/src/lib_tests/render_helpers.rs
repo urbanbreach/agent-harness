@@ -459,7 +459,6 @@ pub(crate) fn transcript_turn_group_test_activity(
 ) -> app::ActivityEntry {
     app::ActivityEntry {
         request_id: request_id.to_string(),
-        revision: 1,
         profile_label: "default".to_string(),
         model_id: "gpt-5.4-mini".to_string(),
         provider_id: "openai".to_string(),

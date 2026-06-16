@@ -1,10 +1,5 @@
 use super::*;
 
-const BLOCK_TOOL_MARGIN_TOP: usize = 1;
-const BLOCK_TOOL_PADDING_TOP: usize = 1;
-const BLOCK_TOOL_PADDING_BOTTOM: usize = 1;
-const BLOCK_TOOL_GAP: usize = 1;
-
 pub(super) fn append_tool_call_section_lines(
     tool_call: &TranscriptToolCallSection,
     theme: &Theme,
@@ -81,7 +76,13 @@ fn append_task_inline_tool_section_lines(
     width: u16,
     base_surface: Color,
 ) {
-    let fg = task_inline_tool_color(tool_call.header.status, theme, false);
+    let target = subagent_session_target(tool_call.child_session_id.as_deref()).or_else(|| {
+        Some(TranscriptMouseTarget::Tool {
+            tool_call_id: tool_call.tool_call_id.clone(),
+        })
+    });
+    let hovered = transcript_target_is_hovered(target.as_ref(), tool_call.hovered_target.as_ref());
+    let fg = task_inline_tool_color(tool_call.header.status, theme, hovered && target.is_some());
     let style = tool_call_header_style(tool_call.header.struck_out, fg);
     let surface = base_surface;
     let mut spans = Vec::new();
@@ -90,15 +91,11 @@ fn append_task_inline_tool_section_lines(
         spans.push(Span::raw(" "));
     }
     spans.push(Span::styled(tool_call.header.title.clone(), style));
-    if let Some(subtitle) = tool_call.header.subtitle.as_deref() {
-        spans.push(Span::styled(" · ".to_string(), muted_meta_style(theme)));
-        spans.push(Span::styled(subtitle.to_string(), muted_meta_style(theme)));
-    }
 
     append_surface_row_with_bounded_target(
         &mut render.lines,
         &mut render.interaction_rows,
-        None,
+        target.clone(),
         TRANSCRIPT_ASSISTANT_BODY_PREFIX,
         surface,
         spans,
@@ -122,7 +119,7 @@ fn append_task_inline_tool_section_lines(
                     append_surface_row_with_bounded_target(
                         &mut render.lines,
                         &mut render.interaction_rows,
-                        None,
+                        target.clone(),
                         TRANSCRIPT_OPCODE_EDIT_INDENT,
                         surface,
                         spans,
@@ -163,12 +160,14 @@ fn append_block_tool_section_lines(
         return;
     }
 
-    let surface = theme.surface.panel;
-    let card_shell = TranscriptToolCardShell {
-        indent: "",
-        rail_color: block_tool_rail_color(tool_call.header.status, theme),
-        surface,
-    };
+    let surface = base_surface;
+    let card_shell = (tool_call.header.status == ToolCallDisplayStatus::Failed).then_some(
+        TranscriptToolCardShell {
+            indent: TRANSCRIPT_ASSISTANT_BODY_PREFIX,
+            rail_color: block_tool_rail_color(tool_call.header.status, theme),
+            surface,
+        },
+    );
     let title_style = tool_call_header_style(
         tool_call.header.struck_out,
         block_tool_color(tool_call.header.status, theme),
@@ -192,101 +191,63 @@ fn append_block_tool_section_lines(
         title_spans.push(Span::styled(disclosure, muted_meta_style(theme)));
     }
 
-    append_block_tool_margin_and_padding(render, card_shell, width);
-    append_nested_surface_row_with_target(
-        &mut render.lines,
-        &mut render.interaction_rows,
-        header_target.clone(),
-        NestedSurfaceChrome {
-            indent: card_shell.indent,
-            rail_color: card_shell.rail_color,
-            surface: card_shell.surface,
-        },
-        title_spans,
-        transcript_surface_content_width(width, false),
-    );
+    if let Some(shell) = card_shell {
+        append_nested_surface_row_with_target(
+            &mut render.lines,
+            &mut render.interaction_rows,
+            header_target.clone(),
+            NestedSurfaceChrome {
+                indent: shell.indent,
+                rail_color: shell.rail_color,
+                surface: shell.surface,
+            },
+            title_spans,
+            transcript_surface_content_width(width, false),
+        );
+    } else {
+        append_surface_row_with_target(
+            &mut render.lines,
+            &mut render.interaction_rows,
+            header_target.clone(),
+            TRANSCRIPT_ASSISTANT_BODY_PREFIX,
+            surface,
+            title_spans,
+            transcript_surface_content_width(width, false),
+        );
+    }
 
     if let Some(path_metadata) = tool_call.header.path_metadata.as_deref() {
         let path_spans = vec![Span::styled(
             path_metadata.to_string(),
             muted_meta_style(theme),
         )];
-        append_nested_surface_row_with_target(
-            &mut render.lines,
-            &mut render.interaction_rows,
-            header_target,
-            NestedSurfaceChrome {
-                indent: card_shell.indent,
-                rail_color: card_shell.rail_color,
-                surface: card_shell.surface,
-            },
-            path_spans,
-            transcript_surface_content_width(width, false),
-        );
+        if let Some(shell) = card_shell {
+            append_nested_surface_row_with_target(
+                &mut render.lines,
+                &mut render.interaction_rows,
+                header_target,
+                NestedSurfaceChrome {
+                    indent: shell.indent,
+                    rail_color: shell.rail_color,
+                    surface: shell.surface,
+                },
+                path_spans,
+                transcript_surface_content_width(width, false),
+            );
+        } else {
+            append_surface_row_with_target(
+                &mut render.lines,
+                &mut render.interaction_rows,
+                header_target,
+                TRANSCRIPT_OPCODE_EDIT_INDENT,
+                surface,
+                path_spans,
+                transcript_surface_content_width(width, false),
+            );
+        }
     }
 
-    if !tool_call.detail_blocks.is_empty() {
-        append_block_tool_gap(render, card_shell, width);
-    }
-    append_tool_call_detail_blocks(
-        render,
-        tool_call,
-        theme,
-        width,
-        base_surface,
-        Some(card_shell),
-    );
-    append_block_tool_bottom_padding(render, card_shell, width);
-}
-
-fn append_block_tool_margin_and_padding(
-    render: &mut ToolSectionRender,
-    card_shell: TranscriptToolCardShell,
-    width: u16,
-) {
-    for _ in 0..BLOCK_TOOL_MARGIN_TOP {
-        render.lines.push(Line::default());
-        render.interaction_rows.push(None);
-    }
-    for _ in 0..BLOCK_TOOL_PADDING_TOP {
-        append_block_tool_padding_row(render, card_shell, width);
-    }
-}
-
-fn append_block_tool_gap(
-    render: &mut ToolSectionRender,
-    card_shell: TranscriptToolCardShell,
-    width: u16,
-) {
-    for _ in 0..BLOCK_TOOL_GAP {
-        append_block_tool_padding_row(render, card_shell, width);
-    }
-}
-
-fn append_block_tool_bottom_padding(
-    render: &mut ToolSectionRender,
-    card_shell: TranscriptToolCardShell,
-    width: u16,
-) {
-    for _ in 0..BLOCK_TOOL_PADDING_BOTTOM {
-        append_block_tool_padding_row(render, card_shell, width);
-    }
-}
-
-fn append_block_tool_padding_row(
-    render: &mut ToolSectionRender,
-    card_shell: TranscriptToolCardShell,
-    width: u16,
-) {
-    append_nested_surface_row(
-        &mut render.lines,
-        card_shell.indent,
-        card_shell.rail_color,
-        card_shell.surface,
-        Vec::new(),
-        transcript_surface_content_width(width, false),
-    );
-    render.interaction_rows.push(None);
+    append_tool_call_detail_blocks(render, tool_call, theme, width, base_surface, card_shell);
 }
 
 pub(super) fn shell_tool_uses_harness_bash_card(tool_call: &TranscriptToolCallSection) -> bool {
@@ -691,7 +652,6 @@ fn append_tool_call_diff_block(
         content_width,
         StructuredDiffRenderOptions {
             force_stacked,
-            auto_split_width: Some(width),
             highlight_intraline: false,
             highlight_syntax: true,
             show_file_header,

@@ -4,24 +4,16 @@ use ratatui::{
     text::{Line, Span},
     Frame,
 };
-#[cfg(debug_assertions)]
-use std::cell::Cell;
 
 use crate::theme::Theme;
 
 use super::ui_transcript::TranscriptRenderSurface;
 use super::ui_transcript_interaction::TranscriptInteractionRow;
 use super::ui_transcript_selection::TranscriptSelectionRow;
-use super::ui_transcript_style::decorate_transcript_spinner_line;
 use super::ui_transcript_surface::{
     render_transcript_surface, render_transcript_surface_lines, transcript_surface_content_width,
     transcript_surface_leading_gap, transcript_surface_render_width,
 };
-
-#[cfg(debug_assertions)]
-thread_local! {
-    static TRANSCRIPT_SECTION_MEASURE_COUNT: Cell<usize> = const { Cell::new(0) };
-}
 
 const TRANSCRIPT_SECTION_GAP_HEIGHT: usize = 1;
 
@@ -79,26 +71,12 @@ pub(super) fn measure_transcript_layout<Section>(
     theme: &Theme,
     width: u16,
     base_surface: Color,
-    render_surfaces: impl FnMut(&Section, &Theme, u16, Color) -> Vec<TranscriptRenderSurface>,
-) -> MeasuredTranscriptLayout {
-    measure_transcript_layout_without_cache(sections, theme, width, base_surface, render_surfaces)
-}
-
-pub(super) fn measure_transcript_layout_without_cache<Section>(
-    sections: &[Section],
-    theme: &Theme,
-    width: u16,
-    base_surface: Color,
     mut render_surfaces: impl FnMut(&Section, &Theme, u16, Color) -> Vec<TranscriptRenderSurface>,
 ) -> MeasuredTranscriptLayout {
     let mut top_row = 0;
     let mut measured_sections = Vec::with_capacity(sections.len());
 
     for section in sections {
-        #[cfg(debug_assertions)]
-        TRANSCRIPT_SECTION_MEASURE_COUNT.with(|count| {
-            count.set(count.get().saturating_add(1));
-        });
         let surfaces = render_surfaces(section, theme, width, base_surface);
         let lines = render_transcript_surface_lines(&surfaces);
         let mut content_height = 0usize;
@@ -150,13 +128,8 @@ pub(super) fn measure_transcript_layout_without_cache<Section>(
 pub(super) fn transcript_layout_lines(
     layout: &MeasuredTranscriptLayout,
     theme: &Theme,
-    animation_phase: usize,
 ) -> Vec<Line<'static>> {
-    let mut lines = layout
-        .rendered_lines()
-        .into_iter()
-        .map(|line| decorate_transcript_spinner_line(line, animation_phase))
-        .collect::<Vec<_>>();
+    let mut lines = layout.rendered_lines();
 
     if lines.is_empty() {
         lines.push(Line::from(Span::styled(
@@ -174,7 +147,6 @@ pub(super) fn render_transcript_layout_surfaces(
     area: Rect,
     scroll_top: usize,
     theme: &Theme,
-    animation_phase: usize,
 ) {
     let viewport_height = usize::from(area.height);
     if viewport_height == 0 || area.width == 0 {
@@ -203,14 +175,7 @@ pub(super) fn render_transcript_layout_surfaces(
                 surface.width.min(area.width),
                 u16::try_from(visible_height).unwrap_or(u16::MAX),
             );
-            render_transcript_surface(
-                frame,
-                surface,
-                surface_rect,
-                local_scroll,
-                theme,
-                animation_phase,
-            );
+            render_transcript_surface(frame, surface, surface_rect, local_scroll, theme);
         }
     }
 }
@@ -246,14 +211,4 @@ fn transcript_visual_rows(lines: &[Line<'static>], viewport_width: usize) -> usi
             }
         })
         .sum()
-}
-
-#[cfg(debug_assertions)]
-pub(crate) fn reset_transcript_layout_measurement_metrics_for_test() {
-    TRANSCRIPT_SECTION_MEASURE_COUNT.with(|count| count.set(0));
-}
-
-#[cfg(debug_assertions)]
-pub(crate) fn transcript_layout_section_build_count_for_test() -> usize {
-    TRANSCRIPT_SECTION_MEASURE_COUNT.with(Cell::get)
 }

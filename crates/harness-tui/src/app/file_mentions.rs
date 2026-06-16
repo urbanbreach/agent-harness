@@ -168,14 +168,14 @@ struct LineRangeQuery<'a> {
 
 impl AppState {
     pub(in crate::app) fn clear_file_mention_menu(&mut self) {
-        self.overlay_state.file_mention_visible = false;
+        self.file_mention_visible = false;
         self.file_mention_entries.clear();
         self.file_mention_selected = 0;
         self.file_mention_trigger = None;
     }
 
     pub(in crate::app) fn file_mention_overlay_should_render(&self) -> bool {
-        self.overlay_state.file_mention_visible
+        self.file_mention_visible
     }
 
     pub(in crate::app) fn sync_file_mention_overlay(&mut self) {
@@ -186,9 +186,9 @@ impl AppState {
 
         if self.focus != Focus::Prompt
             || self.composer_disabled()
-            || self.overlay_state.palette_visible
-            || self.overlay_state.session_history_visible
-            || self.overlay_state.model_switcher_visible
+            || self.palette_visible
+            || self.session_history_visible
+            || self.model_switcher_visible
             || self.active_permission().is_some()
         {
             self.clear_file_mention_menu();
@@ -208,7 +208,7 @@ impl AppState {
             ));
             search_file_mentions(&entries, &query, &frecency)
         };
-        self.overlay_state.file_mention_visible = true;
+        self.file_mention_visible = true;
         self.file_mention_trigger = Some(active.trigger);
         self.file_mention_entries = file_mention_entries;
         self.file_mention_selected = self
@@ -283,11 +283,11 @@ impl AppState {
     }
 
     fn active_file_mention(&self) -> Option<ActiveFileMention> {
-        if self.composer.prompt_cursor == 0 {
+        if self.prompt_cursor == 0 {
             return None;
         }
 
-        let text_before_cursor = self.prompt_slice(0, self.composer.prompt_cursor);
+        let text_before_cursor = self.prompt_slice(0, self.prompt_cursor);
         let mut trigger = None;
         for (index, ch) in text_before_cursor.chars().enumerate() {
             if ch == '@' {
@@ -300,14 +300,14 @@ impl AppState {
             return None;
         }
 
-        let between = self.prompt_slice(trigger, self.composer.prompt_cursor);
+        let between = self.prompt_slice(trigger, self.prompt_cursor);
         if between.chars().any(char::is_whitespace) {
             return None;
         }
 
         Some(ActiveFileMention {
             trigger,
-            cursor: self.composer.prompt_cursor,
+            cursor: self.prompt_cursor,
         })
     }
 
@@ -335,8 +335,8 @@ impl AppState {
             format!("@{}{}", entry.value, suffix)
         };
         let tag_end = trigger + 1 + entry.value.chars().count();
-        self.replace_prompt_range(trigger, self.composer.prompt_cursor, &token);
-        self.composer.prompt_cursor = trigger + token.chars().count();
+        self.replace_prompt_range(trigger, self.prompt_cursor, &token);
+        self.prompt_cursor = trigger + token.chars().count();
 
         if expand_directory {
             self.file_mention_selected = 0;
@@ -464,26 +464,22 @@ impl AppState {
     }
 
     fn prompt_slice(&self, start: usize, end: usize) -> &str {
-        let start_byte = prompt_char_to_byte(&self.composer.prompt_buffer, start);
-        let end_byte = prompt_char_to_byte(&self.composer.prompt_buffer, end);
-        &self.composer.prompt_buffer[start_byte..end_byte]
+        let start_byte = prompt_char_to_byte(&self.prompt_buffer, start);
+        let end_byte = prompt_char_to_byte(&self.prompt_buffer, end);
+        &self.prompt_buffer[start_byte..end_byte]
     }
 
     fn replace_prompt_range(&mut self, start: usize, end: usize, replacement: &str) {
-        let start_byte = prompt_char_to_byte(&self.composer.prompt_buffer, start);
-        let end_byte = prompt_char_to_byte(&self.composer.prompt_buffer, end);
+        let start_byte = prompt_char_to_byte(&self.prompt_buffer, start);
+        let end_byte = prompt_char_to_byte(&self.prompt_buffer, end);
         self.adjust_file_mention_tags_for_delete(start, end);
         self.adjust_file_mention_tags_for_insert(start, replacement.chars().count());
-        self.composer
-            .prompt_buffer
+        self.prompt_buffer
             .replace_range(start_byte..end_byte, replacement);
     }
 
     fn char_after_prompt_cursor(&self) -> Option<char> {
-        self.composer
-            .prompt_buffer
-            .chars()
-            .nth(self.composer.prompt_cursor)
+        self.prompt_buffer.chars().nth(self.prompt_cursor)
     }
 
     #[cfg(test)]
@@ -554,7 +550,7 @@ impl AppState {
     }
 }
 
-pub(in crate::app) fn prompt_char_to_byte(value: &str, char_index: usize) -> usize {
+fn prompt_char_to_byte(value: &str, char_index: usize) -> usize {
     value
         .char_indices()
         .nth(char_index)

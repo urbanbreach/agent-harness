@@ -11,7 +11,6 @@ use crate::theme::Theme;
 use super::ui_chrome::{display_width, panel_style, take_width_prefix};
 use super::ui_transcript::{TranscriptRenderSurface, TranscriptRenderSurfaceKind};
 use super::ui_transcript_layout::MeasuredTranscriptSurface;
-use super::ui_transcript_style::decorate_transcript_spinner_line;
 
 const TRANSCRIPT_SURFACE_RAIL_WIDTH: u16 = 1;
 const TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH: u16 = 2;
@@ -46,18 +45,6 @@ pub(super) fn transcript_surface_leading_gap(
         {
             0
         }
-        Some(previous)
-            if matches!(
-                previous,
-                TranscriptRenderSurfaceKind::AssistantBody
-                    | TranscriptRenderSurfaceKind::AssistantReasoning
-                    | TranscriptRenderSurfaceKind::AssistantTool
-                    | TranscriptRenderSurfaceKind::AssistantCommandTool
-                    | TranscriptRenderSurfaceKind::AssistantError
-            ) && current == TranscriptRenderSurfaceKind::AssistantFooter =>
-        {
-            1
-        }
         Some(_) => 1,
         None => 0,
     }
@@ -77,7 +64,6 @@ pub(super) fn render_transcript_surface(
     area: Rect,
     local_scroll: usize,
     theme: &Theme,
-    animation_phase: usize,
 ) {
     if area.width == 0 || area.height == 0 {
         return;
@@ -116,12 +102,8 @@ pub(super) fn render_transcript_surface(
         area.width.saturating_sub(rail_width),
         area.height,
     );
-    let visible_lines = visible_surface_lines(
-        surface,
-        local_scroll,
-        usize::from(content_rect.height),
-        animation_phase,
-    );
+    let visible_lines =
+        visible_surface_lines(surface, local_scroll, usize::from(content_rect.height));
     let paragraph = Paragraph::new(Text::from(visible_lines))
         .style(panel_style(surface.surface, theme.text.primary));
     frame.render_widget(paragraph, content_rect);
@@ -131,7 +113,6 @@ pub(super) fn visible_surface_lines(
     surface: &MeasuredTranscriptSurface,
     local_scroll: usize,
     visible_height: usize,
-    animation_phase: usize,
 ) -> Vec<Line<'static>> {
     if visible_height == 0 {
         return Vec::new();
@@ -143,7 +124,6 @@ pub(super) fn visible_surface_lines(
         .skip(local_scroll)
         .take(visible_height)
         .cloned()
-        .map(|line| decorate_transcript_spinner_line(line, animation_phase))
         .collect()
 }
 
@@ -181,11 +161,7 @@ pub(super) fn transcript_surface_render_width(
                 .saturating_sub(TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH)
                 .max(1)
         }
-        TranscriptRenderSurfaceKind::AssistantFooter
-        | TranscriptRenderSurfaceKind::AssistantReasoning
-        | TranscriptRenderSurfaceKind::AssistantBody
-        | TranscriptRenderSurfaceKind::AssistantTool
-        | TranscriptRenderSurfaceKind::AssistantError => width.max(1),
+        _ => width.max(1),
     }
 }
 
@@ -441,12 +417,12 @@ fn nested_surface_prefix(indent: &str, rail_color: Color, surface: Color) -> Vec
         TRANSCRIPT_RAIL_GLYPH,
         Style::default().fg(rail_color).bg(surface),
     ));
-    spans.push(surface_span("  ", Style::default(), surface));
+    spans.push(surface_span(" ", Style::default(), surface));
     spans
 }
 
 pub(super) fn nested_surface_prefix_width(indent: &str) -> usize {
-    display_width(indent) + display_width(TRANSCRIPT_RAIL_GLYPH) + 2
+    display_width(indent) + display_width(TRANSCRIPT_RAIL_GLYPH) + 1
 }
 
 fn nested_surface_line(

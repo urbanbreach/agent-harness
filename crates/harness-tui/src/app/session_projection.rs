@@ -98,13 +98,12 @@ impl SessionProjection {
 
     fn find_tool_call_mut(&mut self, tool_call_id: &str) -> Option<&mut ToolCallEntry> {
         for activity in &mut self.activities {
-            if let Some(index) = activity
+            if let Some(tool_call) = activity
                 .tool_calls
-                .iter()
-                .position(|tc| tc.tool_call_id == tool_call_id)
+                .iter_mut()
+                .find(|tc| tc.tool_call_id == tool_call_id)
             {
-                activity.bump_revision();
-                return activity.tool_calls.get_mut(index);
+                return Some(tool_call);
             }
         }
         None
@@ -144,7 +143,6 @@ impl SessionProjection {
         }
 
         entry.request_id = request_id.to_string();
-        entry.bump_revision();
         if entry.first_seq == 0 {
             entry.first_seq = seq;
         }
@@ -786,10 +784,10 @@ impl AppState {
         let runtime_context = self.runtime_provider_context();
 
         if self.startup_shell_visible() {
-            let composer_body = if self.composer.prompt_buffer.is_empty() {
+            let composer_body = if self.prompt_buffer.is_empty() {
                 runtime_state.composer_hint.clone()
             } else {
-                self.composer.prompt_buffer.clone()
+                self.prompt_buffer.clone()
             };
             return view_model::control_dock_view_model(view_model::ControlDockInput::Startup {
                 runtime_context,
@@ -827,10 +825,10 @@ impl AppState {
             );
         }
 
-        let composer_body = if self.composer.prompt_buffer.is_empty() {
-            runtime_state.composer_hint.clone()
+        let composer_body = if self.prompt_buffer.is_empty() {
+            String::new()
         } else {
-            self.composer.prompt_buffer.clone()
+            self.prompt_buffer.clone()
         };
         view_model::control_dock_view_model(view_model::ControlDockInput::Live {
             runtime_context,

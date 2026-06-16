@@ -27,8 +27,8 @@ pub(crate) fn exact_test_startup_slash_commands_execute_without_menu() {
 #[cfg(test)]
 pub(crate) fn exact_test_slash_new_preserves_draft_and_returns_home() {
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
-    app.composer.prompt_buffer = "/new".to_string();
-    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.prompt_buffer = "/new".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
     app.slash_draft_snapshot = Some("carry draft home".to_string());
     app.sync_slash_overlay();
 
@@ -36,11 +36,8 @@ pub(crate) fn exact_test_slash_new_preserves_draft_and_returns_home() {
 
     assert!(app.startup_shell_visible());
     assert_eq!(app.focus, Focus::Prompt);
-    assert_eq!(app.composer.prompt_buffer, "carry draft home");
-    assert_eq!(
-        app.composer.prompt_cursor,
-        "carry draft home".chars().count()
-    );
+    assert_eq!(app.prompt_buffer, "carry draft home");
+    assert_eq!(app.prompt_cursor, "carry draft home".chars().count());
     assert!(!app.should_quit);
     assert!(!app.replay_mode);
     assert!(app.session_path.is_none());
@@ -52,83 +49,83 @@ pub(crate) fn exact_test_replay_mode_disables_slash_workflow() {
     app.focus = Focus::Prompt;
     app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
 
-    assert!(!app.overlay_state.slash_visible);
+    assert!(!app.slash_visible);
     assert_eq!(app.overlay_stack().top(), None);
-    assert!(app.composer.prompt_buffer.is_empty());
+    assert!(app.prompt_buffer.is_empty());
 }
 
 #[cfg(test)]
 pub(crate) fn exact_test_slash_replay_opens_history_and_restores_draft() {
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
-    app.composer.prompt_buffer = "/replay".to_string();
-    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.prompt_buffer = "/replay".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
     app.slash_draft_snapshot = Some("keep this draft".to_string());
     app.sync_slash_overlay();
 
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-    assert!(app.overlay_state.palette_visible);
-    assert!(app.overlay_state.session_history_visible);
+    assert!(app.palette_visible);
+    assert!(app.session_history_visible);
     assert_eq!(
         app.startup_launcher_action,
         StartupLauncherAction::ReplaySession
     );
-    assert_eq!(app.composer.prompt_buffer, "keep this draft");
-    assert!(!app.overlay_state.slash_visible);
+    assert_eq!(app.prompt_buffer, "keep this draft");
+    assert!(!app.slash_visible);
 }
 
 #[cfg(test)]
 pub(crate) fn exact_test_slash_resume_opens_history_and_restores_draft() {
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
-    app.composer.prompt_buffer = "/resume".to_string();
-    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.prompt_buffer = "/resume".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
     app.slash_draft_snapshot = Some("resume this draft".to_string());
     app.sync_slash_overlay();
 
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-    assert!(app.overlay_state.palette_visible);
-    assert!(app.overlay_state.session_history_visible);
+    assert!(app.palette_visible);
+    assert!(app.session_history_visible);
     assert_eq!(
         app.startup_launcher_action,
         StartupLauncherAction::ContinueSession
     );
-    assert_eq!(app.composer.prompt_buffer, "resume this draft");
-    assert!(!app.overlay_state.slash_visible);
+    assert_eq!(app.prompt_buffer, "resume this draft");
+    assert!(!app.slash_visible);
 }
 
 #[cfg(test)]
 pub(crate) fn exact_test_slash_events_opens_review_surface() {
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
-    app.composer.prompt_buffer = "/events".to_string();
-    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.prompt_buffer = "/events".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
     app.slash_draft_snapshot = Some("keep events draft".to_string());
     app.sync_slash_overlay();
 
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
     assert_eq!(app.active_review_surface, Some(ReviewSurface::Events));
-    assert_eq!(app.composer.prompt_buffer, "keep events draft");
-    assert!(!app.overlay_state.slash_visible);
+    assert_eq!(app.prompt_buffer, "keep events draft");
+    assert!(!app.slash_visible);
 }
 
 #[cfg(test)]
 pub(crate) fn exact_test_slash_status_opens_status_dialog_and_restores_draft() {
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
-    app.composer.prompt_buffer = "/status".to_string();
-    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.prompt_buffer = "/status".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
     app.slash_draft_snapshot = Some("status draft".to_string());
     app.sync_slash_overlay();
 
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-    assert!(app.overlay_state.status_dialog_visible);
+    assert!(app.status_dialog_visible);
     assert_eq!(app.overlay_stack().top(), Some(OverlayKind::StatusDialog));
-    assert_eq!(app.composer.prompt_buffer, "status draft");
-    assert!(!app.overlay_state.slash_visible);
+    assert_eq!(app.prompt_buffer, "status draft");
+    assert!(!app.slash_visible);
 
     app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-    assert!(!app.overlay_state.status_dialog_visible);
+    assert!(!app.status_dialog_visible);
 }
 
 #[cfg(test)]
@@ -136,34 +133,34 @@ pub(crate) fn exact_test_slash_shell_closes_review_surface() {
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
     app.open_review_surface(ReviewSurface::Events);
     app.focus = Focus::Prompt;
-    app.composer.prompt_buffer = "/shell".to_string();
-    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.prompt_buffer = "/shell".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
     app.slash_draft_snapshot = Some("back to shell".to_string());
     app.sync_slash_overlay();
 
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
     assert_eq!(app.active_review_surface, None);
-    assert_eq!(app.composer.prompt_buffer, "back to shell");
-    assert!(!app.overlay_state.slash_visible);
+    assert_eq!(app.prompt_buffer, "back to shell");
+    assert!(!app.slash_visible);
 }
 
 #[cfg(test)]
 pub(crate) fn exact_test_slash_follow_toggles_follow_mode() {
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
-    app.transcript_view.follow_mode = false;
-    app.transcript_view.transcript_scroll = 12;
-    app.composer.prompt_buffer = "/follow".to_string();
-    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.follow_mode = false;
+    app.transcript_scroll = 12;
+    app.prompt_buffer = "/follow".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
     app.slash_draft_snapshot = Some("follow draft".to_string());
     app.sync_slash_overlay();
 
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-    assert!(app.transcript_view.follow_mode);
-    assert_eq!(app.transcript_view.transcript_scroll, 0);
-    assert_eq!(app.composer.prompt_buffer, "follow draft");
-    assert!(!app.overlay_state.slash_visible);
+    assert!(app.follow_mode);
+    assert_eq!(app.transcript_scroll, 0);
+    assert_eq!(app.prompt_buffer, "follow draft");
+    assert!(!app.slash_visible);
 }
 
 #[cfg(test)]
@@ -177,15 +174,15 @@ pub(crate) fn exact_test_live_slash_compact_emits_ui_intent() {
     };
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(sink));
     app.set_compact_session_supported(true);
-    app.composer.prompt_buffer = "/compact".to_string();
-    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.prompt_buffer = "/compact".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
     app.slash_draft_snapshot = Some("compact draft".to_string());
     app.sync_slash_overlay();
 
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-    assert_eq!(app.composer.prompt_buffer, "compact draft");
-    assert!(!app.overlay_state.slash_visible);
+    assert_eq!(app.prompt_buffer, "compact draft");
+    assert!(!app.slash_visible);
     assert_eq!(
         intents.lock().expect("lock intents").as_slice(),
         &[UiIntent::CompactSession]
@@ -207,15 +204,15 @@ pub(crate) fn exact_test_auth_slash_and_palette_emit_ui_intent_mid_session() {
         false,
         Some(sink.clone()),
     );
-    slash.composer.prompt_buffer = "/login codex --method device".to_string();
-    slash.composer.prompt_cursor = slash.composer.prompt_buffer.chars().count();
+    slash.prompt_buffer = "/login codex --method device".to_string();
+    slash.prompt_cursor = slash.prompt_buffer.chars().count();
     slash.slash_draft_snapshot = Some("draft after auth".to_string());
     slash.sync_slash_overlay();
 
     slash.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-    assert_eq!(slash.composer.prompt_buffer, "draft after auth");
-    assert!(!slash.overlay_state.slash_visible);
+    assert_eq!(slash.prompt_buffer, "draft after auth");
+    assert!(!slash.slash_visible);
     assert_eq!(
         slash.status_banner.as_deref(),
         Some("auth backend requested: harness auth login codex --method device")
@@ -240,7 +237,7 @@ pub(crate) fn exact_test_auth_slash_and_palette_emit_ui_intent_mid_session() {
     }
     palette.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-    assert!(!palette.overlay_state.palette_visible);
+    assert!(!palette.palette_visible);
     assert_eq!(
         palette.status_banner.as_deref(),
         Some("auth backend requested: harness auth list")
@@ -634,32 +631,32 @@ pub(crate) fn exact_test_slash_lineage_write_commands_blocked_in_replay() {
     let mut app = AppState::new_replay(PathBuf::from("/tmp/replay"), Vec::new());
     app.on_ui_intent = Some(sink);
 
-    app.composer.prompt_buffer = "/fork".to_string();
-    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.prompt_buffer = "/fork".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
     assert!(app.typed_slash_command().is_none());
     app.execute_slash_command("fork", Some("replay draft".to_string()));
-    assert_eq!(app.composer.prompt_buffer, "replay draft");
+    assert_eq!(app.prompt_buffer, "replay draft");
     assert_eq!(
         app.status_banner.as_deref(),
         Some("session fork blocked: replay mode is read-only")
     );
 
-    app.composer.prompt_buffer = "/clone".to_string();
-    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.prompt_buffer = "/clone".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
     assert!(app.typed_slash_command().is_none());
     app.execute_slash_command("clone", Some("clone draft".to_string()));
-    assert_eq!(app.composer.prompt_buffer, "clone draft");
+    assert_eq!(app.prompt_buffer, "clone draft");
     assert_eq!(
         app.status_banner.as_deref(),
         Some("session clone blocked: replay mode is read-only")
     );
 
-    app.composer.prompt_buffer = "/tree".to_string();
-    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.prompt_buffer = "/tree".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
     assert_eq!(app.typed_slash_command(), Some("tree"));
     app.execute_slash_command("tree", Some("tree draft".to_string()));
-    assert_eq!(app.composer.prompt_buffer, "tree draft");
-    assert!(app.overlay_state.lineage_browser_visible);
+    assert_eq!(app.prompt_buffer, "tree draft");
+    assert!(app.lineage_browser_visible);
 
     assert!(intents.lock().expect("lock intents").is_empty());
 }
@@ -701,10 +698,10 @@ pub(crate) fn exact_test_slash_lineage_write_commands_blocked_when_live_unstable
     assert_eq!(app.typed_slash_command(), Some("fork"));
     assert_eq!(app.slash_filtered, vec!["fork".to_string()]);
     app.execute_slash_command("fork", Some("fork draft".to_string()));
-    assert_eq!(app.composer.prompt_buffer, "fork draft");
-    assert!(app.overlay_state.fork_selector_visible);
+    assert_eq!(app.prompt_buffer, "fork draft");
+    assert!(app.fork_selector_visible);
 
-    app.overlay_state.fork_selector_visible = false;
+    app.fork_selector_visible = false;
     app.replace_prompt_input("/clone".to_string());
     app.sync_slash_overlay();
     assert!(
@@ -716,7 +713,7 @@ pub(crate) fn exact_test_slash_lineage_write_commands_blocked_when_live_unstable
         "/clone should be hidden while live work is active"
     );
     app.execute_slash_command("clone", Some("clone draft".to_string()));
-    assert_eq!(app.composer.prompt_buffer, "clone draft");
+    assert_eq!(app.prompt_buffer, "clone draft");
     assert_eq!(
         app.status_banner.as_deref(),
         Some("Harness session clone blocked: live session has active work")

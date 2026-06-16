@@ -72,8 +72,8 @@ pub(super) fn live_mode_accepts_input_without_focus_switch() {
         app.handle_key(key(crossterm::event::KeyCode::Char(c)));
     }
 
-    assert_eq!(app.composer.prompt_buffer, "hello");
-    assert_eq!(app.composer.prompt_cursor, 5);
+    assert_eq!(app.prompt_buffer, "hello");
+    assert_eq!(app.prompt_cursor, 5);
 }
 
 pub(super) fn command_palette_renders_and_filters() {
@@ -84,42 +84,29 @@ pub(super) fn command_palette_renders_and_filters() {
         crossterm::event::KeyModifiers::CONTROL,
     ));
 
-    assert!(app.overlay_state.palette_visible);
-    let filtered_command_ids = app
-        .palette_filtered
-        .iter()
-        .map(String::as_str)
-        .collect::<Vec<_>>();
+    assert!(app.palette_visible);
     assert_eq!(
-        filtered_command_ids,
+        app.palette_filtered,
         vec![
-            "new_session",
-            "show_last_error",
-            "resume_session",
-            "replay_session",
-            "switch_model",
-            "agent_cycle",
-            "agent_cycle_reverse",
-            "cycle_variant",
-            "toggles",
-            "variant_list",
-            "agent_list",
-            "auth",
-            "open_event_log",
-            "toggle_terminal_panel",
-            "toggle_follow",
-            "child_sessions",
-            "copy_message",
-            "copy_session",
-            "export_session",
-            "toggle_transcript_scrollbar",
-            "hide_thinking",
-            "show_timestamps",
-            "hide_tool_details",
-            "show_generic_tool_output",
-            "stack_transcript_diffs",
-            "help",
-            "quit",
+            "new_session".to_string(),
+            "resume_session".to_string(),
+            "replay_session".to_string(),
+            "switch_model".to_string(),
+            "agent_cycle".to_string(),
+            "agent_cycle_reverse".to_string(),
+            "cycle_variant".to_string(),
+            "toggles".to_string(),
+            "auth".to_string(),
+            "open_event_log".to_string(),
+            "toggle_terminal_panel".to_string(),
+            "toggle_follow".to_string(),
+            "hide_thinking".to_string(),
+            "show_timestamps".to_string(),
+            "hide_tool_details".to_string(),
+            "show_generic_tool_output".to_string(),
+            "stack_transcript_diffs".to_string(),
+            "help".to_string(),
+            "quit".to_string(),
         ]
     );
 
@@ -158,7 +145,7 @@ pub(super) fn command_palette_exposes_model_switcher_when_models_are_configured(
         crossterm::event::KeyModifiers::CONTROL,
     ));
 
-    assert!(app.overlay_state.palette_visible);
+    assert!(app.palette_visible);
     assert!(app
         .palette_filtered
         .iter()
@@ -176,7 +163,7 @@ pub(super) fn command_palette_dims_background_instead_of_repainting_it() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    assert!(palette.overlay_state.palette_visible);
+    assert!(palette.palette_visible);
 
     let overlay =
         FrameLayoutPlan::for_app(&palette, ratatui::layout::Rect::new(0, 0, width, height))
@@ -243,7 +230,7 @@ pub(super) fn command_palette_empty_state_renders() {
     ));
     app.handle_key(key(crossterm::event::KeyCode::Char('z')));
 
-    assert!(app.overlay_state.palette_visible);
+    assert!(app.palette_visible);
     assert!(app.palette_filtered.is_empty());
 
     let debug = render_live_screen(&app, 100, 24);
@@ -277,10 +264,9 @@ pub(super) fn command_palette_includes_session_history_entry() {
         crossterm::event::KeyModifiers::CONTROL,
     ));
 
-    assert!(app.overlay_state.palette_visible);
+    assert!(app.palette_visible);
     assert!(app.palette_filtered.starts_with(&[
         "new_session".to_string(),
-        "show_last_error".to_string(),
         "resume_session".to_string(),
         "replay_session".to_string(),
     ]));
@@ -288,29 +274,6 @@ pub(super) fn command_palette_includes_session_history_entry() {
     let rendered = render_live_lines(&app, 100, 24);
     assert!(rendered.contains("New session"));
     assert!(rendered.contains("Continue session"));
-}
-
-pub(super) fn command_palette_suggested_section_only_renders_for_empty_filter() {
-    let mut app = app::AppState::new_startup(Vec::new(), None);
-
-    app.handle_key(key_with_modifiers(
-        crossterm::event::KeyCode::Char('p'),
-        crossterm::event::KeyModifiers::CONTROL,
-    ));
-    let empty_filter_render = render_live_lines(&app, 100, 24);
-
-    assert!(empty_filter_render.contains("Suggested"));
-    assert!(empty_filter_render.contains("New session"));
-
-    for ch in "new".chars() {
-        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
-    }
-    let filtered_render = render_live_lines(&app, 100, 24);
-
-    assert_eq!(app.palette_filtered, vec!["new_session".to_string()]);
-    assert!(!filtered_render.contains("Suggested"));
-    assert!(filtered_render.contains("Sessions"));
-    assert!(filtered_render.contains("New session"));
 }
 
 pub(super) fn session_history_picker_renders_resumable_and_replay_rows() {
@@ -371,154 +334,6 @@ pub(super) fn session_history_picker_renders_resumable_and_replay_rows() {
     assert!(replay_render.contains("beta-prompt"));
     assert!(replay_render.contains("delete"));
     assert!(replay_render.contains("rename"));
-}
-
-pub(super) fn session_history_pin_persists_and_groups_first() {
-    let root = tempfile::tempdir().expect("temp session root");
-    let older_dir = root.path().join("run_older");
-    let newer_dir = root.path().join("run_newer");
-    std::fs::create_dir_all(&older_dir).expect("older run dir");
-    std::fs::create_dir_all(&newer_dir).expect("newer run dir");
-    let entries = vec![
-        startup_session_entry_with_details(
-            "run_older",
-            older_dir.to_string_lossy().as_ref(),
-            "older pinned",
-            Some(harness_core::proj::RunStatus::Finished),
-            Some("2026-03-08T08:00:00Z"),
-            "deep",
-            "openai/gpt-5.4-mini",
-            true,
-            None,
-        ),
-        startup_session_entry_with_details(
-            "run_newer",
-            newer_dir.to_string_lossy().as_ref(),
-            "newer unpinned",
-            Some(harness_core::proj::RunStatus::Finished),
-            Some("2026-03-08T12:00:00Z"),
-            "deep",
-            "openai/gpt-5.4-mini",
-            true,
-            None,
-        ),
-    ];
-    let mut app = app::AppState::new_startup(entries.clone(), None);
-
-    app.handle_key(key_with_modifiers(
-        crossterm::event::KeyCode::Char('p'),
-        crossterm::event::KeyModifiers::CONTROL,
-    ));
-    for ch in "resume".chars() {
-        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
-    }
-    app.handle_key(key(crossterm::event::KeyCode::Enter));
-    assert_eq!(
-        app.session_history_filtered
-            .iter()
-            .map(|index| app.session_history_entries[*index].catalog.run_id.as_str())
-            .collect::<Vec<_>>(),
-        vec!["run_newer", "run_older"]
-    );
-
-    app.handle_key(key(crossterm::event::KeyCode::Down));
-    app.handle_key(key_with_modifiers(
-        crossterm::event::KeyCode::Char('f'),
-        crossterm::event::KeyModifiers::CONTROL,
-    ));
-
-    let mut restarted = app::AppState::new_startup(entries, None);
-    restarted.handle_key(key_with_modifiers(
-        crossterm::event::KeyCode::Char('p'),
-        crossterm::event::KeyModifiers::CONTROL,
-    ));
-    for ch in "resume".chars() {
-        restarted.handle_key(key(crossterm::event::KeyCode::Char(ch)));
-    }
-    restarted.handle_key(key(crossterm::event::KeyCode::Enter));
-
-    assert_eq!(
-        restarted
-            .session_history_filtered
-            .iter()
-            .map(|index| restarted.session_history_entries[*index]
-                .catalog
-                .run_id
-                .as_str())
-            .collect::<Vec<_>>(),
-        vec!["run_older", "run_newer"]
-    );
-    let rendered = render_live_lines(&restarted, 120, 30);
-    assert!(rendered.contains("Pinned"), "{rendered}");
-    assert!(rendered.contains("older pinned"), "{rendered}");
-}
-
-pub(super) fn session_history_delete_requires_second_ctrl_d_and_emits_intent() {
-    let intents = std::sync::Arc::new(std::sync::Mutex::new(Vec::<app::UiIntent>::new()));
-    let sink = {
-        let intents = std::sync::Arc::clone(&intents);
-        std::sync::Arc::new(move |intent: app::UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
-        })
-    };
-    let root = tempfile::tempdir().expect("temp session root");
-    let run_dir = root.path().join("run_delete");
-    std::fs::create_dir_all(&run_dir).expect("run dir");
-    let mut app = app::AppState::new_startup(
-        vec![startup_session_entry_with_details(
-            "run_delete",
-            run_dir.to_string_lossy().as_ref(),
-            "delete candidate",
-            Some(harness_core::proj::RunStatus::Finished),
-            Some("2026-03-08T08:00:00Z"),
-            "deep",
-            "openai/gpt-5.4-mini",
-            true,
-            None,
-        )],
-        Some(sink),
-    );
-
-    app.handle_key(key_with_modifiers(
-        crossterm::event::KeyCode::Char('p'),
-        crossterm::event::KeyModifiers::CONTROL,
-    ));
-    for ch in "resume".chars() {
-        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
-    }
-    app.handle_key(key(crossterm::event::KeyCode::Enter));
-
-    app.handle_key(key_with_modifiers(
-        crossterm::event::KeyCode::Char('d'),
-        crossterm::event::KeyModifiers::CONTROL,
-    ));
-    assert!(intents.lock().expect("lock intents").is_empty());
-    let armed = render_live_lines(&app, 120, 30);
-    assert!(armed.contains("Press ctrl+d again to confirm"), "{armed}");
-
-    app.handle_key(key(crossterm::event::KeyCode::Down));
-    let disarmed = render_live_lines(&app, 120, 30);
-    assert!(!disarmed.contains("Press ctrl+d again to confirm"));
-
-    app.handle_key(key_with_modifiers(
-        crossterm::event::KeyCode::Char('d'),
-        crossterm::event::KeyModifiers::CONTROL,
-    ));
-    app.handle_key(key_with_modifiers(
-        crossterm::event::KeyCode::Char('d'),
-        crossterm::event::KeyModifiers::CONTROL,
-    ));
-
-    let intents = intents.lock().expect("lock intents");
-    let app::UiIntent::DeleteSession {
-        run_id,
-        run_dir: intent_dir,
-    } = intents.last().expect("delete intent emitted")
-    else {
-        panic!("expected delete session intent");
-    };
-    assert_eq!(run_id, "run_delete");
-    assert_eq!(intent_dir, &run_dir);
 }
 
 pub(super) fn session_history_filter_matches_visible_fields_and_fuzzy_title() {
@@ -686,7 +501,7 @@ pub(super) fn continue_picker_filters_to_interactive_sessions() {
     }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
 
-    assert!(app.overlay_state.session_history_visible);
+    assert!(app.session_history_visible);
     assert_eq!(
         app.session_history_filtered
             .iter()
@@ -776,7 +591,7 @@ pub(super) fn replay_picker_keeps_prompt_runs_visible() {
     }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
 
-    assert!(app.overlay_state.session_history_visible);
+    assert!(app.session_history_visible);
     assert_eq!(
         app.session_history_filtered
             .iter()
@@ -795,8 +610,8 @@ pub(super) fn replay_picker_keeps_prompt_runs_visible() {
 pub(super) fn focus_returns_after_session_history_close() {
     let mut app = app::AppState::new_live(None, false, None);
     app.focus = app::Focus::Details;
-    app.composer.prompt_buffer = "keep prompt draft".to_string();
-    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.prompt_buffer = "keep prompt draft".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
     app.set_session_history_entries(vec![startup_session_entry_with_details(
         "run_replay",
         "/tmp/sessions/run_replay",
@@ -818,28 +633,25 @@ pub(super) fn focus_returns_after_session_history_close() {
     }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
 
-    assert!(app.overlay_state.session_history_visible);
+    assert!(app.session_history_visible);
     assert_eq!(app.focus, app::Focus::Details);
-    assert_eq!(app.composer.prompt_buffer, "keep prompt draft");
+    assert_eq!(app.prompt_buffer, "keep prompt draft");
 
     app.handle_key(key(crossterm::event::KeyCode::Esc));
 
-    assert!(!app.overlay_state.session_history_visible);
-    assert!(!app.overlay_state.palette_visible);
+    assert!(!app.session_history_visible);
+    assert!(!app.palette_visible);
     assert_eq!(app.focus, app::Focus::Details);
-    assert_eq!(app.composer.prompt_buffer, "keep prompt draft");
-    assert_eq!(
-        app.composer.prompt_cursor,
-        "keep prompt draft".chars().count()
-    );
+    assert_eq!(app.prompt_buffer, "keep prompt draft");
+    assert_eq!(app.prompt_cursor, "keep prompt draft".chars().count());
 }
 
 pub(super) fn command_palette_enter_executes_selected_command() {
     let mut app = app::AppState::new_live(None, false, None);
     app.active_review_surface = Some(app::ReviewSurface::Help);
     app.focus = app::Focus::Details;
-    app.composer.prompt_buffer = "preserve me".to_string();
-    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.prompt_buffer = "preserve me".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
 
     app.handle_key(key_with_modifiers(
         crossterm::event::KeyCode::Char('p'),
@@ -851,10 +663,10 @@ pub(super) fn command_palette_enter_executes_selected_command() {
     app.handle_key(key(crossterm::event::KeyCode::Enter));
 
     assert_eq!(app.active_tab, app::Tab::Run);
-    assert!(!app.overlay_state.palette_visible);
+    assert!(!app.palette_visible);
     assert_eq!(app.focus, app::Focus::Details);
-    assert_eq!(app.composer.prompt_buffer, "preserve me");
-    assert_eq!(app.composer.prompt_cursor, "preserve me".chars().count());
+    assert_eq!(app.prompt_buffer, "preserve me");
+    assert_eq!(app.prompt_cursor, "preserve me".chars().count());
 }
 
 pub(super) fn palette_escape_preserves_prompt_draft() {
@@ -863,8 +675,8 @@ pub(super) fn palette_escape_preserves_prompt_draft() {
         app.handle_key(key(crossterm::event::KeyCode::Char(c)));
     }
 
-    let prompt_before = app.composer.prompt_buffer.clone();
-    let cursor_before = app.composer.prompt_cursor;
+    let prompt_before = app.prompt_buffer.clone();
+    let cursor_before = app.prompt_cursor;
 
     app.handle_key(key_with_modifiers(
         crossterm::event::KeyCode::Char('p'),
@@ -872,18 +684,18 @@ pub(super) fn palette_escape_preserves_prompt_draft() {
     ));
     app.handle_key(key(crossterm::event::KeyCode::Char('d')));
 
-    assert!(app.overlay_state.palette_visible);
+    assert!(app.palette_visible);
     assert_eq!(app.palette_input, "d");
 
     app.handle_key(key(crossterm::event::KeyCode::Esc));
 
-    assert!(!app.overlay_state.palette_visible);
+    assert!(!app.palette_visible);
     assert!(app.palette_input.is_empty());
     assert_eq!(app.palette_cursor, 0);
     assert!(app.palette_filtered.is_empty());
     assert_eq!(app.palette_selected, 0);
-    assert_eq!(app.composer.prompt_buffer, prompt_before);
-    assert_eq!(app.composer.prompt_cursor, cursor_before);
-    assert!(app.composer.prompt_history.is_empty());
-    assert_eq!(app.composer.prompt_history_index, None);
+    assert_eq!(app.prompt_buffer, prompt_before);
+    assert_eq!(app.prompt_cursor, cursor_before);
+    assert!(app.prompt_history.is_empty());
+    assert_eq!(app.prompt_history_index, None);
 }

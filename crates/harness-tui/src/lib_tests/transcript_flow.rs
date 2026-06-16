@@ -130,8 +130,8 @@ pub(super) fn transcript_scrollbar_matches_session_shape() {
             .collect::<Vec<_>>(),
     );
     app.selected_activity_index = 13;
-    app.transcript_view.follow_mode = false;
-    app.transcript_view.transcript_scroll = 18;
+    app.follow_mode = false;
+    app.transcript_scroll = 18;
 
     insta::with_settings!({ prepend_module_to_snapshot => false, snapshot_path => "../snapshots" }, {
         insta::assert_snapshot!("harness_tui__live_transcript_scrollbar", render_live_lines(&app, 80, 24));
@@ -192,7 +192,7 @@ pub(super) fn transcript_page_down_reaches_response_tail_after_scrolling_up() {
 
     for _ in 0..20 {
         app.handle_key(key(KeyCode::PageDown));
-        if app.transcript_view.follow_mode {
+        if app.follow_mode {
             break;
         }
     }
@@ -213,7 +213,7 @@ pub(super) fn transcript_without_overflow_hides_scrollbar() {
         "short reply",
     )]);
     app.selected_activity_index = 0;
-    app.transcript_view.follow_mode = true;
+    app.follow_mode = true;
 
     let rendered = render_live_lines(&app, 80, 24);
     assert!(
@@ -252,11 +252,11 @@ pub(super) fn disconnected_stream_disables_composer_with_reopen_guidance() {
     app.handle_key(key(crossterm::event::KeyCode::Char('x')));
 
     let debug = render_live_buffer(&app, 80, 24);
-    assert!(app.composer.prompt_buffer.is_empty());
+    assert!(app.prompt_buffer.is_empty());
     assert!(debug.contains("transcript stays visible"));
     assert!(debug.contains("Disconnected"));
     assert!(!debug.contains("Composer ·"));
-    assert!(debug.contains("Draft preserved locally — reopen the TUI to reconnect."));
+    assert!(!debug.contains("Draft preserved locally"));
     assert!(debug.contains("Reopen the TUI, then continue from the transcript."));
 }
 
@@ -450,13 +450,13 @@ pub(super) fn transcript_shell_remains_scannable_without_bubble_cards() {
     assert!(!rendered.contains("(tool fs.read · succeeded)"));
 }
 
-pub(super) fn transcript_status_metadata_stays_tool_inline_without_assistant_footer() {
+pub(super) fn transcript_status_metadata_is_inline_not_chrome() {
     let app = rich_transcript_fixture_app();
 
     let rendered = render_live_lines(&app, 120, 30);
 
     assert!(!rendered.contains("req_rich_shell"));
-    assert!(!rendered.contains("Assistant ·"));
+    assert!(rendered.contains("Assistant · model-1"));
     assert!(rendered.contains("Read src/ui.rs [offset=1, limit=24]"));
     assert!(!rendered.contains("user ("));
     assert!(!rendered.contains("assistant ("));
@@ -657,7 +657,7 @@ pub(super) fn permission_overlay_ignores_plain_draft_input_once_prompt_is_active
     }
     app.handle_key(key(crossterm::event::KeyCode::Char('/')));
 
-    assert_eq!(app.composer.prompt_buffer, "keep this dr");
+    assert_eq!(app.prompt_buffer, "keep this dr");
     assert!(app.active_permission().is_some());
 
     let debug = render_live_buffer(&app, 80, 24);
@@ -682,10 +682,9 @@ pub(super) fn permission_overlay_preserves_existing_draft_without_buffering_new_
         app.handle_key(key(crossterm::event::KeyCode::Char(c)));
     }
 
-    assert_eq!(app.composer.prompt_buffer, "keep t");
+    assert_eq!(app.prompt_buffer, "keep t");
     assert_eq!(
-        app.permission_prompt
-            .permission_modal_selection("perm_overlay_home_row_input"),
+        app.permission_modal_selection("perm_overlay_home_row_input"),
         app::permissions::PermissionModalSelection::AllowOnce
     );
 

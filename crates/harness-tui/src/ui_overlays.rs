@@ -1,19 +1,9 @@
 use super::*;
 
-#[path = "ui_overlays/child_sessions.rs"]
-mod child_sessions;
-#[path = "ui_overlays/error_details.rs"]
-mod error_details;
 #[path = "ui_overlays/model_switcher.rs"]
 mod model_switcher;
 #[path = "ui_overlays/permission_modal.rs"]
 mod permission_modal;
-#[path = "ui_overlays/permission_request_summary.rs"]
-mod permission_request_summary;
-#[path = "ui_overlays/prompt_management.rs"]
-mod prompt_management;
-#[path = "ui_overlays/select_dialog.rs"]
-mod select_dialog;
 #[path = "ui_overlays/session_history.rs"]
 mod session_history;
 #[path = "ui_overlays/status_dialog.rs"]
@@ -21,8 +11,6 @@ mod status_dialog;
 #[path = "ui_overlays/toggles_menu.rs"]
 mod toggles_menu;
 
-use child_sessions::render_child_sessions_overlay;
-use error_details::render_error_details_overlay;
 use model_switcher::{
     model_switcher_overlay_title, paint_model_select_panel, render_model_switcher_overlay,
 };
@@ -32,10 +20,6 @@ pub(super) use permission_modal::{
     permission_modal_summary_line, permission_modal_title, question_permission_actions_text,
     question_permission_body_text,
 };
-pub(super) use permission_request_summary::{
-    permission_modal_always_scope_line, permission_modal_diff_preview_lines,
-};
-use prompt_management::render_prompt_management_overlay;
 use session_history::{
     render_fork_selector_input, render_fork_selector_list, render_lineage_browser_overlay,
     render_session_history_overlay, session_history_overlay_title,
@@ -69,20 +53,6 @@ pub(super) fn render_overlays(
             OverlayKind::TogglesMenu | OverlayKind::LineageBrowser | OverlayKind::ForkSelector => {
                 render_command_palette_overlay(frame, app, theme, plan.root, plan.palette_overlay)
             }
-            OverlayKind::ChildSessions => {
-                render_child_sessions_overlay(frame, app, theme, plan.root, plan.palette_overlay)
-            }
-            OverlayKind::ErrorDetails => render_error_details_overlay(frame, app, theme, plan.root),
-            OverlayKind::PromptStash | OverlayKind::QueuedPrompts => {
-                render_prompt_management_overlay(
-                    frame,
-                    app,
-                    theme,
-                    plan.root,
-                    plan.palette_overlay,
-                    overlay,
-                )
-            }
             OverlayKind::StatusDialog => render_status_dialog_overlay(frame, app, theme, plan.root),
             OverlayKind::PermissionModal => {}
         }
@@ -102,31 +72,31 @@ fn render_command_palette_overlay(
 
     render_overlay_dim_backdrop(frame, root);
 
-    let title = if app.overlay_state.session_history_visible {
+    let title = if app.session_history_visible {
         session_history_overlay_title(app)
-    } else if app.overlay_state.model_switcher_visible {
+    } else if app.model_switcher_visible {
         model_switcher_overlay_title(app)
-    } else if app.overlay_state.toggles_menu_visible {
+    } else if app.toggles_menu_visible {
         "Toggles".to_string()
-    } else if app.overlay_state.lineage_browser_visible {
-        "Message timeline".to_string()
-    } else if app.overlay_state.fork_selector_visible {
+    } else if app.lineage_browser_visible {
+        "Harness session tree".to_string()
+    } else if app.fork_selector_visible {
         "Fork session".to_string()
     } else {
         "Commands".to_string()
     };
 
-    if app.overlay_state.session_history_visible {
+    if app.session_history_visible {
         if !paint_command_palette_panel(frame, theme, overlay) {
             return;
         }
         render_session_history_overlay(frame, app, theme, overlay, &title);
-    } else if app.overlay_state.model_switcher_visible {
+    } else if app.model_switcher_visible {
         if !paint_model_select_panel(frame, theme, overlay) {
             return;
         }
         render_model_switcher_overlay(frame, app, theme, overlay, &title);
-    } else if app.overlay_state.toggles_menu_visible {
+    } else if app.toggles_menu_visible {
         if !paint_command_palette_panel(frame, theme, overlay) {
             return;
         }
@@ -139,12 +109,12 @@ fn render_command_palette_overlay(
         if app.toggles_yolo_confirmation_visible() {
             render_yolo_warning_popup(frame, theme, overlay);
         }
-    } else if app.overlay_state.lineage_browser_visible {
+    } else if app.lineage_browser_visible {
         let Some(inner) = render_command_palette_surface(frame, theme, overlay) else {
             return;
         };
         render_lineage_browser_overlay(frame, app, theme, inner, &title);
-    } else if app.overlay_state.fork_selector_visible {
+    } else if app.fork_selector_visible {
         if !paint_command_palette_panel(frame, theme, overlay) {
             return;
         }
@@ -412,51 +382,171 @@ fn slash_command_display(command: &str) -> String {
 }
 
 fn render_command_palette_surface(frame: &mut Frame, theme: &Theme, overlay: Rect) -> Option<Rect> {
-    select_dialog::render_select_dialog_surface(frame, theme, overlay)
+    if !paint_command_palette_panel(frame, theme, overlay) {
+        return None;
+    }
+
+    let content = inset_rect(overlay, 3.min(overlay.width.saturating_sub(1)), 1);
+    if content.width == 0 || content.height == 0 {
+        return None;
+    }
+
+    Some(content)
 }
 
 fn paint_command_palette_panel(frame: &mut Frame, theme: &Theme, overlay: Rect) -> bool {
-    select_dialog::paint_select_dialog_panel(frame, theme, overlay)
+    if overlay.width == 0 || overlay.height == 0 {
+        return false;
+    }
+
+    let surface = ui_chrome::command_palette_surface(theme);
+    frame.render_widget(Clear, overlay);
+    frame.render_widget(
+        Block::default().style(Style::default().bg(surface)),
+        overlay,
+    );
+    true
 }
 
 fn command_palette_dialog_layout(overlay: Rect) -> Option<(Rect, Rect, Rect)> {
-    select_dialog::select_dialog_layout(overlay)
-        .map(|layout| (layout.header, layout.input, layout.list))
+    if overlay.width <= 8 || overlay.height <= 6 {
+        return None;
+    }
+
+    let content_x = overlay.x.saturating_add(4);
+    let content_width = overlay.width.saturating_sub(8);
+    let header = Rect::new(content_x, overlay.y.saturating_add(1), content_width, 1);
+    let input = Rect::new(content_x, overlay.y.saturating_add(3), content_width, 1);
+    let list = Rect::new(
+        overlay.x,
+        overlay.y.saturating_add(5),
+        overlay.width,
+        overlay.height.saturating_sub(6),
+    );
+    Some((header, input, list))
 }
 
 fn render_command_palette_header(frame: &mut Frame, theme: &Theme, area: Rect, title: &str) {
-    select_dialog::render_select_dialog_header(frame, theme, area, title);
-}
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
 
-fn render_palette_empty_message(frame: &mut Frame, theme: &Theme, area: Rect, message: &str) {
-    select_dialog::render_select_dialog_empty_message(frame, theme, area, message);
-}
+    let surface = ui_chrome::command_palette_surface(theme);
+    let esc = "esc";
+    let columns = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(esc.chars().count() as u16),
+        ])
+        .split(area);
 
-fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
-    let placeholder = if app.overlay_state.session_history_visible {
-        "Search"
-    } else if app.overlay_state.model_switcher_visible {
-        "Filter models, providers"
-    } else if app.overlay_state.toggles_menu_visible {
-        "Filter toggles"
-    } else if app.overlay_state.lineage_browser_visible {
-        "Filter Harness session tree"
-    } else {
-        "Search"
-    };
-    select_dialog::render_select_dialog_input(
-        frame,
-        theme,
-        area,
-        &app.palette_input,
-        app.palette_cursor,
-        placeholder,
-        command_palette_input_cursor(theme, app),
+    frame.render_widget(
+        Paragraph::new(title.to_string()).style(
+            Style::default()
+                .fg(ui_chrome::command_palette_title(theme))
+                .bg(surface)
+                .add_modifier(Modifier::BOLD),
+        ),
+        columns[0],
+    );
+    frame.render_widget(
+        Paragraph::new(esc).alignment(Alignment::Right).style(
+            Style::default()
+                .fg(ui_chrome::command_palette_muted(theme))
+                .bg(surface),
+        ),
+        columns[1],
     );
 }
 
+fn render_palette_empty_message(frame: &mut Frame, theme: &Theme, area: Rect, message: &str) {
+    let empty_area = Rect::new(
+        area.x.saturating_add(3),
+        area.y,
+        area.width.saturating_sub(3),
+        1,
+    );
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            truncate_plain_text(message, usize::from(empty_area.width)),
+            Style::default()
+                .fg(ui_chrome::command_palette_muted(theme))
+                .bg(ui_chrome::command_palette_surface(theme)),
+        ))),
+        empty_area,
+    );
+}
+
+fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    let surface = ui_chrome::command_palette_surface(theme);
+    frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
+
+    let line = if app.palette_input.is_empty() {
+        let placeholder = if app.session_history_visible {
+            "Search"
+        } else if app.model_switcher_visible {
+            "Filter models, providers"
+        } else if app.toggles_menu_visible {
+            "Filter toggles"
+        } else if app.lineage_browser_visible {
+            "Filter Harness session tree"
+        } else {
+            "Search"
+        };
+        Line::from(vec![
+            Span::styled(
+                "█",
+                Style::default()
+                    .fg(command_palette_input_cursor(theme, app))
+                    .bg(surface),
+            ),
+            Span::styled(
+                format!(" {placeholder}"),
+                Style::default()
+                    .fg(ui_chrome::command_palette_muted(theme))
+                    .bg(surface),
+            ),
+        ])
+    } else {
+        let cursor_byte = app
+            .palette_input
+            .char_indices()
+            .nth(app.palette_cursor)
+            .map(|(index, _)| index)
+            .unwrap_or(app.palette_input.len());
+        let before = &app.palette_input[..cursor_byte];
+        let after = &app.palette_input[cursor_byte..];
+        Line::from(vec![
+            Span::styled(
+                before.to_string(),
+                Style::default()
+                    .fg(ui_chrome::command_palette_muted(theme))
+                    .bg(surface),
+            ),
+            Span::styled(
+                "█",
+                Style::default()
+                    .fg(command_palette_input_cursor(theme, app))
+                    .bg(surface),
+            ),
+            Span::styled(
+                after.to_string(),
+                Style::default()
+                    .fg(ui_chrome::command_palette_muted(theme))
+                    .bg(surface),
+            ),
+        ])
+    };
+    frame.render_widget(Paragraph::new(line), area);
+}
+
 fn command_palette_input_cursor(theme: &Theme, app: &AppState) -> Color {
-    if app.overlay_state.session_history_visible {
+    if app.session_history_visible {
         ui_chrome::fork_selector_cursor()
     } else {
         ui_chrome::command_palette_cursor(theme)
@@ -547,7 +637,7 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
                     Paragraph::new(command_palette_row(
                         Action::palette_command_label(command),
                         palette_command_description(command),
-                        &app.keymap.palette_command_shortcut(command),
+                        Action::palette_command_shortcut(command),
                         is_selected,
                         theme,
                         row_area.width,
@@ -573,15 +663,7 @@ fn palette_overlay_rows(app: &AppState) -> Vec<PaletteOverlayRow<'_>> {
     let mut last_section = None;
 
     for (selected_index, command) in app.palette_filtered.iter().enumerate() {
-        let section = Action::palette_command_section(command.as_str()).map(|section| {
-            if !app.palette_input.is_empty()
-                && section == crate::keybindings::PaletteCommandSection::Suggested
-            {
-                crate::keybindings::PaletteCommandSection::Session
-            } else {
-                section
-            }
-        });
+        let section = Action::palette_command_section(command.as_str());
         if section != last_section {
             if let Some(section) = section {
                 if last_section.is_some() {

@@ -1,6 +1,5 @@
 use super::ui_transcript_tool_sections::build_tool_call_section;
 use super::*;
-use crate::text::has_trimmed_content;
 
 pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSection> {
     let hidden_child_request_ids = hidden_delegated_child_request_ids(app);
@@ -21,17 +20,41 @@ pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSec
             queued_user_message: pending_assistant_index
                 .is_some_and(|pending| visible_index > pending),
             is_selected: *activity_index == app.selected_activity_index,
+            is_latest: false,
             thinking_visible: app.transcript_thinking_visible(),
             timestamps_visible: app.transcript_timestamps_visible(),
             show_tool_details: app.tool_details_visible(),
             show_generic_tool_output: app.generic_tool_output_visible(),
-            stacked_diffs: app.transcript_view.stacked_transcript_diffs(),
+            stacked_diffs: app.stacked_transcript_diffs(),
             session_path: app.session_path.as_deref(),
             app,
         }));
     }
 
+    if let Some(latest_assistant_footer_index) = turn_sections
+        .iter()
+        .rposition(turn_supports_assistant_footer)
+    {
+        let original_activity_index = visible_activities[latest_assistant_footer_index].0;
+        if let Some(turn) = turn_sections.get_mut(latest_assistant_footer_index) {
+            turn.show_footer = true;
+            turn.footer_timestamp = app
+                .transcript_timestamps_visible()
+                .then_some(
+                    app.activities[original_activity_index]
+                        .user_timestamp
+                        .as_deref(),
+                )
+                .flatten()
+                .map(short_time_or_trimmed);
+        }
+    }
+
     turn_sections
+}
+
+fn turn_supports_assistant_footer(turn: &TranscriptTurnSection) -> bool {
+    !turn.assistant_parts.is_empty() || activity_status_supports_footer_only(turn.header.status)
 }
 
 fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
@@ -39,6 +62,7 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
         activity,
         queued_user_message,
         is_selected,
+        is_latest,
         thinking_visible,
         timestamps_visible,
         show_tool_details,
@@ -58,12 +82,10 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
             });
 
     let thinking = (thinking_visible && activity_has_thinking_text(activity)).then(|| {
-        reasoning_section(
-            activity.thinking_text.clone(),
-            activity.status,
-            Some(activity.first_mono_ms),
-            reasoning_duration_for_status(activity.status, activity.duration_ms()),
-        )
+        TranscriptLabeledTextSection {
+            label: THINKING_TRACE_LABEL,
+            text: activity.thinking_text.clone(),
+        }
     });
 
     let mut body_blocks = Vec::new();
@@ -115,13 +137,17 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
     TranscriptTurnSection {
         request_id: activity.request_id.clone(),
         user_message,
-        animation_phase: app.transcript_view.transcript_animation_phase(),
+        show_footer: is_latest,
+        footer_timestamp: (is_latest && timestamps_visible)
+            .then_some(activity.user_timestamp.as_deref())
+            .flatten()
+            .map(short_time_or_trimmed),
+        animation_phase: app.transcript_animation_phase(),
         header: TranscriptTurnHeader {
             status: activity.status,
             is_selected,
             profile_label: activity.profile_label.clone(),
             model_id: activity.model_id.clone(),
-            provider_id: activity.provider_id.clone(),
             duration_ms: activity.duration_ms(),
         },
         body_blocks,
@@ -129,49 +155,8 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
         thinking,
         error,
         assistant_parts,
-        assistant_footer: assistant_footer_section(activity),
+        subagent_hint_key: app.keymap.get_binding_str(Action::SessionChildFirst),
     }
-}
-
-fn assistant_footer_section(activity: &ActivityEntry) -> Option<TranscriptAssistantFooterSection> {
-    if activity_status_supports_footer_only(activity.status) {
-        return active_activity_supports_footer(activity).then(|| {
-            TranscriptAssistantFooterSection {
-                agent_label: assistant_footer_label(&activity.profile_label),
-                model_label: activity.model_id.clone(),
-                provider_label: provider_footer_label(&activity.provider_id),
-                duration_ms: activity.duration_ms(),
-            }
-        });
-    }
-
-    if activity.transcript_text.is_empty()
-        && activity.thinking_text.is_empty()
-        && activity.tool_calls.is_empty()
-        && activity.error_message.is_none()
-    {
-        return None;
-    }
-    Some(TranscriptAssistantFooterSection {
-        agent_label: assistant_footer_label(&activity.profile_label),
-        model_label: activity.model_id.clone(),
-        provider_label: provider_footer_label(&activity.provider_id),
-        duration_ms: activity.duration_ms(),
-    })
-}
-
-fn active_activity_supports_footer(activity: &ActivityEntry) -> bool {
-    match activity.status {
-        ActivityStatus::Streaming => true,
-        ActivityStatus::Queued => activity.user_message.is_none(),
-        ActivityStatus::Done | ActivityStatus::Error => false,
-    }
-}
-
-fn provider_footer_label(provider_id: &str) -> Option<String> {
-    let provider = provider_id.trim();
-    (!provider.is_empty() && provider != "default" && provider != "local")
-        .then(|| provider.to_string())
 }
 
 fn build_ordered_assistant_parts(
@@ -200,6 +185,7 @@ fn build_ordered_assistant_parts(
                 .into_iter()
                 .map(|tool_call| TranscriptAssistantPart::ToolCall(Box::new(tool_call.section))),
         );
+        insert_subagent_hint_after_task_tools(&mut fallback_parts);
         if let Some(error) = error {
             fallback_parts.push(TranscriptAssistantPart::Error(error));
         }
@@ -207,11 +193,36 @@ fn build_ordered_assistant_parts(
     }
 
     sync_reasoning_parts_with_activity(&mut event_parts, activity, thinking_visible);
+    insert_subagent_hint_after_task_tools(&mut event_parts);
 
     if let Some(error) = error {
         event_parts.push(TranscriptAssistantPart::Error(error));
     }
     event_parts
+}
+
+fn insert_subagent_hint_after_task_tools(parts: &mut Vec<TranscriptAssistantPart>) {
+    if parts
+        .iter()
+        .any(|part| matches!(part, TranscriptAssistantPart::SubagentHint))
+    {
+        return;
+    }
+    let has_task_tool = parts.iter().any(|part| {
+        matches!(
+            part,
+            TranscriptAssistantPart::ToolCall(tool_call)
+                if matches!(tool_call.header.tool_id.as_str(), "agent.spawn" | "task")
+        )
+    });
+    if !has_task_tool {
+        return;
+    }
+    let insert_at = parts
+        .iter()
+        .position(|part| matches!(part, TranscriptAssistantPart::Error(_)))
+        .unwrap_or(parts.len());
+    parts.insert(insert_at, TranscriptAssistantPart::SubagentHint);
 }
 
 fn sync_reasoning_parts_with_activity(
@@ -242,11 +253,11 @@ fn sync_reasoning_parts_with_activity(
     };
 
     if reasoning_indices.len() == 1 {
-        if let Some(TranscriptAssistantPart::Reasoning(reasoning)) =
-            parts.get_mut(first_reasoning_index)
-        {
-            reasoning.text = activity.thinking_text.clone();
-        }
+        parts[first_reasoning_index] =
+            TranscriptAssistantPart::Reasoning(TranscriptLabeledTextSection {
+                label: THINKING_TRACE_LABEL,
+                text: activity.thinking_text.clone(),
+            });
         return;
     }
 
@@ -294,7 +305,7 @@ fn build_ordered_assistant_parts_from_events(
     let mut saw_reasoning_event = false;
     let mut saw_body_event = false;
     let mut saw_tool_call = false;
-    let mut pending_pre_tool_stream: Option<(u64, u64, String)> = None;
+    let mut pending_pre_tool_stream: Option<(u64, String)> = None;
     let mut pending_tool_calls = ordered_tool_calls
         .iter()
         .cloned()
@@ -321,7 +332,6 @@ fn build_ordered_assistant_parts_from_events(
                         &mut parts,
                         &mut next_index,
                         event.seq,
-                        event.mono_ms,
                         TranscriptAssistantTextKind::Reasoning,
                         &data.delta,
                     );
@@ -341,55 +351,28 @@ fn build_ordered_assistant_parts_from_events(
                         &mut parts,
                         &mut next_index,
                         event.seq,
-                        event.mono_ms,
                         TranscriptAssistantTextKind::Body,
                         &data.delta,
                     );
                 } else {
-                    let pending = pending_pre_tool_stream
-                        .get_or_insert_with(|| (event.seq, event.mono_ms, String::new()));
-                    pending.2.push_str(&data.delta);
+                    let pending =
+                        pending_pre_tool_stream.get_or_insert_with(|| (event.seq, String::new()));
+                    pending.1.push_str(&data.delta);
                 }
-            }
-            harness_core::event::EventV1::ProviderRequestFinished(data)
-                if provider_event_matches_activity(
-                    event,
-                    &data.request_id,
-                    &activity.request_id,
-                ) =>
-            {
-                saw_turn_event = true;
-                record_flushed_pending_stream(
-                    flush_pending_pre_tool_stream(
-                        &mut parts,
-                        &mut next_index,
-                        &mut pending_pre_tool_stream,
-                        activity,
-                        thinking_visible,
-                        event.mono_ms,
-                    ),
-                    &mut saw_reasoning_event,
-                    &mut saw_body_event,
-                );
-                finalize_open_reasoning_part(&mut parts, event.mono_ms, activity.status);
             }
             harness_core::event::EventV1::TaskCompleted(data)
                 if event.correlation_id.as_deref() == Some(activity.request_id.as_str()) =>
             {
                 saw_turn_event = true;
-                record_flushed_pending_stream(
-                    flush_pending_pre_tool_stream(
-                        &mut parts,
-                        &mut next_index,
-                        &mut pending_pre_tool_stream,
-                        activity,
-                        thinking_visible,
-                        event.mono_ms,
-                    ),
+                flush_pending_pre_tool_stream(
+                    &mut parts,
+                    &mut next_index,
+                    &mut pending_pre_tool_stream,
+                    activity,
+                    thinking_visible,
                     &mut saw_reasoning_event,
                     &mut saw_body_event,
                 );
-                finalize_open_reasoning_part(&mut parts, event.mono_ms, activity.status);
                 if crate::app::task_completed_updates_assistant_transcript(data)
                     && !saw_body_event
                     && has_trimmed_content(&data.result_summary)
@@ -399,7 +382,6 @@ fn build_ordered_assistant_parts_from_events(
                         &mut parts,
                         &mut next_index,
                         event.seq,
-                        event.mono_ms,
                         TranscriptAssistantTextKind::Body,
                         &data.result_summary,
                     );
@@ -410,19 +392,15 @@ fn build_ordered_assistant_parts_from_events(
             {
                 saw_turn_event = true;
                 saw_tool_call = true;
-                record_flushed_pending_stream(
-                    flush_pending_pre_tool_stream(
-                        &mut parts,
-                        &mut next_index,
-                        &mut pending_pre_tool_stream,
-                        activity,
-                        thinking_visible,
-                        event.mono_ms,
-                    ),
+                flush_pending_pre_tool_stream(
+                    &mut parts,
+                    &mut next_index,
+                    &mut pending_pre_tool_stream,
+                    activity,
+                    thinking_visible,
                     &mut saw_reasoning_event,
                     &mut saw_body_event,
                 );
-                finalize_open_reasoning_part(&mut parts, event.mono_ms, ActivityStatus::Done);
                 if let Some(tool_call) = pending_tool_calls.remove(&data.tool_call_id) {
                     parts.push(SequencedTranscriptAssistantPart {
                         seq: event.seq,
@@ -440,35 +418,24 @@ fn build_ordered_assistant_parts_from_events(
         return Vec::new();
     }
 
-    record_flushed_pending_stream(
-        flush_pending_pre_tool_stream(
-            &mut parts,
-            &mut next_index,
-            &mut pending_pre_tool_stream,
-            activity,
-            thinking_visible,
-            activity.last_mono_ms,
-        ),
+    flush_pending_pre_tool_stream(
+        &mut parts,
+        &mut next_index,
+        &mut pending_pre_tool_stream,
+        activity,
+        thinking_visible,
         &mut saw_reasoning_event,
         &mut saw_body_event,
     );
-    if matches!(
-        activity.status,
-        ActivityStatus::Done | ActivityStatus::Error
-    ) {
-        finalize_open_reasoning_part(&mut parts, activity.last_mono_ms, activity.status);
-    }
 
     if !saw_reasoning_event && !saw_body_event && activity_has_thinking_text(activity) {
         parts.push(SequencedTranscriptAssistantPart {
             seq: activity.first_seq,
             index: next_index,
-            part: TranscriptAssistantPart::Reasoning(reasoning_section(
-                activity.thinking_text.clone(),
-                activity.status,
-                Some(activity.first_mono_ms),
-                reasoning_duration_for_status(activity.status, activity.duration_ms()),
-            )),
+            part: TranscriptAssistantPart::Reasoning(TranscriptLabeledTextSection {
+                label: THINKING_TRACE_LABEL,
+                text: activity.thinking_text.clone(),
+            }),
         });
         next_index += 1;
     }
@@ -500,54 +467,41 @@ fn build_ordered_assistant_parts_from_events(
 fn flush_pending_pre_tool_stream(
     parts: &mut Vec<SequencedTranscriptAssistantPart>,
     next_index: &mut usize,
-    pending_pre_tool_stream: &mut Option<(u64, u64, String)>,
+    pending_pre_tool_stream: &mut Option<(u64, String)>,
     activity: &ActivityEntry,
     thinking_visible: bool,
-    close_mono_ms: u64,
-) -> Option<TranscriptAssistantTextKind> {
-    let (seq, started_mono_ms, text) = pending_pre_tool_stream.take()?;
+    saw_reasoning_event: &mut bool,
+    saw_body_event: &mut bool,
+) {
+    let Some((seq, text)) = pending_pre_tool_stream.take() else {
+        return;
+    };
 
     if text.is_empty() {
-        return None;
+        return;
     }
 
-    let treat_as_reasoning = activity_has_thinking_text(activity) && activity.thinking_text == text;
+    let treat_as_reasoning =
+        thinking_visible && activity_has_thinking_text(activity) && activity.thinking_text == text;
 
     if treat_as_reasoning {
-        if thinking_visible {
-            push_sequenced_text_part(
-                parts,
-                next_index,
-                seq,
-                started_mono_ms,
-                TranscriptAssistantTextKind::Reasoning,
-                &text,
-            );
-            finalize_open_reasoning_part(parts, close_mono_ms, ActivityStatus::Done);
-        }
-        Some(TranscriptAssistantTextKind::Reasoning)
-    } else {
+        *saw_reasoning_event = true;
         push_sequenced_text_part(
             parts,
             next_index,
             seq,
-            started_mono_ms,
+            TranscriptAssistantTextKind::Reasoning,
+            &text,
+        );
+    } else {
+        *saw_body_event = true;
+        push_sequenced_text_part(
+            parts,
+            next_index,
+            seq,
             TranscriptAssistantTextKind::Body,
             &text,
         );
-        Some(TranscriptAssistantTextKind::Body)
-    }
-}
-
-fn record_flushed_pending_stream(
-    flushed_kind: Option<TranscriptAssistantTextKind>,
-    saw_reasoning_event: &mut bool,
-    saw_body_event: &mut bool,
-) {
-    match flushed_kind {
-        Some(TranscriptAssistantTextKind::Reasoning) => *saw_reasoning_event = true,
-        Some(TranscriptAssistantTextKind::Body) => *saw_body_event = true,
-        None => {}
     }
 }
 
@@ -561,7 +515,6 @@ fn push_sequenced_text_part(
     parts: &mut Vec<SequencedTranscriptAssistantPart>,
     next_index: &mut usize,
     seq: u64,
-    mono_ms: u64,
     kind: TranscriptAssistantTextKind,
     text: &str,
 ) {
@@ -574,7 +527,7 @@ fn push_sequenced_text_part(
             (
                 TranscriptAssistantPart::Reasoning(existing),
                 TranscriptAssistantTextKind::Reasoning,
-            ) if existing.status == ActivityStatus::Streaming => {
+            ) => {
                 existing.text.push_str(text);
                 return;
             }
@@ -591,15 +544,12 @@ fn push_sequenced_text_part(
 
     let part = match kind {
         TranscriptAssistantTextKind::Reasoning => {
-            TranscriptAssistantPart::Reasoning(reasoning_section(
-                text.to_string(),
-                ActivityStatus::Streaming,
-                Some(mono_ms),
-                None,
-            ))
+            TranscriptAssistantPart::Reasoning(TranscriptLabeledTextSection {
+                label: THINKING_TRACE_LABEL,
+                text: text.to_string(),
+            })
         }
         TranscriptAssistantTextKind::Body => {
-            finalize_open_reasoning_part(parts, mono_ms, ActivityStatus::Done);
             TranscriptAssistantPart::Body(TranscriptBodyBlock::RichText(text.to_string()))
         }
     };
@@ -609,46 +559,4 @@ fn push_sequenced_text_part(
         part,
     });
     *next_index += 1;
-}
-
-fn finalize_open_reasoning_part(
-    parts: &mut [SequencedTranscriptAssistantPart],
-    finished_mono_ms: u64,
-    fallback_status: ActivityStatus,
-) {
-    let Some(TranscriptAssistantPart::Reasoning(reasoning)) =
-        parts.last_mut().map(|part| &mut part.part)
-    else {
-        return;
-    };
-    if reasoning.status != ActivityStatus::Streaming {
-        return;
-    }
-    reasoning.status = if fallback_status == ActivityStatus::Error {
-        ActivityStatus::Error
-    } else {
-        ActivityStatus::Done
-    };
-    reasoning.duration_ms = reasoning
-        .started_mono_ms
-        .and_then(|started| (finished_mono_ms >= started).then_some(finished_mono_ms - started));
-}
-
-fn reasoning_section(
-    text: String,
-    status: ActivityStatus,
-    started_mono_ms: Option<u64>,
-    duration_ms: Option<u64>,
-) -> TranscriptLabeledTextSection {
-    TranscriptLabeledTextSection {
-        label: THINKING_TRACE_LABEL,
-        text,
-        status,
-        started_mono_ms,
-        duration_ms,
-    }
-}
-
-fn reasoning_duration_for_status(status: ActivityStatus, duration_ms: Option<u64>) -> Option<u64> {
-    matches!(status, ActivityStatus::Done | ActivityStatus::Error).then_some(duration_ms)?
 }
