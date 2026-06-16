@@ -49,6 +49,8 @@ Provider-context compaction fallback is observable. When optional model-backed s
 
 Resume rebuilds the transcript, artifacts, pending permission state, todos, plan context, provider context, and meaningful title from append-only events. Recovery must be read-only until the next operator-approved turn starts. A session with a meaningful title should show that title in list/resume surfaces rather than only a run id. The `UpdateSessionTitle` event records operator-initiated renames; replay derives the current title from the latest title event and `session_title_update` allows a model to rename a session without executing providers or tools.
 
+Workspace snapshots are captured automatically before each assistant tool batch and are stored as redacted artifacts. `WorkspaceReverted` records that the runtime restored the workspace from a snapshot; it is appended during live execution and replay must not write files or rewrite `events.jsonl`.
+
 The V1 resume acceptance scenario is a realistic interrupted coding session, not a
 single empty run. The fixture records multiple user/provider turns. The guarded
 anchors are: loaded skill context; todo checklist state; plan handoff context;

@@ -239,6 +239,10 @@ Field decisions:
 - `ArtifactWritten` - File stored to session
 - `PolicyViolationDetected` - Security rule triggered
 
+**Workspace Snapshots**
+- `WorkspaceSnapshot` - Captured working-tree state before a tool batch; stores a redacted map of relative paths to content digests in the artifact store.
+- `WorkspaceReverted` - Restored the workspace from a prior snapshot; records restored paths, removed paths, and any failures without rewriting the event log.
+
 Team membership events record the team role, dependency edges, and shutdown
 state for child sessions. Members remain ordinary child agents: their
 provider/tool work is represented by the same task and provider lifecycle

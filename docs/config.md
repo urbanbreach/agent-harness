@@ -333,7 +333,7 @@ for those settings instead of mixing them into runtime config.
 | `enabled_providers` | Upstream-compatible provider allow-list; when non-empty, only matching configured/authenticated built-in providers remain in runtime model catalogs. |
 | `enterprise` | Upstream enterprise configuration; accepted only when empty because the harness does not implement enterprise product integration. |
 | `experimental` | Upstream-compatible experimental settings accepted as inert compatibility input. |
-| `formatter` | Upstream-compatible formatter settings accepted as inert compatibility input. |
+| `formatter` | Per-language auto-formatter configuration. `false` disables formatters; `true` uses defaults; an object sets `enabled` and `languages` keyed by file extension. |
 | `instructions` | Optional inline instructions or instruction file paths prepended before agent prompts. |
 | `layout` | Deprecated upstream layout setting accepted as inert compatibility input. |
 | `logLevel` | Upstream-compatible log-level setting accepted as inert compatibility input. |
