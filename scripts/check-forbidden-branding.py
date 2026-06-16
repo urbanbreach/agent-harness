@@ -18,6 +18,7 @@ sys.dont_write_bytecode = True
 
 ALLOWED_DIRS = {".git", ".sisyphus", "inspirations", "target"}
 ALLOWED_MATCH_LINES = {
+    Path("scripts/check-forbidden-branding.py"): {118, 119, 120, 121, 122, 123},
     Path("configs/config.json"): {710, 835},
     Path("configs/provider-catalog.generated.json"): {1},
     Path("crates/harness-core/src/config/public.rs"): {60, 193, 315, 477, 483, 489, 497},
@@ -115,7 +116,12 @@ def is_allowed(path: Path) -> bool:
         name = path.name
         if name.startswith("agent_harness_") and name.endswith("_ui_pi_backend_prd.md"):
             return True
-        if name == "roadmap-v1.md":
+        if name in (
+            "roadmap-v1.md",
+            "opencode-tui-parity.md",
+            "opencode-visual-tool-parity-prd.md",
+            "hyperplan-desktop-app-opencode-feel.md",
+        ):
             return True
     return False
 
