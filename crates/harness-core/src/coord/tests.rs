@@ -794,6 +794,28 @@ delegate_tokio_test!(formatter_disabled_skips_command => workspace_snapshot_test
 delegate_tokio_test!(formatter_missing_language_is_no_op => workspace_snapshot_tests::formatter_missing_language_is_no_op);
 delegate_tokio_test!(formatter_failure_returns_warning_without_panic => workspace_snapshot_tests::formatter_failure_returns_warning_without_panic);
 
+#[cfg(test)]
+#[path = "tests/formatter_discovery_tests.rs"]
+mod formatter_discovery_tests;
+
+#[cfg(test)]
+#[path = "tests/formatter_execution_tests.rs"]
+mod formatter_execution_tests;
+
+delegate_tokio_test!(built_in_discovery_includes_rustfmt_when_on_path => formatter_discovery_tests::built_in_discovery_includes_rustfmt_when_on_path);
+delegate_tokio_test!(built_in_command_still_requires_discovery_when_only_extensions_overridden => formatter_discovery_tests::built_in_command_still_requires_discovery_when_only_extensions_overridden);
+delegate_tokio_test!(multiple_matching_formatters_run_in_sorted_order => formatter_discovery_tests::multiple_matching_formatters_run_in_sorted_order);
+delegate_tokio_test!(ruff_uv_coupling_skips_both_when_one_disabled => formatter_discovery_tests::ruff_uv_coupling_skips_both_when_one_disabled);
+
+delegate_tokio_test!(file_substitution_replaces_token_and_falls_back_to_append => formatter_execution_tests::file_substitution_replaces_token_and_falls_back_to_append);
+delegate_tokio_test!(override_command_replaces_built_in_and_failure_is_non_fatal => formatter_execution_tests::override_command_replaces_built_in_and_failure_is_non_fatal);
+delegate_tokio_test!(disabled_override_skips_formatter => formatter_execution_tests::disabled_override_skips_formatter);
+delegate_tokio_test!(environment_variables_merge_with_override_winning => formatter_execution_tests::environment_variables_merge_with_override_winning);
+delegate_tokio_test!(path_escape_returns_warning_and_does_not_touch_external_file => formatter_execution_tests::path_escape_returns_warning_and_does_not_touch_external_file);
+delegate_tokio_test!(success_continues_after_one_formatter_fails => formatter_execution_tests::success_continues_after_one_formatter_fails);
+delegate_tokio_test!(override_command_runs_even_when_builtin_not_on_path => formatter_execution_tests::override_command_runs_even_when_builtin_not_on_path);
+delegate_tokio_test!(extension_override_replaces_builtin_extension_list => formatter_execution_tests::extension_override_replaces_builtin_extension_list);
+
 fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
     let event_store =
         Arc::new(JsonlFileEventStore::open(session_dir, run_id, true).expect("open event store"));
