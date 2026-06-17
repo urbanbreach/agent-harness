@@ -26,3 +26,8 @@ artifacts/
 
 # Local IDE workspace state
 .cate/
+
+# Local environment secrets / credentials
+.env
+*.env
+

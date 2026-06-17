@@ -530,6 +530,10 @@ where
 
 /// Run the process CLI using real OS arguments and standard streams.
 pub fn run_os() -> ExitCode {
+    // Load any `.env` file in the current working directory so local credential
+    // files can be used without exporting variables manually.
+    let _ = dotenvy::dotenv();
+
     let stdin = io::stdin();
     let stdin_is_terminal = stdin.is_terminal();
     let mut stdin = stdin.lock();

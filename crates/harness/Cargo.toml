@@ -8,6 +8,7 @@ version.workspace = true
 async-trait = "0.1"
 clap.workspace = true
 crossterm.workspace = true
+dotenvy = "0.15"
 harness-core = { path = "../harness-core" }
 harness-providers = { path = "../harness-providers" }
 harness-tools = { path = "../harness-tools" }
