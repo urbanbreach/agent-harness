@@ -237,6 +237,51 @@ pub(super) async fn handle_ui_intents(
                 }
                 break;
             }
+            UiIntent::UpdateSessionTitle { title } => {
+                let (message, level) = match coordinator.update_session_title(title).await {
+                    Ok(_) => (
+                        "session title updated".to_string(),
+                        OperatorNoticeLevel::Info,
+                    ),
+                    Err(err) => (
+                        format!("failed to update session title: {err}"),
+                        OperatorNoticeLevel::Error,
+                    ),
+                };
+                let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
+            }
+            UiIntent::RevertWorkspace {
+                snapshot_request_id,
+            } => {
+                let (message, level) = match coordinator.revert_workspace(snapshot_request_id).await
+                {
+                    Ok(summary) => {
+                        let mut parts = Vec::new();
+                        if !summary.restored_paths.is_empty() {
+                            parts.push(format!("{} restored", summary.restored_paths.len()));
+                        }
+                        if !summary.removed_paths.is_empty() {
+                            parts.push(format!("{} removed", summary.removed_paths.len()));
+                        }
+                        let msg = if parts.is_empty() {
+                            "workspace reverted (no paths affected)".to_string()
+                        } else {
+                            format!("workspace reverted: {}", parts.join(", "))
+                        };
+                        let lvl = if summary.failed_paths.is_empty() {
+                            OperatorNoticeLevel::Info
+                        } else {
+                            OperatorNoticeLevel::Error
+                        };
+                        (msg, lvl)
+                    }
+                    Err(err) => (
+                        format!("workspace revert failed: {err}"),
+                        OperatorNoticeLevel::Error,
+                    ),
+                };
+                let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
+            }
         }
     }
     Ok(())

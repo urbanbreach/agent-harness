@@ -115,7 +115,9 @@ pub(super) fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> Intera
         | Some(UiIntent::InterruptSession { .. })
         | Some(UiIntent::ForkSession { .. })
         | Some(UiIntent::CloneSession { .. })
-        | Some(UiIntent::SwitchModel { .. }) => InteractiveWorkflow::Quit,
+        | Some(UiIntent::SwitchModel { .. })
+        | Some(UiIntent::UpdateSessionTitle { .. })
+        | Some(UiIntent::RevertWorkspace { .. }) => InteractiveWorkflow::Quit,
     }
 }
 
@@ -157,7 +159,9 @@ pub(super) fn live_workflow_from_intent(intent: &UiIntent) -> Option<Interactive
         | UiIntent::InterruptSession { .. }
         | UiIntent::ForkSession { .. }
         | UiIntent::CloneSession { .. }
-        | UiIntent::SwitchModel { .. } => None,
+        | UiIntent::SwitchModel { .. }
+        | UiIntent::UpdateSessionTitle { .. }
+        | UiIntent::RevertWorkspace { .. } => None,
     }
 }
 
@@ -173,6 +177,8 @@ fn forward_intent_to_live_run(intent: &UiIntent) -> bool {
             | UiIntent::CloneSession { .. }
             | UiIntent::SwitchModel { .. }
             | UiIntent::QuitRequested
+            | UiIntent::UpdateSessionTitle { .. }
+            | UiIntent::RevertWorkspace { .. }
     )
 }
 
