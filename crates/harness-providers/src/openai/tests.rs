@@ -241,6 +241,7 @@ fn basic_request(model_id: &str) -> CompletionRequest {
         reasoning_effort: None,
         text_verbosity: None,
         reasoning_summary: None,
+        thinking: None,
         tools: None,
         tool_choice: None,
         context: Default::default(),
@@ -265,6 +266,7 @@ fn request_with_single_tool(model_id: &str) -> CompletionRequest {
         reasoning_effort: None,
         text_verbosity: None,
         reasoning_summary: None,
+        thinking: None,
         tools: Some(vec![ToolDef {
             tool_id: "fs.read".to_string(),
             function_name: "filesystem_read".to_string(),
