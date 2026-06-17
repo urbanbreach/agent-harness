@@ -174,7 +174,7 @@ pub(super) struct OpenAiChatChoiceChunk {
 pub(super) struct OpenAiChatDeltaChunk {
     #[serde(default)]
     pub(super) content: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "reasoning_content")]
     pub(super) reasoning_text: Option<String>,
     #[serde(default)]
     pub(super) tool_calls: Vec<OpenAiChatToolCallDeltaChunk>,
