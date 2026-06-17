@@ -160,6 +160,7 @@ fn resolve_direct_model_target(
         } else {
             None
         },
+        thinking: resolved.thinking,
         resolution: resolved.resolution,
     })
 }

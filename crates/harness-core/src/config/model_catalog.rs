@@ -2,6 +2,17 @@ use crate::model_resolution::{resolve_model, ModelResolution, ModelResolutionInp
 
 use super::model_selection::{resolve_agent_model_selection, resolve_named_model_profile};
 use super::*;
+use serde_json::Value;
+
+fn merge_thinking_option(
+    model_options: &std::collections::BTreeMap<String, Value>,
+    variant_options: Option<&std::collections::BTreeMap<String, Value>>,
+) -> Option<Value> {
+    variant_options
+        .and_then(|options| options.get("thinking"))
+        .or_else(|| model_options.get("thinking"))
+        .cloned()
+}
 
 pub fn resolve_profile_model_metadata(
     cfg: &HarnessConfig,
@@ -85,6 +96,7 @@ pub fn resolve_profile_model_metadata(
         max_input_tokens,
         max_output_tokens,
     );
+    let thinking = merge_thinking_option(&model.options, variant.map(|(_, cfg)| &cfg.options));
 
     Ok(ResolvedProfileModelMetadata {
         profile: profile_name.to_string(),
@@ -122,6 +134,7 @@ pub fn resolve_profile_model_metadata(
         }),
         recommended_for: variant
             .and_then(|(_, variant_cfg)| variant_cfg.metadata.recommended_for.clone()),
+        thinking,
         resolution,
     })
 }
@@ -252,6 +265,7 @@ fn build_resolved_model_catalog_entry(
         max_input_tokens,
         max_output_tokens,
     );
+    let thinking = merge_thinking_option(&model.options, variant.map(|(_, cfg)| &cfg.options));
 
     ResolvedModelCatalogEntry {
         provider: provider_name.to_string(),
@@ -292,6 +306,7 @@ fn build_resolved_model_catalog_entry(
         }),
         recommended_for: variant
             .and_then(|(_, variant_cfg)| variant_cfg.metadata.recommended_for.clone()),
+        thinking,
         supports_reasoning_summaries: model.metadata.supports_reasoning_summaries.unwrap_or(false),
         resolution,
     }

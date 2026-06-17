@@ -112,6 +112,7 @@ pub struct ResolvedProfileModelMetadata {
     pub reasoning_effort: Option<String>,
     pub text_verbosity: Option<String>,
     pub recommended_for: Option<String>,
+    pub thinking: Option<serde_json::Value>,
     pub resolution: ModelResolution,
 }
 
@@ -133,6 +134,7 @@ pub struct ResolvedModelCatalogEntry {
     pub reasoning_effort: Option<String>,
     pub text_verbosity: Option<String>,
     pub recommended_for: Option<String>,
+    pub thinking: Option<serde_json::Value>,
     pub supports_reasoning_summaries: bool,
     pub resolution: ModelResolution,
 }
@@ -146,6 +148,7 @@ pub struct ResolvedModelTarget {
     pub reasoning_effort: Option<String>,
     pub text_verbosity: Option<String>,
     pub reasoning_summary: Option<String>,
+    pub thinking: Option<serde_json::Value>,
     pub resolution: ModelResolution,
 }
 
