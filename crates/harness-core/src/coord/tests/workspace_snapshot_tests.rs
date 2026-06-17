@@ -3,7 +3,7 @@ use std::fs;
 use std::sync::Arc;
 
 use crate::clock::FakeClock;
-use crate::config::{FormatterConfig, FormatterLanguageConfig};
+use crate::config::{FormatterConfig, FormatterOverride};
 use crate::coord::formatter::run_formatter_for_path;
 use crate::event::EventV1;
 
@@ -135,16 +135,20 @@ pub(super) async fn formatter_runs_configured_command_on_edited_file() {
         fs::set_permissions(&script, perms).expect("chmod");
     }
 
-    let mut languages = BTreeMap::new();
-    languages.insert(
-        "txt".to_string(),
-        FormatterLanguageConfig {
-            command: vec![script.to_string_lossy().to_string()],
+    let mut overrides = BTreeMap::new();
+    overrides.insert(
+        "_lang_txt".to_string(),
+        FormatterOverride {
+            disabled: false,
+            command: Some(vec![script.to_string_lossy().to_string()]),
+            environment: None,
+            extensions: Some(vec![".txt".to_string()]),
         },
     );
     let config = FormatterConfig {
         enabled: true,
-        languages,
+        experimental_oxfmt: false,
+        overrides,
     };
 
     let file_path = workspace.join("test.txt");
@@ -167,7 +171,8 @@ pub(super) async fn formatter_disabled_skips_command() {
 
     let config = FormatterConfig {
         enabled: false,
-        languages: BTreeMap::new(),
+        experimental_oxfmt: false,
+        overrides: BTreeMap::new(),
     };
 
     run_formatter_for_path(&config, &workspace, "test.txt")
@@ -187,7 +192,8 @@ pub(super) async fn formatter_missing_language_is_no_op() {
 
     let config = FormatterConfig {
         enabled: true,
-        languages: BTreeMap::new(),
+        experimental_oxfmt: false,
+        overrides: BTreeMap::new(),
     };
 
     run_formatter_for_path(&config, &workspace, "test.unknown")
@@ -205,16 +211,20 @@ pub(super) async fn formatter_failure_returns_warning_without_panic() {
     let file_path = workspace.join("test.txt");
     fs::write(&file_path, "content").expect("write file");
 
-    let mut languages = BTreeMap::new();
-    languages.insert(
-        "txt".to_string(),
-        FormatterLanguageConfig {
-            command: vec!["false".to_string()],
+    let mut overrides = BTreeMap::new();
+    overrides.insert(
+        "_lang_txt".to_string(),
+        FormatterOverride {
+            disabled: false,
+            command: Some(vec!["false".to_string()]),
+            environment: None,
+            extensions: Some(vec![".txt".to_string()]),
         },
     );
     let config = FormatterConfig {
         enabled: true,
-        languages,
+        experimental_oxfmt: false,
+        overrides,
     };
 
     let err = run_formatter_for_path(&config, &workspace, "test.txt")
