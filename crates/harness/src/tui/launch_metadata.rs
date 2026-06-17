@@ -42,6 +42,7 @@ pub(super) fn interactive_launch_metadata(
                 profile_description: metadata.profile_description,
                 reasoning_effort: metadata.reasoning_effort,
                 text_verbosity: metadata.text_verbosity,
+                thinking: metadata.thinking,
                 recommended_for: metadata.recommended_for,
             })
         })
@@ -146,6 +147,7 @@ fn configured_profile_model_options(
                 profile_description: profile_description.clone(),
                 reasoning_effort: entry.reasoning_effort.clone(),
                 text_verbosity: entry.text_verbosity.clone(),
+                thinking: entry.thinking.clone(),
                 recommended_for: entry.recommended_for.clone(),
             };
 
@@ -185,6 +187,7 @@ fn configured_profile_model_options(
                     profile_description: profile_description.clone(),
                     reasoning_effort: entry.reasoning_effort.clone(),
                     text_verbosity: entry.text_verbosity.clone(),
+                    thinking: entry.thinking.clone(),
                     recommended_for: entry.recommended_for.clone(),
                 };
 
@@ -211,6 +214,7 @@ fn configured_profile_model_options(
                 profile_description: metadata.profile_description,
                 reasoning_effort: metadata.reasoning_effort,
                 text_verbosity: metadata.text_verbosity,
+                thinking: metadata.thinking,
                 recommended_for: metadata.recommended_for,
             };
 
@@ -292,6 +296,7 @@ pub(super) fn launch_metadata_model_settings(
         reasoning_summary: launch_metadata
             .reasoning_effort()
             .map(|_| "auto".to_string()),
+        thinking: launch_metadata.thinking().cloned(),
     }
 }
 
@@ -317,6 +322,7 @@ fn launch_metadata_from_recorded_runtime_context(
         profile_description: recorded_runtime_context.profile_description.clone(),
         reasoning_effort: recorded_runtime_context.reasoning_effort.clone(),
         text_verbosity: recorded_runtime_context.text_verbosity.clone(),
+        thinking: recorded_runtime_context.thinking.clone(),
         recommended_for: recorded_runtime_context.recommended_for.clone(),
     })
 }

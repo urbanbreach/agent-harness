@@ -58,6 +58,7 @@ fn continue_metadata_prefers_recorded_runtime_context_before_event_inference() {
         recommended_for: Some("deep work".to_string()),
         reasoning_effort: Some("high".to_string()),
         text_verbosity: Some("medium".to_string()),
+        thinking: None,
     };
 
     let metadata = continue_launch_metadata(
@@ -117,6 +118,7 @@ fn replay_launch_metadata_prefers_recorded_runtime_context_before_event_inferenc
         recommended_for: None,
         reasoning_effort: None,
         text_verbosity: None,
+        thinking: None,
     };
 
     let metadata = replay_launch_metadata(Some(&recorded_runtime_context), &historical_events);
