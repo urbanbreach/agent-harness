@@ -18,6 +18,7 @@ pub(crate) use ui_chrome_exact_tests::{
     exact_test_live_composer_reserves_right_gap,
     exact_test_live_control_dock_collapses_disclosure_before_status,
     exact_test_live_control_dock_renders_shared_surface,
+    exact_test_retry_summary_segment_prioritizes_retry_indicator,
     exact_test_startup_disclosure_matches_harness_hint_row,
     exact_test_subagent_footer_matches_harness_layout,
     exact_test_subagent_replay_suppresses_parent_replay_dock,
@@ -941,6 +942,14 @@ fn build_control_dock_view_model(
 fn control_dock_summary_segment(
     app: &AppState,
 ) -> Option<crate::view_model::ControlDockSummarySegment> {
+    if let Some(retry) = app.active_retry_metadata() {
+        let text = format!("retry {}/{}", retry.attempt, retry.max_attempts);
+        return Some(crate::view_model::ControlDockSummarySegment {
+            kind: crate::view_model::ControlDockSummarySegmentKind::Retry,
+            text,
+            tone: crate::view_model::ControlDockSummaryTone::Warning,
+        });
+    }
     if let Some((text, tone)) = tool_status_summary(app) {
         return Some(crate::view_model::ControlDockSummarySegment {
             kind: crate::view_model::ControlDockSummarySegmentKind::Tool,

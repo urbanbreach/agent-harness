@@ -113,6 +113,7 @@ pub(crate) enum ControlDockVariant {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ControlDockSummarySegmentKind {
+    Retry,
     Orchestration,
     Tool,
 }

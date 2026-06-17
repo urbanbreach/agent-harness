@@ -368,6 +368,58 @@ pub(crate) fn exact_test_tool_status_summary_uses_effective_tool_identity() {
 }
 
 #[cfg(test)]
+pub(crate) fn exact_test_retry_summary_segment_prioritizes_retry_indicator() {
+    let mut app = AppState::new_live(None, false, None);
+    app.activities.push_front(ActivityEntry {
+        request_id: "req_retry".to_string(),
+        profile_label: "build".to_string(),
+        model_id: "gpt-5.4".to_string(),
+        provider_id: "default".to_string(),
+        status: ActivityStatus::Streaming,
+        user_message: None,
+        user_timestamp: None,
+        request_data: Some(harness_core::event::ProviderRequestStartedEvent {
+            request_id: "req_retry".to_string(),
+            provider_id: "default".to_string(),
+            model_id: "gpt-5.4".to_string(),
+            prompt_summary: "prompt summary".to_string(),
+            request_digest: "digest-retry".to_string(),
+            metadata: Some(harness_core::event::ProviderRequestStartedMetadata {
+                retry: Some(harness_core::event::ProviderRequestRetryMetadata {
+                    attempt: 2,
+                    max_attempts: 5,
+                    delay_ms: None,
+                    category: None,
+                }),
+                ..harness_core::event::ProviderRequestStartedMetadata::default()
+            }),
+        }),
+        thinking_text: String::new(),
+        transcript_text: String::new(),
+        usage: None,
+        cache_usage: None,
+        error_message: None,
+        permissions: Vec::new(),
+        tool_calls: Vec::new(),
+        first_seq: 1,
+        last_seq: 1,
+        first_mono_ms: 1,
+        last_mono_ms: 1,
+    });
+
+    let summary = control_dock_summary_segment(&app).expect("retry summary segment");
+    assert_eq!(
+        summary.kind,
+        crate::view_model::ControlDockSummarySegmentKind::Retry
+    );
+    assert_eq!(summary.text, "retry 2/5");
+    assert_eq!(
+        summary.tone,
+        crate::view_model::ControlDockSummaryTone::Warning
+    );
+}
+
+#[cfg(test)]
 pub(crate) fn exact_test_live_composer_reserves_right_gap() {
     let mut app = AppState::new_live(None, false, None);
     let mut events = crate::lib_tests::session_view_events();
