@@ -4,7 +4,7 @@ use std::{
 };
 
 use super::{
-    resolve_profile_model_metadata, ConfigError, HarnessConfig, HookRuntimeConfig,
+    resolve_profile_model_metadata, ConfigError, FormatterConfig, HarnessConfig, HookRuntimeConfig,
     IntegrationsConfig, LspConfig, McpServerConnectionState, ResolvedProfileModelMetadata,
     SkillsConfig,
 };
@@ -21,6 +21,7 @@ static MCP_SERVER_CONNECTION_REGISTRY: OnceLock<Mutex<BTreeMap<String, McpServer
 static MCP_SERVER_FIRST_CLASS_TOOL_ID_REGISTRY: OnceLock<
     Mutex<BTreeMap<String, BTreeMap<String, String>>>,
 > = OnceLock::new();
+static FORMATTER_CONFIG_REGISTRY: OnceLock<Mutex<Option<FormatterConfig>>> = OnceLock::new();
 
 fn profile_model_metadata_registry(
 ) -> &'static Mutex<BTreeMap<String, ResolvedProfileModelMetadata>> {
@@ -50,6 +51,10 @@ fn mcp_server_connection_registry() -> &'static Mutex<BTreeMap<String, McpServer
 fn mcp_server_first_class_tool_id_registry(
 ) -> &'static Mutex<BTreeMap<String, BTreeMap<String, String>>> {
     MCP_SERVER_FIRST_CLASS_TOOL_ID_REGISTRY.get_or_init(|| Mutex::new(BTreeMap::new()))
+}
+
+fn formatter_config_registry() -> &'static Mutex<Option<FormatterConfig>> {
+    FORMATTER_CONFIG_REGISTRY.get_or_init(|| Mutex::new(None))
 }
 
 fn with_registry_lock<T, U>(registry: &'static Mutex<T>, f: impl FnOnce(&mut T) -> U) -> U {
@@ -94,6 +99,10 @@ fn with_mcp_server_first_class_tool_id_registry<T>(
     f: impl FnOnce(&mut BTreeMap<String, BTreeMap<String, String>>) -> T,
 ) -> T {
     with_registry_lock(mcp_server_first_class_tool_id_registry(), f)
+}
+
+fn with_formatter_config_registry<T>(f: impl FnOnce(&mut Option<FormatterConfig>) -> T) -> T {
+    with_registry_lock(formatter_config_registry(), f)
 }
 
 pub fn refresh_profile_model_metadata_registry(cfg: &HarnessConfig) -> Result<(), ConfigError> {
@@ -223,6 +232,16 @@ pub fn set_registered_lsp_config(config: LspConfig) {
 
 pub fn registered_lsp_config() -> LspConfig {
     with_lsp_config_registry(|registered| registered.clone())
+}
+
+pub fn set_registered_formatter_config(config: FormatterConfig) {
+    with_formatter_config_registry(|registered| {
+        *registered = Some(config);
+    });
+}
+
+pub fn registered_formatter_config() -> Option<FormatterConfig> {
+    with_formatter_config_registry(|registered| registered.clone())
 }
 
 pub fn registered_profile_model_metadata(profile: &str) -> Option<ResolvedProfileModelMetadata> {

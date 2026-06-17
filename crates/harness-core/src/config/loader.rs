@@ -217,6 +217,7 @@ fn finalize_loaded_config(
     refresh_lsp_config_registry(&parsed);
     refresh_integrations_config_registry(&parsed);
     refresh_profile_model_metadata_registry(&parsed)?;
+    set_registered_formatter_config(parsed.formatter.clone());
     Ok(parsed)
 }
 
@@ -241,6 +242,7 @@ fn finalize_loaded_config_with_current_dir(
     refresh_lsp_config_registry(&parsed);
     refresh_integrations_config_registry(&parsed);
     refresh_profile_model_metadata_registry(&parsed)?;
+    set_registered_formatter_config(parsed.formatter.clone());
     Ok(parsed)
 }
 
