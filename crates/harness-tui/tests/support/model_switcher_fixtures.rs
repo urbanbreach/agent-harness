@@ -117,6 +117,7 @@ pub(crate) fn build_plan_models() -> Vec<ModelOption> {
             profile_description: Some("Writer".to_string()),
             reasoning_effort: Some("minimal".to_string()),
             text_verbosity: Some("low".to_string()),
+            thinking: None,
             recommended_for: Some("planning".to_string()),
         },
     ]
@@ -142,6 +143,7 @@ pub(crate) fn multi_provider_models() -> Vec<ModelOption> {
             profile_description: Some("Build".to_string()),
             reasoning_effort: None,
             text_verbosity: None,
+            thinking: None,
             recommended_for: None,
         },
         ModelOption {
@@ -162,6 +164,7 @@ pub(crate) fn multi_provider_models() -> Vec<ModelOption> {
             profile_description: Some("Build".to_string()),
             reasoning_effort: None,
             text_verbosity: None,
+            thinking: None,
             recommended_for: None,
         },
     ]
@@ -187,6 +190,7 @@ pub(crate) fn duplicate_build_plan_models() -> Vec<ModelOption> {
             profile_description: Some("Build".to_string()),
             reasoning_effort: Some("minimal".to_string()),
             text_verbosity: Some("low".to_string()),
+            thinking: None,
             recommended_for: Some("build".to_string()),
         },
         ModelOption {
@@ -207,6 +211,7 @@ pub(crate) fn duplicate_build_plan_models() -> Vec<ModelOption> {
             profile_description: Some("Plan".to_string()),
             reasoning_effort: Some("minimal".to_string()),
             text_verbosity: Some("low".to_string()),
+            thinking: None,
             recommended_for: Some("planning".to_string()),
         },
     ]
@@ -232,6 +237,7 @@ pub(crate) fn same_profile_variant_options() -> Vec<ModelOption> {
             profile_description: Some("Deep work".to_string()),
             reasoning_effort: Some("minimal".to_string()),
             text_verbosity: Some("low".to_string()),
+            thinking: None,
             recommended_for: Some("deep debugging".to_string()),
         },
         ModelOption {
@@ -252,6 +258,7 @@ pub(crate) fn same_profile_variant_options() -> Vec<ModelOption> {
             profile_description: Some("Deep work".to_string()),
             reasoning_effort: Some("high".to_string()),
             text_verbosity: Some("high".to_string()),
+            thinking: None,
             recommended_for: Some("novel drafting".to_string()),
         },
     ]
@@ -282,6 +289,7 @@ pub(crate) fn reasoning_order_variant_options() -> Vec<ModelOption> {
         profile_description: Some("Deep work".to_string()),
         reasoning_effort: Some(reasoning_effort.to_string()),
         text_verbosity: Some("medium".to_string()),
+        thinking: None,
         recommended_for: None,
     })
     .collect()
@@ -309,6 +317,7 @@ pub(crate) fn config_backed_profile_model_options(profile: &str) -> Vec<ModelOpt
             profile_description: None,
             reasoning_effort: entry.reasoning_effort,
             text_verbosity: entry.text_verbosity,
+            thinking: entry.thinking,
             recommended_for: entry.recommended_for,
         })
         .collect()

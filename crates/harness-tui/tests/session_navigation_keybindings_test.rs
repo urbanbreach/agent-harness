@@ -171,6 +171,7 @@ fn continued_runtime_model_options() -> Vec<ModelOption> {
             profile_description: Some("Deep work".to_string()),
             reasoning_effort: None,
             text_verbosity: None,
+            thinking: None,
             recommended_for: None,
         },
         ModelOption {
@@ -191,6 +192,7 @@ fn continued_runtime_model_options() -> Vec<ModelOption> {
             profile_description: Some("Deep work".to_string()),
             reasoning_effort: None,
             text_verbosity: None,
+            thinking: None,
             recommended_for: None,
         },
     ]

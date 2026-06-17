@@ -265,6 +265,7 @@ fn authenticated_builtin_models() -> Vec<harness_tui::app::ModelOption> {
             profile_description: Some("Build".to_string()),
             reasoning_effort: None,
             text_verbosity: None,
+            thinking: None,
             recommended_for: None,
         },
         harness_tui::app::ModelOption {
@@ -285,6 +286,7 @@ fn authenticated_builtin_models() -> Vec<harness_tui::app::ModelOption> {
             profile_description: Some("Build".to_string()),
             reasoning_effort: None,
             text_verbosity: None,
+            thinking: None,
             recommended_for: None,
         },
     ]

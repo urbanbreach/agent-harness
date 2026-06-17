@@ -396,6 +396,7 @@ fn live_control_dock_keeps_current_runtime_primary_and_next_turn_secondary() {
         profile_description: Some("Deep work".to_string()),
         reasoning_effort: None,
         text_verbosity: None,
+        thinking: None,
         recommended_for: None,
     };
     let alternate = ModelOption {
@@ -416,6 +417,7 @@ fn live_control_dock_keeps_current_runtime_primary_and_next_turn_secondary() {
         profile_description: Some("Deep work".to_string()),
         reasoning_effort: None,
         text_verbosity: None,
+        thinking: None,
         recommended_for: None,
     };
 
@@ -461,6 +463,7 @@ fn continued_live_control_dock_preserves_continued_runtime_after_switch() {
         profile_description: Some("Deep work".to_string()),
         reasoning_effort: None,
         text_verbosity: None,
+        thinking: None,
         recommended_for: None,
     };
     let alternate = ModelOption {
@@ -481,6 +484,7 @@ fn continued_live_control_dock_preserves_continued_runtime_after_switch() {
         profile_description: Some("Deep work".to_string()),
         reasoning_effort: None,
         text_verbosity: None,
+        thinking: None,
         recommended_for: None,
     };
 

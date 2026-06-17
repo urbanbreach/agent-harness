@@ -31,6 +31,7 @@ pub(crate) fn exact_test_startup_shell_keeps_no_default_tab_chrome_after_runtime
             profile_description: Some("Deep work".to_string()),
             reasoning_effort: None,
             text_verbosity: None,
+            thinking: None,
             recommended_for: None,
         },
     ));
@@ -71,6 +72,7 @@ pub(crate) fn exact_test_replay_prompt_pane_is_visibly_read_only() {
             profile_description: Some("Archive".to_string()),
             reasoning_effort: None,
             text_verbosity: None,
+            thinking: None,
             recommended_for: None,
         },
     ));
