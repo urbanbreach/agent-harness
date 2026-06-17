@@ -2,6 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::agent::AgentModelRef;
 use crate::config::{registered_profile_model_metadata, ResolvedProfileModelMetadata};
@@ -47,6 +48,8 @@ pub struct RecordedRuntimeContext {
     pub recommended_for: Option<String>,
     pub reasoning_effort: Option<String>,
     pub text_verbosity: Option<String>,
+    #[serde(default)]
+    pub thinking: Option<Value>,
 }
 
 impl RecordedRuntimeContext {
@@ -77,6 +80,7 @@ impl RecordedRuntimeContext {
             recommended_for: None,
             reasoning_effort: None,
             text_verbosity: None,
+            thinking: None,
         }
     }
 }
@@ -102,6 +106,7 @@ impl From<ResolvedProfileModelMetadata> for RecordedRuntimeContext {
             recommended_for: metadata.recommended_for,
             reasoning_effort: metadata.reasoning_effort,
             text_verbosity: metadata.text_verbosity,
+            thinking: metadata.thinking,
         }
     }
 }
