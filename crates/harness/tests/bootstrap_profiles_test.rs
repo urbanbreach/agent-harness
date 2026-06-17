@@ -249,6 +249,7 @@ fn family_prompt_model_target(
         reasoning_effort: None,
         text_verbosity: None,
         reasoning_summary: None,
+        thinking: None,
         resolution: harness_core::model_resolution::ModelResolution {
             family: model_family,
             family_source: harness_core::model_resolution::ModelFamilySource::Metadata,

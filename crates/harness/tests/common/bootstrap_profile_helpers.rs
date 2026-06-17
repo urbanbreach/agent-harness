@@ -19,6 +19,7 @@ fn snapshot_model_target() -> ResolvedModelTarget {
         reasoning_effort: Some("high".to_string()),
         text_verbosity: None,
         reasoning_summary: None,
+        thinking: None,
         resolution,
     }
 }

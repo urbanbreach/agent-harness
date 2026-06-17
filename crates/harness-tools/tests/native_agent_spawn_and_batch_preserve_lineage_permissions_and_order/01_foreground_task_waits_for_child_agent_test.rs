@@ -157,6 +157,7 @@ async fn task_subagent_inherits_parent_turn_model_when_profile_model_is_defaulte
                 reasoning_effort: Some("high".to_string()),
                 text_verbosity: Some("low".to_string()),
                 reasoning_summary: Some("auto".to_string()),
+                thinking: None,
             }),
         )
         .await
@@ -226,6 +227,7 @@ async fn task_subagent_keeps_explicit_profile_model_over_parent_turn_model() {
                 reasoning_effort: Some("high".to_string()),
                 text_verbosity: Some("low".to_string()),
                 reasoning_summary: Some("auto".to_string()),
+                thinking: None,
             }),
         )
         .await
