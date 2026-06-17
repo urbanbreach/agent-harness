@@ -14,6 +14,7 @@ fn provider_boundary_preserves_existing_message_shape() {
             reasoning_effort: Some("high".to_string()),
             text_verbosity: Some("low".to_string()),
             reasoning_summary: Some("auto".to_string()),
+            thinking: None,
         },
     };
     let prior_context = ProviderContext {
@@ -107,6 +108,7 @@ fn provider_boundary_preserves_existing_message_shape() {
             reasoning_effort: Some("high".to_string()),
             text_verbosity: Some("low".to_string()),
             reasoning_summary: Some("auto".to_string()),
+            thinking: None,
             tools: Some(tool_defs),
             tool_choice: Some(ToolChoice::Auto),
             context: Default::default(),

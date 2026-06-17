@@ -74,6 +74,7 @@ async fn recorded_runtime_context_meta_roundtrips() {
         recommended_for: Some("deep".to_string()),
         reasoning_effort: Some("minimal".to_string()),
         text_verbosity: Some("low".to_string()),
+        thinking: None,
     };
 
     assert_eq!(metadata.run_id, run.run_id);

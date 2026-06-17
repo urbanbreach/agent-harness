@@ -310,6 +310,7 @@ pub(super) fn test_mock_provider() -> MockProvider {
             reasoning_effort: None,
             text_verbosity: None,
             reasoning_summary: None,
+            thinking: None,
             tools: None,
             tool_choice: None,
             context: Default::default(),

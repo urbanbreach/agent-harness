@@ -215,6 +215,7 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
         reasoning_effort: None,
         text_verbosity: None,
         reasoning_summary: None,
+        thinking: None,
         tools: Some(tool_defs.clone()),
         tool_choice: Some(harness_providers::ToolChoice::Auto),
         context: Default::default(),
