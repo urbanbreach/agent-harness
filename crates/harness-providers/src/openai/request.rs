@@ -25,6 +25,8 @@ pub(super) struct OpenAiChatCompletionsRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     text_verbosity: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    thinking: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     tools: Option<Vec<OpenAiChatTool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_choice: Option<ToolChoice>,
@@ -52,6 +54,7 @@ impl OpenAiChatCompletionsRequest {
             reasoning_effort,
             text_verbosity,
             reasoning_summary: _,
+            thinking,
             tools,
             tool_choice,
             context,
@@ -68,6 +71,7 @@ impl OpenAiChatCompletionsRequest {
             max_tokens,
             reasoning_effort,
             text_verbosity,
+            thinking,
             tools: map_tools(tools),
             tool_choice,
             stream,
@@ -184,6 +188,8 @@ pub(super) struct OpenAiResponsesRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     text: Option<OpenAiResponsesText>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    thinking: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     tools: Option<Vec<OpenAiResponsesTool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_choice: Option<ToolChoice>,
@@ -212,6 +218,7 @@ impl OpenAiResponsesRequest {
             reasoning_effort,
             text_verbosity,
             reasoning_summary,
+            thinking,
             tools,
             tool_choice,
             context,
@@ -239,6 +246,7 @@ impl OpenAiResponsesRequest {
                 },
             ),
             text: text_verbosity.map(|verbosity| OpenAiResponsesText { verbosity }),
+            thinking,
             tools: map_tools(tools),
             tool_choice,
             stream,
