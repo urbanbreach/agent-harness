@@ -1,5 +1,6 @@
 use harness_core::agent::AgentModelRef;
 use harness_core::config::{registered_profile_model_metadata, ResolvedProfileModelMetadata};
+use serde_json::Value;
 
 use crate::text::has_trimmed_content;
 
@@ -40,6 +41,7 @@ pub struct LaunchMetadata {
     description: Option<String>,
     reasoning_effort: Option<String>,
     text_verbosity: Option<String>,
+    thinking: Option<Value>,
     recommended_for: Option<String>,
     mode_label: Option<String>,
     available_models: Vec<ModelOption>,
@@ -82,6 +84,7 @@ impl LaunchMetadata {
             description: None,
             reasoning_effort: None,
             text_verbosity: None,
+            thinking: None,
             recommended_for: None,
             mode_label: None,
             available_models: Vec::new(),
@@ -117,6 +120,7 @@ impl LaunchMetadata {
             description: option.description.clone(),
             reasoning_effort: option.reasoning_effort.clone(),
             text_verbosity: option.text_verbosity.clone(),
+            thinking: option.thinking.clone(),
             recommended_for: option.recommended_for.clone(),
             mode_label: None,
             available_models: Vec::new(),
@@ -243,6 +247,13 @@ impl LaunchMetadata {
         self.fallback_model_option_label(&self.text_verbosity, ModelOption::text_verbosity)
     }
 
+    pub fn thinking(&self) -> Option<&Value> {
+        self.thinking.as_ref().or_else(|| {
+            self.matching_available_model()
+                .and_then(|option| option.thinking.as_ref())
+        })
+    }
+
     pub fn recommended_for(&self) -> Option<&str> {
         self.fallback_model_option_label(&self.recommended_for, ModelOption::recommended_for)
     }
@@ -282,6 +293,7 @@ impl LaunchMetadata {
             profile_description: self.profile_description().map(str::to_string),
             reasoning_effort: self.reasoning_effort().map(str::to_string),
             text_verbosity: self.text_verbosity().map(str::to_string),
+            thinking: self.thinking().cloned(),
             recommended_for: self.recommended_for().map(str::to_string),
         })
     }
@@ -311,6 +323,7 @@ impl LaunchMetadata {
         self.description = metadata.description.clone();
         self.reasoning_effort = metadata.reasoning_effort.clone();
         self.text_verbosity = metadata.text_verbosity.clone();
+        self.thinking = metadata.thinking.clone();
         self.recommended_for = metadata.recommended_for.clone();
     }
 
@@ -387,6 +400,7 @@ pub struct ModelOption {
     pub profile_description: Option<String>,
     pub reasoning_effort: Option<String>,
     pub text_verbosity: Option<String>,
+    pub thinking: Option<Value>,
     pub recommended_for: Option<String>,
 }
 
@@ -423,6 +437,7 @@ impl ModelOption {
             profile_description: None,
             reasoning_effort: None,
             text_verbosity: None,
+            thinking: None,
             recommended_for: None,
         };
         option.apply_registered_metadata();

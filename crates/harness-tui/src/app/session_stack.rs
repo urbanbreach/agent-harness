@@ -571,6 +571,7 @@ fn launch_metadata_from_recorded_runtime_context(
         profile_description: recorded_runtime_context.profile_description.clone(),
         reasoning_effort: recorded_runtime_context.reasoning_effort.clone(),
         text_verbosity: recorded_runtime_context.text_verbosity.clone(),
+        thinking: recorded_runtime_context.thinking.clone(),
         recommended_for: recorded_runtime_context.recommended_for.clone(),
     })
     .with_available_models(fallback.available_models().to_vec())

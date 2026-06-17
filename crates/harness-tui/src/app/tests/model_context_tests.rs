@@ -26,6 +26,7 @@ fn runtime_context_model_option(
         profile_description: None,
         reasoning_effort: None,
         text_verbosity: None,
+        thinking: None,
         recommended_for: None,
     }
 }
@@ -56,6 +57,7 @@ fn metadata_model_option(
         profile_description: profile_description.map(str::to_string),
         reasoning_effort: Some("high".to_string()),
         text_verbosity: None,
+        thinking: None,
         recommended_for: None,
     }
 }
