@@ -417,6 +417,7 @@ impl AppState {
             || (self.events.is_empty() && self.activities.is_empty());
         self.launch_metadata = launch_metadata.clone();
         self.seed_toggles_from_launch_metadata();
+        self.seed_toggles_from_formatter_config();
         if refresh_runtime_context {
             self.runtime_context_metadata = Some(launch_metadata);
         }
@@ -700,6 +701,7 @@ impl AppState {
                         profile_description: None,
                         reasoning_effort: None,
                         text_verbosity: None,
+                        thinking: None,
                         recommended_for: None,
                     };
                     options.insert(self.model_selector_option_for_active_profile(&option));
@@ -731,6 +733,7 @@ impl AppState {
                     profile_description: None,
                     reasoning_effort: None,
                     text_verbosity: None,
+                    thinking: None,
                     recommended_for: None,
                 };
                 options.insert(self.model_selector_option_for_active_profile(&option));

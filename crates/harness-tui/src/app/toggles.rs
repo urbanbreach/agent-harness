@@ -33,6 +33,7 @@ pub enum ToggleEntryKind {
     McpServer { name: String },
     AgentTool { agent: String, tool: String },
     AgentSkill { agent: String, skill: String },
+    Formatter { language: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,6 +107,7 @@ impl ToggleEntryKind {
             Self::McpServer { .. } => "MCP servers",
             Self::AgentTool { .. } => "Agent tools",
             Self::AgentSkill { .. } => "Agent skills",
+            Self::Formatter { .. } => "Formatters",
         }
     }
 }
@@ -286,6 +288,28 @@ impl AppState {
                 },
                 label: profile,
                 description: "Subagent profile".to_string(),
+                enabled: true,
+            });
+        }
+    }
+
+    pub(in crate::app) fn seed_toggles_from_formatter_config(&mut self) {
+        let Some(formatter_config) = harness_core::config::registered_formatter_config() else {
+            return;
+        };
+        if !formatter_config.enabled {
+            return;
+        }
+        for override_name in formatter_config.overrides.keys() {
+            let display_name = override_name
+                .strip_prefix("_lang_")
+                .unwrap_or(override_name);
+            self.add_toggle_entry_if_missing(ToggleEntryState {
+                kind: ToggleEntryKind::Formatter {
+                    language: display_name.to_string(),
+                },
+                label: display_name.to_string(),
+                description: "Formatter".to_string(),
                 enabled: true,
             });
         }
