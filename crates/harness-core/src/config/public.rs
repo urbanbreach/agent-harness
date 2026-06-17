@@ -611,18 +611,44 @@ fn normalize_public_mcp_servers(value: serde_json::Value) -> serde_json::Value {
     serde_json::Value::Object(normalized_servers)
 }
 
-fn translate_public_formatter_config(
+pub(super) fn translate_public_formatter_config(
     value: Option<&serde_json::Value>,
 ) -> Result<FormatterConfig, ConfigError> {
     match value {
         None => Ok(FormatterConfig::default()),
         Some(serde_json::Value::Bool(false)) => Ok(FormatterConfig {
             enabled: false,
-            languages: BTreeMap::new(),
+            ..FormatterConfig::default()
         }),
         Some(serde_json::Value::Bool(true)) => Ok(FormatterConfig::default()),
-        Some(value) => serde_json::from_value(value.clone())
-            .map_err(|err| ConfigError::ParseJson5(err.to_string())),
+        Some(value) => {
+            let serde_json::Value::Object(mut object) = value.clone() else {
+                return Err(ConfigError::ParseJson5(
+                    "formatter must be a boolean or an object".to_string(),
+                ));
+            };
+            if let Some(languages) = object.remove("languages") {
+                let languages = languages.as_object().ok_or_else(|| {
+                    ConfigError::ParseJson5("formatter.languages must be an object".to_string())
+                })?;
+                for (extension, language_value) in languages {
+                    let mut override_object = serde_json::Map::new();
+                    override_object.insert(
+                        "extensions".to_string(),
+                        serde_json::json!([format!(".{extension}")]),
+                    );
+                    if let Some(command) = language_value.get("command") {
+                        override_object.insert("command".to_string(), command.clone());
+                    }
+                    object.insert(
+                        format!("_lang_{extension}"),
+                        serde_json::Value::Object(override_object),
+                    );
+                }
+            }
+            serde_json::from_value(serde_json::Value::Object(object))
+                .map_err(|err| ConfigError::ParseJson5(err.to_string()))
+        }
     }
 }
 

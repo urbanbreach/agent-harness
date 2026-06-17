@@ -165,5 +165,6 @@ fn public_minimal_config_with_permission(permission: &str) -> String {
 mod agents_profiles_test;
 mod discovery_schema_test;
 mod env_assets_test;
+mod formatter_config_test;
 mod permissions_models_test;
 mod public_basics_test;

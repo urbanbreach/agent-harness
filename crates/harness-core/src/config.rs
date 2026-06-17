@@ -81,12 +81,12 @@ pub use self::registries::{
     clear_registered_mcp_server_first_class_tool_ids, refresh_hook_runtime_config_registry,
     refresh_integrations_config_registry, refresh_lsp_config_registry,
     refresh_profile_model_metadata_registry, refresh_skills_config_registry,
-    registered_hook_runtime_config, registered_integrations_config, registered_lsp_config,
-    registered_mcp_server_connection_state, registered_mcp_server_first_class_tool_id,
-    registered_profile_model_metadata, registered_skills_config,
-    set_registered_hook_runtime_config, set_registered_integrations_config,
-    set_registered_lsp_config, set_registered_mcp_server_connection_states,
-    set_registered_mcp_server_first_class_tool_ids,
+    registered_formatter_config, registered_hook_runtime_config, registered_integrations_config,
+    registered_lsp_config, registered_mcp_server_connection_state,
+    registered_mcp_server_first_class_tool_id, registered_profile_model_metadata,
+    registered_skills_config, set_registered_formatter_config, set_registered_hook_runtime_config,
+    set_registered_integrations_config, set_registered_lsp_config,
+    set_registered_mcp_server_connection_states, set_registered_mcp_server_first_class_tool_ids,
 };
 use self::validation::{
     is_blank_config_value, validate_hook_definitions, validate_lsp_overrides, validate_mcp_servers,
@@ -270,28 +270,42 @@ pub struct UiParityKeybindingsConfig {
     pub variant_cycle: Option<String>,
 }
 
+/// Runtime formatter configuration.
+///
+/// `deny_unknown_fields` is intentionally omitted because `#[serde(flatten)]`
+/// on the per-formatter overrides map allows arbitrary formatter-name keys in
+/// the public object form; serde would otherwise reject those keys as unknown.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
 pub struct FormatterConfig {
     #[serde(default = "default_formatter_enabled")]
     pub enabled: bool,
-    #[serde(default)]
-    pub languages: BTreeMap<String, FormatterLanguageConfig>,
+    #[serde(default, alias = "experimentalOxfmt")]
+    pub experimental_oxfmt: bool,
+    #[serde(flatten, default)]
+    pub overrides: BTreeMap<String, FormatterOverride>,
 }
 
 impl Default for FormatterConfig {
     fn default() -> Self {
         Self {
             enabled: default_formatter_enabled(),
-            languages: BTreeMap::new(),
+            experimental_oxfmt: false,
+            overrides: BTreeMap::new(),
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct FormatterLanguageConfig {
-    pub command: Vec<String>,
+pub struct FormatterOverride {
+    #[serde(default)]
+    pub disabled: bool,
+    #[serde(default)]
+    pub command: Option<Vec<String>>,
+    #[serde(default)]
+    pub environment: Option<BTreeMap<String, String>>,
+    #[serde(default)]
+    pub extensions: Option<Vec<String>>,
 }
 
 fn default_formatter_enabled() -> bool {
