@@ -610,6 +610,7 @@ fn resolve_prompt_model_override(
         model_settings.variant = resolved.variant.clone();
         model_settings.reasoning_effort = resolved.reasoning_effort.clone();
         model_settings.text_verbosity = resolved.text_verbosity.clone();
+        model_settings.thinking = resolved.thinking.clone();
         model_settings.reasoning_summary = if resolved
             .resolution
             .capabilities

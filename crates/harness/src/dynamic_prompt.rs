@@ -586,6 +586,7 @@ mod tests {
             reasoning_effort: None,
             text_verbosity: None,
             reasoning_summary: None,
+            thinking: None,
             resolution,
         }
     }
