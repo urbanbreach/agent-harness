@@ -222,6 +222,7 @@ pub(in crate::coord) async fn generate_harness_session_title(
             reasoning_effort: None,
             text_verbosity: None,
             reasoning_summary: None,
+            thinking: None,
             tools: None,
             tool_choice: None,
             context: Default::default(),
