@@ -326,29 +326,100 @@
         "gpt-5.1": { "name": "GPT 5.1" },
       },
     },
+    "umans-ai-coding-plan": {
+      "type": "openai_compatible",
+      "name": "Umans AI Coding Plan",
+      "options": {
+        "apiMode": "chat_completions",
+        "baseURL": "https://api.code.umans.ai/v1",
+        "apiKeyEnv": ["UMANS_AI_CODING_PLAN_API_KEY"],
+        "timeoutMs": 1800000,
+      },
+      "models": {
+        "umans-coder": {
+          "name": "Coder",
+          "limit": { "context": 262144, "input": 262144, "output": 262144 },
+          "modalities": {
+            "input": ["text", "image"],
+            "output": ["text"],
+          },
+        },
+        "umans-flash": {
+          "name": "Flash",
+          "limit": { "context": 262144, "input": 262144, "output": 262144 },
+          "modalities": {
+            "input": ["text", "image"],
+            "output": ["text"],
+          },
+        },
+        "umans-glm-5.1": {
+          "name": "GLM 5.1",
+          "limit": { "context": 202752, "input": 202752, "output": 131072 },
+          "modalities": {
+            "input": ["text"],
+            "output": ["text"],
+          },
+        },
+        "umans-glm-5.2": {
+          "name": "GLM 5.2",
+          "limit": { "context": 405504, "input": 405504, "output": 131072 },
+          "modalities": {
+            "input": ["text"],
+            "output": ["text"],
+          },
+        },
+        "umans-kimi-k2.6": {
+          "name": "Kimi K2.6",
+          "limit": { "context": 262144, "input": 262144, "output": 262144 },
+          "modalities": {
+            "input": ["text", "image"],
+            "output": ["text"],
+          },
+          "options": {
+            "thinking": { "type": "enabled", "budgetTokens": 32000 }
+          },
+        },
+        "umans-kimi-k2.7": {
+          "name": "Kimi K2.7 Code",
+          "limit": { "context": 262144, "input": 262144, "output": 262144 },
+          "modalities": {
+            "input": ["text", "image"],
+            "output": ["text"],
+          },
+          "options": {
+            "thinking": { "type": "enabled", "budgetTokens": 32000 }
+          },
+        },
+        "umans-qwen3.6-35b-a3b": {
+          "name": "Qwen3.6 35B A3B",
+          "limit": { "context": 262144, "input": 262144, "output": 262144 },
+          "modalities": {
+            "input": ["text", "image"],
+            "output": ["text"],
+          },
+        },
+      },
+    },
   },
 
   // Default primary model and smaller model used by hidden/background agents.
-  "model": "default/gpt-5.4",
-  "small_model": "default/gpt-5.4-mini",
+  "model": "umans-ai-coding-plan/umans-kimi-k2.7",
+  "small_model": "umans-ai-coding-plan/umans-flash",
 
   // Built-in agents are listed explicitly for discoverability. Use enable:false
   // (or enabled:false) to remove one; add model/prompt/tools only for overrides.
   "agent": {
     "build": {
       "enable": true,
-      "model": "default/gpt-5.5",
-      "variant": "high",
+      "model": "umans-ai-coding-plan/umans-kimi-k2.7",
     },
     "plan": {
       "enable": true,
-      "model": "default/gpt-5.5",
-      "variant": "xhigh",
+      "model": "umans-ai-coding-plan/umans-kimi-k2.7",
     },
     "general": {
       "enable": true,
-      "model": "default/gpt-5.4-mini",
-      "variant": "medium",
+      "model": "umans-ai-coding-plan/umans-kimi-k2.7",
     },
     "explore": {
       "enable": true,

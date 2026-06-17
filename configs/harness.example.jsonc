@@ -179,14 +179,13 @@
   "permission": "ask",
 
   // Optional auto-formatters applied after successful file edits.
-  // Use `formatter: false` to disable; omit the key for the default enabled state
-  // with no configured languages. Languages are keyed by lowercase extension.
+  // Use `formatter: false` to disable; omit the key to enable all built-in
+  // formatters by default. Entries are keyed by formatter name, not extension.
   "formatter": {
     "enabled": true,
-    "languages": {
-      "rs": { "command": ["rustfmt"] },
-      "py": { "command": ["ruff", "format", "-"] }
-    }
+    "rustfmt": {},
+    "biome": { "disabled": true },
+    "prettier": { "environment": { "BUN_BE_BUN": "1" } }
   },
 
   // Optional MCP servers. Disabled entries stay documented but do not launch.

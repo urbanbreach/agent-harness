@@ -82,8 +82,9 @@ fn root_runtime_example_uses_canonical_public_keys() {
         json5::from_str(&root_example).expect("parse root runtime example");
 
     assert_eq!(parsed.default_agent.as_deref(), Some("build"));
-    assert_eq!(parsed.model.as_deref(), Some("default/gpt-5.4"));
-    assert_eq!(parsed.small_model.as_deref(), Some("default/gpt-5.4-mini"));
+    assert_eq!(parsed.model.as_deref(), Some("umans-ai-coding-plan/umans-kimi-k2.7"));
+    assert_eq!(parsed.small_model.as_deref(), Some("umans-ai-coding-plan/umans-flash"));
+    assert!(parsed.provider.contains_key("umans-ai-coding-plan"));
     assert!(parsed.agent.build.is_some());
     assert!(parsed.agent.plan.is_some());
     assert!(parsed.agent.general.is_some());
