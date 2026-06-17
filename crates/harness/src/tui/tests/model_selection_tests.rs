@@ -147,6 +147,7 @@ fn persisted_model_selection_restores_valid_variant_for_active_profile() {
         profile_description: None,
         reasoning_effort: None,
         text_verbosity: None,
+        thinking: None,
         recommended_for: None,
     })
     .with_available_models(vec![
@@ -168,6 +169,7 @@ fn persisted_model_selection_restores_valid_variant_for_active_profile() {
             profile_description: None,
             reasoning_effort: None,
             text_verbosity: None,
+            thinking: None,
             recommended_for: None,
         },
         ModelOption {
@@ -188,6 +190,7 @@ fn persisted_model_selection_restores_valid_variant_for_active_profile() {
             profile_description: None,
             reasoning_effort: Some("high".to_string()),
             text_verbosity: None,
+            thinking: None,
             recommended_for: None,
         },
     ]);
@@ -277,6 +280,7 @@ fn persisted_model_selection_round_trips_model_json() {
         profile_description: None,
         reasoning_effort: None,
         text_verbosity: None,
+        thinking: None,
         recommended_for: None,
     });
 
