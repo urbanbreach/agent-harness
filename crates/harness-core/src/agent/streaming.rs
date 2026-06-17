@@ -968,6 +968,7 @@ pub fn default_model_settings_for_profile(profile_name: &str) -> AgentModelSetti
         } else {
             None
         },
+        thinking: metadata.thinking.clone(),
     }
 }
 

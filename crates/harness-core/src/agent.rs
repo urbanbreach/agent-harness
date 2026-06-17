@@ -105,6 +105,8 @@ pub struct AgentModelSettings {
     pub text_verbosity: Option<String>,
     #[serde(default)]
     pub reasoning_summary: Option<String>,
+    #[serde(default)]
+    pub thinking: Option<serde_json::Value>,
 }
 
 #[cfg(test)]
@@ -432,6 +434,7 @@ mod tests {
                 reasoning_effort: Some("high".to_string()),
                 text_verbosity: Some("low".to_string()),
                 reasoning_summary: Some("auto".to_string()),
+                thinking: None,
             },
             ..test_request()
         };
@@ -523,6 +526,7 @@ mod tests {
                 reasoning_effort: Some("high".to_string()),
                 text_verbosity: Some("low".to_string()),
                 reasoning_summary: Some("auto".to_string()),
+                thinking: None,
                 tools: Some(tool_defs),
                 tool_choice: Some(ToolChoice::Auto),
                 context: Default::default(),
@@ -743,6 +747,7 @@ mod tests {
             reasoning_effort: None,
             text_verbosity: None,
             reasoning_summary: None,
+            thinking: None,
             tools: Some(tool_defs.to_vec()),
             tool_choice: Some(ToolChoice::Auto),
             context: Default::default(),

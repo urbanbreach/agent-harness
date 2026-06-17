@@ -441,6 +441,7 @@ fn build_completion_request(input: CompletionRequestInput) -> CompletionRequest 
         reasoning_effort,
         text_verbosity,
         reasoning_summary,
+        thinking,
     } = model_settings;
 
     CompletionRequest {
@@ -453,6 +454,7 @@ fn build_completion_request(input: CompletionRequestInput) -> CompletionRequest 
         reasoning_effort,
         text_verbosity,
         reasoning_summary,
+        thinking,
         tools,
         tool_choice,
         context: ProviderRequestContext {
