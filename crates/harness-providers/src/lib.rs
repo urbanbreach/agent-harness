@@ -151,6 +151,8 @@ pub struct CompletionRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_summary: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<ToolDef>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<ToolChoice>,
@@ -478,6 +480,7 @@ mod tests {
             reasoning_effort: Some("low".to_string()),
             text_verbosity: Some("low".to_string()),
             reasoning_summary: Some("auto".to_string()),
+            thinking: None,
             tools: Some(vec![ToolDef {
                 tool_id: "fs.read".to_string(),
                 function_name: "filesystem_read".to_string(),
@@ -521,6 +524,7 @@ mod tests {
             reasoning_effort: None,
             text_verbosity: None,
             reasoning_summary: None,
+            thinking: None,
             tools: None,
             tool_choice: None,
             context: Default::default(),
