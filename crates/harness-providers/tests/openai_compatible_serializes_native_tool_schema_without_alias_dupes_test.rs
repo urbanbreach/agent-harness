@@ -149,6 +149,7 @@ fn native_surface_request() -> CompletionRequest {
         reasoning_effort: None,
         text_verbosity: None,
         reasoning_summary: None,
+        thinking: None,
         tools: Some(vec![
             ToolDef {
                 tool_id: "read".to_string(),
