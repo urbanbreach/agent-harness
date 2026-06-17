@@ -27,6 +27,8 @@ use session_history::{
 use status_dialog::render_status_dialog_overlay;
 #[cfg(test)]
 pub(crate) use status_dialog::{
+    exact_test_status_dialog_formatters_section_disabled_when_none,
+    exact_test_status_dialog_formatters_section_lists_enabled_language,
     exact_test_status_dialog_mcp_rows_match_harness_states,
     exact_test_status_dialog_render_snapshot_covers_harness_sections,
 };

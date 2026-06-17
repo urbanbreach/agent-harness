@@ -110,7 +110,11 @@ fn status_dialog_body_from_rows(
     let mut lines = Vec::new();
     append_status_dialog_mcp_section(&mut lines, mcp_rows, theme);
     append_status_dialog_lsp_section(&mut lines, lsp_rows, theme);
-    append_status_dialog_formatters_section(&mut lines, theme);
+    append_status_dialog_formatters_section(
+        &mut lines,
+        theme,
+        harness_core::config::registered_formatter_config().as_ref(),
+    );
     append_status_dialog_plugins_section(&mut lines, theme);
     Text::from(lines)
 }
@@ -155,8 +159,67 @@ fn append_status_dialog_lsp_section(
     lines.push(Line::default());
 }
 
-fn append_status_dialog_formatters_section(lines: &mut Vec<Line<'static>>, theme: &Theme) {
-    lines.push(status_dialog_plain_line("No Formatters", theme));
+fn append_status_dialog_formatters_section(
+    lines: &mut Vec<Line<'static>>,
+    theme: &Theme,
+    formatter_config: Option<&harness_core::config::FormatterConfig>,
+) {
+    let Some(formatter_config) = formatter_config else {
+        lines.push(status_dialog_row_line(
+            StatusDialogRow {
+                name: "disabled".to_string(),
+                suffix: None,
+                tone: StatusDialogTone::Muted,
+                enabled: false,
+            },
+            theme,
+        ));
+        lines.push(Line::default());
+        return;
+    };
+
+    if !formatter_config.enabled {
+        lines.push(status_dialog_row_line(
+            StatusDialogRow {
+                name: "disabled".to_string(),
+                suffix: None,
+                tone: StatusDialogTone::Muted,
+                enabled: false,
+            },
+            theme,
+        ));
+        lines.push(Line::default());
+        return;
+    }
+
+    if formatter_config.overrides.is_empty() {
+        lines.push(status_dialog_row_line(
+            StatusDialogRow {
+                name: "auto-detect".to_string(),
+                suffix: None,
+                tone: StatusDialogTone::Muted,
+                enabled: true,
+            },
+            theme,
+        ));
+        lines.push(Line::default());
+        return;
+    }
+
+    for override_name in formatter_config.overrides.keys() {
+        let display_name = override_name
+            .strip_prefix("_lang_")
+            .unwrap_or(override_name);
+        lines.push(status_dialog_row_line(
+            StatusDialogRow {
+                name: display_name.to_string(),
+                suffix: Some("configured".to_string()),
+                tone: StatusDialogTone::Success,
+                enabled: true,
+            },
+            theme,
+        ));
+    }
     lines.push(Line::default());
 }
 
@@ -331,6 +394,53 @@ pub(crate) fn exact_test_status_dialog_mcp_rows_match_harness_states() {
     assert_eq!(rows[2].name, "failed");
     assert_eq!(rows[2].suffix.as_deref(), Some("connection refused"));
     assert_eq!(rows[2].tone, StatusDialogTone::Error);
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_status_dialog_formatters_section_disabled_when_none() {
+    let theme = Theme::default();
+    let mut lines = Vec::new();
+    append_status_dialog_formatters_section(&mut lines, &theme, None);
+    assert_eq!(lines.len(), 2);
+    let row = lines[0]
+        .spans
+        .iter()
+        .map(|span| span.content.clone())
+        .collect::<String>();
+    assert!(row.contains("disabled"), "expected disabled label: {row}");
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_status_dialog_formatters_section_lists_enabled_language() {
+    let theme = Theme::default();
+    let mut config = harness_core::config::FormatterConfig {
+        enabled: true,
+        ..Default::default()
+    };
+    config.overrides.insert(
+        "rust".to_string(),
+        harness_core::config::FormatterOverride {
+            disabled: false,
+            command: Some(vec!["rustfmt".to_string()]),
+            environment: None,
+            extensions: Some(vec![".rs".to_string()]),
+        },
+    );
+
+    let mut lines = Vec::new();
+    append_status_dialog_formatters_section(&mut lines, &theme, Some(&config));
+
+    assert_eq!(lines.len(), 2);
+    let row = lines[0]
+        .spans
+        .iter()
+        .map(|span| span.content.clone())
+        .collect::<String>();
+    assert!(row.contains("rust"), "expected rust language label: {row}");
+    assert!(
+        row.contains("configured"),
+        "expected configured suffix: {row}"
+    );
 }
 
 #[cfg(test)]

@@ -1,6 +1,5 @@
 ---
 source: crates/harness-tui/src/ui_overlays/status_dialog.rs
-assertion_line: 389
 expression: "format!(\"{:#?}\", terminal.backend().buffer())"
 ---
 Buffer {
@@ -19,7 +18,7 @@ Buffer {
         "          1 LSP Servers                                                         ",
         "          • rust /workspace                                                     ",
         "                                                                                ",
-        "          No Formatters                                                         ",
+        "          • disabled                                                            ",
         "                                                                                ",
         "          No Plugins                                                            ",
         "                                                                                ",
@@ -78,8 +77,9 @@ Buffer {
         x: 8, y: 12, fg: Reset, bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
         x: 72, y: 12, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 8, y: 13, fg: Reset, bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
-        x: 10, y: 13, fg: Rgb(238, 238, 238), bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
-        x: 23, y: 13, fg: Reset, bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
+        x: 10, y: 13, fg: Rgb(128, 128, 128), bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
+        x: 12, y: 13, fg: Rgb(238, 238, 238), bg: Rgb(20, 20, 20), underline: Reset, modifier: BOLD,
+        x: 20, y: 13, fg: Reset, bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
         x: 72, y: 13, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 8, y: 14, fg: Reset, bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
         x: 72, y: 14, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
