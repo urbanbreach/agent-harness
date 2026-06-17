@@ -77,6 +77,7 @@ pub enum Action {
     Delete,
     /// Character input (prompt)
     Char(char),
+    RevertWorkspace,
 }
 
 impl Action {
@@ -119,6 +120,7 @@ impl Action {
             Action::Backspace => None,
             Action::Delete => None,
             Action::Char(_) => None,
+            Action::RevertWorkspace => None,
         }
     }
 
@@ -180,6 +182,7 @@ impl Action {
             Action::Backspace => "backspace",
             Action::Delete => "delete",
             Action::Char(_) => "char",
+            Action::RevertWorkspace => "revert_workspace",
         }
     }
 
@@ -264,6 +267,7 @@ impl FromStr for Action {
             "cursor_right" => Ok(Action::CursorRight),
             "backspace" => Ok(Action::Backspace),
             "delete" => Ok(Action::Delete),
+            "revert_workspace" => Ok(Action::RevertWorkspace),
             _ => Err(format!("unknown action: {s}")),
         }
     }

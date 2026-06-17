@@ -872,6 +872,9 @@ impl AppState {
             Action::FocusPrev => {
                 self.cycle_focus_backward();
             }
+            Action::RevertWorkspace => {
+                self.request_workspace_revert();
+            }
             _ => {}
         }
     }

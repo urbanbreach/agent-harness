@@ -253,6 +253,11 @@ const COMMAND_METADATA: &[CommandMetadata] = &[
         description: "Quit the application",
     },
     CommandMetadata {
+        id: "revert_workspace",
+        label: "Revert workspace",
+        description: "Revert workspace to the most recent snapshot",
+    },
+    CommandMetadata {
         id: "slash_new",
         label: "New",
         description: "Return to the home shell",
@@ -297,13 +302,18 @@ const COMMAND_METADATA: &[CommandMetadata] = &[
         label: "Compact",
         description: "Write a manual context checkpoint",
     },
+    CommandMetadata {
+        id: "slash_rename",
+        label: "Rename",
+        description: "Rename the current session",
+    },
 ];
 
 pub(super) fn command_metadata(id: &str) -> Option<&'static CommandMetadata> {
     COMMAND_METADATA.iter().find(|entry| entry.id == id)
 }
 
-const SLASH_COMMANDS: [SlashCommand; 17] = [
+const SLASH_COMMANDS: [SlashCommand; 18] = [
     SlashCommand {
         id: "new",
         metadata_id: "slash_new",
@@ -388,6 +398,11 @@ const SLASH_COMMANDS: [SlashCommand; 17] = [
         id: "exit",
         metadata_id: "quit",
         aliases: &["quit", "q"],
+    },
+    SlashCommand {
+        id: "rename",
+        metadata_id: "slash_rename",
+        aliases: &["title"],
     },
 ];
 
@@ -475,6 +490,12 @@ const PALETTE_COMMANDS: &[PaletteCommand] = &[
     PaletteCommand {
         id: "open_event_log",
         metadata_id: "open_event_log",
+        shortcut: "",
+        section: PaletteCommandSection::Session,
+    },
+    PaletteCommand {
+        id: "revert_workspace",
+        metadata_id: "revert_workspace",
         shortcut: "",
         section: PaletteCommandSection::Session,
     },
