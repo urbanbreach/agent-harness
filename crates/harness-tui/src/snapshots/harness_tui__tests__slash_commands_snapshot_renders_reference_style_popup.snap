@@ -1,6 +1,5 @@
 ---
 source: crates/harness-tui/src/tests.rs
-assertion_line: 2001
 expression: normalized
 ---
 Buffer {
@@ -23,7 +22,7 @@ Buffer {
         "                /help     Show shortcuts and TUI controls                                           ",
         "                /model    Browse available provider/model options                                   ",
         "                /new      Return to the home shell                                                  ",
-        "                /replay   Replay a saved session                                                    ",
+        "                /rename   Rename the current session                                                ",
         "            â                                                                                       ",
         "            â  /                                                                                    ",
         "            â                                                                                       ",
@@ -111,7 +110,7 @@ Buffer {
         x: 16, y: 17, fg: Rgb(238, 238, 238), bg: Rgb(30, 30, 30), underline: Reset, modifier: NONE,
         x: 23, y: 17, fg: Reset, bg: Rgb(30, 30, 30), underline: Reset, modifier: NONE,
         x: 26, y: 17, fg: Rgb(128, 128, 128), bg: Rgb(30, 30, 30), underline: Reset, modifier: NONE,
-        x: 48, y: 17, fg: Reset, bg: Rgb(30, 30, 30), underline: Reset, modifier: NONE,
+        x: 52, y: 17, fg: Reset, bg: Rgb(30, 30, 30), underline: Reset, modifier: NONE,
         x: 86, y: 17, fg: Reset, bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
         x: 12, y: 18, fg: Rgb(92, 156, 245), bg: Rgb(10, 10, 10), underline: Reset, modifier: NONE,
         x: 13, y: 18, fg: Reset, bg: Rgb(30, 30, 30), underline: Reset, modifier: NONE,

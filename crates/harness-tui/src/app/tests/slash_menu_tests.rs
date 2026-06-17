@@ -274,3 +274,89 @@ pub(super) fn slash_menu_exposes_model_switcher_when_models_are_configured() {
 
     assert!(app.slash_filtered.iter().any(|command| command == "model"));
 }
+
+pub(super) fn rename_slash_command_availability_matches_mode() {
+    let mut live = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
+    live.handle_key(key(KeyCode::Char('/')));
+    assert!(live
+        .slash_filtered
+        .iter()
+        .any(|command| command == "rename"));
+
+    let mut replay = AppState::new_replay(PathBuf::from("/tmp/replay"), Vec::new());
+    replay.handle_key(key(KeyCode::Char('/')));
+    assert!(!replay
+        .slash_filtered
+        .iter()
+        .any(|command| command == "rename"));
+
+    let mut startup = AppState::new_startup(Vec::new(), None);
+    startup.handle_key(key(KeyCode::Char('/')));
+    assert!(!startup
+        .slash_filtered
+        .iter()
+        .any(|command| command == "rename"));
+}
+
+pub(super) fn rename_slash_command_emits_update_session_title_intent() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(sink));
+    app.prompt_buffer = "/rename New Title".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.slash_draft_snapshot = Some("draft preserved".to_string());
+    app.sync_slash_overlay();
+
+    app.handle_key(key(KeyCode::Enter));
+
+    assert_eq!(app.prompt_buffer, "draft preserved");
+    assert!(!app.slash_visible);
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[UiIntent::UpdateSessionTitle {
+            title: "New Title".to_string(),
+        }]
+    );
+}
+
+pub(super) fn rename_slash_title_alias_resolves() {
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
+    app.prompt_buffer = "/title Alias Title".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.sync_slash_overlay();
+
+    assert_eq!(app.typed_slash_command(), Some("rename"));
+}
+
+pub(super) fn rename_slash_empty_title_emits_error_toast() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(sink));
+    app.prompt_buffer = "/rename  ".to_string();
+    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.sync_slash_overlay();
+
+    app.handle_key(key(KeyCode::Enter));
+
+    assert!(!intents
+        .lock()
+        .expect("lock intents")
+        .iter()
+        .any(|intent| matches!(intent, UiIntent::UpdateSessionTitle { .. })));
+    assert_eq!(
+        app.status_banner.as_deref(),
+        Some("session title cannot be empty")
+    );
+}
