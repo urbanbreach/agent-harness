@@ -662,6 +662,7 @@ mod tests {
             reasoning_effort: None,
             text_verbosity: None,
             reasoning_summary: None,
+            thinking: None,
             tools: None,
             tool_choice: None,
             context: Default::default(),

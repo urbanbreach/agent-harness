@@ -185,6 +185,8 @@ struct FixtureCompletionRequest {
     #[serde(default)]
     reasoning_summary: Option<String>,
     #[serde(default)]
+    thinking: Option<serde_json::Value>,
+    #[serde(default)]
     tools: Option<Vec<ToolDef>>,
     #[serde(default)]
     tool_choice: Option<ToolChoice>,
@@ -205,6 +207,7 @@ impl From<FixtureCompletionRequest> for CompletionRequest {
             reasoning_effort: value.reasoning_effort,
             text_verbosity: value.text_verbosity,
             reasoning_summary: value.reasoning_summary,
+            thinking: value.thinking,
             tools: value.tools,
             tool_choice: value.tool_choice,
             context: value.context,
@@ -345,6 +348,7 @@ mod tests {
             reasoning_effort: None,
             text_verbosity: None,
             reasoning_summary: None,
+            thinking: None,
             tools: None,
             tool_choice: None,
             context: Default::default(),
@@ -462,6 +466,7 @@ mod tests {
             reasoning_effort: None,
             text_verbosity: None,
             reasoning_summary: None,
+            thinking: None,
             tools: None,
             tool_choice: None,
             context: Default::default(),
@@ -495,6 +500,7 @@ mod tests {
             reasoning_effort: None,
             text_verbosity: None,
             reasoning_summary: None,
+            thinking: None,
             tools: Some(vec![crate::ToolDef {
                 tool_id: "fs.read".to_string(),
                 function_name: "filesystem_read".to_string(),
