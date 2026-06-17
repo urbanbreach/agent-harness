@@ -750,6 +750,129 @@ pub(crate) fn exact_test_slash_lineage_descriptions_use_harness_branding() {
 }
 
 #[cfg(test)]
+pub(crate) fn exact_test_revert_workspace_palette_availability() {
+    let mut replay = AppState::new_replay(PathBuf::from("/tmp/replay"), Vec::new());
+    replay.focus = Focus::Prompt;
+    assert!(!replay.palette_command_available("revert_workspace"));
+
+    let live_no_snapshot = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
+    assert!(!live_no_snapshot.palette_command_available("revert_workspace"));
+
+    let snapshot = EventEnvelopeV1 {
+        schema_version: 1,
+        event_id: "evt_workspace_snapshot_001".to_string(),
+        seq: 1,
+        run_id: "run_snapshot".to_string(),
+        mono_ms: 1,
+        ts: None,
+        actor: harness_core::event::EventActor::new(ActorKind::Worker, Some("build".to_string())),
+        correlation_id: Some("req_snapshot_001".to_string()),
+        causation_id: None,
+        stream_key: Some("req_snapshot_001".to_string()),
+        payload: EventV1::WorkspaceSnapshot(harness_core::event::WorkspaceSnapshotEvent {
+            request_id: "req_snapshot_001".to_string(),
+            artifact_path: "artifacts/snapshot.json".to_string(),
+            artifact_digest: "digest-snapshot".to_string(),
+            file_count: 3,
+        }),
+    };
+    let mut live_with_snapshot =
+        AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
+    live_with_snapshot.ingest_event(snapshot);
+    assert!(live_with_snapshot.palette_command_available("revert_workspace"));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_most_recent_workspace_snapshot_request_id() {
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
+    assert!(app.most_recent_workspace_snapshot_request_id().is_none());
+
+    app.ingest_event(EventEnvelopeV1 {
+        schema_version: 1,
+        event_id: "evt_snapshot_first".to_string(),
+        seq: 1,
+        run_id: "run_snapshot".to_string(),
+        mono_ms: 1,
+        ts: None,
+        actor: harness_core::event::EventActor::new(ActorKind::Worker, Some("build".to_string())),
+        correlation_id: Some("req_snapshot_first".to_string()),
+        causation_id: None,
+        stream_key: Some("req_snapshot_first".to_string()),
+        payload: EventV1::WorkspaceSnapshot(harness_core::event::WorkspaceSnapshotEvent {
+            request_id: "req_snapshot_first".to_string(),
+            artifact_path: "artifacts/snapshot_first.json".to_string(),
+            artifact_digest: "digest-first".to_string(),
+            file_count: 1,
+        }),
+    });
+    assert_eq!(
+        app.most_recent_workspace_snapshot_request_id(),
+        Some("req_snapshot_first".to_string())
+    );
+
+    app.ingest_event(EventEnvelopeV1 {
+        schema_version: 1,
+        event_id: "evt_snapshot_latest".to_string(),
+        seq: 2,
+        run_id: "run_snapshot".to_string(),
+        mono_ms: 2,
+        ts: None,
+        actor: harness_core::event::EventActor::new(ActorKind::Worker, Some("build".to_string())),
+        correlation_id: Some("req_snapshot_latest".to_string()),
+        causation_id: None,
+        stream_key: Some("req_snapshot_latest".to_string()),
+        payload: EventV1::WorkspaceSnapshot(harness_core::event::WorkspaceSnapshotEvent {
+            request_id: "req_snapshot_latest".to_string(),
+            artifact_path: "artifacts/snapshot_latest.json".to_string(),
+            artifact_digest: "digest-latest".to_string(),
+            file_count: 2,
+        }),
+    });
+    assert_eq!(
+        app.most_recent_workspace_snapshot_request_id(),
+        Some("req_snapshot_latest".to_string())
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_request_workspace_revert_emits_intent() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().expect("lock intents").push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(sink));
+    app.ingest_event(EventEnvelopeV1 {
+        schema_version: 1,
+        event_id: "evt_snapshot_001".to_string(),
+        seq: 1,
+        run_id: "run_snapshot".to_string(),
+        mono_ms: 1,
+        ts: None,
+        actor: harness_core::event::EventActor::new(ActorKind::Worker, Some("build".to_string())),
+        correlation_id: Some("req_snapshot_001".to_string()),
+        causation_id: None,
+        stream_key: Some("req_snapshot_001".to_string()),
+        payload: EventV1::WorkspaceSnapshot(harness_core::event::WorkspaceSnapshotEvent {
+            request_id: "req_snapshot_001".to_string(),
+            artifact_path: "artifacts/snapshot.json".to_string(),
+            artifact_digest: "digest-snapshot".to_string(),
+            file_count: 3,
+        }),
+    });
+    app.request_workspace_revert();
+    assert_eq!(
+        intents.lock().expect("lock intents").as_slice(),
+        &[UiIntent::RevertWorkspace {
+            snapshot_request_id: "req_snapshot_001".to_string(),
+        }]
+    );
+}
+
+#[cfg(test)]
 pub(crate) fn exact_test_compact_operator_rail_skips_focus_cycle() {
     let mut live = AppState::new_live(None, false, None);
 
