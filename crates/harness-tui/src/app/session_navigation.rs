@@ -210,6 +210,7 @@ impl AppState {
             "shell" => self.active_review_surface.is_some(),
             "follow" => !self.replay_mode && !self.startup_mode,
             "compact" => self.compact_session_supported,
+            "rename" => !self.replay_mode && !self.startup_mode,
             _ => false,
         }
     }
@@ -326,6 +327,21 @@ impl AppState {
             "compact" => {
                 self.restore_slash_draft(preserved_draft);
                 self.emit_ui_intent(UiIntent::CompactSession);
+            }
+            "rename" => {
+                let prompt = self.prompt_buffer.clone();
+                let title = prompt
+                    .trim_start_matches('/')
+                    .split_once(|ch: char| ch.is_whitespace())
+                    .map(|(_, rest)| rest.trim())
+                    .unwrap_or("")
+                    .to_string();
+                self.restore_slash_draft(preserved_draft);
+                if title.is_empty() {
+                    self.set_status_banner(Some("session title cannot be empty".to_string()));
+                } else {
+                    self.emit_ui_intent(UiIntent::UpdateSessionTitle { title });
+                }
             }
             "fork" => self
                 .execute_passive_lineage_slash_command(preserved_draft, LineageSlashCommand::Fork),
@@ -672,6 +688,7 @@ impl AppState {
             "split_transcript_diffs" => self.stacked_transcript_diffs = false,
             "help" => self.execute_action(Action::Help),
             "quit" => self.execute_action(Action::Quit),
+            "revert_workspace" => self.request_workspace_revert(),
             _ => {}
         }
         if !self.session_history_visible
@@ -737,7 +754,7 @@ impl AppState {
             .collect()
     }
 
-    fn palette_command_available(&self, command_id: &str) -> bool {
+    pub(in crate::app) fn palette_command_available(&self, command_id: &str) -> bool {
         if command_id == "switch_model" {
             return self.model_switcher_supported();
         }
@@ -820,6 +837,10 @@ impl AppState {
             self.active_review_surface != Some(ReviewSurface::Events)
         } else if command_id == "toggle_terminal_panel" {
             !self.startup_shell_visible()
+        } else if command_id == "revert_workspace" {
+            !self.replay_mode
+                && !self.startup_shell_visible()
+                && self.most_recent_workspace_snapshot_request_id().is_some()
         } else {
             true
         }

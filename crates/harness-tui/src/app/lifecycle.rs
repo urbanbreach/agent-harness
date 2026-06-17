@@ -139,6 +139,12 @@ pub enum UiIntent {
         events: Vec<EventEnvelopeV1>,
         stable_prefix: harness_core::session_lineage::StableSessionPrefix,
     },
+    RevertWorkspace {
+        snapshot_request_id: String,
+    },
+    UpdateSessionTitle {
+        title: String,
+    },
     QuitRequested,
 }
 
@@ -581,6 +587,26 @@ impl AppState {
     pub fn emit_ui_intent(&mut self, intent: UiIntent) {
         if let Some(handler) = &self.on_ui_intent {
             handler(intent);
+        }
+    }
+
+    pub fn most_recent_workspace_snapshot_request_id(&self) -> Option<String> {
+        self.events.iter().rev().find_map(|envelope| {
+            if let harness_core::event::EventV1::WorkspaceSnapshot(snapshot) = &envelope.payload {
+                Some(snapshot.request_id.clone())
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn request_workspace_revert(&mut self) {
+        if let Some(snapshot_request_id) = self.most_recent_workspace_snapshot_request_id() {
+            self.emit_ui_intent(UiIntent::RevertWorkspace {
+                snapshot_request_id,
+            });
+        } else {
+            self.status_banner = Some("no workspace snapshot available to revert to".to_string());
         }
     }
 
