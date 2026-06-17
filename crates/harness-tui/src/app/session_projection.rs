@@ -3,7 +3,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use harness_core::event::{
     ActorKind, BackgroundTaskNotificationEvent, EventEnvelopeV1, EventV1,
-    ProviderRequestFinishedEvent, ResolvedToolIdentity, UserMessageSubmittedEvent,
+    ProviderRequestFinishedEvent, ProviderRequestRetryMetadata, ResolvedToolIdentity,
+    UserMessageSubmittedEvent,
 };
 
 use super::permissions::PendingPermission;
@@ -754,6 +755,16 @@ impl AppState {
         self.control_dock_view_model().runtime_context
     }
 
+    pub(crate) fn active_retry_metadata(&self) -> Option<ProviderRequestRetryMetadata> {
+        self.activities.iter().rev().find_map(|entry| {
+            if entry.status != ActivityStatus::Streaming {
+                return None;
+            }
+            let metadata = entry.request_data.as_ref()?.metadata.as_ref()?;
+            metadata.retry
+        })
+    }
+
     pub(crate) fn cache_status_summary_segment(
         &self,
     ) -> Option<view_model::ControlDockSummarySegment> {
@@ -888,5 +899,108 @@ impl AppState {
             || has_modified_files
             || has_integrations
             || has_lsp
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn active_retry_metadata_returns_some_for_streaming_retry() {
+        // arrange
+        let mut app = AppState::new_live(None, false, None);
+        app.activities.push_back(ActivityEntry {
+            request_id: "req_retry".to_string(),
+            profile_label: "build".to_string(),
+            model_id: "gpt-5.4".to_string(),
+            provider_id: "default".to_string(),
+            status: ActivityStatus::Streaming,
+            user_message: None,
+            user_timestamp: None,
+            request_data: Some(harness_core::event::ProviderRequestStartedEvent {
+                request_id: "req_retry".to_string(),
+                provider_id: "default".to_string(),
+                model_id: "gpt-5.4".to_string(),
+                prompt_summary: "prompt summary".to_string(),
+                request_digest: "digest-retry".to_string(),
+                metadata: Some(harness_core::event::ProviderRequestStartedMetadata {
+                    retry: Some(harness_core::event::ProviderRequestRetryMetadata {
+                        attempt: 3,
+                        max_attempts: 4,
+                        delay_ms: None,
+                        category: None,
+                    }),
+                    ..harness_core::event::ProviderRequestStartedMetadata::default()
+                }),
+            }),
+            thinking_text: String::new(),
+            transcript_text: String::new(),
+            usage: None,
+            cache_usage: None,
+            error_message: None,
+            permissions: Vec::new(),
+            tool_calls: Vec::new(),
+            first_seq: 1,
+            last_seq: 1,
+            first_mono_ms: 1,
+            last_mono_ms: 1,
+        });
+
+        // act
+        let retry = app.active_retry_metadata();
+
+        // assert
+        let retry = retry.expect("retry metadata");
+        assert_eq!(retry.attempt, 3);
+        assert_eq!(retry.max_attempts, 4);
+    }
+
+    #[test]
+    fn active_retry_metadata_returns_none_for_non_streaming_activity() {
+        // arrange
+        let mut app = AppState::new_live(None, false, None);
+        app.activities.push_back(ActivityEntry {
+            request_id: "req_done".to_string(),
+            profile_label: "build".to_string(),
+            model_id: "gpt-5.4".to_string(),
+            provider_id: "default".to_string(),
+            status: ActivityStatus::Done,
+            user_message: None,
+            user_timestamp: None,
+            request_data: Some(harness_core::event::ProviderRequestStartedEvent {
+                request_id: "req_done".to_string(),
+                provider_id: "default".to_string(),
+                model_id: "gpt-5.4".to_string(),
+                prompt_summary: "prompt summary".to_string(),
+                request_digest: "digest-done".to_string(),
+                metadata: Some(harness_core::event::ProviderRequestStartedMetadata {
+                    retry: Some(harness_core::event::ProviderRequestRetryMetadata {
+                        attempt: 1,
+                        max_attempts: 3,
+                        delay_ms: None,
+                        category: None,
+                    }),
+                    ..harness_core::event::ProviderRequestStartedMetadata::default()
+                }),
+            }),
+            thinking_text: String::new(),
+            transcript_text: String::new(),
+            usage: None,
+            cache_usage: None,
+            error_message: None,
+            permissions: Vec::new(),
+            tool_calls: Vec::new(),
+            first_seq: 1,
+            last_seq: 1,
+            first_mono_ms: 1,
+            last_mono_ms: 1,
+        });
+
+        // act
+        let retry = app.active_retry_metadata();
+
+        // assert
+        assert!(retry.is_none());
     }
 }
