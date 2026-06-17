@@ -104,6 +104,8 @@ use ui_lifecycle::{live_empty_state_visible, render_live_empty_state, startup_sh
 use ui_overlays::render_overlays;
 #[cfg(test)]
 pub(crate) use ui_overlays::{
+    exact_test_status_dialog_formatters_section_disabled_when_none,
+    exact_test_status_dialog_formatters_section_lists_enabled_language,
     exact_test_status_dialog_mcp_rows_match_harness_states,
     exact_test_status_dialog_render_snapshot_covers_harness_sections,
 };
@@ -143,6 +145,7 @@ pub(crate) use ui_chrome::{
     exact_test_live_composer_reserves_right_gap,
     exact_test_live_control_dock_collapses_disclosure_before_status,
     exact_test_live_control_dock_renders_shared_surface,
+    exact_test_retry_summary_segment_prioritizes_retry_indicator,
     exact_test_startup_disclosure_matches_harness_hint_row,
     exact_test_tool_status_summary_uses_effective_tool_identity,
 };

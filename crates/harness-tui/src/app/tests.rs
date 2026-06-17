@@ -960,6 +960,10 @@ delegate_test!(slash_exit_matches_quit_requested_behavior => slash_menu_tests::s
 delegate_test!(resume_history_surface_uses_meaningful_session_title => slash_menu_tests::resume_history_surface_uses_meaningful_session_title);
 delegate_test!(slash_menu_supports_mouse_selection => slash_menu_tests::slash_menu_supports_mouse_selection);
 delegate_test!(slash_menu_exposes_model_switcher_when_models_are_configured => slash_menu_tests::slash_menu_exposes_model_switcher_when_models_are_configured);
+delegate_test!(rename_slash_command_availability_matches_mode => slash_menu_tests::rename_slash_command_availability_matches_mode);
+delegate_test!(rename_slash_command_emits_update_session_title_intent => slash_menu_tests::rename_slash_command_emits_update_session_title_intent);
+delegate_test!(rename_slash_title_alias_resolves => slash_menu_tests::rename_slash_title_alias_resolves);
+delegate_test!(rename_slash_empty_title_emits_error_toast => slash_menu_tests::rename_slash_empty_title_emits_error_toast);
 
 delegate_test!(startup_mode_uses_pending_launch_metadata => lifecycle_shell_tests::startup_mode_uses_pending_launch_metadata);
 

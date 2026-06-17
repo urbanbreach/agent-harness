@@ -98,6 +98,7 @@ delegate_test!(startup_disclosure_matches_harness_hint_row => ui::exact_test_sta
 delegate_test!(composer_viewport_wraps_by_display_width => ui::exact_test_composer_viewport_wraps_by_display_width);
 delegate_test!(composer_viewport_wraps_at_word_boundaries => ui::exact_test_composer_viewport_wraps_at_word_boundaries);
 delegate_test!(tool_status_summary_uses_effective_tool_identity => ui::exact_test_tool_status_summary_uses_effective_tool_identity);
+delegate_test!(retry_summary_segment_prioritizes_retry_indicator => ui::exact_test_retry_summary_segment_prioritizes_retry_indicator);
 delegate_test!(wheel_target_hits_transcript_when_hovered => ui::exact_test_wheel_target_hits_transcript_when_hovered);
 delegate_test!(wheel_target_hits_inspector_inside_live_overlay => ui::exact_test_wheel_target_hits_inspector_inside_live_overlay);
 delegate_test!(wheel_target_excludes_activity_portion_of_live_overlay => ui::exact_test_wheel_target_excludes_activity_portion_of_live_overlay);
@@ -114,6 +115,8 @@ delegate_test!(slash_events_opens_review_surface => app::exact_test_slash_events
 delegate_test!(slash_status_opens_status_dialog_and_restores_draft => app::exact_test_slash_status_opens_status_dialog_and_restores_draft);
 delegate_test!(status_dialog_mcp_rows_match_harness_states => ui::exact_test_status_dialog_mcp_rows_match_harness_states);
 delegate_test!(status_dialog_render_snapshot_covers_harness_sections => ui::exact_test_status_dialog_render_snapshot_covers_harness_sections);
+delegate_test!(status_dialog_formatters_section_disabled_when_none => ui::exact_test_status_dialog_formatters_section_disabled_when_none);
+delegate_test!(status_dialog_formatters_section_lists_enabled_language => ui::exact_test_status_dialog_formatters_section_lists_enabled_language);
 delegate_test!(slash_shell_closes_review_surface => app::exact_test_slash_shell_closes_review_surface);
 delegate_test!(slash_follow_toggles_follow_mode => app::exact_test_slash_follow_toggles_follow_mode);
 delegate_test!(live_slash_compact_appears_when_supported => app::exact_test_live_slash_compact_appears_when_supported);
@@ -129,6 +132,9 @@ delegate_test!(slash_menu_lists_lineage_commands => app::exact_test_slash_menu_l
 delegate_test!(slash_lineage_write_commands_blocked_in_replay => app::exact_test_slash_lineage_write_commands_blocked_in_replay);
 delegate_test!(slash_lineage_write_commands_blocked_when_live_unstable => app::exact_test_slash_lineage_write_commands_blocked_when_live_unstable);
 delegate_test!(slash_lineage_descriptions_use_harness_branding => app::exact_test_slash_lineage_descriptions_use_harness_branding);
+delegate_test!(revert_workspace_palette_availability => app::exact_test_revert_workspace_palette_availability);
+delegate_test!(most_recent_workspace_snapshot_request_id => app::exact_test_most_recent_workspace_snapshot_request_id);
+delegate_test!(request_workspace_revert_emits_intent => app::exact_test_request_workspace_revert_emits_intent);
 
 mod shell_overlay_contract;
 delegate_test!(onboarding_inventory_screens_render_in_startup_surface => shell_overlay_contract::onboarding_inventory_screens_render_in_startup_surface);
