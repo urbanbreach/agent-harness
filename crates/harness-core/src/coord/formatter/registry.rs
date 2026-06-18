@@ -1,9 +1,36 @@
+// allow: SIZE_OK — pure data table of 26 OpenCode formatters; splitting would
+// fragment the canonical registry order and command/extension mappings.
 //! Built-in formatter registry for OpenCode-parity formatting.
 //!
 //! This module defines the canonical set of built-in formatters, their default
 //! file extensions, optional environment variables, and command templates. Each
 //! command must contain the `$FILE` placeholder, which the runner replaces with
 //! the target path.
+
+/// Discovery strategy for a built-in formatter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiscoveryKind {
+    /// Formatter is discovered by bare `which` (no special discovery logic).
+    WhichOnly,
+    /// Formatter uses Prettier-style discovery (package.json or installed globally).
+    Prettier,
+    /// Formatter uses Biome-style discovery (biome.json or installed globally).
+    Biome,
+    /// Formatter uses Oxfmt-style discovery (oxfmt binary on PATH).
+    Oxfmt,
+    /// Formatter uses ClangFormat-style discovery (.clang-format file or clang-format on PATH).
+    ClangFormat,
+    /// Formatter uses Ruff-style discovery (ruff.toml/pyproject.toml or ruff on PATH).
+    Ruff,
+    /// Formatter uses UvFormat-style discovery (uv on PATH).
+    UvFormat,
+    /// Formatter uses Ocamlformat-style discovery (.ocamlformat file or ocamlformat on PATH).
+    Ocamlformat,
+    /// Formatter uses Pint-style discovery (composer/pint on PATH).
+    Pint,
+    /// Formatter uses Air-style discovery (air on PATH).
+    Air,
+}
 
 /// Metadata describing a single built-in formatter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,77 +43,206 @@ pub struct FormatterInfo {
     pub environment: Option<&'static [(&'static str, &'static str)]>,
     /// Command template. Must include exactly one `$FILE` argument.
     pub command: &'static [&'static str],
+    /// How this formatter is discovered on the system.
+    pub discovery_kind: DiscoveryKind,
 }
+
+// Shared extension sets for brevity.
+const JS_TS_EXT: &[&str] = &[".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"];
+const PRETTIER_BIOME_EXT: &[&str] = &[
+    ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".html", ".htm", ".css", ".scss",
+    ".sass", ".less", ".vue", ".svelte", ".json", ".jsonc", ".yaml", ".yml", ".toml", ".xml",
+    ".md", ".mdx", ".graphql", ".gql",
+];
+const RUBY_EXT: &[&str] = &[".rb", ".rake", ".gemspec", ".ru"];
+const BUN_ENV: Option<&[(&str, &str)]> = Some(&[("BUN_BE_BUN", "1")]);
 
 /// Canonical built-in formatters matching OpenCode's default formatter set.
 pub static BUILTIN_FORMATTERS: &[FormatterInfo] = &[
-    FormatterInfo {
-        name: "rustfmt",
-        extensions: &[".rs"],
-        environment: None,
-        command: &["rustfmt", "$FILE"],
-    },
-    FormatterInfo {
-        name: "ruff",
-        extensions: &[".py", ".pyi"],
-        environment: None,
-        command: &["ruff", "format", "$FILE"],
-    },
-    FormatterInfo {
-        name: "uvformat",
-        extensions: &[".py", ".pyi"],
-        environment: None,
-        command: &["uv", "format", "$FILE"],
-    },
-    FormatterInfo {
-        name: "prettier",
-        extensions: &[
-            ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".html", ".htm", ".css",
-            ".scss", ".sass", ".less", ".vue", ".svelte", ".json", ".jsonc", ".yaml", ".yml",
-            ".toml", ".xml", ".md", ".mdx", ".graphql", ".gql",
-        ],
-        environment: Some(&[("BUN_BE_BUN", "1")]),
-        command: &["prettier", "--write", "$FILE"],
-    },
-    FormatterInfo {
-        name: "biome",
-        extensions: &[
-            ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".html", ".htm", ".css",
-            ".scss", ".sass", ".less", ".vue", ".svelte", ".json", ".jsonc", ".yaml", ".yml",
-            ".toml", ".xml", ".md", ".mdx", ".graphql", ".gql",
-        ],
-        environment: Some(&[("BUN_BE_BUN", "1")]),
-        command: &["biome", "format", "--write", "$FILE"],
-    },
     FormatterInfo {
         name: "gofmt",
         extensions: &[".go"],
         environment: None,
         command: &["gofmt", "-w", "$FILE"],
+        discovery_kind: DiscoveryKind::WhichOnly,
+    },
+    FormatterInfo {
+        name: "mix",
+        extensions: &[".ex", ".exs", ".eex", ".heex", ".leex", ".neex", ".sface"],
+        environment: None,
+        command: &["mix", "format", "$FILE"],
+        discovery_kind: DiscoveryKind::WhichOnly,
+    },
+    FormatterInfo {
+        name: "prettier",
+        extensions: PRETTIER_BIOME_EXT,
+        environment: BUN_ENV,
+        command: &["prettier", "--write", "$FILE"],
+        discovery_kind: DiscoveryKind::Prettier,
+    },
+    FormatterInfo {
+        name: "oxfmt",
+        extensions: JS_TS_EXT,
+        environment: BUN_ENV,
+        command: &["oxfmt", "$FILE"],
+        discovery_kind: DiscoveryKind::Oxfmt,
+    },
+    FormatterInfo {
+        name: "biome",
+        extensions: PRETTIER_BIOME_EXT,
+        environment: BUN_ENV,
+        command: &["biome", "format", "--write", "$FILE"],
+        discovery_kind: DiscoveryKind::Biome,
     },
     FormatterInfo {
         name: "zig",
         extensions: &[".zig", ".zon"],
         environment: None,
         command: &["zig", "fmt", "$FILE"],
+        discovery_kind: DiscoveryKind::WhichOnly,
+    },
+    FormatterInfo {
+        name: "clang-format",
+        extensions: &[
+            ".c", ".cc", ".cpp", ".cxx", ".c++", ".h", ".hh", ".hpp", ".hxx", ".h++", ".ino", ".C",
+            ".H",
+        ],
+        environment: None,
+        command: &["clang-format", "-i", "$FILE"],
+        discovery_kind: DiscoveryKind::ClangFormat,
+    },
+    FormatterInfo {
+        name: "ktlint",
+        extensions: &[".kt", ".kts"],
+        environment: None,
+        command: &["ktlint", "-F", "$FILE"],
+        discovery_kind: DiscoveryKind::WhichOnly,
+    },
+    FormatterInfo {
+        name: "ruff",
+        extensions: &[".py", ".pyi"],
+        environment: None,
+        command: &["ruff", "format", "$FILE"],
+        discovery_kind: DiscoveryKind::Ruff,
+    },
+    FormatterInfo {
+        name: "air",
+        extensions: &[".R"],
+        environment: None,
+        command: &["air", "format", "$FILE"],
+        discovery_kind: DiscoveryKind::Air,
+    },
+    FormatterInfo {
+        name: "uv",
+        extensions: &[".py", ".pyi"],
+        environment: None,
+        command: &["uv", "format", "--", "$FILE"],
+        discovery_kind: DiscoveryKind::UvFormat,
+    },
+    FormatterInfo {
+        name: "rubocop",
+        extensions: RUBY_EXT,
+        environment: None,
+        command: &["rubocop", "--autocorrect", "$FILE"],
+        discovery_kind: DiscoveryKind::WhichOnly,
+    },
+    FormatterInfo {
+        name: "standardrb",
+        extensions: RUBY_EXT,
+        environment: None,
+        command: &["standardrb", "--fix", "$FILE"],
+        discovery_kind: DiscoveryKind::WhichOnly,
+    },
+    FormatterInfo {
+        name: "htmlbeautifier",
+        extensions: &[".erb", ".html.erb"],
+        environment: None,
+        command: &["htmlbeautifier", "$FILE"],
+        discovery_kind: DiscoveryKind::WhichOnly,
     },
     FormatterInfo {
         name: "dart",
         extensions: &[".dart"],
         environment: None,
         command: &["dart", "format", "$FILE"],
+        discovery_kind: DiscoveryKind::WhichOnly,
+    },
+    FormatterInfo {
+        name: "ocamlformat",
+        extensions: &[".ml", ".mli"],
+        environment: None,
+        command: &["ocamlformat", "-i", "$FILE"],
+        discovery_kind: DiscoveryKind::Ocamlformat,
+    },
+    FormatterInfo {
+        name: "terraform",
+        extensions: &[".tf", ".tfvars"],
+        environment: None,
+        command: &["terraform", "fmt", "$FILE"],
+        discovery_kind: DiscoveryKind::WhichOnly,
+    },
+    FormatterInfo {
+        name: "latexindent",
+        extensions: &[".tex"],
+        environment: None,
+        command: &["latexindent", "-w", "-s", "$FILE"],
+        discovery_kind: DiscoveryKind::WhichOnly,
+    },
+    FormatterInfo {
+        name: "gleam",
+        extensions: &[".gleam"],
+        environment: None,
+        command: &["gleam", "format", "$FILE"],
+        discovery_kind: DiscoveryKind::WhichOnly,
     },
     FormatterInfo {
         name: "shfmt",
         extensions: &[".sh", ".bash"],
         environment: None,
         command: &["shfmt", "-w", "$FILE"],
+        discovery_kind: DiscoveryKind::WhichOnly,
     },
     FormatterInfo {
         name: "nixfmt",
         extensions: &[".nix"],
         environment: None,
         command: &["nixfmt", "$FILE"],
+        discovery_kind: DiscoveryKind::WhichOnly,
+    },
+    FormatterInfo {
+        name: "rustfmt",
+        extensions: &[".rs"],
+        environment: None,
+        command: &["rustfmt", "$FILE"],
+        discovery_kind: DiscoveryKind::WhichOnly,
+    },
+    FormatterInfo {
+        name: "pint",
+        extensions: &[".php"],
+        environment: None,
+        command: &["./vendor/bin/pint", "$FILE"],
+        discovery_kind: DiscoveryKind::Pint,
+    },
+    FormatterInfo {
+        name: "ormolu",
+        extensions: &[".hs"],
+        environment: None,
+        command: &["ormolu", "-i", "$FILE"],
+        discovery_kind: DiscoveryKind::WhichOnly,
+    },
+    FormatterInfo {
+        name: "cljfmt",
+        extensions: &[".clj", ".cljs", ".cljc", ".edn"],
+        environment: None,
+        command: &["cljfmt", "fix", "--quiet", "$FILE"],
+        discovery_kind: DiscoveryKind::WhichOnly,
+    },
+    FormatterInfo {
+        name: "dfmt",
+        extensions: &[".d"],
+        environment: None,
+        command: &["dfmt", "-i", "$FILE"],
+        discovery_kind: DiscoveryKind::WhichOnly,
     },
 ];
 
@@ -112,11 +268,40 @@ mod tests {
     fn formatter_registry_contains_all_expected_names() {
         let names: Vec<_> = BUILTIN_FORMATTERS.iter().map(|info| info.name).collect();
         for expected in [
-            "rustfmt", "ruff", "uvformat", "prettier", "biome", "gofmt", "zig", "dart", "shfmt",
+            "gofmt",
+            "mix",
+            "prettier",
+            "oxfmt",
+            "biome",
+            "zig",
+            "clang-format",
+            "ktlint",
+            "ruff",
+            "air",
+            "uv",
+            "rubocop",
+            "standardrb",
+            "htmlbeautifier",
+            "dart",
+            "ocamlformat",
+            "terraform",
+            "latexindent",
+            "gleam",
+            "shfmt",
             "nixfmt",
+            "rustfmt",
+            "pint",
+            "ormolu",
+            "cljfmt",
+            "dfmt",
         ] {
             assert!(names.contains(&expected), "missing formatter: {expected}");
         }
+        assert_eq!(
+            names.len(),
+            26,
+            "registry should contain exactly 26 formatters"
+        );
     }
 
     #[test]
@@ -149,8 +334,8 @@ mod tests {
     }
 
     #[test]
-    fn formatter_registry_prettier_and_biome_set_bun_be_bun() {
-        for name in ["prettier", "biome"] {
+    fn formatter_registry_prettier_biome_oxfmt_set_bun_be_bun() {
+        for name in ["prettier", "biome", "oxfmt"] {
             let info = BUILTIN_FORMATTERS
                 .iter()
                 .find(|f| f.name == name)
@@ -169,10 +354,8 @@ mod tests {
     fn formatter_registry_lookup_by_extension_finds_match() {
         let rust = formatter_info_by_extension("rs").expect("lookup rs");
         assert_eq!(rust.name, "rustfmt");
-
         let python = formatter_info_by_extension(".py").expect("lookup .py");
         assert_eq!(python.name, "ruff");
-
         assert!(formatter_info_by_extension("not-an-ext").is_none());
     }
 }

@@ -1,28 +1,27 @@
+use std::path::PathBuf;
+
 use async_trait::async_trait;
+
+#[cfg(test)]
+use super::BUILTIN_FORMATTERS;
 
 #[cfg(test)]
 use std::collections::HashSet;
 
-/// Discovers whether a named formatter binary is available on the current PATH.
-#[async_trait]
-pub trait FormatterDiscovery: Send + Sync {
-    /// Return `true` if `name` is available as an executable on PATH.
-    async fn is_on_path(&self, name: &str) -> bool;
+/// Context passed to formatter discovery.
+#[derive(Debug, Clone)]
+pub struct DiscoveryContext {
+    pub workspace_root: PathBuf,
+    pub target_dir: PathBuf,
+    pub experimental_oxfmt: bool,
 }
 
-/// PATH-based discovery using the `which` crate.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct WhichFormatterDiscovery;
-
+/// Discovers and resolves a command vector for a named formatter.
 #[async_trait]
-impl FormatterDiscovery for WhichFormatterDiscovery {
-    async fn is_on_path(&self, name: &str) -> bool {
-        let name = name.to_string();
-        matches!(
-            tokio::task::spawn_blocking(move || which::which(&name)).await,
-            Ok(Ok(_))
-        )
-    }
+pub trait FormatterDiscovery: Send + Sync {
+    /// Resolve the command vector for a named formatter, or `None` if unavailable.
+    /// When `Some(command)` is returned, every command must contain `"$FILE"`.
+    async fn resolve(&self, name: &str, context: &DiscoveryContext) -> Option<Vec<String>>;
 }
 
 /// Deterministic discovery for tests.
@@ -52,8 +51,17 @@ impl FakeFormatterDiscovery {
 #[async_trait]
 #[cfg(test)]
 impl FormatterDiscovery for FakeFormatterDiscovery {
-    async fn is_on_path(&self, name: &str) -> bool {
-        self.names.contains(name)
+    async fn resolve(&self, name: &str, _context: &DiscoveryContext) -> Option<Vec<String>> {
+        if !self.names.contains(name) {
+            return None;
+        }
+        let info = BUILTIN_FORMATTERS.iter().find(|info| info.name == name)?;
+        let mut command: Vec<String> = info.command.iter().map(|arg| (*arg).to_string()).collect();
+        if command.is_empty() {
+            return None;
+        }
+        command[0] = name.to_string();
+        Some(command)
     }
 }
 
@@ -63,19 +71,29 @@ mod tests {
 
     #[tokio::test]
     async fn fake_discovery_reports_configured_names() {
+        let context = DiscoveryContext {
+            workspace_root: PathBuf::from("."),
+            target_dir: PathBuf::from("."),
+            experimental_oxfmt: false,
+        };
         let discovery = FakeFormatterDiscovery::new(["rustfmt", "prettier"]);
-        assert!(discovery.is_on_path("rustfmt").await);
-        assert!(discovery.is_on_path("prettier").await);
-        assert!(!discovery.is_on_path("ruff").await);
+        assert!(discovery.resolve("rustfmt", &context).await.is_some());
+        assert!(discovery.resolve("prettier", &context).await.is_some());
+        assert!(discovery.resolve("ruff", &context).await.is_none());
     }
 
     #[tokio::test]
     async fn fake_discovery_supports_runtime_mutation() {
+        let context = DiscoveryContext {
+            workspace_root: PathBuf::from("."),
+            target_dir: PathBuf::from("."),
+            experimental_oxfmt: false,
+        };
         let mut discovery = FakeFormatterDiscovery::new(["rustfmt"]);
-        assert!(discovery.is_on_path("rustfmt").await);
+        assert!(discovery.resolve("rustfmt", &context).await.is_some());
         discovery.remove("rustfmt");
-        assert!(!discovery.is_on_path("rustfmt").await);
+        assert!(discovery.resolve("rustfmt", &context).await.is_none());
         discovery.insert("ruff");
-        assert!(discovery.is_on_path("ruff").await);
+        assert!(discovery.resolve("ruff", &context).await.is_some());
     }
 }

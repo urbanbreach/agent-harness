@@ -1,0 +1,265 @@
+use super::{DiscoveryContext, RealFormatterDiscovery};
+use crate::coord::formatter::FormatterDiscovery;
+
+#[tokio::test]
+async fn ruff_discovery_requires_config_file() {
+    let _guard = PATH_LOCK.lock().await;
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).expect("create workspace");
+    let bin_dir = temp_dir.path().join("bin");
+    std::fs::create_dir_all(&bin_dir).expect("create bin dir");
+    std::fs::write(bin_dir.join("ruff"), "#!/bin/sh\n").expect("create fake ruff");
+    super::tests::make_executable(&bin_dir.join("ruff"));
+    let _path_guard = prepend_path(&bin_dir);
+
+    let context = DiscoveryContext {
+        workspace_root: workspace.clone(),
+        target_dir: workspace.clone(),
+        experimental_oxfmt: false,
+    };
+    let discovery = RealFormatterDiscovery;
+
+    assert!(
+        discovery.resolve("ruff", &context).await.is_none(),
+        "ruff absent without config or fallback"
+    );
+    std::fs::write(workspace.join("ruff.toml"), "[tool.ruff]\n").unwrap();
+    let command = discovery
+        .resolve("ruff", &context)
+        .await
+        .expect("ruff discovered with config");
+    assert_eq!(command, vec!["ruff", "format", "$FILE"]);
+
+    std::fs::remove_file(workspace.join("ruff.toml")).unwrap();
+    std::fs::write(workspace.join("requirements.txt"), "ruff\n").unwrap();
+    assert!(
+        discovery.resolve("ruff", &context).await.is_some(),
+        "requirements fallback enables ruff"
+    );
+}
+
+#[tokio::test]
+async fn ruff_falls_back_when_nearest_pyproject_lacks_ruff_section() {
+    let _guard = PATH_LOCK.lock().await;
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).expect("create workspace");
+    let target = workspace.join("package");
+    std::fs::create_dir_all(&target).expect("create target");
+    let bin_dir = temp_dir.path().join("bin");
+    std::fs::create_dir_all(&bin_dir).expect("create bin dir");
+    std::fs::write(bin_dir.join("ruff"), "#!/bin/sh\n").expect("create fake ruff");
+    super::tests::make_executable(&bin_dir.join("ruff"));
+    let _path_guard = prepend_path(&bin_dir);
+
+    std::fs::write(target.join("pyproject.toml"), "[tool.other]\n").unwrap();
+    std::fs::write(workspace.join("ruff.toml"), "[tool.ruff]\n").unwrap();
+
+    let context = DiscoveryContext {
+        workspace_root: workspace.clone(),
+        target_dir: target.clone(),
+        experimental_oxfmt: false,
+    };
+    let discovery = RealFormatterDiscovery;
+
+    let command = discovery
+        .resolve("ruff", &context)
+        .await
+        .expect("ruff discovered via ruff.toml after pyproject without ruff section");
+    assert_eq!(command, vec!["ruff", "format", "$FILE"]);
+}
+
+#[tokio::test]
+async fn uv_skips_when_ruff_enabled() {
+    let _guard = PATH_LOCK.lock().await;
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).expect("create workspace");
+    let bin_dir = temp_dir.path().join("bin");
+    std::fs::create_dir_all(&bin_dir).expect("create bin dir");
+    for name in ["ruff", "uv"] {
+        let path = bin_dir.join(name);
+        std::fs::write(&path, "#!/bin/sh\n").expect("create fake binary");
+        super::tests::make_executable(&path);
+    }
+    std::fs::write(workspace.join("ruff.toml"), "[tool.ruff]\n").unwrap();
+    let _path_guard = prepend_path(&bin_dir);
+
+    let context = DiscoveryContext {
+        workspace_root: workspace.clone(),
+        target_dir: workspace.clone(),
+        experimental_oxfmt: false,
+    };
+    let discovery = RealFormatterDiscovery;
+
+    assert!(
+        discovery.resolve("uv", &context).await.is_none(),
+        "uv skips while ruff config exists"
+    );
+    std::fs::remove_file(workspace.join("ruff.toml")).unwrap();
+    let command = discovery
+        .resolve("uv", &context)
+        .await
+        .expect("uv discovered without ruff");
+    let uv_path = bin_dir.join("uv").to_string_lossy().to_string();
+    assert_eq!(
+        command,
+        vec![uv_path, "format".into(), "--".into(), "$FILE".into()]
+    );
+}
+
+#[tokio::test]
+async fn clang_format_discovery_requires_dot_clang_format() {
+    let _guard = PATH_LOCK.lock().await;
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).expect("create workspace");
+    let bin_dir = temp_dir.path().join("bin");
+    std::fs::create_dir_all(&bin_dir).expect("create bin dir");
+    std::fs::write(bin_dir.join("clang-format"), "#!/bin/sh\n").expect("create fake clang-format");
+    super::tests::make_executable(&bin_dir.join("clang-format"));
+    let _path_guard = prepend_path(&bin_dir);
+
+    let context = DiscoveryContext {
+        workspace_root: workspace.clone(),
+        target_dir: workspace.clone(),
+        experimental_oxfmt: false,
+    };
+    let discovery = RealFormatterDiscovery;
+
+    assert!(
+        discovery.resolve("clang-format", &context).await.is_none(),
+        "clang-format absent without marker"
+    );
+    std::fs::write(workspace.join(".clang-format"), "\n").unwrap();
+    let command = discovery
+        .resolve("clang-format", &context)
+        .await
+        .expect("clang-format discovered with marker");
+    assert_eq!(command[1..], ["-i", "$FILE"]);
+}
+
+#[tokio::test]
+async fn ocamlformat_discovery_requires_dot_ocamlformat() {
+    let _guard = PATH_LOCK.lock().await;
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).expect("create workspace");
+    let bin_dir = temp_dir.path().join("bin");
+    std::fs::create_dir_all(&bin_dir).expect("create bin dir");
+    std::fs::write(bin_dir.join("ocamlformat"), "#!/bin/sh\n").expect("create fake ocamlformat");
+    super::tests::make_executable(&bin_dir.join("ocamlformat"));
+    let _path_guard = prepend_path(&bin_dir);
+
+    let context = DiscoveryContext {
+        workspace_root: workspace.clone(),
+        target_dir: workspace.clone(),
+        experimental_oxfmt: false,
+    };
+    let discovery = RealFormatterDiscovery;
+
+    assert!(
+        discovery.resolve("ocamlformat", &context).await.is_none(),
+        "ocamlformat absent without marker"
+    );
+    std::fs::write(workspace.join(".ocamlformat"), "\n").unwrap();
+    assert!(
+        discovery.resolve("ocamlformat", &context).await.is_some(),
+        "ocamlformat discovered with marker"
+    );
+}
+
+#[tokio::test]
+async fn air_discovery_requires_help_output() {
+    let _guard = PATH_LOCK.lock().await;
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).expect("create workspace");
+    let bin_dir = temp_dir.path().join("bin");
+    std::fs::create_dir_all(&bin_dir).expect("create bin dir");
+    let valid = bin_dir.join("air");
+    std::fs::write(
+        &valid,
+        "#!/bin/sh\necho 'air: format R language formatter'\n",
+    )
+    .expect("create valid air");
+    super::tests::make_executable(&valid);
+    let _path_guard = prepend_path(&bin_dir);
+
+    let context = DiscoveryContext {
+        workspace_root: workspace.clone(),
+        target_dir: workspace.clone(),
+        experimental_oxfmt: false,
+    };
+    let discovery = RealFormatterDiscovery;
+
+    let command = discovery
+        .resolve("air", &context)
+        .await
+        .expect("air discovered when help matches");
+    assert_eq!(
+        command,
+        vec![
+            valid.to_string_lossy().to_string(),
+            "format".to_string(),
+            "$FILE".to_string(),
+        ]
+    );
+
+    std::fs::write(&valid, "#!/bin/sh\necho 'air: format language formatter'\n").unwrap();
+    assert!(
+        discovery.resolve("air", &context).await.is_none(),
+        "air absent when help lacks R language"
+    );
+}
+
+#[tokio::test]
+async fn which_only_formatter_resolves_to_path_binary() {
+    let _guard = PATH_LOCK.lock().await;
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).expect("create workspace");
+    let bin_dir = temp_dir.path().join("bin");
+    std::fs::create_dir_all(&bin_dir).expect("create bin dir");
+    std::fs::write(bin_dir.join("gofmt"), "#!/bin/sh\n").expect("create fake gofmt");
+    super::tests::make_executable(&bin_dir.join("gofmt"));
+    let _path_guard = prepend_path(&bin_dir);
+
+    let context = DiscoveryContext {
+        workspace_root: workspace.clone(),
+        target_dir: workspace.clone(),
+        experimental_oxfmt: false,
+    };
+    let discovery = RealFormatterDiscovery;
+
+    let command = discovery
+        .resolve("gofmt", &context)
+        .await
+        .expect("gofmt discovered by PATH");
+    assert_eq!(command[1..], ["-w", "$FILE"]);
+    assert!(
+        command[0].ends_with("gofmt"),
+        "gofmt should be resolved to the PATH binary, got {}",
+        command[0]
+    );
+}
+
+struct PathPrefixGuard {
+    original: String,
+}
+
+impl Drop for PathPrefixGuard {
+    fn drop(&mut self) {
+        std::env::set_var("PATH", &self.original);
+    }
+}
+
+fn prepend_path(dir: &std::path::Path) -> PathPrefixGuard {
+    let original = std::env::var("PATH").unwrap_or_default();
+    std::env::set_var("PATH", format!("{}:{}", dir.display(), original));
+    PathPrefixGuard { original }
+}
+
+static PATH_LOCK: std::sync::LazyLock<tokio::sync::Mutex<()>> =
+    std::sync::LazyLock::new(|| tokio::sync::Mutex::new(()));
