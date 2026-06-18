@@ -77,6 +77,8 @@ mod event_helpers;
 mod formatter;
 mod handle;
 mod hooks;
+
+pub use formatter::{formatter_status, FormatterStatus, RealFormatterDiscovery};
 mod permission;
 mod provider_context;
 mod provider_lifecycle;

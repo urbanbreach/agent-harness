@@ -389,6 +389,8 @@ impl Coordinator {
 
                 let mut formatter_warnings = Vec::new();
                 let mut formatted_paths = std::collections::BTreeSet::new();
+                let caching_discovery =
+                    formatter::CachingFormatterDiscovery::new(formatter::RealFormatterDiscovery);
                 for applied_edit in &applied_edits {
                     if applied_edit.deleted {
                         continue;
@@ -397,10 +399,11 @@ impl Coordinator {
                     if !formatted_paths.insert(path.clone()) {
                         continue;
                     }
-                    if let Err(warning) = formatter::run_formatter_for_path(
+                    if let Err(warning) = formatter::run_formatter_for_path_with_discovery(
                         &self.config.formatter,
                         &run_state.info.workspace_root,
                         path,
+                        &caching_discovery,
                     )
                     .await
                     {
