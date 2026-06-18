@@ -368,8 +368,17 @@ fn validate_shell_path_arguments(
         let candidate = if token.starts_with('-') {
             if let Some((_, value)) = token.split_once('=') {
                 value
-            } else {
+            } else if token.starts_with("--") {
                 continue;
+            } else {
+                let mut chars = token.chars();
+                chars.next();
+                chars.next();
+                let extracted = chars.as_str();
+                if extracted.is_empty() {
+                    continue;
+                }
+                extracted
             }
         } else {
             token
@@ -559,6 +568,13 @@ mod tests {
             )
             .expect_err("external relative path inside option should be blocked");
         assert!(matches!(err3, ToolError::PathEscapesWorkspace { .. }));
+
+        let err5 = safety
+            .validate_bash_command("ls -I/etc/passwd", tempdir.path(), tempdir.path())
+            .expect_err(
+                "external absolute path inside short option without equals should be blocked",
+            );
+        assert!(matches!(err5, ToolError::PathEscapesWorkspace { .. }));
 
         let err4 = safety
             .validate_bash_command("ls foo/../../../etc/pas*", tempdir.path(), tempdir.path())
