@@ -30,6 +30,11 @@ mod part_02e_config_validate_discovery_test {
     include!("config_schema_cli/02e_config_validate_discovery_test.rs");
 }
 
+mod part_02f_doctor_cli_reports_formatter_status_test {
+    use super::*;
+    include!("config_schema_cli/02f_doctor_cli_reports_formatter_status_test.rs");
+}
+
 mod part_03_config_validate_cli_loads_separate_tui_test {
     use super::*;
     include!("config_schema_cli/03_config_validate_cli_loads_separate_tui_test.rs");

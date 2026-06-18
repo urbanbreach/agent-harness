@@ -11,6 +11,7 @@ use harness_core::config::{
     resolve_model_selection, AgentMode, HarnessConfig, McpServerConfig, PermissionMode,
     ProviderConfig,
 };
+use harness_core::coord::{formatter_status, FormatterStatus, RealFormatterDiscovery};
 use harness_core::extension_manifest::EXTENSION_MANIFEST_V1_SCHEMA_VERSION;
 use harness_tools::{
     coordinator_registry_with_mcp_and_editing, native_tool_catalog_entries,
@@ -18,6 +19,7 @@ use harness_tools::{
 };
 use serde::Serialize;
 use serde_json::{json, Value};
+use tokio::runtime::Runtime;
 
 use crate::auth_cmd;
 use crate::readiness::ast_grep_adapter_readiness;
@@ -224,6 +226,7 @@ fn build_report(
         check_permissions(config),
         check_session_dir(&config.paths.session_dir),
         check_mcp(config),
+        check_formatters(config, workspace_root),
     ];
 
     DoctorReport {
@@ -893,6 +896,68 @@ fn check_mcp(config: &HarnessConfig) -> DoctorCheck {
         format!(
             "{enabled}/{total} MCP server(s) enabled; {stdio_enabled} enabled stdio server(s) will launch only at runtime"
         ),
+    )
+}
+
+fn check_formatters(config: &HarnessConfig, workspace_root: &Path) -> DoctorCheck {
+    let formatter_config = &config.formatter;
+    if !formatter_config.enabled {
+        return pass("formatters", "formatters are disabled");
+    }
+
+    let runtime = match Runtime::new() {
+        Ok(runtime) => runtime,
+        Err(err) => {
+            return warn(
+                "formatters",
+                format!("failed to create runtime for formatter discovery: {err}"),
+            )
+        }
+    };
+
+    let target_path = workspace_root.display().to_string();
+    let statuses: Vec<FormatterStatus> = runtime.block_on(formatter_status(
+        formatter_config,
+        workspace_root,
+        &target_path,
+        &RealFormatterDiscovery,
+    ));
+
+    let enabled_count = statuses.iter().filter(|s| s.enabled).count();
+    let formatter_entries: Vec<Value> = statuses
+        .iter()
+        .map(|s| {
+            json!({
+                "name": s.name,
+                "extensions": s.extensions,
+                "enabled": s.enabled,
+            })
+        })
+        .collect();
+    let details = json!({
+        "formatters": formatter_entries,
+        "no_network_probes": true,
+    });
+
+    if statuses.is_empty() {
+        return warn_with_details("formatters", "no formatter statuses available", details);
+    }
+
+    if enabled_count == 0 {
+        return warn_with_details(
+            "formatters",
+            format!(
+                "{} formatter(s) configured, none enabled on this system",
+                statuses.len()
+            ),
+            details,
+        );
+    }
+
+    pass_with_details(
+        "formatters",
+        format!("{enabled_count}/{} formatter(s) enabled", statuses.len()),
+        details,
     )
 }
 
