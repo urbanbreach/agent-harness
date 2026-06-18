@@ -171,6 +171,18 @@ feasible parity with OpenCode's local-coding UI/UX**, reimplemented natively:
   review (§18.4); differences are documented and justified, not discovered by
   users.
 
+### 0.7 Missing-specs companion document
+
+A task-by-task breakdown of everything in this PRD that is not yet implemented,
+together with per-task OpenCode reverse-engineering targets and the recommended
+implementation order, lives in
+[`agent_harness_opencode_ui_pi_backend_prd_missing_specs.md`](./agent_harness_opencode_ui_pi_backend_prd_missing_specs.md).
+Every task card in §17 should be implemented as a standalone cycle with its own
+failing test, smallest correct change, and evidence row. UI/UX tasks in that
+companion document are specified for maximum feasible OpenCode parity and must be
+verified against the OpenCode reference (source + screenshots) at matching
+terminal geometry before they are considered complete.
+
 ---
 
 ## 1. Executive summary
