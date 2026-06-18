@@ -179,10 +179,12 @@
   "permission": "ask",
 
   // Optional auto-formatters applied after successful file edits.
-  // Use `formatter: false` to disable; omit the key to enable all built-in
+  // Use `formatter: false` to disable; omit the key to enable all 26 built-in
   // formatters by default. Entries are keyed by formatter name, not extension.
+  // Matching formatters run in built-in registry declaration order.
   "formatter": {
     "enabled": true,
+    "experimentalOxfmt": false,
     "rustfmt": {},
     "biome": { "disabled": true },
     "prettier": { "environment": { "BUN_BE_BUN": "1" } }
