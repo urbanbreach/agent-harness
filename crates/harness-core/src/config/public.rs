@@ -646,6 +646,11 @@ pub(super) fn translate_public_formatter_config(
                     );
                 }
             }
+            // Backward-compatible alias: older harness configs used "uvformat"
+            // for the uv Python formatter. OpenCode uses "uv", which is now canonical.
+            if let Some(value) = object.remove("uvformat") {
+                object.entry("uv".to_string()).or_insert(value);
+            }
             serde_json::from_value(serde_json::Value::Object(object))
                 .map_err(|err| ConfigError::ParseJson5(err.to_string()))
         }

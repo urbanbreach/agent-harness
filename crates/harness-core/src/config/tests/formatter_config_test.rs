@@ -120,6 +120,41 @@ fn formatter_environment_is_preserved_at_config_level() {
 }
 
 #[test]
+fn formatter_uvformat_alias_translates_to_uv_key() {
+    let value = serde_json::json!({
+        "uvformat": { "disabled": true },
+    });
+    let translated = translate_public_formatter_config(Some(&value)).unwrap();
+
+    assert!(translated.enabled);
+    assert!(
+        !translated.overrides.contains_key("uvformat"),
+        "legacy uvformat key should not remain in overrides"
+    );
+    let uv = translated
+        .overrides
+        .get("uv")
+        .expect("uv override from alias");
+    assert!(uv.disabled);
+}
+
+#[test]
+fn formatter_uv_canonical_key_takes_precedence_over_uvformat_alias() {
+    let value = serde_json::json!({
+        "uv": { "disabled": true },
+        "uvformat": { "disabled": false },
+    });
+    let translated = translate_public_formatter_config(Some(&value)).unwrap();
+
+    let uv = translated.overrides.get("uv").expect("uv override");
+    assert!(
+        uv.disabled,
+        "canonical uv key should win when both are present"
+    );
+    assert!(!translated.overrides.contains_key("uvformat"));
+}
+
+#[test]
 fn formatter_languages_backward_compat_converts_to_synthetic_overrides() {
     let value = serde_json::json!({
         "enabled": true,
