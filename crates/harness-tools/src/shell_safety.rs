@@ -368,6 +368,11 @@ fn validate_shell_path_arguments(
         let candidate = if token.starts_with('-') {
             if let Some((_, value)) = token.split_once('=') {
                 value
+            } else if !token.starts_with("--") && token.len() > 2 {
+                let mut chars = token.chars();
+                chars.next();
+                chars.next();
+                chars.as_str()
             } else {
                 continue;
             }
@@ -564,6 +569,25 @@ mod tests {
             .validate_bash_command("ls foo/../../../etc/pas*", tempdir.path(), tempdir.path())
             .expect_err("external relative path with glob should be blocked");
         assert!(matches!(err4, ToolError::PathEscapesWorkspace { .. }));
+    }
+
+    #[test]
+    fn validate_bash_command_rejects_embedded_short_flag_paths() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: vec!["ls".to_string()],
+            cwd_roots: vec![".".to_string()],
+        });
+
+        let err = safety
+            .validate_bash_command("ls -I/etc/passwd", tempdir.path(), tempdir.path())
+            .expect_err("embedded short flag path should be blocked");
+        assert!(matches!(err, ToolError::PathEscapesWorkspace { .. }));
+
+        let err2 = safety
+            .validate_bash_command("ls -O/var/log", tempdir.path(), tempdir.path())
+            .expect_err("embedded short flag path should be blocked");
+        assert!(matches!(err2, ToolError::PathEscapesWorkspace { .. }));
     }
 
     #[test]
