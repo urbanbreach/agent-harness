@@ -368,8 +368,17 @@ fn validate_shell_path_arguments(
         let candidate = if token.starts_with('-') {
             if let Some((_, value)) = token.split_once('=') {
                 value
-            } else {
+            } else if token.starts_with("--") {
                 continue;
+            } else {
+                let mut chars = token.chars();
+                chars.next();
+                chars.next();
+                let payload = chars.as_str();
+                if payload.is_empty() {
+                    continue;
+                }
+                payload
             }
         } else {
             token
@@ -467,6 +476,23 @@ mod tests {
     use harness_core::tool::ToolError;
 
     use crate::test_support::tool_context;
+
+    #[test]
+    fn validate_shell_path_arguments_blocks_concatenated_short_option_path_escape() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let workspace = root.path().join("workspace");
+        std::fs::create_dir_all(&workspace).expect("workspace dir");
+
+        let command = super::ShellSegmentCommand {
+            executable: "ls".to_string(),
+            args: vec!["-L../../escape".to_string()],
+        };
+
+        let err = super::validate_shell_path_arguments(&command, &workspace, &workspace)
+            .expect_err("should block concatenated short option path escape");
+
+        assert!(matches!(err, ToolError::PathEscapesWorkspace { .. }));
+    }
 
     #[test]
     fn ensure_executable_allowed_returns_recovery_hints_for_blocked_commands() {
