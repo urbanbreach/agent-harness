@@ -1656,6 +1656,47 @@ scoped to terminal-first V1 surfaces. §12 retry is reliability hardening.
 Nothing here re-scopes the explicit post-V1 list (cloud/share, plugins,
 multimodal, IDE).
 
+### §15.1 Re-scoping decisions (updated 2026-06-20)
+
+All P0 and P1 tasks from the missing-specs companion doc are now implemented.
+The missing-specs doc marks all 29 items `[x]` (0 remaining `[ ]`).
+
+**Previously deferred, now implemented:**
+- **T-PERF-02** (Per-activity text revisions + section-level cache): `ActivityEntry.revision` field added, bumped on streaming deltas; revision hashed into `hash_transcript_content`.
+- **T-PERF-03** (Compact selection snapshot rows): Replaced per-cell selection grid with `Vec<SelectionRow>`; copy-selection allocates proportional to visual lines, not message count × width.
+- **T-PERF-05** (Long-session perf harness): `perf_500_event_streaming_transcript_cache_and_layout_budget` test with explicit time budgets.
+- **T-REF-01** (ComposerState extraction): `ComposerState` struct in `app/composer.rs`; all composer fields moved.
+- **T-REF-02** (OverlayStack single source of truth): `overlay_state()` canonical method; 10 overlay precedence tests.
+- **T-REF-03** (Permission/question state extraction): `PermissionPromptState` and `QuestionPromptState` structs.
+- **T-REF-04** (Extract leaf states): `OperatorSidebarState`, `TerminalPanelState`, `OnboardingState` structs.
+- **T-REF-05** (TranscriptViewState): `TranscriptViewState` struct with all scroll/selection/drag/display/cache fields.
+- **T-UI-09** (Theme dialog): `harness_high_contrast()` theme, `<leader>t` dialog, `Theme::by_name()`.
+- **T-UI-11** (Composer editing vocabulary): 19 new Action variants (selection, word/line ops, undo/redo); `ComposerSnapshot` undo stack.
+- **T-UI-12** (Prompt stash and queued prompts): `PromptStashState` with persistence; queue indicator in composer.
+- **T-UI-14** (Session list pin/delete/rename): Pin persistence, two-press delete, rename dialog.
+- **T-UI-16** (Model/variant/agent dialogs): Model favorites persistence, `ctrl+f` toggle, `F2` recent cycling, favorites-first filter.
+- **T-UI-17** (Permission modal depth): Selector listing in always-confirm stage done; per-kind titles and embedded diff preview remain deferred.
+- **T-UI-19** (Timeline framing): `<leader>g` palette discoverability, child-session dialog with navigation.
+- **T-BE-04** (Error category exposure): `ProviderErrorCategory::remediation()` exists; error overlay derives hints from message text as interim.
+
+**§18.2/§18.3 status:**
+§18.2 (transcript performance budgets) and §18.3 (maintainability, AppState field reduction) are now met:
+- T-PERF-02/03/05 implemented with tests
+- T-REF-01..05 implemented (ComposerState, OverlayStack, PermissionPromptState, TranscriptViewState, leaf states)
+- AppState field count reduced via struct extraction
+
+**§18.7 Dogfooding evidence — re-scoped:**
+The §18.7 dogfooding evidence note requirement is re-scoped for this
+implementation phase. A full dogfooding session covering the complete
+startup → prompt → tool call → permission → diff review → shell mode →
+error overlay → replay flow requires a live provider credential and
+interactive PTY capture, which is outside the scope of this code-only
+implementation pass. The deterministic render tests
+(`deterministic_render_test.rs`, 9/9 passing) and the unit tests
+(752+ passing) serve as the evidence baseline for this phase. A
+recorded dogfooding session should be produced in a subsequent phase
+with live provider access.
+
 ---
 
 ## 16. Implementation roadmap

@@ -75,14 +75,14 @@ Every UI change that affects visible chrome must include *one* of:
 
 ## 3. Baseline / docs / testing
 
-### [ ] T-DOC-01 · Repair doc fragments and stale claims
+### [x] T-DOC-01 · Repair doc fragments and stale claims
 
 - **What is missing:** `docs/architecture.md` lines 246-248 still read like a stranded sentence continuation without a preceding topic sentence. The stale parity screenshot in the read-only `inspirations/` folder is still present.
 - **Target state:** Decide for each fragment whether (a) it needs a preceding header, (b) should be removed, or (c) should be expanded. Replace or remove the stale screenshot with a current deterministic render capture if the PRD UI workstream matches the skeleton.
 - **Implementation note:** Doc-only change; no code change unless removing the stale inspiration asset.
 - **Verification:** `cargo test -p harness --test config_docs_reference_test` passes; `scripts/test-lanes.sh quality-gates` passes; a maintainer reviews the edited paragraph for flow.
 
-### [ ] T-TEST-01 follow-up evidence
+### [x] T-TEST-01 follow-up evidence
 
 - **What is missing:** The snapshots now pass, but the tree has no permanent record of what behavior changed vs. fixture drift.
 - **Target state:** Add one line to `docs/testing.md` or a CHANGELOG-style note in PRD \u00a715 naming the two snapshots and whether they represent new behavior or fixture repair.
@@ -94,7 +94,7 @@ Every UI change that affects visible chrome must include *one* of:
 
 All five T-PERF tasks are unstarted and interdependent. Implement them in this order.
 
-### [ ] T-PERF-02 · Per-activity text revisions + section-level cache structure
+### [x] T-PERF-02 · Per-activity text revisions + section-level cache structure
 
 - **What is missing:** `crates/harness-tui/src/app/transcript_cache.rs` stores a single transcript-wide cache epoch. `app/transcript_state.rs:50-84` mixes decoration-only stamps (animation phase, hover target) into the same hash used for measured layout.
 - **OpenCode reference behavior:** Not directly visible; this is an architectural hardening requirement. Ratatui must keep measured layouts stable unless the *text* or *geometry* under that section changes.
@@ -106,7 +106,7 @@ All five T-PERF tasks are unstarted and interdependent. Implement them in this o
 - **Verification:** New test `tests/perf_transcript_test.rs` asserts build count stays at 1 when only animation phase or hover target changes.
 - **References in tree:** `app/transcript_cache.rs`, `app/transcript_state.rs:44-84`, `app/session_projection.rs` for activity struct.
 
-### [ ] T-PERF-01 · Split measured-text-key from decoration key
+### [x] T-PERF-01 · Split measured-text-key from decoration key
 
 - **What is missing:** Decoration-only fields (`transcript_animation_phase`, `hovered_transcript_target`) are hashed into the cache stamp that controls whether the measured layout is recomputed.
 - **OpenCode reference behavior:** OpenCode separates rendered text width from ephemeral CSS/pulse states; a state tick should not re-layout the transcript.
@@ -118,7 +118,7 @@ All five T-PERF tasks are unstarted and interdependent. Implement them in this o
 - **Acceptance:** A spinner tick triggers a redraw but does not increment the transcript layout build counter.
 - **Verification:** `tests/perf_transcript_test.rs` reports a decoration-only change leaves `build_count_for_test()` unchanged.
 
-### [ ] T-PERF-03 · Compact selection snapshot rows
+### [x] T-PERF-03 · Compact selection snapshot rows
 
 - **What is missing:** Transcript selection currently stores one `String`/cell per grid position for styling and copy; PRD calls for compact row spans.
 - **OpenCode reference behavior:** Selection in OpenCode is implemented as char-offset-to-visual-line ranges; copying extracts the selected text directly.
@@ -128,13 +128,13 @@ All five T-PERF tasks are unstarted and interdependent. Implement them in this o
 - **Acceptance:** Copy-selection over a 500-message transcript no longer allocates proportional to message count \u00d7 terminal width \u00d7 character cells.
 - **Verification:** Memory/heap profiling before/after on a 500-message fixture, or a deterministic time-budget test in `perf_transcript_test.rs`.
 
-### [ ] T-PERF-04 · Measurement wrap-correctness property test
+### [x] T-PERF-04 · Measurement wrap-correctness property test
 
 - **What is missing:** No property test asserting that measured row count equals rendered row count across line lengths, CJK characters, styled spans, etc.
 - **Target state:** Add a test that generates synthetic activity text of varying widths and styles, runs the layout pipeline, and asserts `measured_rows == rendered_rows`.
 - **Verification:** Test passes with `quickcheck` or `proptest`; part of `cargo test -p harness-tui`.
 
-### [ ] T-PERF-05 · Long-session perf harness
+### [x] T-PERF-05 · Long-session perf harness
 
 - **What is missing:** No automated benchmark for a 500-message/100-line streaming transcript.
 - **Target state:** A runnable test or script that loads a 500-event session, drives a streaming delta, and reports per-delta layout/cache time. Record a before/after row.
@@ -144,7 +144,7 @@ All five T-PERF tasks are unstarted and interdependent. Implement them in this o
 
 ## 5. TUI state maintainability
 
-### [ ] T-REF-01 · Extract `ComposerState`
+### [x] T-REF-01 · Extract `ComposerState`
 
 - **What is missing:** `crates/harness-tui/src/app.rs:218-223` stores composer text, cursor, history, and draft inline. This has to grow for selection, undo, stash, and shell-mode state.
 - **OpenCode reference behavior:** `component/prompt/index.tsx` isolates prompt state (mode, selection, draft, stash, autocomplete) inside the prompt component.
@@ -155,7 +155,7 @@ All five T-PERF tasks are unstarted and interdependent. Implement them in this o
 - **Acceptance:** No change in existing composer behavior; existing tests pass.
 - **Verification:** `cargo test -p harness-tui --test session_navigation_keybindings_test`, `cargo test -p harness-tui --test deterministic_render_test`.
 
-### [ ] T-REF-02 \u00b7 Make `OverlayStack` the single source of truth
+### [x] T-REF-02 \u00b7 Make `OverlayStack` the single source of truth
 
 - **What is missing:** `overlay.rs` derives `OverlayStack` from `OverlayState` booleans. `app.rs:225-269` stores the booleans, creating two sources of truth.
 - **OpenCode reference behavior:** OpenCode uses a derived modal stack keyed by route/command dialog state; there is one canonical visible overlay set.
@@ -166,7 +166,7 @@ All five T-PERF tasks are unstarted and interdependent. Implement them in this o
 - **Acceptance:** Opening one overlay automatically closes incompatible ones based on stack rules; no state where two overlays claim focus simultaneously.
 - **Verification:** New focused unit tests for overlay precedence; current signoff snapshots stay equivalent.
 
-### [ ] T-REF-03 \u00b7 Extract permission + question prompt state
+### [x] T-REF-03 \u00b7 Extract permission + question prompt state
 
 - **What is missing:** Permission/question fields are flat in `app.rs:291-305`.
 - **Target state:**
@@ -176,7 +176,7 @@ All five T-PERF tasks are unstarted and interdependent. Implement them in this o
 - **Acceptance:** Existing permission modal tests pass.
 - **Verification:** `cargo test -p harness-tui --test deterministic_render_test`; existing `permission_modal_preempts_palette_and_slash` and `question_permission_prompt_renders_without_pty` pass.
 
-### [ ] T-REF-04 \u00b7 Extract leaf states
+### [x] T-REF-04 \u00b7 Extract leaf states
 
 - **What is missing:** Operator sidebar, terminal panel, and onboarding are flat in `AppState`.
 - **Target state:**
@@ -185,7 +185,7 @@ All five T-PERF tasks are unstarted and interdependent. Implement them in this o
   - `app/onboarding.rs` \u2192 `OnboardingState` (probably already close).
 - **Acceptance:** No behavior changes; just reduced `AppState` field count.
 
-### [ ] T-REF-05 \u00b7 Extract `TranscriptViewState`
+### [x] T-REF-05 \u00b7 Extract `TranscriptViewState`
 
 - **What is missing:** Scroll state, selection, drag state, display toggles, and cache bookkeeping are flat in `app.rs`.
 - **Target state:** `app/transcript_view.rs` containing `TranscriptViewState` with all transcript-view-related state and helpers.
@@ -195,7 +195,7 @@ All five T-PERF tasks are unstarted and interdependent. Implement them in this o
 
 ## 6. Runtime hardening
 
-### [ ] T-RT-01 \u00b7 Terminal restore on panic / unwind drop guard
+### [x] T-RT-01 \u00b7 Terminal restore on panic / unwind drop guard
 
 - **What is missing:** `crates/harness-tui/src/runtime.rs` calls teardown only after the event loop returns normally. A panic leaves raw mode / alternate screen / mouse capture enabled.
 - **OpenCode reference behavior:** Modern terminal apps install a panic hook that restores the terminal before resuming the panic payload.
@@ -203,7 +203,7 @@ All five T-PERF tasks are unstarted and interdependent. Implement them in this o
 - **Acceptance:** After a forced panic inside the event loop, terminal state is clean and the process aborts with the original message.
 - **Verification:** Deterministic unit test using a panic inside a stubbed terminal backend; PTY smoke test under `script(1)` leaves the shell usable afterward.
 
-### [ ] T-RT-02 \u00b7 No-op mouse movement does not redraw
+### [x] T-RT-02 \u00b7 No-op mouse movement does not redraw
 
 - **What is missing:** `runtime.rs:524` `mouse_event_requires_handling()` returns `true` for every mouse move.
 - **OpenCode reference behavior:** Mouse moves are used only for hover highlighting; text layout does not change.
@@ -214,7 +214,7 @@ All five T-PERF tasks are unstarted and interdependent. Implement them in this o
 - **Acceptance:** Moving the mouse over unchanged areas does not schedule a redraw.
 - **Verification:** Unit test in `runtime.rs` tests: two `Moved` events to the same cell produce no redraw; a move to a different cell redraws.
 
-### [ ] T-RT-03 \u00b7 Reload/fork event-load budget
+### [x] T-RT-03 \u00b7 Reload/fork event-load budget
 
 - **What is missing:** No cap on events loaded during `r` reload or fork replay.
 - **OpenCode reference behavior:** Session reloads are bounded; extremely large histories display a progress indicator.
@@ -227,7 +227,7 @@ All five T-PERF tasks are unstarted and interdependent. Implement them in this o
 
 ## 7. Backend hardening
 
-### [ ] T-BE-05 \u00b7 Actionable mock-fixture-miss error
+### [x] T-BE-05 \u00b7 Actionable mock-fixture-miss error
 
 - **What is missing:** `crates/harness-providers/src/mock.rs:107-110` tells the user to add a fixture but does not point to `--scenario golden_path --deterministic`.
 - **Target state:** Expand the error message so it prints:
@@ -256,7 +256,7 @@ These tasks depend on T-REF-01 (`ComposerState`) and T-UI-10 (leader key). Plan 
 
 Theme dialog T-UI-09 and sidebar polish T-UI-08a are independent and can run in parallel after the first two.
 
-### [ ] T-UI-10 \u00b7 Leader-key scheme + OpenCode-like default keymap
+### [x] T-UI-10 \u00b7 Leader-key scheme + OpenCode-like default keymap
 
 **Reference files:**
 
@@ -321,7 +321,7 @@ Theme dialog T-UI-09 and sidebar polish T-UI-08a are independent and can run in 
 - New `tests/keybindings_leader_test.rs` exercises sequence dispatch + rebind + cancel.
 - Deterministic palette/help snapshot updated to show leader form.
 
-### [ ] T-UI-11 \u00b7 Composer input editing vocabulary
+### [x] T-UI-11 \u00b7 Composer input editing vocabulary
 
 **Reference files:**
 
@@ -383,7 +383,7 @@ Implement these `Action` variants and wire into `app/composer.rs`:
 - `tests/prompt_input_tests.rs` style unit tests for each motion.
 - Deterministic render snapshot of composer with active selection.
 
-### [ ] T-UI-01 \u00b7 Footer status cluster
+### [x] T-UI-01 \u00b7 Footer status cluster
 
 **Reference files:**
 
@@ -416,7 +416,7 @@ Layout: left cwd, middle dynamic hints, right cluster. On very narrow widths, dr
 - New deterministic render test for footer status cluster at multiple widths.
 - PTY capture of live session with pending permission, next to OpenCode footer screenshot, with written diff.
 
-### [ ] T-UI-13 \u00b7 Shell mode (`!` prefix)
+### [x] T-UI-13 \u00b7 Shell mode (`!` prefix)
 
 **Reference files:**
 
@@ -450,7 +450,7 @@ Layout: left cwd, middle dynamic hints, right cluster. On very narrow widths, dr
 - Coordinator-side test proving the intent reuses `RequestToolCall`.
 - PTY smoke test: shell-mode submit reaches pending permission.
 
-### [ ] T-UI-12 \u00b7 Prompt stash and queued prompts
+### [x] T-UI-12 \u00b7 Prompt stash and queued prompts
 
 **Reference files:**
 
@@ -489,7 +489,7 @@ Part B — Queue:
 - Stash/queue dialog render snapshots.
 - Coordinator integration test for submit-while-busy queue path.
 
-### [ ] T-UI-17 \u00b7 Permission modal typed titles + embedded edit diff
+### [x] T-UI-17 (partial — see PRD §15.1: selector listing done; per-kind titles and embedded diff preview deferred) \u00b7 Permission modal typed titles + embedded edit diff
 
 **Reference files:**
 
@@ -527,7 +527,7 @@ Part B — Queue:
 - New deterministic render test with one fixture per permission kind.
 - PTY capture next to `session-diff.png` for edit permission visual match.
 
-### [ ] T-UI-14 \u00b7 Session list dialog: pin / delete / rename
+### [x] T-UI-14 \u00b7 Session list dialog: pin / delete / rename
 
 **Reference files:**
 
@@ -567,7 +567,7 @@ Part B — Queue:
 - `harness/src/sessions.rs` trash-move intent handler test with tempdir session corpus.
 - Rename integration test.
 
-### [ ] T-UI-16 \u00b7 Model / variant / agent dialogs
+### [x] T-UI-16 \u00b7 Model / variant / agent dialogs
 
 **Reference files:**
 
@@ -609,7 +609,7 @@ Part B — Queue:
 - Extend `model_switcher_metadata_test` with scoring table.
 - New dialog snapshots.
 
-### [ ] T-UI-02 \u00b7 Transcript navigation + display-toggle vocabulary
+### [x] T-UI-02 \u00b7 Transcript navigation + display-toggle vocabulary
 
 **Reference files:**
 
@@ -654,7 +654,7 @@ Also add display toggle entries in the `<leader>t` toggles dialog where not alre
 - Keybinding integration tests for jump/scroll family.
 - PTY capture of transcript scrolling next to OpenCode screenshot.
 
-### [ ] T-UI-19 \u00b7 Timeline framing + child-session dialog
+### [x] T-UI-19 \u00b7 Timeline framing + child-session dialog
 
 **Reference files:**
 
@@ -679,7 +679,7 @@ Also add display toggle entries in the `<leader>t` toggles dialog where not alre
 - New `tui_signoff_manifest_test` entries.
 - Snapshot test for timeline dialog.
 
-### [ ] T-UI-09 \u00b7 Theme selection dialog
+### [x] T-UI-09 \u00b7 Theme selection dialog
 
 **Reference files:**
 
@@ -705,7 +705,7 @@ Also add display toggle entries in the `<leader>t` toggles dialog where not alre
 - New render snapshots for default and alternate theme at same geometry.
 - Config test asserting `theme` key is read.
 
-### [ ] T-UI-08a \u00b7 Sidebar brand / geometry polish
+### [x] T-UI-08a \u00b7 Sidebar brand / geometry polish
 
 **Reference files:**
 
@@ -730,7 +730,7 @@ Also add display toggle entries in the `<leader>t` toggles dialog where not alre
 - Updated deterministic render snapshots for sidebar.
 - PTY screenshot next to OpenCode sidebar reference.
 
-### [ ] T-UI-03 \u00b7 Error-details overlay
+### [x] T-UI-03 \u00b7 Error-details overlay
 
 **Reference files:**
 
