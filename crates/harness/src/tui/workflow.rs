@@ -117,7 +117,10 @@ pub(super) fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> Intera
         | Some(UiIntent::CloneSession { .. })
         | Some(UiIntent::SwitchModel { .. })
         | Some(UiIntent::UpdateSessionTitle { .. })
-        | Some(UiIntent::RevertWorkspace { .. }) => InteractiveWorkflow::Quit,
+        | Some(UiIntent::DeleteSession { .. })
+        | Some(UiIntent::RevertWorkspace { .. })
+        | Some(UiIntent::ExportSession)
+        | Some(UiIntent::RunShellCommand { .. }) => InteractiveWorkflow::Quit,
     }
 }
 
@@ -161,7 +164,10 @@ pub(super) fn live_workflow_from_intent(intent: &UiIntent) -> Option<Interactive
         | UiIntent::CloneSession { .. }
         | UiIntent::SwitchModel { .. }
         | UiIntent::UpdateSessionTitle { .. }
-        | UiIntent::RevertWorkspace { .. } => None,
+        | UiIntent::DeleteSession { .. }
+        | UiIntent::RevertWorkspace { .. }
+        | UiIntent::ExportSession
+        | UiIntent::RunShellCommand { .. } => None,
     }
 }
 
@@ -178,7 +184,9 @@ fn forward_intent_to_live_run(intent: &UiIntent) -> bool {
             | UiIntent::SwitchModel { .. }
             | UiIntent::QuitRequested
             | UiIntent::UpdateSessionTitle { .. }
+            | UiIntent::DeleteSession { .. }
             | UiIntent::RevertWorkspace { .. }
+            | UiIntent::RunShellCommand { .. }
     )
 }
 

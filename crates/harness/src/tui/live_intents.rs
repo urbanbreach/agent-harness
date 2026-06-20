@@ -282,6 +282,45 @@ pub(super) async fn handle_ui_intents(
                 };
                 let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
             }
+            UiIntent::ExportSession => {}
+            UiIntent::DeleteSession { run_id, run_dir } => {
+                let (message, level) = match delete_session_dir(&run_dir) {
+                    Ok(trash_dir) => (
+                        format!("session {} moved to {}", run_id, trash_dir.display()),
+                        OperatorNoticeLevel::Info,
+                    ),
+                    Err(err) => (
+                        format!("failed to delete session {run_id}: {err}"),
+                        OperatorNoticeLevel::Error,
+                    ),
+                };
+                let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
+            }
+            UiIntent::RunShellCommand { command } => {
+                let actor = harness_core::event::EventActor::new(
+                    harness_core::event::ActorKind::User,
+                    None,
+                );
+                let (message, level) = match coordinator
+                    .request_tool_call(
+                        actor,
+                        None,
+                        "bash",
+                        serde_json::json!({ "command": command }),
+                    )
+                    .await
+                {
+                    Ok(_) => (
+                        format!("shell command queued: {command}"),
+                        OperatorNoticeLevel::Info,
+                    ),
+                    Err(err) => (
+                        format!("shell command failed: {err}"),
+                        OperatorNoticeLevel::Error,
+                    ),
+                };
+                let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
+            }
         }
     }
     Ok(())
@@ -312,4 +351,47 @@ fn compact_token_estimate(value: u32) -> String {
         return format!("{:.1}K", f64::from(value) / 1_000.0);
     }
     value.to_string()
+}
+
+/// Move a session run directory to a sibling `trash/` folder.
+///
+/// This reuses session path safety: the run_dir must be a valid directory,
+/// and the trash folder is created as a sibling of the session root.
+fn delete_session_dir(run_dir: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    let parent = run_dir.parent().ok_or_else(|| {
+        format!(
+            "cannot determine parent of session dir {}",
+            run_dir.display()
+        )
+    })?;
+
+    let trash_dir = parent.join("trash");
+    std::fs::create_dir_all(&trash_dir)
+        .map_err(|err| format!("failed to create trash dir {}: {err}", trash_dir.display()))?;
+
+    let run_name = run_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| {
+            format!(
+                "cannot determine session dir name from {}",
+                run_dir.display()
+            )
+        })?;
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let dest = trash_dir.join(format!("{run_name}-{timestamp}"));
+
+    std::fs::rename(run_dir, &dest).map_err(|err| {
+        format!(
+            "failed to move session dir {} to {}: {err}",
+            run_dir.display(),
+            dest.display()
+        )
+    })?;
+
+    Ok(dest)
 }
