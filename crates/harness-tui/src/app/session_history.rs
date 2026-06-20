@@ -336,6 +336,9 @@ impl AppState {
     }
 
     pub(in crate::app) fn handle_session_history_key(&mut self, key: &KeyEvent) -> bool {
+        if self.session_rename_visible {
+            return self.handle_session_rename_key(key);
+        }
         let ctrl_only = key.modifiers == KeyModifiers::CONTROL;
         match key.code {
             KeyCode::Esc => {
@@ -347,27 +350,33 @@ impl AppState {
                 true
             }
             KeyCode::PageUp => {
+                self.session_delete_armed_run_id = None;
                 self.move_session_history_selection(-10);
                 true
             }
             KeyCode::PageDown => {
+                self.session_delete_armed_run_id = None;
                 self.move_session_history_selection(10);
                 true
             }
             KeyCode::Home => {
+                self.session_delete_armed_run_id = None;
                 self.session_history_selected = 0;
                 true
             }
             KeyCode::End => {
+                self.session_delete_armed_run_id = None;
                 self.session_history_selected =
                     self.session_history_filtered.len().saturating_sub(1);
                 true
             }
             KeyCode::Up => {
+                self.session_delete_armed_run_id = None;
                 self.move_session_history_selection(-1);
                 true
             }
             KeyCode::Down => {
+                self.session_delete_armed_run_id = None;
                 self.move_session_history_selection(1);
                 true
             }
@@ -387,12 +396,25 @@ impl AppState {
                 self.move_session_history_selection(1);
                 true
             }
+            KeyCode::Char('f') if ctrl_only => {
+                self.toggle_session_pin();
+                true
+            }
+            KeyCode::Char('d') if ctrl_only => {
+                self.handle_session_delete_press();
+                true
+            }
+            KeyCode::Char('r') if ctrl_only => {
+                self.open_session_rename_dialog();
+                true
+            }
             KeyCode::Char(c) => {
                 if key.modifiers.contains(KeyModifiers::CONTROL)
                     || key.modifiers.contains(KeyModifiers::ALT)
                 {
                     return false;
                 }
+                self.session_delete_armed_run_id = None;
                 self.overlay_insert_char(c, Self::update_session_history_filter);
                 true
             }
@@ -437,32 +459,37 @@ impl AppState {
             })
             .filter(|(_, entry)| session_history_filter_matches(entry, &input))
             .map(|(index, entry)| {
+                let is_pinned = self.session_pins.contains(&entry.catalog.run_id);
                 (
                     index,
                     session_history_action_sort_bucket(entry, self.startup_launcher_action),
+                    is_pinned,
                 )
             })
             .collect::<Vec<_>>();
-        filtered.sort_by(|(left_index, left_bucket), (right_index, right_bucket)| {
-            let left_entry = &self.session_history_entries[*left_index];
-            let right_entry = &self.session_history_entries[*right_index];
-            left_bucket
-                .cmp(right_bucket)
-                .then_with(|| {
-                    right_entry
-                        .catalog
-                        .last_updated_at
-                        .as_deref()
-                        .unwrap_or("")
-                        .cmp(left_entry.catalog.last_updated_at.as_deref().unwrap_or(""))
-                })
-                .then_with(|| {
-                    session_history_display_title(left_entry)
-                        .cmp(&session_history_display_title(right_entry))
-                })
-                .then_with(|| left_entry.catalog.run_id.cmp(&right_entry.catalog.run_id))
-        });
-        self.session_history_filtered = filtered.into_iter().map(|(index, _)| index).collect();
+        filtered.sort_by(
+            |(left_index, left_bucket, left_pinned), (right_index, right_bucket, right_pinned)| {
+                let left_entry = &self.session_history_entries[*left_index];
+                let right_entry = &self.session_history_entries[*right_index];
+                right_pinned
+                    .cmp(left_pinned)
+                    .then_with(|| left_bucket.cmp(right_bucket))
+                    .then_with(|| {
+                        right_entry
+                            .catalog
+                            .last_updated_at
+                            .as_deref()
+                            .unwrap_or("")
+                            .cmp(left_entry.catalog.last_updated_at.as_deref().unwrap_or(""))
+                    })
+                    .then_with(|| {
+                        session_history_display_title(left_entry)
+                            .cmp(&session_history_display_title(right_entry))
+                    })
+                    .then_with(|| left_entry.catalog.run_id.cmp(&right_entry.catalog.run_id))
+            },
+        );
+        self.session_history_filtered = filtered.into_iter().map(|(index, _, _)| index).collect();
         self.session_history_selected = 0;
     }
 
@@ -551,7 +578,7 @@ impl AppState {
             StartupLauncherAction::ReplaySession => {
                 self.continue_disabled_banner = None;
                 self.replay_mode = true;
-                set_pending_live_prompt_draft(Some(self.prompt_buffer.clone()));
+                set_pending_live_prompt_draft(Some(self.composer.prompt_buffer.clone()));
                 self.emit_ui_intent(UiIntent::ReplaySession {
                     run_id: selected_run_id,
                     run_dir: selected_run_dir,
@@ -573,7 +600,7 @@ impl AppState {
 
                 self.continue_disabled_banner = None;
                 self.replay_mode = false;
-                set_pending_live_prompt_draft(Some(self.prompt_buffer.clone()));
+                set_pending_live_prompt_draft(Some(self.composer.prompt_buffer.clone()));
                 self.emit_ui_intent(UiIntent::ContinueSession {
                     run_id: selected_run_id,
                     run_dir: selected_run_dir,
@@ -583,6 +610,158 @@ impl AppState {
                 }
                 self.close_session_history();
             }
+        }
+    }
+
+    fn toggle_session_pin(&mut self) {
+        let Some(entry) = self.selected_session_history_entry() else {
+            return;
+        };
+        let run_id = entry.catalog.run_id.clone();
+        if !self.session_pins.insert(run_id.clone()) {
+            self.session_pins.remove(&run_id);
+        }
+        self.persist_session_pins();
+        self.update_session_history_filter();
+    }
+
+    fn handle_session_delete_press(&mut self) {
+        let Some(entry) = self.selected_session_history_entry() else {
+            return;
+        };
+        let run_id = entry.catalog.run_id.clone();
+        let run_dir = entry.run_dir.clone();
+        if self.session_delete_armed_run_id.as_deref() == Some(run_id.as_str()) {
+            self.session_delete_armed_run_id = None;
+            self.emit_ui_intent(UiIntent::DeleteSession { run_id, run_dir });
+            self.close_session_history();
+        } else {
+            self.session_delete_armed_run_id = Some(run_id);
+        }
+    }
+
+    fn open_session_rename_dialog(&mut self) {
+        let Some(entry) = self.selected_session_history_entry() else {
+            return;
+        };
+        let run_id = entry.catalog.run_id.clone();
+        let title = session_history_display_title(entry).to_string();
+        self.session_rename_target_run_id = Some(run_id);
+        self.session_rename_input = title;
+        self.session_rename_cursor = self.session_rename_input.chars().count();
+        self.session_rename_visible = true;
+    }
+
+    fn handle_session_rename_key(&mut self, key: &KeyEvent) -> bool {
+        let ctrl_only = key.modifiers == KeyModifiers::CONTROL;
+        match key.code {
+            KeyCode::Esc => {
+                self.close_session_rename_dialog();
+                true
+            }
+            KeyCode::Enter => {
+                self.submit_session_rename();
+                true
+            }
+            KeyCode::Left => {
+                if self.session_rename_cursor > 0 {
+                    self.session_rename_cursor -= 1;
+                }
+                true
+            }
+            KeyCode::Right => {
+                if self.session_rename_cursor < self.session_rename_input.chars().count() {
+                    self.session_rename_cursor += 1;
+                }
+                true
+            }
+            KeyCode::Home => {
+                self.session_rename_cursor = 0;
+                true
+            }
+            KeyCode::End => {
+                self.session_rename_cursor = self.session_rename_input.chars().count();
+                true
+            }
+            KeyCode::Backspace => {
+                if self.session_rename_cursor > 0 {
+                    self.session_rename_cursor -= 1;
+                    let byte_idx = self
+                        .session_rename_input
+                        .char_indices()
+                        .nth(self.session_rename_cursor)
+                        .map(|(index, _)| index)
+                        .unwrap_or(self.session_rename_input.len());
+                    self.session_rename_input.remove(byte_idx);
+                }
+                true
+            }
+            KeyCode::Delete => {
+                if self.session_rename_cursor < self.session_rename_input.chars().count() {
+                    let byte_idx = self
+                        .session_rename_input
+                        .char_indices()
+                        .nth(self.session_rename_cursor)
+                        .map(|(index, _)| index)
+                        .unwrap_or(self.session_rename_input.len());
+                    self.session_rename_input.remove(byte_idx);
+                }
+                true
+            }
+            KeyCode::Char('a') if ctrl_only => {
+                self.session_rename_cursor = 0;
+                true
+            }
+            KeyCode::Char('e') if ctrl_only => {
+                self.session_rename_cursor = self.session_rename_input.chars().count();
+                true
+            }
+            KeyCode::Char(c) => {
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    || key.modifiers.contains(KeyModifiers::ALT)
+                {
+                    return false;
+                }
+                let byte_idx = self
+                    .session_rename_input
+                    .char_indices()
+                    .nth(self.session_rename_cursor)
+                    .map(|(index, _)| index)
+                    .unwrap_or(self.session_rename_input.len());
+                self.session_rename_input.insert(byte_idx, c);
+                self.session_rename_cursor += 1;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn submit_session_rename(&mut self) {
+        let Some(run_id) = self.session_rename_target_run_id.take() else {
+            self.close_session_rename_dialog();
+            return;
+        };
+        let title = self.session_rename_input.trim().to_string();
+        if !title.is_empty() {
+            self.emit_ui_intent(UiIntent::UpdateSessionTitle { title });
+        }
+        let _ = run_id;
+        self.close_session_rename_dialog();
+    }
+
+    fn close_session_rename_dialog(&mut self) {
+        self.session_rename_visible = false;
+        self.session_rename_input.clear();
+        self.session_rename_cursor = 0;
+        self.session_rename_target_run_id = None;
+    }
+
+    fn persist_session_pins(&mut self) {
+        let Some(path) = self.session_pins_path.as_deref() else {
+            return;
+        };
+        if let Err(err) = super::session_pins::save_session_pins(path, &self.session_pins) {
+            self.status_banner = Some(err);
         }
     }
 }

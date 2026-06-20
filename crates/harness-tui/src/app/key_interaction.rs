@@ -3,7 +3,7 @@ use super::*;
 impl AppState {
     pub fn handle_key(&mut self, key: KeyEvent) {
         if self.onboarding_accepts_hidden_text()
-            && !self.onboarding_auth_in_progress
+            && !self.onboarding.auth_in_progress
             && !key.modifiers.contains(KeyModifiers::CONTROL)
             && !key.modifiers.contains(KeyModifiers::ALT)
         {
@@ -22,6 +22,20 @@ impl AppState {
             }
         }
 
+        if self.keymap.leader_pending() {
+            self.keymap.set_leader_pending(false);
+            if let Some(action) = self.keymap.leader_action(&key) {
+                self.execute_action(action);
+                self.maybe_auto_exit();
+                return;
+            }
+        }
+
+        if key.code == KeyCode::Char('x') && key.modifiers == KeyModifiers::CONTROL {
+            self.keymap.set_leader_pending(true);
+            return;
+        }
+
         if self.overlay_stack().top() == Some(OverlayKind::PermissionModal) {
             self.handle_permission_modal_key(key);
             return;
@@ -35,8 +49,27 @@ impl AppState {
             return;
         }
 
+        if self.overlay_stack().top() == Some(OverlayKind::ThemeDialog) {
+            self.handle_theme_dialog_key(key);
+            self.maybe_auto_exit();
+            return;
+        }
+
+        if self.overlay_stack().top() == Some(OverlayKind::ErrorDetails) {
+            self.handle_error_details_key(key);
+            self.maybe_auto_exit();
+            return;
+        }
+
+        if self.overlay_stack().top() == Some(OverlayKind::PromptStashList) {
+            self.handle_prompt_stash_list_key(key);
+            self.maybe_auto_exit();
+            return;
+        }
+
         if clipboard::copy_on_select_disabled()
-            && (self.transcript_selection.is_some() || self.operator_sidebar_selection.is_some())
+            && (self.transcript_view.transcript_selection.is_some()
+                || self.operator_sidebar.selection.is_some())
         {
             if key.modifiers.contains(KeyModifiers::CONTROL)
                 && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('C'))
@@ -129,6 +162,11 @@ impl AppState {
             }
 
             if let KeyCode::Char(c) = key.code {
+                if c == '!' && self.composer.prompt_buffer.is_empty() && !self.composer.shell_mode {
+                    self.composer.shell_mode = true;
+                    self.maybe_auto_exit();
+                    return;
+                }
                 self.execute_action(Action::Char(c));
                 self.maybe_auto_exit();
                 return;
@@ -415,32 +453,32 @@ impl AppState {
     }
 
     fn move_onboarding_selection(&mut self, delta: isize) {
-        let len = onboarding::screen_for(self.onboarding_step, self.onboarding_selected)
+        let len = onboarding::screen_for(self.onboarding.step, self.onboarding.selected)
             .choices
             .len();
         if len == 0 {
-            self.onboarding_selected = 0;
+            self.onboarding.selected = 0;
             return;
         }
-        self.onboarding_selected = if delta < 0 {
-            if self.onboarding_selected == 0 {
+        self.onboarding.selected = if delta < 0 {
+            if self.onboarding.selected == 0 {
                 len - 1
             } else {
-                self.onboarding_selected - 1
+                self.onboarding.selected - 1
             }
         } else {
-            (self.onboarding_selected + 1) % len
+            (self.onboarding.selected + 1) % len
         };
     }
 
     fn request_onboarding_auth(&mut self, args: Vec<String>, stdin: Option<String>) {
-        self.onboarding_auth_in_progress = true;
+        self.onboarding.auth_in_progress = true;
         self.status_banner = Some(auth_status_banner(&args));
         self.emit_ui_intent(UiIntent::OpenAuthManager { args, stdin });
     }
 
     fn execute_onboarding_auth_step(&mut self) {
-        match self.onboarding_step {
+        match self.onboarding.step {
             OnboardingStep::CodexBrowser => self.request_onboarding_auth(
                 vec![
                     "login".to_string(),
@@ -469,13 +507,13 @@ impl AppState {
                 None,
             ),
             OnboardingStep::CopilotEnterpriseDevice => {
-                let enterprise_url = self.onboarding_secret_input.trim().to_string();
+                let enterprise_url = self.onboarding.secret_input.trim().to_string();
                 if enterprise_url.is_empty() {
                     self.status_banner =
                         Some("enterprise login requires a domain; input stays hidden".to_string());
                     return;
                 }
-                self.onboarding_secret_input.clear();
+                self.onboarding.secret_input.clear();
                 self.request_onboarding_auth(
                     vec![
                         "login".to_string(),
@@ -489,13 +527,13 @@ impl AppState {
                 );
             }
             OnboardingStep::ApiKeyEntry => {
-                let secret = self.onboarding_secret_input.trim().to_string();
+                let secret = self.onboarding.secret_input.trim().to_string();
                 if secret.is_empty() {
                     self.status_banner =
                         Some("api-key login requires a pasted key; input stays hidden".to_string());
                     return;
                 }
-                self.onboarding_secret_input.clear();
+                self.onboarding.secret_input.clear();
                 self.request_onboarding_auth(
                     vec![
                         "login".to_string(),
@@ -512,38 +550,38 @@ impl AppState {
     }
 
     fn execute_onboarding_selection(&mut self) {
-        if self.onboarding_auth_in_progress {
+        if self.onboarding.auth_in_progress {
             self.status_banner = Some("auth backend already running".to_string());
             return;
         }
-        match self.onboarding_step {
-            OnboardingStep::StartSplash if self.onboarding_selected == 1 => {
-                self.onboarding_step = OnboardingStep::SkipConfirmation;
-                self.onboarding_selected = 0;
+        match self.onboarding.step {
+            OnboardingStep::StartSplash if self.onboarding.selected == 1 => {
+                self.onboarding.step = OnboardingStep::SkipConfirmation;
+                self.onboarding.selected = 0;
             }
-            OnboardingStep::ProviderPick if self.onboarding_selected == 1 => {
-                self.onboarding_step = OnboardingStep::CopilotTargetPick;
-                self.onboarding_selected = 0;
+            OnboardingStep::ProviderPick if self.onboarding.selected == 1 => {
+                self.onboarding.step = OnboardingStep::CopilotTargetPick;
+                self.onboarding.selected = 0;
             }
             OnboardingStep::CopilotTargetPick => {
-                self.onboarding_step = if self.onboarding_selected == 1 {
+                self.onboarding.step = if self.onboarding.selected == 1 {
                     OnboardingStep::CopilotEnterpriseDevice
                 } else {
                     OnboardingStep::CopilotPublicDevice
                 };
-                self.onboarding_selected = 0;
+                self.onboarding.selected = 0;
             }
             OnboardingStep::AuthMethodPick => {
-                self.onboarding_step = match self.onboarding_selected {
+                self.onboarding.step = match self.onboarding.selected {
                     1 => OnboardingStep::CodexBrowser,
                     2 => OnboardingStep::ApiKeyEntry,
                     _ => OnboardingStep::CodexDevice,
                 };
-                self.onboarding_selected = 0;
+                self.onboarding.selected = 0;
             }
-            OnboardingStep::LoginErrorTimeout if self.onboarding_selected == 1 => {
-                self.onboarding_step = OnboardingStep::SkipConfirmation;
-                self.onboarding_selected = 0;
+            OnboardingStep::LoginErrorTimeout if self.onboarding.selected == 1 => {
+                self.onboarding.step = OnboardingStep::SkipConfirmation;
+                self.onboarding.selected = 0;
             }
             OnboardingStep::CodexBrowser
             | OnboardingStep::CodexDevice
@@ -552,29 +590,29 @@ impl AppState {
             | OnboardingStep::ApiKeyEntry => {
                 self.execute_onboarding_auth_step();
             }
-            OnboardingStep::SkipConfirmation if self.onboarding_selected == 0 => {
-                self.onboarding_visible = false;
-                self.onboarding_skipped_for_launch = true;
+            OnboardingStep::SkipConfirmation if self.onboarding.selected == 0 => {
+                self.onboarding.visible = false;
+                self.onboarding.skipped_for_launch = true;
                 self.status_banner = Some(
                     "onboarding skipped for this launch; no credential was written".to_string(),
                 );
             }
             OnboardingStep::FirstPromptSuccess => {
-                self.onboarding_visible = false;
+                self.onboarding.visible = false;
                 self.apply_new_session_launcher_selection();
             }
             _ => {
-                self.onboarding_step = self.onboarding_step.next();
-                self.onboarding_selected = 0;
+                self.onboarding.step = self.onboarding.step.next();
+                self.onboarding.selected = 0;
             }
         }
     }
 
     fn handle_onboarding_text_action(&mut self, action: Action) -> bool {
-        if !self.onboarding_visible
-            || self.onboarding_auth_in_progress
+        if !self.onboarding.visible
+            || self.onboarding.auth_in_progress
             || !matches!(
-                self.onboarding_step,
+                self.onboarding.step,
                 OnboardingStep::ApiKeyEntry | OnboardingStep::CopilotEnterpriseDevice
             )
         {
@@ -584,16 +622,16 @@ impl AppState {
         match action {
             Action::Char(c) => {
                 if !c.is_control() {
-                    self.onboarding_secret_input.push(c);
+                    self.onboarding.secret_input.push(c);
                 }
                 true
             }
             Action::Backspace => {
-                self.onboarding_secret_input.pop();
+                self.onboarding.secret_input.pop();
                 true
             }
             Action::ClearPrompt => {
-                self.onboarding_secret_input.clear();
+                self.onboarding.secret_input.clear();
                 true
             }
             _ => false,
@@ -609,7 +647,7 @@ impl AppState {
             return;
         }
 
-        if self.onboarding_visible && self.focus == Focus::List {
+        if self.onboarding.visible && self.focus == Focus::List {
             match action {
                 Action::SubmitPrompt => {
                     self.execute_onboarding_selection();
@@ -624,8 +662,8 @@ impl AppState {
                     return;
                 }
                 Action::DismissModal => {
-                    self.onboarding_step = OnboardingStep::SkipConfirmation;
-                    self.onboarding_selected = 0;
+                    self.onboarding.step = OnboardingStep::SkipConfirmation;
+                    self.onboarding.selected = 0;
                     return;
                 }
                 _ => {}
@@ -690,13 +728,42 @@ impl AppState {
                     | Action::CursorRight
                     | Action::Backspace
                     | Action::Delete
-                    | Action::Char(_) => return,
+                    | Action::Char(_)
+                    | Action::SelectCharLeft
+                    | Action::SelectCharRight
+                    | Action::SelectWordLeft
+                    | Action::SelectWordRight
+                    | Action::SelectLine
+                    | Action::SelectAll
+                    | Action::MoveWordLeft
+                    | Action::MoveWordRight
+                    | Action::MoveLineStart
+                    | Action::MoveLineEnd
+                    | Action::MoveBufferStart
+                    | Action::MoveBufferEnd
+                    | Action::DeleteWordForward
+                    | Action::DeleteWordBackward
+                    | Action::DeleteLine
+                    | Action::KillToLineStart
+                    | Action::KillToLineEnd
+                    | Action::Undo
+                    | Action::Redo => return,
                     _ => {}
                 }
             }
 
             match action {
                 Action::SubmitPrompt => {
+                    if self.composer.shell_mode {
+                        let command = self.composer.prompt_buffer.trim().to_string();
+                        if !command.is_empty() {
+                            self.emit_ui_intent(UiIntent::RunShellCommand { command });
+                            self.composer.prompt_buffer.clear();
+                            self.composer.prompt_cursor = 0;
+                            self.composer.shell_mode = false;
+                        }
+                        return;
+                    }
                     self.submit_prompt();
                     return;
                 }
@@ -705,8 +772,20 @@ impl AppState {
                     return;
                 }
                 Action::ClearPrompt => {
+                    if !self.composer.prompt_buffer.is_empty() {
+                        self.composer.push_undo();
+                    }
                     self.clear_prompt_input();
+                    if self.composer.shell_mode {
+                        self.composer.shell_mode = false;
+                    }
                     return;
+                }
+                Action::DismissModal => {
+                    if self.composer.shell_mode {
+                        self.composer.shell_mode = false;
+                        return;
+                    }
                 }
                 Action::HistoryUp => {
                     if self.move_prompt_cursor_up() {
@@ -731,20 +810,29 @@ impl AppState {
                     return;
                 }
                 Action::CursorLeft => {
-                    if self.prompt_cursor > 0 {
-                        self.prompt_cursor -= 1;
+                    if self.composer.prompt_cursor > 0 {
+                        self.composer.prompt_cursor -= 1;
                     }
+                    self.composer.selection_anchor = None;
                     self.sync_file_mention_overlay();
                     return;
                 }
                 Action::CursorRight => {
-                    if self.prompt_cursor < self.prompt_char_count() {
-                        self.prompt_cursor += 1;
+                    if self.composer.prompt_cursor < self.prompt_char_count() {
+                        self.composer.prompt_cursor += 1;
                     }
+                    self.composer.selection_anchor = None;
                     self.sync_file_mention_overlay();
                     return;
                 }
                 Action::Backspace => {
+                    if self.composer.shell_mode
+                        && self.composer.prompt_cursor == 0
+                        && self.composer.prompt_buffer.is_empty()
+                    {
+                        self.composer.shell_mode = false;
+                        return;
+                    }
                     self.backspace_prompt_char();
                     return;
                 }
@@ -754,6 +842,82 @@ impl AppState {
                 }
                 Action::Char(c) => {
                     self.insert_prompt_char(c);
+                    return;
+                }
+                Action::SelectCharLeft => {
+                    self.composer_select_char_left();
+                    return;
+                }
+                Action::SelectCharRight => {
+                    self.composer_select_char_right();
+                    return;
+                }
+                Action::SelectWordLeft => {
+                    self.composer_select_word_left();
+                    return;
+                }
+                Action::SelectWordRight => {
+                    self.composer_select_word_right();
+                    return;
+                }
+                Action::SelectLine => {
+                    self.composer_select_line();
+                    return;
+                }
+                Action::SelectAll => {
+                    self.composer_select_all();
+                    return;
+                }
+                Action::MoveWordLeft => {
+                    self.composer_move_word_left();
+                    return;
+                }
+                Action::MoveWordRight => {
+                    self.composer_move_word_right();
+                    return;
+                }
+                Action::MoveLineStart => {
+                    self.composer_move_line_start();
+                    return;
+                }
+                Action::MoveLineEnd => {
+                    self.composer_move_line_end();
+                    return;
+                }
+                Action::MoveBufferStart => {
+                    self.composer_move_buffer_start();
+                    return;
+                }
+                Action::MoveBufferEnd => {
+                    self.composer_move_buffer_end();
+                    return;
+                }
+                Action::DeleteWordForward => {
+                    self.composer_delete_word_forward();
+                    return;
+                }
+                Action::DeleteWordBackward => {
+                    self.composer_delete_word_backward();
+                    return;
+                }
+                Action::DeleteLine => {
+                    self.composer_delete_line();
+                    return;
+                }
+                Action::KillToLineStart => {
+                    self.composer_kill_to_line_start();
+                    return;
+                }
+                Action::KillToLineEnd => {
+                    self.composer_kill_to_line_end();
+                    return;
+                }
+                Action::Undo => {
+                    self.composer_undo();
+                    return;
+                }
+                Action::Redo => {
+                    self.composer_redo();
                     return;
                 }
                 _ => {}
@@ -778,9 +942,9 @@ impl AppState {
                 }
             }
             Action::ToggleFollow => {
-                self.follow_mode = !self.follow_mode;
-                if self.follow_mode {
-                    self.transcript_scroll = 0;
+                self.transcript_view.follow_mode = !self.transcript_view.follow_mode;
+                if self.transcript_view.follow_mode {
+                    self.transcript_view.transcript_scroll = 0;
                 }
             }
             Action::ToggleOperatorSidebar
@@ -875,6 +1039,169 @@ impl AppState {
             Action::RevertWorkspace => {
                 self.request_workspace_revert();
             }
+            Action::OpenThemeDialog => {
+                self.theme_dialog_visible = true;
+                self.theme_dialog_selected = Theme::available_theme_names()
+                    .iter()
+                    .position(|name| *name == self.theme_name)
+                    .unwrap_or(0);
+            }
+            Action::OpenModelSwitcher => {
+                if !self.replay_mode {
+                    self.open_model_switcher();
+                }
+            }
+            Action::FirstMessage | Action::MoveBufferStart => {
+                if !self.activities.is_empty() {
+                    self.transcript_view.selected_activity_index = 0;
+                    self.transcript_view.follow_mode = false;
+                    self.details_scroll = 0;
+                    self.transcript_view.transcript_scroll = 0;
+                }
+            }
+            Action::LastMessage | Action::MoveBufferEnd => {
+                if !self.activities.is_empty() {
+                    self.transcript_view.selected_activity_index =
+                        self.activities.len().saturating_sub(1);
+                    self.transcript_view.follow_mode = true;
+                    self.details_scroll = 0;
+                    self.transcript_view.transcript_scroll = 0;
+                }
+            }
+            Action::NextMessage => {
+                if !self.activities.is_empty()
+                    && self.transcript_view.selected_activity_index
+                        < self.activities.len().saturating_sub(1)
+                {
+                    self.transcript_view.selected_activity_index += 1;
+                    self.transcript_view.follow_mode = false;
+                    self.details_scroll = 0;
+                    self.transcript_view.transcript_scroll = 0;
+                }
+            }
+            Action::PreviousMessage => {
+                if self.transcript_view.selected_activity_index > 0 {
+                    self.transcript_view.selected_activity_index -= 1;
+                    self.transcript_view.follow_mode = false;
+                    self.details_scroll = 0;
+                    self.transcript_view.transcript_scroll = 0;
+                }
+            }
+            Action::ToggleScrollbar => {
+                self.transcript_view.transcript_scrollbar_visible =
+                    !self.transcript_view.transcript_scrollbar_visible;
+            }
+            Action::CopyMessage => {
+                if let Some(activity) = self
+                    .activities
+                    .get(self.transcript_view.selected_activity_index)
+                {
+                    let text = activity.transcript_text.clone();
+                    if !text.is_empty() {
+                        let _ = clipboard::copy(&text);
+                        self.show_toast("Copied message", ToastVariant::Info);
+                    }
+                }
+            }
+            Action::ExportSession => {
+                self.emit_ui_intent(UiIntent::ExportSession);
+            }
+            Action::OpenErrorDetails => {
+                self.error_details_visible = true;
+            }
+            Action::PromptStash => {
+                self.prompt_stash_push();
+            }
+            Action::PromptStashPop => {
+                self.prompt_stash_pop();
+            }
+            Action::PromptStashList => {
+                self.open_prompt_stash_list();
+            }
+            Action::OpenLineageBrowser => {
+                self.open_lineage_browser();
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_theme_dialog_key(&mut self, key: KeyEvent) {
+        let names = Theme::available_theme_names();
+        let len = names.len();
+        match key.code {
+            KeyCode::Esc => {
+                self.theme_dialog_visible = false;
+            }
+            KeyCode::Enter => {
+                if let Some(name) = names.get(self.theme_dialog_selected) {
+                    self.apply_theme_by_name(name);
+                }
+                self.theme_dialog_visible = false;
+            }
+            KeyCode::Up => {
+                if len > 0 {
+                    self.theme_dialog_selected = if self.theme_dialog_selected == 0 {
+                        len - 1
+                    } else {
+                        self.theme_dialog_selected - 1
+                    };
+                }
+            }
+            KeyCode::Down => {
+                if len > 0 {
+                    self.theme_dialog_selected = (self.theme_dialog_selected + 1) % len;
+                }
+            }
+            KeyCode::Home => {
+                self.theme_dialog_selected = 0;
+            }
+            KeyCode::End => {
+                self.theme_dialog_selected = len.saturating_sub(1);
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_error_details_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.error_details_visible = false;
+            }
+            KeyCode::Char('r') | KeyCode::Char('R') => {
+                self.error_details_visible = false;
+                if let Some(activity) = self
+                    .activities
+                    .get(self.transcript_view.selected_activity_index)
+                {
+                    if let Some(request_id) = activity.request_id.as_str().strip_prefix("error:") {
+                        let prompt = request_id.to_string();
+                        self.replace_prompt_input(prompt);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_prompt_stash_list_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.close_prompt_stash_list();
+            }
+            KeyCode::Up => {
+                self.prompt_stash_list_move(-1);
+            }
+            KeyCode::Down => {
+                self.prompt_stash_list_move(1);
+            }
+            KeyCode::Enter => {
+                self.prompt_stash_list_restore_selected();
+            }
+            KeyCode::Char('d') | KeyCode::Char('D')
+                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                self.prompt_stash_list_delete_selected();
+            }
             _ => {}
         }
     }
@@ -882,7 +1209,7 @@ impl AppState {
     pub fn next_event(&mut self) {
         if !self.events.is_empty() && self.selected_event_index < self.events.len() - 1 {
             self.selected_event_index += 1;
-            self.follow_mode = false;
+            self.transcript_view.follow_mode = false;
             self.details_scroll = 0;
         }
     }
@@ -890,26 +1217,28 @@ impl AppState {
     pub fn previous_event(&mut self) {
         if self.selected_event_index > 0 {
             self.selected_event_index -= 1;
-            self.follow_mode = false;
+            self.transcript_view.follow_mode = false;
             self.details_scroll = 0;
         }
     }
 
     fn next_activity(&mut self) {
-        if !self.activities.is_empty() && self.selected_activity_index < self.activities.len() - 1 {
-            self.selected_activity_index += 1;
-            self.follow_mode = false;
+        if !self.activities.is_empty()
+            && self.transcript_view.selected_activity_index < self.activities.len() - 1
+        {
+            self.transcript_view.selected_activity_index += 1;
+            self.transcript_view.follow_mode = false;
             self.details_scroll = 0;
-            self.transcript_scroll = 0;
+            self.transcript_view.transcript_scroll = 0;
         }
     }
 
     fn previous_activity(&mut self) {
-        if self.selected_activity_index > 0 {
-            self.selected_activity_index -= 1;
-            self.follow_mode = false;
+        if self.transcript_view.selected_activity_index > 0 {
+            self.transcript_view.selected_activity_index -= 1;
+            self.transcript_view.follow_mode = false;
             self.details_scroll = 0;
-            self.transcript_scroll = 0;
+            self.transcript_view.transcript_scroll = 0;
         }
     }
 
@@ -931,13 +1260,13 @@ impl AppState {
                     true
                 }
                 KeyCode::Home => {
-                    self.terminal_panel_follow = false;
-                    self.terminal_panel_scroll = self.last_terminal_panel_max_scroll.get();
+                    self.terminal_panel.follow = false;
+                    self.terminal_panel.scroll = self.terminal_panel.last_max_scroll.get();
                     true
                 }
                 KeyCode::End => {
-                    self.terminal_panel_follow = true;
-                    self.terminal_panel_scroll = 0;
+                    self.terminal_panel.follow = true;
+                    self.terminal_panel.scroll = 0;
                     true
                 }
                 _ => false,
@@ -958,13 +1287,14 @@ impl AppState {
                 true
             }
             KeyCode::Home => {
-                self.follow_mode = false;
-                self.transcript_scroll = self.last_transcript_max_scroll.get();
+                self.transcript_view.follow_mode = false;
+                self.transcript_view.transcript_scroll =
+                    self.transcript_view.last_transcript_max_scroll.get();
                 true
             }
             KeyCode::End => {
-                self.follow_mode = true;
-                self.transcript_scroll = 0;
+                self.transcript_view.follow_mode = true;
+                self.transcript_view.transcript_scroll = 0;
                 true
             }
             _ => false,
@@ -984,4 +1314,117 @@ fn action_preempts_text_input(action: Action, key: KeyEvent) -> bool {
             KeyModifiers::NONE
         )
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn shell_mode_enters_on_bang_when_prompt_empty() {
+        let mut app = AppState::new_live(None, false, None);
+        app.focus = Focus::Prompt;
+        assert!(!app.shell_mode());
+
+        app.handle_key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char('!'),
+            crossterm::event::KeyModifiers::NONE,
+        ));
+
+        assert!(
+            app.shell_mode(),
+            "typing ! with empty prompt should enter shell mode"
+        );
+        assert!(
+            app.composer.prompt_buffer.is_empty(),
+            "shell mode entry should not add ! to buffer"
+        );
+    }
+
+    #[test]
+    fn shell_mode_exits_on_escape() {
+        let mut app = AppState::new_live(None, false, None);
+        app.focus = Focus::Prompt;
+        app.composer.shell_mode = true;
+
+        app.handle_key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Esc,
+            crossterm::event::KeyModifiers::NONE,
+        ));
+
+        assert!(!app.shell_mode(), "Esc should exit shell mode");
+    }
+
+    #[test]
+    fn shell_mode_exits_on_backspace_at_empty_prompt() {
+        let mut app = AppState::new_live(None, false, None);
+        app.focus = Focus::Prompt;
+        app.composer.shell_mode = true;
+
+        app.handle_key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Backspace,
+            crossterm::event::KeyModifiers::NONE,
+        ));
+
+        assert!(
+            !app.shell_mode(),
+            "Backspace at empty prompt should exit shell mode"
+        );
+    }
+
+    #[test]
+    fn shell_mode_submit_emits_run_shell_command_intent() {
+        let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+        let intent_sink = {
+            let intents = Arc::clone(&intents);
+            Arc::new(move |intent: UiIntent| {
+                intents.lock().expect("lock intents").push(intent);
+            })
+        };
+
+        let mut app = AppState::new_live(None, false, Some(intent_sink));
+        app.focus = Focus::Prompt;
+        app.composer.shell_mode = true;
+
+        for ch in "ls -la".chars() {
+            app.handle_key(crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Char(ch),
+                crossterm::event::KeyModifiers::NONE,
+            ));
+        }
+
+        app.handle_key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Enter,
+            crossterm::event::KeyModifiers::NONE,
+        ));
+
+        let intents = intents.lock().expect("lock intents");
+        assert_eq!(intents.len(), 1);
+        match &intents[0] {
+            UiIntent::RunShellCommand { command } => {
+                assert_eq!(command, "ls -la");
+            }
+            other => panic!("expected RunShellCommand intent, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn shell_mode_does_not_enter_when_prompt_has_text() {
+        let mut app = AppState::new_live(None, false, None);
+        app.focus = Focus::Prompt;
+        app.composer.prompt_buffer = "hello".to_string();
+        app.composer.prompt_cursor = 5;
+
+        app.handle_key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char('!'),
+            crossterm::event::KeyModifiers::NONE,
+        ));
+
+        assert!(
+            !app.shell_mode(),
+            "should not enter shell mode when prompt has text"
+        );
+        assert_eq!(app.composer.prompt_buffer, "hello!");
+    }
 }

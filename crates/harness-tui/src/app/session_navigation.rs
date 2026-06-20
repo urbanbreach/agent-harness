@@ -114,12 +114,14 @@ impl AppState {
     }
 
     fn active_slash_query(&self) -> Option<&str> {
-        if self.prompt_cursor == 0 || self.prompt_buffer.chars().any(char::is_whitespace) {
+        if self.composer.prompt_cursor == 0
+            || self.composer.prompt_buffer.chars().any(char::is_whitespace)
+        {
             return None;
         }
 
         let cursor_byte = self.prompt_cursor_byte_index();
-        let query = self.prompt_buffer[..cursor_byte].strip_prefix('/')?;
+        let query = self.composer.prompt_buffer[..cursor_byte].strip_prefix('/')?;
         (!query.chars().any(char::is_whitespace)).then_some(query)
     }
 
@@ -143,7 +145,7 @@ impl AppState {
             || self.toggles_menu_visible
             || self.active_permission().is_some()
         {
-            if !self.prompt_buffer.starts_with('/') {
+            if !self.composer.prompt_buffer.starts_with('/') {
                 self.slash_draft_snapshot = None;
             }
             self.clear_slash_menu();
@@ -175,7 +177,8 @@ impl AppState {
     }
 
     pub(in crate::app) fn typed_slash_command(&self) -> Option<&'static str> {
-        self.prompt_buffer
+        self.composer
+            .prompt_buffer
             .trim()
             .strip_prefix('/')
             .and_then(|command| {
@@ -222,17 +225,17 @@ impl AppState {
     fn navigate_to_home_shell(&mut self, draft: String) {
         self.projection.reset();
         self.selected_event_index = 0;
-        self.selected_activity_index = 0;
-        self.follow_mode = true;
+        self.transcript_view.selected_activity_index = 0;
+        self.transcript_view.follow_mode = true;
         self.active_tab = Tab::Run;
         self.live_details_drawer_open = false;
         self.startup_mode = true;
         self.startup_launcher_action = StartupLauncherAction::NewSession;
         self.status_banner = None;
         self.details_scroll = 0;
-        self.transcript_scroll = 0;
-        self.prompt_history.clear();
-        self.prompt_history_index = None;
+        self.transcript_view.transcript_scroll = 0;
+        self.composer.prompt_history.clear();
+        self.composer.prompt_history_index = None;
         self.replay_mode = false;
         self.session_path = None;
         self.palette_visible = false;
@@ -256,15 +259,15 @@ impl AppState {
         self.continue_disabled_banner = None;
         self.dismissed_permissions.clear();
         self.submitted_permission_id = None;
-        self.permission_modal_permission_id = None;
-        self.permission_modal_stage = PermissionModalStage::Decision;
-        self.permission_modal_selection = PermissionModalSelection::AllowOnce;
-        self.permission_modal_confirm_selection = PermissionConfirmSelection::Confirm;
-        self.question_prompt_tab = 0;
-        self.question_prompt_selection = 0;
-        self.question_prompt_answers.clear();
-        self.question_prompt_custom.clear();
-        self.question_prompt_editing = false;
+        self.permission_prompt.permission_id = None;
+        self.permission_prompt.stage = PermissionModalStage::Decision;
+        self.permission_prompt.selection = PermissionModalSelection::AllowOnce;
+        self.permission_prompt.confirm_selection = PermissionConfirmSelection::Confirm;
+        self.question_prompt.tab = 0;
+        self.question_prompt.selection = 0;
+        self.question_prompt.answers.clear();
+        self.question_prompt.custom.clear();
+        self.question_prompt.editing = false;
         self.reload_requested = false;
         self.should_quit = false;
         self.focus = Focus::Prompt;
@@ -296,7 +299,7 @@ impl AppState {
                 self.open_toggles_menu();
             }
             "auth" => {
-                let auth_args = auth_slash_args_from_prompt(&self.prompt_buffer);
+                let auth_args = auth_slash_args_from_prompt(&self.composer.prompt_buffer);
                 self.restore_slash_draft(preserved_draft);
                 self.status_banner = Some(auth_status_banner(&auth_args));
                 self.emit_ui_intent(UiIntent::OpenAuthManager {
@@ -329,7 +332,7 @@ impl AppState {
                 self.emit_ui_intent(UiIntent::CompactSession);
             }
             "rename" => {
-                let prompt = self.prompt_buffer.clone();
+                let prompt = self.composer.prompt_buffer.clone();
                 let title = prompt
                     .trim_start_matches('/')
                     .split_once(|ch: char| ch.is_whitespace())
@@ -672,23 +675,31 @@ impl AppState {
             "open_event_log" => self.execute_action(Action::OpenEventLog),
             "toggle_terminal_panel" => self.execute_action(Action::ToggleTerminalPanel),
             "toggle_follow" => self.execute_action(Action::ToggleFollow),
-            "show_thinking" => self.show_transcript_thinking = true,
-            "hide_thinking" => self.show_transcript_thinking = false,
-            "show_timestamps" => self.show_transcript_timestamps = true,
-            "hide_timestamps" => self.show_transcript_timestamps = false,
-            "show_tool_details" => self.show_tool_details = true,
-            "hide_tool_details" => self.show_tool_details = false,
-            "show_generic_tool_output" => self.show_generic_tool_output = true,
-            "hide_generic_tool_output" => self.show_generic_tool_output = false,
+            "show_thinking" => self.transcript_view.show_transcript_thinking = true,
+            "hide_thinking" => self.transcript_view.show_transcript_thinking = false,
+            "show_timestamps" => self.transcript_view.show_transcript_timestamps = true,
+            "hide_timestamps" => self.transcript_view.show_transcript_timestamps = false,
+            "show_tool_details" => self.transcript_view.show_tool_details = true,
+            "hide_tool_details" => self.transcript_view.show_tool_details = false,
+            "show_generic_tool_output" => self.transcript_view.show_generic_tool_output = true,
+            "hide_generic_tool_output" => self.transcript_view.show_generic_tool_output = false,
             "expand_selected_turn_results" => self.set_selected_activity_expandable_outputs(true),
             "collapse_selected_turn_results" => {
                 self.set_selected_activity_expandable_outputs(false)
             }
-            "stack_transcript_diffs" => self.stacked_transcript_diffs = true,
-            "split_transcript_diffs" => self.stacked_transcript_diffs = false,
+            "stack_transcript_diffs" => self.transcript_view.stacked_transcript_diffs = true,
+            "split_transcript_diffs" => self.transcript_view.stacked_transcript_diffs = false,
             "help" => self.execute_action(Action::Help),
             "quit" => self.execute_action(Action::Quit),
             "revert_workspace" => self.request_workspace_revert(),
+            "prompt_stash" => self.execute_action(Action::PromptStash),
+            "prompt_stash_pop" => self.execute_action(Action::PromptStashPop),
+            "prompt_stash_list" => self.execute_action(Action::PromptStashList),
+            "open_lineage_browser" => self.execute_action(Action::OpenLineageBrowser),
+            "session_child_first" => self.execute_action(Action::SessionChildFirst),
+            "session_child_cycle" => self.execute_action(Action::SessionChildCycle),
+            "session_child_cycle_reverse" => self.execute_action(Action::SessionChildCycleReverse),
+            "session_parent" => self.execute_action(Action::SessionParent),
             _ => {}
         }
         if !self.session_history_visible
@@ -777,23 +788,23 @@ impl AppState {
         } else if matches!(command_id, "show_timestamps" | "hide_timestamps") {
             self.active_review_surface.is_none()
                 && if command_id == "show_timestamps" {
-                    !self.show_transcript_timestamps
+                    !self.transcript_view.show_transcript_timestamps
                 } else {
-                    self.show_transcript_timestamps
+                    self.transcript_view.show_transcript_timestamps
                 }
         } else if matches!(command_id, "show_thinking" | "hide_thinking") {
             self.active_review_surface.is_none()
                 && if command_id == "show_thinking" {
-                    !self.show_transcript_thinking
+                    !self.transcript_view.show_transcript_thinking
                 } else {
-                    self.show_transcript_thinking
+                    self.transcript_view.show_transcript_thinking
                 }
         } else if matches!(command_id, "show_tool_details" | "hide_tool_details") {
             self.active_review_surface.is_none()
                 && if command_id == "show_tool_details" {
-                    !self.show_tool_details
+                    !self.transcript_view.show_tool_details
                 } else {
-                    self.show_tool_details
+                    self.transcript_view.show_tool_details
                 }
         } else if matches!(
             command_id,
@@ -801,9 +812,9 @@ impl AppState {
         ) {
             self.active_review_surface.is_none()
                 && if command_id == "show_generic_tool_output" {
-                    !self.show_generic_tool_output
+                    !self.transcript_view.show_generic_tool_output
                 } else {
-                    self.show_generic_tool_output
+                    self.transcript_view.show_generic_tool_output
                 }
         } else if matches!(
             command_id,
@@ -813,13 +824,18 @@ impl AppState {
             self.active_review_surface.is_none()
                 && !expandable_ids.is_empty()
                 && if command_id == "expand_selected_turn_results" {
-                    expandable_ids
-                        .iter()
-                        .any(|tool_call_id| !self.expanded_tool_outputs.contains(tool_call_id))
+                    expandable_ids.iter().any(|tool_call_id| {
+                        !self
+                            .transcript_view
+                            .expanded_tool_outputs
+                            .contains(tool_call_id)
+                    })
                 } else {
-                    expandable_ids
-                        .iter()
-                        .any(|tool_call_id| self.expanded_tool_outputs.contains(tool_call_id))
+                    expandable_ids.iter().any(|tool_call_id| {
+                        self.transcript_view
+                            .expanded_tool_outputs
+                            .contains(tool_call_id)
+                    })
                 }
         } else if matches!(
             command_id,
@@ -827,9 +843,9 @@ impl AppState {
         ) {
             self.active_review_surface.is_none()
                 && if command_id == "stack_transcript_diffs" {
-                    !self.stacked_transcript_diffs
+                    !self.transcript_view.stacked_transcript_diffs
                 } else {
-                    self.stacked_transcript_diffs
+                    self.transcript_view.stacked_transcript_diffs
                 }
         } else if command_id == "close_review_surface" {
             self.active_review_surface.is_some()
@@ -841,6 +857,15 @@ impl AppState {
             !self.replay_mode
                 && !self.startup_shell_visible()
                 && self.most_recent_workspace_snapshot_request_id().is_some()
+        } else if matches!(
+            command_id,
+            "open_lineage_browser"
+                | "session_child_first"
+                | "session_child_cycle"
+                | "session_child_cycle_reverse"
+                | "session_parent"
+        ) {
+            !self.startup_shell_visible()
         } else {
             true
         }
@@ -850,31 +875,31 @@ impl AppState {
         let lifecycle_exit = self.startup_mode
             || self.post_run_handoff_visible()
             || self.completed_session_shell_active();
-        let prompt_buffer = self.prompt_buffer.clone();
-        let prompt_cursor = self.prompt_cursor;
+        let prompt_buffer = self.composer.prompt_buffer.clone();
+        let prompt_cursor = self.composer.prompt_cursor;
         set_pending_live_prompt_draft(Some(prompt_buffer.clone()));
         set_pending_live_launch_metadata(self.launch_metadata.clone());
 
         self.projection.reset();
         self.selected_event_index = 0;
-        self.selected_activity_index = 0;
-        self.follow_mode = true;
+        self.transcript_view.selected_activity_index = 0;
+        self.transcript_view.follow_mode = true;
         self.details_scroll = 0;
-        self.transcript_scroll = 0;
+        self.transcript_view.transcript_scroll = 0;
         self.status_banner = None;
         self.dismissed_permissions.clear();
         self.submitted_permission_id = None;
-        self.permission_modal_permission_id = None;
-        self.permission_modal_stage = PermissionModalStage::Decision;
-        self.permission_modal_selection = PermissionModalSelection::AllowOnce;
-        self.permission_modal_confirm_selection = PermissionConfirmSelection::Confirm;
-        self.question_prompt_tab = 0;
-        self.question_prompt_selection = 0;
-        self.question_prompt_answers.clear();
-        self.question_prompt_custom.clear();
-        self.question_prompt_editing = false;
-        self.prompt_history.clear();
-        self.prompt_history_index = None;
+        self.permission_prompt.permission_id = None;
+        self.permission_prompt.stage = PermissionModalStage::Decision;
+        self.permission_prompt.selection = PermissionModalSelection::AllowOnce;
+        self.permission_prompt.confirm_selection = PermissionConfirmSelection::Confirm;
+        self.question_prompt.tab = 0;
+        self.question_prompt.selection = 0;
+        self.question_prompt.answers.clear();
+        self.question_prompt.custom.clear();
+        self.question_prompt.editing = false;
+        self.composer.prompt_history.clear();
+        self.composer.prompt_history_index = None;
         self.replay_mode = false;
         self.session_path = None;
         self.continued_post_run_handoff_active = false;
@@ -883,8 +908,9 @@ impl AppState {
         self.live_details_drawer_open = false;
         self.continue_disabled_banner = None;
 
-        self.prompt_buffer = prompt_buffer;
-        self.prompt_cursor = prompt_cursor.min(self.prompt_buffer.chars().count());
+        self.composer.prompt_buffer = prompt_buffer;
+        self.composer.prompt_cursor =
+            prompt_cursor.min(self.composer.prompt_buffer.chars().count());
 
         self.close_session_history();
         self.emit_ui_intent(UiIntent::NewSession);
@@ -959,7 +985,7 @@ impl AppState {
                     self.reset_post_run_handoff_selection();
                     return;
                 };
-                set_pending_live_prompt_draft(Some(self.prompt_buffer.clone()));
+                set_pending_live_prompt_draft(Some(self.composer.prompt_buffer.clone()));
                 self.emit_ui_intent(UiIntent::ContinueSession {
                     run_id: run_id.to_string(),
                     run_dir: run_dir.clone(),
@@ -971,7 +997,7 @@ impl AppState {
                     self.reset_post_run_handoff_selection();
                     return;
                 };
-                set_pending_live_prompt_draft(Some(self.prompt_buffer.clone()));
+                set_pending_live_prompt_draft(Some(self.composer.prompt_buffer.clone()));
                 self.emit_ui_intent(UiIntent::ReplaySession {
                     run_id: run_id.to_string(),
                     run_dir: run_dir.clone(),
