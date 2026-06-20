@@ -145,6 +145,14 @@ pub enum UiIntent {
     UpdateSessionTitle {
         title: String,
     },
+    DeleteSession {
+        run_id: String,
+        run_dir: PathBuf,
+    },
+    ExportSession,
+    RunShellCommand {
+        command: String,
+    },
     QuitRequested,
 }
 
@@ -296,11 +304,27 @@ impl AppState {
         let mut state = Self::new();
         state.focus = Focus::Prompt;
         state.live_details_drawer_open = false;
+        let session_pins_path = session_path
+            .as_deref()
+            .map(session_pins::session_pins_path_for_session_dir);
+        let model_favorites_path = session_path
+            .as_deref()
+            .map(model_favorites::model_favorites_path_for_session_dir);
+        let model_recents_path = session_path
+            .as_deref()
+            .map(model_favorites::model_recents_path_for_session_dir);
+        let prompt_stash_path = session_path
+            .as_deref()
+            .map(prompt_stash::prompt_stash_path_for_session_dir);
         state.session_path = session_path;
         state.auto_exit_on_finish = auto_exit_on_finish;
         state.on_ui_intent = on_ui_intent;
         state.set_prompt_history_path(prompt_history_path);
         state.set_session_history_entries(session_history_entries);
+        state.set_session_pins_path(session_pins_path);
+        state.set_model_favorites_path(model_favorites_path);
+        state.set_model_recents_path(model_recents_path);
+        state.set_prompt_stash_path(prompt_stash_path);
         if let Some(launch_metadata) = take_pending_live_launch_metadata() {
             state.set_launch_metadata(launch_metadata);
         }
@@ -343,7 +367,28 @@ impl AppState {
         state.focus = Focus::List;
         state.startup_mode = true;
         state.on_ui_intent = on_ui_intent;
+        let session_dir = prompt_history_path
+            .as_deref()
+            .and_then(|path| path.parent())
+            .and_then(|parent| parent.parent())
+            .map(PathBuf::from);
+        let session_pins_path = session_dir
+            .as_deref()
+            .map(session_pins::session_pins_path_for_session_dir);
+        let model_favorites_path = session_dir
+            .as_deref()
+            .map(model_favorites::model_favorites_path_for_session_dir);
+        let model_recents_path = session_dir
+            .as_deref()
+            .map(model_favorites::model_recents_path_for_session_dir);
+        let prompt_stash_path = session_dir
+            .as_deref()
+            .map(prompt_stash::prompt_stash_path_for_session_dir);
         state.set_prompt_history_path(prompt_history_path);
+        state.set_session_pins_path(session_pins_path);
+        state.set_model_favorites_path(model_favorites_path);
+        state.set_model_recents_path(model_recents_path);
+        state.set_prompt_stash_path(prompt_stash_path);
         if let Some(launch_metadata) = take_pending_live_launch_metadata() {
             state.set_launch_metadata(launch_metadata);
         }
@@ -357,16 +402,72 @@ impl AppState {
 
 impl AppState {
     fn set_prompt_history_path(&mut self, path: Option<PathBuf>) {
-        self.prompt_history_path = path;
-        let Some(path) = self.prompt_history_path.as_deref() else {
+        self.composer.prompt_history_path = path;
+        let Some(path) = self.composer.prompt_history_path.as_deref() else {
             return;
         };
         match prompt_history::load_prompt_history(path) {
             Ok(history) => {
-                self.prompt_history = history;
+                self.composer.prompt_history = history;
             }
             Err(err) => {
                 self.status_banner = Some(err);
+            }
+        }
+    }
+
+    fn set_session_pins_path(&mut self, path: Option<PathBuf>) {
+        self.session_pins_path = path;
+        if let Some(path) = self.session_pins_path.as_deref() {
+            match session_pins::load_session_pins(path) {
+                Ok(pins) => {
+                    self.session_pins = pins;
+                }
+                Err(err) => {
+                    self.status_banner = Some(err);
+                }
+            }
+        }
+    }
+
+    fn set_model_favorites_path(&mut self, path: Option<PathBuf>) {
+        self.model_favorites_path = path;
+        if let Some(path) = self.model_favorites_path.as_deref() {
+            match model_favorites::load_model_favorites(path) {
+                Ok(favorites) => {
+                    self.model_favorites = favorites;
+                }
+                Err(err) => {
+                    self.status_banner = Some(err);
+                }
+            }
+        }
+    }
+
+    fn set_model_recents_path(&mut self, path: Option<PathBuf>) {
+        self.model_recents_path = path;
+        if let Some(path) = self.model_recents_path.as_deref() {
+            match model_favorites::load_model_recents(path) {
+                Ok(recents) => {
+                    self.model_recents = recents;
+                }
+                Err(err) => {
+                    self.status_banner = Some(err);
+                }
+            }
+        }
+    }
+
+    fn set_prompt_stash_path(&mut self, path: Option<PathBuf>) {
+        self.prompt_stash.path = path;
+        if let Some(path) = self.prompt_stash.path.as_deref() {
+            match prompt_stash::load_prompt_stash(path) {
+                Ok(entries) => {
+                    self.prompt_stash.entries = entries;
+                }
+                Err(err) => {
+                    self.status_banner = Some(err);
+                }
             }
         }
     }
@@ -562,8 +663,8 @@ impl AppState {
         self.active_review_surface
     }
 
-    pub fn overlay_stack(&self) -> OverlayStack {
-        OverlayStack::from_state(OverlayState {
+    pub(crate) fn overlay_state(&self) -> OverlayState {
+        OverlayState {
             details_drawer_open: self.details_drawer_open(),
             slash_visible: self.slash_overlay_should_render(),
             file_mention_visible: self.file_mention_overlay_should_render(),
@@ -575,7 +676,14 @@ impl AppState {
             lineage_browser_visible: self.lineage_browser_visible,
             fork_selector_visible: self.fork_selector_visible,
             permission_pending: self.active_permission().is_some(),
-        })
+            theme_dialog_visible: self.theme_dialog_visible,
+            error_details_visible: self.error_details_visible,
+            prompt_stash_list_visible: self.prompt_stash.list_visible,
+        }
+    }
+
+    pub fn overlay_stack(&self) -> OverlayStack {
+        OverlayStack::from_state(self.overlay_state())
     }
 
     pub fn take_reload_requested(&mut self) -> bool {
