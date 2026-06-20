@@ -50,6 +50,8 @@ pub(super) fn render_lineage_browser_overlay(
     area: Rect,
     title: &str,
 ) {
+    let child_dialog = app.lineage_child_dialog_view_model();
+    let dialog_height: u16 = if child_dialog.is_some() { 3 } else { 0 };
     let sections = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -57,6 +59,7 @@ pub(super) fn render_lineage_browser_overlay(
             Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Min(0),
+            Constraint::Length(dialog_height),
         ])
         .split(area);
     let surface = ui_chrome::command_palette_surface(theme);
@@ -69,6 +72,9 @@ pub(super) fn render_lineage_browser_overlay(
         sections[2],
     );
     render_lineage_browser_list(frame, app, theme, sections[3]);
+    if let Some(dialog) = child_dialog {
+        render_lineage_child_dialog(frame, theme, sections[4], &dialog);
+    }
 }
 
 fn render_lineage_browser_list(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
@@ -107,6 +113,90 @@ fn render_lineage_browser_list(frame: &mut Frame, app: &AppState, theme: &Theme,
         frame.render_widget(
             Paragraph::new(lineage_browser_row(row, theme, row_area.width)),
             row_area,
+        );
+    }
+}
+
+fn render_lineage_child_dialog(
+    frame: &mut Frame,
+    theme: &Theme,
+    area: Rect,
+    dialog: &crate::view_model::LineageChildDialogViewModel,
+) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    let surface = ui_chrome::command_palette_surface(theme);
+    let border_style = Style::default().fg(theme.border.subtle).bg(surface);
+    let label_style = Style::default()
+        .fg(theme.text.primary)
+        .bg(surface)
+        .add_modifier(Modifier::BOLD);
+    let meta_style = Style::default().fg(theme.text.secondary).bg(surface);
+    let key_style = Style::default().fg(theme.text.primary).bg(surface);
+
+    frame.render_widget(
+        Block::default()
+            .borders(Borders::TOP)
+            .border_style(border_style)
+            .style(Style::default().bg(surface)),
+        area,
+    );
+
+    let content_area = Rect::new(
+        area.x.saturating_add(2),
+        area.y.saturating_add(1),
+        area.width.saturating_sub(4),
+        1,
+    );
+    if content_area.width == 0 {
+        return;
+    }
+
+    let index_total = if dialog.child_total > 0 {
+        format!(" ({} of {})", dialog.child_index, dialog.child_total)
+    } else {
+        String::new()
+    };
+    let meta = format!("{}{}", dialog.label, index_total);
+    let nav = format!(
+        "First {}  Prev {}  Next {}  Parent {}",
+        dialog.first_child_shortcut,
+        dialog.previous_shortcut,
+        dialog.next_shortcut,
+        dialog.parent_shortcut,
+    );
+
+    let content_width = usize::from(content_area.width);
+    let nav_width = nav.chars().count();
+    let meta_width = meta.chars().count();
+
+    if nav_width + 2 + meta_width.min(content_width.saturating_sub(nav_width).saturating_sub(2))
+        <= content_width
+    {
+        let max_meta = content_width.saturating_sub(nav_width).saturating_sub(2);
+        let meta_text = truncate_plain_text(&meta, max_meta);
+        let used = meta_text.chars().count();
+        let gap = content_width.saturating_sub(used).saturating_sub(nav_width);
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(meta_text, meta_style),
+                Span::styled(" ".repeat(gap), meta_style),
+                Span::styled(nav, key_style),
+            ])),
+            content_area,
+        );
+    } else {
+        let title = truncate_plain_text(&dialog.title, content_width.min(meta_width.max(1)));
+        let used = title.chars().count();
+        let gap = content_width.saturating_sub(used).saturating_sub(nav_width);
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(title, label_style),
+                Span::styled(" ".repeat(gap), meta_style),
+                Span::styled(nav, key_style),
+            ])),
+            content_area,
         );
     }
 }
@@ -475,7 +565,12 @@ fn session_history_visual_rows(app: &AppState) -> Vec<SessionHistoryVisualRow> {
         let Some(entry) = app.session_history_entries.get(*entry_index) else {
             continue;
         };
-        let category = session_history_category_label(entry);
+        let is_pinned = app.session_pins.contains(&entry.catalog.run_id);
+        let category = if is_pinned {
+            "Pinned".to_string()
+        } else {
+            session_history_category_label(entry)
+        };
         if previous_category.as_deref() != Some(category.as_str()) {
             if previous_category.is_some() {
                 rows.push(SessionHistoryVisualRow::Gap);
@@ -500,6 +595,11 @@ fn session_history_row(
 ) -> Line<'static> {
     let row_width = usize::from(width);
     let current = session_history_current_marker(entry, app.current_session_id());
+    let is_pinned = app.session_pins.contains(&entry.catalog.run_id);
+    let is_armed = app
+        .session_delete_armed_run_id
+        .as_deref()
+        .is_some_and(|armed| armed == entry.catalog.run_id);
     let row_style = session_history_row_style(theme, is_selected);
     let text_style = if is_selected {
         row_style.add_modifier(Modifier::BOLD)
@@ -508,7 +608,9 @@ fn session_history_row(
     } else {
         Style::default().fg(theme.text.primary)
     };
-    let footer_style = if is_selected {
+    let footer_style = if is_armed {
+        Style::default().fg(theme.status.warning)
+    } else if is_selected {
         row_style
     } else {
         Style::default().fg(theme.text.secondary)
@@ -518,18 +620,25 @@ fn session_history_row(
     } else {
         Style::default().fg(ui_chrome::fork_selector_cursor())
     };
+    let pin_marker = if is_pinned { "📌 " } else { "" };
     let left_padding = if current { 1usize } else { 3usize };
     let marker = if current { "●" } else { "" };
     let marker_gap = usize::from(current);
-    let footer = match app.startup_launcher_action {
-        crate::app::StartupLauncherAction::ContinueSession if !entry.catalog.is_resumable => entry
-            .catalog
-            .resume_disabled_reason
-            .clone()
-            .unwrap_or_else(|| "continue unavailable".to_string()),
-        crate::app::StartupLauncherAction::ContinueSession => "continue ready".to_string(),
-        crate::app::StartupLauncherAction::ReplaySession => "replay ready".to_string(),
-        crate::app::StartupLauncherAction::NewSession => session_history_footer_label(entry),
+    let footer = if is_armed {
+        "Press ctrl+d again to confirm".to_string()
+    } else {
+        match app.startup_launcher_action {
+            crate::app::StartupLauncherAction::ContinueSession if !entry.catalog.is_resumable => {
+                entry
+                    .catalog
+                    .resume_disabled_reason
+                    .clone()
+                    .unwrap_or_else(|| "continue unavailable".to_string())
+            }
+            crate::app::StartupLauncherAction::ContinueSession => "continue ready".to_string(),
+            crate::app::StartupLauncherAction::ReplaySession => "replay ready".to_string(),
+            crate::app::StartupLauncherAction::NewSession => session_history_footer_label(entry),
+        }
     };
     let footer_width = footer.chars().count();
     let title_padding = 3usize;
@@ -537,6 +646,7 @@ fn session_history_row(
         .saturating_add(marker.chars().count())
         .saturating_add(marker_gap)
         .saturating_add(title_padding)
+        .saturating_add(pin_marker.chars().count())
         .saturating_add(footer_width);
     let title_width = row_width.saturating_sub(fixed_width).min(61);
     let display_title = session_history_display_title(entry);
@@ -550,6 +660,7 @@ fn session_history_row(
         spans.push(Span::styled(" ", row_style));
     }
     spans.push(Span::styled(" ".repeat(title_padding), row_style));
+    spans.push(Span::styled(pin_marker.to_string(), row_style));
     spans.push(Span::styled(title, text_style));
     spans.push(Span::styled(" ".repeat(gap_width), row_style));
     if !footer.is_empty() {
@@ -580,6 +691,8 @@ fn render_session_history_actions(frame: &mut Frame, theme: &Theme, area: Rect) 
     let key_style = Style::default().fg(theme.text.secondary).bg(surface);
     frame.render_widget(
         Paragraph::new(Line::from(vec![
+            Span::styled("pin", action_style),
+            Span::styled(" ctrl+f  ", key_style),
             Span::styled("delete", action_style),
             Span::styled(" ctrl+d  ", key_style),
             Span::styled("rename", action_style),
@@ -588,6 +701,76 @@ fn render_session_history_actions(frame: &mut Frame, theme: &Theme, area: Rect) 
         .style(Style::default().bg(surface)),
         area,
     );
+}
+
+pub(super) fn render_session_rename_dialog(
+    frame: &mut Frame,
+    app: &AppState,
+    theme: &Theme,
+    overlay: Rect,
+) {
+    let dialog_width = 50u16.min(overlay.width.saturating_sub(4));
+    let dialog_height = 7u16.min(overlay.height.saturating_sub(4));
+    let dialog_x = overlay.x + (overlay.width.saturating_sub(dialog_width)) / 2;
+    let dialog_y = overlay.y + (overlay.height.saturating_sub(dialog_height)) / 2;
+    let dialog_area = Rect::new(dialog_x, dialog_y, dialog_width, dialog_height);
+
+    let surface = ui_chrome::command_palette_surface(theme);
+    let border_style = Style::default().fg(theme.border.strong).bg(surface);
+    let title_style = Style::default()
+        .fg(theme.text.primary)
+        .bg(surface)
+        .add_modifier(Modifier::BOLD);
+    let muted_style = Style::default().fg(theme.text.secondary).bg(surface);
+
+    frame.render_widget(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(border_style)
+            .style(Style::default().bg(surface)),
+        dialog_area,
+    );
+
+    let title_area = Rect::new(dialog_x + 1, dialog_y, dialog_width.saturating_sub(2), 1);
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(" Rename session", title_style))),
+        title_area,
+    );
+
+    let input_y = dialog_y + 2;
+    let input_area = Rect::new(dialog_x + 1, input_y, dialog_width.saturating_sub(2), 1);
+    let cursor_byte = app
+        .session_rename_input
+        .char_indices()
+        .nth(app.session_rename_cursor)
+        .map(|(index, _)| index)
+        .unwrap_or(app.session_rename_input.len());
+    let before = &app.session_rename_input[..cursor_byte];
+    let after = &app.session_rename_input[cursor_byte..];
+    let input_style = Style::default().fg(theme.text.primary).bg(surface);
+    let cursor_style = Style::default()
+        .fg(ui_chrome::fork_selector_cursor())
+        .bg(surface);
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(before.to_string(), input_style),
+            Span::styled("█", cursor_style),
+            Span::styled(after.to_string(), input_style),
+        ])),
+        input_area,
+    );
+
+    let hint_y = input_y + 2;
+    if hint_y < dialog_y + dialog_height {
+        let hint_area = Rect::new(dialog_x + 1, hint_y, dialog_width.saturating_sub(2), 1);
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                " Enter to rename · Esc to cancel",
+                muted_style,
+            ))),
+            hint_area,
+        );
+    }
 }
 
 #[cfg(test)]

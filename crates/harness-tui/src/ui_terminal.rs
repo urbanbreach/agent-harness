@@ -24,7 +24,7 @@ pub(super) fn render_terminal_panel(frame: &mut Frame, app: &AppState, area: Rec
     };
     let lines = wrap_terminal_lines(lines, inner.width);
     let max_scroll = lines.len().saturating_sub(usize::from(inner.height));
-    app.last_terminal_panel_max_scroll.set(max_scroll);
+    app.terminal_panel.last_max_scroll.set(max_scroll);
     let scroll_from_bottom = if app.terminal_panel_follow() {
         0
     } else {

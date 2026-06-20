@@ -27,6 +27,7 @@ pub(crate) fn transcript_section_model_test_activity(
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        revision: 0,
     }
 }
 

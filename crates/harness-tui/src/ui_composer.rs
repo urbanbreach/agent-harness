@@ -122,25 +122,32 @@ pub(super) fn render_document_composer_content(
         .split(body_inner);
     let input_area = rows[1];
     let input_width = usize::from(input_area.width);
-    let placeholder_visible = app.prompt_buffer.is_empty()
+    let placeholder_visible = app.composer.prompt_buffer.is_empty()
         && matches!(
             context.dock.variant,
             crate::view_model::ControlDockVariant::Startup
         );
+    let shell_mode_active = app.shell_mode() && !context.dock.composer_disabled;
     let body = if placeholder_visible {
         context.dock.composer_body.as_str()
+    } else if shell_mode_active && app.composer.prompt_buffer.is_empty() {
+        "run a shell command…"
     } else {
-        app.prompt_buffer.as_str()
+        app.composer.prompt_buffer.as_str()
     };
     let body_color = if context.dock.composer_disabled {
         theme.status.disabled
     } else if placeholder_visible {
         composer_input_muted(theme)
+    } else if shell_mode_active {
+        theme.status.warning
     } else {
         composer_input_text(theme)
     };
     let rail_color = if context.dock.composer_disabled {
         theme.status.disabled
+    } else if shell_mode_active {
+        theme.status.warning
     } else {
         composer_agent_accent(theme, app)
     };
@@ -187,7 +194,7 @@ pub(super) fn render_document_composer_content(
             .then_some(if placeholder_visible {
                 0
             } else {
-                app.prompt_cursor
+                app.composer.prompt_cursor
             }),
     );
     if !context.dock.composer_focused || context.dock.composer_disabled {
@@ -328,6 +335,8 @@ pub(super) fn composer_metadata_candidates(
                 && dock.runtime_kind != RuntimeStateKind::Success)
                 .then(|| dock.runtime_badge.to_ascii_lowercase())
         });
+    let queue_indicator =
+        (app.queued_prompt_count > 0).then(|| format!("queued {}", app.queued_prompt_count));
 
     let mut full = Vec::new();
     if let Some(profile) = profile.clone() {
@@ -351,6 +360,12 @@ pub(super) fn composer_metadata_candidates(
         }
         full.push((tail.clone(), ComposerMetadataTone::Accent));
     }
+    if let Some(queue) = queue_indicator.as_ref() {
+        if !full.is_empty() {
+            full.push((" · ".to_string(), ComposerMetadataTone::Secondary));
+        }
+        full.push((queue.clone(), ComposerMetadataTone::Accent));
+    }
 
     let mut compact = Vec::new();
     if let Some(profile) = profile.as_ref() {
@@ -362,10 +377,22 @@ pub(super) fn composer_metadata_candidates(
         }
         compact.push((model, ComposerMetadataTone::Primary));
     }
+    if let Some(queue) = queue_indicator.as_ref() {
+        if !compact.is_empty() {
+            compact.push((" · ".to_string(), ComposerMetadataTone::Secondary));
+        }
+        compact.push((queue.clone(), ComposerMetadataTone::Accent));
+    }
 
-    vec![
-        full,
-        compact,
+    let queue_only = queue_indicator
+        .as_ref()
+        .map(|queue| vec![(queue.clone(), ComposerMetadataTone::Accent)]);
+
+    let mut candidates = vec![full, compact];
+    if let Some(queue_candidate) = queue_only {
+        candidates.push(queue_candidate);
+    }
+    candidates.push(
         source
             .map(|source| vec![(source, ComposerMetadataTone::Secondary)])
             .or_else(|| {
@@ -374,11 +401,12 @@ pub(super) fn composer_metadata_candidates(
                     .map(|profile| vec![(profile.clone(), ComposerMetadataTone::AgentAccent)])
             })
             .unwrap_or_default(),
-        vec![(
-            dock.primary_summary.clone(),
-            ComposerMetadataTone::Secondary,
-        )],
-    ]
+    );
+    candidates.push(vec![(
+        dock.primary_summary.clone(),
+        ComposerMetadataTone::Secondary,
+    )]);
+    candidates
 }
 
 fn active_turn_profile_label(app: &AppState) -> Option<String> {

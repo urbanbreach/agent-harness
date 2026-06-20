@@ -4,10 +4,14 @@ use super::*;
 mod model_switcher;
 #[path = "ui_overlays/permission_modal.rs"]
 mod permission_modal;
+#[path = "ui_overlays/prompt_stash_dialog.rs"]
+mod prompt_stash_dialog;
 #[path = "ui_overlays/session_history.rs"]
 mod session_history;
 #[path = "ui_overlays/status_dialog.rs"]
 mod status_dialog;
+#[path = "ui_overlays/theme_dialog.rs"]
+mod theme_dialog;
 #[path = "ui_overlays/toggles_menu.rs"]
 mod toggles_menu;
 
@@ -20,9 +24,10 @@ pub(super) use permission_modal::{
     permission_modal_summary_line, permission_modal_title, question_permission_actions_text,
     question_permission_body_text,
 };
+use prompt_stash_dialog::render_prompt_stash_list_overlay;
 use session_history::{
     render_fork_selector_input, render_fork_selector_list, render_lineage_browser_overlay,
-    render_session_history_overlay, session_history_overlay_title,
+    render_session_history_overlay, render_session_rename_dialog, session_history_overlay_title,
 };
 use status_dialog::render_status_dialog_overlay;
 #[cfg(test)]
@@ -32,6 +37,7 @@ pub(crate) use status_dialog::{
     exact_test_status_dialog_mcp_rows_match_harness_states,
     exact_test_status_dialog_render_snapshot_covers_harness_sections,
 };
+use theme_dialog::render_theme_dialog_overlay;
 use toggles_menu::{render_toggles_menu_list, render_yolo_warning_popup};
 
 pub(super) fn render_overlays(
@@ -56,7 +62,12 @@ pub(super) fn render_overlays(
                 render_command_palette_overlay(frame, app, theme, plan.root, plan.palette_overlay)
             }
             OverlayKind::StatusDialog => render_status_dialog_overlay(frame, app, theme, plan.root),
+            OverlayKind::ThemeDialog => render_theme_dialog_overlay(frame, app, theme, plan.root),
             OverlayKind::PermissionModal => {}
+            OverlayKind::ErrorDetails => render_error_details_overlay(frame, app, theme, plan.root),
+            OverlayKind::PromptStashList => {
+                render_prompt_stash_list_overlay(frame, app, theme, plan.root)
+            }
         }
     }
 }
@@ -93,6 +104,9 @@ fn render_command_palette_overlay(
             return;
         }
         render_session_history_overlay(frame, app, theme, overlay, &title);
+        if app.session_rename_visible {
+            render_session_rename_dialog(frame, app, theme, overlay);
+        }
     } else if app.model_switcher_visible {
         if !paint_model_select_panel(frame, theme, overlay) {
             return;
@@ -842,4 +856,70 @@ fn color_rgb(color: Color) -> Option<(u8, u8, u8)> {
         Color::Indexed(index) => Some((index, index, index)),
         Color::Reset => None,
     }
+}
+
+fn render_error_details_overlay(frame: &mut Frame, app: &AppState, theme: &Theme, root: Rect) {
+    if root.width == 0 || root.height == 0 {
+        return;
+    }
+
+    render_overlay_dim_backdrop(frame, root);
+
+    let overlay_width = root.width.clamp(40, 80);
+    let overlay_height = root.height.clamp(8, 20);
+    let overlay_x = root.x + (root.width.saturating_sub(overlay_width)) / 2;
+    let overlay_y = root.y + (root.height.saturating_sub(overlay_height)) / 2;
+    let overlay = Rect::new(overlay_x, overlay_y, overlay_width, overlay_height);
+
+    let surface = ui_chrome::elevated_card_surface(theme);
+    let border = theme.status.error;
+    let title_color = theme.status.error;
+
+    let block = ui_chrome::interruptive_modal_block(
+        theme,
+        Line::from("Error details"),
+        border,
+        title_color,
+        ui_chrome::ChromeFrame::Frame,
+    );
+    let inner = block.inner(overlay);
+    frame.render_widget(Clear, overlay);
+    frame.render_widget(block, overlay);
+
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
+
+    let activity = app
+        .activities
+        .get(app.transcript_view.selected_activity_index);
+    let error_text = activity
+        .and_then(|a| a.error_message.as_deref())
+        .unwrap_or("No error details available");
+
+    let primary_style = Style::default().fg(theme.text.primary).bg(surface);
+    let muted_style = Style::default().fg(theme.text.secondary).bg(surface);
+    let error_style = Style::default().fg(theme.status.error).bg(surface);
+
+    let mut lines = Vec::new();
+    lines.push(Line::from(vec![Span::styled("Error:", error_style)]));
+    lines.push(Line::default());
+    for line in error_text.lines() {
+        lines.push(Line::from(vec![Span::styled(
+            truncate_plain_text(line, usize::from(inner.width)),
+            primary_style,
+        )]));
+    }
+    lines.push(Line::default());
+    lines.push(Line::from(vec![Span::styled(
+        "esc close  ·  r resubmit",
+        muted_style,
+    )]));
+
+    frame.render_widget(
+        Paragraph::new(lines)
+            .style(Style::default().bg(surface))
+            .wrap(Wrap { trim: true }),
+        inner,
+    );
 }

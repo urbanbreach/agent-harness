@@ -204,7 +204,7 @@ pub(super) fn render_inline_permission_dock(
                 )]),
             ])
         } else if always_confirm {
-            Text::from(vec![
+            let mut lines = vec![
                 Line::from(vec![Span::styled(
                     "This will allow this exact request until the harness is restarted.",
                     metadata_style,
@@ -213,7 +213,36 @@ pub(super) fn render_inline_permission_dock(
                     permission_modal_metadata_line(permission),
                     summary_style,
                 )]),
-            ])
+            ];
+            lines.push(Line::default());
+            lines.push(Line::from(vec![Span::styled(
+                "Selector listing:",
+                metadata_style,
+            )]));
+            lines.push(Line::from(vec![
+                Span::styled("  kind: ", metadata_style),
+                Span::styled(permission.kind.as_str(), summary_style),
+            ]));
+            if let Some(tool_label) = permission.tool_label.as_deref() {
+                lines.push(Line::from(vec![
+                    Span::styled("  tool: ", metadata_style),
+                    Span::styled(tool_label, summary_style),
+                ]));
+            }
+            if let Some(tool_call_id) = permission.tool_call_id.as_deref() {
+                lines.push(Line::from(vec![
+                    Span::styled("  call: ", metadata_style),
+                    Span::styled(tool_call_id, summary_style),
+                ]));
+            }
+            lines.push(Line::from(vec![
+                Span::styled("  summary: ", metadata_style),
+                Span::styled(
+                    truncate_permission_summary(&permission.summary, 60),
+                    summary_style,
+                ),
+            ]));
+            Text::from(lines)
         } else {
             let mut lines = vec![Line::from(vec![Span::styled(
                 permission_modal_summary_line(permission, false),
@@ -223,7 +252,7 @@ pub(super) fn render_inline_permission_dock(
                 permission_modal_metadata_line(permission),
                 metadata_style,
             )]));
-            let draft = permission_modal_draft_line(app.prompt_buffer.as_str());
+            let draft = permission_modal_draft_line(app.composer.prompt_buffer.as_str());
             if !draft.is_empty() {
                 lines.push(Line::from(vec![Span::styled(draft, guidance_style)]));
             }
@@ -493,4 +522,13 @@ fn permission_prompt_hint_line(theme: &Theme, surface: Color) -> Line<'static> {
             Style::default().fg(theme.text.secondary).bg(surface),
         ),
     ])
+}
+
+fn truncate_permission_summary(summary: &str, max_chars: usize) -> String {
+    let trimmed = summary.trim();
+    if trimmed.chars().count() <= max_chars {
+        return trimmed.to_string();
+    }
+    let truncated: String = trimmed.chars().take(max_chars.saturating_sub(1)).collect();
+    format!("{truncated}…")
 }

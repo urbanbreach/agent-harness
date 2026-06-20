@@ -108,7 +108,11 @@ fn help_text(app: &AppState) -> String {
 fn render_event_list(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     let is_focused = app.focus == Focus::List;
 
-    let follow_indicator = if app.follow_mode { " · follow" } else { "" };
+    let follow_indicator = if app.transcript_view.follow_mode {
+        " · follow"
+    } else {
+        ""
+    };
     let title = if app.replay_mode {
         "Event log".to_string()
     } else {
@@ -252,7 +256,11 @@ fn events_summary_line(app: &AppState, theme: &Theme) -> Line<'static> {
             "{} recorded · selected seq {}{}",
             app.events.len(),
             selected,
-            if app.follow_mode { " · follow on" } else { "" }
+            if app.transcript_view.follow_mode {
+                " · follow on"
+            } else {
+                ""
+            }
         ),
         theme,
     )

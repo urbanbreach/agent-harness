@@ -49,11 +49,27 @@ impl TranscriptSelection {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SelectionRow {
+    pub line_index: usize,
+    pub start_cell: usize,
+    pub end_cell: usize,
+}
+
+impl SelectionRow {
+    fn has_content(self) -> bool {
+        self.end_cell >= self.start_cell
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(super) struct TranscriptSelectionSnapshot {
     pub(super) viewport: Rect,
     pub(super) scroll_top: usize,
-    pub(super) rows: Vec<TranscriptSelectionRow>,
+    pub(super) rows: Vec<SelectionRow>,
+    pub(super) line_texts: Vec<String>,
+    pub(super) continues_previous: Vec<bool>,
+    pub(super) row_width: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -129,46 +145,45 @@ impl TranscriptSelectionSnapshot {
         let mut lines = Vec::new();
         for row_idx in start_row..=end_row {
             let row = self.rows.get(row_idx)?;
-            if row.cells.is_empty() {
-                lines.push(String::new());
-                continue;
-            }
-            let content_start = selection_row_content_start(row);
-            let Some(content_end) = selection_row_content_end(row, content_start) else {
-                if row_idx == start_row || !row.continues_previous || lines.is_empty() {
+            let continues_previous = self
+                .continues_previous
+                .get(row_idx)
+                .copied()
+                .unwrap_or(false);
+
+            if !row.has_content() {
+                if row_idx == start_row || !continues_previous || lines.is_empty() {
                     lines.push(String::new());
                 }
                 continue;
-            };
+            }
+
+            let line_text = self
+                .line_texts
+                .get(row.line_index)
+                .map(|s| s.as_str())
+                .unwrap_or("");
 
             let row_start = if row_idx == start_row {
                 start
                     .column
-                    .max(content_start.max(row.copy_offset))
-                    .min(row.cells.len().saturating_sub(1))
+                    .max(row.start_cell)
+                    .min(self.row_width.saturating_sub(1))
             } else {
-                content_start.max(row.copy_offset)
+                row.start_cell
             };
             let row_end = if row_idx == end_row {
-                end.column.min(content_end)
+                end.column.min(row.end_cell)
             } else {
-                content_end
+                row.end_cell
             };
             if row_start > row_end {
                 lines.push(String::new());
                 continue;
             }
 
-            let mut text = String::new();
-            for cell in row
-                .cells
-                .iter()
-                .skip(row_start)
-                .take(row_end - row_start + 1)
-            {
-                text.push_str(cell);
-            }
-            if row_idx != start_row && row.continues_previous && !lines.is_empty() {
+            let text = extract_text_by_display_columns(line_text, row_start, row_end);
+            if row_idx != start_row && continues_previous && !lines.is_empty() {
                 let continuation = text.trim_start_matches(' ');
                 let current = lines.last_mut().expect("continuation has previous line");
                 if !continuation.is_empty() && !current.ends_with(char::is_whitespace) {
@@ -189,7 +204,12 @@ impl TranscriptSelectionSnapshot {
             .iter()
             .skip(self.scroll_top)
             .take(usize::from(self.viewport.height))
-            .map(|row| row.cells.join(""))
+            .map(|row| {
+                self.line_texts
+                    .get(row.line_index)
+                    .cloned()
+                    .unwrap_or_default()
+            })
             .collect()
     }
 }
@@ -219,6 +239,47 @@ fn selection_row_content_end(row: &TranscriptSelectionRow, content_start: usize)
         .rev()
         .find(|(idx, cell)| *idx >= content_start && !cell.is_empty() && cell.as_str() != " ")
         .map(|(idx, _)| idx)
+}
+
+pub(super) fn compact_selection_row(
+    row: &TranscriptSelectionRow,
+    line_index: usize,
+) -> SelectionRow {
+    let content_start = selection_row_content_start(row);
+    let start_cell = content_start.max(row.copy_offset);
+    match selection_row_content_end(row, content_start) {
+        Some(end_cell) => SelectionRow {
+            line_index,
+            start_cell,
+            end_cell,
+        },
+        None => SelectionRow {
+            line_index,
+            start_cell: 1,
+            end_cell: 0,
+        },
+    }
+}
+
+pub(super) fn selection_row_line_text(row: &TranscriptSelectionRow) -> String {
+    row.cells.join("")
+}
+
+fn extract_text_by_display_columns(text: &str, start_col: usize, end_col: usize) -> String {
+    let mut result = String::new();
+    let mut col = 0;
+    for ch in text.chars() {
+        let ch_str = ch.to_string();
+        let ch_width = display_width(&ch_str).max(1);
+        if col >= start_col && col <= end_col {
+            result.push(ch);
+        }
+        col += ch_width;
+        if col > end_col {
+            break;
+        }
+    }
+    result
 }
 
 pub(super) fn with_cached_transcript_selection_snapshot<R>(
@@ -500,25 +561,27 @@ pub(super) fn lifecycle_selection_snapshot(
         return None;
     }
 
-    let mut rows = vec![
-        TranscriptSelectionRow {
-            cells: vec![" ".to_string(); width],
-            continues_previous: false,
-            copy_offset: 0,
-        };
-        height
-    ];
+    let mut rows: Vec<SelectionRow> = (0..height)
+        .map(|line_index| SelectionRow {
+            line_index,
+            start_cell: 1,
+            end_cell: 0,
+        })
+        .collect();
+    let mut line_texts = vec![" ".repeat(width); height];
+    let mut continues_previous = vec![false; height];
 
     for text in surface.text_rows {
         let rendered_rows = aligned_selection_rows_for_line(&text.line, width, text.alignment);
         let max_height = usize::from(text.max_height).min(rendered_rows.len());
-        for (offset, mut row) in rendered_rows.into_iter().take(max_height).enumerate() {
+        for (offset, row) in rendered_rows.into_iter().take(max_height).enumerate() {
             let target = text.row.saturating_add(offset);
             if target >= rows.len() {
                 break;
             }
-            row.continues_previous = offset > 0;
-            rows[target] = row;
+            rows[target] = compact_selection_row(&row, target);
+            line_texts[target] = selection_row_line_text(&row);
+            continues_previous[target] = offset > 0;
         }
     }
 
@@ -526,6 +589,9 @@ pub(super) fn lifecycle_selection_snapshot(
         viewport: surface.viewport,
         scroll_top: 0,
         rows,
+        line_texts,
+        continues_previous,
+        row_width: width,
     })
 }
 
@@ -615,16 +681,15 @@ pub(super) fn render_transcript_selection(
             continue;
         }
 
-        let row = &snapshot.rows[absolute_row];
         let row_start = if absolute_row == start_row {
-            start.column.min(row.cells.len().saturating_sub(1))
+            start.column.min(snapshot.row_width.saturating_sub(1))
         } else {
             0
         };
         let row_end = if absolute_row == end_row {
-            end.column.min(row.cells.len().saturating_sub(1))
+            end.column.min(snapshot.row_width.saturating_sub(1))
         } else {
-            row.cells.len().saturating_sub(1)
+            snapshot.row_width.saturating_sub(1)
         };
         if row_start > row_end {
             continue;

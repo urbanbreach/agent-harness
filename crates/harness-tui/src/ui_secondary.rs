@@ -547,7 +547,6 @@ pub(crate) use orchestration_card::orchestration_card_text_for_test;
 #[path = "ui_secondary/sidebar_data.rs"]
 mod sidebar_data;
 use sidebar_data::{activity_surface_visible, build_operator_rail_model};
-#[cfg(test)]
 use sidebar_data::{operator_sidebar_lsp_items, operator_sidebar_mcp_items};
 
 #[path = "ui_secondary/sidebar_sections.rs"]
@@ -684,25 +683,29 @@ fn render_operator_sidebar_surface(
         inner.width,
         app.transcript_animation_phase(),
     );
-    let footer = app
+    let directory_footer = app
         .sidebar_directory_branch_label()
         .map(|label| operator_sidebar_directory_footer_text(label, theme, inner.width, surface));
+    let brand_footer = operator_sidebar_brand_footer_text(theme, surface);
     let title_height = title_text.lines.len().min(usize::from(u16::MAX)) as u16;
-    let footer_height = footer
+    let footer_height = directory_footer
         .as_ref()
         .map(|footer| footer.height().min(usize::from(u16::MAX)) as u16)
         .unwrap_or(0);
+    let brand_height = brand_footer.height().min(usize::from(u16::MAX)) as u16;
     let sections = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(title_height),
             Constraint::Min(0),
             Constraint::Length(footer_height),
+            Constraint::Length(brand_height),
         ])
         .split(inner);
     let title_area = sections[0];
     let body_area = sections[1];
     let footer_area = sections[2];
+    let brand_area = sections[3];
 
     if title_height > 0 {
         frame.render_widget(
@@ -725,12 +728,18 @@ fn render_operator_sidebar_surface(
         body_area,
         theme,
     );
-    if let Some(footer) = footer {
+    if let Some(footer) = directory_footer {
         frame.render_widget(
             Paragraph::new(footer)
                 .style(Style::default().bg(surface))
                 .wrap(Wrap { trim: false }),
             footer_area,
+        );
+    }
+    if brand_area.height > 0 {
+        frame.render_widget(
+            Paragraph::new(brand_footer).style(Style::default().bg(surface)),
+            brand_area,
         );
     }
 }
@@ -745,6 +754,7 @@ fn build_operator_sidebar_content(app: &AppState, theme: &Theme) -> Text<'static
             operator_sidebar_directory_footer_text(label, theme, 80, theme.surface.panel).lines,
         );
     }
+    lines.extend(operator_sidebar_brand_footer_text(theme, theme.surface.panel).lines);
 
     Text::from(lines)
 }
@@ -765,6 +775,29 @@ fn operator_sidebar_directory_footer_text(
     ]);
     let wrapped_lines = wrap_line_preserving_spans(line, usize::from(width.max(1)));
     Text::from(wrapped_lines)
+}
+
+fn operator_sidebar_brand_footer_text(
+    theme: &Theme,
+    surface: ratatui::style::Color,
+) -> Text<'static> {
+    let version = env!("CARGO_PKG_VERSION");
+    let short_version: String = version.chars().take(12).collect();
+    let line = Line::from(vec![
+        Span::styled(
+            "HARNESS",
+            Style::default()
+                .fg(theme.text.primary)
+                .bg(surface)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" ", Style::default().bg(surface)),
+        Span::styled(
+            short_version,
+            Style::default().fg(theme.text.tertiary).bg(surface),
+        ),
+    ]);
+    Text::from(line)
 }
 
 fn harness_sidebar_path_parts(text: &str) -> (String, String) {
@@ -911,6 +944,48 @@ pub(crate) fn format_detail_payload(payload: &str) -> String {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct FooterStatusClusterData {
+    pub pending_permissions: usize,
+    pub lsp_count: usize,
+    pub lsp_has_error: bool,
+    pub mcp_count: usize,
+    pub mcp_has_error: bool,
+}
+
+pub(crate) fn footer_status_cluster_data(app: &AppState) -> FooterStatusClusterData {
+    let pending_permissions = app.transcript_pending_permissions().len();
+    let lsp_items = operator_sidebar_lsp_items(app);
+    let mcp_items = operator_sidebar_mcp_items(app);
+
+    let lsp_has_error = lsp_items.iter().any(|item| {
+        matches!(
+            item,
+            OperatorRailItem::Status {
+                state: RuntimeHealthState::Unhealthy,
+                ..
+            }
+        )
+    });
+    let mcp_has_error = mcp_items.iter().any(|item| {
+        matches!(
+            item,
+            OperatorRailItem::Status {
+                state: RuntimeHealthState::Unhealthy,
+                ..
+            }
+        )
+    });
+
+    FooterStatusClusterData {
+        pending_permissions,
+        lsp_count: lsp_items.len(),
+        lsp_has_error,
+        mcp_count: mcp_items.len(),
+        mcp_has_error,
+    }
+}
+
 #[cfg(test)]
 fn line_to_plain_text(line: Line<'static>) -> String {
     line.spans
@@ -950,5 +1025,23 @@ mod tests {
             "Harness sidebar footer does not ellipsize"
         );
         assert!(plain.ends_with("golden_path_interactive-run_1234567890abcdef:dev"));
+    }
+
+    #[test]
+    fn sidebar_brand_footer_renders_harness_branding_and_version() {
+        let theme = Theme::default();
+        let lines = operator_sidebar_brand_footer_text(&theme, theme.surface.panel).lines;
+        assert_eq!(lines.len(), 1, "brand footer should be a single line");
+        let plain = line_to_plain_text(lines[0].clone());
+        assert!(
+            plain.starts_with("HARNESS "),
+            "brand footer should start with bold HARNESS branding: {plain:?}"
+        );
+        let version = env!("CARGO_PKG_VERSION");
+        let short_version: String = version.chars().take(12).collect();
+        assert!(
+            plain.contains(&short_version),
+            "brand footer should include short version string: {plain:?}"
+        );
     }
 }

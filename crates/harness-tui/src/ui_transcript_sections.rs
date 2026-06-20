@@ -19,7 +19,7 @@ pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSec
             activity,
             queued_user_message: pending_assistant_index
                 .is_some_and(|pending| visible_index > pending),
-            is_selected: *activity_index == app.selected_activity_index,
+            is_selected: *activity_index == app.transcript_view.selected_activity_index,
             is_latest: false,
             thinking_visible: app.transcript_thinking_visible(),
             timestamps_visible: app.transcript_timestamps_visible(),

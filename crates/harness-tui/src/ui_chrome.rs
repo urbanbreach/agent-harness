@@ -13,6 +13,8 @@ mod ui_chrome_exact_tests;
 pub(crate) use ui_chrome_exact_tests::{
     exact_test_composer_viewport_wraps_at_word_boundaries,
     exact_test_composer_viewport_wraps_by_display_width,
+    exact_test_footer_status_cluster_empty_when_no_activity,
+    exact_test_footer_status_cluster_shows_pending_permission_count,
     exact_test_live_composer_disclosure_summarizes_compaction_metrics,
     exact_test_live_composer_metadata_omits_success_without_variant,
     exact_test_live_composer_reserves_right_gap,
@@ -235,7 +237,21 @@ pub(super) fn render_footer(
         } else {
             live_footer_status_candidates(app, usize::from(text_area.width), theme)
         };
-        render_live_footer_row(frame, text_area, style, status_candidates, hint_text);
+        let cluster_text = footer_status_cluster_text(app, theme);
+        let hint_with_cluster = if cluster_text.is_empty() {
+            hint_text
+        } else {
+            format!("{cluster_text}  {hint_text}")
+        };
+        let hint_with_cluster =
+            truncate_plain_text(&hint_with_cluster, usize::from(text_area.width));
+        render_live_footer_row(
+            frame,
+            text_area,
+            style,
+            status_candidates,
+            hint_with_cluster,
+        );
     }
 }
 
@@ -355,6 +371,41 @@ fn live_footer_status_candidates(app: &AppState, max_width: usize, theme: &Theme
     options
 }
 
+fn footer_status_cluster_text(app: &AppState, theme: &Theme) -> String {
+    if app.replay_mode || app.startup_shell_visible() {
+        return String::new();
+    }
+
+    let data = crate::ui::ui_secondary::footer_status_cluster_data(app);
+    let mut items: Vec<String> = Vec::new();
+
+    if data.pending_permissions > 0 {
+        items.push(format!("△{}", data.pending_permissions));
+    }
+
+    if data.lsp_count > 0 {
+        let dot_color = if data.lsp_has_error {
+            theme.status.error
+        } else if data.lsp_count > 1 {
+            theme.status.warning
+        } else {
+            theme.status.success
+        };
+        let _ = dot_color;
+        items.push(format!("•{}", data.lsp_count));
+    }
+
+    if data.mcp_count > 0 {
+        items.push(format!("⊙{}", data.mcp_count));
+    }
+
+    if !items.is_empty() {
+        items.push("/status".to_string());
+    }
+
+    items.join(" ")
+}
+
 fn header_identity_text(app: &AppState, header_mode: SessionHeaderMode) -> String {
     let run_id = app.run_id().unwrap_or("unknown");
 
@@ -471,7 +522,8 @@ pub(super) fn render_unified_bottom_dock(
         render_control_dock_disclosure(frame, disclosure_area, app, theme, &dock);
     }
 
-    let composer_lines = composer_input_height(&app.prompt_buffer, dock_layout.composer.width);
+    let composer_lines =
+        composer_input_height(&app.composer.prompt_buffer, dock_layout.composer.width);
     render_document_composer_content(
         frame,
         app,
@@ -726,7 +778,9 @@ pub(super) fn status_badge(label: impl Into<String>, color: Color, theme: &Theme
 fn tool_status_summary(
     app: &AppState,
 ) -> Option<(String, crate::view_model::ControlDockSummaryTone)> {
-    let activity = app.activities.get(app.selected_activity_index)?;
+    let activity = app
+        .activities
+        .get(app.transcript_view.selected_activity_index)?;
     let tool_calls = &activity.tool_calls;
     if tool_calls.is_empty() {
         return None;
