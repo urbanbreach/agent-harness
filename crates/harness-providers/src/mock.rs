@@ -95,23 +95,36 @@ impl MockProvider {
             fixture_path: Some(path_string),
         })
     }
+
+    fn format_missing_fixture_message(&self, digest: &str) -> String {
+        let fixture_hint = match &self.fixture_path {
+            Some(fixture_path) => format!(
+                "; fixture_path={fixture_path}; add a fixture JSON whose normalized request hashes to this digest"
+            ),
+            None => "; add a fixture JSON whose normalized request hashes to this digest".to_string(),
+        };
+        format!(
+            "mock fixture missing for request_digest={digest}{fixture_hint}\n\
+             Suggested commands:\n\
+             \x20 1. Run the deterministic golden path scenario: `harness run --scenario golden_path --deterministic`\n\
+             \x20 2. Record a fixture for your prompt: `harness run --mock \"your prompt\" --record-fixture`\n\
+             \x20 3. Or set MOCK_FIXTURE_RECORD=<output-dir> to capture the request shape on the next run"
+        )
+    }
 }
 
 #[async_trait]
 impl Provider for MockProvider {
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
         let digest = request_digest(&req);
-        let events = self.scripted_events.get(&digest).cloned().unwrap_or_else(|| {
-            let message = match &self.fixture_path {
-                Some(fixture_path) => format!(
-                    "mock fixture missing for request_digest={digest}; fixture_path={fixture_path}; add a fixture JSON whose normalized request hashes to this digest, or run with fixture recording enabled to capture the request shape"
-                ),
-                None => format!(
-                    "mock fixture missing for request_digest={digest}; add a fixture JSON whose normalized request hashes to this digest, or run with fixture recording enabled to capture the request shape"
-                ),
-            };
-            vec![ProviderStreamEvent::error(message)]
-        });
+        let events = self
+            .scripted_events
+            .get(&digest)
+            .cloned()
+            .unwrap_or_else(|| {
+                let message = self.format_missing_fixture_message(&digest);
+                vec![ProviderStreamEvent::error(message)]
+            });
 
         Box::pin(stream::iter(events).map(|event| event))
     }
@@ -376,6 +389,14 @@ mod tests {
         assert!(
             message.contains("add a fixture JSON"),
             "error should be actionable: {message}"
+        );
+        assert!(
+            message.contains("harness run --scenario golden_path --deterministic"),
+            "error should suggest the golden path scenario: {message}"
+        );
+        assert!(
+            message.contains("harness run --mock"),
+            "error should suggest mock fixture recording: {message}"
         );
     }
 
