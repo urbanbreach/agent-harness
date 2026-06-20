@@ -17,7 +17,7 @@ expression: rendered.as_str()
                 Sun Mar 08 2026                                                                     
                    alpha-run                                             continue ready             
                                                                                                     
-                delete ctrl+d  rename ctrl+r                                                        
+                pin ctrl+f  delete ctrl+d  rename ctrl+r                                            
                                                                                                     
                                            ctrl+t variants  tab agents  ctrl+p commands             
                                                                                                     

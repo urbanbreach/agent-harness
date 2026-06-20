@@ -32,9 +32,9 @@ pub(super) fn prompt_focus_enter_emits_submit_intent() {
     );
     drop(intents);
 
-    assert_eq!(app.prompt_buffer, "");
-    assert_eq!(app.prompt_history.len(), 1);
-    assert_eq!(app.prompt_history[0], "hello");
+    assert_eq!(app.composer.prompt_buffer, "");
+    assert_eq!(app.composer.prompt_history.len(), 1);
+    assert_eq!(app.composer.prompt_history[0], "hello");
 }
 
 pub(super) fn activity_groups_by_request_id() {

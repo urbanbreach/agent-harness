@@ -205,6 +205,7 @@ pub(super) fn module_transcript_edit_tool_wide_diff_uses_syntax_highlighting_and
         last_seq: 11,
         first_mono_ms: 10,
         last_mono_ms: 11,
+        revision: 0,
     };
     entry.tool_calls.push(crate::app::ToolCallEntry {
         tool_call_id: "call-edit-wide-1".to_string(),

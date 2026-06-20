@@ -21,8 +21,8 @@ fn startup_shell_is_compose_first_without_pty() {
     app.set_launch_metadata(
         LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Demo"),
     );
-    app.prompt_buffer = "Explain deterministic TUI tests".to_string();
-    app.prompt_cursor = app.prompt_buffer.len();
+    app.composer.prompt_buffer = "Explain deterministic TUI tests".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.len();
 
     let rendered = render_text(&app, 100, 24);
 
@@ -118,8 +118,8 @@ fn command_palette_renders_without_pty() {
 #[test]
 fn permission_modal_preserves_draft_without_pty() {
     let mut app = AppState::new_live(None, false, None);
-    app.prompt_buffer = "keep this draft".to_string();
-    app.prompt_cursor = app.prompt_buffer.len();
+    app.composer.prompt_buffer = "keep this draft".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.len();
     app.ingest_event(permission_requested_event(1, "perm_det", "tool_call_det"));
 
     let rendered = render_text(&app, 100, 28);
@@ -134,7 +134,7 @@ fn permission_modal_preserves_draft_without_pty() {
     assert!(rendered.contains("once=one-shot"));
     assert!(rendered.contains("always=session"));
     assert!(rendered.contains("countdown"));
-    assert_eq!(app.prompt_buffer, "keep this draft");
+    assert_eq!(app.composer.prompt_buffer, "keep this draft");
 }
 
 #[test]
@@ -197,7 +197,7 @@ fn replay_shell_is_read_only_without_pty() {
     assert!(!rendered.contains("Type a prompt for the next turn"));
 
     app.execute_slash_command("clone", Some("preserved replay draft".to_string()));
-    assert_eq!(app.prompt_buffer, "preserved replay draft");
+    assert_eq!(app.composer.prompt_buffer, "preserved replay draft");
     assert_eq!(
         app.status_banner.as_deref(),
         Some("session clone blocked: replay mode is read-only")

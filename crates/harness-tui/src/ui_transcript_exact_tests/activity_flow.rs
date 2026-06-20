@@ -12,7 +12,7 @@ pub(crate) fn exact_test_transcript_section_model_preserves_activity_order() {
             "second reply",
         ),
     ]);
-    app.selected_activity_index = 1;
+    app.transcript_view.selected_activity_index = 1;
 
     let sections = build_transcript_sections(&app);
 

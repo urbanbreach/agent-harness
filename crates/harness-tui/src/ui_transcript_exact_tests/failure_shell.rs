@@ -357,7 +357,7 @@ fn consecutive_tool_rows_do_not_insert_terminal_blank_rows() {
 
     activity.tool_calls = vec![cancel_tool, lsp_tool];
     app.activities = std::collections::VecDeque::from(vec![activity]);
-    app.selected_activity_index = 0;
+    app.transcript_view.selected_activity_index = 0;
 
     let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 120);
     let surfaces = &layout.sections[0].surfaces;

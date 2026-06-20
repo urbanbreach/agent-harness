@@ -28,6 +28,7 @@ fn queued_runtime_status_without_pending_assistant_does_not_render_user_badge_or
             last_seq: 1,
             first_mono_ms: 1,
             last_mono_ms: 1,
+            revision: 0,
         },
         ActivityEntry {
             request_id: "request-queued-followup".to_string(),
@@ -52,9 +53,10 @@ fn queued_runtime_status_without_pending_assistant_does_not_render_user_badge_or
             last_seq: 2,
             first_mono_ms: 2,
             last_mono_ms: 2,
+            revision: 0,
         },
     ]);
-    app.selected_activity_index = 1;
+    app.transcript_view.selected_activity_index = 1;
 
     let lines = transcript_test_line_texts(build_transcript_lines_for_width(
         &app,
@@ -100,8 +102,9 @@ fn streaming_turn_with_own_user_message_does_not_render_queued_badge() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        revision: 0,
     }]);
-    app.selected_activity_index = 0;
+    app.transcript_view.selected_activity_index = 0;
 
     let lines = transcript_test_line_texts(build_transcript_lines_for_width(
         &app,
@@ -148,6 +151,7 @@ fn queued_user_followup_keeps_active_footer_on_streaming_turn() {
             last_seq: 1,
             first_mono_ms: 1,
             last_mono_ms: 1,
+            revision: 0,
         },
         ActivityEntry {
             request_id: "request-queued-followup".to_string(),
@@ -172,9 +176,10 @@ fn queued_user_followup_keeps_active_footer_on_streaming_turn() {
             last_seq: 2,
             first_mono_ms: 2,
             last_mono_ms: 2,
+            revision: 0,
         },
     ]);
-    app.selected_activity_index = 1;
+    app.transcript_view.selected_activity_index = 1;
 
     let lines = transcript_test_line_texts(build_transcript_lines_for_width(
         &app,
@@ -226,8 +231,9 @@ fn transcript_wrapping_respects_display_width_for_wide_glyphs() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        revision: 0,
     }]);
-    app.selected_activity_index = 0;
+    app.transcript_view.selected_activity_index = 0;
 
     let lines = build_transcript_lines_for_width(&app, &Theme::default(), 20);
     assert!(
@@ -270,8 +276,9 @@ fn transcript_selection_snapshot_cache_reuses_repeated_hit_tests() {
         last_seq: 2,
         first_mono_ms: 1,
         last_mono_ms: 2,
+        revision: 0,
     }]);
-    app.selected_activity_index = 0;
+    app.transcript_view.selected_activity_index = 0;
 
     let area = Rect::new(0, 0, 140, 40);
     let snapshot = transcript_selection_debug_snapshot(&app, area).expect("selection snapshot");

@@ -51,6 +51,7 @@ pub(crate) fn exact_test_compaction_applied_updates_active_context_usage_estimat
         last_seq: 2,
         first_mono_ms: 10,
         last_mono_ms: 20,
+        revision: 0,
     });
     assert_eq!(
         app.active_context_usage(),

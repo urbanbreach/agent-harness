@@ -117,8 +117,9 @@ fn transcript_layout_cache_invalidates_when_animation_frame_changes() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        revision: 0,
     }]);
-    app.selected_activity_index = 0;
+    app.transcript_view.selected_activity_index = 0;
 
     let initial_lines = transcript_test_line_texts(build_transcript_lines_for_width(
         &app,
@@ -139,6 +140,84 @@ fn transcript_layout_cache_invalidates_when_animation_frame_changes() {
     assert!(updated_lines
         .iter()
         .any(|line| line.contains("⠙ Assistant · gpt-5.4-mini · active")));
+}
+
+#[test]
+fn transcript_measure_cache_key_stable_across_animation_phase_changes() {
+    let mut app = AppState::default();
+    app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
+        request_id: "request-measure-stable".to_string(),
+        profile_label: "default".to_string(),
+        model_id: "gpt-5.4-mini".to_string(),
+        provider_id: "openai".to_string(),
+        status: ActivityStatus::Streaming,
+        user_message: None,
+        user_timestamp: None,
+        request_data: None,
+        thinking_text: String::new(),
+        transcript_text: String::new(),
+        usage: None,
+        cache_usage: None,
+        error_message: None,
+        permissions: Vec::new(),
+        tool_calls: Vec::new(),
+        first_seq: 1,
+        last_seq: 1,
+        first_mono_ms: 1,
+        last_mono_ms: 1,
+        revision: 0,
+    }]);
+    app.transcript_view.selected_activity_index = 0;
+
+    let initial_key = app.transcript_measure_cache_key();
+    app.advance_transcript_animation_phase();
+    let updated_key = app.transcript_measure_cache_key();
+
+    assert_eq!(
+        initial_key, updated_key,
+        "measure cache key must not change when only animation phase changes"
+    );
+}
+
+#[test]
+fn transcript_layout_cache_does_not_rebuild_on_animation_phase_change() {
+    let mut app = AppState::default();
+    app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
+        request_id: "request-layout-rebuild".to_string(),
+        profile_label: "default".to_string(),
+        model_id: "gpt-5.4-mini".to_string(),
+        provider_id: "openai".to_string(),
+        status: ActivityStatus::Streaming,
+        user_message: None,
+        user_timestamp: None,
+        request_data: None,
+        thinking_text: String::new(),
+        transcript_text: String::new(),
+        usage: None,
+        cache_usage: None,
+        error_message: None,
+        permissions: Vec::new(),
+        tool_calls: Vec::new(),
+        first_seq: 1,
+        last_seq: 1,
+        first_mono_ms: 1,
+        last_mono_ms: 1,
+        revision: 0,
+    }]);
+    app.transcript_view.selected_activity_index = 0;
+
+    AppState::reset_transcript_render_key_metrics_for_test();
+    let _ = app.transcript_measure_cache_key();
+    let builds_after_first = AppState::transcript_render_key_build_count_for_test();
+    assert_eq!(builds_after_first, 1, "first call should build once");
+
+    app.advance_transcript_animation_phase();
+    let _ = app.transcript_measure_cache_key();
+    let builds_after_animation = AppState::transcript_render_key_build_count_for_test();
+    assert_eq!(
+        builds_after_animation, 1,
+        "animation phase change must not rebuild the measure cache key"
+    );
 }
 
 #[test]
@@ -167,8 +246,9 @@ fn transcript_layout_cache_invalidates_when_theme_changes() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        revision: 0,
     }]);
-    app.selected_activity_index = 0;
+    app.transcript_view.selected_activity_index = 0;
 
     let initial_layout = build_measured_transcript_layout_for_width(&app, app.theme(), 80);
     let initial_surface = initial_layout.sections[0].surfaces[0].surface;
@@ -250,8 +330,9 @@ fn streaming_assistant_footer_uses_reserved_active_label() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        revision: 0,
     }]);
-    app.selected_activity_index = 0;
+    app.transcript_view.selected_activity_index = 0;
 
     let lines = transcript_test_line_texts(build_transcript_lines_for_width(
         &app,
@@ -294,6 +375,7 @@ fn only_latest_turn_renders_footer_metadata() {
             last_seq: 1,
             first_mono_ms: 1,
             last_mono_ms: 1,
+            revision: 0,
         },
         ActivityEntry {
             request_id: "request-new-footer".to_string(),
@@ -318,9 +400,10 @@ fn only_latest_turn_renders_footer_metadata() {
             last_seq: 2,
             first_mono_ms: 2,
             last_mono_ms: 2,
+            revision: 0,
         },
     ]);
-    app.selected_activity_index = 1;
+    app.transcript_view.selected_activity_index = 1;
     app.handle_key(crossterm::event::KeyEvent::new(
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
@@ -390,7 +473,7 @@ fn tool_only_turns_render_standalone_assistant_footer() {
         last_timestamp: None,
     });
     app.activities = std::collections::VecDeque::from(vec![entry]);
-    app.selected_activity_index = 0;
+    app.transcript_view.selected_activity_index = 0;
 
     let lines = transcript_test_line_texts(build_transcript_lines_for_width(
         &app,
@@ -412,7 +495,7 @@ fn completed_latest_turn_keeps_footer_after_streaming_finishes() {
     );
     entry.user_timestamp = Some("2026-03-19T09:45:00Z".to_string());
     app.activities = std::collections::VecDeque::from(vec![entry]);
-    app.selected_activity_index = 0;
+    app.transcript_view.selected_activity_index = 0;
     app.handle_key(crossterm::event::KeyEvent::new(
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
@@ -561,6 +644,7 @@ fn user_message_surface_keeps_timestamp_in_latest_footer_only() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        revision: 0,
     }]);
     app.handle_key(crossterm::event::KeyEvent::new(
         crossterm::event::KeyCode::Char('p'),
@@ -605,7 +689,7 @@ fn reasoning_summary_renders_as_nested_inset_block() {
     );
     entry.thinking_text = "Matching harness response spacing".to_string();
     app.activities = std::collections::VecDeque::from(vec![entry]);
-    app.selected_activity_index = 0;
+    app.transcript_view.selected_activity_index = 0;
 
     let lines = transcript_test_line_texts(build_transcript_lines_for_width(
         &app,
@@ -629,7 +713,7 @@ fn fenced_code_blocks_render_frameless_with_highlighting() {
             ActivityStatus::Done,
             "Before\n\n```rust\nfn main() {\n    println!(\"hi\");\n}\n```\n\nAfter",
         )]);
-    app.selected_activity_index = 0;
+    app.transcript_view.selected_activity_index = 0;
 
     let lines = transcript_test_line_texts(build_transcript_lines_for_width(
         &app,
@@ -661,7 +745,7 @@ fn transcript_turn_sections_keep_exactly_one_blank_row_between_sections() {
         transcript_section_model_test_activity("request-a", ActivityStatus::Done, "first"),
         transcript_section_model_test_activity("request-b", ActivityStatus::Done, "second"),
     ]);
-    app.selected_activity_index = 1;
+    app.transcript_view.selected_activity_index = 1;
 
     let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 80);
 
@@ -690,7 +774,7 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
 
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![activity]);
-    app.selected_activity_index = 0;
+    app.transcript_view.selected_activity_index = 0;
 
     let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 80);
     let surfaces = &layout.sections[0].surfaces;
@@ -840,7 +924,7 @@ fn reasoning_to_answer_transition_uses_single_blank_row() {
     );
     entry.thinking_text = "reasoning".to_string();
     app.activities = std::collections::VecDeque::from(vec![entry]);
-    app.selected_activity_index = 0;
+    app.transcript_view.selected_activity_index = 0;
 
     let lines = transcript_test_line_texts(build_transcript_lines_for_width(
         &app,
@@ -887,8 +971,9 @@ fn streaming_assistant_footer_spinner_uses_deterministic_braille_frames() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        revision: 0,
     }]);
-    app.selected_activity_index = 0;
+    app.transcript_view.selected_activity_index = 0;
 
     let first = transcript_test_line_texts(build_transcript_lines_for_width(
         &app,
@@ -908,3 +993,254 @@ fn streaming_assistant_footer_spinner_uses_deterministic_braille_frames() {
 
 #[path = "ui_transcript_lifecycle_tests.rs"]
 mod lifecycle_tests;
+
+#[test]
+fn transcript_measurement_wrap_correctness_across_widths_and_styles() {
+    let patterns = [
+        "short",
+        "a medium length reply that should wrap at narrow widths",
+        "漢字🙂漢字🙂漢字🙂 wide glyph text that needs careful wrapping across columns",
+        "word-with-dashes-and-underscores_that_must_not_break_mid_token",
+        "multiple\nlines\nin\none\nreply\nthat\nshould\npreserve\nhard\nbreaks",
+        "a single very long word without any spaces supercalifragilisticexpialidocious1234567890",
+        "trailing   spaces   and   tabs\t\t\tthat   collapse",
+        "",
+    ];
+
+    let widths = [20u16, 40, 60, 80, 100, 120];
+
+    for pattern in &patterns {
+        for &width in &widths {
+            let mut app = AppState::default();
+            app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
+                request_id: "request-wrap-correctness".to_string(),
+                profile_label: "default".to_string(),
+                model_id: "gpt-5.4-mini".to_string(),
+                provider_id: "openai".to_string(),
+                status: ActivityStatus::Done,
+                user_message: Some(harness_core::event::UserMessageSubmittedEvent {
+                    request_id: "request-wrap-correctness".to_string(),
+                    text: "wrap correctness probe".to_string(),
+                }),
+                user_timestamp: None,
+                request_data: None,
+                thinking_text: String::new(),
+                transcript_text: pattern.to_string(),
+                usage: None,
+                cache_usage: None,
+                error_message: None,
+                permissions: Vec::new(),
+                tool_calls: Vec::new(),
+                first_seq: 1,
+                last_seq: 1,
+                first_mono_ms: 1,
+                last_mono_ms: 1,
+                revision: 0,
+            }]);
+            app.transcript_view.selected_activity_index = 0;
+
+            let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), width);
+            let measured_rows = layout.total_height;
+
+            let mut independently_computed_rows = 0usize;
+            for section in &layout.sections {
+                independently_computed_rows += section.leading_gap_height;
+                let mut section_rows = 0usize;
+                for surface in &section.surfaces {
+                    let content_width = if surface.width == 0 {
+                        1
+                    } else {
+                        usize::from(
+                            surface
+                                .width
+                                .saturating_sub(u16::from(surface.show_outer_rail)),
+                        )
+                        .max(1)
+                    };
+                    let visual_rows = surface
+                        .lines
+                        .iter()
+                        .map(|line| {
+                            let line_width = line.width();
+                            if line_width == 0 {
+                                1
+                            } else {
+                                line_width.div_ceil(content_width)
+                            }
+                        })
+                        .sum::<usize>();
+                    section_rows = surface.top_offset + visual_rows;
+                }
+                independently_computed_rows += section_rows;
+            }
+
+            assert_eq!(
+                measured_rows, independently_computed_rows,
+                "measured_rows ({measured_rows}) must equal independently computed rows \
+                 ({independently_computed_rows}) for pattern {pattern:?} at width {width}"
+            );
+        }
+    }
+}
+
+#[test]
+fn transcript_selection_rows_proportional_to_visual_lines_not_cell_count() {
+    let message_count = 50usize;
+    let mut activities = Vec::with_capacity(message_count);
+    for idx in 0..message_count {
+        activities.push(transcript_section_model_test_activity(
+            &format!("request-perf-{idx}"),
+            ActivityStatus::Done,
+            &format!("Assistant reply number {idx} with some content to render."),
+        ));
+    }
+    let mut app = AppState::default();
+    app.activities = std::collections::VecDeque::from(activities);
+    app.transcript_view.selected_activity_index = message_count.saturating_sub(1);
+
+    let area = Rect::new(0, 0, 140, 40);
+
+    let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 80);
+    let total_height = layout.total_height;
+
+    let row_count =
+        transcript_selection_row_count(&app, area).expect("selection snapshot row count");
+
+    assert_eq!(
+        row_count, total_height,
+        "SelectionRow count must equal visual line count, not scale with width"
+    );
+
+    assert!(
+        row_count < message_count * 80,
+        "SelectionRow count ({row_count}) must be much less than message_count * width ({}), \
+         proving selection does not allocate per-cell",
+        message_count * 80
+    );
+
+    assert!(
+        row_count >= message_count,
+        "SelectionRow count ({row_count}) must be at least proportional to message count ({message_count})"
+    );
+
+    let wide_layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 120);
+    let wide_total_height = wide_layout.total_height;
+    let wide_row_count = transcript_selection_row_count(&app, Rect::new(0, 0, 140, 40))
+        .expect("selection snapshot row count at wider width");
+
+    assert_eq!(
+        wide_row_count, wide_total_height,
+        "SelectionRow count must equal visual line count at any width"
+    );
+
+    let width_ratio = 120.0 / 80.0;
+    let row_ratio = wide_row_count as f64 / row_count.max(1) as f64;
+    assert!(
+        row_ratio < width_ratio,
+        "SelectionRow count should not scale linearly with width: \
+         narrow={row_count}, wide={wide_row_count}, width_ratio={width_ratio:.2}, row_ratio={row_ratio:.2}"
+    );
+}
+
+#[test]
+fn perf_500_event_streaming_transcript_cache_and_layout_budget() {
+    use std::time::{Duration, Instant};
+
+    const ACTIVITY_COUNT: usize = 500;
+    const STREAMING_DELTA_COUNT: usize = 20;
+    const CACHE_KEY_BUDGET: Duration = Duration::from_millis(15);
+    const LAYOUT_BUDGET: Duration = Duration::from_millis(500);
+
+    let activities: Vec<ActivityEntry> = (0..ACTIVITY_COUNT)
+        .map(|index| {
+            let status = if index == ACTIVITY_COUNT - 1 {
+                ActivityStatus::Streaming
+            } else {
+                ActivityStatus::Done
+            };
+            let mut entry = transcript_section_model_test_activity(
+                &format!("req-{index:04}"),
+                status,
+                &format!(
+                    "Assistant reply {index}: the workspace looks consistent and the \
+                     transcript cache should remain stable across streaming deltas."
+                ),
+            );
+            entry.user_message = Some(UserMessageSubmittedEvent {
+                request_id: format!("req-{index:04}"),
+                text: format!("User turn {index}: inspect the workspace."),
+            });
+            if index % 10 == 0 {
+                entry
+                    .tool_calls
+                    .push(transcript_section_model_test_tool_call(
+                        &format!("tc-{index:04}"),
+                        "fs.read",
+                    ));
+            }
+            entry
+        })
+        .collect();
+
+    let mut app = AppState::default();
+    app.activities = std::collections::VecDeque::from(activities);
+    app.transcript_view.selected_activity_index = ACTIVITY_COUNT - 1;
+
+    let theme = Theme::default();
+    let width: u16 = 120;
+
+    let _ = build_transcript_lines_for_width(&app, &theme, width);
+
+    let mut max_cache_key = Duration::ZERO;
+    let mut max_layout = Duration::ZERO;
+    let mut total_delta = Duration::ZERO;
+
+    for delta_index in 0..STREAMING_DELTA_COUNT {
+        if let Some(last) = app.activities.back_mut() {
+            last.transcript_text.push_str(&format!(
+                " Delta {delta_index}: appending streaming text to exercise the \
+                 transcript render cache and layout pipeline."
+            ));
+            last.revision = last.revision.wrapping_add(1);
+        }
+
+        app.advance_transcript_animation_phase();
+
+        let key_start = Instant::now();
+        let _ = app.transcript_render_cache_key();
+        let key_elapsed = key_start.elapsed();
+
+        let layout_start = Instant::now();
+        let lines = build_transcript_lines_for_width(&app, &theme, width);
+        let layout_elapsed = layout_start.elapsed();
+
+        assert!(
+            !lines.is_empty(),
+            "transcript lines must not be empty for delta {delta_index}"
+        );
+
+        max_cache_key = max_cache_key.max(key_elapsed);
+        max_layout = max_layout.max(layout_elapsed);
+        total_delta += key_elapsed + layout_elapsed;
+    }
+
+    let avg_delta = total_delta / STREAMING_DELTA_COUNT as u32;
+
+    eprintln!(
+        "perf_500_event: {ACTIVITY_COUNT} activities, {STREAMING_DELTA_COUNT} deltas | \
+         cache_key max={max_cache_key:?} | layout max={max_layout:?} | \
+         avg_delta={avg_delta:?}"
+    );
+
+    assert!(
+        max_cache_key < CACHE_KEY_BUDGET,
+        "per-delta cache key time {max_cache_key:?} exceeded budget {CACHE_KEY_BUDGET:?} \
+         (avg delta {avg_delta:?}, {STREAMING_DELTA_COUNT} deltas, {ACTIVITY_COUNT} activities)"
+    );
+
+    assert!(
+        max_layout < LAYOUT_BUDGET,
+        "per-delta layout time {max_layout:?} exceeded budget {LAYOUT_BUDGET:?} \
+         (avg delta {avg_delta:?}, {STREAMING_DELTA_COUNT} deltas, {ACTIVITY_COUNT} activities)"
+    );
+}

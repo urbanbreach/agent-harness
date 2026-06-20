@@ -352,6 +352,7 @@ pub(crate) fn exact_test_tool_status_summary_uses_effective_tool_identity() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        revision: 0,
     });
 
     let summary = control_dock_summary_segment(&app).expect("tool summary segment");
@@ -405,6 +406,7 @@ pub(crate) fn exact_test_retry_summary_segment_prioritizes_retry_indicator() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        revision: 0,
     });
 
     let summary = control_dock_summary_segment(&app).expect("retry summary segment");
@@ -612,4 +614,46 @@ fn composer_file_tag_line_uses_warning_bold_style() {
     assert_eq!(line.spans[1].style, tag);
     assert_eq!(line.spans[2].content.as_ref(), " now");
     assert_eq!(line.spans[2].style, base);
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_footer_status_cluster_shows_pending_permission_count() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(harness_core::event::EventEnvelopeV1 {
+        schema_version: harness_core::event::SCHEMA_VERSION,
+        event_id: "evt_footer_cluster".to_string(),
+        seq: 1,
+        run_id: "run_footer_cluster".to_string(),
+        mono_ms: 0,
+        ts: None,
+        actor: harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Supervisor,
+            None,
+        ),
+        correlation_id: Some("tool_call_footer_cluster".to_string()),
+        causation_id: None,
+        stream_key: Some("tool_call_footer_cluster".to_string()),
+        payload: harness_core::event::EventV1::PermissionRequested(
+            harness_core::event::PermissionRequestedEvent {
+                permission_id: "perm_footer_cluster".to_string(),
+                kind: "edit_fs".to_string(),
+                tool_call_id: Some("tool_call_footer_cluster".to_string()),
+                summary: "Apply edit to demo.txt".to_string(),
+                request_digest: "digest-footer".to_string(),
+                timeout_ms: 30_000,
+                default_decision: harness_core::event::PermissionDecision::Deny,
+            },
+        ),
+    });
+
+    let data = crate::ui::ui_secondary::footer_status_cluster_data(&app);
+    assert_eq!(data.pending_permissions, 1);
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_footer_status_cluster_empty_when_no_activity() {
+    let app = AppState::new_live(None, false, None);
+
+    let data = crate::ui::ui_secondary::footer_status_cluster_data(&app);
+    assert_eq!(data.pending_permissions, 0);
 }
