@@ -10,7 +10,7 @@ pub(super) fn slash_menu_closes_after_whitespace() {
     app.handle_key(key(KeyCode::Char(' ')));
 
     assert!(!app.slash_visible);
-    assert_eq!(app.prompt_buffer, "/n ");
+    assert_eq!(app.composer.prompt_buffer, "/n ");
 }
 
 pub(super) fn slash_menu_resets_selection_when_filter_changes() {
@@ -94,8 +94,11 @@ pub(super) fn slash_help_opens_help_surface_and_preserves_draft() {
 
     // assert
     assert_eq!(app.review_surface(), Some(ReviewSurface::Help));
-    assert_eq!(app.prompt_buffer, "preserved draft");
-    assert_eq!(app.prompt_cursor, "preserved draft".chars().count());
+    assert_eq!(app.composer.prompt_buffer, "preserved draft");
+    assert_eq!(
+        app.composer.prompt_cursor,
+        "preserved draft".chars().count()
+    );
     assert!(!app.should_quit);
 }
 
@@ -107,19 +110,19 @@ pub(super) fn slash_escape_clears_token_or_restores_prior_draft() {
 
     fresh.handle_key(key(KeyCode::Esc));
 
-    assert_eq!(fresh.prompt_buffer, "");
-    assert_eq!(fresh.prompt_cursor, 0);
+    assert_eq!(fresh.composer.prompt_buffer, "");
+    assert_eq!(fresh.composer.prompt_cursor, 0);
     assert!(!fresh.slash_visible);
 
     let mut with_draft = AppState::new_startup(Vec::new(), None);
-    with_draft.prompt_buffer = "draft".to_string();
-    with_draft.prompt_cursor = 0;
+    with_draft.composer.prompt_buffer = "draft".to_string();
+    with_draft.composer.prompt_cursor = 0;
     with_draft.handle_key(key(KeyCode::Char('/')));
 
     with_draft.handle_key(key(KeyCode::Esc));
 
-    assert_eq!(with_draft.prompt_buffer, "draft");
-    assert_eq!(with_draft.prompt_cursor, "draft".chars().count());
+    assert_eq!(with_draft.composer.prompt_buffer, "draft");
+    assert_eq!(with_draft.composer.prompt_cursor, "draft".chars().count());
     assert!(!with_draft.slash_visible);
 }
 
@@ -308,14 +311,14 @@ pub(super) fn rename_slash_command_emits_update_session_title_intent() {
     };
 
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(sink));
-    app.prompt_buffer = "/rename New Title".to_string();
-    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.composer.prompt_buffer = "/rename New Title".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
     app.slash_draft_snapshot = Some("draft preserved".to_string());
     app.sync_slash_overlay();
 
     app.handle_key(key(KeyCode::Enter));
 
-    assert_eq!(app.prompt_buffer, "draft preserved");
+    assert_eq!(app.composer.prompt_buffer, "draft preserved");
     assert!(!app.slash_visible);
     assert_eq!(
         intents.lock().expect("lock intents").as_slice(),
@@ -327,8 +330,8 @@ pub(super) fn rename_slash_command_emits_update_session_title_intent() {
 
 pub(super) fn rename_slash_title_alias_resolves() {
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
-    app.prompt_buffer = "/title Alias Title".to_string();
-    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.composer.prompt_buffer = "/title Alias Title".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
     app.sync_slash_overlay();
 
     assert_eq!(app.typed_slash_command(), Some("rename"));
@@ -344,8 +347,8 @@ pub(super) fn rename_slash_empty_title_emits_error_toast() {
     };
 
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(sink));
-    app.prompt_buffer = "/rename  ".to_string();
-    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.composer.prompt_buffer = "/rename  ".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
     app.sync_slash_overlay();
 
     app.handle_key(key(KeyCode::Enter));

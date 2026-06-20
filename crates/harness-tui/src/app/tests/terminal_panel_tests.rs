@@ -204,12 +204,12 @@ pub(super) fn terminal_panel_focus_scrolls_independently_from_transcript() {
     let mut app = AppState::new_live(None, false, None);
     app.handle_key(key(KeyCode::Char('4')));
     app.focus = Focus::Terminal;
-    app.last_terminal_panel_max_scroll.set(20);
+    app.terminal_panel.last_max_scroll.set(20);
 
     app.handle_key(key(KeyCode::PageUp));
     assert_eq!(app.terminal_panel_scroll(), 10);
     assert!(!app.terminal_panel_follow());
-    assert_eq!(app.transcript_scroll, 0);
+    assert_eq!(app.transcript_view.transcript_scroll, 0);
 
     app.handle_key(key(KeyCode::End));
     assert_eq!(app.terminal_panel_scroll(), 0);

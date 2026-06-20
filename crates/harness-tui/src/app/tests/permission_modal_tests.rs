@@ -100,8 +100,8 @@ pub(super) fn permission_modal_ignores_unmapped_chars_without_buffering() {
     };
 
     let mut app = AppState::new_live(None, false, Some(intent_sink));
-    app.prompt_buffer = "keep this draft".to_string();
-    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.composer.prompt_buffer = "keep this draft".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
     app.ingest_event(envelope(
         1,
         "req_modal_quit",
@@ -119,7 +119,7 @@ pub(super) fn permission_modal_ignores_unmapped_chars_without_buffering() {
     app.handle_key(key(KeyCode::Char('q')));
 
     assert!(!app.should_quit);
-    assert_eq!(app.prompt_buffer, "keep this draft");
+    assert_eq!(app.composer.prompt_buffer, "keep this draft");
     let intents = intents.lock().expect("lock intents");
     assert!(intents.is_empty());
     assert!(app.active_permission().is_some());
@@ -178,8 +178,8 @@ pub(super) fn permission_modal_ctrl_n_emits_deny_intent_without_hiding_pending_p
     };
 
     let mut app = AppState::new_live(None, false, Some(intent_sink));
-    app.prompt_buffer = "keep this draft".to_string();
-    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.composer.prompt_buffer = "keep this draft".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
     app.ingest_event(envelope(
         1,
         "req_modal_ctrl_n",
@@ -201,7 +201,7 @@ pub(super) fn permission_modal_ctrl_n_emits_deny_intent_without_hiding_pending_p
     ));
 
     // assert
-    assert_eq!(app.prompt_buffer, "keep this draft");
+    assert_eq!(app.composer.prompt_buffer, "keep this draft");
     assert_eq!(
         intents.lock().expect("lock intents").as_slice(),
         &[UiIntent::ResolvePermission {

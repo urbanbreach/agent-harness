@@ -14,8 +14,8 @@ pub(super) fn ctrl_j_inserts_newline_without_submitting() {
         app.handle_key(key(KeyCode::Char(c)));
     }
 
-    assert_eq!(app.prompt_buffer, "hello\nworld");
-    assert_eq!(app.prompt_history.len(), 0);
+    assert_eq!(app.composer.prompt_buffer, "hello\nworld");
+    assert_eq!(app.composer.prompt_history.len(), 0);
 }
 
 pub(super) fn paste_multiline_text_inserts_newlines_without_submitting() {
@@ -30,36 +30,39 @@ pub(super) fn paste_multiline_text_inserts_newlines_without_submitting() {
 
     app.handle_paste("alpha\r\n\r\nbeta\rgamma");
 
-    assert_eq!(app.prompt_buffer, "alpha\n\nbeta\ngamma");
-    assert_eq!(app.prompt_cursor, app.prompt_buffer.chars().count());
-    assert!(app.prompt_history.is_empty());
+    assert_eq!(app.composer.prompt_buffer, "alpha\n\nbeta\ngamma");
+    assert_eq!(
+        app.composer.prompt_cursor,
+        app.composer.prompt_buffer.chars().count()
+    );
+    assert!(app.composer.prompt_history.is_empty());
     assert!(intents.lock().expect("lock intents").is_empty());
 }
 
 pub(super) fn multiline_history_keys_move_cursor_before_recalling_history() {
     let mut app = AppState::new_live(None, false, None);
-    app.prompt_history = vec!["older prompt".to_string()];
-    app.prompt_buffer = "alpha\nbeta".to_string();
-    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.composer.prompt_history = vec!["older prompt".to_string()];
+    app.composer.prompt_buffer = "alpha\nbeta".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
 
     app.handle_key(key(KeyCode::Up));
-    assert_eq!(app.prompt_buffer, "alpha\nbeta");
-    assert_eq!(app.prompt_cursor, 4);
-    assert_eq!(app.prompt_history_index, None);
+    assert_eq!(app.composer.prompt_buffer, "alpha\nbeta");
+    assert_eq!(app.composer.prompt_cursor, 4);
+    assert_eq!(app.composer.prompt_history_index, None);
 
     app.handle_key(key(KeyCode::Up));
-    assert_eq!(app.prompt_cursor, 4);
-    assert_eq!(app.prompt_history_index, None);
+    assert_eq!(app.composer.prompt_cursor, 4);
+    assert_eq!(app.composer.prompt_history_index, None);
 
-    app.prompt_cursor = 0;
+    app.composer.prompt_cursor = 0;
     app.handle_key(key(KeyCode::Up));
-    assert_eq!(app.prompt_buffer, "older prompt");
-    assert_eq!(app.prompt_history_index, Some(0));
+    assert_eq!(app.composer.prompt_buffer, "older prompt");
+    assert_eq!(app.composer.prompt_history_index, Some(0));
 
     app.handle_key(key(KeyCode::Down));
-    assert_eq!(app.prompt_buffer, "alpha\nbeta");
-    assert_eq!(app.prompt_cursor, 0);
-    assert_eq!(app.prompt_history_index, None);
+    assert_eq!(app.composer.prompt_buffer, "alpha\nbeta");
+    assert_eq!(app.composer.prompt_cursor, 0);
+    assert_eq!(app.composer.prompt_history_index, None);
 }
 
 pub(super) fn prompt_history_persists_and_restores_draft_after_recall() {
@@ -88,21 +91,21 @@ pub(super) fn prompt_history_persists_and_restores_draft_after_recall() {
     let mut restarted =
         AppState::new_startup_with_prompt_history_path(Vec::new(), None, Some(history_path));
     assert_eq!(
-        restarted.prompt_history,
+        restarted.composer.prompt_history,
         vec!["persisted prompt".to_string()]
     );
 
     restarted.focus = Focus::Prompt;
-    restarted.prompt_buffer = "draft text".to_string();
-    restarted.prompt_cursor = 0;
+    restarted.composer.prompt_buffer = "draft text".to_string();
+    restarted.composer.prompt_cursor = 0;
     restarted.handle_key(key(KeyCode::Up));
-    assert_eq!(restarted.prompt_buffer, "persisted prompt");
-    assert_eq!(restarted.prompt_history_index, Some(0));
+    assert_eq!(restarted.composer.prompt_buffer, "persisted prompt");
+    assert_eq!(restarted.composer.prompt_history_index, Some(0));
 
     restarted.handle_key(key(KeyCode::Down));
-    assert_eq!(restarted.prompt_buffer, "draft text");
-    assert_eq!(restarted.prompt_cursor, 0);
-    assert_eq!(restarted.prompt_history_index, None);
+    assert_eq!(restarted.composer.prompt_buffer, "draft text");
+    assert_eq!(restarted.composer.prompt_cursor, 0);
+    assert_eq!(restarted.composer.prompt_history_index, None);
 }
 
 pub(super) fn startup_auto_submit_persists_prompt_history_once() {
@@ -138,7 +141,10 @@ pub(super) fn startup_auto_submit_persists_prompt_history_once() {
         intents.lock().expect("lock intents").as_slice(),
         [UiIntent::NewSession]
     ));
-    assert_eq!(live.prompt_history, vec!["fresh session".to_string()]);
+    assert_eq!(
+        live.composer.prompt_history,
+        vec!["fresh session".to_string()]
+    );
 }
 
 pub(super) fn live_bootstrap_auto_submit_echoes_and_emits_first_prompt() {
@@ -159,8 +165,8 @@ pub(super) fn live_bootstrap_auto_submit_echoes_and_emits_first_prompt() {
         auto_submit: true,
     });
 
-    assert!(app.prompt_buffer.is_empty());
-    assert_eq!(app.prompt_history, vec!["boot prompt".to_string()]);
+    assert!(app.composer.prompt_buffer.is_empty());
+    assert_eq!(app.composer.prompt_history, vec!["boot prompt".to_string()]);
     assert_eq!(
         app.activities
             .back()
@@ -211,12 +217,12 @@ pub(super) fn submit_prompt_while_turn_streams_echoes_as_queued_and_emits_intent
             metadata: None,
         }),
     ));
-    app.prompt_buffer = "next prompt".to_string();
-    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.composer.prompt_buffer = "next prompt".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
 
     app.submit_prompt();
 
-    assert!(app.prompt_buffer.is_empty());
+    assert!(app.composer.prompt_buffer.is_empty());
     assert_eq!(app.activities.len(), 2);
     assert_eq!(
         app.activities
