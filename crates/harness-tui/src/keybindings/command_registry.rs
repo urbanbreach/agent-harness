@@ -307,6 +307,141 @@ const COMMAND_METADATA: &[CommandMetadata] = &[
         label: "Rename",
         description: "Rename the current session",
     },
+    CommandMetadata {
+        id: "select_char_left",
+        label: "Select char left",
+        description: "Extend selection one char left",
+    },
+    CommandMetadata {
+        id: "select_char_right",
+        label: "Select char right",
+        description: "Extend selection one char right",
+    },
+    CommandMetadata {
+        id: "select_word_left",
+        label: "Select word left",
+        description: "Extend selection one word left",
+    },
+    CommandMetadata {
+        id: "select_word_right",
+        label: "Select word right",
+        description: "Extend selection one word right",
+    },
+    CommandMetadata {
+        id: "select_line",
+        label: "Select line",
+        description: "Select the current line",
+    },
+    CommandMetadata {
+        id: "select_all",
+        label: "Select all",
+        description: "Select the entire prompt buffer",
+    },
+    CommandMetadata {
+        id: "move_word_left",
+        label: "Move word left",
+        description: "Move cursor one word left",
+    },
+    CommandMetadata {
+        id: "move_word_right",
+        label: "Move word right",
+        description: "Move cursor one word right",
+    },
+    CommandMetadata {
+        id: "move_line_start",
+        label: "Move line start",
+        description: "Move cursor to line start",
+    },
+    CommandMetadata {
+        id: "move_line_end",
+        label: "Move line end",
+        description: "Move cursor to line end",
+    },
+    CommandMetadata {
+        id: "move_buffer_start",
+        label: "Move buffer start",
+        description: "Move cursor to buffer start",
+    },
+    CommandMetadata {
+        id: "move_buffer_end",
+        label: "Move buffer end",
+        description: "Move cursor to buffer end",
+    },
+    CommandMetadata {
+        id: "delete_word_forward",
+        label: "Delete word forward",
+        description: "Delete the word after the cursor",
+    },
+    CommandMetadata {
+        id: "delete_word_backward",
+        label: "Delete word backward",
+        description: "Delete the word before the cursor",
+    },
+    CommandMetadata {
+        id: "delete_line",
+        label: "Delete line",
+        description: "Delete the current line",
+    },
+    CommandMetadata {
+        id: "kill_to_line_start",
+        label: "Kill to line start",
+        description: "Delete from cursor to line start",
+    },
+    CommandMetadata {
+        id: "kill_to_line_end",
+        label: "Kill to line end",
+        description: "Delete from cursor to line end",
+    },
+    CommandMetadata {
+        id: "undo",
+        label: "Undo",
+        description: "Undo the last edit",
+    },
+    CommandMetadata {
+        id: "redo",
+        label: "Redo",
+        description: "Redo the last undone edit",
+    },
+    CommandMetadata {
+        id: "prompt_stash",
+        label: "Stash prompt",
+        description: "Stash the current composer draft to the prompt stash",
+    },
+    CommandMetadata {
+        id: "prompt_stash_pop",
+        label: "Pop stashed prompt",
+        description: "Restore the most recently stashed prompt to the composer",
+    },
+    CommandMetadata {
+        id: "prompt_stash_list",
+        label: "Prompt stash list",
+        description: "Open the prompt stash dialog to browse stashed prompts",
+    },
+    CommandMetadata {
+        id: "open_lineage_browser",
+        label: "Session tree",
+        description: "Open the Harness session lineage browser",
+    },
+    CommandMetadata {
+        id: "session_child_first",
+        label: "First child session",
+        description: "Open the first child session of the current session",
+    },
+    CommandMetadata {
+        id: "session_child_cycle",
+        label: "Next child session",
+        description: "Cycle to the next sibling child session",
+    },
+    CommandMetadata {
+        id: "session_child_cycle_reverse",
+        label: "Previous child session",
+        description: "Cycle to the previous sibling child session",
+    },
+    CommandMetadata {
+        id: "session_parent",
+        label: "Parent session",
+        description: "Return to the parent session",
+    },
 ];
 
 pub(super) fn command_metadata(id: &str) -> Option<&'static CommandMetadata> {
@@ -594,6 +729,54 @@ const PALETTE_COMMANDS: &[PaletteCommand] = &[
         metadata_id: "quit",
         shortcut: "q",
         section: PaletteCommandSection::System,
+    },
+    PaletteCommand {
+        id: "prompt_stash",
+        metadata_id: "prompt_stash",
+        shortcut: "",
+        section: PaletteCommandSection::Session,
+    },
+    PaletteCommand {
+        id: "prompt_stash_pop",
+        metadata_id: "prompt_stash_pop",
+        shortcut: "",
+        section: PaletteCommandSection::Session,
+    },
+    PaletteCommand {
+        id: "prompt_stash_list",
+        metadata_id: "prompt_stash_list",
+        shortcut: "",
+        section: PaletteCommandSection::Session,
+    },
+    PaletteCommand {
+        id: "open_lineage_browser",
+        metadata_id: "open_lineage_browser",
+        shortcut: "ctrl+x g",
+        section: PaletteCommandSection::Session,
+    },
+    PaletteCommand {
+        id: "session_child_first",
+        metadata_id: "session_child_first",
+        shortcut: "ctrl+]",
+        section: PaletteCommandSection::Session,
+    },
+    PaletteCommand {
+        id: "session_child_cycle",
+        metadata_id: "session_child_cycle",
+        shortcut: "]",
+        section: PaletteCommandSection::Session,
+    },
+    PaletteCommand {
+        id: "session_child_cycle_reverse",
+        metadata_id: "session_child_cycle_reverse",
+        shortcut: "[",
+        section: PaletteCommandSection::Session,
+    },
+    PaletteCommand {
+        id: "session_parent",
+        metadata_id: "session_parent",
+        shortcut: "ctrl+[",
+        section: PaletteCommandSection::Session,
     },
 ];
 

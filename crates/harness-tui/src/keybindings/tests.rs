@@ -427,3 +427,43 @@ fn keymap_binds_ctrl_t_to_variant_cycle() {
     );
     assert_eq!(keymap.get_binding_str(Action::VariantCycle), "Ctrl+t");
 }
+
+#[test]
+fn leader_g_opens_lineage_browser() {
+    let keymap = KeyMap::with_defaults();
+
+    assert_eq!(
+        keymap.leader_action(&KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE)),
+        Some(Action::OpenLineageBrowser)
+    );
+    assert_eq!(
+        Action::from_str("open_lineage_browser"),
+        Ok(Action::OpenLineageBrowser)
+    );
+}
+
+#[test]
+fn palette_exposes_lineage_browser_and_child_session_commands() {
+    let palette_commands = Action::palette_commands();
+
+    let command_ids: Vec<&str> = palette_commands.iter().map(|cmd| cmd.id).collect();
+
+    assert!(command_ids.contains(&"open_lineage_browser"));
+    assert!(command_ids.contains(&"session_child_first"));
+    assert!(command_ids.contains(&"session_child_cycle"));
+    assert!(command_ids.contains(&"session_child_cycle_reverse"));
+    assert!(command_ids.contains(&"session_parent"));
+
+    for command_id in [
+        "open_lineage_browser",
+        "session_child_first",
+        "session_child_cycle",
+        "session_child_cycle_reverse",
+        "session_parent",
+    ] {
+        let label = Action::palette_command_label(command_id);
+        let description = Action::palette_command_description(command_id);
+        assert!(!label.trim().is_empty(), "{command_id} label");
+        assert!(!description.trim().is_empty(), "{command_id} description");
+    }
+}

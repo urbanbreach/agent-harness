@@ -77,7 +77,40 @@ pub enum Action {
     Delete,
     /// Character input (prompt)
     Char(char),
+    SelectCharLeft,
+    SelectCharRight,
+    SelectWordLeft,
+    SelectWordRight,
+    SelectLine,
+    SelectAll,
+    MoveWordLeft,
+    MoveWordRight,
+    MoveLineStart,
+    MoveLineEnd,
+    MoveBufferStart,
+    MoveBufferEnd,
+    DeleteWordForward,
+    DeleteWordBackward,
+    DeleteLine,
+    KillToLineStart,
+    KillToLineEnd,
+    Undo,
+    Redo,
     RevertWorkspace,
+    OpenThemeDialog,
+    OpenModelSwitcher,
+    FirstMessage,
+    LastMessage,
+    NextMessage,
+    PreviousMessage,
+    CopyMessage,
+    ExportSession,
+    ToggleScrollbar,
+    OpenErrorDetails,
+    PromptStash,
+    PromptStashPop,
+    PromptStashList,
+    OpenLineageBrowser,
 }
 
 impl Action {
@@ -101,10 +134,10 @@ impl Action {
             Action::MoveDown => Some("move_down"),
             Action::MoveUp => Some("move_up"),
             Action::Reload => Some("reload"),
-            Action::SessionChildFirst => None,
-            Action::SessionChildCycle => None,
-            Action::SessionChildCycleReverse => None,
-            Action::SessionParent => None,
+            Action::SessionChildFirst => Some("session_child_first"),
+            Action::SessionChildCycle => Some("session_child_cycle"),
+            Action::SessionChildCycleReverse => Some("session_child_cycle_reverse"),
+            Action::SessionParent => Some("session_parent"),
             Action::DiffHunkNext => Some("diff_hunk_next"),
             Action::DiffHunkPrevious => Some("diff_hunk_previous"),
             Action::AgentCycle => Some("agent_cycle"),
@@ -120,7 +153,40 @@ impl Action {
             Action::Backspace => None,
             Action::Delete => None,
             Action::Char(_) => None,
+            Action::SelectCharLeft => Some("select_char_left"),
+            Action::SelectCharRight => Some("select_char_right"),
+            Action::SelectWordLeft => Some("select_word_left"),
+            Action::SelectWordRight => Some("select_word_right"),
+            Action::SelectLine => Some("select_line"),
+            Action::SelectAll => Some("select_all"),
+            Action::MoveWordLeft => Some("move_word_left"),
+            Action::MoveWordRight => Some("move_word_right"),
+            Action::MoveLineStart => Some("move_line_start"),
+            Action::MoveLineEnd => Some("move_line_end"),
+            Action::MoveBufferStart => Some("move_buffer_start"),
+            Action::MoveBufferEnd => Some("move_buffer_end"),
+            Action::DeleteWordForward => Some("delete_word_forward"),
+            Action::DeleteWordBackward => Some("delete_word_backward"),
+            Action::DeleteLine => Some("delete_line"),
+            Action::KillToLineStart => Some("kill_to_line_start"),
+            Action::KillToLineEnd => Some("kill_to_line_end"),
+            Action::Undo => Some("undo"),
+            Action::Redo => Some("redo"),
             Action::RevertWorkspace => None,
+            Action::OpenThemeDialog => Some("open_theme_dialog"),
+            Action::OpenModelSwitcher => Some("open_model_switcher"),
+            Action::FirstMessage => Some("first_message"),
+            Action::LastMessage => Some("last_message"),
+            Action::NextMessage => Some("next_message"),
+            Action::PreviousMessage => Some("previous_message"),
+            Action::CopyMessage => Some("copy_message"),
+            Action::ExportSession => Some("export_session"),
+            Action::ToggleScrollbar => Some("toggle_scrollbar"),
+            Action::OpenErrorDetails => Some("open_error_details"),
+            Action::PromptStash => Some("prompt_stash"),
+            Action::PromptStashPop => Some("prompt_stash_pop"),
+            Action::PromptStashList => Some("prompt_stash_list"),
+            Action::OpenLineageBrowser => Some("open_lineage_browser"),
         }
     }
 
@@ -182,7 +248,40 @@ impl Action {
             Action::Backspace => "backspace",
             Action::Delete => "delete",
             Action::Char(_) => "char",
+            Action::SelectCharLeft => "select_char_left",
+            Action::SelectCharRight => "select_char_right",
+            Action::SelectWordLeft => "select_word_left",
+            Action::SelectWordRight => "select_word_right",
+            Action::SelectLine => "select_line",
+            Action::SelectAll => "select_all",
+            Action::MoveWordLeft => "move_word_left",
+            Action::MoveWordRight => "move_word_right",
+            Action::MoveLineStart => "move_line_start",
+            Action::MoveLineEnd => "move_line_end",
+            Action::MoveBufferStart => "move_buffer_start",
+            Action::MoveBufferEnd => "move_buffer_end",
+            Action::DeleteWordForward => "delete_word_forward",
+            Action::DeleteWordBackward => "delete_word_backward",
+            Action::DeleteLine => "delete_line",
+            Action::KillToLineStart => "kill_to_line_start",
+            Action::KillToLineEnd => "kill_to_line_end",
+            Action::Undo => "undo",
+            Action::Redo => "redo",
             Action::RevertWorkspace => "revert_workspace",
+            Action::OpenThemeDialog => "open_theme_dialog",
+            Action::OpenModelSwitcher => "open_model_switcher",
+            Action::FirstMessage => "first_message",
+            Action::LastMessage => "last_message",
+            Action::NextMessage => "next_message",
+            Action::PreviousMessage => "previous_message",
+            Action::CopyMessage => "copy_message",
+            Action::ExportSession => "export_session",
+            Action::ToggleScrollbar => "toggle_scrollbar",
+            Action::OpenErrorDetails => "open_error_details",
+            Action::PromptStash => "prompt_stash",
+            Action::PromptStashPop => "prompt_stash_pop",
+            Action::PromptStashList => "prompt_stash_list",
+            Action::OpenLineageBrowser => "open_lineage_browser",
         }
     }
 
@@ -267,7 +366,40 @@ impl FromStr for Action {
             "cursor_right" => Ok(Action::CursorRight),
             "backspace" => Ok(Action::Backspace),
             "delete" => Ok(Action::Delete),
+            "select_char_left" => Ok(Action::SelectCharLeft),
+            "select_char_right" => Ok(Action::SelectCharRight),
+            "select_word_left" => Ok(Action::SelectWordLeft),
+            "select_word_right" => Ok(Action::SelectWordRight),
+            "select_line" => Ok(Action::SelectLine),
+            "select_all" => Ok(Action::SelectAll),
+            "move_word_left" => Ok(Action::MoveWordLeft),
+            "move_word_right" => Ok(Action::MoveWordRight),
+            "move_line_start" => Ok(Action::MoveLineStart),
+            "move_line_end" => Ok(Action::MoveLineEnd),
+            "move_buffer_start" => Ok(Action::MoveBufferStart),
+            "move_buffer_end" => Ok(Action::MoveBufferEnd),
+            "delete_word_forward" => Ok(Action::DeleteWordForward),
+            "delete_word_backward" => Ok(Action::DeleteWordBackward),
+            "delete_line" => Ok(Action::DeleteLine),
+            "kill_to_line_start" => Ok(Action::KillToLineStart),
+            "kill_to_line_end" => Ok(Action::KillToLineEnd),
+            "undo" => Ok(Action::Undo),
+            "redo" => Ok(Action::Redo),
             "revert_workspace" => Ok(Action::RevertWorkspace),
+            "open_theme_dialog" => Ok(Action::OpenThemeDialog),
+            "open_model_switcher" => Ok(Action::OpenModelSwitcher),
+            "first_message" => Ok(Action::FirstMessage),
+            "last_message" => Ok(Action::LastMessage),
+            "next_message" => Ok(Action::NextMessage),
+            "previous_message" => Ok(Action::PreviousMessage),
+            "copy_message" => Ok(Action::CopyMessage),
+            "export_session" => Ok(Action::ExportSession),
+            "toggle_scrollbar" => Ok(Action::ToggleScrollbar),
+            "open_error_details" => Ok(Action::OpenErrorDetails),
+            "prompt_stash" => Ok(Action::PromptStash),
+            "prompt_stash_pop" => Ok(Action::PromptStashPop),
+            "prompt_stash_list" => Ok(Action::PromptStashList),
+            "open_lineage_browser" => Ok(Action::OpenLineageBrowser),
             _ => Err(format!("unknown action: {s}")),
         }
     }
@@ -295,24 +427,33 @@ impl FromStr for KeyBinding {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.trim();
+        let mut modifiers = KeyModifiers::NONE;
+        let mut remaining = s;
 
-        for (prefix, modifiers) in [
-            ("ctrl+", KeyModifiers::CONTROL),
-            ("Ctrl+", KeyModifiers::CONTROL),
-            ("shift+", KeyModifiers::SHIFT),
-            ("Shift+", KeyModifiers::SHIFT),
-            ("alt+", KeyModifiers::ALT),
-            ("Alt+", KeyModifiers::ALT),
-        ] {
-            if let Some(key_part) = s.strip_prefix(prefix) {
-                let code = parse_key_code(key_part)?;
-                return Ok(KeyBinding::new(code, modifiers));
+        loop {
+            let mut found = false;
+            for (prefix, modifier) in [
+                ("ctrl+", KeyModifiers::CONTROL),
+                ("Ctrl+", KeyModifiers::CONTROL),
+                ("shift+", KeyModifiers::SHIFT),
+                ("Shift+", KeyModifiers::SHIFT),
+                ("alt+", KeyModifiers::ALT),
+                ("Alt+", KeyModifiers::ALT),
+            ] {
+                if let Some(key_part) = remaining.strip_prefix(prefix) {
+                    modifiers |= modifier;
+                    remaining = key_part;
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                break;
             }
         }
 
-        // Single key (no modifiers)
-        let code = parse_key_code(s)?;
-        Ok(KeyBinding::new(code, KeyModifiers::NONE))
+        let code = parse_key_code(remaining)?;
+        Ok(KeyBinding::new(code, modifiers))
     }
 }
 
@@ -359,6 +500,8 @@ fn parse_key_code(s: &str) -> Result<KeyCode, String> {
 pub struct KeyMap {
     bindings: HashMap<KeyBinding, Action>,
     reverse: HashMap<Action, Vec<KeyBinding>>,
+    leader_sequences: HashMap<KeyBinding, Action>,
+    leader_pending: bool,
 }
 
 impl Default for KeyMap {
@@ -373,6 +516,8 @@ impl KeyMap {
         let mut keymap = Self {
             bindings: HashMap::new(),
             reverse: HashMap::new(),
+            leader_sequences: HashMap::new(),
+            leader_pending: false,
         };
 
         // Navigation
@@ -548,6 +693,141 @@ impl KeyMap {
             Action::Delete,
         );
 
+        // Composer editing vocabulary
+        keymap.bind(
+            KeyBinding::new(KeyCode::Left, KeyModifiers::SHIFT),
+            Action::SelectCharLeft,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Right, KeyModifiers::SHIFT),
+            Action::SelectCharRight,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Left, KeyModifiers::SHIFT | KeyModifiers::CONTROL),
+            Action::SelectWordLeft,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('b'), KeyModifiers::SHIFT | KeyModifiers::ALT),
+            Action::SelectWordLeft,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Right, KeyModifiers::SHIFT | KeyModifiers::CONTROL),
+            Action::SelectWordRight,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('f'), KeyModifiers::SHIFT | KeyModifiers::ALT),
+            Action::SelectWordRight,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Home, KeyModifiers::SHIFT),
+            Action::SelectLine,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::End, KeyModifiers::SHIFT),
+            Action::SelectLine,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('a'), KeyModifiers::CONTROL),
+            Action::SelectAll,
+        );
+        keymap.bind(
+            KeyBinding::new(
+                KeyCode::Char('a'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            ),
+            Action::SelectAll,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Left, KeyModifiers::CONTROL),
+            Action::MoveWordLeft,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('b'), KeyModifiers::ALT),
+            Action::MoveWordLeft,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Right, KeyModifiers::CONTROL),
+            Action::MoveWordRight,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('f'), KeyModifiers::ALT),
+            Action::MoveWordRight,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Home, KeyModifiers::NONE),
+            Action::MoveLineStart,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::End, KeyModifiers::NONE),
+            Action::MoveLineEnd,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Home, KeyModifiers::CONTROL),
+            Action::MoveBufferStart,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::End, KeyModifiers::CONTROL),
+            Action::MoveBufferEnd,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('d'), KeyModifiers::ALT),
+            Action::DeleteWordForward,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Delete, KeyModifiers::CONTROL),
+            Action::DeleteWordForward,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('w'), KeyModifiers::CONTROL),
+            Action::DeleteWordBackward,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Backspace, KeyModifiers::ALT),
+            Action::DeleteWordBackward,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Backspace, KeyModifiers::CONTROL),
+            Action::DeleteWordBackward,
+        );
+        keymap.bind(
+            KeyBinding::new(
+                KeyCode::Char('k'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            ),
+            Action::DeleteLine,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
+            Action::KillToLineStart,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('k'), KeyModifiers::CONTROL),
+            Action::KillToLineEnd,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('z'), KeyModifiers::CONTROL),
+            Action::Undo,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('-'), KeyModifiers::CONTROL),
+            Action::Undo,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('y'), KeyModifiers::CONTROL),
+            Action::Redo,
+        );
+        keymap.bind(
+            KeyBinding::new(
+                KeyCode::Char('z'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            ),
+            Action::Redo,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('.'), KeyModifiers::CONTROL),
+            Action::Redo,
+        );
+
         // Permission modal
         keymap.bind(
             KeyBinding::new(KeyCode::Char('y'), KeyModifiers::CONTROL),
@@ -562,6 +842,41 @@ impl KeyMap {
             Action::DismissModal,
         );
 
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('g'), KeyModifiers::CONTROL),
+            Action::FirstMessage,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Home, KeyModifiers::CONTROL),
+            Action::FirstMessage,
+        );
+        keymap.bind(
+            KeyBinding::new(
+                KeyCode::Char('g'),
+                KeyModifiers::CONTROL | KeyModifiers::ALT,
+            ),
+            Action::LastMessage,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::End, KeyModifiers::CONTROL | KeyModifiers::ALT),
+            Action::LastMessage,
+        );
+        keymap.bind(
+            KeyBinding::new(
+                KeyCode::Char('n'),
+                KeyModifiers::CONTROL | KeyModifiers::ALT,
+            ),
+            Action::NextMessage,
+        );
+        keymap.bind(
+            KeyBinding::new(
+                KeyCode::Char('p'),
+                KeyModifiers::CONTROL | KeyModifiers::ALT,
+            ),
+            Action::PreviousMessage,
+        );
+
+        keymap.register_default_leader_sequences();
         keymap
     }
 
@@ -599,10 +914,6 @@ impl KeyMap {
     pub fn get_action(&self, event: &KeyEvent) -> Option<Action> {
         let binding = KeyBinding::new(event.code, event.modifiers);
         self.bindings.get(&binding).copied().or_else(|| {
-            // Terminals encode Ctrl+] as ASCII GS (0x1d). Crossterm can surface
-            // that as a plain control character instead of Char(']')+CONTROL,
-            // so normalize it at lookup time without changing the displayed
-            // primary binding label.
             (event.code == KeyCode::Char('\u{1d}') && event.modifiers == KeyModifiers::NONE)
                 .then(|| {
                     self.bindings
@@ -611,6 +922,50 @@ impl KeyMap {
                 })
                 .flatten()
         })
+    }
+
+    pub fn leader_pending(&self) -> bool {
+        self.leader_pending
+    }
+
+    pub fn set_leader_pending(&mut self, pending: bool) {
+        self.leader_pending = pending;
+    }
+
+    pub fn leader_action(&self, event: &KeyEvent) -> Option<Action> {
+        let binding = KeyBinding::new(event.code, event.modifiers);
+        self.leader_sequences.get(&binding).copied()
+    }
+
+    fn bind_sequence(&mut self, binding: KeyBinding, action: Action) {
+        self.leader_sequences.insert(binding, action);
+    }
+
+    fn register_default_leader_sequences(&mut self) {
+        self.bind_sequence(
+            KeyBinding::new(KeyCode::Char('t'), KeyModifiers::NONE),
+            Action::OpenThemeDialog,
+        );
+        self.bind_sequence(
+            KeyBinding::new(KeyCode::Char('m'), KeyModifiers::NONE),
+            Action::OpenModelSwitcher,
+        );
+        self.bind_sequence(
+            KeyBinding::new(KeyCode::Char('y'), KeyModifiers::NONE),
+            Action::CopyMessage,
+        );
+        self.bind_sequence(
+            KeyBinding::new(KeyCode::Char('x'), KeyModifiers::NONE),
+            Action::ExportSession,
+        );
+        self.bind_sequence(
+            KeyBinding::new(KeyCode::Char('s'), KeyModifiers::NONE),
+            Action::ToggleScrollbar,
+        );
+        self.bind_sequence(
+            KeyBinding::new(KeyCode::Char('g'), KeyModifiers::NONE),
+            Action::OpenLineageBrowser,
+        );
     }
 
     /// Get all key bindings for an action.
