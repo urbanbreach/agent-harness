@@ -23,9 +23,9 @@ fn tui_startup_new_session_bootstraps_live_after_intent() {
     set_pending_live_prompt_draft(Some("launcher draft".to_string()));
     let app = AppState::new_live(None, false, None);
 
-    assert_eq!(app.prompt_buffer, "launcher draft");
+    assert_eq!(app.composer.prompt_buffer, "launcher draft");
     assert!(
-        app.prompt_history.is_empty(),
+        app.composer.prompt_history.is_empty(),
         "draft carry-over must not auto-submit"
     );
     assert_eq!(app.runtime_state().kind, RuntimeStateKind::Ready);
@@ -51,11 +51,11 @@ fn tui_startup_carries_unsent_draft_into_new_live_session() {
     set_pending_live_prompt_draft(Some("unsent startup draft".to_string()));
     let app = AppState::new_live(None, false, None);
 
-    assert_eq!(app.prompt_buffer, "unsent startup draft");
-    assert_eq!(app.prompt_cursor, "unsent startup draft".chars().count());
+    assert_eq!(app.composer.prompt_buffer, "unsent startup draft");
+    assert_eq!(app.composer.prompt_cursor, "unsent startup draft".chars().count());
     assert!(!app.startup_mode, "live handoff must clear startup mode");
     assert!(
-        app.prompt_history.is_empty(),
+        app.composer.prompt_history.is_empty(),
         "live handoff must not create pending turn"
     );
     assert_eq!(app.runtime_state().kind, RuntimeStateKind::Ready);
@@ -411,7 +411,7 @@ fn tui_continue_session_bootstraps_live_with_preloaded_history() {
     assert_eq!(app.active_provider(), "mock");
     assert_eq!(app.current_model_label(), "model-1");
     assert_eq!(app.runtime_state().kind, RuntimeStateKind::Success);
-    assert_eq!(app.prompt_buffer, "preserved continue draft");
+    assert_eq!(app.composer.prompt_buffer, "preserved continue draft");
 }
 #[test]
 fn tui_continue_session_restores_launch_metadata_from_history() {
