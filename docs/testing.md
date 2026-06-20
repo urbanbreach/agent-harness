@@ -225,6 +225,12 @@ guards the manifest shape, required flows, deterministic owner tests, and the no
 provenance class: when `HARNESS_NATIVE_VISUAL=1` and `DISPLAY=<display>` are missing, the manifest
 records a documented gap rather than silently converting PTY evidence into native screenshot proof.
 
+Snapshot reconciliation note: the `command_palette_renders_without_pty` and
+`tool_lifecycle_rows_stay_ordered_without_pty` snapshots were reconciled to
+match current render behavior (live composer placeholder line and ordered tool
+lifecycle rows). The verdict was fixture drift — the committed snapshots
+predated the current render output; no behavior change was introduced.
+
 ```bash
 scripts/test-lanes.sh all-deterministic
 ```
