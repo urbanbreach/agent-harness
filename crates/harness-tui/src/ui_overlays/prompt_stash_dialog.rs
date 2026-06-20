@@ -1,0 +1,149 @@
+use super::*;
+
+pub(super) fn render_prompt_stash_list_overlay(
+    frame: &mut Frame,
+    app: &AppState,
+    theme: &Theme,
+    root: Rect,
+) {
+    if root.width == 0 || root.height == 0 {
+        return;
+    }
+
+    render_overlay_dim_backdrop(frame, root);
+
+    let overlay_width = root.width.clamp(40, 80);
+    let overlay_height = root.height.clamp(8, 24);
+    let overlay_x = root.x + (root.width.saturating_sub(overlay_width)) / 2;
+    let overlay_y = root.y + (root.height.saturating_sub(overlay_height)) / 2;
+    let overlay = Rect::new(overlay_x, overlay_y, overlay_width, overlay_height);
+
+    let surface = ui_chrome::command_palette_surface(theme);
+    let border_style = Style::default().fg(theme.border.strong).bg(surface);
+    let title_style = Style::default()
+        .fg(theme.text.primary)
+        .bg(surface)
+        .add_modifier(Modifier::BOLD);
+    let row_style = Style::default().bg(surface);
+    let selected_style = ui_chrome::overlay_focus_row_style(theme);
+    let muted_style = Style::default().fg(theme.text.secondary).bg(surface);
+    let text_style = Style::default().fg(theme.text.primary).bg(surface);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(border_style)
+        .style(Style::default().bg(surface));
+    let inner = block.inner(overlay);
+    frame.render_widget(Clear, overlay);
+    frame.render_widget(block, overlay);
+
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
+
+    let title_area = Rect::new(overlay.x + 1, overlay.y, overlay.width.saturating_sub(2), 1);
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(" Prompt stash", title_style))),
+        title_area,
+    );
+
+    let list_y = inner.y;
+    let list_width = usize::from(inner.width);
+
+    if app.prompt_stash.entries.is_empty() {
+        let empty_area = Rect::new(inner.x + 1, list_y, inner.width.saturating_sub(2), 1);
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled("No stashed prompts", muted_style))),
+            empty_area,
+        );
+    } else {
+        let visible_rows = usize::from(inner.height.saturating_sub(2));
+        let selected = app
+            .prompt_stash
+            .list_selected
+            .min(app.prompt_stash.entries.len().saturating_sub(1));
+        let scroll = selected.saturating_sub(visible_rows.saturating_sub(1));
+
+        for (row, entry) in app
+            .prompt_stash
+            .entries
+            .iter()
+            .enumerate()
+            .skip(scroll)
+            .take(visible_rows)
+        {
+            let row_y = list_y + u16::try_from(row - scroll).unwrap_or(u16::MAX);
+            let row_area = Rect::new(inner.x, row_y, inner.width, 1);
+            let is_selected = row == selected;
+            let style = if is_selected {
+                selected_style
+            } else {
+                row_style
+            };
+            frame.render_widget(Block::default().style(style), row_area);
+
+            let timestamp = format_timestamp_short(entry.timestamp);
+            let preview = preview_text(
+                &entry.text,
+                list_width.saturating_sub(timestamp.chars().count() + 4),
+            );
+
+            let preview_style = if is_selected {
+                Style::default()
+                    .fg(theme.text.inverse)
+                    .bg(style.bg.unwrap_or(surface))
+            } else {
+                text_style
+            };
+            let timestamp_style = if is_selected {
+                Style::default()
+                    .fg(theme.text.inverse)
+                    .bg(style.bg.unwrap_or(surface))
+            } else {
+                muted_style
+            };
+
+            let line = Line::from(vec![
+                Span::styled(" ".to_string(), style),
+                Span::styled(preview, preview_style),
+                Span::styled(" ".to_string(), style),
+                Span::styled(timestamp, timestamp_style),
+            ]);
+            frame.render_widget(Paragraph::new(line), row_area);
+        }
+    }
+
+    let hint_y = inner.y + inner.height.saturating_sub(1);
+    if hint_y < overlay.y + overlay.height {
+        let hint_area = Rect::new(overlay.x + 1, hint_y, overlay.width.saturating_sub(2), 1);
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                " Enter restore · Ctrl+D delete · Esc close",
+                muted_style,
+            ))),
+            hint_area,
+        );
+    }
+}
+
+fn preview_text(text: &str, max_width: usize) -> String {
+    let single_line = text.replace('\n', " ");
+    let collapsed = single_line.split_whitespace().collect::<Vec<_>>().join(" ");
+    truncate_plain_text(&collapsed, max_width)
+}
+
+fn format_timestamp_short(timestamp_millis: u64) -> String {
+    let secs = timestamp_millis / 1000;
+    let days = secs / 86_400;
+    let hours = (secs % 86_400) / 3_600;
+    let minutes = (secs % 3_600) / 60;
+    if days > 0 {
+        format!("{days}d {hours:02}h")
+    } else if hours > 0 {
+        format!("{hours}h {minutes:02}m")
+    } else if minutes > 0 {
+        format!("{minutes}m")
+    } else {
+        "now".to_string()
+    }
+}
