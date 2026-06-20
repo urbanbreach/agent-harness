@@ -9,10 +9,11 @@ thread_local! {
 }
 
 #[derive(Debug)]
-pub(in crate::app) struct TranscriptRenderCache {
+pub(crate) struct TranscriptRenderCache {
     instance_id: u64,
     epoch: u64,
     key_cache: Cell<Option<(u64, u64)>>,
+    selection_key_cache: Cell<Option<(u64, u64)>>,
 }
 
 impl Default for TranscriptRenderCache {
@@ -21,6 +22,7 @@ impl Default for TranscriptRenderCache {
             instance_id: NEXT_TRANSCRIPT_CACHE_INSTANCE_ID.fetch_add(1, Ordering::Relaxed),
             epoch: 0,
             key_cache: Cell::new(None),
+            selection_key_cache: Cell::new(None),
         }
     }
 }
@@ -50,8 +52,27 @@ impl TranscriptRenderCache {
         key
     }
 
+    pub(in crate::app) fn selection_cache_key(
+        &self,
+        stamp: u64,
+        build_key: impl FnOnce() -> u64,
+    ) -> u64 {
+        if let Some((cached_stamp, cached_key)) = self.selection_key_cache.get() {
+            if cached_stamp == stamp {
+                return cached_key;
+            }
+        }
+
+        let key = build_key();
+        self.selection_key_cache.set(Some((stamp, key)));
+
+        key
+    }
+
     pub(in crate::app) fn bump_epoch(&mut self) {
         self.epoch = self.epoch.wrapping_add(1);
+        self.key_cache.set(None);
+        self.selection_key_cache.set(None);
     }
 
     #[cfg(test)]

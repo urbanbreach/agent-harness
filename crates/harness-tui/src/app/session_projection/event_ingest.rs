@@ -157,6 +157,7 @@ impl SessionProjection {
                     if let Some(entry) = self.activities.get_mut(index) {
                         entry.status = ActivityStatus::Streaming;
                         entry.transcript_text.push_str(&data.delta);
+                        entry.bump_revision();
                         mark_activity_event(entry, event.seq, event.mono_ms);
                     }
                 } else {
@@ -186,6 +187,7 @@ impl SessionProjection {
                     if let Some(entry) = self.activities.get_mut(index) {
                         entry.status = ActivityStatus::Streaming;
                         entry.thinking_text.push_str(&data.delta);
+                        entry.bump_revision();
                         mark_activity_event(entry, event.seq, event.mono_ms);
                     }
                 } else {
@@ -205,6 +207,7 @@ impl SessionProjection {
                     ));
                     if let Some(entry) = self.activities.back_mut() {
                         entry.thinking_text = data.delta.clone();
+                        entry.bump_revision();
                     }
                 }
                 self.enforce_transcript_memory_cap();
@@ -223,6 +226,7 @@ impl SessionProjection {
                             && !entry.thinking_text.is_empty()
                         {
                             entry.transcript_text = std::mem::take(&mut entry.thinking_text);
+                            entry.bump_revision();
                         }
                         if let Some(error_detail) = provider_error_detail {
                             entry.status = ActivityStatus::Error;
@@ -345,6 +349,7 @@ impl SessionProjection {
                                     non_empty_preserved_string(&data.result_summary)
                                 {
                                     entry.transcript_text = result_summary;
+                                    entry.bump_revision();
                                 }
                             }
                             entry.last_seq = event.seq;
@@ -483,6 +488,7 @@ impl SessionProjection {
                         && !entry.transcript_text.is_empty()
                     {
                         entry.thinking_text = std::mem::take(&mut entry.transcript_text);
+                        entry.bump_revision();
                     }
                     let tool_entry = ToolCallEntry {
                         tool_call_id: data.tool_call_id.clone(),

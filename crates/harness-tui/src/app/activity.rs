@@ -20,6 +20,7 @@ pub struct ActivityEntry {
     pub last_seq: u64,
     pub first_mono_ms: u64,
     pub last_mono_ms: u64,
+    pub revision: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -132,6 +133,7 @@ pub(in crate::app) fn new_streaming_activity_entry(
         last_seq: first_seq,
         first_mono_ms,
         last_mono_ms: first_mono_ms,
+        revision: 0,
     }
 }
 
@@ -139,6 +141,10 @@ impl ActivityEntry {
     pub fn duration_ms(&self) -> Option<u64> {
         (self.last_mono_ms >= self.first_mono_ms)
             .then_some(self.last_mono_ms.saturating_sub(self.first_mono_ms))
+    }
+
+    pub(in crate::app) fn bump_revision(&mut self) {
+        self.revision = self.revision.saturating_add(1);
     }
 }
 
