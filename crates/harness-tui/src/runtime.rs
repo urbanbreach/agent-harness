@@ -25,6 +25,8 @@ const ACTIVE_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const IDLE_POLL_INTERVAL: Duration = Duration::from_secs(1);
 const LIVE_UPDATE_DRAIN_MAX_PER_FRAME: usize = 16;
 const LIVE_UPDATE_DRAIN_MAX_DURATION: Duration = Duration::from_millis(8);
+const RELOAD_EVENT_COUNT_BANNER_THRESHOLD: usize = 1000;
+const RELOAD_LOAD_TIME_SLOW_THRESHOLD: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct LiveUpdateDrainState {
@@ -46,6 +48,67 @@ fn recover_mutex_lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     match mutex.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+pub(crate) struct TerminalRestoreGuard {
+    keyboard_enhancements_enabled: bool,
+    mouse_capture_enabled: bool,
+    bracketed_paste_enabled: bool,
+    restored: bool,
+}
+
+impl TerminalRestoreGuard {
+    pub(crate) fn new(
+        keyboard_enhancements_enabled: bool,
+        mouse_capture_enabled: bool,
+        bracketed_paste_enabled: bool,
+    ) -> Self {
+        Self {
+            keyboard_enhancements_enabled,
+            mouse_capture_enabled,
+            bracketed_paste_enabled,
+            restored: false,
+        }
+    }
+
+    pub(crate) fn mark_restored(&mut self) {
+        self.restored = true;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn restored(&self) -> bool {
+        self.restored
+    }
+
+    #[cfg(test)]
+    pub(crate) fn keyboard_enhancements_enabled(&self) -> bool {
+        self.keyboard_enhancements_enabled
+    }
+
+    #[cfg(test)]
+    pub(crate) fn mouse_capture_enabled(&self) -> bool {
+        self.mouse_capture_enabled
+    }
+
+    #[cfg(test)]
+    pub(crate) fn bracketed_paste_enabled(&self) -> bool {
+        self.bracketed_paste_enabled
+    }
+}
+
+impl Drop for TerminalRestoreGuard {
+    fn drop(&mut self) {
+        if self.restored {
+            return;
+        }
+        let mut stdout = std::io::stdout();
+        let _ = teardown_terminal_session(
+            &mut stdout,
+            self.keyboard_enhancements_enabled,
+            self.mouse_capture_enabled,
+            self.bracketed_paste_enabled,
+        );
     }
 }
 
@@ -266,6 +329,12 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         }
     }
 
+    let mut restore_guard = TerminalRestoreGuard::new(
+        keyboard_enhancements_enabled,
+        mouse_capture_enabled,
+        bracketed_paste_enabled,
+    );
+
     let run_result = (|| -> Result<()> {
         let mut redraw_requested = true;
         let mut next_animation_tick = Instant::now() + ACTIVE_POLL_INTERVAL;
@@ -285,10 +354,14 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
 
             if app.take_reload_requested() {
                 if let Some(run_dir) = app.session_path.clone() {
+                    let load_started_at = Instant::now();
                     match event_log::load_events_from_run_dir(&run_dir) {
                         Ok(events) => {
+                            let event_count = events.len();
+                            let load_elapsed = load_started_at.elapsed();
                             app.replace_events(events);
                             app.set_status_banner(None);
+                            apply_reload_budget(&mut app, event_count, load_elapsed);
                         }
                         Err(err) => {
                             app.set_status_banner(Some(format!("reload failed: {err}")));
@@ -422,6 +495,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             bracketed_paste_enabled,
             buffer: Some(terminal.current_buffer_mut().clone()),
         };
+        restore_guard.mark_restored();
         return run_result;
     }
 
@@ -432,6 +506,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         mouse_capture_enabled,
         bracketed_paste_enabled,
     )?;
+    restore_guard.mark_restored();
 
     run_result
 }
@@ -623,6 +698,28 @@ fn drain_live_updates(
 fn transient_live_status_banner(status: &str) -> bool {
     let lower = status.to_ascii_lowercase();
     lower.contains("lagged") || lower.contains("replaying")
+}
+
+fn apply_reload_budget(app: &mut AppState, event_count: usize, load_elapsed: Duration) {
+    if event_count > RELOAD_EVENT_COUNT_BANNER_THRESHOLD {
+        app.set_status_banner(Some(format!(
+            "loaded {event_count} events · scroll to navigate"
+        )));
+    }
+    if load_elapsed > RELOAD_LOAD_TIME_SLOW_THRESHOLD {
+        app.transcript_view.follow_mode = false;
+        if app.status_banner.is_none() {
+            app.set_status_banner(Some(format!(
+                "slow reload · {event_count} events in {secs:.1}s · follow paused",
+                secs = load_elapsed.as_secs_f64()
+            )));
+        } else if let Some(banner) = app.status_banner.as_mut() {
+            banner.push_str(&format!(
+                " · slow reload {secs:.1}s · follow paused",
+                secs = load_elapsed.as_secs_f64()
+            ));
+        }
+    }
 }
 
 #[cfg(test)]
@@ -887,5 +984,60 @@ mod tests {
             app.status_banner.as_deref(),
             Some(format!("status {LIVE_UPDATE_DRAIN_MAX_PER_FRAME}").as_str())
         );
+    }
+
+    #[test]
+    fn terminal_restore_guard_marks_restored_on_normal_teardown() {
+        let mut guard = TerminalRestoreGuard::new(true, true, true);
+        assert!(!guard.restored());
+        guard.mark_restored();
+        assert!(guard.restored());
+    }
+
+    #[test]
+    fn terminal_restore_guard_carries_enabled_flags() {
+        let guard = TerminalRestoreGuard::new(true, false, true);
+        assert!(guard.keyboard_enhancements_enabled());
+        assert!(!guard.mouse_capture_enabled());
+        assert!(guard.bracketed_paste_enabled());
+    }
+
+    #[test]
+    fn apply_reload_budget_warns_on_large_event_count() {
+        let mut app = AppState::default();
+        apply_reload_budget(
+            &mut app,
+            RELOAD_EVENT_COUNT_BANNER_THRESHOLD + 1,
+            Duration::from_millis(10),
+        );
+        assert!(app
+            .status_banner
+            .as_deref()
+            .is_some_and(|banner| banner.contains("loaded")));
+    }
+
+    #[test]
+    fn apply_reload_budget_disables_follow_on_slow_load() {
+        let mut app = AppState::default();
+        app.transcript_view.follow_mode = true;
+        apply_reload_budget(
+            &mut app,
+            10,
+            RELOAD_LOAD_TIME_SLOW_THRESHOLD + Duration::from_millis(50),
+        );
+        assert!(!app.transcript_view.follow_mode);
+        assert!(app
+            .status_banner
+            .as_deref()
+            .is_some_and(|banner| banner.contains("follow paused")));
+    }
+
+    #[test]
+    fn apply_reload_budget_leaves_small_fast_loads_alone() {
+        let mut app = AppState::default();
+        app.transcript_view.follow_mode = true;
+        apply_reload_budget(&mut app, 50, Duration::from_millis(10));
+        assert!(app.transcript_view.follow_mode);
+        assert!(app.status_banner.is_none());
     }
 }

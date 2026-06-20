@@ -643,7 +643,7 @@ fn permission_prompt_block_height(
         return rows.clamp(LIVE_QUESTION_PROMPT_MIN_HEIGHT, 16);
     }
 
-    let draft_rows = wrapped_text_rows(app.prompt_buffer.as_str(), inner_width).min(2);
+    let draft_rows = wrapped_text_rows(app.composer.prompt_buffer.as_str(), inner_width).min(2);
     LIVE_PERMISSION_PROMPT_MIN_HEIGHT
         .saturating_add(draft_rows.saturating_sub(1))
         .clamp(LIVE_PERMISSION_PROMPT_MIN_HEIGHT, 12)
@@ -689,7 +689,7 @@ fn live_prompt_block_height(
         LIVE_PROMPT_STANDARD_CHROME_ROWS
     };
     let disclosure_rows = u16::from(startup_shell);
-    let natural_height = composer_input_height(&app.prompt_buffer, area.width)
+    let natural_height = composer_input_height(&app.composer.prompt_buffer, area.width)
         .saturating_add(chrome_rows)
         .saturating_add(disclosure_rows)
         .max(min_height);

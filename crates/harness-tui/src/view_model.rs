@@ -104,6 +104,21 @@ pub struct ForkSelectorRowViewModel {
     pub selected: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LineageChildDialogViewModel {
+    pub run_id: String,
+    pub title: String,
+    pub label: String,
+    pub parent_run_id: Option<String>,
+    pub child_index: usize,
+    pub child_total: usize,
+    pub usage: Option<String>,
+    pub first_child_shortcut: String,
+    pub previous_shortcut: String,
+    pub next_shortcut: String,
+    pub parent_shortcut: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ControlDockVariant {
     Startup,
@@ -818,6 +833,7 @@ fn runtime_tool_identity_fixture(status: ToolCallDisplayStatus) -> ActivityEntry
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        revision: 0,
     }
 }
 

@@ -121,6 +121,23 @@ fn command_palette_overlay_height(app: &AppState, terminal_height: u16) -> u16 {
             .min(max_height_rows.max(1));
         let toggle_rows = u16::try_from(toggle_rows).unwrap_or(u16::MAX);
         COMMAND_OVERLAY_ROWS.saturating_add(toggle_rows)
+    } else if app.lineage_browser_visible {
+        let max_height_rows = usize::from(terminal_height.saturating_div(2).saturating_sub(6));
+        let lineage_rows = app
+            .lineage_browser_view_model()
+            .rows
+            .len()
+            .max(1)
+            .min(max_height_rows.max(1));
+        let lineage_rows = u16::try_from(lineage_rows).unwrap_or(u16::MAX);
+        let dialog_rows = if app.lineage_child_dialog_view_model().is_some() {
+            3u16
+        } else {
+            0u16
+        };
+        COMMAND_OVERLAY_ROWS
+            .saturating_add(lineage_rows)
+            .saturating_add(dialog_rows)
     } else {
         let max_height_rows = usize::from(terminal_height.saturating_div(2).saturating_sub(6));
         let command_rows = command_palette_visible_rows(app)
