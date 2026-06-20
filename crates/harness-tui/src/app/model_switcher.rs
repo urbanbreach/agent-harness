@@ -110,6 +110,10 @@ fn runtime_identity_for_metadata(metadata: &LaunchMetadata) -> String {
     format!("{} · {model_label}", metadata.profile())
 }
 
+fn model_option_favorite_key(option: &ModelOption) -> String {
+    option.model.clone()
+}
+
 impl AppState {
     pub fn active_profile(&self) -> &str {
         let profile = self.launch_metadata.profile();
@@ -360,6 +364,14 @@ impl AppState {
                 self.move_model_selection(1);
                 true
             }
+            KeyCode::Char('f') if ctrl_only => {
+                self.toggle_model_favorite();
+                true
+            }
+            KeyCode::F(2) => {
+                self.cycle_recent_model(false);
+                true
+            }
             KeyCode::Char(c) => {
                 if key.modifiers.contains(KeyModifiers::CONTROL)
                     || key.modifiers.contains(KeyModifiers::ALT)
@@ -437,6 +449,9 @@ impl AppState {
         self.launch_metadata = launch_metadata.clone();
 
         if emit_intent {
+            let favorite_key = model_option_favorite_key(&selected_model);
+            super::model_favorites::push_model_recent(&mut self.model_recents, &favorite_key);
+            self.persist_model_recents();
             set_pending_live_launch_metadata(launch_metadata.clone());
             self.emit_ui_intent(UiIntent::SwitchModel {
                 profile: selected_model.profile,
@@ -771,9 +786,19 @@ impl AppState {
             filtered.sort_by(|left, right| {
                 let left_option = &self.model_options[*left];
                 let right_option = &self.model_options[*right];
-                left_option
-                    .selector_category()
-                    .cmp(right_option.selector_category())
+                let left_fav = self
+                    .model_favorites
+                    .contains(&model_option_favorite_key(left_option));
+                let right_fav = self
+                    .model_favorites
+                    .contains(&model_option_favorite_key(right_option));
+                right_fav
+                    .cmp(&left_fav)
+                    .then_with(|| {
+                        left_option
+                            .selector_category()
+                            .cmp(right_option.selector_category())
+                    })
                     .then_with(|| {
                         left_option
                             .selector_title()
@@ -802,8 +827,15 @@ impl AppState {
         filtered.sort_by(|(left, left_score), (right, right_score)| {
             let left_option = &self.model_options[*left];
             let right_option = &self.model_options[*right];
-            left_score
-                .cmp(right_score)
+            let left_fav = self
+                .model_favorites
+                .contains(&model_option_favorite_key(left_option));
+            let right_fav = self
+                .model_favorites
+                .contains(&model_option_favorite_key(right_option));
+            right_fav
+                .cmp(&left_fav)
+                .then_with(|| left_score.cmp(right_score))
                 .then_with(|| {
                     left_option
                         .selector_category()
@@ -856,5 +888,72 @@ impl AppState {
 
         self.apply_selected_model_option(selected_model, true);
         self.close_palette();
+    }
+
+    fn toggle_model_favorite(&mut self) {
+        let Some(selected_index) = self.model_filtered.get(self.model_selected).copied() else {
+            return;
+        };
+        let Some(option) = self.model_options.get(selected_index) else {
+            return;
+        };
+        let key = model_option_favorite_key(option);
+        if !self.model_favorites.insert(key.clone()) {
+            self.model_favorites.remove(&key);
+        }
+        self.persist_model_favorites();
+        self.update_model_filter();
+    }
+
+    fn cycle_recent_model(&mut self, reverse: bool) {
+        if self.model_recents.is_empty() {
+            return;
+        }
+        let current_key = self.current_model_id().to_string();
+        let len = self.model_recents.len();
+        let current_index = self
+            .model_recents
+            .iter()
+            .position(|recent| recent == &current_key);
+        let next_index = match current_index {
+            Some(idx) => {
+                if reverse {
+                    idx.saturating_sub(1)
+                } else {
+                    (idx + 1) % len
+                }
+            }
+            None => 0,
+        };
+        let Some(target_key) = self.model_recents.get(next_index) else {
+            return;
+        };
+        let target_option = self
+            .model_options
+            .iter()
+            .find(|option| option.model == *target_key)
+            .cloned();
+        if let Some(option) = target_option {
+            self.apply_selected_model_option(option, !self.replay_mode);
+        }
+    }
+
+    fn persist_model_favorites(&mut self) {
+        let Some(path) = self.model_favorites_path.as_deref() else {
+            return;
+        };
+        if let Err(err) = super::model_favorites::save_model_favorites(path, &self.model_favorites)
+        {
+            self.status_banner = Some(err);
+        }
+    }
+
+    fn persist_model_recents(&mut self) {
+        let Some(path) = self.model_recents_path.as_deref() else {
+            return;
+        };
+        if let Err(err) = super::model_favorites::save_model_recents(path, &self.model_recents) {
+            self.status_banner = Some(err);
+        }
     }
 }

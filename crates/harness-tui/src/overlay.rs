@@ -9,6 +9,9 @@ pub enum OverlayKind {
     ForkSelector,
     StatusDialog,
     PermissionModal,
+    ThemeDialog,
+    ErrorDetails,
+    PromptStashList,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -24,6 +27,9 @@ pub struct OverlayState {
     pub lineage_browser_visible: bool,
     pub fork_selector_visible: bool,
     pub permission_pending: bool,
+    pub theme_dialog_visible: bool,
+    pub error_details_visible: bool,
+    pub prompt_stash_list_visible: bool,
 }
 
 impl OverlayState {
@@ -68,6 +74,15 @@ impl OverlayStack {
         if state.status_dialog_visible && !state.permission_pending {
             overlays.push(OverlayKind::StatusDialog);
         }
+        if state.theme_dialog_visible && !state.permission_pending {
+            overlays.push(OverlayKind::ThemeDialog);
+        }
+        if state.error_details_visible && !state.permission_pending {
+            overlays.push(OverlayKind::ErrorDetails);
+        }
+        if state.prompt_stash_list_visible && !state.permission_pending {
+            overlays.push(OverlayKind::PromptStashList);
+        }
         if state.permission_pending {
             overlays.push(OverlayKind::PermissionModal);
         }
@@ -94,6 +109,9 @@ impl OverlayStack {
                     | OverlayKind::ForkSelector
                     | OverlayKind::StatusDialog
                     | OverlayKind::PermissionModal
+                    | OverlayKind::ThemeDialog
+                    | OverlayKind::ErrorDetails
+                    | OverlayKind::PromptStashList
             )
         )
     }
@@ -109,147 +127,5 @@ impl<'a> IntoIterator for &'a OverlayStack {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_from_state_empty() {
-        let state = OverlayState::default();
-        let stack = OverlayStack::from_state(state);
-        assert_eq!(stack.ordered(), &[]);
-    }
-
-    #[test]
-    fn test_command_palette_channel_visible_fields() {
-        let visible_states = [
-            OverlayState {
-                palette_visible: true,
-                ..Default::default()
-            },
-            OverlayState {
-                session_history_visible: true,
-                ..Default::default()
-            },
-            OverlayState {
-                model_switcher_visible: true,
-                ..Default::default()
-            },
-            OverlayState {
-                toggles_menu_visible: true,
-                ..Default::default()
-            },
-            OverlayState {
-                lineage_browser_visible: true,
-                ..Default::default()
-            },
-            OverlayState {
-                fork_selector_visible: true,
-                ..Default::default()
-            },
-        ];
-
-        for state in visible_states {
-            assert!(state.command_palette_channel_visible());
-        }
-
-        let unrelated_state = OverlayState {
-            details_drawer_open: true,
-            slash_visible: true,
-            file_mention_visible: true,
-            status_dialog_visible: true,
-            permission_pending: true,
-            ..Default::default()
-        };
-        assert!(!unrelated_state.command_palette_channel_visible());
-    }
-
-    #[test]
-    fn test_from_state_all_independent() {
-        let state = OverlayState {
-            details_drawer_open: true,
-            slash_visible: true,
-            file_mention_visible: true,
-            status_dialog_visible: true,
-            ..Default::default()
-        };
-        let stack = OverlayStack::from_state(state);
-        assert_eq!(
-            stack.ordered(),
-            &[
-                OverlayKind::DetailsDrawer,
-                OverlayKind::SlashCommands,
-                OverlayKind::FileMentions,
-                OverlayKind::StatusDialog,
-            ]
-        );
-    }
-
-    #[test]
-    fn test_from_state_permission_pending_overrides() {
-        let state = OverlayState {
-            details_drawer_open: true,
-            slash_visible: true,
-            file_mention_visible: true,
-            palette_visible: true,
-            status_dialog_visible: true,
-            permission_pending: true,
-            ..Default::default()
-        };
-        let stack = OverlayStack::from_state(state);
-        assert_eq!(
-            stack.ordered(),
-            &[OverlayKind::DetailsDrawer, OverlayKind::PermissionModal,]
-        );
-    }
-
-    #[test]
-    fn test_from_state_command_palette_hierarchy() {
-        // TogglesMenu takes precedence over LineageBrowser, ForkSelector, and CommandPalette
-        let mut state = OverlayState {
-            palette_visible: true,
-            toggles_menu_visible: true,
-            lineage_browser_visible: true,
-            fork_selector_visible: true,
-            ..Default::default()
-        };
-        assert_eq!(
-            OverlayStack::from_state(state).ordered(),
-            &[OverlayKind::TogglesMenu]
-        );
-
-        // LineageBrowser takes precedence over ForkSelector and CommandPalette
-        state.toggles_menu_visible = false;
-        assert_eq!(
-            OverlayStack::from_state(state).ordered(),
-            &[OverlayKind::LineageBrowser]
-        );
-
-        // ForkSelector takes precedence over CommandPalette
-        state.lineage_browser_visible = false;
-        assert_eq!(
-            OverlayStack::from_state(state).ordered(),
-            &[OverlayKind::ForkSelector]
-        );
-
-        // CommandPalette is the default for the remaining command-palette channels.
-        state.fork_selector_visible = false;
-        assert_eq!(
-            OverlayStack::from_state(state).ordered(),
-            &[OverlayKind::CommandPalette]
-        );
-
-        state.palette_visible = false;
-        state.session_history_visible = true;
-        assert_eq!(
-            OverlayStack::from_state(state).ordered(),
-            &[OverlayKind::CommandPalette]
-        );
-
-        state.session_history_visible = false;
-        state.model_switcher_visible = true;
-        assert_eq!(
-            OverlayStack::from_state(state).ordered(),
-            &[OverlayKind::CommandPalette]
-        );
-    }
-}
+#[path = "overlay_tests.rs"]
+mod tests;
