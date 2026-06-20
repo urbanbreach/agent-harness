@@ -1,3 +1,5 @@
+use std::cell::Cell;
+
 use serde_json::Value;
 
 use harness_core::event::{EventV1, ToolCallMetadata};
@@ -5,6 +7,24 @@ use harness_core::event::{EventV1, ToolCallMetadata};
 use crate::text::{non_empty_trimmed, trimmed_json_string_field};
 
 use super::{AppState, Focus, ToolCallDisplayStatus, ToolCallEntry};
+
+pub(crate) struct TerminalPanelState {
+    pub(crate) visible: bool,
+    pub(crate) scroll: usize,
+    pub(crate) follow: bool,
+    pub(crate) last_max_scroll: Cell<usize>,
+}
+
+impl Default for TerminalPanelState {
+    fn default() -> Self {
+        Self {
+            visible: false,
+            scroll: 0,
+            follow: true,
+            last_max_scroll: Cell::new(0),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TerminalPanelStatus {
@@ -58,22 +78,22 @@ impl From<ToolCallDisplayStatus> for TerminalPanelStatus {
 
 impl AppState {
     pub(crate) fn terminal_panel_visible(&self) -> bool {
-        self.terminal_panel_visible
+        self.terminal_panel.visible
     }
 
     pub(crate) fn terminal_panel_follow(&self) -> bool {
-        self.terminal_panel_follow
+        self.terminal_panel.follow
     }
 
     pub(crate) fn terminal_panel_scroll(&self) -> usize {
-        self.terminal_panel_scroll
+        self.terminal_panel.scroll
     }
 
     pub(crate) fn toggle_terminal_panel(&mut self) {
-        self.terminal_panel_visible = !self.terminal_panel_visible;
-        if !self.terminal_panel_visible {
-            self.terminal_panel_scroll = 0;
-            self.terminal_panel_follow = true;
+        self.terminal_panel.visible = !self.terminal_panel.visible;
+        if !self.terminal_panel.visible {
+            self.terminal_panel.scroll = 0;
+            self.terminal_panel.follow = true;
             if self.focus == Focus::Terminal {
                 self.focus = Focus::Details;
             }
@@ -81,7 +101,7 @@ impl AppState {
     }
 
     pub(crate) fn terminal_panel_surface_active(&self) -> bool {
-        self.terminal_panel_visible
+        self.terminal_panel.visible
             && self.focus == Focus::Terminal
             && self.active_review_surface.is_none()
             && !self.startup_shell_visible()
@@ -96,18 +116,20 @@ impl AppState {
     }
 
     pub(in crate::app) fn scroll_terminal_panel_up(&mut self, amount: u16) {
-        self.terminal_panel_follow = false;
-        self.terminal_panel_scroll = self
-            .terminal_panel_scroll
+        self.terminal_panel.follow = false;
+        self.terminal_panel.scroll = self
+            .terminal_panel
+            .scroll
             .saturating_add(usize::from(amount.max(1)));
     }
 
     pub(in crate::app) fn scroll_terminal_panel_down(&mut self, amount: u16) {
-        self.terminal_panel_scroll = self
-            .terminal_panel_scroll
+        self.terminal_panel.scroll = self
+            .terminal_panel
+            .scroll
             .saturating_sub(usize::from(amount.max(1)));
-        if self.terminal_panel_scroll == 0 {
-            self.terminal_panel_follow = true;
+        if self.terminal_panel.scroll == 0 {
+            self.terminal_panel.follow = true;
         }
     }
 }

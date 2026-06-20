@@ -8,10 +8,11 @@ use harness_core::session_lineage::{
 };
 
 use super::AppState;
+use crate::keybindings::Action;
 use crate::text::non_empty_trimmed;
 use crate::view_model::{
     ForkSelectorRowViewModel, ForkSelectorViewModel, LineageBrowserRowViewModel,
-    LineageBrowserViewModel,
+    LineageBrowserViewModel, LineageChildDialogViewModel,
 };
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -201,6 +202,46 @@ impl LineageBrowserState {
             selected_run_id: self.selected_run_id().map(str::to_string),
         }
     }
+
+    pub fn child_dialog_info(&self) -> Option<LineageChildDialogInfo> {
+        let node = self.selected_node()?;
+        let parent_run_id = node.catalog.parent_session_id.clone()?;
+        let parent_node = node.parent_index.and_then(|index| self.nodes.get(index))?;
+        let siblings = &parent_node.child_indices;
+        let child_total = siblings.len();
+        let child_index = siblings
+            .iter()
+            .position(|sibling_index| {
+                self.nodes
+                    .get(*sibling_index)
+                    .map(|sibling| sibling.catalog.run_id == node.catalog.run_id)
+                    .unwrap_or(false)
+            })
+            .map(|idx| idx + 1)
+            .unwrap_or(0);
+        Some(LineageChildDialogInfo {
+            run_id: node.catalog.run_id.clone(),
+            title: lineage_row_title(&node.catalog),
+            label: node
+                .catalog
+                .profile_preset
+                .clone()
+                .unwrap_or_else(|| "Subagent".to_string()),
+            parent_run_id,
+            child_index,
+            child_total,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LineageChildDialogInfo {
+    pub run_id: String,
+    pub title: String,
+    pub label: String,
+    pub parent_run_id: String,
+    pub child_index: usize,
+    pub child_total: usize,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -391,6 +432,25 @@ impl AppState {
 
     pub fn lineage_browser_view_model(&self) -> LineageBrowserViewModel {
         self.lineage_browser.view_model(&self.palette_input)
+    }
+
+    pub fn lineage_child_dialog_view_model(&self) -> Option<LineageChildDialogViewModel> {
+        let info = self.lineage_browser.child_dialog_info()?;
+        Some(LineageChildDialogViewModel {
+            run_id: info.run_id,
+            title: info.title,
+            label: info.label,
+            parent_run_id: Some(info.parent_run_id),
+            child_index: info.child_index,
+            child_total: info.child_total,
+            usage: None,
+            first_child_shortcut: self.keymap.get_binding_str(Action::SessionChildFirst),
+            previous_shortcut: self
+                .keymap
+                .get_binding_str(Action::SessionChildCycleReverse),
+            next_shortcut: self.keymap.get_binding_str(Action::SessionChildCycle),
+            parent_shortcut: self.keymap.get_binding_str(Action::SessionParent),
+        })
     }
 
     pub fn fork_selector_view_model(&self) -> ForkSelectorViewModel {

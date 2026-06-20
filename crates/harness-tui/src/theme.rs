@@ -854,6 +854,74 @@ impl Theme {
         }
     }
 
+    pub fn harness_high_contrast() -> Self {
+        Self {
+            surface: SurfaceColors {
+                canvas: Color::Black,
+                shell: Color::Black,
+                panel: Color::Black,
+                panel_elevated: Color::Black,
+                overlay: Color::Black,
+            },
+            border: BorderColors {
+                subtle: Color::DarkGray,
+                strong: Color::Gray,
+                focus: Color::Yellow,
+            },
+            text: TextColors {
+                primary: Color::White,
+                secondary: Color::Gray,
+                tertiary: Color::DarkGray,
+                accent: Color::Yellow,
+                inverse: Color::Black,
+            },
+            question_prompt: QuestionPromptColors {
+                accent: Color::Yellow,
+                secondary: Color::Cyan,
+            },
+            status: StatusColors {
+                success: Color::LightGreen,
+                warning: Color::Yellow,
+                error: Color::LightRed,
+                info: Color::LightCyan,
+                disabled: Color::DarkGray,
+            },
+            agents: AgentColors {
+                build: Color::Cyan,
+                plan: Color::Magenta,
+                docs: Color::Yellow,
+                ask: Color::LightYellow,
+                palette: [
+                    Color::Cyan,
+                    Color::Magenta,
+                    Color::LightGreen,
+                    Color::Yellow,
+                    Color::LightYellow,
+                    Color::LightRed,
+                    Color::LightCyan,
+                ],
+            },
+            scrollbar: ScrollbarColors {
+                track: Color::Black,
+                thumb: Color::DarkGray,
+                thumb_active: Color::Yellow,
+            },
+            live_shell: Self::HARNESS_DARK_SHELL,
+        }
+    }
+
+    pub fn by_name(name: &str) -> Option<Self> {
+        match name {
+            "default" | "harness-dark" => Some(Self::harness_dark()),
+            "high-contrast" => Some(Self::harness_high_contrast()),
+            _ => None,
+        }
+    }
+
+    pub const fn available_theme_names() -> &'static [&'static str] {
+        &["default", "high-contrast"]
+    }
+
     pub const fn live_shell_layout(self, width: u16, height: u16) -> LiveShellLayout {
         self.live_shell.select(width, height)
     }

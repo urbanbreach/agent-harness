@@ -281,8 +281,9 @@ fn transcript_selection_test_app_with_text(transcript_text: &str) -> AppState {
         last_seq: 2,
         first_mono_ms: 1,
         last_mono_ms: 2,
+        revision: 0,
     }]);
-    app.selected_activity_index = 0;
+    app.transcript_view.selected_activity_index = 0;
     app
 }
 
@@ -351,7 +352,7 @@ fn shell_card_selection_test_app() -> AppState {
             metadata: None,
         }),
     ));
-    app.selected_activity_index = 0;
+    app.transcript_view.selected_activity_index = 0;
     app
 }
 
@@ -903,6 +904,10 @@ delegate_test!(replay_terminal_only_tool_cancellation_scope_does_not_fail_activi
 #[path = "tests/prompt_input_tests.rs"]
 mod prompt_input_tests;
 
+#[cfg(test)]
+#[path = "tests/prompt_stash_tests.rs"]
+mod prompt_stash_tests;
+
 delegate_test!(ctrl_j_inserts_newline_without_submitting => prompt_input_tests::ctrl_j_inserts_newline_without_submitting);
 delegate_test!(paste_multiline_text_inserts_newlines_without_submitting => prompt_input_tests::paste_multiline_text_inserts_newlines_without_submitting);
 delegate_test!(multiline_history_keys_move_cursor_before_recalling_history => prompt_input_tests::multiline_history_keys_move_cursor_before_recalling_history);
@@ -910,6 +915,49 @@ delegate_test!(prompt_history_persists_and_restores_draft_after_recall => prompt
 delegate_test!(startup_auto_submit_persists_prompt_history_once => prompt_input_tests::startup_auto_submit_persists_prompt_history_once);
 delegate_test!(live_bootstrap_auto_submit_echoes_and_emits_first_prompt => prompt_input_tests::live_bootstrap_auto_submit_echoes_and_emits_first_prompt);
 delegate_test!(submit_prompt_while_turn_streams_echoes_as_queued_and_emits_intent => prompt_input_tests::submit_prompt_while_turn_streams_echoes_as_queued_and_emits_intent);
+
+delegate_test!(prompt_stash_push_clears_composer_and_persists_entry => prompt_stash_tests::prompt_stash_push_clears_composer_and_persists_entry);
+delegate_test!(prompt_stash_pop_restores_text_cursor_and_selection => prompt_stash_tests::prompt_stash_pop_restores_text_cursor_and_selection);
+delegate_test!(prompt_stash_pop_with_empty_stash_is_noop => prompt_stash_tests::prompt_stash_pop_with_empty_stash_is_noop);
+delegate_test!(prompt_stash_push_with_empty_composer_is_noop => prompt_stash_tests::prompt_stash_push_with_empty_composer_is_noop);
+delegate_test!(prompt_stash_list_dialog_opens_and_closes => prompt_stash_tests::prompt_stash_list_dialog_opens_and_closes);
+delegate_test!(prompt_stash_list_dialog_renders_entries => prompt_stash_tests::prompt_stash_list_dialog_renders_entries);
+delegate_test!(prompt_stash_list_delete_removes_selected_entry => prompt_stash_tests::prompt_stash_list_delete_removes_selected_entry);
+delegate_test!(prompt_stash_list_restore_loads_selected_entry_to_composer => prompt_stash_tests::prompt_stash_list_restore_loads_selected_entry_to_composer);
+delegate_test!(prompt_stash_persists_across_session_restart => prompt_stash_tests::prompt_stash_persists_across_session_restart);
+delegate_test!(queued_prompt_count_tracks_queued_activities => prompt_stash_tests::queued_prompt_count_tracks_queued_activities);
+delegate_test!(queued_prompt_indicator_renders_when_count_positive => prompt_stash_tests::queued_prompt_indicator_renders_when_count_positive);
+
+#[cfg(test)]
+#[path = "tests/composer_editing_tests.rs"]
+mod composer_editing_tests;
+
+delegate_test!(move_word_left_skips_separators_then_word => composer_editing_tests::move_word_left_skips_separators_then_word);
+delegate_test!(move_word_right_skips_word_then_separators => composer_editing_tests::move_word_right_skips_word_then_separators);
+delegate_test!(move_word_left_at_start_stays_at_zero => composer_editing_tests::move_word_left_at_start_stays_at_zero);
+delegate_test!(move_word_right_at_end_stays_at_end => composer_editing_tests::move_word_right_at_end_stays_at_end);
+delegate_test!(move_word_left_handles_leading_separators => composer_editing_tests::move_word_left_handles_leading_separators);
+delegate_test!(delete_word_backward_removes_word_and_pushes_undo => composer_editing_tests::delete_word_backward_removes_word_and_pushes_undo);
+delegate_test!(delete_word_forward_removes_word_and_pushes_undo => composer_editing_tests::delete_word_forward_removes_word_and_pushes_undo);
+delegate_test!(redo_re_applies_after_undo => composer_editing_tests::redo_re_applies_after_undo);
+delegate_test!(undo_restores_selection_anchor => composer_editing_tests::undo_restores_selection_anchor);
+delegate_test!(select_char_left_extends_selection => composer_editing_tests::select_char_left_extends_selection);
+delegate_test!(select_word_right_extends_selection => composer_editing_tests::select_word_right_extends_selection);
+delegate_test!(select_all_selects_entire_buffer => composer_editing_tests::select_all_selects_entire_buffer);
+delegate_test!(select_line_selects_current_line => composer_editing_tests::select_line_selects_current_line);
+delegate_test!(move_line_start_clears_selection => composer_editing_tests::move_line_start_clears_selection);
+delegate_test!(move_line_end_clears_selection => composer_editing_tests::move_line_end_clears_selection);
+delegate_test!(move_buffer_start_clears_selection => composer_editing_tests::move_buffer_start_clears_selection);
+delegate_test!(move_buffer_end_clears_selection => composer_editing_tests::move_buffer_end_clears_selection);
+delegate_test!(delete_line_removes_entire_line_including_newline => composer_editing_tests::delete_line_removes_entire_line_including_newline);
+delegate_test!(kill_to_line_start_deletes_from_cursor_to_line_start => composer_editing_tests::kill_to_line_start_deletes_from_cursor_to_line_start);
+delegate_test!(kill_to_line_end_deletes_from_cursor_to_line_end => composer_editing_tests::kill_to_line_end_deletes_from_cursor_to_line_end);
+delegate_test!(typing_after_select_replaces_selection => composer_editing_tests::typing_after_select_replaces_selection);
+delegate_test!(backspace_with_selection_deletes_selection => composer_editing_tests::backspace_with_selection_deletes_selection);
+delegate_test!(undo_stack_caps_at_max_entries => composer_editing_tests::undo_stack_caps_at_max_entries);
+delegate_test!(history_navigation_preserves_draft_via_undo => composer_editing_tests::history_navigation_preserves_draft_via_undo);
+delegate_test!(cursor_left_clears_selection => composer_editing_tests::cursor_left_clears_selection);
+delegate_test!(word_boundary_detects_punctuation_as_separator => composer_editing_tests::word_boundary_detects_punctuation_as_separator);
 
 #[cfg(test)]
 #[path = "tests/file_mention_tests.rs"]

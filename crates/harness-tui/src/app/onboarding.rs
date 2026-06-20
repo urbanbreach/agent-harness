@@ -1,5 +1,27 @@
 use ratatui::text::{Line, Span};
 
+pub(crate) struct OnboardingState {
+    pub(crate) visible: bool,
+    pub(crate) step: OnboardingStep,
+    pub(crate) selected: usize,
+    pub(crate) skipped_for_launch: bool,
+    pub(crate) auth_in_progress: bool,
+    pub(crate) secret_input: String,
+}
+
+impl Default for OnboardingState {
+    fn default() -> Self {
+        Self {
+            visible: false,
+            step: OnboardingStep::StartSplash,
+            selected: 0,
+            skipped_for_launch: false,
+            auth_in_progress: false,
+            secret_input: String::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OnboardingStep {
     StartSplash,

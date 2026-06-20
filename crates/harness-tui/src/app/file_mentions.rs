@@ -283,11 +283,11 @@ impl AppState {
     }
 
     fn active_file_mention(&self) -> Option<ActiveFileMention> {
-        if self.prompt_cursor == 0 {
+        if self.composer.prompt_cursor == 0 {
             return None;
         }
 
-        let text_before_cursor = self.prompt_slice(0, self.prompt_cursor);
+        let text_before_cursor = self.prompt_slice(0, self.composer.prompt_cursor);
         let mut trigger = None;
         for (index, ch) in text_before_cursor.chars().enumerate() {
             if ch == '@' {
@@ -300,14 +300,14 @@ impl AppState {
             return None;
         }
 
-        let between = self.prompt_slice(trigger, self.prompt_cursor);
+        let between = self.prompt_slice(trigger, self.composer.prompt_cursor);
         if between.chars().any(char::is_whitespace) {
             return None;
         }
 
         Some(ActiveFileMention {
             trigger,
-            cursor: self.prompt_cursor,
+            cursor: self.composer.prompt_cursor,
         })
     }
 
@@ -335,8 +335,8 @@ impl AppState {
             format!("@{}{}", entry.value, suffix)
         };
         let tag_end = trigger + 1 + entry.value.chars().count();
-        self.replace_prompt_range(trigger, self.prompt_cursor, &token);
-        self.prompt_cursor = trigger + token.chars().count();
+        self.replace_prompt_range(trigger, self.composer.prompt_cursor, &token);
+        self.composer.prompt_cursor = trigger + token.chars().count();
 
         if expand_directory {
             self.file_mention_selected = 0;
@@ -464,22 +464,26 @@ impl AppState {
     }
 
     fn prompt_slice(&self, start: usize, end: usize) -> &str {
-        let start_byte = prompt_char_to_byte(&self.prompt_buffer, start);
-        let end_byte = prompt_char_to_byte(&self.prompt_buffer, end);
-        &self.prompt_buffer[start_byte..end_byte]
+        let start_byte = prompt_char_to_byte(&self.composer.prompt_buffer, start);
+        let end_byte = prompt_char_to_byte(&self.composer.prompt_buffer, end);
+        &self.composer.prompt_buffer[start_byte..end_byte]
     }
 
     fn replace_prompt_range(&mut self, start: usize, end: usize, replacement: &str) {
-        let start_byte = prompt_char_to_byte(&self.prompt_buffer, start);
-        let end_byte = prompt_char_to_byte(&self.prompt_buffer, end);
+        let start_byte = prompt_char_to_byte(&self.composer.prompt_buffer, start);
+        let end_byte = prompt_char_to_byte(&self.composer.prompt_buffer, end);
         self.adjust_file_mention_tags_for_delete(start, end);
         self.adjust_file_mention_tags_for_insert(start, replacement.chars().count());
-        self.prompt_buffer
+        self.composer
+            .prompt_buffer
             .replace_range(start_byte..end_byte, replacement);
     }
 
     fn char_after_prompt_cursor(&self) -> Option<char> {
-        self.prompt_buffer.chars().nth(self.prompt_cursor)
+        self.composer
+            .prompt_buffer
+            .chars()
+            .nth(self.composer.prompt_cursor)
     }
 
     #[cfg(test)]

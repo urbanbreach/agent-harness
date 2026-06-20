@@ -795,10 +795,10 @@ impl AppState {
         let runtime_context = self.runtime_provider_context();
 
         if self.startup_shell_visible() {
-            let composer_body = if self.prompt_buffer.is_empty() {
+            let composer_body = if self.composer.prompt_buffer.is_empty() {
                 runtime_state.composer_hint.clone()
             } else {
-                self.prompt_buffer.clone()
+                self.composer.prompt_buffer.clone()
             };
             return view_model::control_dock_view_model(view_model::ControlDockInput::Startup {
                 runtime_context,
@@ -836,10 +836,10 @@ impl AppState {
             );
         }
 
-        let composer_body = if self.prompt_buffer.is_empty() {
+        let composer_body = if self.composer.prompt_buffer.is_empty() {
             String::new()
         } else {
-            self.prompt_buffer.clone()
+            self.composer.prompt_buffer.clone()
         };
         view_model::control_dock_view_model(view_model::ControlDockInput::Live {
             runtime_context,
@@ -945,6 +945,7 @@ mod tests {
             last_seq: 1,
             first_mono_ms: 1,
             last_mono_ms: 1,
+            revision: 0,
         });
 
         // act
@@ -995,6 +996,7 @@ mod tests {
             last_seq: 1,
             first_mono_ms: 1,
             last_mono_ms: 1,
+            revision: 0,
         });
 
         // act
