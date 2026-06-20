@@ -36,8 +36,8 @@ pub(super) fn live_shell_shift_enter_keeps_draft_multiline() {
         app.handle_key(key(crossterm::event::KeyCode::Char(c)));
     }
 
-    assert_eq!(app.prompt_history.len(), 0);
-    assert_eq!(app.prompt_buffer, "first line\nsecond line");
+    assert_eq!(app.composer.prompt_history.len(), 0);
+    assert_eq!(app.composer.prompt_buffer, "first line\nsecond line");
     assert_live_shell_contains(&app, 80, 24, &["first line", "second line"]);
     let rendered = render_live_lines(&app, 80, 24);
     assert!(!rendered.contains("Composer ·"));
@@ -53,9 +53,9 @@ pub(super) fn live_shell_enter_submits_and_echoes_prompt_snapshot() {
 
     app.handle_key(key(crossterm::event::KeyCode::Enter));
 
-    assert_eq!(app.prompt_buffer, "");
+    assert_eq!(app.composer.prompt_buffer, "");
     assert_eq!(
-        app.prompt_history.last().map(String::as_str),
+        app.composer.prompt_history.last().map(String::as_str),
         Some("ship it")
     );
     let rendered = render_live_lines(&app, 80, 24);
@@ -85,8 +85,8 @@ pub(super) fn live_submitted_event_merges_duplicate_local_echo_before_rendering_
             None,
             "Ack.",
         ));
-    app.selected_activity_index = 1;
-    app.follow_mode = false;
+    app.transcript_view.selected_activity_index = 1;
+    app.transcript_view.follow_mode = false;
 
     app.ingest_event(envelope(
         1,
@@ -100,7 +100,7 @@ pub(super) fn live_submitted_event_merges_duplicate_local_echo_before_rendering_
     ));
 
     assert_eq!(app.activities.len(), 1);
-    assert_eq!(app.selected_activity_index, 0);
+    assert_eq!(app.transcript_view.selected_activity_index, 0);
     let activity = app.activities.back().expect("merged activity");
     assert_eq!(activity.request_id, "req_live_echo_merge");
     assert_eq!(activity.status, app::ActivityStatus::Done);

@@ -72,8 +72,8 @@ pub(super) fn live_mode_accepts_input_without_focus_switch() {
         app.handle_key(key(crossterm::event::KeyCode::Char(c)));
     }
 
-    assert_eq!(app.prompt_buffer, "hello");
-    assert_eq!(app.prompt_cursor, 5);
+    assert_eq!(app.composer.prompt_buffer, "hello");
+    assert_eq!(app.composer.prompt_cursor, 5);
 }
 
 pub(super) fn command_palette_renders_and_filters() {
@@ -107,6 +107,14 @@ pub(super) fn command_palette_renders_and_filters() {
             "stack_transcript_diffs".to_string(),
             "help".to_string(),
             "quit".to_string(),
+            "prompt_stash".to_string(),
+            "prompt_stash_pop".to_string(),
+            "prompt_stash_list".to_string(),
+            "open_lineage_browser".to_string(),
+            "session_child_first".to_string(),
+            "session_child_cycle".to_string(),
+            "session_child_cycle_reverse".to_string(),
+            "session_parent".to_string(),
         ]
     );
 
@@ -120,7 +128,11 @@ pub(super) fn command_palette_renders_and_filters() {
     assert_eq!(app.palette_cursor, 1);
     assert_eq!(
         app.palette_filtered,
-        vec!["new_session".to_string(), "agent_cycle".to_string()]
+        vec![
+            "new_session".to_string(),
+            "session_child_cycle".to_string(),
+            "agent_cycle".to_string()
+        ]
     );
 
     let filtered_debug = render_live_screen(&app, 120, 36);
@@ -610,8 +622,8 @@ pub(super) fn replay_picker_keeps_prompt_runs_visible() {
 pub(super) fn focus_returns_after_session_history_close() {
     let mut app = app::AppState::new_live(None, false, None);
     app.focus = app::Focus::Details;
-    app.prompt_buffer = "keep prompt draft".to_string();
-    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.composer.prompt_buffer = "keep prompt draft".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
     app.set_session_history_entries(vec![startup_session_entry_with_details(
         "run_replay",
         "/tmp/sessions/run_replay",
@@ -635,23 +647,26 @@ pub(super) fn focus_returns_after_session_history_close() {
 
     assert!(app.session_history_visible);
     assert_eq!(app.focus, app::Focus::Details);
-    assert_eq!(app.prompt_buffer, "keep prompt draft");
+    assert_eq!(app.composer.prompt_buffer, "keep prompt draft");
 
     app.handle_key(key(crossterm::event::KeyCode::Esc));
 
     assert!(!app.session_history_visible);
     assert!(!app.palette_visible);
     assert_eq!(app.focus, app::Focus::Details);
-    assert_eq!(app.prompt_buffer, "keep prompt draft");
-    assert_eq!(app.prompt_cursor, "keep prompt draft".chars().count());
+    assert_eq!(app.composer.prompt_buffer, "keep prompt draft");
+    assert_eq!(
+        app.composer.prompt_cursor,
+        "keep prompt draft".chars().count()
+    );
 }
 
 pub(super) fn command_palette_enter_executes_selected_command() {
     let mut app = app::AppState::new_live(None, false, None);
     app.active_review_surface = Some(app::ReviewSurface::Help);
     app.focus = app::Focus::Details;
-    app.prompt_buffer = "preserve me".to_string();
-    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.composer.prompt_buffer = "preserve me".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
 
     app.handle_key(key_with_modifiers(
         crossterm::event::KeyCode::Char('p'),
@@ -665,8 +680,8 @@ pub(super) fn command_palette_enter_executes_selected_command() {
     assert_eq!(app.active_tab, app::Tab::Run);
     assert!(!app.palette_visible);
     assert_eq!(app.focus, app::Focus::Details);
-    assert_eq!(app.prompt_buffer, "preserve me");
-    assert_eq!(app.prompt_cursor, "preserve me".chars().count());
+    assert_eq!(app.composer.prompt_buffer, "preserve me");
+    assert_eq!(app.composer.prompt_cursor, "preserve me".chars().count());
 }
 
 pub(super) fn palette_escape_preserves_prompt_draft() {
@@ -675,8 +690,8 @@ pub(super) fn palette_escape_preserves_prompt_draft() {
         app.handle_key(key(crossterm::event::KeyCode::Char(c)));
     }
 
-    let prompt_before = app.prompt_buffer.clone();
-    let cursor_before = app.prompt_cursor;
+    let prompt_before = app.composer.prompt_buffer.clone();
+    let cursor_before = app.composer.prompt_cursor;
 
     app.handle_key(key_with_modifiers(
         crossterm::event::KeyCode::Char('p'),
@@ -694,8 +709,222 @@ pub(super) fn palette_escape_preserves_prompt_draft() {
     assert_eq!(app.palette_cursor, 0);
     assert!(app.palette_filtered.is_empty());
     assert_eq!(app.palette_selected, 0);
-    assert_eq!(app.prompt_buffer, prompt_before);
-    assert_eq!(app.prompt_cursor, cursor_before);
-    assert!(app.prompt_history.is_empty());
-    assert_eq!(app.prompt_history_index, None);
+    assert_eq!(app.composer.prompt_buffer, prompt_before);
+    assert_eq!(app.composer.prompt_cursor, cursor_before);
+    assert!(app.composer.prompt_history.is_empty());
+    assert_eq!(app.composer.prompt_history_index, None);
+}
+
+pub(super) fn session_pin_toggles_and_sorts_pinned_first() {
+    let mut app = app::AppState::new_startup(
+        vec![startup_session_entry_with_details(
+            "run_pin",
+            "/tmp/sessions/run_pin",
+            "Pin target",
+            Some(harness_core::proj::RunStatus::Finished),
+            Some("2026-03-08T12:34:56Z"),
+            "deep",
+            "openai/gpt-5.4-mini",
+            true,
+            None,
+        )],
+        None,
+    );
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    for ch in "resume".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+    assert!(app.session_history_visible);
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('f'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    assert!(app.session_pins.contains("run_pin"));
+
+    assert_eq!(
+        app.session_history_entries[*app
+            .session_history_filtered
+            .first()
+            .expect("filtered entry")]
+        .catalog
+        .run_id,
+        "run_pin"
+    );
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('f'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    assert!(!app.session_pins.contains("run_pin"));
+}
+
+pub(super) fn session_delete_two_press_arms_then_emits_intent() {
+    let captured_intent = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let cb: std::sync::Arc<dyn Fn(app::UiIntent) + Send + Sync> = std::sync::Arc::new({
+        let captured_intent = std::sync::Arc::clone(&captured_intent);
+        move |intent| {
+            *captured_intent.lock().unwrap() = Some(intent);
+        }
+    });
+
+    let mut app = app::AppState::new_startup(
+        vec![startup_session_entry_with_details(
+            "run_del",
+            "/tmp/sessions/run_del",
+            "Delete target",
+            Some(harness_core::proj::RunStatus::Finished),
+            Some("2026-03-08T12:34:56Z"),
+            "deep",
+            "openai/gpt-5.4-mini",
+            true,
+            None,
+        )],
+        Some(cb),
+    );
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    for ch in "resume".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+    assert!(app.session_history_visible);
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('d'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    assert_eq!(app.session_delete_armed_run_id.as_deref(), Some("run_del"));
+
+    app.handle_key(key(crossterm::event::KeyCode::Down));
+    assert!(app.session_delete_armed_run_id.is_none());
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('d'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    assert_eq!(app.session_delete_armed_run_id.as_deref(), Some("run_del"));
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('d'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    let intent = captured_intent.lock().unwrap().take();
+    assert!(
+        matches!(intent, Some(app::UiIntent::DeleteSession { ref run_id, .. }) if run_id == "run_del"),
+        "expected DeleteSession intent, got {intent:?}"
+    );
+}
+
+pub(super) fn session_rename_dialog_opens_and_cancels() {
+    let mut app = app::AppState::new_startup(
+        vec![startup_session_entry_with_details(
+            "run_rename",
+            "/tmp/sessions/run_rename",
+            "Rename target",
+            Some(harness_core::proj::RunStatus::Finished),
+            Some("2026-03-08T12:34:56Z"),
+            "deep",
+            "openai/gpt-5.4-mini",
+            true,
+            None,
+        )],
+        None,
+    );
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    for ch in "resume".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+    assert!(app.session_history_visible);
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('r'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    assert!(app.session_rename_visible);
+    assert_eq!(app.session_rename_input, "Rename target");
+    assert_eq!(
+        app.session_rename_target_run_id.as_deref(),
+        Some("run_rename")
+    );
+
+    app.handle_key(key(crossterm::event::KeyCode::Esc));
+    assert!(!app.session_rename_visible);
+    assert!(app.session_rename_input.is_empty());
+    assert!(app.session_rename_target_run_id.is_none());
+}
+
+pub(super) fn theme_dialog_opens_and_cycles_themes() {
+    let mut app = app::AppState::new_live(None, false, None);
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('x'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    app.handle_key(key(crossterm::event::KeyCode::Char('t')));
+    assert!(app.theme_dialog_visible);
+
+    app.handle_key(key(crossterm::event::KeyCode::Down));
+    app.handle_key(key(crossterm::event::KeyCode::Enter));
+    assert!(!app.theme_dialog_visible);
+    assert_eq!(app.theme_name, "high-contrast");
+}
+
+pub(super) fn theme_dialog_escape_closes_without_applying() {
+    let mut app = app::AppState::new_live(None, false, None);
+    let theme_before = *app.theme();
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('x'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    app.handle_key(key(crossterm::event::KeyCode::Char('t')));
+    assert!(app.theme_dialog_visible);
+
+    app.handle_key(key(crossterm::event::KeyCode::Down));
+    app.handle_key(key(crossterm::event::KeyCode::Esc));
+    assert!(!app.theme_dialog_visible);
+    assert_eq!(*app.theme(), theme_before);
+}
+
+pub(super) fn model_favorite_toggles_and_sorts_first() {
+    let mut app = app::AppState::new_live(None, false, None);
+    app.set_launch_metadata(
+        app::LaunchMetadata::from_model_ref("build", "default:gpt-5.4-mini").with_available_models(
+            vec![app::ModelOption::from_model_ref(
+                "build",
+                "default:gpt-5.4-mini",
+            )],
+        ),
+    );
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('x'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    app.handle_key(key(crossterm::event::KeyCode::Char('m')));
+    assert!(app.model_switcher_visible);
+
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('f'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    assert!(app.model_favorites.contains("gpt-5.4-mini"));
+
+    let selected_index = app.model_filtered[app.model_selected];
+    let selected_option = &app.model_options[selected_index];
+    assert_eq!(selected_option.model, "gpt-5.4-mini");
 }

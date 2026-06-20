@@ -98,6 +98,8 @@ delegate_test!(startup_disclosure_matches_harness_hint_row => ui::exact_test_sta
 delegate_test!(composer_viewport_wraps_by_display_width => ui::exact_test_composer_viewport_wraps_by_display_width);
 delegate_test!(composer_viewport_wraps_at_word_boundaries => ui::exact_test_composer_viewport_wraps_at_word_boundaries);
 delegate_test!(tool_status_summary_uses_effective_tool_identity => ui::exact_test_tool_status_summary_uses_effective_tool_identity);
+delegate_test!(footer_status_cluster_shows_pending_permission_count => ui::exact_test_footer_status_cluster_shows_pending_permission_count);
+delegate_test!(footer_status_cluster_empty_when_no_activity => ui::exact_test_footer_status_cluster_empty_when_no_activity);
 delegate_test!(retry_summary_segment_prioritizes_retry_indicator => ui::exact_test_retry_summary_segment_prioritizes_retry_indicator);
 delegate_test!(wheel_target_hits_transcript_when_hovered => ui::exact_test_wheel_target_hits_transcript_when_hovered);
 delegate_test!(wheel_target_hits_inspector_inside_live_overlay => ui::exact_test_wheel_target_hits_inspector_inside_live_overlay);
@@ -306,6 +308,12 @@ delegate_test!(replay_picker_keeps_prompt_runs_visible => command_session_surfac
 delegate_test!(focus_returns_after_session_history_close => command_session_surface::focus_returns_after_session_history_close);
 delegate_test!(command_palette_enter_executes_selected_command => command_session_surface::command_palette_enter_executes_selected_command);
 delegate_test!(palette_escape_preserves_prompt_draft => command_session_surface::palette_escape_preserves_prompt_draft);
+delegate_test!(session_pin_toggles_and_sorts_pinned_first => command_session_surface::session_pin_toggles_and_sorts_pinned_first);
+delegate_test!(session_delete_two_press_arms_then_emits_intent => command_session_surface::session_delete_two_press_arms_then_emits_intent);
+delegate_test!(session_rename_dialog_opens_and_cancels => command_session_surface::session_rename_dialog_opens_and_cancels);
+delegate_test!(theme_dialog_opens_and_cycles_themes => command_session_surface::theme_dialog_opens_and_cycles_themes);
+delegate_test!(theme_dialog_escape_closes_without_applying => command_session_surface::theme_dialog_escape_closes_without_applying);
+delegate_test!(model_favorite_toggles_and_sorts_first => command_session_surface::model_favorite_toggles_and_sorts_first);
 
 mod startup_lifecycle_surface;
 delegate_test!(startup_surface_renders_primary_actions => startup_lifecycle_surface::startup_surface_renders_primary_actions);

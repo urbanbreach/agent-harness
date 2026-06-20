@@ -88,7 +88,7 @@ pub(super) fn permission_modal_preempts_palette_and_slash() {
     let slash_render = render_live_lines(&slash_app, 100, 24);
     assert!(slash_render.contains("Permission required"));
     assert!(!slash_render.contains("Slash commands"));
-    assert_eq!(slash_app.prompt_buffer, "/");
+    assert_eq!(slash_app.composer.prompt_buffer, "/");
     assert!(!slash_app.slash_visible);
     assert_eq!(
         slash_app.overlay_stack().ordered(),
@@ -225,7 +225,7 @@ pub(super) fn slash_overlay_uses_reference_navigation_keys() {
     assert_eq!(app.slash_selected, 0);
 
     app.handle_key(key(crossterm::event::KeyCode::Esc));
-    assert_eq!(app.prompt_buffer, "");
+    assert_eq!(app.composer.prompt_buffer, "");
     assert!(!app.slash_visible);
 }
 
@@ -277,7 +277,7 @@ pub(super) fn new_session_preserves_unsent_draft_across_home_navigation() {
     app::set_pending_live_prompt_draft(Some("draft from home".to_string()));
 
     let mut startup = app::AppState::new_startup(Vec::new(), None);
-    assert_eq!(startup.prompt_buffer, "draft from home");
+    assert_eq!(startup.composer.prompt_buffer, "draft from home");
 
     startup.handle_key(exact_test_key_with_modifiers(
         crossterm::event::KeyCode::Char('p'),
@@ -290,8 +290,11 @@ pub(super) fn new_session_preserves_unsent_draft_across_home_navigation() {
     assert!(startup.should_quit);
 
     let live = app::AppState::new_live(None, false, None);
-    assert_eq!(live.prompt_buffer, "draft from home");
-    assert_eq!(live.prompt_cursor, "draft from home".chars().count());
+    assert_eq!(live.composer.prompt_buffer, "draft from home");
+    assert_eq!(
+        live.composer.prompt_cursor,
+        "draft from home".chars().count()
+    );
 }
 
 pub(super) fn command_driven_session_switch_emits_correct_ui_intent() {
@@ -431,7 +434,7 @@ pub(super) fn live_shell_redesign_preserves_replay_overlay_and_permission_parity
 
     let mut replay =
         app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), session_view_events());
-    replay.transcript_scroll = usize::MAX;
+    replay.transcript_view.transcript_scroll = usize::MAX;
     let replay_plan = FrameLayoutPlan::for_app(&replay, ratatui::layout::Rect::new(0, 0, 100, 30));
     let replay_render = render_live_lines(&replay, 100, 30);
     let replay_buffer = render_live_cells(&replay, 100, 30);

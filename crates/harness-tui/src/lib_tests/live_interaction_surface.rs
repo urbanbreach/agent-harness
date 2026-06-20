@@ -33,9 +33,12 @@ pub(super) fn permission_modal_preempts_prompt_submission() {
     );
     drop(intents);
 
-    assert_eq!(app.prompt_buffer, "blocked by permission");
-    assert_eq!(app.prompt_cursor, "blocked by permission".chars().count());
-    assert!(app.prompt_history.is_empty());
+    assert_eq!(app.composer.prompt_buffer, "blocked by permission");
+    assert_eq!(
+        app.composer.prompt_cursor,
+        "blocked by permission".chars().count()
+    );
+    assert!(app.composer.prompt_history.is_empty());
     assert!(app.activities.is_empty());
     assert!(app.active_permission().is_some());
 }
@@ -99,8 +102,8 @@ pub(super) fn replay_session_intent_never_enables_prompt_submission() {
         )],
         Some(intent_sink),
     );
-    app.prompt_buffer = "do not submit".to_string();
-    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.composer.prompt_buffer = "do not submit".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
 
     app.handle_key(key_with_modifiers(
         crossterm::event::KeyCode::Char('p'),
@@ -121,16 +124,16 @@ pub(super) fn replay_session_intent_never_enables_prompt_submission() {
         }]
     );
     drop(intents);
-    assert_eq!(app.prompt_buffer, "do not submit");
-    assert!(app.prompt_history.is_empty());
+    assert_eq!(app.composer.prompt_buffer, "do not submit");
+    assert!(app.composer.prompt_history.is_empty());
 }
 
 pub(super) fn overlay_wheel_routing_preserved() {
     let frame_area = ratatui::layout::Rect::new(0, 0, 140, 40);
     let mut palette_overlay = app::AppState::new_live(None, false, None);
     palette_overlay.details_scroll = 6;
-    palette_overlay.transcript_scroll = 4;
-    palette_overlay.follow_mode = false;
+    palette_overlay.transcript_view.transcript_scroll = 4;
+    palette_overlay.transcript_view.follow_mode = false;
     palette_overlay.handle_key(key_with_modifiers(
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
@@ -163,13 +166,13 @@ pub(super) fn overlay_wheel_routing_preserved() {
 
     assert!(palette_overlay.palette_visible);
     assert_eq!(palette_overlay.details_scroll, 6);
-    assert_eq!(palette_overlay.transcript_scroll, 4);
-    assert!(!palette_overlay.follow_mode);
+    assert_eq!(palette_overlay.transcript_view.transcript_scroll, 4);
+    assert!(!palette_overlay.transcript_view.follow_mode);
 
     let mut permission_overlay = app::AppState::new_live(None, false, None);
     permission_overlay.details_scroll = 8;
-    permission_overlay.transcript_scroll = 3;
-    permission_overlay.follow_mode = false;
+    permission_overlay.transcript_view.transcript_scroll = 3;
+    permission_overlay.transcript_view.follow_mode = false;
     permission_overlay.ingest_event(permission_requested_event(
         1,
         "perm_overlay_wheel",
@@ -203,8 +206,8 @@ pub(super) fn overlay_wheel_routing_preserved() {
 
     assert!(permission_overlay.active_permission().is_some());
     assert_eq!(permission_overlay.details_scroll, 8);
-    assert_eq!(permission_overlay.transcript_scroll, 3);
-    assert!(!permission_overlay.follow_mode);
+    assert_eq!(permission_overlay.transcript_view.transcript_scroll, 3);
+    assert!(!permission_overlay.transcript_view.follow_mode);
 }
 
 pub(super) fn replay_secondary_surfaces_remain_reachable_after_live_shell_refactor() {
@@ -273,9 +276,9 @@ pub(super) fn composer_enter_submits_and_shift_enter_inserts_newline() {
     );
     drop(intents);
 
-    assert!(app.prompt_buffer.is_empty());
+    assert!(app.composer.prompt_buffer.is_empty());
     assert_eq!(
-        app.prompt_history.last().map(String::as_str),
+        app.composer.prompt_history.last().map(String::as_str),
         Some("hello\nworld")
     );
 
@@ -304,7 +307,7 @@ pub(super) fn composer_ctrl_j_inserts_newline() {
         app.handle_key(key(crossterm::event::KeyCode::Char(c)));
     }
 
-    assert_eq!(app.prompt_buffer, "hello\nworld");
+    assert_eq!(app.composer.prompt_buffer, "hello\nworld");
 }
 
 pub(super) fn composer_submits_queued_followup_while_streaming() {
@@ -378,9 +381,12 @@ pub(super) fn composer_submits_queued_followup_while_streaming() {
     );
     drop(intents);
 
-    assert!(app.prompt_buffer.is_empty());
-    assert_eq!(app.prompt_cursor, 0);
-    assert_eq!(app.prompt_history.last().map(String::as_str), Some("next"));
+    assert!(app.composer.prompt_buffer.is_empty());
+    assert_eq!(app.composer.prompt_cursor, 0);
+    assert_eq!(
+        app.composer.prompt_history.last().map(String::as_str),
+        Some("next")
+    );
     let activity = app.activities.front().expect("streaming activity");
     assert_eq!(activity.request_id, "req_001");
     assert_eq!(activity.transcript_text, "streaming");

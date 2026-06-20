@@ -153,11 +153,11 @@ pub(super) fn live_shell_composer_contract_matches_shell_parity() {
     assert_live_shell_document_composer_contract(&ready, 100, 30, None, None, "Ctrl+p commands");
 
     let mut multiline = app::AppState::new_live(None, false, None);
-    multiline.prompt_buffer = (1..=8)
+    multiline.composer.prompt_buffer = (1..=8)
         .map(|line| format!("line {line}"))
         .collect::<Vec<_>>()
         .join("\n");
-    multiline.prompt_cursor = multiline.prompt_buffer.chars().count();
+    multiline.composer.prompt_cursor = multiline.composer.prompt_buffer.chars().count();
 
     let rendered = render_live_lines(&multiline, 100, 30);
     let lines = rendered.lines().collect::<Vec<_>>();
@@ -341,8 +341,8 @@ pub(super) fn session_view_ignores_duplicate_seq_without_losing_ui_state() {
     assert!(app.permission_submission_pending("perm_1"));
 
     app.focus = app::Focus::Prompt;
-    app.prompt_buffer = "draft".to_string();
-    app.prompt_cursor = "draft".chars().count();
+    app.composer.prompt_buffer = "draft".to_string();
+    app.composer.prompt_cursor = "draft".chars().count();
 
     app.ingest_event(envelope(
         1,
@@ -356,6 +356,6 @@ pub(super) fn session_view_ignores_duplicate_seq_without_losing_ui_state() {
     assert_eq!(app.events.len(), 1);
     assert!(app.active_permission().is_some());
     assert!(app.permission_submission_pending("perm_1"));
-    assert_eq!(app.prompt_buffer, "draft");
-    assert_eq!(app.prompt_cursor, "draft".chars().count());
+    assert_eq!(app.composer.prompt_buffer, "draft");
+    assert_eq!(app.composer.prompt_cursor, "draft".chars().count());
 }

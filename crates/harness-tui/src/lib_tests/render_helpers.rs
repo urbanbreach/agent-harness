@@ -480,6 +480,7 @@ pub(crate) fn transcript_turn_group_test_activity(
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        revision: 0,
     }
 }
 

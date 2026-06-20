@@ -171,7 +171,11 @@ pub(super) fn command_palette_state_filters_existing_commands() {
     assert_eq!(app.palette_cursor, 1);
     assert_eq!(
         app.palette_filtered,
-        vec!["new_session".to_string(), "agent_cycle".to_string()]
+        vec![
+            "new_session".to_string(),
+            "session_child_cycle".to_string(),
+            "agent_cycle".to_string()
+        ]
     );
     assert!(app.palette_filtered.iter().all(|command| {
         Action::palette_commands()

@@ -96,8 +96,8 @@ pub(super) fn permission_modal_preempts_palette() {
 pub(super) fn focus_returns_after_palette_close() {
     let mut app = app::AppState::new_live(None, false, None);
     app.focus = app::Focus::Details;
-    app.prompt_buffer = "keep prompt draft".to_string();
-    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.composer.prompt_buffer = "keep prompt draft".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
 
     app.handle_key(key_with_modifiers(
         crossterm::event::KeyCode::Char('p'),
@@ -106,15 +106,18 @@ pub(super) fn focus_returns_after_palette_close() {
     app.handle_key(key(crossterm::event::KeyCode::Char('d')));
     assert!(app.palette_visible);
     assert_eq!(app.focus, app::Focus::Details);
-    assert_eq!(app.prompt_buffer, "keep prompt draft");
+    assert_eq!(app.composer.prompt_buffer, "keep prompt draft");
     let open_debug = render_live_screen(&app, 120, 36);
     println!("PALETTE_OPEN\n{open_debug}");
 
     app.handle_key(key(crossterm::event::KeyCode::Esc));
     assert!(!app.palette_visible);
     assert_eq!(app.focus, app::Focus::Details);
-    assert_eq!(app.prompt_buffer, "keep prompt draft");
-    assert_eq!(app.prompt_cursor, "keep prompt draft".chars().count());
+    assert_eq!(app.composer.prompt_buffer, "keep prompt draft");
+    assert_eq!(
+        app.composer.prompt_cursor,
+        "keep prompt draft".chars().count()
+    );
     let closed_debug = render_live_screen(&app, 100, 24);
     println!("PALETTE_CLOSED\n{closed_debug}");
 }

@@ -76,8 +76,8 @@ pub(super) fn completed_shell_bottom_rows_do_not_duplicate_command_help_footers(
     );
     app.active_review_surface = Some(app::ReviewSurface::Events);
     app.focus = app::Focus::Prompt;
-    app.prompt_buffer = "keep this draft".to_string();
-    app.prompt_cursor = app.prompt_buffer.chars().count();
+    app.composer.prompt_buffer = "keep this draft".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
     app.ingest_event(envelope(
         1,
         Some("req_completed_decrowded_footer"),
