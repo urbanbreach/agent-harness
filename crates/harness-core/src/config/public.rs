@@ -48,16 +48,20 @@ pub struct PublicRuntimeConfig {
     #[serde(default)]
     pub instructions: Option<InstructionList>,
     #[serde(default)]
+    #[schemars(skip)]
     pub shell: Option<String>,
     #[serde(default, rename = "logLevel")]
+    #[schemars(skip)]
     pub log_level: Option<String>,
     #[serde(default)]
     pub server: Option<serde_json::Value>,
     #[serde(default)]
     pub command: Option<serde_json::Value>,
     #[serde(default)]
+    #[schemars(skip)]
     pub watcher: Option<serde_json::Value>,
     #[serde(default)]
+    #[schemars(skip)]
     pub snapshot: Option<bool>,
     #[serde(default)]
     pub plugin: Option<serde_json::Value>,
@@ -72,22 +76,28 @@ pub struct PublicRuntimeConfig {
     #[serde(default)]
     pub enabled_providers: Option<Vec<String>>,
     #[serde(default)]
+    #[schemars(skip)]
     pub username: Option<String>,
     #[serde(default)]
     pub formatter: Option<serde_json::Value>,
     #[serde(default)]
     pub lsp: Option<serde_json::Value>,
     #[serde(default)]
+    #[schemars(skip)]
     pub layout: Option<String>,
     #[serde(default)]
+    #[schemars(skip)]
     pub tools: Option<BTreeMap<String, bool>>,
     #[serde(default)]
     pub enterprise: Option<serde_json::Value>,
     #[serde(default)]
+    #[schemars(skip)]
     pub tool_output: Option<serde_json::Value>,
     #[serde(default)]
+    #[schemars(skip)]
     pub compaction: Option<serde_json::Value>,
     #[serde(default)]
+    #[schemars(skip)]
     pub experimental: Option<serde_json::Value>,
 }
 
