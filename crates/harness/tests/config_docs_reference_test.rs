@@ -155,6 +155,54 @@ fn config_docs_runtime_and_tui_keys_match_generated_schemas() {
 }
 
 #[test]
+fn config_docs_document_variable_substitution_and_config_layering() {
+    let root = repo_root();
+    let doc = std::fs::read_to_string(root.join("docs/config.md")).expect("read docs/config.md");
+
+    assert!(
+        doc.contains("## Variable substitution"),
+        "docs/config.md must document variable substitution"
+    );
+    assert!(
+        doc.contains("{env:VAR}"),
+        "docs/config.md must document {{env:VAR}} syntax"
+    );
+    assert!(
+        doc.contains("{file:path}"),
+        "docs/config.md must document {{file:path}} syntax"
+    );
+    assert!(
+        doc.contains("${VAR:-fallback}"),
+        "docs/config.md must document ${{VAR:-fallback}} syntax"
+    );
+    assert!(
+        doc.contains("apiKeyEnv"),
+        "docs/config.md must distinguish apiKeyEnv from {{env:VAR}}"
+    );
+
+    assert!(
+        doc.contains("## Config layering"),
+        "docs/config.md must document config layering"
+    );
+    assert!(
+        doc.contains("XDG global config"),
+        "docs/config.md must document XDG global config discovery"
+    );
+    assert!(
+        doc.contains("Project local config"),
+        "docs/config.md must document project local config discovery"
+    );
+    assert!(
+        doc.contains("Agent markdown files"),
+        "docs/config.md must document agent markdown file discovery"
+    );
+    assert!(
+        doc.contains("last-wins"),
+        "docs/config.md must document last-wins discovery order"
+    );
+}
+
+#[test]
 fn config_contract_semantic_metadata_matches_docs() {
     // arrange
     let contract = public_config_contract();

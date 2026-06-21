@@ -327,16 +327,12 @@ for those settings instead of mixing them into runtime config.
 | `autoshare` | Upstream-compatible sharing flag; inactive `false` is accepted, active sharing is rejected. |
 | `autoupdate` | Upstream-compatible update flag; inactive `false` is accepted, active updates are rejected. |
 | `command` | Upstream command configuration; accepted only when empty because the harness does not execute configured commands. |
-| `compaction` | Upstream-compatible compaction settings accepted as inert compatibility input; harness compaction knobs live under `runtime.compaction`. |
 | `default_agent` | Default interactive agent selected at startup; the shipped example keeps `build` as the default while `plan` remains selectable. |
 | `disabled_providers` | Upstream-compatible provider filter; hides matching configured and authenticated built-in providers from runtime model catalogs. |
 | `enabled_providers` | Upstream-compatible provider allow-list; when non-empty, only matching configured/authenticated built-in providers remain in runtime model catalogs. |
 | `enterprise` | Upstream enterprise configuration; accepted only when empty because the harness does not implement enterprise product integration. |
-| `experimental` | Upstream-compatible experimental settings accepted as inert compatibility input. |
 | `formatter` | Formatter registry. `false` disables formatters; `true` enables all 26 built-in formatters (the default when the key is omitted). An object accepts `enabled`, `experimentalOxfmt`, and named formatter entries such as `<name>: { disabled?, command?, environment?, extensions? }`. Built-in formatter names are `gofmt`, `mix`, `prettier`, `oxfmt`, `biome`, `zig`, `clang-format`, `ktlint`, `ruff`, `air`, `uv`, `rubocop`, `standardrb`, `htmlbeautifier`, `dart`, `ocamlformat`, `terraform`, `latexindent`, `gleam`, `shfmt`, `nixfmt`, `rustfmt`, `pint`, `ormolu`, `cljfmt`, `dfmt`. Formatters are selected by name, not by extension; each built-in formatter declares its own extensions, and an `extensions` override replaces the built-in list. `command` overrides discovery entirely; `environment` merges with the built-in environment (override wins). `$FILE` is substituted with the target file path. When several formatters match a file, they run sequentially in built-in registry declaration order, followed by any custom override-only formatters; failures surface as non-fatal warnings. |
 | `instructions` | Optional inline instructions or instruction file paths prepended before agent prompts. |
-| `layout` | Deprecated upstream layout setting accepted as inert compatibility input. |
-| `logLevel` | Upstream-compatible log-level setting accepted as inert compatibility input. |
 | `lsp` | Upstream-compatible LSP setting; `false` disables harness LSP overrides, object values map to harness LSP servers when possible. |
 | `mcp` | MCP server definitions keyed by server name. |
 | `mode` | Deprecated upstream alias for `agent`; entries are translated as agent definitions. |
@@ -348,14 +344,51 @@ for those settings instead of mixing them into runtime config.
 | `runtime` | Runtime knobs that are not provider/model/agent definitions, currently including provider-context compaction settings and provider retry policy. |
 | `server` | Upstream server configuration; accepted only when empty because server commands are outside this runtime config. |
 | `share` | Upstream sharing mode; only `disabled` is accepted. |
-| `shell` | Upstream-compatible default-shell setting accepted as inert compatibility input. |
 | `small_model` | Optional smaller model reference for custom secondary profiles. |
-| `snapshot` | Upstream-compatible snapshot setting accepted as inert compatibility input. |
 | `skills` | Shared skill discovery roots and permission overrides for skill loading. |
-| `tool_output` | Upstream-compatible tool-output truncation setting accepted as inert compatibility input. |
-| `tools` | Upstream-compatible top-level tool map accepted as inert compatibility input. |
-| `username` | Upstream-compatible username setting accepted as inert compatibility input. |
-| `watcher` | Upstream-compatible watcher settings accepted as inert compatibility input. |
+
+## Variable substitution
+
+The harness resolves variable references in config values before parsing. A
+single pass is applied to all config values via
+`resolve_config_value_references_with_lookup()`. Nested references (e.g.,
+`${VAR:-${OTHER}}`) are NOT expanded recursively — only one level of
+substitution is performed.
+
+| Syntax | Behavior |
+| --- | --- |
+| `{env:VAR}` | Environment variable substitution. Returns an empty string if `VAR` is missing from the environment. |
+| `{file:path}` | File content substitution. The path is resolved relative to the config file directory; absolute paths are used as-is. |
+| `${VAR}` | Shell-style environment variable. If `VAR` is missing from the environment, this produces a config error rather than expanding to an empty string. Use `${VAR:-}` for an explicit empty fallback. |
+| `${VAR:-fallback}` | Environment variable with fallback value. If `VAR` is missing or empty, `fallback` is used. |
+
+Note: `apiKeyEnv` in provider config is a separate mechanism (multi-env
+fallback chain with credential redaction) — it is NOT the same as `{env:VAR}`.
+
+## Config layering
+
+The harness discovers and merges config from multiple sources. Later layers
+override earlier ones, so project-local settings take precedence over global
+defaults.
+
+### Discovery order
+
+1. **XDG global config** (`$XDG_CONFIG_HOME/harness/harness.jsonc`, fallback:
+   `~/.config/harness/harness.jsonc`) — shared defaults across projects.
+2. **Project local config** (`./harness.jsonc` or `./harness.json`) —
+   project-specific overrides.
+3. **Agent markdown files** (`.agent-harness/agents/*.md`) — agent definitions
+   with JSON5 frontmatter. Frontmatter fields take effect when no JSON config
+   override exists for the same field.
+
+### Merge precedence
+
+- Project local config overrides XDG global config.
+- Agent markdown frontmatter overrides the JSON config `agent` section for
+  fields that are not explicitly set in JSON config (empty or default values
+  fall back to markdown).
+- Markdown agent discovery is last-wins: project-level markdown files override
+  shipped agents with the same name.
 
 ## Extension manifest descriptors
 

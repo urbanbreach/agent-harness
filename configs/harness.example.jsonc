@@ -198,4 +198,10 @@
       "enabled": false
     }
   }
+
+  // Variable substitution examples (uncomment to use):
+  //   "{env:HOME}"             — expands to $HOME, empty string if unset
+  //   "${OPENAI_API_KEY}"      — expands to $OPENAI_API_KEY, errors if unset
+  //   "${OPENAI_API_KEY:-key}" — expands to $OPENAI_API_KEY, "key" if unset/empty
+  //   "{file:secrets/key.txt}" — expands to file contents (relative to config dir)
 }
