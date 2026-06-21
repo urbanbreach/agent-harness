@@ -1,4 +1,4 @@
-You are implementing a config restructure for the agent-harness Rust workspace. The full spec is at `.agent-harness/plans/config-restructure-spec.md`. Read it now — all of it. It is your single source of truth.
+You are implementing a config restructure for the agent-harness Rust workspace. The full spec is at `docs/config-restructure-spec.md`. Read it now — all of it. It is your single source of truth.
 
 ## MODEL
 

@@ -10,7 +10,7 @@
 
 The agent-harness config is "almost there but not quite" when compared to Opencode. The adversarial analysis discovered that **most features that seem missing already exist** — wildcard permissions, variable substitution, markdown frontmatter parsing. The real gaps are:
 
-1. **The merge function is broken** — it silently drops 8 of 14 markdown frontmatter fields
+1. **The merge function is broken** — it silently drops 9 of 14 markdown frontmatter fields
 2. **Discovery is first-wins** — project-level markdown can't override shipped agents
 3. **Frontmatter struct is misaligned** — missing `enable`/`disable`/`use_small_model`/`PublicAgentTools`
 4. **Permission field name mismatch** — `shell` vs `bash` across structs
@@ -149,7 +149,7 @@ While `PublicProfilePermissions` uses `bash` with `alias = "shell"`.
 
 ### 3.3 Must Not Break
 
-- Plan agent's `PermissionRuleSet` (agents.rs:304-317) must stay in Rust code, not markdown
+- Plan agent's `PermissionRuleSet` (agents.rs:304-320) must stay in Rust code, not markdown
 - Hidden system agents (`title`, `summary`, `compaction`) must stay compiled-in Rust defaults
 - `default_shipped_agents()` must stay called before markdown discovery
 - All existing configs must continue to work without modification
@@ -170,7 +170,7 @@ The implementer MUST actively refer to the Opencode source code in `inspirations
 | `inspirations/opencode/packages/core/src/v1/config/agent.ts` | How Opencode defines agent config fields. Note the `mode`, `steps`, `permission`, `tools` fields. |
 | `inspirations/opencode/packages/core/src/v1/config/permission.ts` | How Opencode structures permissions (simple map + catch-all). |
 | `inspirations/opencode/packages/opencode/src/config/agent.ts` | How Opencode discovers and loads markdown agent files. Note `ConfigAgent.load()` and the `{agent,agents}/**/*.md` glob pattern. |
-| `inspirations/opencode/.opencode/agent/triage.md` | A real example of an Opencode agent markdown file with full frontmatter. |
+| `inspirations/opencode/.opencode/agent/triage.md` | A real example of an Opencode agent markdown file with full frontmatter. **Note:** This file uses YAML frontmatter, NOT JSON5. Do not copy the format — agent-harness uses JSON5 frontmatter. |
 | `inspirations/opencode/specs/v2/config.md` | Opencode's V2 config spec. Learn what they're moving AWAY from (don't copy their mistakes). |
 
 ### 4.2 Reference Reading (consult as needed)
@@ -205,22 +205,21 @@ The implementer MUST actively refer to the Opencode source code in `inspirations
 
 | Field | Current (broken) | Required (fixed) |
 |-------|-----------------|-----------------|
-| `description` | `config.description.clone()` | `config.description.clone().or_else(\|\| markdown.frontmatter.description.clone())` |
-| `model_ref` | `config.model_ref.clone()` | `config.model_ref.clone().or_else(\|\| markdown.frontmatter.model_ref.clone())` — BUT see note below |
-| `model_ref_explicit` | `config.model_ref_explicit` | `config.model_ref_explicit \|\| markdown.frontmatter.model_ref.is_some()` |
-| `variant` | `config.variant.clone()` | `config.variant.clone().or_else(\|\| markdown.frontmatter.variant.clone())` |
+| `description` | `config.description.clone()` | `if config.description.is_empty() { markdown.frontmatter.description.clone().unwrap_or_default() } else { config.description.clone() }` |
+| `model_ref` | `config.model_ref.clone()` | `if !config.model_ref_explicit { markdown.frontmatter.model_ref.clone().unwrap_or_else(|| config.model_ref.clone()) } else { config.model_ref.clone() }` — BUT see note below |
+| `model_ref_explicit` | `config.model_ref_explicit` | `config.model_ref_explicit || markdown.frontmatter.model_ref.is_some()` |
+| `variant` | `config.variant.clone()` | `config.variant.clone().or_else(|| markdown.frontmatter.variant.clone())` |
 | `temperature` | `config.temperature` | `config.temperature.or(markdown.frontmatter.temperature)` |
-| `permissions` | `config.permissions.clone()` | `config.permissions.clone().or_else(\|\| markdown.frontmatter.permissions.clone())` |
+| `permissions` | `config.permissions.clone()` | `config.permissions.clone().or_else(|| markdown.frontmatter.permissions.clone())` |
 | `max_iters` | `config.max_iters` | `config.max_iters.or(markdown.frontmatter.max_iters)` |
 | `tool_failure_mode` | `config.tool_failure_mode` | See note below |
 | `tools` | `config.tools.clone()` | `if config.tools.is_empty() { markdown.frontmatter.tools.clone().unwrap_or_default() } else { config.tools.clone() }` |
 
-**Note on `model_ref`:** `ProfileConfig.model_ref` is a `String` (not `Option<String>`), so it always has a value. The fallback to markdown only matters when the config was built from `profile_from_markdown_agent()` which uses `"default:default"` as fallback. The implementer should check whether `config.model_ref == "default:default"` or use a different approach. **The implementer has freedom to decide the exact approach** as long as:
-- When JSON config explicitly sets a model, JSON wins
-- When JSON config doesn't set a model but markdown frontmatter does, markdown wins
-- When neither sets a model, the existing fallback behavior is preserved
+**Note on `model_ref`:** `ProfileConfig.model_ref` is a `String` (not `Option<String>`), so it always has a value. Use `config.model_ref_explicit` to determine if JSON config explicitly set the model. If `config.model_ref_explicit == false`, fall back to `markdown.frontmatter.model_ref.clone()`. If `config.model_ref_explicit == true`, JSON wins. This is the same pattern used in `public_agent_to_profile()` (agents.rs:672-677). Do NOT check for `"default:default"` — shipped agents use actual model refs (e.g., `"openai-codex/gpt-5.4-mini"`), so that check would miss most cases.
 
-**Note on `tool_failure_mode`:** `ProfileConfig.tool_failure_mode` is a `ToolFailureMode` (not `Option<ToolFailureMode>`), and it defaults to `ContinueAsToolMessage`. The implementer should check whether the config's value is the default and fall back to markdown if so. **The implementer has freedom** to decide the exact approach.
+**Note on `tool_failure_mode`:** `ProfileConfig.tool_failure_mode` is a `ToolFailureMode` (not `Option<ToolFailureMode>`). The serde default is `ContinueAsToolMessage` but `Default::default()` is `FailTurn`, so checking for the default is ambiguous. Accept the ambiguity: if `config.tool_failure_mode == ToolFailureMode::ContinueAsToolMessage` (the serde default), fall back to `markdown.frontmatter.tool_failure_mode`. Document this limitation in a code comment — if a user explicitly sets `continue_as_tool_message` in JSON config, the markdown value would override it. This is an accepted trade-off to avoid adding a `tool_failure_mode_explicit` flag to all 11+ `ProfileConfig` construction sites.
+
+**Note on `mode`:** The `mode` field already has a conditional fallback at discovery.rs:158-162 (falls back to markdown when config is `AgentMode::All`). No change needed for this field.
 
 **TDD requirement:** Write tests FIRST that verify:
 1. Markdown `description` takes effect when JSON config has no `description`
@@ -234,7 +233,7 @@ The implementer MUST actively refer to the Opencode source code in `inspirations
 9. JSON config still wins when both are present (precedence preserved for ALL fields)
 10. Existing behavior is preserved when no markdown exists
 
-**No existing tests exist for this function** — tests must be written from scratch.
+**No existing tests directly test `merge_markdown_agent_with_config()`** — tests must be written from scratch. Reuse helpers and fixtures from `crates/harness-core/src/config/tests/env_assets_test.rs` where applicable.
 
 **Verification:**
 ```bash
@@ -249,7 +248,7 @@ cargo test -p harness-core
 **File:** `crates/harness-core/src/config/discovery.rs`
 **Function:** `discover_markdown_agents()` (line 217)
 
-**Problem:** Line 241 has `if agents.contains_key(&name) { continue; }` which means the first discovered file wins. Project-level markdown can't override shipped agents.
+**Problem:** Line 241 has `if agents.contains_key(&name) { continue; }` which means the first discovered file wins. The first-wins guard prevents later markdown files from overriding earlier ones in nested directory structures. The fix changes to last-wins and reorders search dirs so that shipped agents come first and project-level agents come last, giving project-level precedence with last-wins.
 
 **Fix:**
 1. Remove the `if agents.contains_key(&name) { continue; }` guard at line 241
@@ -257,14 +256,15 @@ cargo test -p harness-core
 
 **Search dir ordering:** Check `agent_prompt_search_dirs()` (line 372) and `discovery_search_bases()` (line 400). The implementer must verify the current ordering and reverse it if needed so that:
 - Shipped agents (`.agent-harness/agents/`) are discovered first
-- Global config dir agents are discovered second
 - Project-level agents are discovered last (and win)
+
+**Note:** `agent_prompt_search_dirs()` does NOT search XDG global config dirs. Do not add a "global config dir" step — only shipped and project-level dirs are in scope.
 
 **TDD requirement:** Write tests FIRST that verify:
 1. Two markdown files with the same name in different dirs — the last-discovered one wins
 2. Project-level markdown overrides a shipped agent with the same name
 3. Shipped agents still load correctly when no project-level override exists
-4. The search dir order is: shipped → global → project (so project wins)
+4. The search dir order is: shipped → project (so project wins)
 
 **Verification:**
 ```bash
@@ -314,26 +314,48 @@ cargo test -p harness-core
 **Field to change:**
 4. `tools: Option<Vec<String>>` → `tools: Option<PublicAgentTools>` — to support both List and Map shapes. Import `PublicAgentTools` from `crates/harness-core/src/config/public/agents.rs`.
 
+**Prerequisite changes for `PublicAgentTools` import:**
+5. **Make `tool_ids()` accessible:** Change `fn tool_ids(self)` to `pub fn tool_ids(self)` (or `pub(crate) fn tool_ids(self)`) in `crates/harness-core/src/config/public/agents.rs:198`. The function is currently private and cannot be called from `discovery.rs`.
+6. **Export `PublicAgentTools`:** Add `PublicAgentTools` to the re-export in `crates/harness-core/src/config/public.rs:9`: change `pub use self::agents::{PublicAgentConfig, PublicAgentMap};` to `pub use self::agents::{PublicAgentConfig, PublicAgentMap, PublicAgentTools};`
+
+**Note on `tools` merge from Task 1:** Task 1's `tools` merge line uses `markdown.frontmatter.tools.clone().unwrap_or_default()` (which returns `Vec<String>`). After Task 4 changes `MarkdownAgentFrontmatter.tools` to `Option<PublicAgentTools>`, this line must be updated to: `if config.tools.is_empty() { markdown.frontmatter.tools.clone().map(|t| t.tool_ids()).unwrap_or_default() } else { config.tools.clone() }`. Note: `tool_ids(self)` consumes `self`, so `.clone()` is needed if the `PublicAgentTools` value is used elsewhere.
+
 **Changes to `ProfileConfig`** (`crates/harness-core/src/config.rs:729`):
 - Add `enabled: Option<bool>` field with `#[serde(default)]` and `#[schemars(skip)]` (internal-only, not in public schema)
+- **ALL construction sites must add `enabled: None`:**
+  - `default_shipped_agents()` in `agents.rs:209-601` — 7 direct `ProfileConfig { ... }` sites (build, plan, explore, general, title, summary, compaction)
+  - `category_routing_profile()` in `agents.rs:604-645` — 1 site (called 8 times for category agents)
+  - `public_agent_to_profile()` in `agents.rs:665-770` — 1 site
+  - `profile_from_markdown_agent()` in `discovery.rs:180-215` — 1 site (set `enabled` based on `enable`/`disable` frontmatter)
+  - `merge_markdown_agent_with_config()` in `discovery.rs:136-178` — 1 site (merge `enabled` field)
+  - Total: 11 code locations must be updated
+
+**Note on `public_agent_to_profile()`:** This function sets `enabled: None` — JSON path filtering happens at `public.rs:771-781` before `ProfileConfig` is created, so `enabled` is always `None` for JSON-configured agents. No additional filtering is needed in this function.
 
 **Changes to `profile_from_markdown_agent()`** (discovery.rs:180):
-- Handle `enable`/`disable`: if `disable == true` or `enable == Some(false)`, return `Ok(None)` (agent is disabled)
+- Handle `enable`/`disable` with TWO paths:
+  - **Markdown-only path** (`profile_from_markdown_agent()`): if `disable == true` or `enable == Some(false)`, return `Ok(None)` (agent is disabled, not included in map)
+  - **Merge path** (`merge_markdown_agent_with_config()`): set `enabled: Some(false)` when markdown has `disable == true` or `enable == Some(false)`. Then `merge_configured_and_markdown_agents()` filters out agents with `enabled == Some(false)` AFTER merge (so JSON config can re-enable a markdown-disabled agent by setting `enabled: Some(true)`)
 - Store `enabled` in `ProfileConfig`
-- Handle `use_small_model`: if true, use the small model ref (requires passing `small_model_ref` parameter to the function)
+- Handle `use_small_model`: if true, use the small model ref (requires passing `small_model_ref` parameter to the function). `model_ref` takes precedence over `use_small_model` (following the `public_agent_to_profile()` pattern at agents.rs:678-684 where `agent.model.clone().or_else(...)` checks `use_small_model` only as fallback)
 - Handle `PublicAgentTools`: call `.tool_ids()` to convert to `Vec<String>`
 
 **Changes to `merge_markdown_agent_with_config()`** (discovery.rs:136):
 - Merge `enabled` field: JSON config wins, markdown is fallback
-- Handle `disable` from markdown
+- Handle `disable` from markdown: set `enabled: Some(false)` when markdown has `disable == true` or `enable == Some(false)`
 
 **Changes to `merge_configured_and_markdown_agents()`** (discovery.rs:99):
 - Pass `small_model_ref` to `profile_from_markdown_agent()` — requires plumbing the small model ref through the call chain
-- Filter out disabled agents after merge
+- Filter out disabled agents after merge (check `enabled == Some(false)`)
 
-**Changes to function signatures:**
-- `profile_from_markdown_agent()` needs a new `small_model_ref: Option<&str>` parameter
-- `merge_configured_and_markdown_agents()` needs to receive `small_model_ref` — either as a parameter or from the configured profiles
+**Changes to plumb `small_model_ref`:**
+- Add `small_model: Option<String>` to `HarnessConfig` (the internal config struct) with `#[serde(skip)]` and `#[schemars(skip)]`
+- Populate it from `PublicRuntimeConfig.small_model` during `translate_public_runtime_root()`
+- `merge_configured_and_markdown_agents()` reads `config.small_model.as_deref()` and passes it to `profile_from_markdown_agent()`
+- `profile_from_markdown_agent()` signature changes to: `fn profile_from_markdown_agent(markdown: &MarkdownAgentFile, fallback_model_ref: Option<&str>, small_model_ref: Option<&str>) -> Result<Option<ProfileConfig>, ConfigError>`
+- When `use_small_model == true` and `small_model_ref` is `Some`, use it as the `model_ref`
+
+**Relationship between `fallback_model_ref` and `small_model_ref`:** `fallback_model_ref` is the default model ref (used when frontmatter has no `model`). `small_model_ref` is the small model ref (used when `use_small_model: true`). They are independent — `fallback_model_ref` is used when `use_small_model` is false or unset, `small_model_ref` is used when `use_small_model` is true. This mirrors the `public_agent_to_profile()` pattern at agents.rs:678-684.
 
 **TDD requirement:** Write tests FIRST that verify:
 1. Markdown frontmatter with `enable: false` disables the agent
@@ -348,10 +370,10 @@ cargo test -p harness-core
 ```bash
 cargo test -p harness-core -- config::discovery
 cargo test -p harness-core
-cargo test -p harness --test config_docs_reference_test
-cargo test -p harness --test config_schema_cli_test
 cargo test -p harness --test bootstrap_profiles_test
 ```
+
+**Note:** `config_docs_reference_test` and `config_schema_cli_test` are drift tests updated in Task 7. They are NOT included here to avoid a circular verification dependency.
 
 ---
 
@@ -379,6 +401,10 @@ cargo test -p harness --test bootstrap_profiles_test
 
 **TDD requirement:** Write a test FIRST that verifies these keys do NOT appear in the generated JSON schema properties.
 
+**Additional changes:**
+- Update `docs/config.md` to remove or deprecate documentation of InertCompatibility keys. This is required by the UPDATE TOGETHER table in root `AGENTS.md` (public config shape changes require updating `docs/config.md`, `configs/*.json`, examples, and config docs/schema tests).
+- **Note on external impact:** Removing InertCompatibility keys from the generated JSON schema may break external schema validators that previously accepted these keys. This is intentional — the keys were silently ignored, so validators that accepted them were giving false positives. The `configs/config.json` regeneration (Task 7) will reflect this removal.
+
 **Verification:**
 ```bash
 cargo test -p harness --test config_docs_reference_test
@@ -392,15 +418,15 @@ cargo run -p harness -- --config configs/harness.example.jsonc config validate
 
 **Files:** `docs/config.md`, `configs/harness.example.jsonc`
 
-**Problem:** Variable substitution (`{env:VAR}`, `{file:path}`, `${VAR:-fallback}`) exists in `loader.rs:345-405` but is undocumented. Config layering (XDG global → project local → agent markdown) is partially documented but not clearly explained.
+**Problem:** Variable substitution (`{env:VAR}`, `{file:path}`, `${VAR:-fallback}`) exists in `loader.rs:345-420` but is undocumented. Config layering (XDG global → project local → agent markdown) is partially documented but not clearly explained.
 
 **Fix:**
 1. Add a "Variable Substitution" section to `docs/config.md` documenting:
    - `{env:VAR}` — environment variable substitution (returns empty string if missing)
    - `{file:path}` — file content substitution
-   - `${VAR}` — shell-style environment variable
+   - `${VAR}` — shell-style environment variable. **Note:** Unlike shell behavior, if `VAR` is missing from the environment, this produces a config error rather than expanding to an empty string. Use `${VAR:-}` for explicit empty fallback.
    - `${VAR:-fallback}` — environment variable with fallback value
-   - Applied recursively to all config values via `resolve_config_value_references_with_lookup()`
+   - Applied as a single pass to all config values via `resolve_config_value_references_with_lookup()`. Nested references (e.g., `${VAR:-${OTHER}}`) are NOT expanded recursively — only one level of substitution is performed.
    - Note: `apiKeyEnv` in provider config is a separate mechanism (multi-env fallback chain with credential redaction) — NOT the same as `{env:VAR}`
 
 2. Add a "Config Layering" section to `docs/config.md` documenting:
@@ -408,7 +434,7 @@ cargo run -p harness -- --config configs/harness.example.jsonc config validate
    - Project local config (`./harness.jsonc`)
    - Agent markdown files (`.agent-harness/agents/*.md`)
    - Merge precedence: project local overrides XDG global; agent markdown frontmatter overrides JSON config `agent` section (after Task 1 fix)
-   - Discovery order: shipped → global → project (last-wins, after Task 2 fix)
+   - Discovery order: shipped → project (last-wins, after Task 2 fix)
 
 3. Add variable substitution examples to `configs/harness.example.jsonc` in comments
 
@@ -423,7 +449,7 @@ cargo test -p harness --test config_docs_reference_test
 
 ### Task 7: Update drift tests and final verification
 
-**Files:** `crates/harness/tests/config_docs_reference_test.rs`, `crates/harness/tests/config_schema_cli_test.rs`
+**Files:** `crates/harness/tests/config_docs_reference_test.rs`, `crates/harness/tests/config_schema_cli_test.rs`, `crates/harness/tests/bootstrap_profiles_test.rs`, `crates/harness/tests/snapshots/` (15+ snapshot files that capture generated JSON schema output)
 **Depends on:** Tasks 1-6
 
 **Problem:** Drift tests validate that docs, schema, and contract are in sync. Changes from Tasks 1-6 will cause drift test failures that must be resolved.
@@ -435,7 +461,7 @@ cargo test -p harness --test config_docs_reference_test
    - Variable substitution documented (Task 6)
 2. Update `config_schema_cli_test.rs` sub-tests as needed
 3. Update any snapshot files that capture the generated JSON schema
-4. Regenerate `configs/config.json` (generated schema) if needed
+4. Regenerate `configs/config.json` (generated schema) — this is NOT conditional. The schema WILL change due to Task 5 (InertCompatibility keys removed) and Task 4 (new frontmatter fields). Run the schema generation command and commit the updated `configs/config.json`.
 
 **Verification (run ALL — no skipping):**
 ```bash
@@ -525,18 +551,12 @@ The `custom-test.md` file MUST include frontmatter that exercises every field fi
 ---
 {
   "description": "E2E test agent for frontmatter enrichment verification",
-  "model": "umans-ai-coding-plan/umans-glm-5.2",
+  "model": "mock/default",
   "variant": "high",
   "temperature": 0.3,
   "permissions": {
     "bash": "ask",
-    "edit": "allow",
-    "rules": {
-      "edit": [
-        { "selector": "*", "mode": "deny" },
-        { "selector": "prefix:/tmp/", "mode": "allow" }
-      ]
-    }
+    "edit": "allow"
   },
   "tools": ["read", "glob", "grep", "list", "bash"],
   "max_iters": 5,
@@ -547,6 +567,10 @@ The `custom-test.md` file MUST include frontmatter that exercises every field fi
 You are a test agent for E2E verification.
 ```
 
+**Note on `bash` in frontmatter:** The E2E frontmatter uses `bash` in permissions, which requires Task 3's `#[serde(alias = "bash")]` fix to be complete. If running E2E before Task 3 is done, use `shell` instead of `bash` in the frontmatter.
+
+**Note on frontmatter model:** The frontmatter model is `mock/default` to match the E2E config's provider. Using a model with no matching provider (e.g., `umans-ai-coding-plan/umans-glm-5.2`) would cause model resolution to fail after Task 1's fix makes frontmatter models take effect.
+
 The `harness.jsonc` in the test workspace MUST use the mock provider (no network calls):
 
 ```jsonc
@@ -554,7 +578,9 @@ The `harness.jsonc` in the test workspace MUST use the mock provider (no network
   "$schema": "../../srv/samba/code/accela/agent-harness/configs/config.json",
   "provider": {
     "mock": {
-      "type": "mock",
+      "type": "openai_compatible",
+      "baseURL": "http://localhost:0",
+      "apiKey": "test-key",
       "models": { "default": { "name": "Mock" } }
     }
   },
@@ -564,7 +590,11 @@ The `harness.jsonc` in the test workspace MUST use the mock provider (no network
 }
 ```
 
+**Note:** The `model` field is required so that `default_shipped_agents()` returns a non-empty map. Without it, no shipped agents exist for Step 5's override test. The provider type must be `openai_compatible` (the only valid `ProviderConfig` variant) — `"type": "mock"` would fail to parse.
+
 **Note:** The implementer has freedom to adjust the exact test workspace structure, config contents, and agent frontmatter as long as it exercises the fields fixed by Tasks 1-4. If the mock provider requires cassettes, check `crates/harness-providers/` for existing cassette fixtures or create a minimal one.
+
+**Note on mock provider:** The `--mock` flag uses `golden_path_provider()` with hardcoded events for specific prompt digests, not cassettes. If the custom agent's prompt doesn't match a recognized digest, Step 3 will fail. This is acceptable — document the failure reason and proceed to Step 4.
 
 #### Verification Steps
 
@@ -578,7 +608,7 @@ cargo run -p harness -- --config /tmp/harness-e2e-test/harness.jsonc doctor --js
 
 Verify in the output:
 - The `custom-test` agent appears in the agent catalog
-- Its model is `umans-ai-coding-plan/umans-glm-5.2` (from markdown frontmatter, NOT from JSON config)
+- Its model is `mock/default` (from markdown frontmatter, NOT from JSON config)
 - Its variant is `high` (from markdown frontmatter)
 - Its temperature is `0.3` (from markdown frontmatter)
 - Its tools list includes `read`, `glob`, `grep`, `list`, `bash` (from markdown frontmatter)
@@ -601,7 +631,7 @@ cargo run -p harness -- --config /tmp/harness-e2e-test/harness.jsonc run --mock 
 
 If a mock cassette is missing and this fails, document the failure reason and proceed to Step 4. If it succeeds, verify in `/tmp/harness-e2e-events.jsonl`:
 - The agent name is `custom-test`
-- The model ref is `umans-ai-coding-plan/umans-glm-5.2`
+- The model ref is `mock/default`
 
 **Step 4: Offline stress harness passes**
 
@@ -610,6 +640,8 @@ scripts/stress-harness.sh --mode offline --config /tmp/harness-e2e-test/harness.
 ```
 
 Verify the stress harness completes without config-related failures.
+
+**Note on stress-harness.sh:** The `--mode offline` flag only passes `--config` to the `config_validate` stage. Execution stages do not use `--config` for custom agent frontmatter at runtime. Step 4 verifies config validation only, not custom agent frontmatter at runtime.
 
 **Step 5: Discovery last-wins works at runtime**
 
@@ -729,8 +761,8 @@ The implementer has freedom to make decisions in these areas:
 - Choose whether to add tests to existing test files or create new ones
 
 ### 8.6 Approach to model_ref Fallback
-- The spec says `model_ref` is a `String` (not `Option`), so it always has a value
-- The implementer may choose to: add a `model_ref_from_markdown: bool` flag, check for `"default:default"`, use a sentinel value, or restructure to use `Option<String>` internally
+- `ProfileConfig.model_ref` is a `String` (not `Option<String>`), so it always has a value. Do NOT restructure to `Option<String>` — that would break the public serialization contract
+- The implementer may choose to: use `config.model_ref_explicit` (the RECOMMENDED approach, see Task 1's updated note), add a `model_ref_from_markdown: bool` flag, or use a sentinel value
 - Any approach is acceptable as long as the behavior is correct and tests verify it
 
 ---
@@ -738,14 +770,16 @@ The implementer has freedom to make decisions in these areas:
 ## 9. Task Dependency Graph
 
 ```
-Wave 1 (parallel — no dependencies):
+Wave 1a (parallel — no dependencies):
 ├── Task 1: Fix merge function field precedence
-├── Task 2: Fix discovery first-wins → last-wins
 ├── Task 3: Add bash alias to ProfilePermissions::shell
 ├── Task 5: Remove InertCompatibility keys from schema
 └── Task 6: Document variable substitution and config layering
 
-Wave 2 (after Wave 1):
+Wave 1b (after Task 1 — Task 2 also modifies discovery.rs):
+└── Task 2: Fix discovery first-wins → last-wins
+
+Wave 2 (after Wave 1b):
 └── Task 4: Align MarkdownAgentFrontmatter with PublicAgentConfig
     (depends on Task 1 — merge function must be fixed first)
 
@@ -754,7 +788,9 @@ Wave 3 (after Wave 2):
     (depends on all previous tasks)
 ```
 
-**Critical path:** Task 1 → Task 4 → Task 7
+**Note:** Tasks 1 and 2 both modify `crates/harness-core/src/config/discovery.rs`. They MUST be serialized (Task 1 before Task 2) to avoid merge conflicts. Alternatively, they can be combined into a single task.
+
+**Critical path:** Task 1 → Task 2 → Task 4 → Task 7
 
 ---
 
