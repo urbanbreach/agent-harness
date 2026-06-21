@@ -70,7 +70,13 @@ struct MarkdownAgentFrontmatter {
     pub max_iters: Option<usize>,
     #[serde(alias = "toolFailureMode")]
     pub tool_failure_mode: Option<ToolFailureMode>,
-    pub tools: Option<Vec<String>>,
+    pub tools: Option<PublicAgentTools>,
+    #[serde(default, alias = "enabled")]
+    pub enable: Option<bool>,
+    #[serde(default)]
+    pub disable: bool,
+    #[serde(default, alias = "smallModel")]
+    pub use_small_model: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -91,7 +97,15 @@ pub(super) fn resolve_discovered_prompt_assets_with_current_dir(
     config_path: &Path,
     current_dir: Option<&Path>,
 ) -> Result<(), ConfigError> {
-    parsed.agents = merge_configured_and_markdown_agents(&parsed.agents, config_path, current_dir)?;
+    let small_model_ref = parsed.small_model.as_deref();
+    let disabled_agents = parsed.disabled_agents.clone();
+    parsed.agents = merge_configured_and_markdown_agents(
+        &parsed.agents,
+        config_path,
+        current_dir,
+        small_model_ref,
+        &disabled_agents,
+    )?;
     parsed.instruction_files = discover_instruction_files(config_path, current_dir)?;
     Ok(())
 }
@@ -100,6 +114,8 @@ fn merge_configured_and_markdown_agents(
     configured: &BTreeMap<String, ProfileConfig>,
     config_path: &Path,
     current_dir: Option<&Path>,
+    small_model_ref: Option<&str>,
+    disabled_agents: &BTreeSet<String>,
 ) -> Result<BTreeMap<String, ProfileConfig>, ConfigError> {
     let discovered = discover_markdown_agents(config_path, current_dir)?;
     let agent_names = discovered
@@ -110,6 +126,9 @@ fn merge_configured_and_markdown_agents(
     let mut merged = BTreeMap::new();
 
     for name in agent_names {
+        if disabled_agents.contains(&name) {
+            continue;
+        }
         let profile = match (discovered.get(&name), configured.get(&name)) {
             (Some(markdown), Some(config)) => {
                 Some(merge_markdown_agent_with_config(config, markdown))
@@ -120,12 +139,15 @@ fn merge_configured_and_markdown_agents(
                     .values()
                     .next()
                     .map(|profile| profile.model_ref.as_str());
-                profile_from_markdown_agent(markdown, fallback_model_ref)?
+                profile_from_markdown_agent(markdown, fallback_model_ref, small_model_ref)?
             }
             (None, None) => None,
         };
 
         if let Some(profile) = profile {
+            if profile.enabled == Some(false) {
+                continue;
+            }
             merged.insert(name, profile);
         }
     }
@@ -143,17 +165,55 @@ fn merge_markdown_agent_with_config(
         .or_else(|| markdown.prompt_body.clone())
         .or_else(|| markdown.frontmatter.system_prompt.clone());
 
+    // `model_ref` is a `String` (not `Option<String>`), so it always has a
+    // value. Use `model_ref_explicit` to determine if JSON config explicitly
+    // set the model. When JSON config did not explicitly set it, fall back to
+    // the markdown frontmatter value.
+    let model_ref = if config.model_ref_explicit {
+        config.model_ref.clone()
+    } else {
+        markdown
+            .frontmatter
+            .model_ref
+            .clone()
+            .unwrap_or_else(|| config.model_ref.clone())
+    };
+
+    // `tool_failure_mode` is a `ToolFailureMode` (not `Option`), so checking
+    // for the default is ambiguous: the serde default is
+    // `ContinueAsToolMessage` but `Default::default()` is `FailTurn`. We
+    // accept the ambiguity: if the config has `ContinueAsToolMessage` (the
+    // serde default), fall back to the markdown value. This means a user who
+    // explicitly sets `continue_as_tool_message` in JSON config would have
+    // their value overridden by markdown — an accepted trade-off to avoid
+    // adding a `tool_failure_mode_explicit` flag to all construction sites.
+    let tool_failure_mode = if config.tool_failure_mode == ToolFailureMode::ContinueAsToolMessage {
+        markdown
+            .frontmatter
+            .tool_failure_mode
+            .unwrap_or(config.tool_failure_mode)
+    } else {
+        config.tool_failure_mode
+    };
+
     ProfileConfig {
         name: config
             .name
             .clone()
             .or_else(|| markdown.frontmatter.name.clone()),
-        description: config.description.clone(),
+        description: if config.description.is_empty() {
+            markdown.frontmatter.description.clone().unwrap_or_default()
+        } else {
+            config.description.clone()
+        },
         system_prompt: prompt,
-        model_ref: config.model_ref.clone(),
-        model_ref_explicit: config.model_ref_explicit,
-        variant: config.variant.clone(),
-        temperature: config.temperature,
+        model_ref,
+        model_ref_explicit: config.model_ref_explicit || markdown.frontmatter.model_ref.is_some(),
+        variant: config
+            .variant
+            .clone()
+            .or_else(|| markdown.frontmatter.variant.clone()),
+        temperature: config.temperature.or(markdown.frontmatter.temperature),
         top_p: config.top_p.or(markdown.frontmatter.top_p),
         mode: if matches!(config.mode, AgentMode::All) {
             markdown.frontmatter.mode.unwrap_or(config.mode)
@@ -170,26 +230,59 @@ fn merge_markdown_agent_with_config(
         } else {
             config.options.clone()
         },
-        permissions: config.permissions.clone(),
-        max_iters: config.max_iters,
-        tool_failure_mode: config.tool_failure_mode,
-        tools: config.tools.clone(),
+        permissions: config
+            .permissions
+            .clone()
+            .or_else(|| markdown.frontmatter.permissions.clone()),
+        max_iters: config.max_iters.or(markdown.frontmatter.max_iters),
+        tool_failure_mode,
+        tools: if config.tools.is_empty() {
+            markdown
+                .frontmatter
+                .tools
+                .clone()
+                .map(|t| t.tool_ids())
+                .unwrap_or_default()
+        } else {
+            config.tools.clone()
+        },
+        enabled: config.enabled.or_else(|| {
+            if markdown.frontmatter.disable || markdown.frontmatter.enable == Some(false) {
+                Some(false)
+            } else {
+                None
+            }
+        }),
     }
 }
 
 fn profile_from_markdown_agent(
     markdown: &MarkdownAgentFile,
     fallback_model_ref: Option<&str>,
+    small_model_ref: Option<&str>,
 ) -> Result<Option<ProfileConfig>, ConfigError> {
+    if markdown.frontmatter.disable || markdown.frontmatter.enable == Some(false) {
+        return Ok(None);
+    }
     let Some(description) = markdown.frontmatter.description.clone() else {
         return Ok(None);
     };
-    let model_ref = markdown
-        .frontmatter
-        .model_ref
-        .clone()
-        .or_else(|| fallback_model_ref.map(str::to_string))
-        .unwrap_or_else(|| "default:default".to_string());
+    let model_ref = if markdown.frontmatter.use_small_model {
+        markdown
+            .frontmatter
+            .model_ref
+            .clone()
+            .or_else(|| small_model_ref.map(str::to_string))
+            .or_else(|| fallback_model_ref.map(str::to_string))
+            .unwrap_or_else(|| "default:default".to_string())
+    } else {
+        markdown
+            .frontmatter
+            .model_ref
+            .clone()
+            .or_else(|| fallback_model_ref.map(str::to_string))
+            .unwrap_or_else(|| "default:default".to_string())
+    };
 
     Ok(Some(ProfileConfig {
         name: markdown.frontmatter.name.clone(),
@@ -210,7 +303,13 @@ fn profile_from_markdown_agent(
         permissions: markdown.frontmatter.permissions.clone(),
         max_iters: markdown.frontmatter.max_iters,
         tool_failure_mode: markdown.frontmatter.tool_failure_mode.unwrap_or_default(),
-        tools: markdown.frontmatter.tools.clone().unwrap_or_default(),
+        tools: markdown
+            .frontmatter
+            .tools
+            .clone()
+            .map(|t| t.tool_ids())
+            .unwrap_or_default(),
+        enabled: None,
     }))
 }
 
@@ -238,9 +337,6 @@ fn discover_markdown_agents(
                     ))
                 })?
                 .to_string();
-            if agents.contains_key(&name) {
-                continue;
-            }
 
             let content =
                 fs::read_to_string(&file).map_err(|source| ConfigError::ReadMarkdownAsset {
@@ -380,6 +476,7 @@ fn agent_prompt_search_dirs(config_path: &Path, current_dir: Option<&Path>) -> V
         push_unique_path(&mut dirs, config_dir.join(".agent-harness").join("agents"));
     }
 
+    dirs.reverse();
     dirs
 }
 

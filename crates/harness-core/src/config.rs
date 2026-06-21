@@ -804,7 +804,7 @@ pub struct ProfilePermissions {
     pub fallback: Option<PermissionMode>,
     #[serde(default)]
     pub edit: Option<PermissionMode>,
-    #[serde(default)]
+    #[serde(default, alias = "bash")]
     pub shell: Option<PermissionMode>,
     #[serde(default)]
     pub network: Option<PermissionMode>,
