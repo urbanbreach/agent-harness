@@ -116,6 +116,35 @@ fn schema_uses_runtime_first_public_contract() {
 }
 
 #[test]
+fn inert_compatibility_keys_absent_from_generated_schema() {
+    let schema = harness_schema_pretty_json().expect("schema generation should succeed");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&schema).expect("schema output should be valid json");
+    let properties = parsed
+        .get("properties")
+        .and_then(serde_json::Value::as_object)
+        .expect("schema should contain properties");
+
+    for key in [
+        "compaction",
+        "experimental",
+        "layout",
+        "logLevel",
+        "shell",
+        "snapshot",
+        "tool_output",
+        "tools",
+        "username",
+        "watcher",
+    ] {
+        assert!(
+            !properties.contains_key(key),
+            "InertCompatibility key `{key}` must not appear in generated JSON schema properties"
+        );
+    }
+}
+
+#[test]
 fn public_top_level_skills_translate_into_runtime_config() {
     let parsed = load_config_from_str(
         r#"

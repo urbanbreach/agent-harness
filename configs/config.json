@@ -1496,9 +1496,6 @@
     "command": {
       "default": null
     },
-    "compaction": {
-      "default": null
-    },
     "default_agent": {
       "default": null,
       "type": [
@@ -1529,9 +1526,6 @@
     "enterprise": {
       "default": null
     },
-    "experimental": {
-      "default": null
-    },
     "formatter": {
       "default": null
     },
@@ -1545,20 +1539,6 @@
         }
       ],
       "default": null
-    },
-    "layout": {
-      "default": null,
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "logLevel": {
-      "default": null,
-      "type": [
-        "string",
-        "null"
-      ]
     },
     "lsp": {
       "default": null
@@ -1666,13 +1646,6 @@
     "share": {
       "default": null
     },
-    "shell": {
-      "default": null,
-      "type": [
-        "string",
-        "null"
-      ]
-    },
     "skills": {
       "allOf": [
         {
@@ -1703,36 +1676,6 @@
         "string",
         "null"
       ]
-    },
-    "snapshot": {
-      "default": null,
-      "type": [
-        "boolean",
-        "null"
-      ]
-    },
-    "tool_output": {
-      "default": null
-    },
-    "tools": {
-      "additionalProperties": {
-        "type": "boolean"
-      },
-      "default": null,
-      "type": [
-        "object",
-        "null"
-      ]
-    },
-    "username": {
-      "default": null,
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "watcher": {
-      "default": null
     }
   },
   "title": "PublicRuntimeConfig",

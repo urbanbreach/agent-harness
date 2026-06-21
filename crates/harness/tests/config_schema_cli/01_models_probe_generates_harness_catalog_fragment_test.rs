@@ -250,7 +250,7 @@ fn schema_cli_prints_runtime_json_schema() {
     assert!(root_properties.contains_key("command"));
     assert!(root_properties.contains_key("plugin"));
     assert!(root_properties.contains_key("formatter"));
-    assert!(root_properties.contains_key("tool_output"));
+    assert!(!root_properties.contains_key("tool_output"));
     assert!(!root_properties.contains_key("integrations"));
 
     let definitions = schema
