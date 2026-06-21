@@ -122,6 +122,8 @@ def is_allowed(path: Path) -> bool:
             "opencode-visual-tool-parity-prd.md",
             "hyperplan-desktop-app-opencode-feel.md",
             "agent_harness_opencode_ui_pi_backend_prd_missing_specs.md",
+            "config-restructure-prompt.md",
+            "config-restructure-spec.md",
         ):
             return True
     return False
