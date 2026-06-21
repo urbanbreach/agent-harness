@@ -6,7 +6,7 @@ use self::agents::{default_shipped_agents, public_agent_to_profile};
 
 mod agents;
 mod contract;
-pub use self::agents::{PublicAgentConfig, PublicAgentMap};
+pub use self::agents::{PublicAgentConfig, PublicAgentMap, PublicAgentTools};
 pub use self::contract::{
     public_config_contract, PublicConfigAlias, PublicConfigAliasScope, PublicConfigCompactionKnob,
     PublicConfigContract, PublicConfigKeyStatus, PublicConfigPermissionName, PublicConfigSurface,
@@ -811,6 +811,20 @@ pub(super) fn translate_public_runtime_root(
         "agents".to_string(),
         serde_json::to_value(agents).map_err(|err| ConfigError::ParseJson5(err.to_string()))?,
     );
+
+    if let Some(small_model) = &small_model {
+        translated.insert(
+            "small_model".to_string(),
+            serde_json::Value::String(small_model.clone()),
+        );
+    }
+
+    if !disabled_agents.is_empty() {
+        translated.insert(
+            "disabled_agents".to_string(),
+            serde_json::to_value(&disabled_agents).unwrap_or(serde_json::Value::Array(Vec::new())),
+        );
+    }
 
     if let Some(default_agent) = object
         .get("default_agent")

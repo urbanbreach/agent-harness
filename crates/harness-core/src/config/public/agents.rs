@@ -195,7 +195,7 @@ impl Default for PublicAgentTools {
 }
 
 impl PublicAgentTools {
-    fn tool_ids(self) -> Vec<String> {
+    pub fn tool_ids(self) -> Vec<String> {
         match self {
             Self::List(tools) => tools,
             Self::Map(tools) => tools
@@ -272,6 +272,7 @@ pub(super) fn default_shipped_agents(
                 .into_iter()
                 .map(str::to_string)
                 .collect(),
+                enabled: None,
             },
         ),
         (
@@ -349,6 +350,7 @@ pub(super) fn default_shipped_agents(
                 .into_iter()
                 .map(str::to_string)
                 .collect(),
+                enabled: None,
             },
         ),
         (
@@ -400,6 +402,7 @@ pub(super) fn default_shipped_agents(
                 .into_iter()
                 .map(str::to_string)
                 .collect(),
+                enabled: None,
             },
         ),
         (
@@ -457,6 +460,7 @@ pub(super) fn default_shipped_agents(
                 .into_iter()
                 .map(str::to_string)
                 .collect(),
+                enabled: None,
             },
         ),
         category_routing_profile(
@@ -530,6 +534,7 @@ pub(super) fn default_shipped_agents(
                 max_iters: None,
                 tool_failure_mode: ToolFailureMode::FailTurn,
                 tools: Vec::new(),
+                enabled: None,
             },
         ),
         (
@@ -563,6 +568,7 @@ pub(super) fn default_shipped_agents(
                 max_iters: None,
                 tool_failure_mode: ToolFailureMode::FailTurn,
                 tools: Vec::new(),
+                enabled: None,
             },
         ),
         (
@@ -596,6 +602,7 @@ pub(super) fn default_shipped_agents(
                 max_iters: None,
                 tool_failure_mode: ToolFailureMode::FailTurn,
                 tools: Vec::new(),
+                enabled: None,
             },
         ),
     ])
@@ -640,6 +647,7 @@ fn category_routing_profile(
                 .into_iter()
                 .map(str::to_string)
                 .collect(),
+            enabled: None,
         },
     )
 }
@@ -766,6 +774,7 @@ pub(super) fn public_agent_to_profile(
         } else {
             configured_tools
         },
+        enabled: None,
     })
 }
 

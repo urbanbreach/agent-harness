@@ -69,11 +69,11 @@ pub use self::provider::{
 };
 pub use self::public::{
     harness_schema_pretty_json, harness_tui_schema_pretty_json, public_config_contract,
-    InstructionList, PublicAgentConfig, PublicConfigAlias, PublicConfigAliasScope,
-    PublicConfigCompactionKnob, PublicConfigContract, PublicConfigKeyStatus,
-    PublicConfigPermissionName, PublicConfigSurface, PublicConfigTopLevelKey,
-    PublicPermissionConfig, PublicPermissionValue, PublicProfilePermissions,
-    PublicRulePermissionValue, PublicRuntimeConfig, PublicTuiConfig,
+    InstructionList, PublicAgentConfig, PublicAgentTools, PublicConfigAlias,
+    PublicConfigAliasScope, PublicConfigCompactionKnob, PublicConfigContract,
+    PublicConfigKeyStatus, PublicConfigPermissionName, PublicConfigSurface,
+    PublicConfigTopLevelKey, PublicPermissionConfig, PublicPermissionValue,
+    PublicProfilePermissions, PublicRulePermissionValue, PublicRuntimeConfig, PublicTuiConfig,
     PublicUnsupportedInactiveValue,
 };
 pub use self::registries::{
@@ -187,6 +187,14 @@ pub struct HarnessConfig {
     #[serde(skip)]
     #[schemars(skip)]
     pub instruction_files: Vec<InstructionFile>,
+    #[serde(default)]
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub small_model: Option<String>,
+    #[serde(default)]
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub disabled_agents: BTreeSet<String>,
 }
 
 fn is_false(value: &bool) -> bool {
@@ -766,6 +774,9 @@ pub struct ProfileConfig {
     pub tool_failure_mode: ToolFailureMode,
     #[serde(default)]
     pub tools: Vec<String>,
+    #[serde(default)]
+    #[schemars(skip)]
+    pub enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
