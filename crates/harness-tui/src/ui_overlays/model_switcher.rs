@@ -348,7 +348,7 @@ fn render_model_select_input(frame: &mut Frame, app: &AppState, theme: &Theme, a
                 Style::default().fg(model_select_primary(theme)).bg(surface),
             ),
             Span::styled(
-                " Search",
+                " Filter models, providers",
                 Style::default().fg(model_select_muted(theme)).bg(surface),
             ),
         ])
