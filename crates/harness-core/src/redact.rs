@@ -166,24 +166,67 @@ pub fn redact_map<R: Redactor + ?Sized>(
         .collect()
 }
 
+fn key_segments(key: &str) -> impl Iterator<Item = &str> {
+    key.split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|s| !s.is_empty())
+}
+
+fn adjacent_segments(key: &str, left: &str, right: &str) -> bool {
+    let mut prev: Option<&str> = None;
+    for segment in key_segments(key) {
+        if let Some(p) = prev {
+            if p.eq_ignore_ascii_case(left) && segment.eq_ignore_ascii_case(right) {
+                return true;
+            }
+        }
+        prev = Some(segment);
+    }
+    false
+}
+
+fn credential_key_segments(key: &str) -> bool {
+    let mut has_key = false;
+    let mut has_keyword = false;
+    for s in key_segments(key) {
+        if s.eq_ignore_ascii_case("key") {
+            has_key = true;
+        }
+        if s.eq_ignore_ascii_case("access")
+            || s.eq_ignore_ascii_case("api")
+            || s.eq_ignore_ascii_case("auth")
+            || s.eq_ignore_ascii_case("bearer")
+            || s.eq_ignore_ascii_case("client")
+            || s.eq_ignore_ascii_case("credential")
+            || s.eq_ignore_ascii_case("github")
+            || s.eq_ignore_ascii_case("google")
+            || s.eq_ignore_ascii_case("openai")
+            || s.eq_ignore_ascii_case("private")
+            || s.eq_ignore_ascii_case("provider")
+            || s.eq_ignore_ascii_case("secret")
+            || s.eq_ignore_ascii_case("token")
+            || s.eq_ignore_ascii_case("aws")
+        {
+            has_keyword = true;
+        }
+    }
+    has_key && has_keyword
+}
+
 fn redaction_marker_for_sensitive_key(key: &str) -> Option<&'static str> {
-    let normalized = key
-        .chars()
-        .filter(|character| character.is_ascii_alphanumeric())
-        .flat_map(|character| character.to_lowercase())
-        .collect::<String>();
+    let mut normalized = String::with_capacity(key.len());
+    for character in key.chars() {
+        if character.is_ascii_alphanumeric() {
+            normalized.extend(character.to_lowercase());
+        }
+    }
+
     if normalized == "credentials" {
         return None;
     }
-    let segments = key
-        .split(|character: char| !character.is_ascii_alphanumeric())
-        .filter(|segment| !segment.is_empty())
-        .map(|segment| segment.to_ascii_lowercase())
-        .collect::<Vec<_>>();
 
     if normalized == "apikey"
         || normalized.ends_with("apikey")
-        || adjacent_segments(&segments, "api", "key")
+        || adjacent_segments(key, "api", "key")
     {
         return Some("[REDACTED_API_KEY]");
     }
@@ -193,7 +236,7 @@ fn redaction_marker_for_sensitive_key(key: &str) -> Option<&'static str> {
     if normalized.contains("cookie") {
         return Some("[REDACTED_COOKIE]");
     }
-    if normalized.contains("privatekey") || adjacent_segments(&segments, "private", "key") {
+    if normalized.contains("privatekey") || adjacent_segments(key, "private", "key") {
         return Some("[REDACTED_PRIVATE_KEY]");
     }
     if normalized.contains("password")
@@ -201,47 +244,12 @@ fn redaction_marker_for_sensitive_key(key: &str) -> Option<&'static str> {
         || normalized.contains("secret")
         || normalized.contains("token")
         || normalized.contains("credential")
-        || credential_key_segments(&segments)
+        || credential_key_segments(key)
     {
         return Some("[REDACTED_SECRET]");
     }
 
     None
-}
-
-fn adjacent_segments(segments: &[String], left: &str, right: &str) -> bool {
-    segments
-        .windows(2)
-        .any(|window| window[0] == left && window[1] == right)
-}
-
-fn key_segments_contain(segments: &[String], needle: &str) -> bool {
-    segments.iter().any(|segment| segment == needle)
-}
-
-fn credential_key_segments(segments: &[String]) -> bool {
-    if !key_segments_contain(segments, "key") {
-        return false;
-    }
-    segments.iter().any(|segment| {
-        matches!(
-            segment.as_str(),
-            "access"
-                | "api"
-                | "auth"
-                | "bearer"
-                | "client"
-                | "credential"
-                | "github"
-                | "google"
-                | "openai"
-                | "private"
-                | "provider"
-                | "secret"
-                | "token"
-                | "aws"
-        )
-    })
 }
 
 #[cfg(test)]
