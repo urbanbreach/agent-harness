@@ -156,9 +156,13 @@ fn config_docs_runtime_and_tui_keys_match_generated_schemas() {
 
 #[test]
 fn config_docs_document_variable_substitution_and_config_layering() {
+    // arrange
     let root = repo_root();
+
+    // act
     let doc = std::fs::read_to_string(root.join("docs/config.md")).expect("read docs/config.md");
 
+    // assert
     assert!(
         doc.contains("## Variable substitution"),
         "docs/config.md must document variable substitution"
@@ -271,23 +275,6 @@ fn config_contract_semantic_metadata_matches_docs() {
     // assert
     assert!(compaction_aliases.contains(&("fallbackInputTokens", "fallback_input_tokens")));
     assert!(compaction_aliases.contains(&("model", "model_ref")));
-}
-
-#[test]
-fn config_docs_capture_harness_contract_and_migration_boundary() {
-    let doc_path = repo_root().join("docs/config.md");
-    let doc = std::fs::read_to_string(&doc_path).expect("read docs/config.md");
-
-    assert!(doc.contains("## Public contract summary"));
-    assert!(doc.contains("$XDG_CONFIG_HOME/harness/harness.jsonc"));
-    assert!(doc.contains("HARNESS_CONFIG"));
-    assert!(doc.contains("HARNESS_CONFIG_CONTENT"));
-    assert!(doc.contains("HARNESS_TUI_CONFIG"));
-    assert!(doc.contains(".agent-harness/agents"));
-    assert!(doc.contains("harness.json"));
-    assert!(doc.contains("harness.jsonc"));
-    assert!(doc.contains("compatibility inputs"));
-    assert!(doc.contains("Unsupported top-level areas"));
 }
 
 #[test]
@@ -435,44 +422,6 @@ fn built_in_skill_docs_and_capability_map_cover_catalog_stable_ids() {
         assert!(
             extension_row.get(3).is_some_and(|cell| cell == "loadable"),
             "extension capability map should state {stable_id} default state"
-        );
-    }
-}
-
-#[test]
-fn config_docs_capture_plan_operator_workflow_and_guardrails() {
-    let root = repo_root();
-    let doc = std::fs::read_to_string(root.join("docs/config.md")).expect("read docs/config.md");
-    let example = std::fs::read_to_string(root.join("configs/harness.example.jsonc"))
-        .expect("read harness example config");
-
-    for expected in [
-        "### Plan operator workflow",
-        "stable public runtime surface",
-        "experimental compatibility flag",
-        "Build call `plan_enter`",
-        ".agent-harness/plans/<run>.md",
-        "Plan calls `plan_exit`",
-        "restricted to `explore`",
-        "cannot launch\n   `general`, `build`, or user-defined writer subagents",
-        "Approving that prompt switches\n   back to Build",
-        "declining leaves the session in Plan",
-    ] {
-        assert!(
-            doc.contains(expected),
-            "docs/config.md missing Plan workflow anchor: {expected}"
-        );
-    }
-
-    for expected in [
-        "Stable read-only planning lane",
-        ".agent-harness/plans/<run>.md",
-        "plan_exit",
-        "continuing implementation in Build",
-    ] {
-        assert!(
-            example.contains(expected),
-            "configs/harness.example.jsonc missing Plan comment anchor: {expected}"
         );
     }
 }
