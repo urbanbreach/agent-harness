@@ -163,6 +163,7 @@ fn public_minimal_config_with_permission(permission: &str) -> String {
 }
 
 mod agents_profiles_test;
+mod discovery_merge_overlay_test;
 mod discovery_merge_test;
 mod discovery_schema_test;
 mod env_assets_test;
