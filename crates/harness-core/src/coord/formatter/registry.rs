@@ -266,7 +266,9 @@ mod tests {
 
     #[test]
     fn formatter_registry_contains_all_expected_names() {
+        // arrange
         let names: Vec<_> = BUILTIN_FORMATTERS.iter().map(|info| info.name).collect();
+        // act
         for expected in [
             "gofmt",
             "mix",
@@ -297,6 +299,7 @@ mod tests {
         ] {
             assert!(names.contains(&expected), "missing formatter: {expected}");
         }
+        // assert
         assert_eq!(
             names.len(),
             26,
@@ -306,7 +309,10 @@ mod tests {
 
     #[test]
     fn formatter_registry_entries_have_extensions_and_file_placeholder() {
+        // arrange
+        // act
         for info in BUILTIN_FORMATTERS {
+            // assert
             assert!(
                 !info.extensions.is_empty(),
                 "{} has no extensions",
@@ -322,7 +328,10 @@ mod tests {
 
     #[test]
     fn formatter_registry_extensions_include_leading_dot() {
+        // arrange
+        // act
         for info in BUILTIN_FORMATTERS {
+            // assert
             for ext in info.extensions {
                 assert!(
                     ext.starts_with('.'),
@@ -335,6 +344,8 @@ mod tests {
 
     #[test]
     fn formatter_registry_prettier_biome_oxfmt_set_bun_be_bun() {
+        // arrange
+        // act
         for name in ["prettier", "biome", "oxfmt"] {
             let info = BUILTIN_FORMATTERS
                 .iter()
@@ -343,6 +354,7 @@ mod tests {
             let env = info
                 .environment
                 .unwrap_or_else(|| panic!("{name} missing environment"));
+            // assert
             assert!(
                 env.contains(&("BUN_BE_BUN", "1")),
                 "{name} missing BUN_BE_BUN=1"
@@ -352,7 +364,10 @@ mod tests {
 
     #[test]
     fn formatter_registry_lookup_by_extension_finds_match() {
+        // arrange
+        // act
         let rust = formatter_info_by_extension("rs").expect("lookup rs");
+        // assert
         assert_eq!(rust.name, "rustfmt");
         let python = formatter_info_by_extension(".py").expect("lookup .py");
         assert_eq!(python.name, "ruff");

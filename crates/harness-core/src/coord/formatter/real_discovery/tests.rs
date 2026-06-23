@@ -3,6 +3,9 @@ use crate::coord::formatter::FormatterDiscovery;
 
 #[test]
 fn first_line_returns_first_line_or_empty() {
+    // arrange
+    // act
+    // assert
     assert_eq!(super::first_line("alpha\nbeta"), "alpha");
     assert_eq!(super::first_line(""), "");
     assert_eq!(super::first_line("only"), "only");
@@ -10,6 +13,7 @@ fn first_line_returns_first_line_or_empty() {
 
 #[tokio::test]
 async fn prettier_discovery_uses_local_npm_binary_when_dep_present() {
+    // arrange
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let workspace = temp_dir.path().join("workspace");
     let node_bin = workspace.join("node_modules").join(".bin");
@@ -28,10 +32,12 @@ async fn prettier_discovery_uses_local_npm_binary_when_dep_present() {
     };
 
     let discovery = RealFormatterDiscovery;
+    // act
     let command = discovery
         .resolve("prettier", &context)
         .await
         .expect("prettier discovered");
+    // assert
     assert_eq!(command.len(), 3);
     assert_eq!(command[1], "--write");
     assert_eq!(command[2], "$FILE");
@@ -39,6 +45,7 @@ async fn prettier_discovery_uses_local_npm_binary_when_dep_present() {
 
 #[tokio::test]
 async fn biome_discovery_requires_biome_json() {
+    // arrange
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let workspace = temp_dir.path().join("workspace");
     let node_bin = workspace.join("node_modules").join(".bin");
@@ -55,15 +62,18 @@ async fn biome_discovery_requires_biome_json() {
     };
 
     let discovery = RealFormatterDiscovery;
+    // act
     let command = discovery
         .resolve("biome", &context)
         .await
         .expect("biome discovered");
+    // assert
     assert_eq!(command[1..], ["format", "--write", "$FILE"]);
 }
 
 #[tokio::test]
 async fn oxfmt_discovery_gated_by_experimental_oxfmt() {
+    // arrange
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let workspace = temp_dir.path().join("workspace");
     let node_bin = workspace.join("node_modules").join(".bin");
@@ -82,6 +92,7 @@ async fn oxfmt_discovery_gated_by_experimental_oxfmt() {
         experimental_oxfmt: false,
     };
     let discovery = RealFormatterDiscovery;
+    // act
     assert!(
         discovery
             .resolve("oxfmt", &disabled_context)
@@ -99,12 +110,14 @@ async fn oxfmt_discovery_gated_by_experimental_oxfmt() {
         .resolve("oxfmt", &enabled_context)
         .await
         .expect("oxfmt discovered when enabled");
+    // assert
     assert_eq!(command.len(), 2);
     assert_eq!(command[1], "$FILE");
 }
 
 #[tokio::test]
 async fn pint_discovery_requires_laravel_pint_in_composer() {
+    // arrange
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let workspace = temp_dir.path().join("workspace");
     std::fs::create_dir_all(&workspace).expect("create workspace");
@@ -120,10 +133,12 @@ async fn pint_discovery_requires_laravel_pint_in_composer() {
         experimental_oxfmt: false,
     };
     let discovery = RealFormatterDiscovery;
+    // act
     let command = discovery
         .resolve("pint", &context)
         .await
         .expect("pint discovered");
+    // assert
     assert_eq!(command, vec!["./vendor/bin/pint", "$FILE"]);
 }
 

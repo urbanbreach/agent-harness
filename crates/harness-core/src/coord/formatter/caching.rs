@@ -85,6 +85,7 @@ mod tests {
 
     #[tokio::test]
     async fn caching_discovery_deduplicates_identical_requests() {
+        // arrange
         let count = Arc::new(AtomicUsize::new(0));
         let inner = CountingDiscovery {
             count: count.clone(),
@@ -96,9 +97,11 @@ mod tests {
             experimental_oxfmt: false,
         };
 
+        // act
         let first = caching.resolve("rustfmt", &context).await;
         let second = caching.resolve("rustfmt", &context).await;
 
+        // assert
         assert!(first.is_some());
         assert_eq!(first, second);
         assert_eq!(count.load(Ordering::SeqCst), 1, "inner resolve called once");
@@ -106,6 +109,7 @@ mod tests {
 
     #[tokio::test]
     async fn caching_discovery_separates_keys_by_name_and_target_dir() {
+        // arrange
         let count = Arc::new(AtomicUsize::new(0));
         let inner = CountingDiscovery {
             count: count.clone(),
@@ -122,11 +126,13 @@ mod tests {
             experimental_oxfmt: false,
         };
 
+        // act
         caching.resolve("rustfmt", &ctx_a).await;
         caching.resolve("rustfmt", &ctx_b).await;
         caching.resolve("rustfmt", &ctx_a).await;
         caching.resolve("prettier", &ctx_a).await;
 
+        // assert
         assert_eq!(count.load(Ordering::SeqCst), 3, "three distinct keys");
     }
 }

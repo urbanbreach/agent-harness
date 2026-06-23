@@ -71,12 +71,15 @@ mod tests {
 
     #[tokio::test]
     async fn fake_discovery_reports_configured_names() {
+        // arrange
         let context = DiscoveryContext {
             workspace_root: PathBuf::from("."),
             target_dir: PathBuf::from("."),
             experimental_oxfmt: false,
         };
         let discovery = FakeFormatterDiscovery::new(["rustfmt", "prettier"]);
+        // act
+        // assert
         assert!(discovery.resolve("rustfmt", &context).await.is_some());
         assert!(discovery.resolve("prettier", &context).await.is_some());
         assert!(discovery.resolve("ruff", &context).await.is_none());
@@ -84,16 +87,19 @@ mod tests {
 
     #[tokio::test]
     async fn fake_discovery_supports_runtime_mutation() {
+        // arrange
         let context = DiscoveryContext {
             workspace_root: PathBuf::from("."),
             target_dir: PathBuf::from("."),
             experimental_oxfmt: false,
         };
         let mut discovery = FakeFormatterDiscovery::new(["rustfmt"]);
+        // act
         assert!(discovery.resolve("rustfmt", &context).await.is_some());
         discovery.remove("rustfmt");
-        assert!(discovery.resolve("rustfmt", &context).await.is_none());
         discovery.insert("ruff");
+        // assert
+        assert!(discovery.resolve("rustfmt", &context).await.is_none());
         assert!(discovery.resolve("ruff", &context).await.is_some());
     }
 }

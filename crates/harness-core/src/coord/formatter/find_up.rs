@@ -117,6 +117,7 @@ mod tests {
 
     #[tokio::test]
     async fn find_up_finds_file_in_parent() {
+        // arrange
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let root = temp_dir.path();
         let nested = root.join("a").join("b").join("c");
@@ -125,7 +126,9 @@ mod tests {
         let marker = root.join("marker.txt");
         std::fs::write(&marker, "found").expect("write marker");
 
+        // act
         let found = find_up("marker.txt", &nested, root).await;
+        // assert
         assert_eq!(found, vec![marker]);
     }
 }
