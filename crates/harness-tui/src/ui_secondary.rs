@@ -1029,8 +1029,11 @@ mod tests {
 
     #[test]
     fn sidebar_brand_footer_renders_harness_branding_and_version() {
+        // arrange
         let theme = Theme::default();
+        // act
         let lines = operator_sidebar_brand_footer_text(&theme, theme.surface.panel).lines;
+        // assert
         assert_eq!(lines.len(), 1, "brand footer should be a single line");
         let plain = line_to_plain_text(lines[0].clone());
         assert!(

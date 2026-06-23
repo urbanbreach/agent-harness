@@ -430,8 +430,10 @@ fn keymap_binds_ctrl_t_to_variant_cycle() {
 
 #[test]
 fn leader_g_opens_lineage_browser() {
+    // arrange
     let keymap = KeyMap::with_defaults();
-
+    // act
+    // assert
     assert_eq!(
         keymap.leader_action(&KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE)),
         Some(Action::OpenLineageBrowser)
@@ -444,10 +446,11 @@ fn leader_g_opens_lineage_browser() {
 
 #[test]
 fn palette_exposes_lineage_browser_and_child_session_commands() {
+    // arrange
     let palette_commands = Action::palette_commands();
-
     let command_ids: Vec<&str> = palette_commands.iter().map(|cmd| cmd.id).collect();
-
+    // act
+    // assert
     assert!(command_ids.contains(&"open_lineage_browser"));
     assert!(command_ids.contains(&"session_child_first"));
     assert!(command_ids.contains(&"session_child_cycle"));

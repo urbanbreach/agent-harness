@@ -144,6 +144,7 @@ fn transcript_layout_cache_invalidates_when_animation_frame_changes() {
 
 #[test]
 fn transcript_measure_cache_key_stable_across_animation_phase_changes() {
+    // arrange
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "request-measure-stable".to_string(),
@@ -168,11 +169,11 @@ fn transcript_measure_cache_key_stable_across_animation_phase_changes() {
         revision: 0,
     }]);
     app.transcript_view.selected_activity_index = 0;
-
+    // act
     let initial_key = app.transcript_measure_cache_key();
     app.advance_transcript_animation_phase();
     let updated_key = app.transcript_measure_cache_key();
-
+    // assert
     assert_eq!(
         initial_key, updated_key,
         "measure cache key must not change when only animation phase changes"
@@ -181,6 +182,7 @@ fn transcript_measure_cache_key_stable_across_animation_phase_changes() {
 
 #[test]
 fn transcript_layout_cache_does_not_rebuild_on_animation_phase_change() {
+    // arrange
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "request-layout-rebuild".to_string(),
@@ -205,9 +207,10 @@ fn transcript_layout_cache_does_not_rebuild_on_animation_phase_change() {
         revision: 0,
     }]);
     app.transcript_view.selected_activity_index = 0;
-
+    // act
     AppState::reset_transcript_render_key_metrics_for_test();
     let _ = app.transcript_measure_cache_key();
+    // assert
     let builds_after_first = AppState::transcript_render_key_build_count_for_test();
     assert_eq!(builds_after_first, 1, "first call should build once");
 
@@ -996,6 +999,7 @@ mod lifecycle_tests;
 
 #[test]
 fn transcript_measurement_wrap_correctness_across_widths_and_styles() {
+    // arrange
     let patterns = [
         "short",
         "a medium length reply that should wrap at narrow widths",
@@ -1008,7 +1012,7 @@ fn transcript_measurement_wrap_correctness_across_widths_and_styles() {
     ];
 
     let widths = [20u16, 40, 60, 80, 100, 120];
-
+    // act
     for pattern in &patterns {
         for &width in &widths {
             let mut app = AppState::default();
@@ -1073,7 +1077,7 @@ fn transcript_measurement_wrap_correctness_across_widths_and_styles() {
                 }
                 independently_computed_rows += section_rows;
             }
-
+            // assert
             assert_eq!(
                 measured_rows, independently_computed_rows,
                 "measured_rows ({measured_rows}) must equal independently computed rows \
@@ -1085,6 +1089,7 @@ fn transcript_measurement_wrap_correctness_across_widths_and_styles() {
 
 #[test]
 fn transcript_selection_rows_proportional_to_visual_lines_not_cell_count() {
+    // arrange
     let message_count = 50usize;
     let mut activities = Vec::with_capacity(message_count);
     for idx in 0..message_count {
@@ -1099,13 +1104,13 @@ fn transcript_selection_rows_proportional_to_visual_lines_not_cell_count() {
     app.transcript_view.selected_activity_index = message_count.saturating_sub(1);
 
     let area = Rect::new(0, 0, 140, 40);
-
+    // act
     let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 80);
     let total_height = layout.total_height;
 
     let row_count =
         transcript_selection_row_count(&app, area).expect("selection snapshot row count");
-
+    // assert
     assert_eq!(
         row_count, total_height,
         "SelectionRow count must equal visual line count, not scale with width"
@@ -1146,6 +1151,7 @@ fn transcript_selection_rows_proportional_to_visual_lines_not_cell_count() {
 fn perf_500_event_streaming_transcript_cache_and_layout_budget() {
     use std::time::{Duration, Instant};
 
+    // arrange
     const ACTIVITY_COUNT: usize = 500;
     const STREAMING_DELTA_COUNT: usize = 20;
     const CACHE_KEY_BUDGET: Duration = Duration::from_millis(15);
@@ -1188,7 +1194,7 @@ fn perf_500_event_streaming_transcript_cache_and_layout_budget() {
 
     let theme = Theme::default();
     let width: u16 = 120;
-
+    // act
     let _ = build_transcript_lines_for_width(&app, &theme, width);
 
     let mut max_cache_key = Duration::ZERO;
@@ -1231,7 +1237,7 @@ fn perf_500_event_streaming_transcript_cache_and_layout_budget() {
          cache_key max={max_cache_key:?} | layout max={max_layout:?} | \
          avg_delta={avg_delta:?}"
     );
-
+    // assert
     assert!(
         max_cache_key < CACHE_KEY_BUDGET,
         "per-delta cache key time {max_cache_key:?} exceeded budget {CACHE_KEY_BUDGET:?} \

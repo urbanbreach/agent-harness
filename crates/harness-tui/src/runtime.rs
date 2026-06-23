@@ -988,15 +988,21 @@ mod tests {
 
     #[test]
     fn terminal_restore_guard_marks_restored_on_normal_teardown() {
+        // arrange
         let mut guard = TerminalRestoreGuard::new(true, true, true);
         assert!(!guard.restored());
+        // act
         guard.mark_restored();
+        // assert
         assert!(guard.restored());
     }
 
     #[test]
     fn terminal_restore_guard_carries_enabled_flags() {
+        // arrange
         let guard = TerminalRestoreGuard::new(true, false, true);
+        // act
+        // assert
         assert!(guard.keyboard_enhancements_enabled());
         assert!(!guard.mouse_capture_enabled());
         assert!(guard.bracketed_paste_enabled());
@@ -1004,12 +1010,15 @@ mod tests {
 
     #[test]
     fn apply_reload_budget_warns_on_large_event_count() {
+        // arrange
         let mut app = AppState::default();
+        // act
         apply_reload_budget(
             &mut app,
             RELOAD_EVENT_COUNT_BANNER_THRESHOLD + 1,
             Duration::from_millis(10),
         );
+        // assert
         assert!(app
             .status_banner
             .as_deref()
@@ -1018,13 +1027,16 @@ mod tests {
 
     #[test]
     fn apply_reload_budget_disables_follow_on_slow_load() {
+        // arrange
         let mut app = AppState::default();
         app.transcript_view.follow_mode = true;
+        // act
         apply_reload_budget(
             &mut app,
             10,
             RELOAD_LOAD_TIME_SLOW_THRESHOLD + Duration::from_millis(50),
         );
+        // assert
         assert!(!app.transcript_view.follow_mode);
         assert!(app
             .status_banner
@@ -1034,9 +1046,12 @@ mod tests {
 
     #[test]
     fn apply_reload_budget_leaves_small_fast_loads_alone() {
+        // arrange
         let mut app = AppState::default();
         app.transcript_view.follow_mode = true;
+        // act
         apply_reload_budget(&mut app, 50, Duration::from_millis(10));
+        // assert
         assert!(app.transcript_view.follow_mode);
         assert!(app.status_banner.is_none());
     }
