@@ -1,8 +1,10 @@
 #[test]
 fn doctor_cli_json_reports_formatter_status() {
+    // arrange
     let repo_root = repo_root();
     let config_path = repo_root.join("configs").join("harness.example.jsonc");
 
+    // act
     let output = harness_command()
         .current_dir(&repo_root)
         .env("OPENAI_API_KEY", "doctor-formatter-status-test-key")
@@ -15,6 +17,7 @@ fn doctor_cli_json_reports_formatter_status() {
         .output()
         .expect("run harness doctor --json for formatter status");
 
+    // assert
     assert!(
         output.status.success(),
         "stdout:\n{}\nstderr:\n{}",
