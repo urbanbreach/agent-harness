@@ -118,10 +118,9 @@ fn validate_stable_prefix_with_options(
 }
 
 fn validate_event_log(events: &[EventEnvelopeV1]) -> Result<u64, SessionLineageError> {
-    let mut expected_seq = 1_u64;
     let mut run_id: Option<&str> = None;
 
-    for event in events {
+    for (expected_seq, event) in (1_u64..).zip(events.iter()) {
         if event.schema_version != SCHEMA_VERSION {
             return Err(SessionLineageError::UnsupportedSchemaVersion {
                 seq: event.seq,
@@ -135,7 +134,6 @@ fn validate_event_log(events: &[EventEnvelopeV1]) -> Result<u64, SessionLineageE
                 actual: event.seq,
             });
         }
-        expected_seq += 1;
 
         match run_id {
             None => run_id = Some(event.run_id.as_str()),

@@ -306,16 +306,13 @@ pub fn project_resume_plan<'a>(
     let mut provider_model = None;
     let mut run_id: Option<String> = None;
     let mut max_seq = 0_u64;
-    let mut expected_seq = 1_u64;
-
-    for event in events {
+    for (expected_seq, event) in (1_u64..).zip(events) {
         if event.seq != expected_seq {
             return Err(ProjectionError::NonContiguousSeq {
                 expected: expected_seq,
                 current: event.seq,
             });
         }
-        expected_seq += 1;
         max_seq = event.seq;
 
         match run_id.as_deref() {

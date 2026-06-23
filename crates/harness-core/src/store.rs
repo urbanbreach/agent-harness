@@ -736,8 +736,9 @@ fn replay_events_from_index(
         })?;
 
     let mut events = Vec::new();
-    let mut expected_seq = first_entry.seq;
-    for (offset_index, line_result) in BufReader::new(file).lines().enumerate() {
+    for (expected_seq, (offset_index, line_result)) in
+        (first_entry.seq..).zip(BufReader::new(file).lines().enumerate())
+    {
         let line_number = first_entry.line + offset_index;
         let line = line_result.map_err(|source| EventStoreError::ReadLog {
             path: display_path(file_path),
@@ -756,7 +757,6 @@ fn replay_events_from_index(
             });
         }
         events.push(event);
-        expected_seq += 1;
     }
 
     Ok(events)
