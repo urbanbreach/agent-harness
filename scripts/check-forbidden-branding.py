@@ -18,10 +18,14 @@ sys.dont_write_bytecode = True
 
 ALLOWED_DIRS = {".git", ".sisyphus", "inspirations", "target"}
 ALLOWED_MATCH_LINES = {
-    Path("scripts/check-forbidden-branding.py"): {118, 119, 120, 121, 122, 123, 124},
+    Path("scripts/check-forbidden-branding.py"): {122, 123, 124, 125, 126, 127, 128},
     Path("configs/config.json"): {710, 835},
     Path("configs/provider-catalog.generated.json"): {1},
-    Path("crates/harness-core/src/config/public.rs"): {60, 193, 315, 477, 483, 489, 497},
+    Path("crates/harness-core/src/config/public.rs"): {60, 193, 315, 477, 483, 489, 497, 660},
+    Path("crates/harness-core/src/coord/formatter/real_discovery/mod.rs"): {1, 21},
+    Path("crates/harness-core/src/coord/formatter/real_discovery/support.rs"): {1},
+    Path("crates/harness-core/src/coord/formatter/registry.rs"): {1, 3, 60},
+    Path("crates/harness-core/src/coord/formatter/resolver.rs"): {18},
     Path("crates/harness-tui/src/keybindings.rs"): {595},
     Path("crates/harness/src/models.rs"): {17},
     Path("crates/harness/tests/config_docs_reference_test.rs"): {95},
