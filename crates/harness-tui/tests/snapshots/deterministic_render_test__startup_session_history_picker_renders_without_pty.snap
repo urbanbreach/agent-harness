@@ -25,4 +25,4 @@ expression: rendered.as_str()
                                                                                                     
                                                                                                     
                                                                                                     
-            /srv/samba/code/accela/agent-harness/crates/harness-tu…  Ctrl+p open  q quit
+            ~/projects/agent-harness/crates/harness-tui:dev          Ctrl+p open  q quit
