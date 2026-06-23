@@ -91,6 +91,7 @@ mod tests {
 
     #[test]
     fn prompt_stash_round_trip() {
+        // arrange
         let dir = tempdir().unwrap();
         let path = prompt_stash_path_for_session_dir(dir.path());
         let entries = vec![
@@ -108,28 +109,37 @@ mod tests {
             },
         ];
 
+        // act
         save_prompt_stash(&path, &entries).unwrap();
         let loaded = load_prompt_stash(&path).unwrap();
+        // assert
         assert_eq!(loaded, entries);
     }
 
     #[test]
     fn prompt_stash_missing_file_returns_empty() {
+        // arrange
         let dir = tempdir().unwrap();
         let path = prompt_stash_path_for_session_dir(dir.path());
+        // act
         let loaded = load_prompt_stash(&path).unwrap();
+        // assert
         assert!(loaded.is_empty());
     }
 
     #[test]
     fn prompt_stash_path_under_tui_subdir() {
+        // arrange
         let dir = tempdir().unwrap();
+        // act
         let path = prompt_stash_path_for_session_dir(dir.path());
+        // assert
         assert!(path.ends_with("tui/prompt-stash.json"));
     }
 
     #[test]
     fn prompt_stash_rejects_unknown_schema_version() {
+        // arrange
         let dir = tempdir().unwrap();
         let path = prompt_stash_path_for_session_dir(dir.path());
         if let Some(parent) = path.parent() {
@@ -137,7 +147,9 @@ mod tests {
         }
         let body = r#"{"schema_version":99,"entries":[]}"#;
         fs::write(&path, body).unwrap();
+        // act
         let result = load_prompt_stash(&path);
+        // assert
         assert!(result.is_err());
         assert!(result
             .unwrap_err()

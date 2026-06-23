@@ -1323,15 +1323,18 @@ mod tests {
 
     #[test]
     fn shell_mode_enters_on_bang_when_prompt_empty() {
+        // arrange
         let mut app = AppState::new_live(None, false, None);
         app.focus = Focus::Prompt;
         assert!(!app.shell_mode());
 
+        // act
         app.handle_key(crossterm::event::KeyEvent::new(
             crossterm::event::KeyCode::Char('!'),
             crossterm::event::KeyModifiers::NONE,
         ));
 
+        // assert
         assert!(
             app.shell_mode(),
             "typing ! with empty prompt should enter shell mode"
@@ -1344,29 +1347,35 @@ mod tests {
 
     #[test]
     fn shell_mode_exits_on_escape() {
+        // arrange
         let mut app = AppState::new_live(None, false, None);
         app.focus = Focus::Prompt;
         app.composer.shell_mode = true;
 
+        // act
         app.handle_key(crossterm::event::KeyEvent::new(
             crossterm::event::KeyCode::Esc,
             crossterm::event::KeyModifiers::NONE,
         ));
 
+        // assert
         assert!(!app.shell_mode(), "Esc should exit shell mode");
     }
 
     #[test]
     fn shell_mode_exits_on_backspace_at_empty_prompt() {
+        // arrange
         let mut app = AppState::new_live(None, false, None);
         app.focus = Focus::Prompt;
         app.composer.shell_mode = true;
 
+        // act
         app.handle_key(crossterm::event::KeyEvent::new(
             crossterm::event::KeyCode::Backspace,
             crossterm::event::KeyModifiers::NONE,
         ));
 
+        // assert
         assert!(
             !app.shell_mode(),
             "Backspace at empty prompt should exit shell mode"
@@ -1375,6 +1384,7 @@ mod tests {
 
     #[test]
     fn shell_mode_submit_emits_run_shell_command_intent() {
+        // arrange
         let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
         let intent_sink = {
             let intents = Arc::clone(&intents);
@@ -1387,6 +1397,7 @@ mod tests {
         app.focus = Focus::Prompt;
         app.composer.shell_mode = true;
 
+        // act
         for ch in "ls -la".chars() {
             app.handle_key(crossterm::event::KeyEvent::new(
                 crossterm::event::KeyCode::Char(ch),
@@ -1399,6 +1410,7 @@ mod tests {
             crossterm::event::KeyModifiers::NONE,
         ));
 
+        // assert
         let intents = intents.lock().expect("lock intents");
         assert_eq!(intents.len(), 1);
         match &intents[0] {
@@ -1411,16 +1423,19 @@ mod tests {
 
     #[test]
     fn shell_mode_does_not_enter_when_prompt_has_text() {
+        // arrange
         let mut app = AppState::new_live(None, false, None);
         app.focus = Focus::Prompt;
         app.composer.prompt_buffer = "hello".to_string();
         app.composer.prompt_cursor = 5;
 
+        // act
         app.handle_key(crossterm::event::KeyEvent::new(
             crossterm::event::KeyCode::Char('!'),
             crossterm::event::KeyModifiers::NONE,
         ));
 
+        // assert
         assert!(
             !app.shell_mode(),
             "should not enter shell mode when prompt has text"

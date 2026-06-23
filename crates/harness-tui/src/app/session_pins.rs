@@ -76,29 +76,38 @@ mod tests {
 
     #[test]
     fn session_pins_round_trip() {
+        // arrange
         let dir = tempdir().unwrap();
         let path = session_pins_path_for_session_dir(dir.path());
         let mut pins = BTreeSet::new();
         pins.insert("run-abc".to_string());
         pins.insert("run-xyz".to_string());
 
+        // act
         save_session_pins(&path, &pins).unwrap();
         let loaded = load_session_pins(&path).unwrap();
+        // assert
         assert_eq!(loaded, pins);
     }
 
     #[test]
     fn session_pins_missing_file_returns_empty() {
+        // arrange
         let dir = tempdir().unwrap();
         let path = session_pins_path_for_session_dir(dir.path());
+        // act
         let loaded = load_session_pins(&path).unwrap();
+        // assert
         assert!(loaded.is_empty());
     }
 
     #[test]
     fn session_pins_path_under_tui_subdir() {
+        // arrange
         let dir = tempdir().unwrap();
+        // act
         let path = session_pins_path_for_session_dir(dir.path());
+        // assert
         assert!(path.ends_with("tui/session-pins.json"));
     }
 }

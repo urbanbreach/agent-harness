@@ -155,19 +155,23 @@ mod tests {
 
     #[test]
     fn model_favorites_round_trip() {
+        // arrange
         let dir = tempdir().unwrap();
         let path = model_favorites_path_for_session_dir(dir.path());
         let mut favorites = BTreeSet::new();
         favorites.insert("openai/gpt-5.5".to_string());
         favorites.insert("anthropic/claude-4".to_string());
 
+        // act
         save_model_favorites(&path, &favorites).unwrap();
         let loaded = load_model_favorites(&path).unwrap();
+        // assert
         assert_eq!(loaded, favorites);
     }
 
     #[test]
     fn model_recents_round_trip() {
+        // arrange
         let dir = tempdir().unwrap();
         let path = model_recents_path_for_session_dir(dir.path());
         let recents = vec![
@@ -175,15 +179,20 @@ mod tests {
             "anthropic/claude-4".to_string(),
         ];
 
+        // act
         save_model_recents(&path, &recents).unwrap();
         let loaded = load_model_recents(&path).unwrap();
+        // assert
         assert_eq!(loaded, recents);
     }
 
     #[test]
     fn push_model_recent_dedupes_and_caps() {
+        // arrange
         let mut recents = vec!["a".to_string(), "b".to_string()];
+        // act
         push_model_recent(&mut recents, "b");
+        // assert
         assert_eq!(recents, vec!["b".to_string(), "a".to_string()]);
 
         for i in 0..15 {
