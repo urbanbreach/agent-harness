@@ -575,10 +575,8 @@ async fn read_terminal_manual_callback_url(
                     KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         return Ok(ManualCallbackInput::Cancelled);
                     }
-                    KeyCode::Char(ch) => {
-                        if !ch.is_control() {
-                            value.push(ch);
-                        }
+                    KeyCode::Char(ch) if !ch.is_control() => {
+                        value.push(ch);
                     }
                     _ => {}
                 },
