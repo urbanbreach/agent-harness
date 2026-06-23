@@ -368,6 +368,16 @@ fn validate_shell_path_arguments(
         let candidate = if token.starts_with('-') {
             if let Some((_, value)) = token.split_once('=') {
                 value
+            } else if !token.starts_with("--") && token.chars().nth(1).is_some() {
+                let mut chars = token.chars();
+                chars.next();
+                chars.next();
+                let payload = chars.as_str();
+                if payload.is_empty() {
+                    continue;
+                } else {
+                    payload
+                }
             } else {
                 continue;
             }
@@ -518,6 +528,28 @@ mod tests {
         assert!(matches!(
             err,
             ToolError::CommandBlocked(message) if message.contains(" is not in allowlist")
+        ));
+    }
+
+    #[test]
+    fn validate_direct_args_rejects_embedded_external_paths() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: vec!["gcc".to_string()],
+            cwd_roots: vec![".".to_string()],
+        });
+
+        let embedded_path_err = safety
+            .validate_direct_args(
+                "gcc",
+                &["-I/etc/passwd".to_string()],
+                tempdir.path(),
+                tempdir.path(),
+            )
+            .expect_err("direct shell.run embedded path args should stay inside workspace");
+        assert!(matches!(
+            embedded_path_err,
+            ToolError::PathEscapesWorkspace { .. }
         ));
     }
 
