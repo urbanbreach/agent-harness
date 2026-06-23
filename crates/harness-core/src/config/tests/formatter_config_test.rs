@@ -3,9 +3,12 @@ use crate::config::{FormatterConfig, FormatterOverride};
 
 #[test]
 fn formatter_scalar_false_disables_formatting() {
+    // arrange
+    // act
     let translated =
         translate_public_formatter_config(Some(&serde_json::Value::Bool(false))).unwrap();
 
+    // assert
     assert!(!translated.enabled);
     assert!(!translated.experimental_oxfmt);
     assert!(translated.overrides.is_empty());
@@ -13,9 +16,12 @@ fn formatter_scalar_false_disables_formatting() {
 
 #[test]
 fn formatter_scalar_true_yields_defaults() {
+    // arrange
+    // act
     let translated =
         translate_public_formatter_config(Some(&serde_json::Value::Bool(true))).unwrap();
 
+    // assert
     assert!(translated.enabled);
     assert!(!translated.experimental_oxfmt);
     assert!(translated.overrides.is_empty());
@@ -23,8 +29,11 @@ fn formatter_scalar_true_yields_defaults() {
 
 #[test]
 fn formatter_none_yields_defaults() {
+    // arrange
+    // act
     let translated = translate_public_formatter_config(None).unwrap();
 
+    // assert
     assert!(translated.enabled);
     assert!(!translated.experimental_oxfmt);
     assert!(translated.overrides.is_empty());
@@ -32,12 +41,15 @@ fn formatter_none_yields_defaults() {
 
 #[test]
 fn formatter_object_parses_enabled_and_experimental_oxfmt() {
+    // arrange
     let value = serde_json::json!({
         "enabled": false,
         "experimentalOxfmt": true,
     });
+    // act
     let translated = translate_public_formatter_config(Some(&value)).unwrap();
 
+    // assert
     assert!(!translated.enabled);
     assert!(translated.experimental_oxfmt);
     assert!(translated.overrides.is_empty());
@@ -45,14 +57,17 @@ fn formatter_object_parses_enabled_and_experimental_oxfmt() {
 
 #[test]
 fn formatter_object_parses_named_override() {
+    // arrange
     let value = serde_json::json!({
         "rustfmt": {
             "command": ["rustfmt", "--edition", "2021"],
             "extensions": [".rs"],
         },
     });
+    // act
     let translated = translate_public_formatter_config(Some(&value)).unwrap();
 
+    // assert
     assert!(translated.enabled);
     let rustfmt = translated
         .overrides
@@ -73,6 +88,7 @@ fn formatter_object_parses_named_override() {
 
 #[test]
 fn formatter_disable_by_name_sets_disabled_flag() {
+    // arrange
     let value = serde_json::json!({
         "prettier": {
             "disabled": true,
@@ -80,8 +96,10 @@ fn formatter_disable_by_name_sets_disabled_flag() {
             "extensions": [".js", ".ts"],
         },
     });
+    // act
     let translated = translate_public_formatter_config(Some(&value)).unwrap();
 
+    // assert
     let prettier = translated
         .overrides
         .get("prettier")
@@ -95,6 +113,7 @@ fn formatter_disable_by_name_sets_disabled_flag() {
 
 #[test]
 fn formatter_environment_is_preserved_at_config_level() {
+    // arrange
     let value = serde_json::json!({
         "black": {
             "command": ["black"],
@@ -105,8 +124,10 @@ fn formatter_environment_is_preserved_at_config_level() {
             },
         },
     });
+    // act
     let translated = translate_public_formatter_config(Some(&value)).unwrap();
 
+    // assert
     let black = translated.overrides.get("black").expect("black override");
     let environment = black.environment.as_ref().expect("environment map");
     assert_eq!(
@@ -121,11 +142,14 @@ fn formatter_environment_is_preserved_at_config_level() {
 
 #[test]
 fn formatter_uvformat_alias_translates_to_uv_key() {
+    // arrange
     let value = serde_json::json!({
         "uvformat": { "disabled": true },
     });
+    // act
     let translated = translate_public_formatter_config(Some(&value)).unwrap();
 
+    // assert
     assert!(translated.enabled);
     assert!(
         !translated.overrides.contains_key("uvformat"),
@@ -140,12 +164,15 @@ fn formatter_uvformat_alias_translates_to_uv_key() {
 
 #[test]
 fn formatter_uv_canonical_key_takes_precedence_over_uvformat_alias() {
+    // arrange
     let value = serde_json::json!({
         "uv": { "disabled": true },
         "uvformat": { "disabled": false },
     });
+    // act
     let translated = translate_public_formatter_config(Some(&value)).unwrap();
 
+    // assert
     let uv = translated.overrides.get("uv").expect("uv override");
     assert!(
         uv.disabled,
@@ -156,6 +183,7 @@ fn formatter_uv_canonical_key_takes_precedence_over_uvformat_alias() {
 
 #[test]
 fn formatter_languages_backward_compat_converts_to_synthetic_overrides() {
+    // arrange
     let value = serde_json::json!({
         "enabled": true,
         "languages": {
@@ -163,8 +191,10 @@ fn formatter_languages_backward_compat_converts_to_synthetic_overrides() {
             "py": { "command": ["black"] },
         },
     });
+    // act
     let translated = translate_public_formatter_config(Some(&value)).unwrap();
 
+    // assert
     assert!(translated.enabled);
 
     let rust = translated
@@ -184,8 +214,11 @@ fn formatter_languages_backward_compat_converts_to_synthetic_overrides() {
 
 #[test]
 fn formatter_default_values_are_sensible() {
+    // arrange
+    // act
     let default = FormatterConfig::default();
 
+    // assert
     assert!(default.enabled);
     assert!(!default.experimental_oxfmt);
     assert!(default.overrides.is_empty());
@@ -193,8 +226,11 @@ fn formatter_default_values_are_sensible() {
 
 #[test]
 fn formatter_override_default_values_are_sensible() {
+    // arrange
+    // act
     let override_value: FormatterOverride = serde_json::from_value(serde_json::json!({})).unwrap();
 
+    // assert
     assert!(!override_value.disabled);
     assert!(override_value.command.is_none());
     assert!(override_value.environment.is_none());

@@ -117,6 +117,8 @@ fn schema_uses_runtime_first_public_contract() {
 
 #[test]
 fn inert_compatibility_keys_absent_from_generated_schema() {
+    // arrange
+    // act
     let schema = harness_schema_pretty_json().expect("schema generation should succeed");
     let parsed: serde_json::Value =
         serde_json::from_str(&schema).expect("schema output should be valid json");
@@ -125,6 +127,7 @@ fn inert_compatibility_keys_absent_from_generated_schema() {
         .and_then(serde_json::Value::as_object)
         .expect("schema should contain properties");
 
+    // assert
     for key in [
         "compaction",
         "experimental",
