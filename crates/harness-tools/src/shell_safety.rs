@@ -369,7 +369,22 @@ fn validate_shell_path_arguments(
             if let Some((_, value)) = token.split_once('=') {
                 value
             } else {
-                continue;
+                let mut chars = token.chars();
+                chars.next(); // skip '-'
+                if let Some(flag) = chars.next() {
+                    if flag.is_alphanumeric() {
+                        let remainder = chars.as_str();
+                        if remainder.starts_with('/') || remainder.starts_with('.') {
+                            remainder
+                        } else {
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
+                } else {
+                    continue;
+                }
             }
         } else {
             token
@@ -564,6 +579,25 @@ mod tests {
             .validate_bash_command("ls foo/../../../etc/pas*", tempdir.path(), tempdir.path())
             .expect_err("external relative path with glob should be blocked");
         assert!(matches!(err4, ToolError::PathEscapesWorkspace { .. }));
+    }
+
+    #[test]
+    fn validate_bash_command_rejects_external_paths_in_short_flags() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: vec!["ls".to_string()],
+            cwd_roots: vec![".".to_string()],
+        });
+
+        let err = safety
+            .validate_bash_command("ls -I/etc/passwd", tempdir.path(), tempdir.path())
+            .expect_err("external path attached to short flag should be blocked");
+        assert!(matches!(err, ToolError::PathEscapesWorkspace { .. }));
+
+        let err2 = safety
+            .validate_bash_command("ls -I../../../etc/passwd", tempdir.path(), tempdir.path())
+            .expect_err("external relative path attached to short flag should be blocked");
+        assert!(matches!(err2, ToolError::PathEscapesWorkspace { .. }));
     }
 
     #[test]
