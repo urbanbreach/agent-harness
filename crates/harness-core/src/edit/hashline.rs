@@ -755,7 +755,7 @@ mod tests {
                 .expect("non-overlapping ops should apply");
 
             let mut expected_lines = source_lines.clone();
-            model.sort_by(|left, right| right.0.cmp(&left.0));
+            model.sort_by_key(|entry| std::cmp::Reverse(entry.0));
             for (line_index, maybe_replacement) in model {
                 match maybe_replacement {
                     Some(replacement) => {
