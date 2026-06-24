@@ -175,15 +175,9 @@ fn redaction_marker_for_sensitive_key(key: &str) -> Option<&'static str> {
     if normalized == "credentials" {
         return None;
     }
-    let segments = key
-        .split(|character: char| !character.is_ascii_alphanumeric())
-        .filter(|segment| !segment.is_empty())
-        .map(|segment| segment.to_ascii_lowercase())
-        .collect::<Vec<_>>();
-
     if normalized == "apikey"
         || normalized.ends_with("apikey")
-        || adjacent_segments(&segments, "api", "key")
+        || adjacent_segments(key, "api", "key")
     {
         return Some("[REDACTED_API_KEY]");
     }
@@ -193,7 +187,7 @@ fn redaction_marker_for_sensitive_key(key: &str) -> Option<&'static str> {
     if normalized.contains("cookie") {
         return Some("[REDACTED_COOKIE]");
     }
-    if normalized.contains("privatekey") || adjacent_segments(&segments, "private", "key") {
+    if normalized.contains("privatekey") || adjacent_segments(key, "private", "key") {
         return Some("[REDACTED_PRIVATE_KEY]");
     }
     if normalized.contains("password")
@@ -201,7 +195,7 @@ fn redaction_marker_for_sensitive_key(key: &str) -> Option<&'static str> {
         || normalized.contains("secret")
         || normalized.contains("token")
         || normalized.contains("credential")
-        || credential_key_segments(&segments)
+        || credential_key_segments(key)
     {
         return Some("[REDACTED_SECRET]");
     }
@@ -209,23 +203,37 @@ fn redaction_marker_for_sensitive_key(key: &str) -> Option<&'static str> {
     None
 }
 
-fn adjacent_segments(segments: &[String], left: &str, right: &str) -> bool {
-    segments
-        .windows(2)
-        .any(|window| window[0] == left && window[1] == right)
+fn get_segments(key: &str) -> impl Iterator<Item = &str> + Clone {
+    key.split(|character: char| !character.is_ascii_alphanumeric())
+        .filter(|segment| !segment.is_empty())
 }
 
-fn key_segments_contain(segments: &[String], needle: &str) -> bool {
-    segments.iter().any(|segment| segment == needle)
+fn adjacent_segments(key: &str, left: &str, right: &str) -> bool {
+    let mut segments = get_segments(key);
+    let mut prev = match segments.next() {
+        Some(s) => s,
+        None => return false,
+    };
+    for curr in segments {
+        if prev.eq_ignore_ascii_case(left) && curr.eq_ignore_ascii_case(right) {
+            return true;
+        }
+        prev = curr;
+    }
+    false
 }
 
-fn credential_key_segments(segments: &[String]) -> bool {
-    if !key_segments_contain(segments, "key") {
+fn key_segments_contain(key: &str, needle: &str) -> bool {
+    get_segments(key).any(|segment| segment.eq_ignore_ascii_case(needle))
+}
+
+fn credential_key_segments(key: &str) -> bool {
+    if !key_segments_contain(key, "key") {
         return false;
     }
-    segments.iter().any(|segment| {
-        matches!(
-            segment.as_str(),
+    get_segments(key).any(|segment| {
+        let is_match = matches!(
+            segment.to_ascii_lowercase().as_str(),
             "access"
                 | "api"
                 | "auth"
@@ -240,7 +248,8 @@ fn credential_key_segments(segments: &[String]) -> bool {
                 | "secret"
                 | "token"
                 | "aws"
-        )
+        );
+        is_match
     })
 }
 
