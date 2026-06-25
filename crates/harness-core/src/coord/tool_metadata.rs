@@ -27,6 +27,7 @@ pub(super) struct AppliedToolEditMetadata {
     pub(super) metadata: HashlineEditMetadata,
     pub(super) diff_rel_path: Option<String>,
     pub(super) diff_digest: Option<String>,
+    pub(super) before_rel_path: Option<String>,
     pub(super) deleted: bool,
 }
 
@@ -125,7 +126,8 @@ pub(super) fn applied_tool_edit_metadata(
         metadata.edit_id = edit_id.to_string();
     }
     if let Some(path) = structured
-        .and_then(|value| value.get("path"))
+        .and_then(|value| value.get("to_path"))
+        .or_else(|| structured.and_then(|value| value.get("path")))
         .and_then(Value::as_str)
         .and_then(non_empty_trimmed)
     {
@@ -139,10 +141,15 @@ pub(super) fn applied_tool_edit_metadata(
             .and_then(Value::as_str)
             .is_some_and(|path| !Path::new(path).exists());
     let (diff_rel_path, diff_digest) = hashline_diff_refs(result);
+    let before_rel_path = structured
+        .and_then(|value| value.get("before_rel_path"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
     vec![AppliedToolEditMetadata {
         metadata,
         diff_rel_path,
         diff_digest,
+        before_rel_path,
         deleted,
     }]
 }

@@ -340,16 +340,107 @@ impl Coordinator {
         match outcome {
             JobOutcome::Succeeded { result } => {
                 let result_for_response = result.clone();
-                let applied_edits = applied_tool_edit_metadata(
+                let mut applied_edits = applied_tool_edit_metadata(
                     &task_hook_state.tool_id,
                     &result_for_response,
                     task.hashline_edit.as_ref(),
                 );
+
+                // Run formatters BEFORE computing digests so that the stored
+                // digest and EditApplied event reflect the post-format file
+                // content, matching OpenCode's behavior of re-reading the file
+                // after formatting.
+                let mut formatter_warnings = Vec::new();
+                let mut formatted_paths = std::collections::BTreeSet::new();
+                let caching_discovery =
+                    formatter::CachingFormatterDiscovery::new(formatter::RealFormatterDiscovery);
+                for applied_edit in &applied_edits {
+                    if applied_edit.deleted {
+                        continue;
+                    }
+                    let path = &applied_edit.metadata.path;
+                    if !formatted_paths.insert(path.clone()) {
+                        continue;
+                    }
+                    if let Err(warning) = formatter::run_formatter_for_path_with_discovery(
+                        &self.config.formatter,
+                        &run_state.info.workspace_root,
+                        path,
+                        &caching_discovery,
+                    )
+                    .await
+                    {
+                        formatter_warnings.push(format!("{path}: {warning}"));
+                    }
+                }
+
+                // Regenerate diff artifacts to reflect post-format content,
+                // matching OpenCode's behavior of re-reading the file after
+                // formatting and regenerating the diff from the original
+                // pre-edit content vs the formatted file.
+                for applied_edit in &mut applied_edits {
+                    if applied_edit.deleted {
+                        continue;
+                    }
+                    let Some(before_rel_path) = &applied_edit.before_rel_path else {
+                        continue;
+                    };
+                    let Some(diff_rel_path) = &applied_edit.diff_rel_path else {
+                        continue;
+                    };
+
+                    let before_name = Path::new(before_rel_path)
+                        .strip_prefix(crate::session_paths::ARTIFACTS_DIR_NAME)
+                        .unwrap_or(Path::new(before_rel_path));
+                    let before_full_path = run_state.info.artifacts_dir.join(before_name);
+                    let before_content = match tokio::fs::read_to_string(&before_full_path).await {
+                        Ok(content) => content,
+                        Err(_) => continue,
+                    };
+
+                    let file_path = if Path::new(&applied_edit.metadata.path).is_absolute() {
+                        PathBuf::from(&applied_edit.metadata.path)
+                    } else {
+                        run_state.info.workspace_root.join(&applied_edit.metadata.path)
+                    };
+                    let formatted_content = match tokio::fs::read_to_string(&file_path).await {
+                        Ok(content) => content,
+                        Err(_) => continue,
+                    };
+
+                    let before_normalized = normalize_for_diff(&before_content);
+                    let formatted_normalized = normalize_for_diff(&formatted_content);
+
+                    if before_normalized == formatted_normalized {
+                        continue;
+                    }
+
+                    let raw_diff = similar::TextDiff::from_lines(
+                        &before_normalized,
+                        &formatted_normalized,
+                    )
+                    .unified_diff()
+                    .to_string();
+                    let new_diff = trim_diff(&raw_diff);
+
+                    let diff_name = Path::new(diff_rel_path)
+                        .strip_prefix(crate::session_paths::ARTIFACTS_DIR_NAME)
+                        .unwrap_or(Path::new(diff_rel_path));
+                    let diff_full_path = run_state.info.artifacts_dir.join(diff_name);
+                    if std::fs::write(&diff_full_path, new_diff.as_bytes()).is_ok() {
+                        applied_edit.diff_digest =
+                            Some(blake3::hash(new_diff.as_bytes()).to_hex().to_string());
+                    }
+                }
+
+                // Compute digests and store EditApplied events AFTER formatting
+                // so new_file_digest matches the actual on-disk file content.
                 for applied_edit in &applied_edits {
                     let AppliedToolEditMetadata {
                         metadata,
                         diff_rel_path,
                         diff_digest,
+                        before_rel_path: _,
                         deleted,
                     } = applied_edit;
                     let new_file_digest = if *deleted {
@@ -385,30 +476,6 @@ impl Coordinator {
                             request_correlation_id: request_correlation_id.as_deref(),
                         },
                     )?;
-                }
-
-                let mut formatter_warnings = Vec::new();
-                let mut formatted_paths = std::collections::BTreeSet::new();
-                let caching_discovery =
-                    formatter::CachingFormatterDiscovery::new(formatter::RealFormatterDiscovery);
-                for applied_edit in &applied_edits {
-                    if applied_edit.deleted {
-                        continue;
-                    }
-                    let path = &applied_edit.metadata.path;
-                    if !formatted_paths.insert(path.clone()) {
-                        continue;
-                    }
-                    if let Err(warning) = formatter::run_formatter_for_path_with_discovery(
-                        &self.config.formatter,
-                        &run_state.info.workspace_root,
-                        path,
-                        &caching_discovery,
-                    )
-                    .await
-                    {
-                        formatter_warnings.push(format!("{path}: {warning}"));
-                    }
                 }
 
                 let mut result_summary = result.display_text.clone();
@@ -727,5 +794,100 @@ impl Coordinator {
         }
 
         Ok(())
+    }
+}
+
+fn strip_bom(text: &str) -> &str {
+    text.strip_prefix('\u{feff}').unwrap_or(text)
+}
+
+fn normalize_for_diff(text: &str) -> String {
+    strip_bom(text).replace("\r\n", "\n")
+}
+
+fn trim_diff(diff: &str) -> String {
+    let lines: Vec<&str> = diff.split('\n').collect();
+
+    let is_content = |line: &&str| {
+        (line.starts_with('+') && !line.starts_with("+++"))
+            || (line.starts_with('-') && !line.starts_with("---"))
+            || (line.starts_with(' ') && !line.is_empty())
+    };
+
+    let min_indent = lines
+        .iter()
+        .filter(|line| is_content(line))
+        .filter_map(|line| {
+            let content = &line[1..];
+            if content.trim().is_empty() {
+                return None;
+            }
+            Some(content.len() - content.trim_start().len())
+        })
+        .min()
+        .unwrap_or(0);
+
+    if min_indent == 0 {
+        return diff.to_string();
+    }
+
+    lines
+        .iter()
+        .map(|line| {
+            if is_content(line) {
+                let prefix = &line[..1];
+                let content = &line[1..];
+                if content.len() >= min_indent {
+                    format!("{prefix}{}", &content[min_indent..])
+                } else {
+                    line.to_string()
+                }
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[cfg(test)]
+mod diff_helper_tests {
+    use super::*;
+
+    #[test]
+    fn strip_bom_removes_bom_prefix() {
+        assert_eq!(strip_bom("\u{feff}hello"), "hello");
+        assert_eq!(strip_bom("hello"), "hello");
+        assert_eq!(strip_bom(""), "");
+    }
+
+    #[test]
+    fn normalize_for_diff_strips_bom_and_crlf() {
+        assert_eq!(normalize_for_diff("\u{feff}\r\nhello\r\n"), "\nhello\n");
+        assert_eq!(normalize_for_diff("hello\n"), "hello\n");
+        assert_eq!(normalize_for_diff("\r\n\r\n"), "\n\n");
+    }
+
+    #[test]
+    fn trim_diff_strips_common_indent() {
+        let diff = "--- a\n+++ b\n@@ -1,2 +1,2 @@\n     line1\n-    old\n+    new\n";
+        let trimmed = trim_diff(diff);
+        assert!(trimmed.contains(" line1"), "context line should have 1 space prefix");
+        assert!(trimmed.contains("-old"), "removed line should have no indent");
+        assert!(trimmed.contains("+new"), "added line should have no indent");
+    }
+
+    #[test]
+    fn trim_diff_preserves_no_indent_diffs() {
+        let diff = "--- a\n+++ b\n@@ -1,2 +1,2 @@\n line1\n-old\n+new\n";
+        assert_eq!(trim_diff(diff), diff);
+    }
+
+    #[test]
+    fn trim_diff_skips_empty_content_lines_for_indent_calc() {
+        let diff = "--- a\n+++ b\n@@ -1,3 +1,3 @@\n     line1\n     \n-    old\n+    new\n";
+        let trimmed = trim_diff(diff);
+        assert!(trimmed.contains("-old"));
+        assert!(trimmed.contains("+new"));
     }
 }
