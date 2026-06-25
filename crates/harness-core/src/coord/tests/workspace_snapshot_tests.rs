@@ -286,3 +286,57 @@ pub(super) async fn replay_of_reverted_session_does_not_restore_files() {
         "replaying WorkspaceReverted must be side-effect free and leave workspace unchanged"
     );
 }
+
+pub(super) async fn live_rustfmt_formats_and_diff_reflects_post_format_content() {
+    if std::process::Command::new("rustfmt")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        eprintln!("skipping: rustfmt not available");
+        return;
+    }
+
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let workspace = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("create workspace");
+
+    let original = "fn main(){println!(\"hello\");}\n";
+    fs::write(workspace.join("test.rs"), original).expect("write file");
+
+    let config = FormatterConfig {
+        enabled: true,
+        experimental_oxfmt: false,
+        overrides: BTreeMap::new(),
+    };
+
+    run_formatter_for_path(&config, &workspace, "test.rs")
+        .await
+        .expect("rustfmt succeeds");
+
+    let formatted = fs::read_to_string(workspace.join("test.rs")).expect("read formatted file");
+    assert_ne!(formatted, original, "rustfmt should have changed the file");
+    assert!(
+        formatted.contains("fn main() {"),
+        "rustfmt should add space after fn main"
+    );
+
+    let before_normalized = original.replace("\r\n", "\n");
+    let formatted_normalized = formatted.replace("\r\n", "\n");
+    assert_ne!(
+        before_normalized, formatted_normalized,
+        "normalized content should differ"
+    );
+
+    let diff = similar::TextDiff::from_lines(&before_normalized, &formatted_normalized)
+        .unified_diff()
+        .to_string();
+    assert!(
+        diff.contains("-fn main(){println!(\"hello\");}"),
+        "diff should show original unformatted line"
+    );
+    assert!(
+        diff.contains("+fn main() {"),
+        "diff should show formatted line"
+    );
+}

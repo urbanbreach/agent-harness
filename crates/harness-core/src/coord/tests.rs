@@ -822,6 +822,7 @@ delegate_tokio_test!(success_continues_after_one_formatter_fails => formatter_ex
 delegate_tokio_test!(override_command_runs_even_when_builtin_not_on_path => formatter_execution_command_tests::override_command_runs_even_when_builtin_not_on_path);
 delegate_tokio_test!(extension_override_replaces_builtin_extension_list => formatter_execution_tests::extension_override_replaces_builtin_extension_list);
 delegate_tokio_test!(enabled_false_skips_all_formatters => formatter_execution_tests::enabled_false_skips_all_formatters);
+delegate_tokio_test!(live_rustfmt_formats_and_diff_reflects_post_format_content => workspace_snapshot_tests::live_rustfmt_formats_and_diff_reflects_post_format_content);
 
 fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
     let event_store =
