@@ -96,7 +96,14 @@ async fn native_code_lsp_rename_previews_and_applies_workspace_edits() {
     let apply_json = apply.structured_json.expect("rename apply structured json");
     assert_eq!(apply_json["applied"], json!(true));
     assert_eq!(apply_json["appliedEdits"].as_array().map(Vec::len), Some(2),);
-    assert_eq!(apply.artifacts.len(), 2);
+    assert_eq!(
+        apply
+            .artifacts
+            .iter()
+            .filter(|a| a.path.ends_with(".diff"))
+            .count(),
+        2
+    );
 }
 #[tokio::test]
 #[expect(

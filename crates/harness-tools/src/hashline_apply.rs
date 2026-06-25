@@ -184,6 +184,7 @@ pub(crate) fn apply_hashline_patch_to_workspace(
         &resolved_path,
         applied.changed_ranges,
         &diff,
+        Some(&source),
     )
 }
 
@@ -420,25 +421,35 @@ fn build_hashline_tool_result(
     resolved_path: &Path,
     changed_ranges: Vec<ChangedLineRange>,
     diff: &str,
+    before_content: Option<&str>,
 ) -> Result<ToolResult, ToolError> {
     let artifact = write_diff_artifact(ctx, edit_id, diff)?;
+    let before_artifact = before_content
+        .filter(|content| !content.is_empty())
+        .and_then(|content| write_before_artifact(ctx, edit_id, content).ok());
     let workspace = canonical_workspace_root(ctx)?;
     let display_path = workspace_relative_display(&workspace, resolved_path)?;
+    let mut json = json!({
+        "edit_id": edit_id,
+        "diff_rel_path": artifact.path,
+        "diff_digest": artifact.digest,
+        "path": display_path,
+        "resolved_path": resolved_path.display().to_string(),
+        "changed_ranges": changed_ranges,
+    });
+    if let Some(ref before) = before_artifact {
+        json["before_rel_path"] = json!(before.path);
+    }
+    let mut artifacts = vec![artifact];
+    artifacts.extend(before_artifact);
     Ok(crate::text_json_artifacts_tool_result(
         format!(
             "applied hashline edit {} to {}",
             edit_id,
             resolved_path.display()
         ),
-        json!({
-            "edit_id": edit_id,
-            "diff_rel_path": artifact.path,
-            "diff_digest": artifact.digest,
-            "path": display_path,
-            "resolved_path": resolved_path.display().to_string(),
-            "changed_ranges": changed_ranges,
-        }),
-        vec![artifact],
+        json,
+        artifacts,
     ))
 }
 
@@ -452,7 +463,7 @@ fn build_full_file_change_result(
     let diff = unified_diff(before, after);
     let changed_ranges = full_file_changed_ranges(before, after);
 
-    build_hashline_tool_result(ctx, edit_id, resolved_path, changed_ranges, &diff)
+    build_hashline_tool_result(ctx, edit_id, resolved_path, changed_ranges, &diff, Some(before))
 }
 
 fn build_move_file_result(
@@ -466,26 +477,37 @@ fn build_move_file_result(
 ) -> Result<ToolResult, ToolError> {
     let diff = move_file_diff(from_path, to_path, source);
     let artifact = write_diff_artifact(ctx, edit_id, &diff)?;
+    let before_artifact = if source.is_empty() {
+        None
+    } else {
+        Some(write_before_artifact(ctx, edit_id, source)?)
+    };
     let workspace = canonical_workspace_root(ctx)?;
     let from_display_path = workspace_relative_display(&workspace, from_resolved_path)?;
     let to_display_path = workspace_relative_display(&workspace, to_resolved_path)?;
+    let mut json = json!({
+        "edit_id": edit_id,
+        "diff_rel_path": artifact.path,
+        "diff_digest": artifact.digest,
+        "path": from_display_path,
+        "resolved_path": from_resolved_path.display().to_string(),
+        "to_path": to_display_path,
+        "resolved_to_path": to_resolved_path.display().to_string(),
+        "changed_ranges": [],
+    });
+    if let Some(ref before) = before_artifact {
+        json["before_rel_path"] = json!(before.path);
+    }
+    let mut artifacts = vec![artifact];
+    artifacts.extend(before_artifact);
     Ok(crate::text_json_artifacts_tool_result(
         format!(
             "applied hashline edit {} to {}",
             edit_id,
             to_resolved_path.display()
         ),
-        json!({
-            "edit_id": edit_id,
-            "diff_rel_path": artifact.path,
-            "diff_digest": artifact.digest,
-            "path": from_display_path,
-            "resolved_path": from_resolved_path.display().to_string(),
-            "to_path": to_display_path,
-            "resolved_to_path": to_resolved_path.display().to_string(),
-            "changed_ranges": [],
-        }),
-        vec![artifact],
+        json,
+        artifacts,
     ))
 }
 
@@ -520,6 +542,17 @@ fn write_diff_artifact(
         .map_err(|e| ToolError::Execution(format!("failed to access artifact store: {e}")))?
         .write_text(&format!("edit-{edit_id}.diff"), diff)
         .map_err(|e| ToolError::Execution(format!("failed to write diff artifact: {e}")))
+}
+
+fn write_before_artifact(
+    ctx: &ToolContext,
+    edit_id: &str,
+    before: &str,
+) -> Result<harness_core::tool::ArtifactRef, ToolError> {
+    ctx.artifact_store()
+        .map_err(|e| ToolError::Execution(format!("failed to access artifact store: {e}")))?
+        .write_text(&format!("edit-{edit_id}.before"), before)
+        .map_err(|e| ToolError::Execution(format!("failed to write before artifact: {e}")))
 }
 
 fn line_count(content: &str) -> u32 {
