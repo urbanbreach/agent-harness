@@ -36,12 +36,11 @@ pub enum OnboardingStep {
     LoginSuccess,
     LoginErrorTimeout,
     SkipConfirmation,
-    FirstPromptSuccess,
     SkillSelection,
 }
 
 impl OnboardingStep {
-    pub const INVENTORY: [Self; 14] = [
+    pub const INVENTORY: [Self; 13] = [
         Self::StartSplash,
         Self::ProviderPick,
         Self::AuthMethodPick,
@@ -54,7 +53,6 @@ impl OnboardingStep {
         Self::LoginSuccess,
         Self::LoginErrorTimeout,
         Self::SkipConfirmation,
-        Self::FirstPromptSuccess,
         Self::SkillSelection,
     ];
 
@@ -71,9 +69,8 @@ impl OnboardingStep {
             Self::ApiKeyEntry => Self::LoginSuccess,
             Self::LoginSuccess => Self::SkillSelection,
             Self::LoginErrorTimeout => Self::AuthMethodPick,
-            Self::SkipConfirmation => Self::FirstPromptSuccess,
-            Self::FirstPromptSuccess => Self::FirstPromptSuccess,
-            Self::SkillSelection => Self::FirstPromptSuccess,
+            Self::SkipConfirmation => Self::StartSplash,
+            Self::SkillSelection => Self::SkillSelection,
         }
     }
 
@@ -91,7 +88,6 @@ impl OnboardingStep {
             Self::LoginSuccess => "login_success",
             Self::LoginErrorTimeout => "login_error_timeout",
             Self::SkipConfirmation => "skip_confirmation",
-            Self::FirstPromptSuccess => "first_prompt_success",
             Self::SkillSelection => "skill_selection",
         }
     }
@@ -206,7 +202,7 @@ pub fn screen_for(step: OnboardingStep, selected: usize) -> OnboardingScreen {
             "SUCCESS",
             "Credential stored",
             "Provider auth is ready without a live transport probe. You can relogin or logout later from /auth.",
-            vec![choice("Continue", "Move to first prompt")],
+            vec![choice("Continue", "Move to skill selection")],
             Some("Stored credential present · secret redacted"),
             "enter continue",
         ),
@@ -231,14 +227,6 @@ pub fn screen_for(step: OnboardingStep, selected: usize) -> OnboardingScreen {
             ],
             None,
             "↑↓ select · enter choose · esc back",
-        ),
-        OnboardingStep::FirstPromptSuccess => (
-            "FIRST PROMPT",
-            "Ready for first prompt",
-            "Send a prompt to confirm the selected provider path. Success appears in the live transcript.",
-            vec![choice("Start session", "Open the transcript-first shell")],
-            Some("First prompt success signal ready"),
-            "enter start · ctrl+p commands",
         ),
         OnboardingStep::SkillSelection => (
             "SKILLS",

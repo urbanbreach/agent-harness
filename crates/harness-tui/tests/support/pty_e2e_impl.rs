@@ -90,9 +90,9 @@ pub(crate) fn pty_onboarding_auth_drives_required_screens() {
 
     send_key(helper.writer.as_mut(), b'\r').expect("continue to skill selection");
     helper.wait_for("Select skills");
-    send_key(helper.writer.as_mut(), b'\r').expect("continue to first-prompt success");
-    helper.wait_for("Ready for first prompt");
-    send_key(helper.writer.as_mut(), b'\r').expect("finish onboarding helper");
+    send_key(helper.writer.as_mut(), b'\r').expect("finish onboarding and return to start shell");
+    helper.wait_for("ctrl+p commands");
+    send_key(helper.writer.as_mut(), b'\r').expect("start new session from launcher");
 
     let status = helper
         .child

@@ -597,9 +597,14 @@ impl AppState {
                     "onboarding skipped for this launch; no credential was written".to_string(),
                 );
             }
-            OnboardingStep::FirstPromptSuccess => {
+            OnboardingStep::SkipConfirmation if self.onboarding.selected == 1 => {
+                self.onboarding.step = OnboardingStep::StartSplash;
+                self.onboarding.selected = 0;
+            }
+            OnboardingStep::SkillSelection => {
                 self.onboarding.visible = false;
-                self.apply_new_session_launcher_selection();
+                self.status_banner =
+                    Some("onboarding complete; ready to start".to_string());
             }
             _ => {
                 self.onboarding.step = self.onboarding.step.next();
