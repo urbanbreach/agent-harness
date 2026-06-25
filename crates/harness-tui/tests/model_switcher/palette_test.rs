@@ -369,7 +369,7 @@ fn model_switcher_search_matches_authenticated_provider_label_and_switches() {
     assert_eq!(app.launch_metadata().model(), Some("gpt-5.5"));
     assert_eq!(
         app.current_source_label().as_deref(),
-        Some("GitHub Copilot (OpenAI-compatible)")
+        Some("GitHub Copilot")
     );
     assert_eq!(app.current_model_label(), "GPT 5.5");
     let intents = intents.lock().expect("lock intents");

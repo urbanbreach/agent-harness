@@ -117,19 +117,6 @@ fn compact_usage_count(value: u64) -> String {
     }
 }
 
-pub(super) fn provider_label_includes_backend(provider: &str, backend: &str) -> bool {
-    let provider = provider.trim();
-    let backend = backend.trim();
-    if provider.eq_ignore_ascii_case(backend) {
-        return true;
-    }
-
-    provider
-        .strip_suffix(')')
-        .and_then(|label| label.rsplit_once('(').map(|(_, suffix)| suffix.trim()))
-        .is_some_and(|suffix| suffix.eq_ignore_ascii_case(backend))
-}
-
 pub(super) fn sibling_session_id(
     session_ids: &[String],
     current_session_id: &str,

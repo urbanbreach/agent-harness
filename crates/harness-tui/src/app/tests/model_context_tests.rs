@@ -129,13 +129,10 @@ pub(super) fn composer_metadata_prefers_short_agent_name_and_configured_source_l
     app.set_launch_metadata(LaunchMetadata::from_model_option(&option));
 
     assert_eq!(app.current_agent_label().as_deref(), Some("Build"));
-    assert_eq!(
-        app.current_source_label().as_deref(),
-        Some("CLIProxyAPI (OpenAI)")
-    );
+    assert_eq!(app.current_source_label().as_deref(), Some("CLIProxyAPI"));
 }
 
-pub(super) fn composer_metadata_deduplicates_provider_backend_source_label() {
+pub(super) fn composer_metadata_source_label_uses_provider_display_label_only() {
     let openai_option = metadata_model_option(
         "build",
         Some("Deep Agent"),

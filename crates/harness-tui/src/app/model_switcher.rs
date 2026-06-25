@@ -2,7 +2,6 @@ use std::collections::BTreeSet;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::child_session::provider_label_includes_backend;
 use super::model_metadata::{LaunchMetadata, ModelOption};
 use super::session_history::{fuzzy_subsequence_score, session_history_profile_label};
 use super::{set_pending_live_launch_metadata, AppState, UiIntent};
@@ -212,17 +211,7 @@ impl AppState {
                 (!Self::launch_value_is_unknown(provider) && provider != "local")
                     .then_some(provider)
             })?;
-        let backend = self
-            .launch_metadata
-            .provider_backend_label()
-            .filter(|value| !Self::launch_value_is_unknown(value));
-        Some(match backend {
-            Some(backend) if !provider_label_includes_backend(provider, backend) => {
-                format!("{provider} ({backend})")
-            }
-            None => provider.to_string(),
-            Some(_) => provider.to_string(),
-        })
+        Some(provider.to_string())
     }
 
     pub fn current_agent_label(&self) -> Option<String> {
