@@ -21,6 +21,7 @@ tokio-stream.workspace = true
 tokio-util.workspace = true
 tracing = "0.1"
 which = "7"
+similar = "2.7.0"
 harness-providers = { path = "../harness-providers" }
 
 [dev-dependencies]
