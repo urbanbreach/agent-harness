@@ -603,8 +603,7 @@ impl AppState {
             }
             OnboardingStep::SkillSelection => {
                 self.onboarding.visible = false;
-                self.status_banner =
-                    Some("onboarding complete; ready to start".to_string());
+                self.status_banner = Some("onboarding complete; ready to start".to_string());
             }
             _ => {
                 self.onboarding.step = self.onboarding.step.next();

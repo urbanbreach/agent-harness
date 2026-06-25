@@ -463,7 +463,14 @@ fn build_full_file_change_result(
     let diff = unified_diff(before, after);
     let changed_ranges = full_file_changed_ranges(before, after);
 
-    build_hashline_tool_result(ctx, edit_id, resolved_path, changed_ranges, &diff, Some(before))
+    build_hashline_tool_result(
+        ctx,
+        edit_id,
+        resolved_path,
+        changed_ranges,
+        &diff,
+        Some(before),
+    )
 }
 
 fn build_move_file_result(

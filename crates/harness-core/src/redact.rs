@@ -177,13 +177,11 @@ fn redaction_marker_for_sensitive_key(key: &str) -> Option<&'static str> {
     }
     let segments = key
         .split(|character: char| !character.is_ascii_alphanumeric())
-        .filter(|segment| !segment.is_empty())
-        .map(|segment| segment.to_ascii_lowercase())
-        .collect::<Vec<_>>();
+        .filter(|segment| !segment.is_empty());
 
     if normalized == "apikey"
         || normalized.ends_with("apikey")
-        || adjacent_segments(&segments, "api", "key")
+        || adjacent_segments(segments.clone(), "api", "key")
     {
         return Some("[REDACTED_API_KEY]");
     }
@@ -193,7 +191,7 @@ fn redaction_marker_for_sensitive_key(key: &str) -> Option<&'static str> {
     if normalized.contains("cookie") {
         return Some("[REDACTED_COOKIE]");
     }
-    if normalized.contains("privatekey") || adjacent_segments(&segments, "private", "key") {
+    if normalized.contains("privatekey") || adjacent_segments(segments.clone(), "private", "key") {
         return Some("[REDACTED_PRIVATE_KEY]");
     }
     if normalized.contains("password")
@@ -201,7 +199,7 @@ fn redaction_marker_for_sensitive_key(key: &str) -> Option<&'static str> {
         || normalized.contains("secret")
         || normalized.contains("token")
         || normalized.contains("credential")
-        || credential_key_segments(&segments)
+        || credential_key_segments(segments)
     {
         return Some("[REDACTED_SECRET]");
     }
@@ -209,38 +207,59 @@ fn redaction_marker_for_sensitive_key(key: &str) -> Option<&'static str> {
     None
 }
 
-fn adjacent_segments(segments: &[String], left: &str, right: &str) -> bool {
-    segments
-        .windows(2)
-        .any(|window| window[0] == left && window[1] == right)
+fn adjacent_segments<'a, I>(segments: I, left: &str, right: &str) -> bool
+where
+    I: Iterator<Item = &'a str>,
+{
+    let mut prev = None;
+    for segment in segments {
+        if let Some(p) = prev {
+            if p == left && segment.eq_ignore_ascii_case(right) {
+                return true;
+            }
+        }
+        if segment.eq_ignore_ascii_case(left) {
+            prev = Some(left);
+        } else {
+            prev = None;
+        }
+    }
+    false
 }
 
-fn key_segments_contain(segments: &[String], needle: &str) -> bool {
-    segments.iter().any(|segment| segment == needle)
+fn key_segments_contain<'a, I>(mut segments: I, needle: &str) -> bool
+where
+    I: Iterator<Item = &'a str>,
+{
+    segments.any(|segment| segment.eq_ignore_ascii_case(needle))
 }
 
-fn credential_key_segments(segments: &[String]) -> bool {
-    if !key_segments_contain(segments, "key") {
+fn credential_key_segments<'a, I>(mut segments: I) -> bool
+where
+    I: Iterator<Item = &'a str> + Clone,
+{
+    if !key_segments_contain(segments.clone(), "key") {
         return false;
     }
-    segments.iter().any(|segment| {
-        matches!(
-            segment.as_str(),
-            "access"
-                | "api"
-                | "auth"
-                | "bearer"
-                | "client"
-                | "credential"
-                | "github"
-                | "google"
-                | "openai"
-                | "private"
-                | "provider"
-                | "secret"
-                | "token"
-                | "aws"
-        )
+    segments.any(|segment| {
+        if segment.eq_ignore_ascii_case("access")
+            || segment.eq_ignore_ascii_case("api")
+            || segment.eq_ignore_ascii_case("auth")
+            || segment.eq_ignore_ascii_case("bearer")
+            || segment.eq_ignore_ascii_case("client")
+            || segment.eq_ignore_ascii_case("credential")
+            || segment.eq_ignore_ascii_case("github")
+            || segment.eq_ignore_ascii_case("google")
+            || segment.eq_ignore_ascii_case("openai")
+            || segment.eq_ignore_ascii_case("private")
+            || segment.eq_ignore_ascii_case("provider")
+            || segment.eq_ignore_ascii_case("secret")
+            || segment.eq_ignore_ascii_case("token")
+            || segment.eq_ignore_ascii_case("aws")
+        {
+            return true;
+        }
+        false
     })
 }
 
