@@ -97,6 +97,7 @@ async fn run_single_formatter(
         .args(&args[1..])
         .current_dir(workspace_root)
         .env("HARNESS_FORMATTER", "1")
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     for (key, value) in &formatter.environment {
