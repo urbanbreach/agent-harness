@@ -401,7 +401,10 @@ impl Coordinator {
                     let file_path = if Path::new(&applied_edit.metadata.path).is_absolute() {
                         PathBuf::from(&applied_edit.metadata.path)
                     } else {
-                        run_state.info.workspace_root.join(&applied_edit.metadata.path)
+                        run_state
+                            .info
+                            .workspace_root
+                            .join(&applied_edit.metadata.path)
                     };
                     let formatted_content = match tokio::fs::read_to_string(&file_path).await {
                         Ok(content) => content,
@@ -415,12 +418,10 @@ impl Coordinator {
                         continue;
                     }
 
-                    let raw_diff = similar::TextDiff::from_lines(
-                        &before_normalized,
-                        &formatted_normalized,
-                    )
-                    .unified_diff()
-                    .to_string();
+                    let raw_diff =
+                        similar::TextDiff::from_lines(&before_normalized, &formatted_normalized)
+                            .unified_diff()
+                            .to_string();
                     let new_diff = trim_diff(&raw_diff);
 
                     let diff_name = Path::new(diff_rel_path)
@@ -872,8 +873,14 @@ mod diff_helper_tests {
     fn trim_diff_strips_common_indent() {
         let diff = "--- a\n+++ b\n@@ -1,2 +1,2 @@\n     line1\n-    old\n+    new\n";
         let trimmed = trim_diff(diff);
-        assert!(trimmed.contains(" line1"), "context line should have 1 space prefix");
-        assert!(trimmed.contains("-old"), "removed line should have no indent");
+        assert!(
+            trimmed.contains(" line1"),
+            "context line should have 1 space prefix"
+        );
+        assert!(
+            trimmed.contains("-old"),
+            "removed line should have no indent"
+        );
         assert!(trimmed.contains("+new"), "added line should have no indent");
     }
 
