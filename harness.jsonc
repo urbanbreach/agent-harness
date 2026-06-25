@@ -352,14 +352,6 @@
             "output": ["text"],
           },
         },
-        "umans-glm-5.1": {
-          "name": "GLM 5.1",
-          "limit": { "context": 202752, "input": 202752, "output": 131072 },
-          "modalities": {
-            "input": ["text"],
-            "output": ["text"],
-          },
-        },
         "umans-glm-5.2": {
           "name": "GLM 5.2",
           "limit": { "context": 405504, "input": 405504, "output": 131072 },
@@ -367,16 +359,15 @@
             "input": ["text"],
             "output": ["text"],
           },
-        },
-        "umans-kimi-k2.6": {
-          "name": "Kimi K2.6",
-          "limit": { "context": 262144, "input": 262144, "output": 262144 },
-          "modalities": {
-            "input": ["text", "image"],
-            "output": ["text"],
-          },
-          "options": {
-            "thinking": { "type": "enabled", "budgetTokens": 32000 }
+          "variants": {
+            "high": {
+              "name": "High",
+              "metadata": { "reasoningEffort": "high" },
+            },
+            "max": {
+              "name": "Max",
+              "metadata": { "reasoningEffort": "xhigh" },
+            },
           },
         },
         "umans-kimi-k2.7": {
