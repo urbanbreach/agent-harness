@@ -20,6 +20,7 @@ pub mod perm;
 pub mod plan;
 pub mod proj;
 pub(crate) mod provider_args;
+pub mod provider_catalog;
 pub mod question_answers;
 pub mod redact;
 pub mod sched;
