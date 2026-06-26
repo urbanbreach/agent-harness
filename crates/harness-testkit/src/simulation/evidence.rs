@@ -152,7 +152,7 @@ pub fn simulation_event_rows(
 pub fn scan_simulation_artifact_root(
     artifact_root: &Path,
 ) -> SingleFailureResult<RedactionSummary> {
-    let findings = scan_directory_tree_for_secrets(artifact_root, &default_forbidden_patterns())
+    let findings = scan_directory_tree_for_secrets(artifact_root, default_forbidden_patterns())
         .map_err(|err| {
             Box::new(failure(
                 "secret-scan",

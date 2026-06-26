@@ -24,7 +24,7 @@ mod secretscan {
         scan_roots.sort();
 
         let patterns = default_forbidden_patterns();
-        let findings = scan_directories_for_secrets(&scan_roots, &patterns)
+        let findings = scan_directories_for_secrets(&scan_roots, patterns)
             .expect("scan artifacts for forbidden secret patterns");
 
         assert!(
