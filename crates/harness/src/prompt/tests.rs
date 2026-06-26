@@ -70,7 +70,7 @@ fn no_config_prompt_with_stored_codex_uses_runtime_catalog() {
     let store = CredentialStore::new(data_home.join("harness"));
     store
         .save(&StoredCredential::api_key(
-            AuthProviderId::Codex,
+            AuthProviderId::codex(),
             "test-token",
             SystemCredentialClock.now_rfc3339(),
         ))

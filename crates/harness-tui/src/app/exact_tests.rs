@@ -12,6 +12,7 @@ pub(crate) fn exact_test_startup_slash_commands_execute_without_menu() {
         app.slash_filtered,
         vec![
             "auth".to_string(),
+            "connect".to_string(),
             "exit".to_string(),
             "help".to_string(),
             "model".to_string(),
@@ -266,66 +267,34 @@ pub(crate) fn exact_test_auth_slash_and_palette_emit_ui_intent_mid_session() {
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_onboarding_inventory_has_focus_hints_redaction_and_skill_selection() {
-    for step in OnboardingStep::INVENTORY {
-        let screen = onboarding::screen_for(step, 0);
-        let text = screen
-            .lines()
-            .into_iter()
-            .map(|line| line.to_string())
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert!(
-            !text.to_lowercase().contains("reference implementation"),
-            "onboarding screen {} should use Harness branding only:\n{text}",
-            step.snapshot_name()
-        );
-        assert!(
-            !text.contains("oauth-access")
-                && !text.contains("refresh")
-                && !text.contains("acct-")
-                && !text.contains("sk-"),
-            "onboarding screen {} should not include secret-like values:\n{text}",
-            step.snapshot_name()
-        );
-        assert!(
-            !screen.choices.is_empty(),
-            "onboarding screen {} should expose at least one selectable row",
-            step.snapshot_name()
-        );
-        assert!(
-            !screen.footer.trim().is_empty(),
-            "onboarding screen {} should include key hints",
-            step.snapshot_name()
-        );
-        if matches!(
-            step,
-            OnboardingStep::CodexBrowser
-                | OnboardingStep::CodexDevice
-                | OnboardingStep::CopilotPublicDevice
-                | OnboardingStep::CopilotEnterpriseDevice
-                | OnboardingStep::ApiKeyEntry
-                | OnboardingStep::LoginSuccess
-        ) {
-            assert!(
-                text.contains("redacted"),
-                "onboarding screen {} should explicitly redact sensitive auth metadata:\n{text}",
-                step.snapshot_name()
-            );
-        }
-    }
+pub(crate) fn exact_test_connect_slash_command_emits_open_auth_manager() {
+    let mut app = AppState::new_live(
+        Some(PathBuf::from("/tmp/session")),
+        false,
+        Some(Arc::new(|_| {})),
+    );
+    app.composer.prompt_buffer = "/connect".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.slash_draft_snapshot = Some("draft after connect".to_string());
+    app.sync_slash_overlay();
 
-    let skill_screen = onboarding::screen_for(OnboardingStep::SkillSelection, 0);
-    let skill_labels = skill_screen
-        .choices
-        .iter()
-        .map(|choice| choice.label)
-        .collect::<Vec<_>>();
-    assert_eq!(skill_labels, vec!["build", "plan", "explore"]);
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert_eq!(app.composer.prompt_buffer, "draft after connect");
+    assert!(!app.slash_visible);
+    assert!(
+        app.connect_dialog.visible,
+        "/connect should open the auth dialog"
+    );
+    assert_eq!(
+        app.connect_dialog.step,
+        crate::app::auth_dialog::ConnectDialogStep::SelectProvider,
+        "dialog should start at provider selection"
+    );
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_onboarding_skip_is_launch_local_and_writes_no_auth_intent() {
+pub(crate) fn exact_test_connect_slash_command_passes_provider_args() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
@@ -333,101 +302,70 @@ pub(crate) fn exact_test_onboarding_skip_is_launch_local_and_writes_no_auth_inte
             intents.lock().expect("lock intents").push(intent);
         })
     };
-    let mut app = AppState::new_startup(Vec::new(), Some(sink));
-    app.set_onboarding_required(true);
-    assert!(app.onboarding_screen().is_some());
+
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(sink));
+    {
+        use harness_core::auth::plugin::AuthPluginRegistry;
+        use harness_core::auth::ProviderId;
+
+        let registry = AuthPluginRegistry::with_builtins();
+        let codex = registry.get(&ProviderId::codex()).expect("codex plugin");
+        let copilot = registry
+            .get(&ProviderId::github_copilot())
+            .expect("copilot plugin");
+        let providers = vec![
+            crate::app::ConnectProviderOption {
+                id: ProviderId::codex(),
+                label: codex.label().to_string(),
+                description: codex.description().to_string(),
+                methods: codex.auth_methods().to_vec(),
+                models: vec!["gpt-5.5".to_string(), "gpt-5.4-mini".to_string()],
+            },
+            crate::app::ConnectProviderOption {
+                id: ProviderId::github_copilot(),
+                label: copilot.label().to_string(),
+                description: copilot.description().to_string(),
+                methods: copilot.auth_methods().to_vec(),
+                models: vec!["gpt-4o".to_string()],
+            },
+        ];
+        app.set_connect_dialog_providers(providers);
+    }
+    app.open_connect_dialog();
+    assert!(app.connect_dialog.visible);
+
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert!(
+        app.connect_dialog.selected_provider == Some(0),
+        "first provider should be selected"
+    );
+    assert_eq!(
+        app.connect_dialog.step,
+        crate::app::auth_dialog::ConnectDialogStep::SelectMethod,
+        "should advance to method selection for OpenAI"
+    );
 
     app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
-    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-    assert_eq!(
-        app.onboarding_screen().expect("skip screen").step,
-        OnboardingStep::SkipConfirmation
-    );
-
-    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-
-    assert!(app.onboarding_screen().is_none());
-    assert_eq!(
-        app.status_banner.as_deref(),
-        Some("onboarding skipped for this launch; no credential was written")
-    );
-    assert!(intents.lock().expect("lock intents").is_empty());
-
-    app.set_onboarding_required(true);
-    assert!(
-        app.onboarding_screen().is_none(),
-        "skip should suppress onboarding only for the current AppState launch"
-    );
-}
-
-#[cfg(test)]
-pub(crate) fn exact_test_onboarding_auth_waits_for_backend_result() {
-    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
-    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
-        let intents = Arc::clone(&intents);
-        Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
-        })
-    };
-    let mut app = AppState::new_startup(Vec::new(), Some(sink));
-    app.set_onboarding_step_for_test(OnboardingStep::CodexDevice);
-
+    app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
     assert_eq!(
-        app.onboarding_screen().expect("codex device screen").step,
-        OnboardingStep::CodexDevice,
-        "onboarding must not show success before the backend reports success"
-    );
-    assert!(app.onboarding.auth_in_progress);
-    assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
-        &[UiIntent::OpenAuthManager {
-            args: vec![
-                "login".to_string(),
-                "codex".to_string(),
-                "--method".to_string(),
-                "device".to_string()
-            ],
-            stdin: None,
-        }]
+        app.connect_dialog.step,
+        crate::app::auth_dialog::ConnectDialogStep::ApiKeyInput,
+        "selecting API Key method should advance to key input"
     );
 
-    app.apply_auth_backend_result(true);
-
-    assert!(!app.onboarding.auth_in_progress);
-    assert_eq!(
-        app.onboarding_screen().expect("success screen").step,
-        OnboardingStep::LoginSuccess
-    );
-}
-
-#[cfg(test)]
-pub(crate) fn exact_test_onboarding_api_key_emits_hidden_stdin_without_visible_secret() {
-    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
-    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
-        let intents = Arc::clone(&intents);
-        Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
-        })
-    };
-    let mut app = AppState::new_startup(Vec::new(), Some(sink));
-    app.set_onboarding_step_for_test(OnboardingStep::ApiKeyEntry);
-    let secret = "sk-tui-onboarding-secret-value";
-
-    app.handle_paste(secret);
+    app.handle_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE));
+    app.handle_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
+    app.handle_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE));
+    app.handle_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE));
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-    assert!(
-        !app.status_banner
-            .as_deref()
-            .unwrap_or_default()
-            .contains(secret),
-        "onboarding status leaked the pasted API key"
-    );
-    assert!(
-        app.onboarding.secret_input.is_empty(),
-        "secret buffer should be cleared after auth request handoff"
+    assert_eq!(
+        app.connect_dialog.step,
+        crate::app::auth_dialog::ConnectDialogStep::Waiting,
+        "submitting API key should enter waiting state"
     );
     assert_eq!(
         intents.lock().expect("lock intents").as_slice(),
@@ -437,121 +375,72 @@ pub(crate) fn exact_test_onboarding_api_key_emits_hidden_stdin_without_visible_s
                 "codex".to_string(),
                 "--method".to_string(),
                 "api-key".to_string(),
-                "--api-key-stdin".to_string()
+                "--api-key-stdin".to_string(),
             ],
-            stdin: Some(secret.to_string()),
+            stdin: Some("test".to_string()),
         }]
-    );
-    assert_eq!(
-        app.onboarding_screen().expect("api key screen").step,
-        OnboardingStep::ApiKeyEntry,
-        "success must wait for backend result"
     );
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_onboarding_copilot_enterprise_is_reachable_and_redacts_domain() {
-    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
-    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
-        let intents = Arc::clone(&intents);
-        Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
-        })
-    };
-    let mut app = AppState::new_startup(Vec::new(), Some(sink));
-    let enterprise_domain = "https://github.example.test";
-
-    app.set_onboarding_required(true);
-    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-    assert_eq!(
-        app.onboarding_screen().expect("provider screen").step,
-        OnboardingStep::ProviderPick
+pub(crate) fn exact_test_connect_slash_command_available_in_session() {
+    let mut app = AppState::new_live(
+        Some(PathBuf::from("/tmp/session")),
+        false,
+        Some(Arc::new(|_| {})),
     );
+    app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
 
-    app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
-    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-    let target_screen = app.onboarding_screen().expect("copilot target screen");
-    assert_eq!(target_screen.step, OnboardingStep::CopilotTargetPick);
-    assert_eq!(
-        target_screen
-            .choices
+    assert!(
+        app.slash_filtered
             .iter()
-            .map(|choice| choice.label)
-            .collect::<Vec<_>>(),
-        vec!["GitHub.com", "Enterprise"]
+            .any(|command| command == "connect"),
+        "/connect should appear in slash command list during live session"
     );
-
-    app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
-    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     assert_eq!(
-        app.onboarding_screen()
-            .expect("enterprise device screen")
-            .step,
-        OnboardingStep::CopilotEnterpriseDevice
+        crate::keybindings::slash_command_description("connect"),
+        "Connect a provider"
     );
+}
 
-    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-
-    assert!(!app.onboarding.auth_in_progress);
+#[cfg(test)]
+pub(crate) fn exact_test_no_provider_banner_shown_when_disconnected() {
+    let mut app = AppState::new_startup(Vec::new(), None);
+    app.maybe_set_no_provider_banner();
     assert_eq!(
         app.status_banner.as_deref(),
-        Some("enterprise login requires a domain; input stays hidden")
+        Some("No provider connected. Run `harness auth login` in a terminal or use /connect to set up a provider.")
     );
-    assert!(
-        intents.lock().expect("lock intents").is_empty(),
-        "blank Enterprise domain must not emit a public-fallback auth request"
-    );
+}
 
-    app.handle_paste(enterprise_domain);
-    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+#[cfg(test)]
+pub(crate) fn exact_test_apply_auth_backend_result_updates_banner() {
+    let mut app = AppState::new_startup(Vec::new(), None);
+    app.maybe_set_no_provider_banner();
+    assert!(app.status_banner.is_some());
+
+    app.apply_auth_backend_result(true);
 
     assert!(
-        !app.status_banner
-            .as_deref()
-            .unwrap_or_default()
-            .contains(enterprise_domain),
-        "onboarding status leaked the enterprise domain"
+        app.status_banner.is_none(),
+        "successful auth backend result should clear the no-provider banner"
     );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_apply_auth_backend_result_failure_shows_error() {
+    let mut app = AppState::new_startup(Vec::new(), None);
+    app.maybe_set_no_provider_banner();
+
+    app.apply_auth_backend_result(false);
+
     assert!(
         app.status_banner
             .as_deref()
             .unwrap_or_default()
-            .contains("--enterprise-url <redacted>"),
-        "onboarding status should redact the enterprise-url value"
-    );
-    assert!(
-        app.onboarding.secret_input.is_empty(),
-        "enterprise domain buffer should be cleared after auth request handoff"
-    );
-    assert_eq!(
-        app.onboarding_screen()
-            .expect("enterprise device screen")
-            .step,
-        OnboardingStep::CopilotEnterpriseDevice,
-        "success must wait for backend result"
-    );
-    assert!(app.onboarding.auth_in_progress);
-    assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
-        &[UiIntent::OpenAuthManager {
-            args: vec![
-                "login".to_string(),
-                "github-copilot".to_string(),
-                "--method".to_string(),
-                "device".to_string(),
-                "--enterprise-url".to_string(),
-                enterprise_domain.to_string(),
-            ],
-            stdin: None,
-        }]
-    );
-
-    app.apply_auth_backend_result(true);
-
-    assert!(!app.onboarding.auth_in_progress);
-    assert_eq!(
-        app.onboarding_screen().expect("success screen").step,
-        OnboardingStep::LoginSuccess
+            .contains("auth backend failed"),
+        "failed auth backend result should show an error banner, got: {:?}",
+        app.status_banner
     );
 }
 
@@ -919,4 +808,238 @@ pub(crate) fn exact_test_compact_operator_rail_skips_focus_cycle() {
 
     replay.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::CONTROL));
     assert_eq!(replay.focus, Focus::Details);
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_select_model_step_shows_models() {
+    // arrange
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
+    {
+        use harness_core::auth::plugin::AuthPluginRegistry;
+        use harness_core::auth::ProviderId;
+        let registry = AuthPluginRegistry::with_builtins();
+        let codex = registry.get(&ProviderId::codex()).expect("codex plugin");
+        let providers = vec![crate::app::ConnectProviderOption {
+            id: ProviderId::codex(),
+            label: codex.label().to_string(),
+            description: codex.description().to_string(),
+            methods: codex.auth_methods().to_vec(),
+            models: vec!["gpt-5.5".to_string(), "gpt-5.4-mini".to_string()],
+        }];
+        app.set_connect_dialog_providers(providers);
+    }
+    app.open_connect_dialog();
+    app.connect_dialog.step = crate::app::auth_dialog::ConnectDialogStep::Waiting;
+    app.connect_dialog.selected_provider = Some(0);
+
+    // act
+    app.apply_connect_dialog_auth_result(true);
+
+    // assert
+    assert_eq!(
+        app.connect_dialog.step,
+        crate::app::auth_dialog::ConnectDialogStep::SelectModel,
+        "should advance to SelectModel when models are available"
+    );
+    assert_eq!(
+        app.connect_dialog.models,
+        vec!["gpt-5.5".to_string(), "gpt-5.4-mini".to_string()],
+        "models should be populated from provider config"
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_select_model_skip_goes_to_success() {
+    // arrange
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
+    {
+        use harness_core::auth::plugin::AuthPluginRegistry;
+        use harness_core::auth::ProviderId;
+        let registry = AuthPluginRegistry::with_builtins();
+        let codex = registry.get(&ProviderId::codex()).expect("codex plugin");
+        let providers = vec![crate::app::ConnectProviderOption {
+            id: ProviderId::codex(),
+            label: codex.label().to_string(),
+            description: codex.description().to_string(),
+            methods: codex.auth_methods().to_vec(),
+            models: vec!["gpt-5.5".to_string(), "gpt-5.4-mini".to_string()],
+        }];
+        app.set_connect_dialog_providers(providers);
+    }
+    app.open_connect_dialog();
+    app.connect_dialog.step = crate::app::auth_dialog::ConnectDialogStep::Waiting;
+    app.connect_dialog.selected_provider = Some(0);
+    app.apply_connect_dialog_auth_result(true);
+    app.connect_dialog.selected = 2;
+
+    // act
+    app.handle_connect_dialog_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    // assert
+    assert_eq!(
+        app.connect_dialog.step,
+        crate::app::auth_dialog::ConnectDialogStep::Success,
+        "selecting Skip should go to Success"
+    );
+    assert!(
+        app.connect_dialog.selected_model.is_none(),
+        "selected_model should be None when skipping"
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_select_model_select_goes_to_success() {
+    // arrange
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
+    {
+        use harness_core::auth::plugin::AuthPluginRegistry;
+        use harness_core::auth::ProviderId;
+        let registry = AuthPluginRegistry::with_builtins();
+        let codex = registry.get(&ProviderId::codex()).expect("codex plugin");
+        let providers = vec![crate::app::ConnectProviderOption {
+            id: ProviderId::codex(),
+            label: codex.label().to_string(),
+            description: codex.description().to_string(),
+            methods: codex.auth_methods().to_vec(),
+            models: vec!["gpt-5.5".to_string(), "gpt-5.4-mini".to_string()],
+        }];
+        app.set_connect_dialog_providers(providers);
+    }
+    app.open_connect_dialog();
+    app.connect_dialog.step = crate::app::auth_dialog::ConnectDialogStep::Waiting;
+    app.connect_dialog.selected_provider = Some(0);
+    app.apply_connect_dialog_auth_result(true);
+    app.connect_dialog.selected = 0;
+
+    // act
+    app.handle_connect_dialog_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    // assert
+    assert_eq!(
+        app.connect_dialog.step,
+        crate::app::auth_dialog::ConnectDialogStep::Success,
+        "selecting a model should go to Success"
+    );
+    assert_eq!(
+        app.connect_dialog.selected_model,
+        Some(0),
+        "selected_model should be set to the chosen index"
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_toast_set_on_auth_success() {
+    // arrange
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
+    {
+        use harness_core::auth::plugin::AuthPluginRegistry;
+        use harness_core::auth::ProviderId;
+        let registry = AuthPluginRegistry::with_builtins();
+        let codex = registry.get(&ProviderId::codex()).expect("codex plugin");
+        let providers = vec![crate::app::ConnectProviderOption {
+            id: ProviderId::codex(),
+            label: codex.label().to_string(),
+            description: codex.description().to_string(),
+            methods: codex.auth_methods().to_vec(),
+            models: vec![],
+        }];
+        app.set_connect_dialog_providers(providers);
+    }
+    app.open_connect_dialog();
+    app.connect_dialog.step = crate::app::auth_dialog::ConnectDialogStep::Waiting;
+    app.connect_dialog.selected_provider = Some(0);
+
+    // act
+    app.apply_connect_dialog_auth_result(true);
+
+    // assert
+    let toast = app
+        .connect_dialog
+        .toast
+        .as_ref()
+        .expect("toast should be set on success");
+    assert!(toast.is_success, "toast should be success");
+    assert_eq!(toast.message, "Connected successfully");
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_toast_set_on_auth_failure() {
+    // arrange
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
+    {
+        use harness_core::auth::plugin::AuthPluginRegistry;
+        use harness_core::auth::ProviderId;
+        let registry = AuthPluginRegistry::with_builtins();
+        let codex = registry.get(&ProviderId::codex()).expect("codex plugin");
+        let providers = vec![crate::app::ConnectProviderOption {
+            id: ProviderId::codex(),
+            label: codex.label().to_string(),
+            description: codex.description().to_string(),
+            methods: codex.auth_methods().to_vec(),
+            models: vec![],
+        }];
+        app.set_connect_dialog_providers(providers);
+    }
+    app.open_connect_dialog();
+    app.connect_dialog.step = crate::app::auth_dialog::ConnectDialogStep::Waiting;
+    app.connect_dialog.selected_provider = Some(0);
+
+    // act
+    app.apply_connect_dialog_auth_result(false);
+
+    // assert
+    let toast = app
+        .connect_dialog
+        .toast
+        .as_ref()
+        .expect("toast should be set on failure");
+    assert!(!toast.is_success, "toast should be failure");
+    assert_eq!(toast.message, "Authentication failed");
+    assert_eq!(
+        app.connect_dialog.step,
+        crate::app::auth_dialog::ConnectDialogStep::Error,
+        "should advance to Error on failure"
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_any_key_closes_dialog_on_success() {
+    // arrange
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
+    {
+        use harness_core::auth::plugin::AuthPluginRegistry;
+        use harness_core::auth::ProviderId;
+        let registry = AuthPluginRegistry::with_builtins();
+        let codex = registry.get(&ProviderId::codex()).expect("codex plugin");
+        let providers = vec![crate::app::ConnectProviderOption {
+            id: ProviderId::codex(),
+            label: codex.label().to_string(),
+            description: codex.description().to_string(),
+            methods: codex.auth_methods().to_vec(),
+            models: vec![],
+        }];
+        app.set_connect_dialog_providers(providers);
+    }
+    app.open_connect_dialog();
+    app.connect_dialog.step = crate::app::auth_dialog::ConnectDialogStep::Waiting;
+    app.connect_dialog.selected_provider = Some(0);
+    app.apply_connect_dialog_auth_result(true);
+    assert_eq!(
+        app.connect_dialog.step,
+        crate::app::auth_dialog::ConnectDialogStep::Success,
+        "should be on Success step"
+    );
+
+    // act
+    app.handle_connect_dialog_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    // assert
+    assert!(
+        !app.connect_dialog.visible,
+        "dialog should be closed after any key on Success"
+    );
+    assert!(
+        app.connect_dialog.toast.is_none(),
+        "toast should be cleared after closing"
+    );
 }

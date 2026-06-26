@@ -2,26 +2,6 @@ use super::*;
 
 impl AppState {
     pub fn handle_key(&mut self, key: KeyEvent) {
-        if self.onboarding_accepts_hidden_text()
-            && !self.onboarding.auth_in_progress
-            && !key.modifiers.contains(KeyModifiers::CONTROL)
-            && !key.modifiers.contains(KeyModifiers::ALT)
-        {
-            match key.code {
-                KeyCode::Char(c) => {
-                    self.execute_action(Action::Char(c));
-                    self.maybe_auto_exit();
-                    return;
-                }
-                KeyCode::Backspace => {
-                    self.execute_action(Action::Backspace);
-                    self.maybe_auto_exit();
-                    return;
-                }
-                _ => {}
-            }
-        }
-
         if self.keymap.leader_pending() {
             self.keymap.set_leader_pending(false);
             if let Some(action) = self.keymap.leader_action(&key) {
@@ -38,6 +18,11 @@ impl AppState {
 
         if self.overlay_stack().top() == Some(OverlayKind::PermissionModal) {
             self.handle_permission_modal_key(key);
+            return;
+        }
+
+        if self.overlay_stack().top() == Some(OverlayKind::AuthDialog) {
+            self.handle_connect_dialog_key(key);
             return;
         }
 
@@ -452,227 +437,9 @@ impl AppState {
         }
     }
 
-    fn move_onboarding_selection(&mut self, delta: isize) {
-        let len = onboarding::screen_for(self.onboarding.step, self.onboarding.selected)
-            .choices
-            .len();
-        if len == 0 {
-            self.onboarding.selected = 0;
-            return;
-        }
-        self.onboarding.selected = if delta < 0 {
-            if self.onboarding.selected == 0 {
-                len - 1
-            } else {
-                self.onboarding.selected - 1
-            }
-        } else {
-            (self.onboarding.selected + 1) % len
-        };
-    }
-
-    fn request_onboarding_auth(&mut self, args: Vec<String>, stdin: Option<String>) {
-        self.onboarding.auth_in_progress = true;
-        self.status_banner = Some(auth_status_banner(&args));
-        self.emit_ui_intent(UiIntent::OpenAuthManager { args, stdin });
-    }
-
-    fn execute_onboarding_auth_step(&mut self) {
-        match self.onboarding.step {
-            OnboardingStep::CodexBrowser => self.request_onboarding_auth(
-                vec![
-                    "login".to_string(),
-                    "codex".to_string(),
-                    "--method".to_string(),
-                    "browser".to_string(),
-                ],
-                None,
-            ),
-            OnboardingStep::CodexDevice => self.request_onboarding_auth(
-                vec![
-                    "login".to_string(),
-                    "codex".to_string(),
-                    "--method".to_string(),
-                    "device".to_string(),
-                ],
-                None,
-            ),
-            OnboardingStep::CopilotPublicDevice => self.request_onboarding_auth(
-                vec![
-                    "login".to_string(),
-                    "github-copilot".to_string(),
-                    "--method".to_string(),
-                    "device".to_string(),
-                ],
-                None,
-            ),
-            OnboardingStep::CopilotEnterpriseDevice => {
-                let enterprise_url = self.onboarding.secret_input.trim().to_string();
-                if enterprise_url.is_empty() {
-                    self.status_banner =
-                        Some("enterprise login requires a domain; input stays hidden".to_string());
-                    return;
-                }
-                self.onboarding.secret_input.clear();
-                self.request_onboarding_auth(
-                    vec![
-                        "login".to_string(),
-                        "github-copilot".to_string(),
-                        "--method".to_string(),
-                        "device".to_string(),
-                        "--enterprise-url".to_string(),
-                        enterprise_url,
-                    ],
-                    None,
-                );
-            }
-            OnboardingStep::ApiKeyEntry => {
-                let secret = self.onboarding.secret_input.trim().to_string();
-                if secret.is_empty() {
-                    self.status_banner =
-                        Some("api-key login requires a pasted key; input stays hidden".to_string());
-                    return;
-                }
-                self.onboarding.secret_input.clear();
-                self.request_onboarding_auth(
-                    vec![
-                        "login".to_string(),
-                        "codex".to_string(),
-                        "--method".to_string(),
-                        "api-key".to_string(),
-                        "--api-key-stdin".to_string(),
-                    ],
-                    Some(secret),
-                );
-            }
-            _ => {}
-        }
-    }
-
-    fn execute_onboarding_selection(&mut self) {
-        if self.onboarding.auth_in_progress {
-            self.status_banner = Some("auth backend already running".to_string());
-            return;
-        }
-        match self.onboarding.step {
-            OnboardingStep::StartSplash if self.onboarding.selected == 1 => {
-                self.onboarding.step = OnboardingStep::SkipConfirmation;
-                self.onboarding.selected = 0;
-            }
-            OnboardingStep::ProviderPick if self.onboarding.selected == 1 => {
-                self.onboarding.step = OnboardingStep::CopilotTargetPick;
-                self.onboarding.selected = 0;
-            }
-            OnboardingStep::CopilotTargetPick => {
-                self.onboarding.step = if self.onboarding.selected == 1 {
-                    OnboardingStep::CopilotEnterpriseDevice
-                } else {
-                    OnboardingStep::CopilotPublicDevice
-                };
-                self.onboarding.selected = 0;
-            }
-            OnboardingStep::AuthMethodPick => {
-                self.onboarding.step = match self.onboarding.selected {
-                    1 => OnboardingStep::CodexBrowser,
-                    2 => OnboardingStep::ApiKeyEntry,
-                    _ => OnboardingStep::CodexDevice,
-                };
-                self.onboarding.selected = 0;
-            }
-            OnboardingStep::LoginErrorTimeout if self.onboarding.selected == 1 => {
-                self.onboarding.step = OnboardingStep::SkipConfirmation;
-                self.onboarding.selected = 0;
-            }
-            OnboardingStep::CodexBrowser
-            | OnboardingStep::CodexDevice
-            | OnboardingStep::CopilotPublicDevice
-            | OnboardingStep::CopilotEnterpriseDevice
-            | OnboardingStep::ApiKeyEntry => {
-                self.execute_onboarding_auth_step();
-            }
-            OnboardingStep::SkipConfirmation if self.onboarding.selected == 0 => {
-                self.onboarding.visible = false;
-                self.onboarding.skipped_for_launch = true;
-                self.status_banner = Some(
-                    "onboarding skipped for this launch; no credential was written".to_string(),
-                );
-            }
-            OnboardingStep::SkipConfirmation if self.onboarding.selected == 1 => {
-                self.onboarding.step = OnboardingStep::StartSplash;
-                self.onboarding.selected = 0;
-            }
-            OnboardingStep::SkillSelection => {
-                self.onboarding.visible = false;
-                self.status_banner =
-                    Some("onboarding complete; ready to start".to_string());
-            }
-            _ => {
-                self.onboarding.step = self.onboarding.step.next();
-                self.onboarding.selected = 0;
-            }
-        }
-    }
-
-    fn handle_onboarding_text_action(&mut self, action: Action) -> bool {
-        if !self.onboarding.visible
-            || self.onboarding.auth_in_progress
-            || !matches!(
-                self.onboarding.step,
-                OnboardingStep::ApiKeyEntry | OnboardingStep::CopilotEnterpriseDevice
-            )
-        {
-            return false;
-        }
-
-        match action {
-            Action::Char(c) => {
-                if !c.is_control() {
-                    self.onboarding.secret_input.push(c);
-                }
-                true
-            }
-            Action::Backspace => {
-                self.onboarding.secret_input.pop();
-                true
-            }
-            Action::ClearPrompt => {
-                self.onboarding.secret_input.clear();
-                true
-            }
-            _ => false,
-        }
-    }
-
     pub(in crate::app) fn execute_action(&mut self, action: Action) {
         if self.execute_permission_action(action) {
             return;
-        }
-
-        if self.handle_onboarding_text_action(action) {
-            return;
-        }
-
-        if self.onboarding.visible && self.focus == Focus::List {
-            match action {
-                Action::SubmitPrompt => {
-                    self.execute_onboarding_selection();
-                    return;
-                }
-                Action::MoveUp | Action::HistoryUp => {
-                    self.move_onboarding_selection(-1);
-                    return;
-                }
-                Action::MoveDown | Action::HistoryDown => {
-                    self.move_onboarding_selection(1);
-                    return;
-                }
-                Action::DismissModal => {
-                    self.onboarding.step = OnboardingStep::SkipConfirmation;
-                    self.onboarding.selected = 0;
-                    return;
-                }
-                _ => {}
-            }
         }
 
         if self.handle_operator_sidebar_action(action) {

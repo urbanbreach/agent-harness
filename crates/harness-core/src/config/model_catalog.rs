@@ -388,6 +388,7 @@ fn model_variant_reasoning_effort_label(effort: ModelVariantReasoningEffort) -> 
         ModelVariantReasoningEffort::Low => "low",
         ModelVariantReasoningEffort::Medium => "medium",
         ModelVariantReasoningEffort::High => "high",
+        ModelVariantReasoningEffort::Max => "max",
         ModelVariantReasoningEffort::Xhigh => "xhigh",
     }
 }

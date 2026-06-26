@@ -168,7 +168,7 @@ async fn codex_loopback_rejects_bad_state_missing_code_and_timeout_without_stori
     ));
     assert_eq!(http.calls.load(Ordering::SeqCst), 0);
     assert!(store
-        .load(AuthProviderId::Codex)
+        .load(&ProviderId::codex())
         .expect("store load")
         .is_none());
 }

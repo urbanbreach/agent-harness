@@ -272,7 +272,7 @@ fn sessions_export_cli_excludes_stored_credentials_and_scans_for_leaks() {
     let store = harness_core::auth::CredentialStore::new(data_home.join("harness"));
     store
         .save(&harness_core::auth::StoredCredential::oauth(
-            harness_core::auth::AuthProviderId::Codex,
+            harness_core::auth::AuthProviderId::codex(),
             "stored-access-secret-value",
             "stored-refresh-secret-value",
             Some("2099-01-01T00:00:00Z".to_string()),

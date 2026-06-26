@@ -211,6 +211,7 @@ pub enum ModelVariantReasoningEffort {
     Low,
     Medium,
     High,
+    Max,
     Xhigh,
 }
 

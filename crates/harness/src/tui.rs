@@ -87,13 +87,11 @@ mod session_history;
 #[path = "tui/workflow.rs"]
 mod workflow;
 
-use self::auth_backend::{
-    onboarding_required_for_runtime, spawn_tui_auth_backend_task, TuiAuthBackendContext,
-};
 #[cfg(test)]
 use self::auth_backend::{
     run_tui_auth_backend_once_with_deps, run_tui_auth_backend_streaming_with_deps,
 };
+use self::auth_backend::{spawn_tui_auth_backend_task, TuiAuthBackendContext};
 use self::coordinator_warmup::LiveCoordinatorConfigWarmup;
 use self::launch_metadata::continue_launch_metadata;
 #[cfg(test)]
@@ -149,8 +147,68 @@ use self::launch_metadata::replay_launch_metadata;
 
 #[cfg(test)]
 use harness_core::proj::RecordedRuntimeContext;
+use harness_tui::app::ConnectProviderOption;
 #[cfg(test)]
 use harness_tui::app::ToggleEntryKind;
+
+fn set_pending_connect_providers_from_config(config: Option<&harness_core::config::HarnessConfig>) {
+    use harness_core::auth::plugin::{AuthMethodSpec, AuthPluginRegistry};
+    use harness_core::auth::ProviderId;
+    use harness_core::config::ProviderConfig;
+    use harness_tui::app::auth_dialog::catalog_providers;
+    use harness_tui::app::set_pending_connect_providers;
+
+    let registry = AuthPluginRegistry::with_builtins();
+
+    let Some(config) = config else {
+        return;
+    };
+
+    let mut providers: Vec<ConnectProviderOption> = Vec::new();
+
+    for (provider_id, provider_config) in &config.providers {
+        let ProviderConfig::OpenAiCompatible(ref oc) = provider_config;
+        let label = oc.name.as_deref().unwrap_or(provider_id).to_string();
+
+        if let Some(auth_provider) = oc.auth_provider.clone() {
+            if let Some(plugin) = registry.get(&auth_provider) {
+                providers.push(ConnectProviderOption {
+                    id: auth_provider.clone(),
+                    label,
+                    description: plugin.description().to_string(),
+                    methods: plugin.auth_methods().to_vec(),
+                    models: Vec::new(),
+                });
+            }
+        } else if !oc.api_key_env.is_empty() {
+            let env_var = oc.api_key_env[0].clone();
+            let already_set = std::env::var(&env_var)
+                .ok()
+                .is_some_and(|v| !v.trim().is_empty());
+            if !already_set {
+                if let Some(id) = ProviderId::parse(provider_id.as_str()) {
+                    providers.push(ConnectProviderOption {
+                        id,
+                        label,
+                        description: "API key".to_string(),
+                        methods: vec![AuthMethodSpec::ApiKey {
+                            label: "Manually enter API Key".to_string(),
+                        }],
+                        models: Vec::new(),
+                    });
+                }
+            }
+        }
+    }
+
+    if providers.is_empty() {
+        if let Ok(catalog) = harness_core::provider_catalog::ProviderCatalog::from_env() {
+            providers = catalog_providers(&catalog, &registry);
+        }
+    }
+
+    set_pending_connect_providers(providers);
+}
 
 #[derive(Debug, Args, Clone)]
 pub struct TuiCommand {
@@ -283,11 +341,11 @@ async fn run_interactive_mode(
     fs::create_dir_all(&settings.session_dir)
         .map_err(|err| format!("failed to create session dir: {err}"))?;
 
+    set_pending_connect_providers_from_config(settings.config.as_ref());
     let launch_selection = Arc::new(Mutex::new(
         settings.launch_metadata.clone().without_mode_label(),
     ));
     let persist_model_selection = settings.config.is_some() && !demo_mode;
-    let onboarding_required = onboarding_required_for_runtime(settings.config.as_ref(), demo_mode);
     let coordinator_config_warmup = LiveCoordinatorConfigWarmup::start(settings, demo_mode);
     profile_handoff("interactive_mode.warmup_started");
 
@@ -312,7 +370,6 @@ async fn run_interactive_mode(
                     Arc::clone(&launch_selection),
                     persist_model_selection,
                     Some(prompt_history_path_for_session_dir(&settings.session_dir)),
-                    onboarding_required,
                     TuiAuthBackendContext::from_settings(settings),
                 )
             }
@@ -369,7 +426,6 @@ async fn run_direct_continue_mode(
         settings.launch_metadata.clone().without_mode_label(),
     ));
     let persist_model_selection = settings.config.is_some() && !demo_mode;
-    let onboarding_required = onboarding_required_for_runtime(settings.config.as_ref(), demo_mode);
     let coordinator_config_warmup = LiveCoordinatorConfigWarmup::start(settings, demo_mode);
     let _ = coordinator_config_warmup
         .coordinator_config(settings, demo_mode)
@@ -409,7 +465,6 @@ async fn run_direct_continue_mode(
                     Arc::clone(&launch_selection),
                     persist_model_selection,
                     Some(prompt_history_path_for_session_dir(&settings.session_dir)),
-                    onboarding_required,
                     TuiAuthBackendContext::from_settings(settings),
                 )
             }
@@ -459,7 +514,6 @@ async fn run_startup_launcher(
     launch_selection: LaunchSelection,
     persist_model_selection: bool,
     prompt_history_path: Option<PathBuf>,
-    onboarding_required: bool,
     auth_backend: TuiAuthBackendContext,
 ) -> Result<InteractiveWorkflow, String> {
     profile_handoff("startup_launcher.begin");
@@ -509,7 +563,6 @@ async fn run_startup_launcher(
             mode: TuiMode::Startup {
                 session_history_entries,
                 prompt_history_path,
-                onboarding_required,
                 update_rx: live_update_rx,
             },
             exit_on_finish,

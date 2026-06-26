@@ -170,7 +170,7 @@ mod tests {
         let data_home = temp.path().join("data");
         CredentialStore::new(data_home.join("harness"))
             .save(&StoredCredential::api_key(
-                AuthProviderId::GithubCopilot,
+                AuthProviderId::github_copilot(),
                 "test-token",
                 SystemCredentialClock.now_rfc3339(),
             ))

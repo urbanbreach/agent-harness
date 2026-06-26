@@ -1,5 +1,4 @@
 use super::*;
-use crate::auth::AuthProviderId;
 use std::sync::Mutex;
 
 static CONFIG_DISCOVERY_TEST_LOCK: Mutex<()> = Mutex::new(());

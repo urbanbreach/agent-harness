@@ -396,6 +396,8 @@ impl AppState {
         if let Some(pending_prompt) = take_pending_live_prompt() {
             state.replace_prompt_input(pending_prompt.text);
         }
+        let connect_providers = take_pending_connect_providers();
+        state.set_connect_dialog_providers(connect_providers);
         state
     }
 }
@@ -679,6 +681,7 @@ impl AppState {
             theme_dialog_visible: self.theme_dialog_visible,
             error_details_visible: self.error_details_visible,
             prompt_stash_list_visible: self.prompt_stash.list_visible,
+            auth_dialog_visible: self.connect_dialog.visible,
         }
     }
 

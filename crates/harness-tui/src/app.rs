@@ -29,6 +29,7 @@ use crate::view_model;
 use crate::{clipboard, ui};
 
 mod activity;
+pub mod auth_dialog;
 mod auth_display;
 mod child_session;
 mod composer;
@@ -43,7 +44,6 @@ mod model_favorites;
 mod model_metadata;
 mod model_switcher;
 mod mouse_interaction;
-mod onboarding;
 mod operator_sidebar;
 mod pending_live;
 mod permission_prompt;
@@ -85,6 +85,7 @@ pub use self::activity::{
     OrchestrationSummary, OrchestrationTaskRow, OrchestrationTaskState, RuntimeState,
     RuntimeStateKind,
 };
+pub use self::auth_dialog::{ConnectDialogState, ConnectProviderOption};
 use self::auth_display::auth_status_banner;
 use self::composer::ComposerState;
 pub use self::lifecycle::{
@@ -127,15 +128,14 @@ pub(crate) use file_mentions::{
 };
 pub use lineage::{ForkSelectorState, LineageBrowserState};
 pub use model_metadata::{LaunchMetadata, McpResourceOption, ModelOption};
-use onboarding::OnboardingState;
-pub use onboarding::{OnboardingScreen, OnboardingStep};
 use operator_sidebar::OperatorSidebarState;
 pub use pending_live::{
-    set_pending_live_launch_metadata, set_pending_live_prompt_auto_submit,
-    set_pending_live_prompt_draft,
+    set_pending_connect_providers, set_pending_live_launch_metadata,
+    set_pending_live_prompt_auto_submit, set_pending_live_prompt_draft,
 };
 use pending_live::{
-    take_pending_live_launch_metadata, take_pending_live_prompt, PendingLivePrompt,
+    take_pending_connect_providers, take_pending_live_launch_metadata, take_pending_live_prompt,
+    PendingLivePrompt,
 };
 use permissions::permission_display_summary;
 pub use permissions::{
@@ -197,6 +197,9 @@ fn rect_contains(area: Rect, column: u16, row: u16) -> bool {
         && row < area.y.saturating_add(area.height)
 }
 
+const NO_PROVIDER_BANNER: &str =
+    "No provider connected. Run `harness auth login` in a terminal or use /connect to set up a provider.";
+
 pub struct AppState {
     pub selected_event_index: usize,
     pub focus: Focus,
@@ -208,6 +211,7 @@ pub struct AppState {
     pub replay_mode: bool,
     pub session_path: Option<PathBuf>,
     pub status_banner: Option<String>,
+    pub connect_dialog: ConnectDialogState,
     toast: Option<ToastState>,
     pub details_scroll: u16,
     pub(crate) terminal_panel: TerminalPanelState,
@@ -229,7 +233,6 @@ pub struct AppState {
     error_details_visible: bool,
     pub startup_mode: bool,
     pub startup_launcher_action: StartupLauncherAction,
-    pub(crate) onboarding: OnboardingState,
     post_run_handoff_action: PostRunHandoffAction,
     continued_post_run_handoff_active: bool,
     continued_live_reopen_surface_active: bool,
@@ -310,6 +313,7 @@ impl Default for AppState {
             replay_mode: false,
             session_path: None,
             status_banner: None,
+            connect_dialog: ConnectDialogState::default(),
             toast: None,
             details_scroll: 0,
             terminal_panel: TerminalPanelState::default(),
@@ -331,7 +335,6 @@ impl Default for AppState {
             error_details_visible: false,
             startup_mode: false,
             startup_launcher_action: StartupLauncherAction::default(),
-            onboarding: OnboardingState::default(),
             post_run_handoff_action: PostRunHandoffAction::default(),
             continued_post_run_handoff_active: false,
             continued_live_reopen_surface_active: false,
@@ -416,55 +419,27 @@ impl DerefMut for AppState {
 }
 
 impl AppState {
-    pub fn set_onboarding_required(&mut self, required: bool) {
-        self.onboarding.visible = required && !self.onboarding.skipped_for_launch;
-        if self.onboarding.visible {
-            self.focus = Focus::List;
-            self.onboarding.step = OnboardingStep::StartSplash;
-            self.onboarding.selected = 0;
-            self.onboarding.auth_in_progress = false;
-            self.onboarding.secret_input.clear();
+    pub fn apply_auth_backend_result(&mut self, success: bool) {
+        self.apply_connect_dialog_auth_result(success);
+        if success {
+            if self.status_banner.as_deref() == Some(NO_PROVIDER_BANNER) {
+                self.status_banner = None;
+            }
+        } else {
+            self.status_banner = Some(
+                "auth backend failed; run `harness auth login` in a terminal or use /connect"
+                    .to_string(),
+            );
         }
     }
-
-    pub fn onboarding_screen(&self) -> Option<OnboardingScreen> {
-        self.onboarding
-            .visible
-            .then(|| onboarding::screen_for(self.onboarding.step, self.onboarding.selected))
-    }
-
-    pub fn set_onboarding_step_for_test(&mut self, step: OnboardingStep) {
-        self.onboarding.visible = true;
-        self.onboarding.step = step;
-        self.onboarding.selected = 0;
-        self.onboarding.auth_in_progress = false;
-        self.onboarding.secret_input.clear();
-        self.focus = Focus::List;
-    }
-
-    pub fn apply_auth_backend_result(&mut self, success: bool) {
-        if !self.onboarding.visible || !self.onboarding.auth_in_progress {
+    pub fn maybe_set_no_provider_banner(&mut self) {
+        if self.replay_mode || !self.startup_mode {
             return;
         }
-        self.onboarding.auth_in_progress = false;
-        self.onboarding.secret_input.clear();
-        self.onboarding.step = if success {
-            OnboardingStep::LoginSuccess
-        } else {
-            OnboardingStep::LoginErrorTimeout
-        };
-        self.onboarding.selected = 0;
-        self.focus = Focus::List;
+        if self.launch_metadata.available_models().is_empty() && self.status_banner.is_none() {
+            self.status_banner = Some(NO_PROVIDER_BANNER.to_string());
+        }
     }
-
-    fn onboarding_accepts_hidden_text(&self) -> bool {
-        self.onboarding.visible
-            && matches!(
-                self.onboarding.step,
-                OnboardingStep::ApiKeyEntry | OnboardingStep::CopilotEnterpriseDevice
-            )
-    }
-
     pub fn apply_keybindings(&mut self, bindings: std::collections::BTreeMap<String, String>) {
         self.keymap.apply_overrides(&bindings);
     }

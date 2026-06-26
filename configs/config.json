@@ -10,13 +10,6 @@
       ],
       "type": "string"
     },
-    "AuthProviderId": {
-      "enum": [
-        "codex",
-        "github-copilot"
-      ],
-      "type": "string"
-    },
     "CacheRetention": {
       "enum": [
         "none",
@@ -529,6 +522,7 @@
         "low",
         "medium",
         "high",
+        "max",
         "xhigh"
       ],
       "type": "string"
@@ -580,7 +574,7 @@
         "authProvider": {
           "anyOf": [
             {
-              "$ref": "#/definitions/AuthProviderId"
+              "$ref": "#/definitions/ProviderId"
             },
             {
               "type": "null"
@@ -666,7 +660,7 @@
             "authProvider": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/AuthProviderId"
+                  "$ref": "#/definitions/ProviderId"
                 },
                 {
                   "type": "null"
@@ -744,6 +738,9 @@
           "type": "object"
         }
       ]
+    },
+    "ProviderId": {
+      "type": "string"
     },
     "ProviderRetryRuntimeConfig": {
       "additionalProperties": false,

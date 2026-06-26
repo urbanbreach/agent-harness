@@ -161,7 +161,7 @@
             },
             "max": {
               "name": "Max",
-              "metadata": { "reasoningEffort": "xhigh" },
+              "metadata": { "reasoningEffort": "max" },
             },
           },
         },
@@ -366,7 +366,7 @@
             },
             "max": {
               "name": "Max",
-              "metadata": { "reasoningEffort": "xhigh" },
+              "metadata": { "reasoningEffort": "max" },
             },
           },
         },
@@ -378,7 +378,7 @@
             "output": ["text"],
           },
           "options": {
-            "thinking": { "type": "enabled", "budgetTokens": 32000 }
+            "thinking": { "type": "enabled", "budgetTokens": 32000 },
           },
         },
         "umans-qwen3.6-35b-a3b": {

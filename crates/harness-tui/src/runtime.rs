@@ -161,7 +161,6 @@ pub enum TuiMode {
     Startup {
         session_history_entries: Vec<SessionHistoryEntry>,
         prompt_history_path: Option<PathBuf>,
-        onboarding_required: bool,
         update_rx: Receiver<LiveUpdate>,
     },
     Replay {
@@ -210,7 +209,6 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         TuiMode::Startup {
             session_history_entries,
             prompt_history_path,
-            onboarding_required,
             update_rx,
         } => {
             let mut app = AppState::new_startup_with_prompt_history_path(
@@ -218,7 +216,6 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 on_ui_intent,
                 prompt_history_path,
             );
-            app.set_onboarding_required(onboarding_required);
             app.should_quit = exit_on_finish;
             if let Some(bindings) = keybindings.as_ref() {
                 app.apply_keybindings(bindings.clone());
@@ -267,6 +264,8 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
     if let Some(toggles) = toggles {
         app.set_toggles_config(toggles);
     }
+
+    app.maybe_set_no_provider_banner();
 
     let preserved_terminal = recover_mutex_lock(preserved_terminal_session()).clone();
     let reusing_terminal = preserved_terminal.active;
@@ -920,13 +919,12 @@ mod tests {
     }
 
     #[test]
-    fn drain_live_updates_applies_auth_backend_result_to_onboarding() {
+    fn drain_live_updates_applies_auth_backend_result_to_status_banner() {
         let (tx, rx) = mpsc::channel();
         let mut app = AppState::new_startup(Vec::new(), None);
-        app.set_onboarding_step_for_test(crate::app::OnboardingStep::CodexDevice);
-        app.handle_key(crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Enter,
-            crossterm::event::KeyModifiers::NONE,
+        app.set_status_banner(Some(
+            "No provider connected. Run `harness auth login` in a terminal or use /connect to set up a provider."
+                .to_string(),
         ));
         tx.send(LiveUpdate::AuthBackendResult { success: true })
             .expect("send auth result");
@@ -941,10 +939,7 @@ mod tests {
                 budget_exhausted: false,
             }
         );
-        assert_eq!(
-            app.onboarding_screen().expect("success screen").step,
-            crate::app::OnboardingStep::LoginSuccess
-        );
+        assert_eq!(app.status_banner, None);
     }
 
     #[test]

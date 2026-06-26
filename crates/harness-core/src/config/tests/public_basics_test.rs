@@ -187,9 +187,97 @@ fn built_in_lsp_presets_accept_override_only_entries() {
 }
 
 #[test]
+fn model_variant_metadata_accepts_max_reasoning_effort() {
+    let parsed = load_config_from_str(
+        r#"
+            {
+              provider: {
+                "umans-ai-coding-plan": {
+                  type: "openai_compatible",
+                  options: {
+                    baseURL: "https://api.code.umans.ai/v1",
+                    apiKeyEnv: ["UMANS_API_KEY"]
+                  },
+                  models: {
+                    "umans-glm-5.2": {
+                      name: "GLM 5.2",
+                      variants: {
+                        high: {
+                          name: "High",
+                          metadata: { reasoningEffort: "high" }
+                        },
+                        max: {
+                          name: "Max",
+                          metadata: { reasoningEffort: "max" }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              model: "umans-ai-coding-plan/umans-glm-5.2",
+              agent: {
+                build: {
+                  system_prompt: "Build work"
+                }
+              },
+              default_agent: "build"
+            }
+        "#,
+    )
+    .expect("max reasoning effort should parse");
+    let catalog = configured_model_catalog(&parsed);
+
+    assert!(catalog.iter().any(|entry| {
+        entry.provider == "umans-ai-coding-plan"
+            && entry.model == "umans-glm-5.2"
+            && entry.variant.as_deref() == Some("max")
+            && entry.reasoning_effort.as_deref() == Some("max")
+    }));
+}
+
+#[test]
 fn missing_required_sections_are_deterministic() {
     let err = load_config_from_str("{}").expect_err("config without agents must fail");
     assert_eq!(err.to_string(), "missing required config sections: agents");
+}
+
+#[test]
+fn provider_keys_reject_terminal_control_characters_without_echoing_them() {
+    let err = load_config_from_str(
+        r#"
+            {
+              provider: {
+                "evil\u001b]52;c;SGFja2Vk\u0007": {
+                  type: "openai_compatible",
+                  options: {
+                    baseURL: "http://127.0.0.1:8317/v1",
+                    apiKey: "test-key"
+                  },
+                  models: {
+                    "gpt-4o-mini": {
+                      name: "GPT-4o mini"
+                    }
+                  }
+                }
+              },
+              model: "evil\u001b]52;c;SGFja2Vk\u0007/gpt-4o-mini",
+              agent: {
+                build: {
+                  system_prompt: "Build work"
+                }
+              },
+              default_agent: "build",
+              permission: "ask"
+            }
+            "#,
+    )
+    .expect_err("provider keys with terminal controls must fail");
+    let message = err.to_string();
+
+    assert!(message.contains("invalid provider id"));
+    assert!(!message.contains('\u{1b}'), "message: {message:?}");
+    assert!(!message.contains('\u{7}'), "message: {message:?}");
 }
 
 #[test]

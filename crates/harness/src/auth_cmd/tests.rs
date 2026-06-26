@@ -10,9 +10,8 @@ use std::sync::{Arc, Mutex};
 use tempfile::tempdir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use super::{
-    complete_codex_pasted_callback, handle_codex_loopback_stream, onboarding_required_for_config,
-};
+use super::support::onboarding_required_for_config;
+use super::{complete_codex_pasted_callback, handle_codex_loopback_stream};
 
 fn codex_config(provider_fields: &str) -> harness_core::config::HarnessConfig {
     load_config_from_str(&format!(
@@ -41,6 +40,25 @@ fn auth_args(args: &[&str]) -> Vec<String> {
     args.iter().map(|arg| (*arg).to_string()).collect()
 }
 
+fn assert_no_terminal_control_bytes(output: &str) {
+    assert!(!output.contains('\u{1b}'), "output: {output:?}");
+    assert!(!output.contains('\u{7}'), "output: {output:?}");
+    assert!(!output.contains('\u{7f}'), "output: {output:?}");
+}
+
+fn assert_explicit_auth_login_rejects_provider(provider: &str) {
+    let temp = tempdir().expect("tempdir");
+    let args = auth_args(&["login", provider, "--method", "api-key", "--api-key-stdin"]);
+
+    let output =
+        super::execute_backend_args(&args, None, None, "sk-test\n", &auth_deps(temp.path()));
+
+    assert_eq!(output.code, 2);
+    assert!(output.stderr.contains("invalid auth provider"));
+    assert_no_terminal_control_bytes(&output.stderr);
+    assert_no_terminal_control_bytes(&output.stdout);
+}
+
 fn auth_deps(data_home: &Path) -> crate::CliDeps {
     crate::CliDeps::real().with_env(
         "HARNESS_DATA_HOME",
@@ -50,7 +68,7 @@ fn auth_deps(data_home: &Path) -> crate::CliDeps {
 
 fn load_stored(data_home: &Path, provider: AuthProviderId) -> StoredCredential {
     CredentialStore::new(data_home.join("harness"))
-        .load(provider)
+        .load(&provider)
         .expect("load stored credential")
         .expect("credential stored")
 }
@@ -82,7 +100,7 @@ fn onboarding_required_only_when_configured_auth_provider_has_no_usable_fallback
     let store = CredentialStore::new(temp.path());
     store
         .save(&StoredCredential::oauth(
-            AuthProviderId::Codex,
+            AuthProviderId::codex(),
             "stored-access-secret",
             "stored-refresh-secret",
             Some("2099-01-02T03:04:05Z".to_string()),
@@ -133,7 +151,7 @@ fn interactive_codex_api_key_stores_without_echoing_secret() {
     assert!(output.stdout.contains("Done"));
     assert!(!output.stdout.contains(secret));
     assert!(!output.stderr.contains(secret));
-    let stored = load_stored(temp.path(), AuthProviderId::Codex);
+    let stored = load_stored(temp.path(), AuthProviderId::codex());
     assert_eq!(stored.kind, StoredCredentialKind::ApiKey);
     assert_eq!(stored.api_key.as_deref(), Some(secret));
 }
@@ -165,7 +183,7 @@ fn interactive_codex_browser_and_device_resolve_to_mockable_oauth_paths() {
         assert!(output.stdout.contains("Login successful"));
         assert!(!output.stdout.contains(&token));
         assert!(!output.stderr.contains(&token));
-        let stored = load_stored(temp.path(), AuthProviderId::Codex);
+        let stored = load_stored(temp.path(), AuthProviderId::codex());
         assert_eq!(stored.kind, StoredCredentialKind::Oauth);
         assert_eq!(stored.access_token.as_deref(), Some(token.as_str()));
     }
@@ -190,7 +208,7 @@ fn interactive_github_copilot_resolves_to_mockable_device_flow() {
     assert!(output.stdout.contains("Login successful"));
     assert!(!output.stdout.contains(token));
     assert!(!output.stderr.contains(token));
-    let stored = load_stored(temp.path(), AuthProviderId::GithubCopilot);
+    let stored = load_stored(temp.path(), AuthProviderId::github_copilot());
     assert_eq!(stored.kind, StoredCredentialKind::Oauth);
     assert_eq!(stored.access_token.as_deref(), Some(token));
 }
@@ -223,7 +241,7 @@ fn explicit_auth_login_args_bypass_interactive_picker() {
     assert!(!output.stdout.contains("Select provider"));
     assert!(!output.stdout.contains(secret));
     assert!(!output.stderr.contains(secret));
-    let stored = load_stored(temp.path(), AuthProviderId::Codex);
+    let stored = load_stored(temp.path(), AuthProviderId::codex());
     assert_eq!(stored.kind, StoredCredentialKind::ApiKey);
     assert_eq!(stored.api_key.as_deref(), Some(secret));
 }
@@ -246,6 +264,155 @@ fn supported_method_labels_parse_for_supported_providers() {
         super::parse_login_method_arg("Login with GitHub Copilot"),
         Ok(super::AuthLoginMethod::Device)
     );
+}
+
+#[test]
+fn explicit_auth_logout_rejects_control_provider_without_echoing_it() {
+    let temp = tempdir().expect("tempdir");
+    let provider = "codex\u{1b}]52;c;SGFja2Vk\u{7}";
+    let args = auth_args(&["logout", provider]);
+
+    let output = super::execute_backend_args(&args, None, None, "", &auth_deps(temp.path()));
+
+    assert_eq!(output.code, 2);
+    assert!(output.stderr.contains("invalid auth provider"));
+    assert_no_terminal_control_bytes(&output.stderr);
+    assert_no_terminal_control_bytes(&output.stdout);
+}
+
+#[test]
+fn explicit_auth_login_rejects_control_provider_without_echoing_it() {
+    let provider = "codex\u{1b}]52;c;SGFja2Vk\u{7}";
+
+    assert_explicit_auth_login_rejects_provider(provider);
+}
+
+#[test]
+fn explicit_auth_login_rejects_leading_newline_codex_alias_without_echoing_it() {
+    let provider = "\ncodex";
+
+    assert_explicit_auth_login_rejects_provider(provider);
+}
+
+#[test]
+fn explicit_auth_login_rejects_trailing_newline_codex_alias_without_echoing_it() {
+    let provider = "codex\n";
+
+    assert_explicit_auth_login_rejects_provider(provider);
+}
+
+#[test]
+fn explicit_auth_login_rejects_leading_newline_openai_alias_without_echoing_it() {
+    let provider = "\nopenai";
+
+    assert_explicit_auth_login_rejects_provider(provider);
+}
+
+#[test]
+fn explicit_auth_login_rejects_leading_newline_copilot_alias_without_echoing_it() {
+    let provider = "\ngithub-copilot";
+
+    assert_explicit_auth_login_rejects_provider(provider);
+}
+
+#[test]
+fn auth_list_sanitizes_control_provider_key_config_error_without_echoing_it() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.jsonc");
+    std::fs::write(
+        &config_path,
+        r#"
+        {
+          provider: {
+            "evil\u001b]52;c;SGFja2Vk\u0007": {
+              type: "openai_compatible",
+              options: {
+                authProvider: "codex",
+                baseURL: "http://127.0.0.1:8317/v1",
+                apiKeyEnv: ["HARNESS_TEST_API_KEY"],
+              },
+              models: {
+                "m": { name: "M" },
+              },
+            },
+          },
+          model: "evil\u001b]52;c;SGFja2Vk\u0007/m",
+          agent: {
+            build: { system_prompt: "Build work" },
+          },
+          default_agent: "build",
+          permission: "ask",
+        }
+        "#,
+    )
+    .expect("write malicious provider-key config");
+    let args = auth_args(&["list"]);
+
+    let output =
+        super::execute_backend_args(&args, Some(config_path), None, "", &auth_deps(temp.path()));
+
+    assert_eq!(output.code, 0);
+    assert!(output.stderr.contains("invalid provider id"));
+    assert_no_terminal_control_bytes(&output.stderr);
+    assert_no_terminal_control_bytes(&output.stdout);
+}
+
+#[test]
+fn auth_list_reports_arbitrary_configured_auth_provider() {
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.jsonc");
+    std::fs::write(
+        &config_path,
+        r#"
+        {
+          provider: {
+            anthropic_route: {
+              type: "openai_compatible",
+              options: {
+                authProvider: "anthropic",
+                baseURL: "http://127.0.0.1:8317/v1",
+                apiKey: "test-key",
+              },
+              models: {
+                "claude-test": { name: "Claude Test" },
+              },
+            },
+          },
+          model: "anthropic_route/claude-test",
+          agent: {
+            build: { system_prompt: "Build work" },
+          },
+          default_agent: "build",
+          permission: "ask",
+        }
+        "#,
+    )
+    .expect("write arbitrary auth-provider config");
+    let args = auth_args(&["list", "--json"]);
+
+    let output =
+        super::execute_backend_args(&args, Some(config_path), None, "", &auth_deps(temp.path()));
+    let statuses: serde_json::Value =
+        serde_json::from_str(&output.stdout).expect("auth list JSON output");
+    let anthropic = statuses
+        .as_array()
+        .and_then(|items| {
+            items
+                .iter()
+                .find(|item| item["auth_provider"] == serde_json::json!("anthropic"))
+        })
+        .expect("anthropic auth provider status");
+
+    assert_eq!(output.code, 0, "stderr: {}", output.stderr);
+    assert!(output.stderr.is_empty(), "stderr: {}", output.stderr);
+    assert_eq!(
+        anthropic["provider_ids"],
+        serde_json::json!(["anthropic_route"])
+    );
+    assert_eq!(anthropic["source"], serde_json::json!("inline_apiKey"));
+    assert_eq!(anthropic["presence"], serde_json::json!("inline"));
+    assert_no_terminal_control_bytes(&output.stderr);
+    assert_no_terminal_control_bytes(&output.stdout);
 }
 
 #[derive(Debug)]
@@ -319,7 +486,7 @@ async fn codex_browser_login_accepts_pasted_localhost_callback_url() {
         Some("pasted-access-secret")
     );
     let stored = store
-        .load(AuthProviderId::Codex)
+        .load(&AuthProviderId::codex())
         .expect("load credential")
         .expect("stored credential");
     assert_eq!(stored.access_token.as_deref(), Some("pasted-access-secret"));
@@ -388,7 +555,7 @@ async fn codex_browser_login_loopback_uses_cli_listener_and_stores_credential() 
         .expect("loopback handler task")
         .expect("loopback handler should store credential");
     let stored = store
-        .load(AuthProviderId::Codex)
+        .load(&AuthProviderId::codex())
         .expect("load credential")
         .expect("stored credential");
     assert_eq!(
@@ -413,4 +580,150 @@ async fn codex_browser_login_loopback_uses_cli_listener_and_stores_credential() 
         .body
         .contains("code_verifier=browser-verifier-123"));
     assert!(!response.contains("browser-access-secret"));
+}
+
+#[test]
+fn config_with_arbitrary_auth_provider_parses() {
+    // arrange
+    let config_str = r#"
+        {
+          provider: {
+            anthropic_route: {
+              type: "openai_compatible",
+              options: {
+                authProvider: "anthropic",
+                baseURL: "http://127.0.0.1:8317/v1",
+                apiKey: "test-key",
+              },
+              models: {
+                "claude-test": { name: "Claude Test" },
+              },
+            },
+          },
+          model: "anthropic_route/claude-test",
+          permission: "ask",
+        }
+        "#;
+
+    // act
+    let config =
+        load_config_from_str(config_str).expect("config with arbitrary authProvider should parse");
+    let provider = config.providers.get("anthropic_route").expect("provider");
+
+    // assert
+    match provider {
+        harness_core::config::ProviderConfig::OpenAiCompatible(opts) => {
+            assert_eq!(
+                opts.auth_provider.as_ref().map(|p| p.as_str()),
+                Some("anthropic")
+            );
+        }
+    }
+}
+
+#[test]
+fn config_with_empty_auth_provider_fails() {
+    // arrange
+    let config_str = r#"
+        {
+          provider: {
+            bad_route: {
+              type: "openai_compatible",
+              options: {
+                authProvider: "",
+                baseURL: "http://127.0.0.1:8317/v1",
+                apiKey: "test-key",
+              },
+              models: {
+                "test": { name: "Test" },
+              },
+            },
+          },
+          model: "bad_route/test",
+          permission: "ask",
+        }
+        "#;
+
+    // act
+    let result = load_config_from_str(config_str);
+
+    // assert
+    assert!(
+        result.is_err(),
+        "config with empty authProvider must fail validation"
+    );
+}
+
+#[test]
+fn config_with_codex_auth_provider_backward_compat() {
+    // arrange
+    let config_str = r#"
+        {
+          provider: {
+            codex_route: {
+              type: "openai_compatible",
+              options: {
+                authProvider: "codex",
+                baseURL: "http://127.0.0.1:8317/v1",
+                apiKeyEnv: ["OPENAI_API_KEY"],
+              },
+              models: {
+                "gpt-test": { name: "GPT Test" },
+              },
+            },
+          },
+          model: "codex_route/gpt-test",
+          permission: "ask",
+        }
+        "#;
+
+    // act
+    let config = load_config_from_str(config_str)
+        .expect("config with codex authProvider should parse for backward compat");
+    let provider = config.providers.get("codex_route").expect("provider");
+
+    // assert
+    match provider {
+        harness_core::config::ProviderConfig::OpenAiCompatible(opts) => {
+            assert_eq!(
+                opts.auth_provider.as_ref().map(|p| p.as_str()),
+                Some("codex")
+            );
+        }
+    }
+}
+
+#[test]
+fn config_with_null_auth_provider_passes() {
+    // arrange
+    let config_str = r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              options: {
+                baseURL: "http://127.0.0.1:8317/v1",
+                apiKey: "test-key",
+              },
+              models: {
+                "test": { name: "Test" },
+              },
+            },
+          },
+          model: "default/test",
+          permission: "ask",
+        }
+        "#;
+
+    // act
+    let config =
+        load_config_from_str(config_str).expect("config without authProvider should parse");
+    let provider = config.providers.get("default").expect("provider");
+
+    // assert
+    match provider {
+        harness_core::config::ProviderConfig::OpenAiCompatible(opts) => {
+            assert!(opts.auth_provider.is_none());
+        }
+    }
 }

@@ -32,7 +32,7 @@ fn no_config_tui_with_stored_codex_launches_connected_catalog() {
     let store = CredentialStore::new(data_home.join("harness"));
     store
         .save(&StoredCredential::api_key(
-            AuthProviderId::Codex,
+            AuthProviderId::codex(),
             "test-token",
             SystemCredentialClock.now_rfc3339(),
         ))
@@ -69,7 +69,7 @@ fn auth_refresh_reloads_no_config_builtin_catalog_after_login() {
     let store = CredentialStore::new(data_home.join("harness"));
     store
         .save(&StoredCredential::api_key(
-            AuthProviderId::GithubCopilot,
+            AuthProviderId::github_copilot(),
             "test-token",
             SystemCredentialClock.now_rfc3339(),
         ))
@@ -107,7 +107,7 @@ fn no_config_tui_restores_recent_builtin_model_selection() {
     let store = CredentialStore::new(data_home.join("harness"));
     store
         .save(&StoredCredential::api_key(
-            AuthProviderId::Codex,
+            AuthProviderId::codex(),
             "test-token",
             SystemCredentialClock.now_rfc3339(),
         ))

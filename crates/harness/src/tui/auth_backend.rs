@@ -2,48 +2,12 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::mpsc as std_mpsc;
 
-use harness_core::config::HarnessConfig;
 use harness_core::redact::{DefaultRedactor, Redactor};
 use harness_tui::app::LaunchMetadata;
 use harness_tui::{LiveUpdate, OperatorNoticeLevel};
 
 use super::live_settings::{resolve_live_settings, LiveSettings};
 use super::TuiCommand;
-
-pub(super) fn onboarding_required_for_runtime(
-    config: Option<&HarnessConfig>,
-    demo_mode: bool,
-) -> bool {
-    if demo_mode {
-        return false;
-    }
-    let credential_store = harness_core::auth::CredentialStore::from_env();
-    auth_onboarding_required_for_config(config, credential_store.as_ref())
-}
-
-#[cfg(not(test))]
-fn auth_onboarding_required_for_config(
-    config: Option<&HarnessConfig>,
-    credential_store: Option<&harness_core::auth::CredentialStore>,
-) -> bool {
-    crate::auth_cmd::onboarding_required_for_config(
-        config,
-        &|name| {
-            std::env::var(name)
-                .ok()
-                .is_some_and(|value| !value.trim().is_empty())
-        },
-        credential_store,
-    )
-}
-
-#[cfg(test)]
-fn auth_onboarding_required_for_config(
-    _config: Option<&HarnessConfig>,
-    _credential_store: Option<&harness_core::auth::CredentialStore>,
-) -> bool {
-    false
-}
 
 #[derive(Clone)]
 pub(super) struct TuiAuthBackendContext {

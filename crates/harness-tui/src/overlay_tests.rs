@@ -217,6 +217,7 @@ fn test_permission_pending_preempts_all_other_overlays() {
         theme_dialog_visible: true,
         error_details_visible: true,
         prompt_stash_list_visible: true,
+        auth_dialog_visible: false,
         permission_pending: true,
     };
     let stack = OverlayStack::from_state(state);
@@ -234,6 +235,7 @@ fn test_top_returns_single_focus_owner() {
         theme_dialog_visible: true,
         error_details_visible: true,
         prompt_stash_list_visible: true,
+        auth_dialog_visible: false,
         ..Default::default()
     };
     let stack = OverlayStack::from_state(state);

@@ -12,6 +12,7 @@ pub enum OverlayKind {
     ThemeDialog,
     ErrorDetails,
     PromptStashList,
+    AuthDialog,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -30,6 +31,7 @@ pub struct OverlayState {
     pub theme_dialog_visible: bool,
     pub error_details_visible: bool,
     pub prompt_stash_list_visible: bool,
+    pub auth_dialog_visible: bool,
 }
 
 impl OverlayState {
@@ -86,6 +88,9 @@ impl OverlayStack {
         if state.permission_pending {
             overlays.push(OverlayKind::PermissionModal);
         }
+        if state.auth_dialog_visible {
+            overlays.push(OverlayKind::AuthDialog);
+        }
         Self { overlays }
     }
 
@@ -112,6 +117,7 @@ impl OverlayStack {
                     | OverlayKind::ThemeDialog
                     | OverlayKind::ErrorDetails
                     | OverlayKind::PromptStashList
+                    | OverlayKind::AuthDialog,
             )
         )
     }

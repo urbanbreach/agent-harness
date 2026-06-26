@@ -1,28 +1,16 @@
 use super::*;
 
-pub(super) fn onboarding_inventory_screens_render_in_startup_surface() {
-    for step in app::OnboardingStep::INVENTORY {
-        let mut app = app::AppState::new_startup(Vec::new(), None);
-        app.set_onboarding_step_for_test(step);
-        let screen = app.onboarding_screen().expect("onboarding screen");
-        let rendered = render_live_lines(&app, 120, 36);
-        assert!(
-            rendered.contains("Harness setup"),
-            "screen {} should render in the Harness setup frame\n{rendered}",
-            step.snapshot_name()
-        );
-        assert!(
-            rendered.contains(screen.title),
-            "screen {} should render title {}\n{rendered}",
-            step.snapshot_name(),
-            screen.title
-        );
-        assert!(
-            !rendered.to_lowercase().contains("reference implementation"),
-            "screen {} should use Harness branding only\n{rendered}",
-            step.snapshot_name()
-        );
-    }
+pub(super) fn startup_surface_renders_without_onboarding_overlay() {
+    let app = app::AppState::new_startup(Vec::new(), None);
+    let rendered = render_live_lines(&app, 120, 36);
+    assert!(
+        !rendered.contains("Harness setup"),
+        "startup surface should not render onboarding setup frame after migration\n{rendered}"
+    );
+    assert!(
+        !rendered.to_lowercase().contains("onboarding"),
+        "startup surface should not reference onboarding\n{rendered}"
+    );
 }
 
 pub(super) fn replay_mode_never_reports_lifecycle_shell_actions() {

@@ -280,7 +280,8 @@ pub(super) fn slash_menu_exposes_model_switcher_when_models_are_configured() {
 
 pub(super) fn rename_slash_command_availability_matches_mode() {
     let mut live = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
-    live.handle_key(key(KeyCode::Char('/')));
+    live.replace_prompt_input("/rename".to_string());
+    live.sync_slash_overlay();
     assert!(live
         .slash_filtered
         .iter()

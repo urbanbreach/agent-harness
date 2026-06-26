@@ -203,7 +203,7 @@ impl AppState {
 
     fn slash_command_available(&self, command: &str) -> bool {
         match command {
-            "new" | "status" | "toggles" | "auth" | "help" | "exit" => true,
+            "new" | "status" | "toggles" | "auth" | "connect" | "help" | "exit" => true,
             "resume" | "replay" => !self.replay_mode,
             "fork" => !self.startup_mode && !self.replay_mode,
             "clone" => !self.startup_mode && self.lineage_write_blocked_reason().is_none(),
@@ -306,6 +306,10 @@ impl AppState {
                     args: auth_args,
                     stdin: None,
                 });
+            }
+            "connect" => {
+                self.restore_slash_draft(preserved_draft);
+                self.open_connect_dialog();
             }
             "status" => {
                 self.restore_slash_draft(preserved_draft);

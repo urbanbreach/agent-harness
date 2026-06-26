@@ -447,8 +447,8 @@ fn check_provider_credentials(
 
     for (id, provider) in &config.providers {
         let ProviderConfig::OpenAiCompatible(provider) = provider;
-        let stored = match (provider.auth_provider, credential_store.as_ref()) {
-            (Some(auth_provider), Some(store)) => match store.load(auth_provider) {
+        let stored = match (provider.auth_provider.clone(), credential_store.as_ref()) {
+            (Some(auth_provider), Some(store)) => match store.load(&auth_provider) {
                 Ok(stored) => stored,
                 Err(err) => {
                     credential_errors.push(format!("{id} ({auth_provider}: {err})"));
@@ -461,6 +461,7 @@ fn check_provider_credentials(
             match stored.kind {
                 StoredCredentialKind::Oauth => stored_oauth_credentials += 1,
                 StoredCredentialKind::ApiKey => stored_api_key_credentials += 1,
+                StoredCredentialKind::WellKnown => stored_oauth_credentials += 1,
             }
             continue;
         }

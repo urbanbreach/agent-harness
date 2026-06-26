@@ -84,12 +84,12 @@ fn connected_builtin_providers(
     env_lookup: &dyn Fn(&str) -> Option<String>,
 ) -> Result<Vec<String>, String> {
     let mut connected = Vec::new();
-    if credential_present(credential_store, AuthProviderId::Codex)?
+    if credential_present(credential_store, AuthProviderId::codex())?
         || env_present(env_lookup, "OPENAI_API_KEY")
     {
         connected.push(BUILTIN_CODEX_PROVIDER_ID.to_string());
     }
-    if credential_present(credential_store, AuthProviderId::GithubCopilot)? {
+    if credential_present(credential_store, AuthProviderId::github_copilot())? {
         connected.push(BUILTIN_COPILOT_PROVIDER_ID.to_string());
     }
     Ok(connected)
@@ -103,7 +103,7 @@ fn credential_present(
         return Ok(false);
     };
     store
-        .load(provider)
+        .load(&provider)
         .map(|credential| credential.is_some())
         .map_err(|err| format!("failed to inspect stored {provider} credential: {err}"))
 }
@@ -187,7 +187,7 @@ fn builtin_codex_provider() -> Result<ProviderConfig, String> {
         .collect::<BTreeMap<_, _>>();
     Ok(openai_provider(
         BUILTIN_CODEX_PROVIDER_LABEL,
-        AuthProviderId::Codex,
+        AuthProviderId::codex(),
         CODEX_BASE_URL,
         vec!["OPENAI_API_KEY".to_string()],
         models,
@@ -299,6 +299,7 @@ fn reasoning_effort_label(effort: ModelVariantReasoningEffort) -> &'static str {
         ModelVariantReasoningEffort::Low => "low",
         ModelVariantReasoningEffort::Medium => "medium",
         ModelVariantReasoningEffort::High => "high",
+        ModelVariantReasoningEffort::Max => "max",
         ModelVariantReasoningEffort::Xhigh => "xhigh",
     }
 }
@@ -310,6 +311,7 @@ fn reasoning_display_name(effort: ModelVariantReasoningEffort) -> &'static str {
         ModelVariantReasoningEffort::Low => "Low",
         ModelVariantReasoningEffort::Medium => "Medium",
         ModelVariantReasoningEffort::High => "High",
+        ModelVariantReasoningEffort::Max => "Max",
         ModelVariantReasoningEffort::Xhigh => "Xhigh",
     }
 }
@@ -390,7 +392,7 @@ fn builtin_copilot_provider() -> Result<ProviderConfig, String> {
     }
     Ok(openai_provider(
         BUILTIN_COPILOT_PROVIDER_LABEL,
-        AuthProviderId::GithubCopilot,
+        AuthProviderId::github_copilot(),
         COPILOT_BASE_URL,
         Vec::new(),
         models,
@@ -508,7 +510,7 @@ mod tests {
 
     #[test]
     fn no_config_stored_codex_activates_filtered_codex_catalog() {
-        let (_temp, store) = store_with(AuthProviderId::Codex);
+        let (_temp, store) = store_with(AuthProviderId::codex());
         let resolved = resolve_runtime_catalog(None, None, None, Some(&store), &|_| None)
             .expect("runtime catalog");
         assert!(resolved
@@ -525,7 +527,7 @@ mod tests {
 
     #[test]
     fn no_config_stored_copilot_activates_copilot_catalog() {
-        let (_temp, store) = store_with(AuthProviderId::GithubCopilot);
+        let (_temp, store) = store_with(AuthProviderId::github_copilot());
         let resolved = resolve_runtime_catalog(None, None, None, Some(&store), &|_| None)
             .expect("runtime catalog");
         assert!(resolved
@@ -555,7 +557,7 @@ mod tests {
           permission: { "*": "deny" }
         }"#;
         let config = load_config_from_str(raw).expect("config");
-        let (_temp, store) = store_with(AuthProviderId::GithubCopilot);
+        let (_temp, store) = store_with(AuthProviderId::github_copilot());
         let resolved = resolve_runtime_catalog(
             Some(config),
             Some("explicit".to_string()),
@@ -607,7 +609,7 @@ mod tests {
             .providers
             .get(BUILTIN_CODEX_PROVIDER_ID)
             .expect("codex provider");
-        assert_eq!(provider.auth_provider, Some(AuthProviderId::Codex));
+        assert_eq!(provider.auth_provider, Some(AuthProviderId::codex()));
         assert!(provider.api_key.is_empty());
         assert_eq!(provider.api_key_env, ["OPENAI_API_KEY".to_string()]);
     }
@@ -661,11 +663,11 @@ mod tests {
 
     #[test]
     fn builtin_provider_configs_carry_auth_profiles_for_router() {
-        let (temp, codex_store) = store_with(AuthProviderId::Codex);
+        let (temp, codex_store) = store_with(AuthProviderId::codex());
         let copilot_store = CredentialStore::new(temp.path());
         copilot_store
             .save(&StoredCredential::api_key(
-                AuthProviderId::GithubCopilot,
+                AuthProviderId::github_copilot(),
                 "test-token",
                 SystemCredentialClock.now_rfc3339(),
             ))
@@ -685,8 +687,11 @@ mod tests {
             .get(BUILTIN_COPILOT_PROVIDER_ID)
             .expect("copilot provider");
 
-        assert_eq!(codex.auth_provider, Some(AuthProviderId::Codex));
-        assert_eq!(copilot.auth_provider, Some(AuthProviderId::GithubCopilot));
+        assert_eq!(codex.auth_provider, Some(AuthProviderId::codex()));
+        assert_eq!(
+            copilot.auth_provider,
+            Some(AuthProviderId::github_copilot())
+        );
         assert!(codex.api_key.is_empty());
         assert!(copilot.api_key.is_empty());
     }
@@ -708,11 +713,11 @@ mod tests {
           permission: { "*": "deny" }
         }"#;
         let config = load_config_from_str(raw).expect("config");
-        let (temp_codex, codex_store) = store_with(AuthProviderId::Codex);
+        let (temp_codex, codex_store) = store_with(AuthProviderId::codex());
         let copilot_store = CredentialStore::new(temp_codex.path());
         copilot_store
             .save(&StoredCredential::api_key(
-                AuthProviderId::GithubCopilot,
+                AuthProviderId::github_copilot(),
                 "test-token",
                 SystemCredentialClock.now_rfc3339(),
             ))
@@ -738,7 +743,7 @@ mod tests {
 
     #[test]
     fn codex_oauth_models_get_complete_reasoning_variants() {
-        let (_temp, store) = store_with(AuthProviderId::Codex);
+        let (_temp, store) = store_with(AuthProviderId::codex());
         let resolved = resolve_runtime_catalog(None, None, None, Some(&store), &|_| None)
             .expect("runtime catalog");
         let entries = configured_model_catalog(&resolved.config);

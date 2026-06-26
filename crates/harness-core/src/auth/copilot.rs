@@ -9,8 +9,8 @@ use thiserror::Error;
 
 use super::codex::{AuthHttpMethod, AuthHttpRequest, AuthHttpResponse};
 use super::{
-    AuthProviderId, CredentialClock, CredentialStore, CredentialStoreError, StoredCredential,
-    SystemCredentialClock,
+    AuthProviderId, CredentialClock, CredentialStore, CredentialStoreError, ProviderId,
+    StoredCredential, SystemCredentialClock,
 };
 
 pub const COPILOT_CLIENT_ID: &str = "Ov23li8tweQw6odWQebz";
@@ -232,7 +232,7 @@ impl CopilotOAuthClient {
             }
         }
         Err(CopilotOAuthError::DevicePollingTimeout {
-            provider: AuthProviderId::GithubCopilot,
+            provider: ProviderId::github_copilot(),
         })
     }
 
@@ -247,7 +247,7 @@ impl CopilotOAuthClient {
         // Copilot bearer. There is no GitHub→Copilot token exchange in that
         // reference path.
         let mut credential = StoredCredential::oauth(
-            AuthProviderId::GithubCopilot,
+            ProviderId::github_copilot(),
             token,
             token,
             None,
@@ -507,7 +507,7 @@ mod tests {
             .await
             .expect("complete device flow");
 
-        assert_eq!(credential.provider, AuthProviderId::GithubCopilot);
+        assert_eq!(credential.provider, ProviderId::github_copilot());
         assert_eq!(
             credential.access_token.as_deref(),
             Some("gho_direct_copilot")
@@ -520,7 +520,7 @@ mod tests {
         assert_eq!(credential.scopes, vec![COPILOT_SCOPE]);
 
         let stored = store
-            .load(AuthProviderId::GithubCopilot)
+            .load(&ProviderId::github_copilot())
             .expect("load stored credential")
             .expect("stored credential");
         assert_eq!(stored.access_token, credential.access_token);
@@ -625,7 +625,7 @@ mod tests {
             }
             assert!(
                 store
-                    .load(AuthProviderId::GithubCopilot)
+                    .load(&ProviderId::github_copilot())
                     .expect("load missing")
                     .is_none(),
                 "{name} should not store credentials"
@@ -649,14 +649,14 @@ mod tests {
             .await
             .expect_err("timeout");
 
-        assert!(matches!(
-            err,
-            CopilotOAuthError::DevicePollingTimeout {
-                provider: AuthProviderId::GithubCopilot
+        match &err {
+            CopilotOAuthError::DevicePollingTimeout { provider } => {
+                assert_eq!(*provider, ProviderId::github_copilot());
             }
-        ));
+            _ => panic!("expected DevicePollingTimeout, got {err:?}"),
+        }
         assert!(store
-            .load(AuthProviderId::GithubCopilot)
+            .load(&ProviderId::github_copilot())
             .expect("load missing")
             .is_none());
     }

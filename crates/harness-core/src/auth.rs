@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
@@ -18,57 +18,103 @@ use tokio::sync::Mutex;
 
 pub mod codex;
 pub mod copilot;
+pub mod plugin;
 
 const CREDENTIAL_STORE_VERSION: u32 = 1;
 const CREDENTIALS_DIR_NAME: &str = "credentials";
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
-)]
-#[serde(rename_all = "kebab-case")]
-pub enum AuthProviderId {
-    Codex,
-    #[serde(rename = "github-copilot")]
-    GithubCopilot,
-}
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ProviderId(Arc<str>);
 
-impl AuthProviderId {
-    pub const ALL: [Self; 2] = [Self::Codex, Self::GithubCopilot];
+impl ProviderId {
+    pub fn codex() -> Self {
+        Self(Arc::from("codex"))
+    }
 
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Codex => "codex",
-            Self::GithubCopilot => "github-copilot",
-        }
+    pub fn github_copilot() -> Self {
+        Self(Arc::from("github-copilot"))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 
     pub fn parse(value: &str) -> Option<Self> {
-        match value.trim() {
-            "codex" => Some(Self::Codex),
-            "github-copilot" => Some(Self::GithubCopilot),
-            _ => None,
+        if value.chars().any(char::is_control) {
+            return None;
         }
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        if trimmed.contains('/') || trimmed.contains('\\') {
+            return None;
+        }
+        if trimmed == ".." || trimmed.contains("..") {
+            return None;
+        }
+        Some(Self(Arc::from(trimmed)))
     }
 }
 
-impl fmt::Display for AuthProviderId {
+impl fmt::Display for ProviderId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.as_str())
     }
 }
+
+impl Serialize for ProviderId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ProviderId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::parse(&value).ok_or_else(|| {
+            serde::de::Error::custom(
+                "invalid provider id: must be non-empty and must not contain path traversal characters, slashes, null bytes, newlines, or terminal control characters",
+            )
+        })
+    }
+}
+
+impl schemars::JsonSchema for ProviderId {
+    fn schema_name() -> String {
+        "ProviderId".to_string()
+    }
+
+    fn json_schema(_: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        schemars::schema::SchemaObject {
+            instance_type: Some(schemars::schema::InstanceType::String.into()),
+            ..Default::default()
+        }
+        .into()
+    }
+}
+
+pub type AuthProviderId = ProviderId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum StoredCredentialKind {
     Oauth,
     ApiKey,
+    WellKnown,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StoredCredential {
     pub version: u32,
-    pub provider: AuthProviderId,
+    pub provider: ProviderId,
     pub kind: StoredCredentialKind,
     #[serde(
         rename = "accessToken",
@@ -98,11 +144,13 @@ pub struct StoredCredential {
     pub scopes: Vec<String>,
     #[serde(rename = "updatedAt")]
     pub updated_at: String,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub metadata: BTreeMap<String, String>,
 }
 
 impl StoredCredential {
     pub fn oauth(
-        provider: AuthProviderId,
+        provider: ProviderId,
         access_token: impl Into<String>,
         refresh_token: impl Into<String>,
         expires_at: Option<String>,
@@ -120,11 +168,12 @@ impl StoredCredential {
             enterprise_url: None,
             scopes: Vec::new(),
             updated_at: updated_at.into(),
+            metadata: BTreeMap::new(),
         }
     }
 
     pub fn api_key(
-        provider: AuthProviderId,
+        provider: ProviderId,
         api_key: impl Into<String>,
         updated_at: impl Into<String>,
     ) -> Self {
@@ -140,6 +189,28 @@ impl StoredCredential {
             enterprise_url: None,
             scopes: Vec::new(),
             updated_at: updated_at.into(),
+            metadata: BTreeMap::new(),
+        }
+    }
+
+    pub fn well_known(
+        provider: ProviderId,
+        access_token: impl Into<String>,
+        updated_at: impl Into<String>,
+    ) -> Self {
+        Self {
+            version: CREDENTIAL_STORE_VERSION,
+            provider,
+            kind: StoredCredentialKind::WellKnown,
+            access_token: Some(access_token.into()),
+            refresh_token: None,
+            api_key: None,
+            expires_at: None,
+            account_id: None,
+            enterprise_url: None,
+            scopes: Vec::new(),
+            updated_at: updated_at.into(),
+            metadata: BTreeMap::new(),
         }
     }
 
@@ -181,15 +252,22 @@ impl CredentialStore {
         &self.data_dir
     }
 
-    pub fn credential_path(&self, provider: AuthProviderId) -> PathBuf {
+    pub fn credential_path(&self, provider: &ProviderId) -> PathBuf {
+        let name = provider.as_str();
+        if name.contains('/') || name.contains('\\') || name.contains('\0') {
+            return self
+                .data_dir
+                .join(CREDENTIALS_DIR_NAME)
+                .join("invalid.json");
+        }
         self.data_dir
             .join(CREDENTIALS_DIR_NAME)
-            .join(format!("{}.json", provider.as_str()))
+            .join(format!("{name}.json"))
     }
 
     pub fn load(
         &self,
-        provider: AuthProviderId,
+        provider: &ProviderId,
     ) -> Result<Option<StoredCredential>, CredentialStoreError> {
         let path = self.credential_path(provider);
         let body = match fs::read_to_string(&path) {
@@ -203,7 +281,7 @@ impl CredentialStore {
                 source,
             }
         })?;
-        if credential.version != CREDENTIAL_STORE_VERSION || credential.provider != provider {
+        if credential.version != CREDENTIAL_STORE_VERSION || &credential.provider != provider {
             return Err(CredentialStoreError::InvalidCredential {
                 path,
                 reason: "credential version or provider does not match path".to_string(),
@@ -215,12 +293,12 @@ impl CredentialStore {
     pub fn save(&self, credential: &StoredCredential) -> Result<(), CredentialStoreError> {
         if credential.version != CREDENTIAL_STORE_VERSION {
             return Err(CredentialStoreError::InvalidCredential {
-                path: self.credential_path(credential.provider),
+                path: self.credential_path(&credential.provider),
                 reason: format!("unsupported credential version {}", credential.version),
             });
         }
 
-        let path = self.credential_path(credential.provider);
+        let path = self.credential_path(&credential.provider);
         let parent = path
             .parent()
             .ok_or_else(|| CredentialStoreError::InvalidCredential {
@@ -246,7 +324,7 @@ impl CredentialStore {
         write_result
     }
 
-    pub fn delete(&self, provider: AuthProviderId) -> Result<bool, CredentialStoreError> {
+    pub fn delete(&self, provider: &ProviderId) -> Result<bool, CredentialStoreError> {
         let path = self.credential_path(provider);
         match fs::remove_file(&path) {
             Ok(()) => Ok(true),
@@ -257,15 +335,16 @@ impl CredentialStore {
 
     pub fn manifest_entries(
         &self,
-        providers: impl IntoIterator<Item = AuthProviderId>,
+        providers: impl IntoIterator<Item = ProviderId>,
     ) -> Vec<CredentialStoreManifestEntry> {
         providers
             .into_iter()
             .collect::<BTreeSet<_>>()
             .into_iter()
             .map(|provider| {
-                let path = self.credential_path(provider);
-                let stored = self.load(provider).ok().flatten();
+                let path = self.credential_path(&provider);
+                let stored = self.load(&provider).ok().flatten();
+                let relative_path = format!("{CREDENTIALS_DIR_NAME}/{}.json", provider.as_str());
                 CredentialStoreManifestEntry {
                     provider,
                     status: if stored.is_some() {
@@ -274,7 +353,7 @@ impl CredentialStore {
                         "not_stored".to_string()
                     },
                     kind: stored.map(|credential| credential.kind),
-                    relative_path: format!("{CREDENTIALS_DIR_NAME}/{}.json", provider.as_str()),
+                    relative_path,
                     absolute_path: path,
                 }
             })
@@ -284,7 +363,7 @@ impl CredentialStore {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CredentialStoreManifestEntry {
-    pub provider: AuthProviderId,
+    pub provider: ProviderId,
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<StoredCredentialKind>,
@@ -600,7 +679,7 @@ impl CredentialRefreshError {
 pub trait OAuthTokenRefresher: Send + Sync {
     async fn refresh(
         &self,
-        provider: AuthProviderId,
+        provider: &ProviderId,
         credential: &StoredCredential,
     ) -> Result<OAuthRefreshOutcome, CredentialRefreshError>;
 }
@@ -666,7 +745,7 @@ impl ProviderCredentialManager {
     }
 
     pub async fn resolve(&self) -> Result<ResolvedCredential, CredentialResolveError> {
-        if let Some(credential) = self.store.load(self.provider)? {
+        if let Some(credential) = self.store.load(&self.provider)? {
             if let Some(resolved) = self.resolve_stored(&credential).await? {
                 return Ok(resolved);
             }
@@ -693,7 +772,7 @@ impl ProviderCredentialManager {
         }
 
         Err(CredentialResolveError::Missing {
-            provider: self.provider,
+            provider: self.provider.clone(),
         })
     }
 
@@ -710,6 +789,17 @@ impl ProviderCredentialManager {
                     token: token.to_string(),
                     source: ResolvedCredentialSource::StoredApiKey,
                     expires_at: None,
+                    account_id: credential.account_id.clone(),
+                    enterprise_url: credential.enterprise_url.clone(),
+                })),
+            StoredCredentialKind::WellKnown => Ok(credential
+                .access_token
+                .as_deref()
+                .and_then(non_empty)
+                .map(|token| ResolvedCredential {
+                    token: token.to_string(),
+                    source: ResolvedCredentialSource::StoredOauth,
+                    expires_at: credential.expires_at.clone(),
                     account_id: credential.account_id.clone(),
                     enterprise_url: credential.enterprise_url.clone(),
                 })),
@@ -741,9 +831,9 @@ impl ProviderCredentialManager {
         &self,
     ) -> Result<ResolvedCredential, CredentialResolveError> {
         let _guard = self.refresh_lock.lock().await;
-        let Some(current) = self.store.load(self.provider)? else {
+        let Some(current) = self.store.load(&self.provider)? else {
             return Err(CredentialResolveError::Missing {
-                provider: self.provider,
+                provider: self.provider.clone(),
             });
         };
         if current.kind != StoredCredentialKind::Oauth {
@@ -757,7 +847,7 @@ impl ProviderCredentialManager {
                 });
             }
             return Err(CredentialResolveError::Missing {
-                provider: self.provider,
+                provider: self.provider.clone(),
             });
         }
         if current
@@ -780,7 +870,7 @@ impl ProviderCredentialManager {
             self.refresher
                 .as_ref()
                 .ok_or(CredentialResolveError::RefreshUnavailable {
-                    provider: self.provider,
+                    provider: self.provider.clone(),
                 })?;
         if current
             .refresh_token
@@ -789,21 +879,21 @@ impl ProviderCredentialManager {
             .is_none()
         {
             return Err(CredentialResolveError::RefreshUnavailable {
-                provider: self.provider,
+                provider: self.provider.clone(),
             });
         }
 
         let outcome = refresher
-            .refresh(self.provider, &current)
+            .refresh(&self.provider, &current)
             .await
             .map_err(|err| CredentialResolveError::RefreshFailed {
-                provider: self.provider,
+                provider: self.provider.clone(),
                 category: err.category,
                 message: err.message,
             })?;
         let access_token = outcome.access_token;
         let mut refreshed = StoredCredential::oauth(
-            self.provider,
+            self.provider.clone(),
             access_token.clone(),
             outcome
                 .refresh_token

@@ -3,7 +3,7 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use harness_core::auth::{
-    AuthProviderId, CredentialStore, CredentialStoreError, StoredCredentialKind,
+    AuthProviderId, CredentialStore, CredentialStoreError, ProviderId, StoredCredentialKind,
 };
 use harness_core::config::{load_resolved_config_with_context, HarnessConfig, ProviderConfig};
 use serde::Serialize;
@@ -44,11 +44,14 @@ pub(crate) fn auth_statuses(
     credential_store: Option<&CredentialStore>,
 ) -> Vec<ProviderAuthStatus> {
     let fallback_map = configured_auth_provider_fallbacks(config);
-    AuthProviderId::ALL
+    let mut auth_providers =
+        BTreeSet::from([AuthProviderId::codex(), AuthProviderId::github_copilot()]);
+    auth_providers.extend(fallback_map.keys().cloned());
+    auth_providers
         .into_iter()
         .map(|auth_provider| {
             auth_status(
-                auth_provider,
+                &auth_provider,
                 fallback_map.get(&auth_provider),
                 env_var_is_set,
                 credential_store,
@@ -57,6 +60,7 @@ pub(crate) fn auth_statuses(
         .collect()
 }
 
+#[cfg(test)]
 pub(crate) fn onboarding_required_for_config(
     config: Option<&HarnessConfig>,
     env_var_is_set: &dyn Fn(&str) -> bool,
@@ -67,13 +71,13 @@ pub(crate) fn onboarding_required_for_config(
     };
     let fallback_map = configured_auth_provider_fallbacks(Some(config));
     fallback_map.iter().any(|(provider, fallbacks)| {
-        let status = auth_status(*provider, Some(fallbacks), env_var_is_set, credential_store);
+        let status = auth_status(provider, Some(fallbacks), env_var_is_set, credential_store);
         !status.usable_without_network_probe
     })
 }
 
 fn auth_status(
-    auth_provider: AuthProviderId,
+    auth_provider: &ProviderId,
     fallbacks: Option<&AuthProviderFallbacks>,
     env_var_is_set: &dyn Fn(&str) -> bool,
     credential_store: Option<&CredentialStore>,
@@ -172,7 +176,7 @@ fn configured_auth_provider_fallbacks(
 
     for (provider_id, provider) in &config.providers {
         let ProviderConfig::OpenAiCompatible(provider) = provider;
-        let Some(auth_provider) = provider.auth_provider else {
+        let Some(auth_provider) = provider.auth_provider.clone() else {
             continue;
         };
         let entry = map.entry(auth_provider).or_default();
@@ -194,10 +198,7 @@ pub(super) fn resolve_provider_arg(
         if let Some(auth_provider) = AuthProviderId::parse(provider) {
             return Some(auth_provider);
         }
-        let _ = writeln!(
-            stderr,
-            "unknown auth provider `{provider}`; expected codex or github-copilot"
-        );
+        let _ = writeln!(stderr, "invalid auth provider: provider ID is not valid");
         return None;
     }
 
@@ -205,18 +206,18 @@ pub(super) fn resolve_provider_arg(
         .into_keys()
         .collect::<Vec<_>>();
     match configured.as_slice() {
-        [only] => Some(*only),
+        [only] => Some(only.clone()),
         [] => {
             let _ = writeln!(
                 stderr,
-                "auth provider is required when config has no provider authProvider; expected codex or github-copilot"
+                "auth provider is required when config has no provider authProvider"
             );
             None
         }
         _ => {
             let _ = writeln!(
                 stderr,
-                "auth provider is required when multiple auth providers are configured; expected codex or github-copilot"
+                "auth provider is required when multiple auth providers are configured"
             );
             None
         }
@@ -226,17 +227,15 @@ pub(super) fn resolve_provider_arg(
 pub(super) fn resolve_login_provider_arg(
     provider: &str,
     stderr: &mut dyn Write,
-) -> Option<AuthProviderId> {
-    match provider.trim().to_ascii_lowercase().as_str() {
-        "codex" | "openai" => Some(AuthProviderId::Codex),
-        "github-copilot" | "github copilot" => Some(AuthProviderId::GithubCopilot),
-        _ => {
-            let _ = writeln!(
-                stderr,
-                "unknown auth provider `{provider}`; expected codex, openai, or github-copilot"
-            );
-            None
-        }
+) -> Option<ProviderId> {
+    let Some(parsed) = ProviderId::parse(provider) else {
+        let _ = writeln!(stderr, "invalid auth provider: provider ID is not valid");
+        return None;
+    };
+    match parsed.as_str().to_ascii_lowercase().as_str() {
+        "codex" | "openai" => Some(ProviderId::codex()),
+        "github-copilot" | "github copilot" => Some(ProviderId::github_copilot()),
+        _ => Some(parsed),
     }
 }
 
@@ -290,6 +289,7 @@ fn stored_credential_kind_label(kind: StoredCredentialKind) -> &'static str {
     match kind {
         StoredCredentialKind::Oauth => "oauth",
         StoredCredentialKind::ApiKey => "api_key",
+        StoredCredentialKind::WellKnown => "well_known",
     }
 }
 

@@ -262,20 +262,26 @@ fn build_provider(
     })
     .map_err(|err| format!("failed to build provider `{provider_id}`: {err}"))?;
 
-    if let Some(auth_provider) = provider.auth_provider {
-        openai_provider = openai_provider.with_auth_profile(match auth_provider {
-            AuthProviderId::Codex => OpenAiAuthProfile::Codex,
-            AuthProviderId::GithubCopilot => OpenAiAuthProfile::GithubCopilot,
-        });
+    if let Some(auth_provider) = provider.auth_provider.clone() {
+        let auth_profile = if auth_provider == AuthProviderId::codex() {
+            OpenAiAuthProfile::Codex
+        } else if auth_provider == AuthProviderId::github_copilot() {
+            OpenAiAuthProfile::GithubCopilot
+        } else {
+            return Err(format!(
+                "unsupported auth provider `{auth_provider}` for provider `{provider_id}`"
+            ));
+        };
+        openai_provider = openai_provider.with_auth_profile(auth_profile);
         if let Some(store) = CredentialStore::from_env() {
             let mut manager = ProviderCredentialManager::new(
                 store,
-                auth_provider,
+                auth_provider.clone(),
                 provider.api_key_env.clone(),
                 provider.api_key.clone(),
                 |name| std::env::var(name).ok(),
             );
-            if auth_provider == AuthProviderId::Codex {
+            if auth_provider == AuthProviderId::codex() {
                 manager = manager.with_refresher(Arc::new(CodexOAuthClient::new(Arc::new(
                     ReqwestAuthHttpClient::default(),
                 ))));

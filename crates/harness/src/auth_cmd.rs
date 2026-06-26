@@ -3,7 +3,12 @@ use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand};
 #[cfg(test)]
 use harness_core::auth::codex::AuthHttpClient as CodexAuthHttpClient;
-use harness_core::auth::{AuthProviderId, CredentialStore};
+use harness_core::auth::copilot::CopilotDeployment;
+use harness_core::auth::plugin::{AuthMethodSpec, AuthPluginRegistry, PromptField};
+use harness_core::auth::{
+    AuthProviderId, CredentialClock, CredentialStore, StoredCredential, SystemCredentialClock,
+};
+use harness_core::provider_catalog::ProviderCatalog;
 
 use crate::{CliDeps, CliIo};
 
@@ -21,12 +26,12 @@ use self::login::{
     store_interactive_api_key_login, store_mock_oauth_login,
 };
 use self::prompt_ui::{
-    auth_prompt_io_error, clack_intro, interactive_enterprise_url, prompt_auth_provider,
-    prompt_login_method, AuthInteractiveError,
+    auth_prompt_io_error, clack_intro, clack_outro, prompt_auth_provider, prompt_input,
+    prompt_login_method, run_prompts, AuthInteractiveError,
 };
-pub(crate) use self::support::{auth_statuses, onboarding_required_for_config};
+pub(crate) use self::support::auth_statuses;
 use self::support::{
-    credential_store_from_deps, credential_store_or_error, load_optional_config,
+    credential_store_from_deps, credential_store_or_error, load_optional_config, non_empty,
     resolve_login_provider_arg, resolve_provider_arg,
 };
 
@@ -274,7 +279,7 @@ fn execute_logout(
         return 2;
     };
 
-    match store.delete(auth_provider) {
+    match store.delete(&auth_provider) {
         Ok(true) => {
             let _ = writeln!(
                 io.stdout,
@@ -336,14 +341,34 @@ fn execute_login_selection(
     store: &CredentialStore,
     ui: AuthLoginUi,
 ) -> i32 {
+    let is_builtin = auth_provider == AuthProviderId::codex()
+        || auth_provider == AuthProviderId::github_copilot();
+
     if method == AuthLoginMethod::ApiKey {
-        if ui == AuthLoginUi::Interactive {
-            return store_interactive_api_key_login(auth_provider, io, store);
+        if auth_provider == AuthProviderId::codex() {
+            if ui == AuthLoginUi::Interactive {
+                return store_interactive_api_key_login(auth_provider, io, store);
+            }
+            return store_api_key_login(auth_provider, command, io, store);
         }
-        return store_api_key_login(auth_provider, command, io, store);
+        if auth_provider == AuthProviderId::github_copilot() {
+            if ui == AuthLoginUi::Interactive {
+                return store_interactive_api_key_login(auth_provider, io, store);
+            }
+            return store_api_key_login(auth_provider, command, io, store);
+        }
+        return store_generic_api_key_login(auth_provider, command, io, store, ui);
     }
 
-    if auth_provider == AuthProviderId::GithubCopilot && method != AuthLoginMethod::Device {
+    if !is_builtin {
+        let _ = writeln!(
+            io.stderr,
+            "auth login failed: only api-key login is supported for {auth_provider}"
+        );
+        return 2;
+    }
+
+    if auth_provider == AuthProviderId::github_copilot() && method != AuthLoginMethod::Device {
         let _ = writeln!(
             io.stderr,
             "auth login failed: github-copilot supports only device login in V1"
@@ -362,31 +387,171 @@ fn execute_login_selection(
     }
 }
 
+fn map_method_spec_to_login_method(spec: &AuthMethodSpec) -> AuthLoginMethod {
+    match spec {
+        AuthMethodSpec::OAuthAuto { .. } => AuthLoginMethod::Browser,
+        AuthMethodSpec::OAuthCode { .. } => AuthLoginMethod::Device,
+        AuthMethodSpec::ApiKey { .. } => AuthLoginMethod::ApiKey,
+        AuthMethodSpec::Prompts { .. } => AuthLoginMethod::Device,
+    }
+}
+
+fn store_generic_api_key_login(
+    auth_provider: AuthProviderId,
+    command: AuthLoginCommand,
+    io: &mut CliIo<'_>,
+    store: &CredentialStore,
+    ui: AuthLoginUi,
+) -> i32 {
+    if ui == AuthLoginUi::Interactive {
+        let api_key = match prompt_input(io, "Enter your API key", None, true) {
+            Ok(Some(api_key)) => api_key,
+            Ok(None) => return 1,
+            Err(err) => return auth_prompt_io_error(err, io.stderr),
+        };
+        return store_api_key_credential(auth_provider, api_key, io, store, ui);
+    }
+
+    if !command.api_key_stdin {
+        let _ = writeln!(
+            io.stderr,
+            "auth login failed: pass --api-key-stdin and provide the key on stdin"
+        );
+        return 2;
+    }
+    let mut body = String::new();
+    if let Err(err) = io.stdin.read_to_string(&mut body) {
+        let _ = writeln!(io.stderr, "auth login failed: failed to read stdin: {err}");
+        return 1;
+    }
+    let Some(api_key) = non_empty(&body).map(str::to_string) else {
+        let _ = writeln!(
+            io.stderr,
+            "auth login failed: stdin did not contain an API key"
+        );
+        return 2;
+    };
+    store_api_key_credential(auth_provider, api_key, io, store, ui)
+}
+
+fn store_api_key_credential(
+    auth_provider: AuthProviderId,
+    api_key: String,
+    io: &mut CliIo<'_>,
+    store: &CredentialStore,
+    ui: AuthLoginUi,
+) -> i32 {
+    let credential = StoredCredential::api_key(
+        auth_provider.clone(),
+        api_key,
+        SystemCredentialClock.now_rfc3339(),
+    );
+    match store.save(&credential) {
+        Ok(()) => {
+            if ui == AuthLoginUi::Interactive {
+                let _ = clack_outro(io.stdout, "Done");
+            } else {
+                let _ = writeln!(
+                    io.stdout,
+                    "stored api_key credential for {} (secret redacted)",
+                    auth_provider
+                );
+            }
+            0
+        }
+        Err(err) => {
+            let _ = writeln!(io.stderr, "auth login failed: {err}");
+            1
+        }
+    }
+}
+
 fn execute_interactive_login(
     command: AuthLoginCommand,
     io: &mut CliIo<'_>,
     store: &CredentialStore,
 ) -> i32 {
     let _ = clack_intro(io.stdout, "Add credential");
-    let auth_provider = match prompt_auth_provider(io) {
+
+    let catalog = match ProviderCatalog::from_env() {
+        Ok(catalog) => catalog,
+        Err(err) => {
+            let _ = writeln!(
+                io.stderr,
+                "auth login failed: failed to load provider catalog: {err}"
+            );
+            return 1;
+        }
+    };
+    let registry = AuthPluginRegistry::with_builtins();
+
+    let auth_provider = match prompt_auth_provider(&catalog, &registry, io) {
         Ok(Some(auth_provider)) => auth_provider,
         Ok(None) => return 1,
         Err(err) => return auth_prompt_io_error(err, io.stderr),
     };
+
+    let methods: &[AuthMethodSpec] = registry
+        .get(&auth_provider)
+        .map(|p| p.auth_methods())
+        .unwrap_or(&[]);
+
     let method = match command.method {
         Some(method) => method,
-        None => match prompt_login_method(auth_provider, io) {
-            Ok(Some(method)) => method,
-            Ok(None) => return 1,
-            Err(err) => return auth_prompt_io_error(err, io.stderr),
-        },
+        None => {
+            if methods.is_empty() {
+                AuthLoginMethod::ApiKey
+            } else if methods.len() == 1 {
+                map_method_spec_to_login_method(&methods[0])
+            } else {
+                match prompt_login_method(methods, io) {
+                    Ok(Some(index)) => map_method_spec_to_login_method(&methods[index]),
+                    Ok(None) => return 1,
+                    Err(err) => return auth_prompt_io_error(err, io.stderr),
+                }
+            }
+        }
     };
-    let enterprise_url =
-        match interactive_enterprise_url(auth_provider, command.enterprise_url.clone(), io) {
-            Ok(value) => value,
-            Err(AuthInteractiveError::Cancelled) => return 1,
-            Err(AuthInteractiveError::Io(err)) => return auth_prompt_io_error(err, io.stderr),
-        };
+
+    let enterprise_url = if command.enterprise_url.is_some() {
+        command.enterprise_url.clone()
+    } else {
+        let prompts: &[PromptField] = registry
+            .get(&auth_provider)
+            .and_then(|p| {
+                p.auth_methods().iter().find_map(|m| {
+                    if let AuthMethodSpec::Prompts { prompts, .. } = m {
+                        Some(prompts.as_slice())
+                    } else {
+                        None
+                    }
+                })
+            })
+            .unwrap_or(&[]);
+
+        if prompts.is_empty() {
+            None
+        } else {
+            match run_prompts(prompts, io) {
+                Ok(values) => {
+                    if let Some(url) = values.get("enterprise_url") {
+                        match CopilotDeployment::enterprise(url) {
+                            Ok(CopilotDeployment::Enterprise { domain }) => Some(domain),
+                            Ok(CopilotDeployment::Public) => None,
+                            Err(err) => {
+                                let _ = writeln!(io.stderr, "auth login failed: {err}");
+                                return 2;
+                            }
+                        }
+                    } else {
+                        None
+                    }
+                }
+                Err(AuthInteractiveError::Cancelled) => return 1,
+                Err(AuthInteractiveError::Io(err)) => return auth_prompt_io_error(err, io.stderr),
+            }
+        }
+    };
 
     execute_login_selection(
         auth_provider,

@@ -320,7 +320,10 @@ fn shipped_example_config_uses_codex_oauth_provider_without_openai_api_key() {
     assert_eq!(provider.base_url, "https://api.openai.com/v1");
     assert_eq!(provider.api_key, "");
     assert_eq!(provider.api_key_env, vec!["OPENAI_API_KEY".to_string()]);
-    assert_eq!(format!("{:?}", provider.auth_provider), "Some(Codex)");
+    assert_eq!(
+        format!("{:?}", provider.auth_provider),
+        "Some(ProviderId(\"codex\"))"
+    );
     assert_eq!(provider.timeout_ms, 1_800_000);
     assert!(matches!(provider.api_mode, OpenAiApiMode::Auto));
 }
@@ -340,7 +343,10 @@ fn shipped_example_config_keeps_codex_oauth_provider_even_when_openai_api_key_is
     assert_eq!(provider.base_url, "https://api.openai.com/v1");
     assert_eq!(provider.api_key, "");
     assert_eq!(provider.api_key_env, vec!["OPENAI_API_KEY".to_string()]);
-    assert_eq!(format!("{:?}", provider.auth_provider), "Some(Codex)");
+    assert_eq!(
+        format!("{:?}", provider.auth_provider),
+        "Some(ProviderId(\"codex\"))"
+    );
     assert_eq!(provider.timeout_ms, 1_800_000);
     assert!(matches!(provider.api_mode, OpenAiApiMode::Auto));
 }

@@ -1,24 +1,20 @@
+use std::collections::BTreeMap;
 use std::io::{self, IsTerminal, Write};
 
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
-use harness_core::auth::copilot::CopilotDeployment;
-use harness_core::auth::AuthProviderId;
+use harness_core::auth::plugin::{
+    AuthMethodSpec, AuthPluginRegistry, PromptField, PromptFieldType, PromptOp,
+};
+use harness_core::auth::ProviderId;
+use harness_core::provider_catalog::ProviderCatalog;
 
 use crate::CliIo;
 
-use super::AuthLoginMethod;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum CopilotDeploymentChoice {
-    Public,
-    Enterprise,
-}
-
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct AuthPromptOption<T> {
-    label: &'static str,
+    label: String,
     value: T,
-    hint: Option<&'static str>,
+    hint: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,118 +52,108 @@ pub(super) enum AuthInteractiveError {
     Io(io::Error),
 }
 
-pub(super) fn prompt_auth_provider(io: &mut CliIo<'_>) -> io::Result<Option<AuthProviderId>> {
-    prompt_pick(
-        io,
-        "Select provider",
-        &[
-            AuthPromptOption {
-                label: "OpenAI",
-                value: AuthProviderId::Codex,
-                hint: Some("ChatGPT Plus/Pro or API key"),
-            },
-            AuthPromptOption {
-                label: "GitHub Copilot",
-                value: AuthProviderId::GithubCopilot,
-                hint: None,
-            },
-        ],
-        true,
-    )
+pub(super) fn prompt_auth_provider(
+    _catalog: &ProviderCatalog,
+    registry: &AuthPluginRegistry,
+    io: &mut CliIo<'_>,
+) -> io::Result<Option<ProviderId>> {
+    let options: Vec<AuthPromptOption<ProviderId>> = registry
+        .providers()
+        .into_iter()
+        .filter_map(|provider_id| {
+            let plugin = registry.get(provider_id)?;
+            Some(AuthPromptOption {
+                label: plugin.label().to_string(),
+                value: provider_id.clone(),
+                hint: Some(plugin.description().to_string()),
+            })
+        })
+        .collect();
+    prompt_pick(io, "Select provider", &options, true)
 }
 
 pub(super) fn prompt_login_method(
-    auth_provider: AuthProviderId,
+    methods: &[AuthMethodSpec],
     io: &mut CliIo<'_>,
-) -> io::Result<Option<AuthLoginMethod>> {
-    if auth_provider == AuthProviderId::GithubCopilot {
-        return Ok(Some(AuthLoginMethod::Device));
-    }
-
-    prompt_pick(
-        io,
-        "Login method",
-        &[
-            AuthPromptOption {
-                label: "ChatGPT Pro/Plus (browser)",
-                value: AuthLoginMethod::Browser,
-                hint: None,
-            },
-            AuthPromptOption {
-                label: "ChatGPT Pro/Plus (headless)",
-                value: AuthLoginMethod::Device,
-                hint: None,
-            },
-            AuthPromptOption {
-                label: "Manually enter API Key",
-                value: AuthLoginMethod::ApiKey,
-                hint: None,
-            },
-        ],
-        false,
-    )
+) -> io::Result<Option<usize>> {
+    let options: Vec<AuthPromptOption<usize>> = methods
+        .iter()
+        .enumerate()
+        .map(|(i, m)| AuthPromptOption {
+            label: method_label(m),
+            value: i,
+            hint: None,
+        })
+        .collect();
+    prompt_pick(io, "Login method", &options, false)
 }
 
-pub(super) fn interactive_enterprise_url(
-    auth_provider: AuthProviderId,
-    explicit_enterprise_url: Option<String>,
-    io: &mut CliIo<'_>,
-) -> Result<Option<String>, AuthInteractiveError> {
-    if auth_provider != AuthProviderId::GithubCopilot || explicit_enterprise_url.is_some() {
-        return Ok(explicit_enterprise_url);
-    }
-
-    let deployment = prompt_pick(
-        io,
-        "Select GitHub deployment type",
-        &[
-            AuthPromptOption {
-                label: "GitHub.com",
-                value: CopilotDeploymentChoice::Public,
-                hint: Some("Public"),
-            },
-            AuthPromptOption {
-                label: "GitHub Enterprise",
-                value: CopilotDeploymentChoice::Enterprise,
-                hint: Some("Data residency or self-hosted"),
-            },
-        ],
-        false,
-    )
-    .map_err(AuthInteractiveError::Io)?;
-
-    match deployment {
-        Some(CopilotDeploymentChoice::Public) => Ok(None),
-        Some(CopilotDeploymentChoice::Enterprise) => prompt_copilot_enterprise_url(io),
-        None => Err(AuthInteractiveError::Cancelled),
+fn method_label(method: &AuthMethodSpec) -> String {
+    match method {
+        AuthMethodSpec::OAuthAuto { label, .. } => label.clone(),
+        AuthMethodSpec::OAuthCode { label } => label.clone(),
+        AuthMethodSpec::ApiKey { label } => label.clone(),
+        AuthMethodSpec::Prompts { label, .. } => label.clone(),
     }
 }
 
-fn prompt_copilot_enterprise_url(
+pub(super) fn run_prompts(
+    prompts: &[PromptField],
     io: &mut CliIo<'_>,
-) -> Result<Option<String>, AuthInteractiveError> {
-    loop {
-        let value = prompt_input(
-            io,
-            "Enter your GitHub Enterprise URL or domain",
-            Some("company.ghe.com or https://company.ghe.com"),
-            false,
-        )
-        .map_err(AuthInteractiveError::Io)?;
+) -> Result<BTreeMap<String, String>, AuthInteractiveError> {
+    let mut values = BTreeMap::new();
+    for field in prompts {
+        if !should_run_prompt(field, &values) {
+            continue;
+        }
+        let value = match field.field_type {
+            PromptFieldType::Select => prompt_select_field(field, io)?,
+            PromptFieldType::Text => prompt_text_field(field, io)?,
+        };
         let Some(value) = value else {
             return Err(AuthInteractiveError::Cancelled);
         };
-        match CopilotDeployment::enterprise(&value) {
-            Ok(CopilotDeployment::Enterprise { domain }) => return Ok(Some(domain)),
-            Ok(CopilotDeployment::Public) => return Ok(None),
-            Err(err) => {
-                let _ = clack_log_error(io.stdout, &err.to_string());
-            }
-        }
+        values.insert(field.key.clone(), value);
+    }
+    Ok(values)
+}
+
+fn should_run_prompt(field: &PromptField, values: &BTreeMap<String, String>) -> bool {
+    let Some(condition) = &field.when else {
+        return true;
+    };
+    let actual = values.get(&condition.key);
+    match condition.op {
+        PromptOp::Eq => actual.map(|v| v == &condition.value).unwrap_or(false),
+        PromptOp::Neq => actual.map(|v| v != &condition.value).unwrap_or(true),
     }
 }
 
-fn prompt_pick<T: Copy>(
+fn prompt_select_field(
+    field: &PromptField,
+    io: &mut CliIo<'_>,
+) -> Result<Option<String>, AuthInteractiveError> {
+    let options: Vec<AuthPromptOption<String>> = field
+        .options
+        .iter()
+        .map(|opt| AuthPromptOption {
+            label: opt.label.clone(),
+            value: opt.id.clone(),
+            hint: None,
+        })
+        .collect();
+    prompt_pick(io, &field.message, &options, false).map_err(AuthInteractiveError::Io)
+}
+
+fn prompt_text_field(
+    field: &PromptField,
+    io: &mut CliIo<'_>,
+) -> Result<Option<String>, AuthInteractiveError> {
+    prompt_input(io, &field.message, field.placeholder.as_deref(), false)
+        .map_err(AuthInteractiveError::Io)
+}
+
+fn prompt_pick<T: Clone>(
     io: &mut CliIo<'_>,
     message: &str,
     options: &[AuthPromptOption<T>],
@@ -216,7 +202,7 @@ fn prompt_pick<T: Copy>(
                 clear_auth_prompt(io.stdout, rendered_lines)?;
                 if let Some(option_index) = visible.get(selected) {
                     render_auth_picker_result(io.stdout, message, &options[*option_index])?;
-                    return Ok(Some(options[*option_index].value));
+                    return Ok(Some(options[*option_index].value.clone()));
                 }
             }
             AuthPromptKey::Cancel => {
@@ -348,6 +334,7 @@ fn render_auth_picker<T>(
             };
             let hint = option
                 .hint
+                .as_ref()
                 .map(|hint| format!(" {AUTH_DIM}{hint}{AUTH_RESET}"))
                 .unwrap_or_default();
             write!(stdout, "│  {marker} {}{hint}\r\n", option.label)?;
@@ -370,6 +357,7 @@ fn render_auth_picker_result<T>(
 ) -> io::Result<()> {
     let hint = option
         .hint
+        .as_ref()
         .map(|hint| format!(" {AUTH_DIM}{hint}{AUTH_RESET}"))
         .unwrap_or_default();
     write!(stdout, "│\r\n")?;

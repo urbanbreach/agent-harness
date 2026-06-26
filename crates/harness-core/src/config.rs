@@ -4,6 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::auth::ProviderId;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -377,6 +378,15 @@ impl HarnessConfig {
     fn validate_references(&mut self) -> Result<(), ConfigError> {
         if self.agents.is_empty() {
             return Err(ConfigError::MissingRequiredSections("agents".to_string()));
+        }
+
+        for provider_name in self.providers.keys() {
+            if ProviderId::parse(provider_name).is_none() {
+                return Err(ConfigError::InvalidReference(
+                    "provider contains an invalid provider id; provider IDs must be non-empty and must not contain path traversal characters, slashes, null bytes, newlines, or terminal control characters"
+                        .to_string(),
+                ));
+            }
         }
 
         for profile_name in self.model_profiles.keys() {

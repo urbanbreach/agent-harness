@@ -7,7 +7,7 @@ use std::sync::MutexGuard;
 #[cfg(not(test))]
 use std::sync::OnceLock;
 
-use super::LaunchMetadata;
+use super::{ConnectProviderOption, LaunchMetadata};
 use crate::text::has_trimmed_content;
 
 #[cfg(not(test))]
@@ -18,6 +18,8 @@ static PENDING_LIVE_PROMPT_DRAFT: OnceLock<Mutex<Option<String>>> = OnceLock::ne
 static PENDING_LIVE_PROMPT_AUTO_SUBMIT: OnceLock<Mutex<bool>> = OnceLock::new();
 #[cfg(not(test))]
 static PENDING_LIVE_PROMPT_ENV_CONSUMED: OnceLock<Mutex<bool>> = OnceLock::new();
+#[cfg(not(test))]
+static PENDING_CONNECT_PROVIDERS: OnceLock<Mutex<Vec<ConnectProviderOption>>> = OnceLock::new();
 
 #[cfg(not(test))]
 const PENDING_LIVE_PROMPT_DRAFT_ENV: &str = "HARNESS_TUI_PENDING_LIVE_PROMPT_DRAFT";
@@ -154,6 +156,30 @@ impl PendingLiveState {
 
 pub fn set_pending_live_launch_metadata(metadata: LaunchMetadata) {
     PendingLiveState::set_launch_metadata(metadata);
+}
+
+pub fn set_pending_connect_providers(providers: Vec<ConnectProviderOption>) {
+    #[cfg(not(test))]
+    {
+        let lock = PENDING_CONNECT_PROVIDERS.get_or_init(|| Mutex::new(Vec::new()));
+        *lock.lock().expect("lock connect providers") = providers;
+    }
+    #[cfg(test)]
+    {
+        let _ = providers;
+    }
+}
+
+pub(super) fn take_pending_connect_providers() -> Vec<ConnectProviderOption> {
+    #[cfg(not(test))]
+    {
+        let lock = PENDING_CONNECT_PROVIDERS.get_or_init(|| Mutex::new(Vec::new()));
+        std::mem::take(&mut *lock.lock().expect("lock connect providers"))
+    }
+    #[cfg(test)]
+    {
+        Vec::new()
+    }
 }
 
 pub(super) fn take_pending_live_launch_metadata() -> Option<LaunchMetadata> {

@@ -136,7 +136,7 @@ pub(super) fn startup_lifecycle_selection_surface(
 
 pub(crate) fn render_startup_lifecycle_flow(
     frame: &mut Frame,
-    app: &AppState,
+    _app: &AppState,
     area: Rect,
     theme: &Theme,
 ) {
@@ -147,10 +147,6 @@ pub(crate) fn render_startup_lifecycle_flow(
     let shell_area = area;
     let surface = theme.surface.shell;
     let content_area = lifecycle_surface_copy_area(shell_area);
-    if let Some(screen) = app.onboarding_screen() {
-        render_onboarding_screen(frame, &screen, content_area, theme);
-        return;
-    }
 
     let logo_height = startup_logo_height(content_area);
     let content_height = logo_height;
@@ -182,35 +178,6 @@ pub(crate) fn render_startup_lifecycle_flow(
             .alignment(Alignment::Center)
             .wrap(Wrap { trim: false }),
         rows[1],
-    );
-}
-
-fn render_onboarding_screen(
-    frame: &mut Frame,
-    screen: &crate::app::OnboardingScreen,
-    content_area: Rect,
-    theme: &Theme,
-) {
-    let surface = theme.surface.panel_elevated;
-    let lines = screen.lines();
-    let height = u16::try_from(lines.len())
-        .unwrap_or(u16::MAX)
-        .saturating_mul(2)
-        .saturating_add(2)
-        .min(content_area.height);
-    let width = content_area.width.min(92);
-    let x = content_area.x + content_area.width.saturating_sub(width) / 2;
-    let y = content_area.y + content_area.height.saturating_sub(height) / 2;
-    let area = Rect::new(x, y, width, height);
-    let block = lifecycle_surface_block(theme, "Harness setup", true);
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-    frame.render_widget(
-        Paragraph::new(Text::from(lines))
-            .style(Style::default().fg(theme.text.primary).bg(surface))
-            .alignment(Alignment::Left)
-            .wrap(Wrap { trim: false }),
-        inner,
     );
 }
 

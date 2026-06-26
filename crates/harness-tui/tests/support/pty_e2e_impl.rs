@@ -13,9 +13,9 @@ const READ_POLL_TIMEOUT: Duration = Duration::from_millis(50);
 const PTY_SIGNOFF_ENV: &str = "HARNESS_TUI_PTY_SIGNOFF";
 const HELPER_SCENARIO_ENV: &str = "HARNESS_TUI_PTY_HELPER_SCENARIO";
 const TYPE_FIRST_STARTUP_SCENARIO: &str = "type_first_startup";
-const ONBOARDING_AUTH_SCENARIO: &str = "onboarding_auth";
+const CONNECT_AUTH_SCENARIO: &str = "connect_auth";
 const TYPE_FIRST_STARTUP_TEST: &str = "pty_helper_type_first_startup";
-const ONBOARDING_AUTH_TEST: &str = "pty_helper_onboarding_auth";
+const CONNECT_AUTH_TEST: &str = "pty_helper_connect_auth";
 const READY_MARKER: &str = "Ctrl+p commands";
 const DRAFT_TEXT: &str = "Hello from PTY";
 
@@ -61,46 +61,38 @@ pub(crate) fn pty_smoke_starts_accepts_input_resizes_and_exits() {
     assert!(status.success(), "helper tui child exited with {status:?}");
 }
 
-pub(crate) fn pty_onboarding_auth_drives_required_screens() {
+pub(crate) fn pty_connect_auth_drives_provider_connection() {
     if !cfg!(target_os = "linux") || std::env::var(PTY_SIGNOFF_ENV).as_deref() != Ok("1") {
         return;
     }
 
-    let mut helper = spawn_helper(ONBOARDING_AUTH_TEST, ONBOARDING_AUTH_SCENARIO);
-    helper.wait_for("Harness setup");
-    helper.wait_for("Connect a provider");
+    let mut helper = spawn_helper(CONNECT_AUTH_TEST, CONNECT_AUTH_SCENARIO);
+    helper.wait_for("ctrl+p commands");
 
-    send_key(helper.writer.as_mut(), b'\r').expect("start onboarding setup");
-    helper.wait_for("Select provider");
-    send_key(helper.writer.as_mut(), b'\r').expect("choose Codex provider");
-    helper.wait_for("Choose login method");
-    send_bytes(helper.writer.as_mut(), b"\x1b[B").expect("move to browser auth method");
-    send_bytes(helper.writer.as_mut(), b"\x1b[B").expect("move to api-key auth method");
-    send_key(helper.writer.as_mut(), b'\r').expect("choose API key auth method");
-    helper.wait_for("secret redacted");
-
+    send_key(helper.writer.as_mut(), b'/').expect("start slash command");
     helper
         .writer
-        .write_all(b"sk-pty-redacted-test")
-        .expect("type hidden API key");
-    helper.writer.flush().expect("flush hidden API key");
-    send_key(helper.writer.as_mut(), b'\r').expect("submit hidden API key");
-    helper.wait_for("Credential stored");
-    helper.wait_for("secret redacted");
+        .write_all(b"connect")
+        .expect("type connect command");
+    helper.writer.flush().expect("flush connect command");
+    helper.wait_for("connect");
+    send_key(helper.writer.as_mut(), b'\r').expect("submit connect command");
 
-    send_key(helper.writer.as_mut(), b'\r').expect("continue to skill selection");
-    helper.wait_for("Select skills");
-    send_key(helper.writer.as_mut(), b'\r').expect("finish onboarding and return to start shell");
-    helper.wait_for("ctrl+p commands");
-    send_key(helper.writer.as_mut(), b'\r').expect("start new session from launcher");
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    send_bytes(helper.writer.as_mut(), b"\x1b").expect("esc to close dialog");
 
-    let status = helper
-        .child
-        .wait()
-        .expect("wait for onboarding helper exit");
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    helper
+        .writer
+        .write_all(b"/exit")
+        .expect("type exit command");
+    helper.writer.flush().expect("flush exit command");
+    send_key(helper.writer.as_mut(), b'\r').expect("submit exit command");
+
+    let status = helper.child.wait().expect("wait for connect helper exit");
     assert!(
         status.success(),
-        "onboarding helper tui child exited with {status:?}"
+        "connect helper tui child exited with {status:?}"
     );
 }
 
@@ -129,8 +121,8 @@ pub(crate) fn pty_helper_type_first_startup() {
     .expect("run type-first helper tui");
 }
 
-pub(crate) fn pty_helper_onboarding_auth() {
-    if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(ONBOARDING_AUTH_SCENARIO) {
+pub(crate) fn pty_helper_connect_auth() {
+    if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(CONNECT_AUTH_SCENARIO) {
         return;
     }
 
@@ -148,7 +140,6 @@ pub(crate) fn pty_helper_onboarding_auth() {
         mode: TuiMode::Startup {
             session_history_entries: Vec::new(),
             prompt_history_path: None,
-            onboarding_required: true,
             update_rx,
         },
         exit_on_finish: false,
@@ -157,7 +148,7 @@ pub(crate) fn pty_helper_onboarding_auth() {
         toggles: None,
         preserve_terminal_on_exit: false,
     })
-    .expect("run onboarding helper tui");
+    .expect("run connect helper tui");
 }
 
 struct SpawnedHelper {

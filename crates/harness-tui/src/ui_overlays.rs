@@ -1,5 +1,7 @@
 use super::*;
 
+#[path = "ui_overlays/auth_dialog.rs"]
+mod auth_dialog;
 #[path = "ui_overlays/model_switcher.rs"]
 mod model_switcher;
 #[path = "ui_overlays/permission_modal.rs"]
@@ -15,6 +17,7 @@ mod theme_dialog;
 #[path = "ui_overlays/toggles_menu.rs"]
 mod toggles_menu;
 
+use auth_dialog::render_auth_dialog_overlay;
 use model_switcher::{
     model_switcher_overlay_title, paint_model_select_panel, render_model_switcher_overlay,
 };
@@ -68,6 +71,7 @@ pub(super) fn render_overlays(
             OverlayKind::PromptStashList => {
                 render_prompt_stash_list_overlay(frame, app, theme, plan.root)
             }
+            OverlayKind::AuthDialog => render_auth_dialog_overlay(frame, app, theme, plan.root),
         }
     }
 }

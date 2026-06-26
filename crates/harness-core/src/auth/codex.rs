@@ -11,7 +11,7 @@ use thiserror::Error;
 
 use super::{
     AuthProviderId, CredentialClock, CredentialRefreshError, CredentialStore, CredentialStoreError,
-    OAuthRefreshOutcome, OAuthTokenRefresher, StoredCredential, SystemCredentialClock,
+    OAuthRefreshOutcome, OAuthTokenRefresher, ProviderId, StoredCredential, SystemCredentialClock,
 };
 
 pub const CODEX_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
@@ -115,7 +115,7 @@ impl CodexLoopbackSession {
 
     pub fn timeout_error(&self) -> CodexOAuthError {
         CodexOAuthError::CallbackTimeout {
-            provider: AuthProviderId::Codex,
+            provider: ProviderId::codex(),
         }
     }
 }
@@ -319,7 +319,7 @@ impl CodexOAuthClient {
             }
         }
         Err(CodexOAuthError::DevicePollingTimeout {
-            provider: AuthProviderId::Codex,
+            provider: ProviderId::codex(),
         })
     }
 
@@ -430,7 +430,7 @@ impl CodexOAuthClient {
             .and_then(|seconds| self.clock.now().checked_add(Duration::from_secs(seconds)))
             .map(format_rfc3339);
         let mut credential = StoredCredential::oauth(
-            AuthProviderId::Codex,
+            ProviderId::codex(),
             access_token,
             refresh_token,
             expires_at,
@@ -446,10 +446,10 @@ impl CodexOAuthClient {
 impl OAuthTokenRefresher for CodexOAuthClient {
     async fn refresh(
         &self,
-        provider: AuthProviderId,
+        provider: &ProviderId,
         credential: &StoredCredential,
     ) -> Result<OAuthRefreshOutcome, CredentialRefreshError> {
-        if provider != AuthProviderId::Codex {
+        if provider != &ProviderId::codex() {
             return Err(CredentialRefreshError::new(
                 ProviderErrorCategory::InvalidCredentials,
                 format!("codex refresher cannot refresh {provider} credentials"),

@@ -212,11 +212,6 @@ impl AppState {
     }
 
     pub(crate) fn handle_paste(&mut self, text: &str) {
-        if self.onboarding_accepts_hidden_text() && !self.onboarding.auth_in_progress {
-            self.onboarding.secret_input.push_str(text.trim());
-            return;
-        }
-
         if self.composer_disabled() {
             return;
         }

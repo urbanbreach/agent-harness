@@ -1,4 +1,5 @@
 use super::*;
+use crate::auth::ProviderId;
 
 #[test]
 fn top_level_default_agent_camel_case_alias_is_accepted() {
@@ -467,7 +468,7 @@ fn openai_compatible_auth_provider_normalizes_from_options_and_rejects_conflicts
 
     let parsed = load_config_from_str(cfg).expect("auth provider options config parses");
     let ProviderConfig::OpenAiCompatible(provider) = &parsed.providers["default"];
-    assert_eq!(provider.auth_provider, Some(AuthProviderId::Codex));
+    assert_eq!(provider.auth_provider, Some(ProviderId::codex()));
 
     let conflicting = r#"
         {

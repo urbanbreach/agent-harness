@@ -359,9 +359,6 @@ fn render_startup_session_surface(
 
     frame.render_widget(live_transcript_shell_section(theme), plan.shell);
     render_transcript_pane(frame, app, transcript_area, theme);
-    if app.onboarding_screen().is_some() {
-        return;
-    }
     render_unified_bottom_dock(frame, app, dock, theme);
 }
 

@@ -88,6 +88,11 @@ const COMMAND_METADATA: &[CommandMetadata] = &[
         description: "Manage provider login, logout, and auth status",
     },
     CommandMetadata {
+        id: "connect",
+        label: "Connect",
+        description: "Connect a provider",
+    },
+    CommandMetadata {
         id: "close_review_surface",
         label: "Session shell",
         description: "Return to the transcript-first session shell",
@@ -448,7 +453,7 @@ pub(super) fn command_metadata(id: &str) -> Option<&'static CommandMetadata> {
     COMMAND_METADATA.iter().find(|entry| entry.id == id)
 }
 
-const SLASH_COMMANDS: [SlashCommand; 18] = [
+const SLASH_COMMANDS: [SlashCommand; 19] = [
     SlashCommand {
         id: "new",
         metadata_id: "slash_new",
@@ -503,6 +508,11 @@ const SLASH_COMMANDS: [SlashCommand; 18] = [
         id: "auth",
         metadata_id: "auth",
         aliases: &["login"],
+    },
+    SlashCommand {
+        id: "connect",
+        metadata_id: "connect",
+        aliases: &[],
     },
     SlashCommand {
         id: "events",

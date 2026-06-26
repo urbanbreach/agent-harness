@@ -38,7 +38,7 @@ pub(super) fn store_api_key_login(
     io: &mut CliIo<'_>,
     store: &CredentialStore,
 ) -> i32 {
-    if auth_provider != AuthProviderId::Codex {
+    if auth_provider != AuthProviderId::codex() {
         let _ = writeln!(
             io.stderr,
             "auth login failed: api-key login is supported for codex only in V1"
@@ -72,7 +72,7 @@ pub(super) fn store_interactive_api_key_login(
     io: &mut CliIo<'_>,
     store: &CredentialStore,
 ) -> i32 {
-    if auth_provider != AuthProviderId::Codex {
+    if auth_provider != AuthProviderId::codex() {
         let _ = writeln!(
             io.stderr,
             "auth login failed: api-key login is supported for codex only in V1"
@@ -94,8 +94,11 @@ fn store_api_key_value(
     store: &CredentialStore,
     ui: AuthLoginUi,
 ) -> i32 {
-    let credential =
-        StoredCredential::api_key(auth_provider, api_key, SystemCredentialClock.now_rfc3339());
+    let credential = StoredCredential::api_key(
+        auth_provider.clone(),
+        api_key,
+        SystemCredentialClock.now_rfc3339(),
+    );
     match store.save(&credential) {
         Ok(()) => {
             if ui == AuthLoginUi::Interactive {
@@ -135,14 +138,14 @@ pub(super) fn store_mock_oauth_login(
         .unwrap_or(&token)
         .to_string();
     let mut credential = StoredCredential::oauth(
-        auth_provider,
+        auth_provider.clone(),
         token,
         refresh,
         command.expires_at.clone(),
         SystemCredentialClock.now_rfc3339(),
     );
     credential.account_id = command.account_id.clone();
-    if auth_provider == AuthProviderId::GithubCopilot {
+    if auth_provider == AuthProviderId::github_copilot() {
         credential.scopes = vec![COPILOT_SCOPE.to_string()];
         if let Some(input) = command.enterprise_url.as_deref() {
             match CopilotDeployment::enterprise(input) {
@@ -199,11 +202,16 @@ pub(super) fn run_device_login(
         }
     };
 
-    match auth_provider {
-        AuthProviderId::Codex => runtime.block_on(run_codex_device_login(io, store, ui)),
-        AuthProviderId::GithubCopilot => {
-            runtime.block_on(run_copilot_device_login(enterprise_url, io, store, ui))
-        }
+    if auth_provider == AuthProviderId::codex() {
+        runtime.block_on(run_codex_device_login(io, store, ui))
+    } else if auth_provider == AuthProviderId::github_copilot() {
+        runtime.block_on(run_copilot_device_login(enterprise_url, io, store, ui))
+    } else {
+        let _ = writeln!(
+            io.stderr,
+            "auth login failed: unsupported auth provider {auth_provider}"
+        );
+        1
     }
 }
 
@@ -317,7 +325,7 @@ async fn run_copilot_device_login(
             }
             Ok(CopilotDevicePoll::Authorized { access_token }) => {
                 let mut credential = StoredCredential::oauth(
-                    AuthProviderId::GithubCopilot,
+                    AuthProviderId::github_copilot(),
                     access_token.clone(),
                     access_token,
                     None,
@@ -360,7 +368,7 @@ pub(super) fn run_codex_browser_login(
     store: &CredentialStore,
     ui: AuthLoginUi,
 ) -> i32 {
-    if auth_provider != AuthProviderId::Codex {
+    if auth_provider != AuthProviderId::codex() {
         let _ = writeln!(
             io.stderr,
             "auth login failed: browser login is supported for codex only in V1"
@@ -485,7 +493,7 @@ async fn complete_codex_browser_loopback(
                 deadline,
                 receive_codex_loopback_callback(&listener, &client, &session, store),
             ) => match result {
-                Ok(result) => CodexBrowserCompletion::Credential(result),
+                Ok(result) => CodexBrowserCompletion::Credential(Box::new(result)),
                 Err(_) => CodexBrowserCompletion::Timeout,
             },
             manual = read_terminal_manual_callback_url(deadline) => match manual {
@@ -493,7 +501,7 @@ async fn complete_codex_browser_loopback(
                     deadline,
                     complete_codex_pasted_callback(&client, &session, store, &callback_url),
                 ).await {
-                    Ok(result) => CodexBrowserCompletion::Credential(result),
+                    Ok(result) => CodexBrowserCompletion::Credential(Box::new(result)),
                     Err(_) => CodexBrowserCompletion::Timeout,
                 },
                 Ok(ManualCallbackInput::Cancelled) => CodexBrowserCompletion::Cancelled,
@@ -508,27 +516,27 @@ async fn complete_codex_browser_loopback(
         )
         .await
         {
-            Ok(result) => CodexBrowserCompletion::Credential(result),
+            Ok(result) => CodexBrowserCompletion::Credential(Box::new(result)),
             Err(_) => CodexBrowserCompletion::Timeout,
         }
     };
 
     match completion {
-        CodexBrowserCompletion::Credential(Ok(_credential)) => {
-            if ui == AuthLoginUi::Interactive {
-                let _ = clack_log_success(io.stdout, "Login successful");
-                let _ = clack_outro(io.stdout, "Done");
-            } else {
-                let _ = writeln!(
-                    io.stdout,
-                    "stored oauth credential for codex (secret redacted)"
-                );
+        CodexBrowserCompletion::Credential(result) => match *result {
+            Ok(_credential) => {
+                if ui == AuthLoginUi::Interactive {
+                    let _ = clack_log_success(io.stdout, "Login successful");
+                    let _ = clack_outro(io.stdout, "Done");
+                } else {
+                    let _ = writeln!(
+                        io.stdout,
+                        "stored oauth credential for codex (secret redacted)"
+                    );
+                }
+                0
             }
-            0
-        }
-        CodexBrowserCompletion::Credential(Err(err)) => {
-            auth_oauth_error("auth login failed", err, io.stderr)
-        }
+            Err(err) => auth_oauth_error("auth login failed", err, io.stderr),
+        },
         CodexBrowserCompletion::InputError(err) => auth_prompt_io_error(err, io.stderr),
         CodexBrowserCompletion::Cancelled => 1,
         CodexBrowserCompletion::Timeout => {
@@ -538,7 +546,7 @@ async fn complete_codex_browser_loopback(
 }
 
 enum CodexBrowserCompletion {
-    Credential(Result<StoredCredential, CodexOAuthError>),
+    Credential(Box<Result<StoredCredential, CodexOAuthError>>),
     InputError(io::Error),
     Cancelled,
     Timeout,
