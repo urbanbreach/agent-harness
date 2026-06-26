@@ -2,8 +2,9 @@ use regex::Regex;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ForbiddenPattern {
     Regex { name: String, expression: Regex },
     Substring { name: String, needle: String },
@@ -45,7 +46,7 @@ pub struct SecretFinding {
     pub line_number: usize,
 }
 
-pub fn default_forbidden_patterns() -> Vec<ForbiddenPattern> {
+static DEFAULT_PATTERNS: LazyLock<Vec<ForbiddenPattern>> = LazyLock::new(|| {
     vec![
         ForbiddenPattern::regex("openai_api_key", r"\bsk-[A-Za-z0-9_-]{10,}\b"),
         ForbiddenPattern::regex("anthropic_api_key", r"\bsk-ant-[A-Za-z0-9_-]{10,}\b"),
@@ -60,6 +61,10 @@ pub fn default_forbidden_patterns() -> Vec<ForbiddenPattern> {
         ForbiddenPattern::regex("pem_private_key", r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
         ForbiddenPattern::substring("Bearer sk-", "Bearer sk-"),
     ]
+});
+
+pub fn default_forbidden_patterns() -> &'static [ForbiddenPattern] {
+    &DEFAULT_PATTERNS
 }
 
 pub fn forbidden_patterns_with_env_values<I, K, V>(vars: I) -> Vec<ForbiddenPattern>
@@ -68,7 +73,7 @@ where
     K: AsRef<str>,
     V: AsRef<str>,
 {
-    let mut patterns = default_forbidden_patterns();
+    let mut patterns = default_forbidden_patterns().to_vec();
     patterns.extend(env_credential_patterns(vars));
     patterns
 }
@@ -211,7 +216,7 @@ mod tests {
         )
         .expect("write cassette");
 
-        let findings = scan_directory_tree_for_secrets(temp.path(), &default_forbidden_patterns())
+        let findings = scan_directory_tree_for_secrets(temp.path(), default_forbidden_patterns())
             .expect("scan");
 
         assert!(findings
