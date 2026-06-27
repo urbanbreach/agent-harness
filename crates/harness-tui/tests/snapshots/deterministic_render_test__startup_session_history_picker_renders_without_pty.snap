@@ -1,6 +1,5 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
-assertion_line: 151
 expression: rendered.as_str()
 ---
                                                                                                     
@@ -20,8 +19,8 @@ expression: rendered.as_str()
                                                                                                     
                 pin ctrl+f  delete ctrl+d  rename ctrl+r                                            
                                                                                                     
+            ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀             
                                            ctrl+t variants  tab agents  ctrl+p commands             
-                                                                                                    
                                                                                                     
                                                                                                     
                                                                                                     

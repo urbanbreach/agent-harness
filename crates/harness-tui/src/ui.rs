@@ -13,7 +13,7 @@ use crate::app::{
 use crate::keybindings::Action;
 use crate::layout::{
     composer_input_height, inset_rect, live_empty_state_area, secondary_surface_layout,
-    split_secondary_surface, FrameLayoutPlan,
+    split_secondary_surface, startup_composer_input_height, FrameLayoutPlan,
 };
 use crate::overlay::OverlayKind;
 use crate::theme::Theme;

@@ -522,8 +522,15 @@ pub(super) fn render_unified_bottom_dock(
         render_control_dock_disclosure(frame, disclosure_area, app, theme, &dock);
     }
 
-    let composer_lines =
-        composer_input_height(&app.composer.prompt_buffer, dock_layout.composer.width);
+    let composer_lines = if dock.variant == crate::view_model::ControlDockVariant::Startup {
+        startup_composer_input_height(
+            &app.composer.prompt_buffer,
+            dock_layout.composer.width,
+            frame.area().height,
+        )
+    } else {
+        composer_input_height(&app.composer.prompt_buffer, dock_layout.composer.width)
+    };
     render_document_composer_content(
         frame,
         app,

@@ -27,7 +27,7 @@ pub(super) fn render_document_composer_content(
     theme: &Theme,
     context: DocumentComposerRenderContext<'_>,
 ) {
-    let _startup_composer = matches!(
+    let startup_composer = matches!(
         context.dock.variant,
         crate::view_model::ControlDockVariant::Startup
     );
@@ -110,14 +110,17 @@ pub(super) fn render_document_composer_content(
         .saturating_sub(metadata_gap)
         .saturating_sub(metadata_height);
 
+    let pre_input_fill = if startup_composer { trailing_fill } else { 0 };
+    let post_metadata_fill = if startup_composer { 0 } else { trailing_fill };
+
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(top_padding),
+            Constraint::Length(top_padding.saturating_add(pre_input_fill)),
             Constraint::Length(input_height),
             Constraint::Length(metadata_gap),
             Constraint::Length(metadata_height),
-            Constraint::Length(trailing_fill),
+            Constraint::Length(post_metadata_fill),
         ])
         .split(body_inner);
     let input_area = rows[1];

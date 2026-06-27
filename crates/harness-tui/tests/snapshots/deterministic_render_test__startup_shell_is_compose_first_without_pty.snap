@@ -1,8 +1,8 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
-assertion_line: 29
 expression: rendered.as_str()
 ---
+                                                                                                    
                                                                                                     
                                                                                                     
                                                                                                     
@@ -14,14 +14,13 @@ expression: rendered.as_str()
                                   ┣━┫  ┣━┫  ┣┳┛  ┃┗┫  ┣╸   ┗━┓  ┗━┓                                 
                                   ╹ ╹  ╹ ╹  ╹┗╸  ╹ ╹  ┗━╸  ┗━┛  ┗━┛                                 
                                                                                                     
+                                                                                                    
             ┃                                                                                       
             ┃  Explain deterministic TUI tests                                                      
             ┃                                                                                       
             ┃  Worker model-1 mock · Demo                                                           
-            ┃                                                                                       
             ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀             
                                            ctrl+t variants  tab agents  ctrl+p commands             
-                                                                                                    
                                                                                                     
                                                                                                     
                                                                                                     
