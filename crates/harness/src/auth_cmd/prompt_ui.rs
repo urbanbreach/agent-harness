@@ -53,19 +53,28 @@ pub(super) enum AuthInteractiveError {
 }
 
 pub(super) fn prompt_auth_provider(
-    _catalog: &ProviderCatalog,
+    catalog: &ProviderCatalog,
     registry: &AuthPluginRegistry,
     io: &mut CliIo<'_>,
 ) -> io::Result<Option<ProviderId>> {
-    let options: Vec<AuthPromptOption<ProviderId>> = registry
-        .providers()
+    let options: Vec<AuthPromptOption<ProviderId>> = catalog
+        .sorted_by_priority()
         .into_iter()
-        .filter_map(|provider_id| {
-            let plugin = registry.get(provider_id)?;
+        .filter_map(|entry| {
+            let provider_id = ProviderId::parse(entry.id.as_str())?;
+            let plugin = registry.get(&provider_id).or_else(|| {
+                (provider_id.as_str() == "openai")
+                    .then(ProviderId::codex)
+                    .and_then(|codex| registry.get(&codex))
+            });
             Some(AuthPromptOption {
-                label: plugin.label().to_string(),
-                value: provider_id.clone(),
-                hint: Some(plugin.description().to_string()),
+                label: plugin
+                    .map(|plugin| plugin.label().to_string())
+                    .unwrap_or_else(|| entry.name.clone()),
+                value: provider_id,
+                hint: plugin
+                    .map(|plugin| plugin.description().to_string())
+                    .or_else(|| Some("API key".to_string())),
             })
         })
         .collect();
