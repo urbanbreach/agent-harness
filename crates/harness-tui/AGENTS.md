@@ -9,8 +9,9 @@ Read root `AGENTS.md` first. E2E lane details live in `crates/harness-testkit/te
 | Task | Location | Notes |
 |------|----------|-------|
 | Runtime entrypoints | `src/lib.rs`, `src/runtime.rs` | Startup/live/replay wiring and exact-name shell contract tests. |
-| App state | `src/app.rs`, `src/app/` | Event ingestion, overlays, permissions, session navigation; prefer submodule extraction over widening `app.rs`. |
+| App state | `src/app.rs`, `src/app/`, `src/app/AGENTS.md` | Event ingestion, overlays, permissions, session navigation; prefer submodule extraction over widening `app.rs`. |
 | Rendering | `src/ui.rs`, `src/ui_*.rs`, `src/ui_transcript.rs`, `src/ui_transcript_*` | Main surface, chrome, overlays, transcript sections, secondary views. |
+| Render test helpers | `src/lib_tests/`, `src/lib_tests.rs`, `src/overlay_tests.rs` | Deterministic shell/view fixtures and overlay regression helpers. |
 | Geometry | `src/layout.rs` | Breakpoints, frame plan, pane sizing, wheel hit areas. |
 | Theme tokens | `src/theme.rs` | Color/token system and shell geometry defaults. |
 | Keybindings | `src/keybindings.rs` | Action map and palette command labels. |
