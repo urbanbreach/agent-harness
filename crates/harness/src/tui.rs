@@ -145,6 +145,7 @@ use self::model_selection::{
 #[cfg(test)]
 use self::launch_metadata::replay_launch_metadata;
 
+use harness_core::auth::plugin::AuthPluginRegistry;
 #[cfg(test)]
 use harness_core::proj::RecordedRuntimeContext;
 use harness_tui::app::ConnectProviderOption;
@@ -152,26 +153,56 @@ use harness_tui::app::ConnectProviderOption;
 use harness_tui::app::ToggleEntryKind;
 
 fn set_pending_connect_providers_from_config(config: Option<&harness_core::config::HarnessConfig>) {
-    use harness_core::auth::plugin::{AuthMethodSpec, AuthPluginRegistry};
-    use harness_core::auth::ProviderId;
-    use harness_core::config::ProviderConfig;
-    use harness_tui::app::auth_dialog::catalog_providers;
     use harness_tui::app::set_pending_connect_providers;
 
     let registry = AuthPluginRegistry::with_builtins();
+    let catalog = std::thread::spawn(harness_core::provider_catalog::ProviderCatalog::from_env)
+        .join()
+        .ok()
+        .and_then(Result::ok);
+    set_pending_connect_providers(connect_provider_options(
+        config,
+        &registry,
+        catalog.as_ref(),
+    ));
+}
+
+fn connect_provider_options(
+    config: Option<&harness_core::config::HarnessConfig>,
+    registry: &AuthPluginRegistry,
+    catalog: Option<&harness_core::provider_catalog::ProviderCatalog>,
+) -> Vec<ConnectProviderOption> {
+    use harness_core::auth::plugin::AuthMethodSpec;
+    use harness_core::auth::ProviderId;
+    use harness_core::config::ProviderConfig;
+    use harness_tui::app::auth_dialog::catalog_providers;
+    use std::collections::BTreeSet;
+
+    let mut providers = catalog
+        .map(|catalog| catalog_providers(catalog, registry))
+        .unwrap_or_default();
+    let mut provider_ids = providers
+        .iter()
+        .map(|provider| provider.id.to_string())
+        .collect::<BTreeSet<_>>();
 
     let Some(config) = config else {
-        return;
+        return providers;
     };
 
-    let mut providers: Vec<ConnectProviderOption> = Vec::new();
-
     for (provider_id, provider_config) in &config.providers {
+        if provider_ids.contains(provider_id) {
+            continue;
+        }
         let ProviderConfig::OpenAiCompatible(ref oc) = provider_config;
         let label = oc.name.as_deref().unwrap_or(provider_id).to_string();
 
         if let Some(auth_provider) = oc.auth_provider.clone() {
+            if provider_ids.contains(auth_provider.as_str()) {
+                continue;
+            }
             if let Some(plugin) = registry.get(&auth_provider) {
+                provider_ids.insert(auth_provider.to_string());
                 providers.push(ConnectProviderOption {
                     id: auth_provider.clone(),
                     label,
@@ -187,6 +218,7 @@ fn set_pending_connect_providers_from_config(config: Option<&harness_core::confi
                 .is_some_and(|v| !v.trim().is_empty());
             if !already_set {
                 if let Some(id) = ProviderId::parse(provider_id.as_str()) {
+                    provider_ids.insert(provider_id.clone());
                     providers.push(ConnectProviderOption {
                         id,
                         label,
@@ -201,13 +233,7 @@ fn set_pending_connect_providers_from_config(config: Option<&harness_core::confi
         }
     }
 
-    if providers.is_empty() {
-        if let Ok(catalog) = harness_core::provider_catalog::ProviderCatalog::from_env() {
-            providers = catalog_providers(&catalog, &registry);
-        }
-    }
-
-    set_pending_connect_providers(providers);
+    providers
 }
 
 #[derive(Debug, Args, Clone)]

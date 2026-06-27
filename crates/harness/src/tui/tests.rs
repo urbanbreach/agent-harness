@@ -247,3 +247,20 @@ fn write_catalog_run(run_dir: &Path, events: &[EventEnvelopeV1]) {
     std::fs::write(run_dir.join("events.jsonl"), format!("{body}\n"))
         .expect("write catalog events");
 }
+
+#[test]
+fn connect_provider_options_seed_from_models_dev_catalog() {
+    let catalog = harness_core::provider_catalog::ProviderCatalog::from_embedded()
+        .expect("embedded catalog loads");
+    let registry = AuthPluginRegistry::with_builtins();
+
+    let providers = connect_provider_options(None, &registry, Some(&catalog));
+
+    assert!(providers.len() > registry.providers().len());
+    assert!(providers
+        .iter()
+        .any(|provider| provider.id.as_str() == "anthropic"));
+    assert!(providers
+        .iter()
+        .any(|provider| provider.id.as_str() == "openai"));
+}
