@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_core::session_lineage::{latest_clone_stable_prefix, StableSessionPrefix};
 
+use super::session_history::fuzzy_subsequence_score;
 pub(crate) use super::session_history::{
     session_history_category_label, session_history_current_marker, session_history_display_title,
     session_history_footer_label,
@@ -47,6 +48,28 @@ impl LineageSlashCommand {
 
 fn non_empty_str(value: &str) -> Option<&str> {
     has_trimmed_content(value).then_some(value)
+}
+
+fn palette_command_filter_score(
+    command: &crate::keybindings::PaletteCommand,
+    needle: &str,
+) -> Option<usize> {
+    let title_score = fuzzy_subsequence_score(
+        &Action::palette_command_label(command.id).to_lowercase(),
+        needle,
+    )
+    .map(|score| score.saturating_mul(2));
+    let category_score = fuzzy_subsequence_score(&command.section.label().to_lowercase(), needle)
+        .map(|score| score.saturating_mul(2).saturating_add(1));
+    let id = command.id.to_lowercase();
+    let id_score = fuzzy_subsequence_score(&id.replace('_', " "), needle)
+        .or_else(|| fuzzy_subsequence_score(&id, needle))
+        .map(|score| score.saturating_mul(2).saturating_add(3));
+
+    [title_score, category_score, id_score]
+        .into_iter()
+        .flatten()
+        .min()
 }
 
 impl AppState {
@@ -512,6 +535,10 @@ impl AppState {
                 self.close_palette();
                 true
             }
+            KeyCode::Char('c') if ctrl_only => {
+                self.close_palette();
+                true
+            }
             KeyCode::Enter => {
                 self.execute_palette_command();
                 true
@@ -571,48 +598,34 @@ impl AppState {
 
     fn update_palette_filter(&mut self) {
         let input = self.palette_input.to_lowercase();
-        let filtered = self
+        if input.is_empty() {
+            self.palette_filtered = self
+                .palette_commands()
+                .iter()
+                .map(|palette_command| palette_command.id.to_string())
+                .collect();
+            self.palette_selected = 0;
+            return;
+        }
+
+        let mut filtered = self
             .palette_commands()
             .iter()
             .enumerate()
-            .filter_map(|palette_command| {
-                let (index, palette_command) = palette_command;
-                let label = Action::palette_command_label(palette_command.id).to_lowercase();
-                let id = palette_command.id.to_lowercase();
-                let description =
-                    Action::palette_command_description(palette_command.id).to_lowercase();
-                let section = palette_command.section.label().to_lowercase();
-                let prefix_match = input.is_empty()
-                    || label.starts_with(&input)
-                    || id.starts_with(&input)
-                    || section.starts_with(&input);
-                let contains_match = prefix_match
-                    || label.contains(&input)
-                    || id.contains(&input)
-                    || description.contains(&input)
-                    || section.contains(&input);
-                contains_match.then_some((
-                    prefix_match,
-                    palette_command.section,
-                    index,
-                    palette_command.id.to_string(),
-                ))
+            .filter_map(|(index, palette_command)| {
+                palette_command_filter_score(palette_command, &input)
+                    .map(|score| (score, index, palette_command.id.to_string()))
             })
             .collect::<Vec<_>>();
-        let has_prefix_matches = filtered.iter().any(|(prefix_match, _, _, _)| *prefix_match);
-        let mut filtered = filtered
-            .into_iter()
-            .filter(|(prefix_match, _, _, _)| !has_prefix_matches || *prefix_match)
-            .collect::<Vec<_>>();
         filtered.sort_by(|left, right| {
-            left.1
-                .cmp(&right.1)
+            left.0
+                .cmp(&right.0)
+                .then_with(|| left.1.cmp(&right.1))
                 .then_with(|| left.2.cmp(&right.2))
-                .then_with(|| left.3.cmp(&right.3))
         });
         self.palette_filtered = filtered
             .into_iter()
-            .map(|(_, _, _, command)| command)
+            .map(|(_, _, command)| command)
             .collect();
         self.palette_selected = 0;
     }
