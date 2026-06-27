@@ -42,7 +42,7 @@ pub(super) fn startup_composer_keeps_inset_input_then_metadata_row_order() {
         app::LaunchMetadata::from_model_ref("deep", "proxy:gpt-5.4").with_mode_label("Demo"),
     );
 
-    for (width, height) in [(100, 30), (80, 24)] {
+    for (width, height) in [(100, 30), (80, 24), (160, 48)] {
         let rendered = render_live_lines(&app, width, height);
         let lines = rendered.lines().collect::<Vec<_>>();
         let composer_input_row = find_line_containing(
@@ -51,10 +51,10 @@ pub(super) fn startup_composer_keeps_inset_input_then_metadata_row_order() {
         )
         .unwrap_or_else(|| panic!("startup composer input row at {width}x{height}\n{rendered}"));
         let composer_first_row = composer_input_row.saturating_sub(1);
-        let metadata_gap_row = composer_input_row.saturating_add(1);
+        let metadata_gap_start = composer_input_row.saturating_add(1);
         let metadata_row = find_line_containing(&lines, "Deep gpt-5.4 proxy · Demo")
             .unwrap_or_else(|| panic!("startup metadata row at {width}x{height}\n{rendered}"));
-        let composer_last_row = metadata_row.saturating_add(1);
+        let composer_cap_row = metadata_row.saturating_add(1);
 
         assert_eq!(
             composer_input_row,
@@ -64,21 +64,27 @@ pub(super) fn startup_composer_keeps_inset_input_then_metadata_row_order() {
         assert_eq!(
             metadata_row,
             composer_input_row + 2,
-            "startup metadata should keep the shell's blank spacer between the input and metadata rows at {width}x{height}\n{rendered}"
+            "startup metadata should keep one blank spacer after the lowered input at {width}x{height}\n{rendered}"
         );
         assert_eq!(
-            composer_last_row,
+            composer_cap_row,
             metadata_row + 1,
             "startup composer should end with the cap row immediately after metadata at {width}x{height}\n{rendered}"
+        );
+        assert!(
+            lines[composer_cap_row].contains('▀'),
+            "startup metadata should sit directly above the shell box cap at {width}x{height}\n{rendered}"
         );
         assert!(
             !lines[composer_first_row].chars().any(char::is_alphanumeric),
             "startup inset row should stay visually blank at {width}x{height}\n{rendered}"
         );
-        assert!(
-            !lines[metadata_gap_row].chars().any(char::is_alphanumeric),
-            "startup metadata spacer row should stay visually blank at {width}x{height}\n{rendered}"
-        );
+        for row in metadata_gap_start..metadata_row {
+            assert!(
+                !lines[row].chars().any(char::is_alphanumeric),
+                "startup metadata spacer row should stay visually blank at {width}x{height}\n{rendered}"
+            );
+        }
     }
 }
 

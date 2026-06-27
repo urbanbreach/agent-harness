@@ -26,6 +26,7 @@ pub(crate) use surfaces::{
 
 const MIN_COMPOSER_LINES: u16 = 1;
 const MAX_COMPOSER_LINES: u16 = 6;
+const OPENCODE_PROMPT_MIN_MAX_HEIGHT: u16 = 6;
 const COMPOSER_VISIBLE_TEXT_CHROME: u16 = 5;
 const LIVE_PROMPT_STANDARD_CHROME_ROWS: u16 = 4;
 const LIVE_PROMPT_DENSE_CHROME_ROWS: u16 = 3;
@@ -46,6 +47,8 @@ const DENSE_SESSION_PALETTE_MAX_WIDTH: u16 = 46;
 const PERSISTENT_SIDEBAR_MIN_WIDTH: u16 = 121;
 const STARTUP_COMPOSER_MAX_WIDTH: u16 = 75;
 const STARTUP_LOGO_TO_COMPOSER_GAP: u16 = 1;
+const OPENCODE_HOME_TOP_SPACER: u16 = 4;
+const OPENCODE_HOME_PROMPT_PADDING_TOP: u16 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SessionResponsiveMode {
@@ -217,7 +220,14 @@ impl FrameLayoutPlan {
             session_contract,
         };
 
-        let session = session_shell_layout(app, plan.shell, theme, shell_layout, session_contract);
+        let session = session_shell_layout(
+            app,
+            plan.shell,
+            theme,
+            shell_layout,
+            session_contract,
+            area.height,
+        );
         plan.live_anchor = session.live_anchor;
         plan.transcript = Some(session.transcript);
         plan.terminal_panel = session.terminal_panel;
@@ -357,6 +367,7 @@ pub(crate) fn session_shell_layout(
     theme: &Theme,
     shell: LiveShellLayout,
     contract: SessionGeometryContract,
+    terminal_height: u16,
 ) -> SessionShellLayout {
     let shell_tokens = theme.token_families().live_shell;
     let gap = shell_tokens.spacing.rhythm.surface_gap / 2;
@@ -414,7 +425,7 @@ pub(crate) fn session_shell_layout(
     } else if app.replay_mode {
         shell_tokens.spacing.heights.prompt_block()
     } else {
-        live_prompt_block_height(app, content_column, contract, shell)
+        live_prompt_block_height(app, content_column, contract, shell, terminal_height)
             .saturating_add(shell_tokens.spacing.heights.status)
     };
 
@@ -532,8 +543,15 @@ fn terminal_panel_split(app: &AppState, body: Rect, gap: u16) -> (Rect, Option<R
 }
 
 pub(crate) fn composer_input_height(text: &str, width: u16) -> u16 {
+    composer_input_height_with_max_lines(text, width, MAX_COMPOSER_LINES)
+}
+
+pub(crate) fn startup_composer_input_height(text: &str, width: u16, terminal_height: u16) -> u16 {
+    composer_input_height_with_max_lines(text, width, opencode_prompt_max_height(terminal_height))
+}
+
+fn composer_input_height_with_max_lines(text: &str, width: u16, max_lines: u16) -> u16 {
     let inner_width = usize::from(width.saturating_sub(COMPOSER_VISIBLE_TEXT_CHROME).max(1));
-    let max_lines = MAX_COMPOSER_LINES;
     let wrapped_lines = if text.is_empty() {
         1
     } else {
@@ -545,6 +563,10 @@ pub(crate) fn composer_input_height(text: &str, width: u16) -> u16 {
     let clamped_lines =
         wrapped_lines.clamp(usize::from(MIN_COMPOSER_LINES), usize::from(max_lines));
     u16::try_from(clamped_lines).unwrap_or(max_lines)
+}
+
+fn opencode_prompt_max_height(terminal_height: u16) -> u16 {
+    OPENCODE_PROMPT_MIN_MAX_HEIGHT.max(terminal_height / 3)
 }
 
 fn display_width(text: &str) -> usize {
@@ -654,6 +676,7 @@ fn live_prompt_block_height(
     area: Rect,
     contract: SessionGeometryContract,
     _shell: LiveShellLayout,
+    terminal_height: u16,
 ) -> u16 {
     let max_block_height = area.height;
     let dense_footer = matches!(contract.footer_mode, SessionFooterMode::Minimal);
@@ -678,18 +701,19 @@ fn live_prompt_block_height(
     }
 
     let chrome_rows = if startup_shell {
-        if dense_footer {
-            LIVE_PROMPT_DENSE_CHROME_ROWS
-        } else {
-            LIVE_PROMPT_STANDARD_CHROME_ROWS
-        }
+        LIVE_PROMPT_DENSE_CHROME_ROWS
     } else if dense_footer {
         LIVE_PROMPT_DENSE_CHROME_ROWS
     } else {
         LIVE_PROMPT_STANDARD_CHROME_ROWS
     };
     let disclosure_rows = u16::from(startup_shell);
-    let natural_height = composer_input_height(&app.composer.prompt_buffer, area.width)
+    let input_height = if startup_shell {
+        startup_composer_input_height(&app.composer.prompt_buffer, area.width, terminal_height)
+    } else {
+        composer_input_height(&app.composer.prompt_buffer, area.width)
+    };
+    let natural_height = input_height
         .saturating_add(chrome_rows)
         .saturating_add(disclosure_rows)
         .max(min_height);
@@ -759,23 +783,30 @@ fn centered_startup_dock_layout(
         .width
         .min(shell.centered_content_width)
         .clamp(1, STARTUP_COMPOSER_MAX_WIDTH);
-    if width == dock.shell.width {
-        return dock;
-    }
 
     let x = dock
         .shell
         .x
         .saturating_add(dock.shell.width.saturating_sub(width) / 2);
     let shell_height = dock.shell.height;
-    let startup_card = startup_shell_area(transcript, theme);
-    let logo_height = if startup_card.width < 40 { 1 } else { 3 };
-    let logo_top_gap = startup_card.height.saturating_sub(logo_height) / 2;
-    let target_y = startup_card
-        .y
-        .saturating_add(logo_top_gap)
+    let logo_height = if startup_shell_area(transcript, theme).width < 40 {
+        1
+    } else {
+        3
+    };
+    let fixed_stack_height = OPENCODE_HOME_TOP_SPACER
         .saturating_add(logo_height)
-        .saturating_add(STARTUP_LOGO_TO_COMPOSER_GAP);
+        .saturating_add(STARTUP_LOGO_TO_COMPOSER_GAP)
+        .saturating_add(OPENCODE_HOME_PROMPT_PADDING_TOP)
+        .saturating_add(shell_height);
+    let top_flex = area.height.saturating_sub(fixed_stack_height) / 2;
+    let target_y = area
+        .y
+        .saturating_add(top_flex)
+        .saturating_add(OPENCODE_HOME_TOP_SPACER)
+        .saturating_add(logo_height)
+        .saturating_add(STARTUP_LOGO_TO_COMPOSER_GAP)
+        .saturating_add(OPENCODE_HOME_PROMPT_PADDING_TOP);
     let max_y = area
         .y
         .saturating_add(area.height.saturating_sub(shell_height));
@@ -857,6 +888,28 @@ mod tests {
         let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 100, 30));
 
         assert!(plan.live_anchor.is_none());
+    }
+
+    #[test]
+    fn startup_composer_input_height_uses_opencode_terminal_scaled_cap() {
+        let text = "line\n".repeat(20);
+
+        assert_eq!(startup_composer_input_height(&text, 75, 18), 6);
+        assert_eq!(startup_composer_input_height(&text, 75, 48), 16);
+    }
+
+    #[test]
+    fn startup_dock_uses_opencode_vertical_stack_when_width_uncapped() {
+        let app = AppState::new_startup(Vec::new(), None);
+        let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 70, 24));
+        let dock = plan.dock.expect("startup dock layout");
+
+        assert_eq!(dock.shell.width, plan.shell.width);
+        assert_eq!(dock.shell.y, 13);
+        assert!(
+            dock.shell.y < plan.shell.y + plan.shell.height.saturating_sub(dock.shell.height),
+            "uncapped startup prompt should not stay bottom-docked"
+        );
     }
 
     #[test]
