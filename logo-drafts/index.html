@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Harness Logo — Draft Concepts</title>
+<style>
+  :root {
+    --bg: #0A0A0A;
+    --panel: #141414;
+    --panel-elevated: #1E1E1E;
+    --border-subtle: #3C3C3C;
+    --border-strong: #484848;
+    --text-primary: #EEEEEE;
+    --text-secondary: #808080;
+    --accent-amber: #F5A742;
+    --accent-blue: #5C9CF5;
+    --accent-purple: #9D7CD8;
+    --accent-green: #7FD88F;
+    --accent-cyan: #56B6C2;
+    --accent-coral: #E06C75;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 64px 32px 96px;
+  }
+
+  /* ── Header ── */
+  .header {
+    text-align: center;
+    margin-bottom: 64px;
+  }
+  .header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+  }
+  .header p {
+    font-size: 15px;
+    color: var(--text-secondary);
+    max-width: 520px;
+    margin: 0 auto;
+  }
+  .header .palette {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 20px;
+  }
+  .header .swatch {
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    border: 1px solid var(--border-subtle);
+  }
+
+  /* ── Card grid ── */
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  @media (min-width: 900px) {
+    .grid { grid-template-columns: 1fr 1fr; }
+    .grid .full { grid-column: 1 / -1; }
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: var(--border-strong); }
+
+  .card-header {
+    padding: 20px 24px 0;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .card-header h2 {
+    font-size: 17px;
+    font-weight: 650;
+    color: var(--text-primary);
+  }
+  .card-header .num {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .tags {
+    padding: 6px 24px 0;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .tag {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: var(--panel-elevated);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-subtle);
+  }
+
+  .preview {
+    margin: 16px 24px;
+    padding: 28px 20px;
+    background: var(--bg);
+    border-radius: 8px;
+    border: 1px solid var(--border-subtle);
+    overflow-x: auto;
+  }
+  .preview pre {
+    font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", "SF Mono", Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.35;
+    white-space: pre;
+    text-align: center;
+  }
+
+  .card-footer {
+    padding: 0 24px 20px;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .meta {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .meta strong {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  /* ── Color treatments ── */
+  .t-ansi pre { color: var(--text-primary); }
+  .t-ansi .shadow-char { color: var(--accent-amber); }
+
+  .t-slant pre {
+    background: linear-gradient(100deg, var(--accent-blue) 0%, var(--accent-purple) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .t-larry pre {
+    background: linear-gradient(180deg, var(--text-primary) 0%, var(--accent-blue) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .t-small pre { color: var(--accent-cyan); }
+
+  .t-epic pre { color: var(--text-primary); }
+  .t-epic .bracket-char { color: var(--accent-amber); }
+
+  .t-emblem pre { color: var(--text-primary); }
+  .t-emblem .emblem-char { color: var(--accent-amber); }
+  .t-emblem .divider-char { color: var(--text-secondary); }
+
+  .t-current pre { color: var(--text-secondary); }
+  .t-current .primary-char { color: var(--text-primary); font-weight: bold; }
+
+  /* ── Footer ── */
+  .footer {
+    text-align: center;
+    margin-top: 48px;
+    padding-top: 32px;
+    border-top: 1px solid var(--border-subtle);
+  }
+  .footer p {
+    font-size: 14px;
+    color: var(--text-secondary);
+  }
+  .footer p strong {
+    color: var(--accent-amber);
+    font-weight: 600;
+  }
+
+  /* fade-in */
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .card { animation: fadeIn 0.4s ease both; }
+  .card:nth-child(2) { animation-delay: 0.05s; }
+  .card:nth-child(3) { animation-delay: 0.1s; }
+  .card:nth-child(4) { animation-delay: 0.15s; }
+  .card:nth-child(5) { animation-delay: 0.2s; }
+  .card:nth-child(6) { animation-delay: 0.25s; }
+  .card:nth-child(7) { animation-delay: 0.3s; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <h1>Harness Logo — Draft Concepts</h1>
+    <p>Six directions for a cooler, flashier TUI startup wordmark. All render in terminal monospace against the harness-dark theme. Pick a direction and I'll wire it into <code>ui_lifecycle.rs</code>.</p>
+    <div class="palette">
+      <div class="swatch" style="background:#0A0A0A" title="canvas #0A0A0A"></div>
+      <div class="swatch" style="background:#EEEEEE" title="text primary #EEEEEE"></div>
+      <div class="swatch" style="background:#808080" title="text secondary #808080"></div>
+      <div class="swatch" style="background:#F5A742" title="accent amber #F5A742"></div>
+      <div class="swatch" style="background:#5C9CF5" title="build blue #5C9CF5"></div>
+      <div class="swatch" style="background:#9D7CD8" title="plan purple #9D7CD8"></div>
+      <div class="swatch" style="background:#56B6C2" title="info cyan #56B6C2"></div>
+    </div>
+  </div>
+
+  <div class="grid">
+
+    <!-- Current logo -->
+    <div class="card full t-current">
+      <div class="card-header">
+        <h2>Current — box-drawing wordmark</h2>
+        <span class="num">REFERENCE</span>
+      </div>
+      <div class="tags">
+        <span class="tag">3 lines</span>
+        <span class="tag">35 chars wide</span>
+        <span class="tag">gray + white bold</span>
+      </div>
+      <div class="preview">
+        <pre id="current-art">╻ ╻  ┏━┓  ┏━┓  ┏┓╻    ┏━╸  ┏━┓  ┏━┓
+┣━┫  ┣━┫  ┣┳┛  ┃┗┫    ┣╸   ┗━┓  ┗━┓
+╹ ╹  ╹ ╹  ╹┗╸  ╹ ╹    ┗━╸  ┗━┛  ┗━┛</pre>
+      </div>
+      <div class="card-footer">
+        <span class="meta"><strong>Left:</strong> "Harness" in secondary gray</span>
+        <span class="meta"><strong>Right:</strong> "Har" in primary bold</span>
+      </div>
+    </div>
+
+    <!-- Variant 1: ANSI Shadow -->
+    <div class="card t-ansi">
+      <div class="card-header">
+        <h2>ANSI Shadow</h2>
+        <span class="num">01</span>
+      </div>
+      <div class="tags">
+        <span class="tag">bold</span>
+        <span class="tag">3D shadow</span>
+        <span class="tag">premium</span>
+      </div>
+      <div class="preview">
+        <pre id="ansi-art">██╗  ██╗ █████╗ ██████╗ ███╗   ██╗███████╗███████╗███████╗
+██║  ██║██╔══██╗██╔══██║████╗  ██║██╔════╝██╔════╝██╔════╝
+███████║███████║██████╔╝██╔██╗ ██║█████╗  ███████╗███████╗
+██╔══██║██╔══██║██╔══██║██║╚██╗██║██╔══╝  ╚════██║╚════██║
+██║  ██║██║  ██║██║  ██║██║ ╚████║███████╗███████╗███████║
+╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝╚══════╝</pre>
+      </div>
+      <div class="card-footer">
+        <span class="meta"><strong>Blocks:</strong> white <code>#EEEEEE</code></span>
+        <span class="meta"><strong>Shadow:</strong> amber <code>#F5A742</code></span>
+        <span class="meta"><strong>Size:</strong> 59×6</span>
+      </div>
+    </div>
+
+    <!-- Variant 2: Slant -->
+    <div class="card t-slant">
+      <div class="card-header">
+        <h2>Slant</h2>
+        <span class="num">02</span>
+      </div>
+      <div class="tags">
+        <span class="tag">italic</span>
+        <span class="tag">techy</span>
+        <span class="tag">gradient</span>
+      </div>
+      <div class="preview">
+        <pre>    __  _____    ____  _   __________________
+   / / / /   |  / __ \/ | / / ____/ ___/ ___/
+  / /_/ / /| | / /_/ /  |/ / __/  \__ \\__ \
+ / __  / ___ |/ _, _/ /|  / /___ ___/ /__/ /
+/_/ /_/_/  |_/_/ |_/_/ |_/_____//____/____/</pre>
+      </div>
+      <div class="card-footer">
+        <span class="meta"><strong>Color:</strong> blue→purple gradient</span>
+        <span class="meta"><strong>Size:</strong> 43×5</span>
+      </div>
+    </div>
+
+    <!-- Variant 3: Larry3D -->
+    <div class="card t-larry">
+      <div class="card-header">
+        <h2>Larry 3D</h2>
+        <span class="num">03</span>
+      </div>
+      <div class="tags">
+        <span class="tag">3D extruded</span>
+        <span class="tag">flashy</span>
+        <span class="tag">depth gradient</span>
+      </div>
+      <div class="preview">
+        <pre> __  __  ______  ____    __  __  ____    ____    ____
+/\ \/\ \/\  _  \/\  _`\ /\ \/\ \/\  _`\ /\  _`\ /\  _`\
+\ \ \_\ \ \ \L\ \ \ \L\ \ \ `\\ \ \ \L\_\ \,\L\_\ \,\L\_
+ \ \  _  \ \ __ \ \ ,  /\ \ , ` \ \  _\L\/_\__ \\/_\__ \
+  \ \ \ \ \ \ \/\ \ \ \\ \\ \ \`\ \ \ \L\ \/\ \L\ \/\ \L\ \
+   \ \_\ \_\ \_\ \_\ \_\ \_\ \_\ \_\ \____/\ `\____\ `\____\
+    \/_/\/_/\/_/\/_/\/_/\/ /\/_/\/_/\/___/  \/_____/\/_____/</pre>
+      </div>
+      <div class="card-footer">
+        <span class="meta"><strong>Color:</strong> white→blue depth gradient</span>
+        <span class="meta"><strong>Size:</strong> 60×6</span>
+      </div>
+    </div>
+
+    <!-- Variant 4: Small -->
+    <div class="card t-small">
+      <div class="card-header">
+        <h2>Small / Compact</h2>
+        <span class="num">04</span>
+      </div>
+      <div class="tags">
+        <span class="tag">clean</span>
+        <span class="tag">compact</span>
+        <span class="tag">readable</span>
+      </div>
+      <div class="preview">
+        <pre> _  _   _   ___ _  _ ___ ___ ___
+| || | /_\ | _ \ \| | __/ __/ __|
+| __ |/ _ \|   / .` | _|\__ \__ \
+|_||_/_/ \_\_|_\_|\_|___|___/___/</pre>
+      </div>
+      <div class="card-footer">
+        <span class="meta"><strong>Color:</strong> cyan <code>#56B6C2</code></span>
+        <span class="meta"><strong>Size:</strong> 32×4</span>
+        <span class="meta"><strong>Also:</strong> great compact fallback</span>
+      </div>
+    </div>
+
+    <!-- Variant 5: Epic -->
+    <div class="card t-epic">
+      <div class="card-header">
+        <h2>Epic</h2>
+        <span class="num">05</span>
+      </div>
+      <div class="tags">
+        <span class="tag">bracketed</span>
+        <span class="tag">distinctive</span>
+        <span class="tag">wide</span>
+      </div>
+      <div class="preview">
+        <pre id="epic-art">          _______  _______  _        _______  _______  _______
+|\     /|(  ___  )(  ____ )( (    /|(  ____ \(  ____ \(  ____ \
+| )   ( || (   ) || (    )||  \  ( || (    \/| (    \/| (    \/
+| (___) || (___) || (____)||   \ | || (__    | (_____ | (_____
+|  ___  ||  ___  ||     __)| (\ \) ||  __)   (_____  )(_____  )
+| (   ) || (   ) || (\ (   | | \   || (            ) |      ) |
+| )   ( || )   ( || ) \ \__| )  \  || (____/\/\____) |/\____) |
+|/     \||/     \||/   \__/|/    )_)(_______/\_______)\_______)</pre>
+      </div>
+      <div class="card-footer">
+        <span class="meta"><strong>Brackets:</strong> amber <code>#F5A742</code></span>
+        <span class="meta"><strong>Letters:</strong> white <code>#EEEEEE</code></span>
+        <span class="meta"><strong>Size:</strong> 70×7</span>
+      </div>
+    </div>
+
+    <!-- Variant 6: Emblem -->
+    <div class="card full t-emblem">
+      <div class="card-header">
+        <h2>Emblem + Wordmark</h2>
+        <span class="num">06</span>
+      </div>
+      <div class="tags">
+        <span class="tag">branded</span>
+        <span class="tag">mark + wordmark</span>
+        <span class="tag">amber accent</span>
+      </div>
+      <div class="preview">
+        <pre id="emblem-art">  ╭━━━╮                          _  _   _   ___ _  _ ___ ___ ___
+  ┃ ◆ ┃  ━━━ HARNESS ━━          | || | /_\ | _ \ \| | __/ __/ __|
+  ╰━━━╯                          |_||_/_/ \_\_|_\_|\_|___|___/___/</pre>
+      </div>
+      <div class="card-footer">
+        <span class="meta"><strong>Emblem:</strong> amber <code>#F5A742</code></span>
+        <span class="meta"><strong>Wordmark:</strong> white <code>#EEEEEE</code></span>
+        <span class="meta"><strong>Dividers:</strong> secondary gray</span>
+        <span class="meta"><strong>Size:</strong> 62×3</span>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="footer">
+    <p>Open a file in <code>logo-drafts/</code> to see raw art in your terminal, or pick a direction above and I'll implement it in <code>ui_lifecycle.rs</code>.</p>
+    <p style="margin-top:8px"><strong>Tip:</strong> <code>cat logo-drafts/*.txt</code> to see all variants in-terminal</p>
+  </div>
+
+</div>
+
+<script>
+// ANSI Shadow: color box-drawing shadow chars amber, keep blocks white
+(function() {
+  const el = document.getElementById('ansi-art');
+  if (!el) return;
+  const text = el.textContent;
+  el.innerHTML = text.replace(/([╗║╔╝╚═╦╩╠╣╬]+)/g, '<span class="shadow-char">$1</span>');
+})();
+
+// Epic: color bracket chars amber
+(function() {
+  const el = document.getElementById('epic-art');
+  if (!el) return;
+  const text = el.textContent;
+  el.innerHTML = text.replace(/([|/\\()]+)/g, function(m) {
+    // Only color the structural bracket chars, not letter strokes
+    if (/^[|/\\()]+$/.test(m)) return '<span class="bracket-char">' + m + '</span>';
+    return m;
+  });
+})();
+
+// Emblem: color emblem box chars amber, dividers gray
+(function() {
+  const el = document.getElementById('emblem-art');
+  if (!el) return;
+  const text = el.textContent;
+  el.innerHTML = text
+    .replace(/([╭╮╰╯━┃◆]+)/g, '<span class="emblem-char">$1</span>')
+    .replace(/(━━━)/g, '<span class="divider-char">$1</span>');
+})();
+
+// Current: color right half bold white
+(function() {
+  const el = document.getElementById('current-art');
+  if (!el) return;
+  const text = el.textContent;
+  const lines = text.split('\n');
+  el.innerHTML = lines.map(function(line) {
+    const idx = line.indexOf('    ');
+    if (idx > 0) {
+      return '<span>' + line.substring(0, idx) + '</span><span class="primary-char">' + line.substring(idx) + '</span>';
+    }
+    return line;
+  }).join('\n');
+})();
+</script>
+</body>
+</html>
