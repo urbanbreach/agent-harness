@@ -481,9 +481,13 @@ fn render_command_palette_header(frame: &mut Frame, theme: &Theme, area: Rect, t
 }
 
 fn render_palette_empty_message(frame: &mut Frame, theme: &Theme, area: Rect, message: &str) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    let top_padding = if area.height > 1 { 1 } else { 0 };
     let empty_area = Rect::new(
         area.x.saturating_add(3),
-        area.y,
+        area.y.saturating_add(top_padding),
         area.width.saturating_sub(3),
         1,
     );
@@ -589,21 +593,7 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
     );
 
     if app.palette_filtered.is_empty() {
-        let empty_area = Rect::new(
-            list_area.x.saturating_add(3),
-            list_area.y,
-            list_area.width.saturating_sub(3),
-            1,
-        );
-        frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                "No results found",
-                Style::default()
-                    .fg(ui_chrome::command_palette_muted(theme))
-                    .bg(ui_chrome::command_palette_surface(theme)),
-            ))),
-            empty_area,
-        );
+        render_palette_empty_message(frame, theme, list_area, "No results found");
         return;
     }
 
@@ -611,7 +601,8 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
     let selected = app
         .palette_selected
         .min(app.palette_filtered.len().saturating_sub(1));
-    let rows = palette_overlay_rows(app);
+    let flatten = !app.palette_input.is_empty();
+    let rows = palette_overlay_rows(app, flatten);
     let selected_row = rows
         .iter()
         .position(|row| matches!(row, PaletteOverlayRow::Command { command, .. } if *command == app.palette_filtered[selected]))
@@ -657,7 +648,7 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
                     Paragraph::new(command_palette_row(
                         Action::palette_command_label(command),
                         palette_command_description(command),
-                        Action::palette_command_shortcut(command),
+                        palette_command_footer(command, flatten),
                         is_selected,
                         theme,
                         row_area.width,
@@ -678,13 +669,13 @@ enum PaletteOverlayRow<'a> {
     },
 }
 
-fn palette_overlay_rows(app: &AppState) -> Vec<PaletteOverlayRow<'_>> {
+fn palette_overlay_rows(app: &AppState, flatten: bool) -> Vec<PaletteOverlayRow<'_>> {
     let mut rows = Vec::new();
     let mut last_section = None;
 
     for (selected_index, command) in app.palette_filtered.iter().enumerate() {
         let section = Action::palette_command_section(command.as_str());
-        if section != last_section {
+        if !flatten && section != last_section {
             if let Some(section) = section {
                 if last_section.is_some() {
                     rows.push(PaletteOverlayRow::Spacer);
@@ -700,6 +691,15 @@ fn palette_overlay_rows(app: &AppState) -> Vec<PaletteOverlayRow<'_>> {
     }
 
     rows
+}
+
+fn palette_command_footer(command: &str, flatten: bool) -> &'static str {
+    if flatten {
+        return Action::palette_command_section(command)
+            .map(|section| section.label())
+            .unwrap_or_else(|| Action::palette_command_shortcut(command));
+    }
+    Action::palette_command_shortcut(command)
 }
 
 fn command_palette_row(
@@ -737,10 +737,10 @@ fn command_palette_row(
     let reserved_shortcut = if shortcut.is_empty() {
         0
     } else {
-        shortcut.chars().count().saturating_add(2)
+        shortcut.chars().count().saturating_add(1)
     };
     let body_width = content_width.saturating_sub(reserved_shortcut);
-    let prefix = "      ";
+    let prefix = "   ";
     let mut spans = vec![Span::styled(prefix.to_string(), row_style)];
     let mut used_width = prefix.chars().count();
 
@@ -763,7 +763,7 @@ fn command_palette_row(
     }
 
     if !shortcut.is_empty() {
-        spans.push(Span::styled("  ", row_style));
+        spans.push(Span::styled(" ", row_style));
         spans.push(Span::styled(shortcut.to_string(), shortcut_style));
     }
 

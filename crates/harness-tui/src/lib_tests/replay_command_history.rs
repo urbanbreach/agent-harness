@@ -46,7 +46,7 @@ pub(super) fn command_palette_groups_commands_for_shell() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "toggle".chars() {
+    for ch in "follow".chars() {
         live_app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
     let filtered = render_live_lines(&live_app, 120, 30);

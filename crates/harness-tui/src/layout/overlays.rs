@@ -214,6 +214,10 @@ fn slash_command_overlay_height(app: &AppState) -> u16 {
 }
 
 fn command_palette_visible_rows(app: &AppState) -> usize {
+    if !app.palette_input.is_empty() {
+        return app.palette_filtered.len();
+    }
+
     app.palette_filtered
         .iter()
         .fold((0usize, None), |(rows, last_section), command| {

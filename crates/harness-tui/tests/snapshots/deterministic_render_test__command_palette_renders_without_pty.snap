@@ -19,18 +19,18 @@ expression: snapshot.as_str()
                                   █ Search
 
                                   Suggested
-                                     New session Start a fresh live session        new
+                                  New session Start a fresh live session           new
 
                            “in    Sessions                                                test
-                                     Continue session Continue a prior sessio…  resume
-                                     Replay session Replay a previous session…  replay
+                                  Continue session Continue a prior session wh… resume
+                                  Replay session Replay a previous session as … replay
 
                                   Agents
-                                     Switch model Browse available provider/mo…  model
-                                     Next agent Cycle to the next primary agent    tab
-                                     Previous agent Cycle to the previous …  shift+tab
-                                     Cycle reasoning preset Cycle the configu…  ctrl+t
-                                     Toggles Toggle profiles, tools, hooks, …  toggles
+                                  Switch model Browse available provider/model … model
+                                  Next agent Cycle to the next primary agent       tab
+                                  Previous agent Cycle to the previous prim… shift+tab
+                                  Cycle reasoning preset Cycle the configured … ctrl+t
+                                  Toggles Toggle profiles, tools, hooks, MCP,… toggles
 
 
 
