@@ -17,7 +17,8 @@ Read root `AGENTS.md` first. Runtime policy lives in `harness-core`; this crate 
 | Delegation/control plane | `src/agent_ops.rs`, `src/agent_ops/`, `src/control_plane.rs`, `src/plan.rs`, `src/question_env.rs` | `task`, `background_output`, `batch`, `question`, `skill`, todos, child metadata. |
 | Skill catalog | `src/skill_catalog.rs`, `src/skill_catalog/` | Project/global skill discovery, frontmatter/resources, compact catalog metadata. |
 | MCP | `src/mcp.rs`, `src/mcp_render.rs`, `src/mcp_session.rs` | Config-backed server registration, rendering, and generic call surface. |
-| Session/team tools | `src/session_tools.rs`, `src/session_tools/`, `src/team_ops.rs` | Replay-derived session reads and event-sourced team projections. |
+| Session tools | `src/session_tools.rs`, `src/session_tools/` | Replay-derived session reads and capped/redacted summaries. |
+| Shared helpers | `src/env_vars.rs`, `src/limit_summary.rs`, `src/text.rs` | Environment access, truncation summaries, text formatting used across tools. |
 
 ## TOOL SURFACE RULES
 - Keep canonical native ids stable: `read`, `list`, `glob`, `grep`, `edit`, `bash`, `task`, `background_output`, `batch`, `question`, `skill`, `webfetch`, `websearch`, `codesearch`, `lsp`.
@@ -43,6 +44,14 @@ cargo test -p harness-tools --test native_agent_spawn_and_batch_preserve_lineage
 cargo test -p harness-tools --test native_ast_grep_search_test
 cargo test -p harness-tools --test native_ast_grep_replace_test
 cargo test -p harness-tools --test native_code_lsp_test
+cargo test -p harness-tools --test native_control_plane_tools_test
+cargo test -p harness-tools --test native_question_tool_test
+cargo test -p harness-tools --test native_web_fetch_test
+cargo test -p harness-tools --test native_web_search_test
+cargo test -p harness-tools --test native_github_test
+cargo test -p harness-tools --test native_code_search_test
+cargo test -p harness-tools --test hashline_apply_test
+cargo test -p harness-tools --test mcp_generic_test
 cargo test -p harness-tools --test skill_load_discovery_test
 cargo test -p harness-tools --test session_info_tool_test
 ```
