@@ -8,13 +8,13 @@ Read root `AGENTS.md` first for search scope, cross-crate invariants, and comman
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |------|----------|-------|
-| Coordinator runtime | `src/coord.rs`, `src/coord/` | Single scheduling authority; provider loop, permissions, hooks, staleness, compaction, questions, teams. |
+| Coordinator runtime | `src/coord.rs`, `src/coord/`, `src/coord/AGENTS.md` | Single scheduling authority; provider loop, permissions, hooks, staleness, compaction, questions, teams. |
 | Agent/provider context | `src/agent.rs`, `src/agent/`, `src/provider_args.rs`, `src/conversation.rs` | Provider-facing message shaping, streaming state, sanitized historical tool metadata. |
 | Event schema | `src/event.rs`, `src/event/` | `EventEnvelopeV1`, payload variants, builders, team events, actor/correlation/causation metadata. |
 | Event stores | `src/store.rs`, `src/store/` | JSONL persistence, append sequencing, writer-lock recovery. |
 | Permissions | `src/perm.rs`, `src/coord/permission.rs` | Capability-to-permission-kind mapping and policy resolution. |
 | Tool contracts | `src/tool.rs` | Tool traits, capabilities, canonical ids, artifact store. |
-| Config | `src/config.rs`, `src/config/` | Discovery, validation, public schema shape, compatibility inputs, model/provider registries. |
+| Config | `src/config.rs`, `src/config/`, `src/config/AGENTS.md` | Discovery, validation, public schema shape, compatibility inputs, model/provider registries. |
 | Auth/model resolution | `src/auth/`, `src/model_resolution.rs`, `src/config/model_*` | Stored auth providers, catalog metadata, variants, capability inference. |
 | Projections | `src/proj.rs`, `src/proj/`, `src/transcript_projection.rs`, `src/transcript_projection/` | Pure replay/UI/resume/export/debugging views. |
 | Agent/session metadata | `src/agent_catalog.rs`, `src/session_lineage.rs`, `src/session_lineage/`, `src/session_title.rs`, `src/session_paths.rs` | Runtime identity, profile catalog, lineage, titles, storage layout. |
@@ -45,6 +45,7 @@ Read root `AGENTS.md` first for search scope, cross-crate invariants, and comman
 ```bash
 cargo test -p harness-core
 cargo test -p harness-core --test coord_test
+cargo test -p harness-core --test coord_auth_test
 cargo test -p harness-core --test coord_ast_grep_auth_test
 cargo test -p harness-core --test extension_manifest_test
 cargo test -p harness-core --test conversation_projection_test
