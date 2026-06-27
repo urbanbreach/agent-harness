@@ -1,8 +1,8 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-06-06
-**Commit:** `3ffaf9a5`
-**Branch:** `thermo-nuclear-refactor`
+**Generated:** 2026-06-27
+**Commit:** `bf28ab0e`
+**Branch:** `dev`
 
 ## OVERVIEW
 Rust workspace for an event-sourced agent harness: CLI entrypoint, coordinator/runtime core, provider adapters, native tool surface, Ratatui TUI, runtime prompt assets, and deterministic plus opt-in signoff lanes.
@@ -27,9 +27,12 @@ agent-harness/
 |------|----------|-------|
 | CLI behavior | `crates/harness/AGENTS.md` | `main.rs` stays a thin shim; command tests use `CliIo`/`CliDeps`. |
 | Runtime invariants | `crates/harness-core/AGENTS.md` | Read before changing events, coordinator, permissions, config, replay, lineage, or compaction. |
+| Coordinator internals | `crates/harness-core/src/coord/AGENTS.md` | Turn phases, task lifecycle, permissions, hooks, compaction, child sessions. |
+| Config internals | `crates/harness-core/src/config/AGENTS.md` | Public contract, aliases, discovery, schema generation, registries. |
 | Provider protocol | `crates/harness-providers/AGENTS.md` | Read before changing `ProviderStreamEvent`, request metadata, cassettes, or transport code. |
 | Native tools | `crates/harness-tools/AGENTS.md` | Read before changing tool ids, schemas, path safety, bash, MCP, LSP, task/session tools. |
 | TUI shell | `crates/harness-tui/AGENTS.md` | Read before touching app state, layout, transcript rendering, overlays, keybindings, or snapshots. |
+| TUI app state | `crates/harness-tui/src/app/AGENTS.md` | AppState, session projection/stack, permissions, composer, model switcher. |
 | Test helpers and signoff | `crates/harness-testkit/AGENTS.md`, `crates/harness-testkit/tests/AGENTS.md` | Deterministic fakes, simulation, PTY/live/native evidence, artifact provenance. |
 | Runtime prompt assets | `.agent-harness/AGENTS.md` | Runtime-loaded agent profiles, prompt-family fragments, and skill packages. |
 | Public docs | `docs/AGENTS.md` | Architecture, config, testing, tool catalog, session/replay, release evidence. |
@@ -81,8 +84,8 @@ RUST_TEST_THREADS=1 cargo test -p harness-testkit --test pty_e2e
 - `AGENTS.md` files are project guidance; `.agent-harness/agents/*.md` and `.agent-harness/prompt-families/*.md` are runtime prompt assets. Do not mix those layers.
 
 ## MANDATORY CODING SKILLS
-- For any coding work in this repository, load `karpathy-guidelines` before the first edit. Coding work includes implementation, bug fixes, refactors, tests, build scripts, schemas, generated-code maintenance, and AGENTS guidance edits.
-- Delegated coding tasks must include the skill in `load_skills`; omit it only for pure read-only exploration, documentation-only lookup, or non-coding QA.
+- For any coding work in this repository, load `karpathy-guidelines` and `programming` before the first edit. Coding work includes implementation, bug fixes, refactors, tests, build scripts, schemas, generated-code maintenance, and AGENTS guidance edits.
+- Delegated coding tasks must include the skills in `load_skills`; omit it only for pure read-only exploration, documentation-only lookup, or non-coding QA.
 
 ## UPDATE TOGETHER
 | Change | Also update |
