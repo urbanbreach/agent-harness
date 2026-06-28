@@ -12,7 +12,8 @@ use harness_tui::{
 
 use crate::cli_io::load_events_from_run_dir;
 
-use super::session_history::replay_launch_metadata_for_run;
+use super::launch_metadata::replay_launch_metadata;
+use super::session_history::load_recorded_runtime_context;
 use super::workflow::{
     capture_first_workflow, live_workflow_from_intent, take_selected_workflow_or,
     InteractiveWorkflow,
@@ -88,6 +89,16 @@ pub(super) async fn run_replay_tui(
 
 fn has_terminal_event(events: &[EventEnvelopeV1]) -> bool {
     events.iter().any(|event| is_terminal_event(&event.payload))
+}
+
+fn replay_launch_metadata_for_run(
+    run_dir: &Path,
+    historical_events: &[EventEnvelopeV1],
+) -> harness_tui::app::LaunchMetadata {
+    replay_launch_metadata(
+        load_recorded_runtime_context(run_dir).as_ref(),
+        historical_events,
+    )
 }
 
 pub(super) fn is_terminal_event(payload: &EventV1) -> bool {

@@ -6,7 +6,11 @@ use harness_core::store::{EventStore, EventStoreError};
 use harness_tui::LiveUpdate;
 
 use super::live_intents::{maybe_update_live_agent_target_for_plan_handoff, LiveAgentTargetState};
-use super::replay::is_terminal_event;
+use harness_core::event::EventV1;
+
+pub(super) fn is_terminal_event(payload: &EventV1) -> bool {
+    matches!(payload, EventV1::RunFinished(_) | EventV1::RunFailed(_))
+}
 
 pub(super) fn latest_request_id_for_agent(
     historical_events: &[EventEnvelopeV1],
