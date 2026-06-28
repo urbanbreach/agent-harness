@@ -5,10 +5,12 @@ use harness_tui::app::{LaunchMetadata, ModelOption};
 use serde::{Deserialize, Serialize};
 
 const MODEL_SELECTION_STATE_FILE: &str = "model.json";
+const MODEL_SELECTION_SCHEMA_VERSION: u8 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct PersistedModelSelection {
     pub(super) schema_version: u8,
+    pub(super) config_digest: String,
     pub(super) profile: String,
     pub(super) provider: String,
     pub(super) model: String,
@@ -49,7 +51,8 @@ pub(super) fn load_persisted_model_selection_from_path(
 }
 
 fn persisted_model_selection_valid(selection: &PersistedModelSelection) -> bool {
-    selection.schema_version == 1
+    selection.schema_version == MODEL_SELECTION_SCHEMA_VERSION
+        && model_selection_value_present(&selection.config_digest)
         && model_selection_value_present(&selection.profile)
         && model_selection_value_present(&selection.provider)
         && model_selection_value_present(&selection.model)
@@ -65,18 +68,21 @@ pub(super) fn model_selection_value_present(value: &str) -> bool {
 
 pub(super) fn save_persisted_model_selection(
     launch_metadata: &LaunchMetadata,
+    config_digest: &str,
 ) -> Result<(), String> {
     let Some(path) = model_selection_state_path() else {
         return Ok(());
     };
-    save_persisted_model_selection_to_path(&path, launch_metadata)
+    save_persisted_model_selection_to_path(&path, launch_metadata, config_digest)
 }
 
 pub(super) fn save_persisted_model_selection_to_path(
     path: &Path,
     launch_metadata: &LaunchMetadata,
+    config_digest: &str,
 ) -> Result<(), String> {
-    let Some(selection) = persisted_model_selection_from_metadata(launch_metadata) else {
+    let Some(selection) = persisted_model_selection_from_metadata(launch_metadata, config_digest)
+    else {
         return Ok(());
     };
     if let Some(parent) = path.parent() {
@@ -107,9 +113,15 @@ pub(super) fn save_persisted_model_selection_to_path(
 
 fn persisted_model_selection_from_metadata(
     launch_metadata: &LaunchMetadata,
+    config_digest: &str,
 ) -> Option<PersistedModelSelection> {
+    if !model_selection_value_present(config_digest) {
+        return None;
+    }
+
     Some(PersistedModelSelection {
-        schema_version: 1,
+        schema_version: MODEL_SELECTION_SCHEMA_VERSION,
+        config_digest: config_digest.to_string(),
         profile: launch_metadata.profile().to_string(),
         provider: launch_metadata.provider().to_string(),
         model: launch_metadata.model()?.to_string(),
@@ -117,20 +129,27 @@ fn persisted_model_selection_from_metadata(
     })
 }
 
-pub(super) fn apply_persisted_model_selection(launch_metadata: LaunchMetadata) -> LaunchMetadata {
+pub(super) fn apply_persisted_model_selection(
+    launch_metadata: LaunchMetadata,
+    config_digest: &str,
+) -> LaunchMetadata {
     let Some(path) = model_selection_state_path() else {
         return launch_metadata;
     };
-    apply_persisted_model_selection_from_path(launch_metadata, &path)
+    apply_persisted_model_selection_from_path(launch_metadata, &path, config_digest)
 }
 
 pub(super) fn apply_persisted_model_selection_from_path(
     launch_metadata: LaunchMetadata,
     path: &Path,
+    config_digest: &str,
 ) -> LaunchMetadata {
     let Some(selection) = load_persisted_model_selection_from_path(path) else {
         return launch_metadata;
     };
+    if selection.config_digest != config_digest {
+        return launch_metadata;
+    }
     apply_model_selection_to_launch_metadata(launch_metadata, &selection)
 }
 

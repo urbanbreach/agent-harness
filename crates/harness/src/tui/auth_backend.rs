@@ -14,6 +14,7 @@ pub(super) struct TuiAuthBackendContext {
     pub(super) config_path: Option<PathBuf>,
     pub(super) session_dir: Option<PathBuf>,
     pub(super) workspace_root: PathBuf,
+    pub(super) config_digest: String,
 }
 
 impl TuiAuthBackendContext {
@@ -22,6 +23,7 @@ impl TuiAuthBackendContext {
             config_path: settings.config_path.clone(),
             session_dir: Some(settings.session_dir.clone()),
             workspace_root: settings.workspace_root.clone(),
+            config_digest: settings.config_digest.clone(),
         }
     }
 }

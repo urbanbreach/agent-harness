@@ -23,8 +23,11 @@ pub(super) type SelectedWorkflow = Arc<Mutex<Option<InteractiveWorkflow>>>;
 pub(super) type UiIntentSink = Arc<dyn Fn(UiIntent) + Send + Sync>;
 pub(super) type LaunchSelection = Arc<Mutex<LaunchMetadata>>;
 
-pub(super) fn persist_launch_selection_for_exit(launch_metadata: &LaunchMetadata) {
-    if let Err(err) = save_persisted_model_selection(launch_metadata) {
+pub(super) fn persist_launch_selection_for_exit(
+    launch_metadata: &LaunchMetadata,
+    config_digest: &str,
+) {
+    if let Err(err) = save_persisted_model_selection(launch_metadata, config_digest) {
         profile_handoff(&format!("model_selection.persist_failed {err}"));
     }
 }
@@ -38,6 +41,7 @@ pub(super) fn handle_model_switch_intent(
     intent: &UiIntent,
     launch_selection: &LaunchSelection,
     persist_model_selection: bool,
+    config_digest: &str,
 ) -> bool {
     let UiIntent::SwitchModel {
         launch_metadata, ..
@@ -48,7 +52,7 @@ pub(super) fn handle_model_switch_intent(
 
     record_launch_selection(launch_selection, launch_metadata);
     if persist_model_selection {
-        persist_launch_selection_for_exit(&recover_mutex_lock(launch_selection));
+        persist_launch_selection_for_exit(&recover_mutex_lock(launch_selection), config_digest);
     }
     true
 }
@@ -128,11 +132,17 @@ pub(super) fn build_live_ui_intent_router(
     intent_tx: mpsc::UnboundedSender<UiIntent>,
     launch_selection: LaunchSelection,
     persist_model_selection: bool,
+    config_digest: String,
 ) -> (SelectedWorkflow, UiIntentSink) {
     let selected_workflow = Arc::new(Mutex::new(None::<InteractiveWorkflow>));
     let selected_workflow_sink = Arc::clone(&selected_workflow);
     let on_ui_intent = Arc::new(move |intent: UiIntent| {
-        handle_model_switch_intent(&intent, &launch_selection, persist_model_selection);
+        handle_model_switch_intent(
+            &intent,
+            &launch_selection,
+            persist_model_selection,
+            &config_digest,
+        );
         if let Some(workflow) = live_workflow_from_intent(&intent) {
             capture_first_workflow(&selected_workflow_sink, workflow);
         }
