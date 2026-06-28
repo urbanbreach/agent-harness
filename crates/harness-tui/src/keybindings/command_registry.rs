@@ -98,11 +98,6 @@ const COMMAND_METADATA: &[CommandMetadata] = &[
         description: "Return to the transcript-first session shell",
     },
     CommandMetadata {
-        id: "open_event_log",
-        label: "Event log",
-        description: "Open the review event log surface",
-    },
-    CommandMetadata {
         id: "toggle_terminal_panel",
         label: "Toggle terminal panel",
         description: "Show or hide shell command output below the transcript",
@@ -453,7 +448,7 @@ pub(super) fn command_metadata(id: &str) -> Option<&'static CommandMetadata> {
     COMMAND_METADATA.iter().find(|entry| entry.id == id)
 }
 
-const SLASH_COMMANDS: [SlashCommand; 19] = [
+const SLASH_COMMANDS: [SlashCommand; 16] = [
     SlashCommand {
         id: "new",
         metadata_id: "slash_new",
@@ -468,11 +463,6 @@ const SLASH_COMMANDS: [SlashCommand; 19] = [
         id: "resume",
         metadata_id: "slash_resume",
         aliases: &["continue"],
-    },
-    SlashCommand {
-        id: "replay",
-        metadata_id: "slash_replay",
-        aliases: &[],
     },
     SlashCommand {
         id: "fork",
@@ -495,11 +485,6 @@ const SLASH_COMMANDS: [SlashCommand; 19] = [
         aliases: &["models"],
     },
     SlashCommand {
-        id: "status",
-        metadata_id: "slash_status",
-        aliases: &["system-status"],
-    },
-    SlashCommand {
         id: "toggles",
         metadata_id: "toggles",
         aliases: &[],
@@ -513,11 +498,6 @@ const SLASH_COMMANDS: [SlashCommand; 19] = [
         id: "connect",
         metadata_id: "connect",
         aliases: &[],
-    },
-    SlashCommand {
-        id: "events",
-        metadata_id: "open_event_log",
-        aliases: &["event-log"],
     },
     SlashCommand {
         id: "help",
@@ -630,12 +610,6 @@ const PALETTE_COMMANDS: &[PaletteCommand] = &[
         id: "close_review_surface",
         metadata_id: "close_review_surface",
         shortcut: "esc",
-        section: PaletteCommandSection::Session,
-    },
-    PaletteCommand {
-        id: "open_event_log",
-        metadata_id: "open_event_log",
-        shortcut: "",
         section: PaletteCommandSection::Session,
     },
     PaletteCommand {

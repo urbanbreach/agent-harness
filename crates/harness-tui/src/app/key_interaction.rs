@@ -736,10 +736,10 @@ impl AppState {
                 self.close_review_surface();
             }
             Action::OpenEventLog if self.focus != Focus::Prompt => {
-                self.open_review_surface(ReviewSurface::Events);
+                self.status_banner = Some("event log surface has been removed".to_string());
             }
             Action::Reload if self.replay_mode => {
-                self.reload_requested = true;
+                self.status_banner = Some("event log reload has been removed".to_string());
             }
             Action::SessionChildFirst => {
                 self.navigate_to_first_child_session();

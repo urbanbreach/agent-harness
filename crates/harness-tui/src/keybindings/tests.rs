@@ -52,7 +52,6 @@ fn slash_and_palette_shared_commands_use_same_metadata() {
     let shared_commands = [
         ("model", "switch_model"),
         ("toggles", "toggles"),
-        ("events", "open_event_log"),
         ("help", "help"),
         ("shell", "close_review_surface"),
         ("follow", "toggle_follow"),
