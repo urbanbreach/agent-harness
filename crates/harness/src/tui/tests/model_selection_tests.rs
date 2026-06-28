@@ -198,7 +198,8 @@ fn persisted_model_selection_restores_valid_variant_for_active_profile() {
     let restored = apply_model_selection_to_launch_metadata(
         base,
         &PersistedModelSelection {
-            schema_version: 1,
+            schema_version: 2,
+            config_digest: "digest-a".to_string(),
             profile: "build".to_string(),
             provider: "default".to_string(),
             model: "gpt-5.4-mini".to_string(),
@@ -226,7 +227,8 @@ fn persisted_model_selection_preserves_switchable_profiles() {
     let restored = apply_model_selection_to_launch_metadata(
         base,
         &PersistedModelSelection {
-            schema_version: 1,
+            schema_version: 2,
+            config_digest: "digest-a".to_string(),
             profile: "ops".to_string(),
             provider: "default".to_string(),
             model: "gpt-5.4".to_string(),
@@ -247,7 +249,8 @@ fn persisted_model_selection_ignores_unconfigured_variant() {
     let restored = apply_model_selection_to_launch_metadata(
         base.clone(),
         &PersistedModelSelection {
-            schema_version: 1,
+            schema_version: 2,
+            config_digest: "digest-a".to_string(),
             profile: "build".to_string(),
             provider: "default".to_string(),
             model: "gpt-5.4-mini".to_string(),
@@ -284,12 +287,51 @@ fn persisted_model_selection_round_trips_model_json() {
         recommended_for: None,
     });
 
-    save_persisted_model_selection_to_path(&path, &metadata).expect("persist model selection");
+    save_persisted_model_selection_to_path(&path, &metadata, "digest-a")
+        .expect("persist model selection");
     let selection = load_persisted_model_selection_from_path(&path).expect("load model selection");
 
-    assert_eq!(selection.schema_version, 1);
+    assert_eq!(selection.schema_version, 2);
+    assert_eq!(selection.config_digest, "digest-a");
     assert_eq!(selection.profile, "build");
     assert_eq!(selection.provider, "default");
     assert_eq!(selection.model, "gpt-5.4-mini");
     assert_eq!(selection.variant.as_deref(), Some("xhigh"));
+}
+
+#[test]
+fn persisted_model_selection_ignores_stale_config_digest() {
+    let base = LaunchMetadata::from_model_ref("build", "umans-ai-coding-plan:umans-kimi-k2.7")
+        .with_available_models(vec![
+            ModelOption::from_model_ref("build", "umans-ai-coding-plan:umans-kimi-k2.7"),
+            ModelOption::from_model_ref("build", "default:gpt-5.4-mini"),
+        ]);
+    let temp = tempfile::tempdir().expect("tempdir");
+    let path = temp.path().join("model.json");
+    let stale = LaunchMetadata::from_model_ref("build", "default:gpt-5.4-mini");
+
+    save_persisted_model_selection_to_path(&path, &stale, "old-digest")
+        .expect("persist stale model selection");
+    let restored = apply_persisted_model_selection_from_path(base.clone(), &path, "new-digest");
+
+    assert_eq!(restored, base);
+}
+
+#[test]
+fn persisted_model_selection_restores_matching_config_digest() {
+    let base = LaunchMetadata::from_model_ref("build", "umans-ai-coding-plan:umans-kimi-k2.7")
+        .with_available_models(vec![
+            ModelOption::from_model_ref("build", "umans-ai-coding-plan:umans-kimi-k2.7"),
+            ModelOption::from_model_ref("build", "default:gpt-5.4-mini"),
+        ]);
+    let temp = tempfile::tempdir().expect("tempdir");
+    let path = temp.path().join("model.json");
+    let selected = LaunchMetadata::from_model_ref("build", "default:gpt-5.4-mini");
+
+    save_persisted_model_selection_to_path(&path, &selected, "same-digest")
+        .expect("persist model selection");
+    let restored = apply_persisted_model_selection_from_path(base, &path, "same-digest");
+
+    assert_eq!(restored.provider(), "default");
+    assert_eq!(restored.model(), Some("gpt-5.4-mini"));
 }

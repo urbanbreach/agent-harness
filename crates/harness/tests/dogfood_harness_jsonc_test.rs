@@ -173,6 +173,26 @@ fn umans_provider_has_api_key_env_without_auth_provider() {
 }
 
 #[test]
+fn dogfood_agents_use_umans_models() {
+    // arrange
+    let (_config_temp, config_path) = copy_harness_jsonc_to_temp();
+
+    // act
+    let config = load_config_from_file(&config_path).expect("load real harness.jsonc");
+
+    // assert
+    for (agent_name, agent) in &config.agents {
+        let uses_umans_provider = agent.model_ref.starts_with("umans-ai-coding-plan/")
+            || agent.model_ref.starts_with("umans-ai-coding-plan:");
+        assert!(
+            uses_umans_provider,
+            "agent `{agent_name}` must dogfood Umans models, got `{}`",
+            agent.model_ref
+        );
+    }
+}
+
+#[test]
 fn adding_anthropic_auth_provider_to_real_config_works() {
     // arrange
     let (_config_temp, config_path) = copy_harness_jsonc_to_temp();

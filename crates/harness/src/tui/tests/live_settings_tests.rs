@@ -100,7 +100,7 @@ fn auth_refresh_reloads_no_config_builtin_catalog_after_login() {
 }
 
 #[test]
-fn no_config_tui_restores_recent_builtin_model_selection() {
+fn no_config_tui_ignores_legacy_builtin_model_selection() {
     let temp = tempfile::tempdir().expect("tempdir");
     let data_home = temp.path().join("data");
     let state_path = temp.path().join("model.json");
@@ -134,11 +134,11 @@ fn no_config_tui_restores_recent_builtin_model_selection() {
     .expect("stored Codex credential should resolve live settings");
 
     assert_eq!(settings.launch_metadata.provider(), "openai-codex");
-    assert_eq!(settings.launch_metadata.model(), Some("gpt-5.5"));
+    assert_eq!(settings.launch_metadata.model(), Some("gpt-5.4-mini"));
 }
 
 #[test]
-fn project_config_tui_restores_recent_model_selection() {
+fn project_config_tui_ignores_legacy_model_selection() {
     let temp = tempfile::tempdir().expect("tempdir");
     let config_path = temp.path().join("harness.jsonc");
     let state_path = temp.path().join("model.json");
@@ -191,7 +191,7 @@ fn project_config_tui_restores_recent_model_selection() {
 
     let settings = result.expect("project config live settings should resolve");
     assert_eq!(settings.launch_metadata.provider(), "openai-codex");
-    assert_eq!(settings.launch_metadata.model(), Some("gpt-5.5"));
+    assert_eq!(settings.launch_metadata.model(), Some("gpt-5.4-mini"));
 }
 
 #[test]
