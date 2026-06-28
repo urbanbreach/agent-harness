@@ -21,14 +21,17 @@ pub(super) fn module_replay_mode_snapshot_renders_two_pane_layout() {
     );
 }
 
-pub(super) fn replay_mode_r_key_marks_reload_requested() {
+pub(super) fn replay_mode_r_key_reports_removed_reload() {
     let run_dir = write_replay_fixture(sample_replay_events());
     let events = load_events_from_run_dir(run_dir.path()).expect("load replay events");
 
     let mut app = AppState::new_replay(run_dir.path().to_path_buf(), events);
     app.handle_key(key(KeyCode::Char('r')));
 
-    assert!(app.take_reload_requested());
+    assert_eq!(
+        app.status_banner.as_deref(),
+        Some("event log reload has been removed")
+    );
 }
 
 pub(super) fn live_mode_snapshot_renders_grouped_streams() {

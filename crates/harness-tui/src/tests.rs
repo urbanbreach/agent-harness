@@ -5,11 +5,11 @@ use std::path::Path;
 use std::sync::Arc;
 
 use super::app::{ActivityEntry, ActivityStatus, AppState, ToolCallDisplayStatus};
-use super::event_log::load_events_from_run_dir;
 use super::lib_tests::{
     key_with_modifiers, render_live_buffer, render_live_cells, render_live_lines,
     row_text_and_palette, transcript_code_block_app, transcript_diff_block_app,
 };
+use super::session_events::load_session_events as load_events_from_run_dir;
 
 use super::*;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -36,8 +36,8 @@ pub(super) fn module_replay_mode_snapshot_renders_two_pane_layout() {
 }
 
 #[test]
-fn replay_mode_r_key_marks_reload_requested() {
-    snapshot_render_tests::replay_mode_r_key_marks_reload_requested();
+fn replay_mode_r_key_reports_removed_reload() {
+    snapshot_render_tests::replay_mode_r_key_reports_removed_reload();
 }
 
 #[test]
