@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_core::session_lineage::{latest_clone_stable_prefix, StableSessionPrefix};
 
-use super::session_history::fuzzy_subsequence_score;
 pub(crate) use super::session_history::{
     session_history_category_label, session_history_current_marker, session_history_display_title,
     session_history_footer_label,
@@ -14,7 +13,7 @@ use super::session_slash::{
 use super::{
     auth_status_banner, set_pending_live_launch_metadata, set_pending_live_prompt_draft, AppState,
     Focus, PermissionConfirmSelection, PermissionModalSelection, PermissionModalStage,
-    PostRunHandoffAction, ReviewSurface, StartupLauncherAction, Tab, UiIntent,
+    PostRunHandoffAction, StartupLauncherAction, Tab, UiIntent,
 };
 use crate::keybindings::{self, Action};
 use crate::text::has_trimmed_content;
@@ -48,28 +47,6 @@ impl LineageSlashCommand {
 
 fn non_empty_str(value: &str) -> Option<&str> {
     has_trimmed_content(value).then_some(value)
-}
-
-fn palette_command_filter_score(
-    command: &crate::keybindings::PaletteCommand,
-    needle: &str,
-) -> Option<usize> {
-    let title_score = fuzzy_subsequence_score(
-        &Action::palette_command_label(command.id).to_lowercase(),
-        needle,
-    )
-    .map(|score| score.saturating_mul(2));
-    let category_score = fuzzy_subsequence_score(&command.section.label().to_lowercase(), needle)
-        .map(|score| score.saturating_mul(2).saturating_add(1));
-    let id = command.id.to_lowercase();
-    let id_score = fuzzy_subsequence_score(&id.replace('_', " "), needle)
-        .or_else(|| fuzzy_subsequence_score(&id, needle))
-        .map(|score| score.saturating_mul(2).saturating_add(3));
-
-    [title_score, category_score, id_score]
-        .into_iter()
-        .flatten()
-        .min()
 }
 
 impl AppState {
@@ -338,10 +315,6 @@ impl AppState {
                 self.restore_slash_draft(preserved_draft);
                 self.status_dialog_visible = true;
             }
-            "events" => {
-                self.restore_slash_draft(preserved_draft);
-                self.open_review_surface(ReviewSurface::Events);
-            }
             "help" => {
                 self.restore_slash_draft(preserved_draft);
                 self.execute_action(Action::Help);
@@ -597,36 +570,8 @@ impl AppState {
     }
 
     fn update_palette_filter(&mut self) {
-        let input = self.palette_input.to_lowercase();
-        if input.is_empty() {
-            self.palette_filtered = self
-                .palette_commands()
-                .iter()
-                .map(|palette_command| palette_command.id.to_string())
-                .collect();
-            self.palette_selected = 0;
-            return;
-        }
-
-        let mut filtered = self
-            .palette_commands()
-            .iter()
-            .enumerate()
-            .filter_map(|(index, palette_command)| {
-                palette_command_filter_score(palette_command, &input)
-                    .map(|score| (score, index, palette_command.id.to_string()))
-            })
-            .collect::<Vec<_>>();
-        filtered.sort_by(|left, right| {
-            left.0
-                .cmp(&right.0)
-                .then_with(|| left.1.cmp(&right.1))
-                .then_with(|| left.2.cmp(&right.2))
-        });
-        self.palette_filtered = filtered
-            .into_iter()
-            .map(|(_, _, command)| command)
-            .collect();
+        let rows = super::palette_controller::compute_palette_rows(self, &self.palette_input);
+        self.palette_filtered = rows.into_iter().map(|row| row.value).collect();
         self.palette_selected = 0;
     }
 
@@ -662,66 +607,14 @@ impl AppState {
             return;
         };
 
-        match cmd.as_str() {
-            "new_session" => {
-                self.startup_launcher_action = StartupLauncherAction::NewSession;
-                self.apply_new_session_launcher_selection();
-            }
-            "resume_session" => {
-                self.begin_session_history_picker(StartupLauncherAction::ContinueSession);
-            }
-            "replay_session" => {
-                self.begin_session_history_picker(StartupLauncherAction::ReplaySession);
-            }
-            "switch_model" => {
-                self.open_model_switcher();
-            }
-            "toggles" => {
-                self.open_toggles_menu();
-            }
-            "auth" => {
-                let auth_args = vec!["list".to_string()];
-                self.status_banner = Some(auth_status_banner(&auth_args));
-                self.emit_ui_intent(UiIntent::OpenAuthManager {
-                    args: auth_args,
-                    stdin: None,
-                });
-            }
-            "cycle_variant" => self.execute_action(Action::VariantCycle),
-            "close_review_surface" => self.execute_action(Action::CloseReviewSurface),
-            "open_event_log" => self.execute_action(Action::OpenEventLog),
-            "toggle_terminal_panel" => self.execute_action(Action::ToggleTerminalPanel),
-            "toggle_follow" => self.execute_action(Action::ToggleFollow),
-            "show_thinking" => self.transcript_view.show_transcript_thinking = true,
-            "hide_thinking" => self.transcript_view.show_transcript_thinking = false,
-            "show_timestamps" => self.transcript_view.show_transcript_timestamps = true,
-            "hide_timestamps" => self.transcript_view.show_transcript_timestamps = false,
-            "show_tool_details" => self.transcript_view.show_tool_details = true,
-            "hide_tool_details" => self.transcript_view.show_tool_details = false,
-            "show_generic_tool_output" => self.transcript_view.show_generic_tool_output = true,
-            "hide_generic_tool_output" => self.transcript_view.show_generic_tool_output = false,
-            "expand_selected_turn_results" => self.set_selected_activity_expandable_outputs(true),
-            "collapse_selected_turn_results" => {
-                self.set_selected_activity_expandable_outputs(false)
-            }
-            "stack_transcript_diffs" => self.transcript_view.stacked_transcript_diffs = true,
-            "split_transcript_diffs" => self.transcript_view.stacked_transcript_diffs = false,
-            "help" => self.execute_action(Action::Help),
-            "quit" => self.execute_action(Action::Quit),
-            "revert_workspace" => self.request_workspace_revert(),
-            "prompt_stash" => self.execute_action(Action::PromptStash),
-            "prompt_stash_pop" => self.execute_action(Action::PromptStashPop),
-            "prompt_stash_list" => self.execute_action(Action::PromptStashList),
-            "open_lineage_browser" => self.execute_action(Action::OpenLineageBrowser),
-            "session_child_first" => self.execute_action(Action::SessionChildFirst),
-            "session_child_cycle" => self.execute_action(Action::SessionChildCycle),
-            "session_child_cycle_reverse" => self.execute_action(Action::SessionChildCycleReverse),
-            "session_parent" => self.execute_action(Action::SessionParent),
-            _ => {}
-        }
+        let cmd = cmd.clone();
+        super::palette_controller::dispatch_palette_command(self, &cmd);
+
         if !self.session_history_visible
             && !self.model_switcher_visible
             && !self.toggles_menu_visible
+            && !self.lineage_browser_visible
+            && !self.fork_selector_visible
         {
             self.close_palette();
         }
@@ -762,10 +655,9 @@ impl AppState {
         self.toggles_yolo_confirm_visible = false;
         self.palette_input.clear();
         self.palette_cursor = 0;
-        self.palette_filtered = self
-            .palette_commands()
-            .iter()
-            .map(|palette_command| palette_command.id.to_string())
+        self.palette_filtered = super::palette_controller::compute_palette_rows(self, "")
+            .into_iter()
+            .map(|row| row.value)
             .collect();
         self.session_history_filtered.clear();
         self.model_filtered.clear();
@@ -774,118 +666,12 @@ impl AppState {
         self.sync_file_mention_overlay();
     }
 
-    fn palette_commands(&self) -> Vec<crate::keybindings::PaletteCommand> {
-        Action::grouped_palette_commands_for_overlay()
-            .iter()
-            .copied()
-            .filter(|command| self.palette_command_available(command.id))
-            .collect()
-    }
-
+    #[allow(dead_code)]
     pub(in crate::app) fn palette_command_available(&self, command_id: &str) -> bool {
-        if command_id == "switch_model" {
-            return self.model_switcher_supported();
-        }
-
-        if command_id == "cycle_variant" {
-            return !self.replay_mode;
-        }
-
-        if self.startup_shell_visible() {
-            matches!(
-                command_id,
-                "new_session"
-                    | "resume_session"
-                    | "replay_session"
-                    | "toggles"
-                    | "auth"
-                    | "help"
-                    | "quit"
-            )
-        } else if matches!(command_id, "show_timestamps" | "hide_timestamps") {
-            self.active_review_surface.is_none()
-                && if command_id == "show_timestamps" {
-                    !self.transcript_view.show_transcript_timestamps
-                } else {
-                    self.transcript_view.show_transcript_timestamps
-                }
-        } else if matches!(command_id, "show_thinking" | "hide_thinking") {
-            self.active_review_surface.is_none()
-                && if command_id == "show_thinking" {
-                    !self.transcript_view.show_transcript_thinking
-                } else {
-                    self.transcript_view.show_transcript_thinking
-                }
-        } else if matches!(command_id, "show_tool_details" | "hide_tool_details") {
-            self.active_review_surface.is_none()
-                && if command_id == "show_tool_details" {
-                    !self.transcript_view.show_tool_details
-                } else {
-                    self.transcript_view.show_tool_details
-                }
-        } else if matches!(
-            command_id,
-            "show_generic_tool_output" | "hide_generic_tool_output"
-        ) {
-            self.active_review_surface.is_none()
-                && if command_id == "show_generic_tool_output" {
-                    !self.transcript_view.show_generic_tool_output
-                } else {
-                    self.transcript_view.show_generic_tool_output
-                }
-        } else if matches!(
-            command_id,
-            "expand_selected_turn_results" | "collapse_selected_turn_results"
-        ) {
-            let expandable_ids = self.selected_activity_expandable_tool_ids();
-            self.active_review_surface.is_none()
-                && !expandable_ids.is_empty()
-                && if command_id == "expand_selected_turn_results" {
-                    expandable_ids.iter().any(|tool_call_id| {
-                        !self
-                            .transcript_view
-                            .expanded_tool_outputs
-                            .contains(tool_call_id)
-                    })
-                } else {
-                    expandable_ids.iter().any(|tool_call_id| {
-                        self.transcript_view
-                            .expanded_tool_outputs
-                            .contains(tool_call_id)
-                    })
-                }
-        } else if matches!(
-            command_id,
-            "stack_transcript_diffs" | "split_transcript_diffs"
-        ) {
-            self.active_review_surface.is_none()
-                && if command_id == "stack_transcript_diffs" {
-                    !self.transcript_view.stacked_transcript_diffs
-                } else {
-                    self.transcript_view.stacked_transcript_diffs
-                }
-        } else if command_id == "close_review_surface" {
-            self.active_review_surface.is_some()
-        } else if command_id == "open_event_log" {
-            self.active_review_surface != Some(ReviewSurface::Events)
-        } else if command_id == "toggle_terminal_panel" {
-            !self.startup_shell_visible()
-        } else if command_id == "revert_workspace" {
-            !self.replay_mode
-                && !self.startup_shell_visible()
-                && self.most_recent_workspace_snapshot_request_id().is_some()
-        } else if matches!(
-            command_id,
-            "open_lineage_browser"
-                | "session_child_first"
-                | "session_child_cycle"
-                | "session_child_cycle_reverse"
-                | "session_parent"
-        ) {
-            !self.startup_shell_visible()
-        } else {
-            true
-        }
+        let Some(entry) = crate::keybindings::palette_model::find(command_id) else {
+            return false;
+        };
+        super::palette_controller::is_available(self, entry)
     }
 
     pub(in crate::app) fn apply_new_session_launcher_selection(&mut self) {

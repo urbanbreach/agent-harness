@@ -45,6 +45,7 @@ mod model_metadata;
 mod model_switcher;
 mod mouse_interaction;
 mod operator_sidebar;
+pub(crate) mod palette_controller;
 mod pending_live;
 mod permission_prompt;
 pub(crate) mod permissions;
@@ -667,5 +668,17 @@ impl AppState {
                     && !hidden_child_request_ids.contains(activity.request_id.as_str())
             })
             .count();
+    }
+
+    pub(crate) fn has_revert_message(&self) -> bool {
+        false
+    }
+
+    pub(crate) fn has_share_url(&self) -> bool {
+        false
+    }
+
+    pub(crate) fn provider_disconnected(&self) -> bool {
+        !self.launch_metadata.has_provider()
     }
 }
