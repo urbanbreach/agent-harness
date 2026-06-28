@@ -414,53 +414,43 @@
     },
     "explore": {
       "enable": true,
-      "model": "default/gpt-5.4-mini",
-      "variant": "low",
+      "model": "umans-ai-coding-plan/umans-flash",
     },
     "visual-engineering": {
       "enable": true,
-      "model": "default/gpt-5.4-mini",
-      "variant": "high",
+      "model": "umans-ai-coding-plan/umans-kimi-k2.7",
     },
     "artistry": {
       "enable": true,
-      "model": "default/gpt-5.5",
-      "variant": "high",
+      "model": "umans-ai-coding-plan/umans-kimi-k2.7",
     },
     "ultrabrain": {
       "enable": true,
-      "model": "default/gpt-5.5",
-      "variant": "xhigh",
+      "model": "umans-ai-coding-plan/umans-kimi-k2.7",
     },
     "deep": {
       "enable": true,
-      "model": "default/gpt-5.5",
-      "variant": "high",
+      "model": "umans-ai-coding-plan/umans-kimi-k2.7",
     },
     "quick": {
       "enable": true,
-      "model": "default/gpt-5.4-mini",
-      "variant": "low",
+      "model": "umans-ai-coding-plan/umans-flash",
     },
     "unspecified-low": {
       "enable": true,
-      "model": "default/gpt-5.4-mini",
-      "variant": "low",
+      "model": "umans-ai-coding-plan/umans-flash",
     },
     "unspecified-high": {
       "enable": true,
-      "model": "default/gpt-5.5",
-      "variant": "high",
+      "model": "umans-ai-coding-plan/umans-kimi-k2.7",
     },
     "writing": {
       "enable": true,
-      "model": "default/gpt-5.4-mini",
-      "variant": "medium",
+      "model": "umans-ai-coding-plan/umans-flash",
     },
     "title": {
       "enable": true,
-      "model": "default/gpt-5.4-mini",
-      "variant": "low",
+      "model": "umans-ai-coding-plan/umans-flash",
       "hidden": true,
     },
     "summary": {

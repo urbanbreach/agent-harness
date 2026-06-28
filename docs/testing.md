@@ -153,7 +153,7 @@ scripts/test-lanes.sh simulation
 
 `simulation` is offline-only. It uses the checked-in `docs/simulation-matrix.json`, runs the real
 `harness run --scenario golden_path --deterministic` path twice with the built-in mock provider,
-replays both runs with `harness replay --json`, then generates and validates a simulation evidence
+derives read-only replay summaries for both runs, then generates and validates a simulation evidence
 bundle through `harness-testkit`.
 
 Current stage commands:
@@ -161,8 +161,8 @@ Current stage commands:
 - `cargo test -p harness-testkit --test simulation_validator_test`
 - `cargo run -p harness -- --session-dir <artifact-root>/simulation/data/sessions-baseline run --scenario golden_path --deterministic --out <artifact-root>/simulation/data/baseline.events.jsonl --print-run-dir`
 - `cargo run -p harness -- --session-dir <artifact-root>/simulation/data/sessions-repeat run --scenario golden_path --deterministic --out <artifact-root>/simulation/data/repeat.events.jsonl --print-run-dir`
-- `cargo run -p harness -- replay --session <baseline-run-dir> --json`
-- `cargo run -p harness -- replay --session <repeat-run-dir> --json`
+- read-only replay summary generation for `<baseline-run-dir>`
+- read-only replay summary generation for `<repeat-run-dir>`
 - `cargo run -p harness-testkit --bin simulation_evidence -- --artifact-root <artifact-root>/simulation/stages/simulation_evidence/artifacts --matrix docs/simulation-matrix.json --baseline-events <baseline.events.jsonl> --baseline-replay <baseline.replay.json> --repeat-events <repeat.events.jsonl> --repeat-replay <repeat.replay.json> --seed 0`
 - `env HARNESS_SECRETS_SCAN_ARTIFACTS=1 HARNESS_SIMULATION_ARTIFACT_DIR=<simulation-artifacts> cargo test -p harness-testkit --test secretscan_test`
 
@@ -245,9 +245,9 @@ Live signoff is opt-in and env-gated:
 
 ```bash
 HARNESS_LIVE_PROXY=1 \
-HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
-HARNESS_LIVE_PROXY_PROVIDER=default \
-HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini \
+HARNESS_LIVE_PROXY_CONFIG=harness.jsonc \
+HARNESS_LIVE_PROXY_PROVIDER=umans-ai-coding-plan \
+HARNESS_LIVE_PROXY_MODEL=umans-kimi-k2.7 \
 scripts/test-lanes.sh signoff-live
 ```
 
@@ -328,9 +328,9 @@ Live stress:
 
 ```bash
 HARNESS_LIVE_PROXY=1 \
-HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
-HARNESS_LIVE_PROXY_PROVIDER=default \
-HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini \
+HARNESS_LIVE_PROXY_CONFIG=harness.jsonc \
+HARNESS_LIVE_PROXY_PROVIDER=umans-ai-coding-plan \
+HARNESS_LIVE_PROXY_MODEL=umans-kimi-k2.7 \
 scripts/test-lanes.sh stress-live
 ```
 

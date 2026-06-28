@@ -80,13 +80,13 @@ fallback. The provider keeps credential material out of config with
 path. `doctor` checks that the named credential is available and redacted.
 doctor does not prove live provider authentication or transport health.
 
-The default path is:
+This workspace's dogfood path in `harness.jsonc` is:
 
-- provider: `openai-codex` (`openai_compatible`) via Codex OAuth
+- provider: `umans-ai-coding-plan` (`openai_compatible`)
 - default agent: `build`
-- default model: `openai-codex/gpt-5.4-mini`
-- interactive model: `openai-codex/gpt-5.4-mini` (`high` reasoning preset)
-- category model profiles: category scale adapted to Codex OAuth-backed GPT primary targets plus validated fallback metadata (`category-ultrabrain`, `category-deep`, `category-quick`, and the other shipped category profiles)
+- default model: `umans-ai-coding-plan/umans-kimi-k2.7` in this workspace's `harness.jsonc`
+- interactive model: `umans-ai-coding-plan/umans-kimi-k2.7`
+- category agents: high-effort lanes use `umans-ai-coding-plan/umans-kimi-k2.7`; quick/read-only/writing lanes use `umans-ai-coding-plan/umans-flash`
 
 Primary agents and category subagents are discovered from `.agent-harness/agents/*.md` and use the
 runtime config's direct model or named `model_profile` settings:
@@ -147,10 +147,9 @@ Troubleshooting starts with the local checks before live provider execution:
   tool failures are persisted as tool messages, and unsupported LSP probes stay
   recoverable in the prompt path.
 - Unsupported tool calls or malformed provider streams: inspect `events.jsonl`,
-  replay the session read-only, then export a support bundle.
-- Session resume or replay failure: use `harness sessions inspect`,
-  `harness sessions replay`, and the support export artifact index to locate the
-  corrupt or missing session/artifact.
+  use session inspection, then export a support bundle.
+- Session resume failure: use `harness sessions inspect` and the support export
+  artifact index to locate the corrupt or missing session/artifact.
 - Permission denial or timeout: the event log records `permission_resolved`,
   `edit_rejected`, and failed tool output while leaving the workspace unchanged.
 - Terminal rendering issues: retry with `--mock`, use `/help` or `Ctrl+p` for the
@@ -246,9 +245,9 @@ deterministic and provider-free. `--mode live` and `--mode all` exercise the too
 path against the configured provider, including best-effort LSP diagnostics, fail-open unsupported
 LSP probes, and absolute-path workspace reads.
 
-The shipped `openai-codex` provider uses `authProvider: "codex"` with an `OPENAI_API_KEY` fallback so default live runs exercise the Codex OAuth-backed path instead of a local proxy bridge. The starter catalog intentionally defines only GPT 5.5 and GPT 5.4 Mini; broader generated provider catalogs live in `configs/provider-catalog.reference.jsonc`.
+The shipped `openai-codex` provider uses `authProvider: "codex"` with an `OPENAI_API_KEY` fallback for Codex OAuth-backed first-run checks. Workspace dogfooding uses the `umans-ai-coding-plan` provider from `harness.jsonc`; the separate starter catalog intentionally defines only GPT 5.5 and GPT 5.4 Mini. Broader generated provider catalogs live in `configs/provider-catalog.reference.jsonc`.
 
-The TUI exposes workflow slash commands for `/model`, `/status`, `/toggles`, `/resume`, `/new`, `/tree`, `/fork`, `/clone`, and `/rename`. `/model` switches the agent/model used for subsequent turns, `/status` opens the system status dialog, `/toggles` opens the session-local Toggles menu for configured agents, prompts, hooks, MCP servers, tools, skills, and YOLO menu state, `/resume` opens the saved-session picker, and `/new` starts a clean live run. `/tree` shows the Harness session lineage tree for saved sessions. `/fork` creates a child Harness session from the current session at an explicit stable event cutoff. `/clone` creates a child Harness session from the latest stable prefix of the selected source session. `/rename` (`/title`) renames the current session by emitting an `UpdateSessionTitle` event, which is replayed by session inspection tools.
+The TUI exposes workflow slash commands for `/model`, `/toggles`, `/resume`, `/new`, `/tree`, `/fork`, `/clone`, and `/rename`. `/model` switches the agent/model used for subsequent turns, `/toggles` opens the session-local Toggles menu for configured agents, prompts, hooks, MCP servers, tools, skills, and YOLO menu state, `/resume` opens the saved-session picker, and `/new` starts a clean live run. `/tree` shows the Harness session lineage tree for saved sessions. `/fork` creates a child Harness session from the current session at an explicit stable event cutoff. `/clone` creates a child Harness session from the latest stable prefix of the selected source session. `/rename` (`/title`) renames the current session by emitting an `UpdateSessionTitle` event, which is replayed by session inspection tools.
 
 The same lineage surface is available from the terminal through `harness sessions tree`, `harness sessions fork`, and `harness sessions clone`. `harness sessions tree` prints the saved Harness session lineage and accepts `--json`, `--root RUN_ID_OR_PATH`, and `--filter TEXT`. `harness sessions fork --source RUN_ID_OR_PATH --cutoff SEQ` writes a child session from a validated stable prefix. `harness sessions clone --source RUN_ID_OR_PATH` writes a child session from the latest stable completed prefix. Both write commands accept `--json`, reject active or writer locked sources, and print the child run id, source cutoff, event count, and copied artifact count when they succeed.
 
