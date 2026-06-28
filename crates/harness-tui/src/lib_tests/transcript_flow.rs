@@ -532,12 +532,12 @@ pub(super) fn thinking_visibility_toggle_hides_and_restores_inline_thinking_rows
     let initial = render_live_lines(&app, 120, 30);
     assert!(initial.contains("Drafting a document-like plan"));
 
-    run_palette_command(&mut app, "hide thinking");
+    run_palette_command(&mut app, "collapse thinking");
     let hidden = render_live_lines(&app, 120, 30);
     assert!(!hidden.contains("Drafting a document-like plan"));
     assert!(hidden.contains("Found the transcript renderer and the composer chrome."));
 
-    run_palette_command(&mut app, "show thinking");
+    run_palette_command(&mut app, "expand thinking");
     let restored = render_live_lines(&app, 120, 30);
     assert!(restored.contains("Drafting a document-like plan"));
 }
