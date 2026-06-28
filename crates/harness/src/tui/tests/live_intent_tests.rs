@@ -63,6 +63,7 @@ async fn compact_intent_reports_noop_status_for_idle_live_agent() {
             config_path: None,
             session_dir: Some(temp_dir.path().to_path_buf()),
             workspace_root: temp_dir.path().to_path_buf(),
+            config_digest: "test-digest".to_string(),
         },
     ));
 
@@ -218,6 +219,7 @@ async fn compact_intent_reports_unavailable_when_no_live_agent_target_exists() {
             config_path: None,
             session_dir: Some(temp_dir.path().to_path_buf()),
             workspace_root: temp_dir.path().to_path_buf(),
+            config_digest: "test-digest".to_string(),
         },
     ));
 
@@ -246,8 +248,12 @@ async fn compact_intent_reports_unavailable_when_no_live_agent_target_exists() {
 fn live_ui_router_forwards_compact_intent_without_switching_workflow() {
     let (intent_tx, mut intent_rx) = mpsc::unbounded_channel::<UiIntent>();
     let launch_selection = Arc::new(Mutex::new(LaunchMetadata::default()));
-    let (selected_workflow, sink) =
-        build_live_ui_intent_router(intent_tx, Arc::clone(&launch_selection), false);
+    let (selected_workflow, sink) = build_live_ui_intent_router(
+        intent_tx,
+        Arc::clone(&launch_selection),
+        false,
+        "test-digest".to_string(),
+    );
 
     sink(UiIntent::CompactSession);
 
@@ -259,8 +265,12 @@ fn live_ui_router_forwards_compact_intent_without_switching_workflow() {
 fn live_ui_router_forwards_interrupt_intent_without_switching_workflow() {
     let (intent_tx, mut intent_rx) = mpsc::unbounded_channel::<UiIntent>();
     let launch_selection = Arc::new(Mutex::new(LaunchMetadata::default()));
-    let (selected_workflow, sink) =
-        build_live_ui_intent_router(intent_tx, Arc::clone(&launch_selection), false);
+    let (selected_workflow, sink) = build_live_ui_intent_router(
+        intent_tx,
+        Arc::clone(&launch_selection),
+        false,
+        "test-digest".to_string(),
+    );
 
     sink(UiIntent::InterruptSession {
         task_ids: vec!["task_active".to_string()],
@@ -279,8 +289,12 @@ fn live_ui_router_forwards_interrupt_intent_without_switching_workflow() {
 fn live_ui_router_records_model_switch_without_switching_workflow() {
     let (intent_tx, mut intent_rx) = mpsc::unbounded_channel::<UiIntent>();
     let launch_selection = Arc::new(Mutex::new(LaunchMetadata::default()));
-    let (selected_workflow, sink) =
-        build_live_ui_intent_router(intent_tx, Arc::clone(&launch_selection), false);
+    let (selected_workflow, sink) = build_live_ui_intent_router(
+        intent_tx,
+        Arc::clone(&launch_selection),
+        false,
+        "test-digest".to_string(),
+    );
     let launch_metadata =
         LaunchMetadata::from_model_ref("ops", "anthropic:claude-3.7").with_mode_label("Live");
 

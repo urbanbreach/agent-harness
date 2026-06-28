@@ -1,41 +1,6 @@
 use super::*;
 
 #[test]
-fn tui_startup_new_session_bootstraps_live_after_intent() {
-    assert_eq!(
-        map_startup_intent_to_workflow(Some(UiIntent::NewSession)),
-        InteractiveWorkflow::NewSession
-    );
-}
-
-#[test]
-fn tui_startup_replay_session_uses_replay_mode() {
-    let run_dir = PathBuf::from("/tmp/sessions/run_replay");
-    assert_eq!(
-        map_startup_intent_to_workflow(Some(UiIntent::ReplaySession {
-            run_id: "run_replay".to_string(),
-            run_dir: run_dir.clone(),
-        })),
-        InteractiveWorkflow::Replay { run_dir }
-    );
-}
-
-#[test]
-fn tui_startup_continue_session_uses_continue_workflow() {
-    let run_dir = PathBuf::from("/tmp/sessions/run_continue");
-    assert_eq!(
-        map_startup_intent_to_workflow(Some(UiIntent::ContinueSession {
-            run_id: "run_continue".to_string(),
-            run_dir: run_dir.clone(),
-        })),
-        InteractiveWorkflow::Continue {
-            run_id: "run_continue".to_string(),
-            run_dir,
-        }
-    );
-}
-
-#[test]
 fn tui_startup_carries_unsent_draft_into_new_live_session() {
     let _guard = startup_draft_test_lock()
         .lock()

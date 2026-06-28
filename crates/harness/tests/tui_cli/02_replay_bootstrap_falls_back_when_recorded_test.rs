@@ -175,89 +175,6 @@ fn tui_replay_and_continue_headers_are_distinct() {
     );
 }
 #[test]
-fn tui_cli_replay_bootstrap_loads_recorded_session() {
-    let _guard = startup_draft_test_lock()
-        .lock()
-        .expect("startup draft test lock poisoned");
-    let run_dir = tempdir().expect("tempdir");
-    write_events_jsonl(
-        run_dir.path(),
-        &[
-            envelope(
-                1,
-                EventV1::RunStarted(RunStartedEvent {
-                    run_name: "replay-fixture".to_string(),
-                    workspace_root: "/tmp/workspace".to_string(),
-                }),
-            ),
-            envelope(
-                2,
-                EventV1::RunFinished(RunFinishedEvent {
-                    summary: "done".to_string(),
-                }),
-            ),
-        ],
-    );
-
-    let output = run_harness([
-            "tui",
-            "--replay",
-            run_dir.path().to_str().expect("run dir utf-8"),
-            "--exit-on-finish",
-        ]);
-
-    assert!(
-        output.status.success(),
-        "stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-#[test]
-fn tui_cli_replay_flag_bypasses_launcher_shell() {
-    let _guard = startup_draft_test_lock()
-        .lock()
-        .expect("startup draft test lock poisoned");
-    let run_dir = tempdir().expect("tempdir");
-    write_events_jsonl(
-        run_dir.path(),
-        &[
-            envelope(
-                1,
-                EventV1::RunStarted(RunStartedEvent {
-                    run_name: "replay-fixture".to_string(),
-                    workspace_root: "/tmp/workspace".to_string(),
-                }),
-            ),
-            envelope(
-                2,
-                EventV1::RunFinished(RunFinishedEvent {
-                    summary: "done".to_string(),
-                }),
-            ),
-        ],
-    );
-
-    let output = run_harness([
-            "tui",
-            "--replay",
-            run_dir.path().to_str().expect("run dir utf-8"),
-            "--exit-on-finish",
-        ]);
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        output.status.success(),
-        "stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        stderr
-    );
-    assert!(
-        !stderr.contains("startup launcher"),
-        "--replay should bypass launcher shell, got:\n{stderr}"
-    );
-}
-#[test]
 fn tui_cli_without_config_reaches_connect_startup() {
     let _guard = startup_draft_test_lock()
         .lock()
@@ -340,8 +257,8 @@ fn tui_mock_mode_still_boots_through_launcher() {
         "expected --mock to bypass config guidance, got:\n{stderr}"
     );
     assert!(
-        output.status.success() || stderr.contains("startup launcher"),
-        "expected --mock to pass through launcher startup shell, got stdout:\n{}\nstderr:\n{}",
+        output.status.success() || stderr.contains("failed to enable terminal raw mode"),
+        "expected --mock to reach the interactive TUI boundary, got stdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         stderr,
     );
@@ -413,16 +330,15 @@ fn command_palette_includes_task5_session_actions() {
         .to_ascii_lowercase();
 
     assert!(
-        palette_surface.contains("open_event_log:open the review event log surface")
+        !palette_surface.contains("open_event_log:")
             && !palette_surface.contains("open_diff_review:")
             && palette_surface.contains("help:show shortcuts and tui controls"),
-        "expected the ctrl-p surface to expose the event-log and help surfaces without stale diff-review commands, got:
+        "expected the ctrl-p surface to expose help without removed event-log or stale diff-review commands, got:
 {palette_surface}"
     );
     assert!(
         palette_surface.contains("new_session:start a fresh live session")
-            && palette_surface.contains("resume_session:continue a prior session when resumable")
-            && palette_surface.contains("replay_session:replay a previous session as read-only"),
-        "expected task-5 ctrl-p surface to include session actions, got:\n{palette_surface}"
+            && palette_surface.contains("resume_session:continue a prior session when resumable"),
+        "expected task-5 ctrl-p surface to include live session actions, got:\n{palette_surface}"
     );
 }
