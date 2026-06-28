@@ -18,10 +18,12 @@ pub(crate) use overlays::{completion_overlay_content_area, slash_command_overlay
 use overlays::{fork_selector_overlay_height, lifecycle_overlay_area};
 #[cfg(test)]
 pub(crate) use surfaces::lifecycle_card_area;
+#[cfg(test)]
+use surfaces::split_secondary_surface;
 pub(crate) use surfaces::{
     inset_rect, live_empty_state_area, pad_rect, permission_dock_layout,
     runtime_state_surface_area, runtime_state_surface_width, secondary_surface_layout,
-    split_secondary_surface, startup_shell_area, ControlDockLayout, EdgeInsets,
+    startup_shell_area, ControlDockLayout, EdgeInsets,
 };
 
 const MIN_COMPOSER_LINES: u16 = 1;
@@ -38,7 +40,6 @@ const LIVE_DETAILS_MIN_TRANSCRIPT_WIDTH: u16 = 48;
 const TERMINAL_PANEL_MIN_TRANSCRIPT_HEIGHT: u16 = 7;
 const TERMINAL_PANEL_MIN_HEIGHT: u16 = 5;
 const TERMINAL_PANEL_MAX_HEIGHT: u16 = 12;
-pub(crate) const REVIEW_SURFACE_SPLIT_PERCENT: u16 = 34;
 const DENSE_SESSION_MAX_WIDTH: u16 = 60;
 const DENSE_SESSION_MAX_HEIGHT: u16 = 18;
 const COMPACT_SESSION_MAX_WIDTH: u16 = 80;

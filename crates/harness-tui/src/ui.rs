@@ -13,7 +13,7 @@ use crate::app::{
 use crate::keybindings::Action;
 use crate::layout::{
     composer_input_height, inset_rect, live_empty_state_area, secondary_surface_layout,
-    split_secondary_surface, startup_composer_input_height, FrameLayoutPlan,
+    startup_composer_input_height, FrameLayoutPlan,
 };
 use crate::overlay::OverlayKind;
 use crate::theme::Theme;
@@ -31,7 +31,7 @@ mod ui_lsp;
 #[path = "ui_markdown.rs"]
 mod ui_markdown;
 #[path = "ui_overlays.rs"]
-mod ui_overlays;
+pub(crate) mod ui_overlays;
 #[path = "ui_secondary.rs"]
 mod ui_secondary;
 #[path = "ui_secondary_events_tab.rs"]
@@ -102,13 +102,6 @@ pub(crate) use ui_chrome::{
 pub(super) use ui_lifecycle::render_startup_lifecycle_surface;
 use ui_lifecycle::{live_empty_state_visible, render_live_empty_state, startup_shell_visible};
 use ui_overlays::render_overlays;
-#[cfg(test)]
-pub(crate) use ui_overlays::{
-    exact_test_status_dialog_formatters_section_disabled_when_none,
-    exact_test_status_dialog_formatters_section_lists_enabled_language,
-    exact_test_status_dialog_mcp_rows_match_harness_states,
-    exact_test_status_dialog_render_snapshot_covers_harness_sections,
-};
 pub(crate) use ui_secondary::{
     operator_sidebar_keyboard_targets, operator_sidebar_section_hit_target,
     operator_sidebar_selection_cell, operator_sidebar_selection_text,
@@ -117,7 +110,7 @@ pub(crate) use ui_secondary::{
     OperatorSidebarSelectionCell,
 };
 use ui_secondary::{render_live_details_overlay, render_operator_sidebar};
-use ui_secondary_events_tab::{render_events_tab, render_help_tab};
+use ui_secondary_events_tab::render_help_tab;
 use ui_terminal::render_terminal_panel;
 use ui_transcript::render_transcript_pane;
 pub(crate) use ui_transcript::transcript_diff_hunk_rows;
@@ -300,8 +293,9 @@ fn render_review_surface(
     };
 
     match surface {
-        ReviewSurface::Events => render_events_tab(frame, app, transcript_area, theme),
-        ReviewSurface::Help => render_help_tab(frame, app, transcript_area, theme),
+        ReviewSurface::Events | ReviewSurface::Help => {
+            render_help_tab(frame, app, transcript_area, theme);
+        }
     }
 }
 

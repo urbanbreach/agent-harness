@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::text::{has_trimmed_content, trimmed_json_string_field};
+use crate::text::trimmed_json_string_field;
 
 pub(super) fn server_name_from_args(args_summary: &str) -> Option<String> {
     let path = path_from_args(args_summary)?;
@@ -65,16 +65,15 @@ pub(super) fn server_name_from_args(args_summary: &str) -> Option<String> {
         })
 }
 
+fn path_from_args(args_summary: &str) -> Option<String> {
+    let args = serde_json::from_str::<serde_json::Value>(args_summary).ok()?;
+    trimmed_json_string_field(Some(&args), &["path", "filePath"])
+}
+
 pub(super) fn path_root_from_args(args_summary: &str) -> Option<String> {
     let path = path_from_args(args_summary)?;
     Path::new(&path)
         .parent()
         .and_then(Path::to_str)
-        .filter(|root| has_trimmed_content(root))
         .map(str::to_string)
-}
-
-fn path_from_args(args_summary: &str) -> Option<String> {
-    let args = serde_json::from_str::<serde_json::Value>(args_summary).ok()?;
-    trimmed_json_string_field(Some(&args), &["path", "filePath"])
 }
