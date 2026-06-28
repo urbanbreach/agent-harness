@@ -528,14 +528,7 @@ pub(super) fn generic_tool_output_toggle_reveals_block_payload() {
     assert!(expanded.contains("cancelled background task"));
     assert!(!expanded.contains("result: ok"));
 
-    app.handle_key(key_with_modifiers(
-        KeyCode::Char('p'),
-        KeyModifiers::CONTROL,
-    ));
-    for c in "expand turn results".chars() {
-        app.handle_key(key(KeyCode::Char(c)));
-    }
-    app.handle_key(key(KeyCode::Enter));
+    app::palette_controller::dispatch_palette_command(&mut app, "harness.expand_turn_results");
 
     let backend = TestBackend::new(120, 30);
     let mut terminal = Terminal::new(backend).expect("create terminal");

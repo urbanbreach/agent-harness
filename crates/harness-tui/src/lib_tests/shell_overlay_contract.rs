@@ -229,13 +229,13 @@ pub(super) fn slash_overlay_uses_input_width_aligned_rows_and_accent_selection()
     let help_description = lines[row]
         .find("Show shortcuts and TUI controls")
         .expect("help description column");
-    let new_row = find_line_containing_all(&lines, &["/new", "Return to the home shell"])
-        .unwrap_or_else(|| panic!("slash /new row\n{rendered}"));
-    let new_description = lines[new_row]
-        .find("Return to the home shell")
-        .expect("new description column");
+    let exit_row = find_line_containing_all(&lines, &["/exit", "Quit the application"])
+        .unwrap_or_else(|| panic!("slash /exit row\n{rendered}"));
+    let exit_description = lines[exit_row]
+        .find("Quit the application")
+        .expect("exit description column");
 
-    assert_eq!(help_description, new_description);
+    assert_eq!(help_description, exit_description);
     assert!(!lines[row].contains('┃'));
     assert!(!rendered.contains('╭') && !rendered.contains('╰') && !rendered.contains('│'));
 

@@ -143,7 +143,7 @@ fn startup_session_history_picker_renders_without_pty() {
         LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Demo"),
     );
 
-    app.execute_slash_command("resume", Some(String::new()));
+    app.execute_slash_command("sessions", Some(String::new()));
 
     let rendered = render_text(&app, 100, 24);
 
