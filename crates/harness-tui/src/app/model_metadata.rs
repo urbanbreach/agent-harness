@@ -166,6 +166,10 @@ impl LaunchMetadata {
         non_empty_option(&self.provider).unwrap_or("local")
     }
 
+    pub fn has_provider(&self) -> bool {
+        self.provider.is_some()
+    }
+
     pub fn profile_description(&self) -> Option<&str> {
         non_empty_option(&self.profile_description)
     }

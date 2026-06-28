@@ -586,7 +586,7 @@ fn session_navigation_snapshot_from_path(
     session_path: &Path,
     fallback_launch_metadata: &LaunchMetadata,
 ) -> Result<SessionNavigationSnapshot, String> {
-    let events = crate::event_log::load_session_events(session_path)?;
+    let events = crate::session_events::load_session_events(session_path)?;
     let launch_metadata =
         replay_launch_metadata_from_session(session_path, &events, fallback_launch_metadata);
     let replay = AppState::new_replay(session_path.to_path_buf(), events.clone());

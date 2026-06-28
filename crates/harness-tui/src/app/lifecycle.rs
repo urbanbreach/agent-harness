@@ -30,7 +30,7 @@ pub enum ReviewSurface {
 impl ReviewSurface {
     pub(crate) fn status_label(self) -> &'static str {
         match self {
-            Self::Events => "events",
+            Self::Events => "shortcuts",
             Self::Help => "shortcuts",
         }
     }

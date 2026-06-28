@@ -87,7 +87,8 @@ fn session_history_entry_matches_action(
             entry.catalog.mode_source,
             SessionModeSource::InteractiveLive | SessionModeSource::InteractiveMock
         ),
-        StartupLauncherAction::ReplaySession | StartupLauncherAction::NewSession => !matches!(
+        StartupLauncherAction::ReplaySession => true,
+        StartupLauncherAction::NewSession => !matches!(
             entry.catalog.mode_source,
             SessionModeSource::ScenarioFixture | SessionModeSource::ReplayOnly
         ),
@@ -575,19 +576,6 @@ impl AppState {
             StartupLauncherAction::NewSession => {
                 self.apply_new_session_launcher_selection();
             }
-            StartupLauncherAction::ReplaySession => {
-                self.continue_disabled_banner = None;
-                self.replay_mode = true;
-                set_pending_live_prompt_draft(Some(self.composer.prompt_buffer.clone()));
-                self.emit_ui_intent(UiIntent::ReplaySession {
-                    run_id: selected_run_id,
-                    run_dir: selected_run_dir,
-                });
-                if self.startup_mode {
-                    self.should_quit = true;
-                }
-                self.close_session_history();
-            }
             StartupLauncherAction::ContinueSession => {
                 if !selected_resumable {
                     self.continue_disabled_banner = selected_resume_disabled_reason
@@ -602,6 +590,18 @@ impl AppState {
                 self.replay_mode = false;
                 set_pending_live_prompt_draft(Some(self.composer.prompt_buffer.clone()));
                 self.emit_ui_intent(UiIntent::ContinueSession {
+                    run_id: selected_run_id,
+                    run_dir: selected_run_dir,
+                });
+                if self.startup_mode {
+                    self.should_quit = true;
+                }
+                self.close_session_history();
+            }
+            StartupLauncherAction::ReplaySession => {
+                self.continue_disabled_banner = None;
+                self.replay_mode = true;
+                self.emit_ui_intent(UiIntent::ReplaySession {
                     run_id: selected_run_id,
                     run_dir: selected_run_dir,
                 });
