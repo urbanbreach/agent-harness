@@ -17,9 +17,7 @@ pub(crate) fn exact_test_startup_slash_commands_execute_without_menu() {
             "help".to_string(),
             "model".to_string(),
             "new".to_string(),
-            "replay".to_string(),
             "resume".to_string(),
-            "status".to_string(),
             "toggles".to_string(),
         ]
     );
@@ -59,26 +57,6 @@ pub(crate) fn exact_test_replay_mode_disables_slash_workflow() {
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_slash_replay_opens_history_and_restores_draft() {
-    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
-    app.composer.prompt_buffer = "/replay".to_string();
-    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
-    app.slash_draft_snapshot = Some("keep this draft".to_string());
-    app.sync_slash_overlay();
-
-    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-
-    assert!(app.palette_visible);
-    assert!(app.session_history_visible);
-    assert_eq!(
-        app.startup_launcher_action,
-        StartupLauncherAction::ReplaySession
-    );
-    assert_eq!(app.composer.prompt_buffer, "keep this draft");
-    assert!(!app.slash_visible);
-}
-
-#[cfg(test)]
 pub(crate) fn exact_test_slash_resume_opens_history_and_restores_draft() {
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
     app.composer.prompt_buffer = "/resume".to_string();
@@ -99,7 +77,7 @@ pub(crate) fn exact_test_slash_resume_opens_history_and_restores_draft() {
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_slash_events_opens_review_surface() {
+pub(crate) fn exact_test_slash_events_is_removed() {
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
     app.composer.prompt_buffer = "/events".to_string();
     app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
@@ -108,34 +86,15 @@ pub(crate) fn exact_test_slash_events_opens_review_surface() {
 
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-    assert_eq!(app.active_review_surface, Some(ReviewSurface::Events));
-    assert_eq!(app.composer.prompt_buffer, "keep events draft");
-    assert!(!app.slash_visible);
-}
-
-#[cfg(test)]
-pub(crate) fn exact_test_slash_status_opens_status_dialog_and_restores_draft() {
-    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
-    app.composer.prompt_buffer = "/status".to_string();
-    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
-    app.slash_draft_snapshot = Some("status draft".to_string());
-    app.sync_slash_overlay();
-
-    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-
-    assert!(app.status_dialog_visible);
-    assert_eq!(app.overlay_stack().top(), Some(OverlayKind::StatusDialog));
-    assert_eq!(app.composer.prompt_buffer, "status draft");
-    assert!(!app.slash_visible);
-
-    app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-    assert!(!app.status_dialog_visible);
+    assert_eq!(app.active_review_surface, None);
+    assert_eq!(app.composer.prompt_buffer, "/events");
+    assert!(app.slash_visible);
 }
 
 #[cfg(test)]
 pub(crate) fn exact_test_slash_shell_closes_review_surface() {
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
-    app.open_review_surface(ReviewSurface::Events);
+    app.open_review_surface(ReviewSurface::Help);
     app.focus = Focus::Prompt;
     app.composer.prompt_buffer = "/shell".to_string();
     app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
@@ -236,33 +195,24 @@ pub(crate) fn exact_test_auth_slash_and_palette_emit_ui_intent_mid_session() {
 
     let mut palette = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(sink));
     palette.handle_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
-    for ch in "auth".chars() {
+    for ch in "connect".chars() {
         palette.handle_key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE));
     }
     palette.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
     assert!(!palette.palette_visible);
-    assert_eq!(
-        palette.status_banner.as_deref(),
-        Some("auth backend requested: harness auth list")
-    );
+    assert!(palette.connect_dialog.visible);
     assert_eq!(
         intents.lock().expect("lock intents").as_slice(),
-        &[
-            UiIntent::OpenAuthManager {
-                args: vec![
-                    "login".to_string(),
-                    "codex".to_string(),
-                    "--method".to_string(),
-                    "device".to_string()
-                ],
-                stdin: None,
-            },
-            UiIntent::OpenAuthManager {
-                args: vec!["list".to_string()],
-                stdin: None,
-            }
-        ]
+        &[UiIntent::OpenAuthManager {
+            args: vec![
+                "login".to_string(),
+                "codex".to_string(),
+                "--method".to_string(),
+                "device".to_string()
+            ],
+            stdin: None,
+        }]
     );
 }
 
@@ -645,10 +595,10 @@ pub(crate) fn exact_test_slash_lineage_descriptions_use_harness_branding() {
 pub(crate) fn exact_test_revert_workspace_palette_availability() {
     let mut replay = AppState::new_replay(PathBuf::from("/tmp/replay"), Vec::new());
     replay.focus = Focus::Prompt;
-    assert!(!replay.palette_command_available("revert_workspace"));
+    assert!(!replay.palette_command_available("harness.revert_workspace"));
 
     let live_no_snapshot = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
-    assert!(!live_no_snapshot.palette_command_available("revert_workspace"));
+    assert!(!live_no_snapshot.palette_command_available("harness.revert_workspace"));
 
     let snapshot = EventEnvelopeV1 {
         schema_version: 1,
@@ -671,7 +621,7 @@ pub(crate) fn exact_test_revert_workspace_palette_availability() {
     let mut live_with_snapshot =
         AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
     live_with_snapshot.ingest_event(snapshot);
-    assert!(live_with_snapshot.palette_command_available("revert_workspace"));
+    assert!(live_with_snapshot.palette_command_available("harness.revert_workspace"));
 }
 
 #[cfg(test)]

@@ -22,9 +22,9 @@ pub(super) fn slash_menu_resets_selection_when_filter_changes() {
 
     app.handle_key(key(KeyCode::Char('r')));
     app.handle_key(key(KeyCode::Char('e')));
-    app.handle_key(key(KeyCode::Char('p')));
+    app.handle_key(key(KeyCode::Char('s')));
 
-    assert_eq!(app.slash_filtered, vec!["replay".to_string()]);
+    assert_eq!(app.slash_filtered, vec!["resume".to_string()]);
     assert_eq!(app.slash_selected, 0);
 }
 
@@ -35,14 +35,20 @@ pub(super) fn slash_menu_matches_descriptions_and_boosts_prefixes() {
         app.handle_key(key(KeyCode::Char(ch)));
     }
 
-    assert_eq!(&app.slash_filtered[..2], ["replay", "resume"]);
+    assert_eq!(
+        app.slash_filtered.first().map(String::as_str),
+        Some("resume")
+    );
 
     app.clear_prompt_input();
     for ch in "/re".chars() {
         app.handle_key(key(KeyCode::Char(ch)));
     }
 
-    assert_eq!(&app.slash_filtered[..2], ["replay", "resume"]);
+    assert_eq!(
+        app.slash_filtered.first().map(String::as_str),
+        Some("resume")
+    );
     assert!(app.slash_filtered.iter().any(|command| command == "new"));
 
     app.clear_prompt_input();
