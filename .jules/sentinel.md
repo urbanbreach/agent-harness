@@ -5,3 +5,6 @@
 ## 2024-05-19 - Options and Glob strings also bypass workspace boundary validation
 **Learning:** Checking for slashes in arguments is a good start, but shell options (`--git-dir=/etc/passwd`) and paths containing glob characters (`foo/../../../etc/pas*`) also need to be extracted and evaluated. The original code skipped anything starting with `-` or containing glob sequences before looking for paths.
 **Action:** Extract the value component of options (e.g. splitting on `=`), and extract the static path prefix before glob sequences, so that the base path is always evaluated against the workspace bounds.
+## 2026-06-28 - Short option parsing boundary bypass
+**Learning:** Shell tool path extraction relied solely on `split_once('=')` for short options. For flags passed without an equals sign (e.g., `-I/etc/passwd`), this caused the entire argument to be ignored by the path validator, allowing boundaries to be bypassed. Blindly stripping alphanumeric characters also risks mutating legitimate paths.
+**Action:** When extracting paths attached directly to short shell options, advance past the dash and the single option character safely (e.g., `chars().next()` twice) and then extract the rest of the string as the path.
