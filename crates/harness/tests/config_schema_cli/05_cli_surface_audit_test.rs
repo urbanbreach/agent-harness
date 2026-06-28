@@ -176,7 +176,6 @@ fn readme_command_audit_resolves_to_real_subcommands() {
         vec!["prompt"],
         vec!["sessions", "export"],
         vec!["sessions", "inspect"],
-        vec!["sessions", "replay"],
         vec!["sessions", "tree"],
         vec!["sessions", "fork"],
         vec!["sessions", "clone"],

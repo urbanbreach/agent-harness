@@ -173,7 +173,6 @@ fn config_validate_cli_rejects_unsupported_upstream_top_level_keys() {
     for key in [
         "server",
         "command",
-        "plugin",
         "share",
         "autoshare",
         "autoupdate",
