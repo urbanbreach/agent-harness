@@ -1,0 +1,784 @@
+//! Opencode-compatible palette command model.
+//!
+//! Each entry uses a stable Opencode command ID as the contract key.
+//! Dynamic toggle commands use one command ID with a `DynamicTitle` rule
+//! instead of split show/hide entries. Harness-only commands are marked
+//! explicitly and excluded from Opencode parity accounting.
+
+use crate::keybindings::Action;
+
+/// Opencode-compatible palette command section (category).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PaletteCategory {
+    Suggested,
+    Session,
+    Agent,
+    System,
+    Workspace,
+    Provider,
+    Prompt,
+}
+
+impl PaletteCategory {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Suggested => "Suggested",
+            Self::Session => "Session",
+            Self::Agent => "Agent",
+            Self::System => "System",
+            Self::Workspace => "Workspace",
+            Self::Provider => "Provider",
+            Self::Prompt => "Prompt",
+        }
+    }
+}
+
+/// Dynamic title rule for toggle commands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DynamicTitle {
+    /// Static title.
+    Static(&'static str),
+    /// Toggle: "Show X" when hidden, "Hide X" when shown.
+    ShowHide {
+        show: &'static str,
+        hide: &'static str,
+    },
+    /// Toggle: "Enable X" when off, "Disable X" when on.
+    Toggle {
+        enable: &'static str,
+        disable: &'static str,
+    },
+}
+
+/// Suggested rule for the command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SuggestedRule {
+    Never,
+    Always,
+    WhenSessionsExist,
+    WhenSessionRoute,
+    WhenDisconnected,
+}
+
+/// Dispatch target for a palette command.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PaletteDispatch {
+    /// Execute a keybinding Action.
+    Action(Action),
+    /// Toggle a transcript view field (local AppState mutation).
+    ToggleTranscriptThinking,
+    ToggleTranscriptTimestamps,
+    ToggleToolDetails,
+    ToggleGenericToolOutput,
+    ToggleStackedDiffs,
+    ExpandTurnResults,
+    CollapseTurnResults,
+    /// Open a dialog/overlay.
+    OpenSessionHistory,
+    OpenModelSwitcher,
+    OpenTogglesMenu,
+    OpenAuth,
+    OpenEventLog,
+    OpenConnectDialog,
+    /// Emit a UiIntent.
+    NewSession,
+    CompactSession,
+    /// Not yet implemented; opens placeholder.
+    Placeholder,
+}
+
+/// A single Opencode-compatible palette command entry.
+#[derive(Debug, Clone, Copy)]
+pub struct PaletteCommandEntry {
+    /// Stable Opencode command ID (e.g., "session.new").
+    pub id: &'static str,
+    /// Category for grouping.
+    pub category: PaletteCategory,
+    /// Title rule (static or dynamic).
+    pub title: DynamicTitle,
+    /// Description for the row.
+    pub description: &'static str,
+    /// Suggested rule.
+    pub suggested: SuggestedRule,
+    /// True if this is a Harness-only command with no Opencode equivalent.
+    pub harness_only: bool,
+    /// Dispatch target.
+    pub dispatch: PaletteDispatch,
+}
+
+/// The complete Opencode-compatible palette command registry.
+///
+/// Derived from the parity matrix in `parity_matrix.rs`.
+/// Only `Included` commands appear here; excluded and hidden non-target
+/// commands are absent by construction.
+pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
+    // === Session ===
+    PaletteCommandEntry {
+        id: "session.list",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Switch session"),
+        description: "Continue a prior session when resumable",
+        suggested: SuggestedRule::WhenSessionsExist,
+        harness_only: false,
+        dispatch: PaletteDispatch::OpenSessionHistory,
+    },
+    PaletteCommandEntry {
+        id: "session.new",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("New session"),
+        description: "Start a fresh live session",
+        suggested: SuggestedRule::WhenSessionRoute,
+        harness_only: false,
+        dispatch: PaletteDispatch::NewSession,
+    },
+    PaletteCommandEntry {
+        id: "session.rename",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Rename session"),
+        description: "Rename the current session",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    PaletteCommandEntry {
+        id: "session.timeline",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Jump to message"),
+        description: "Jump to a specific message in the transcript",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    PaletteCommandEntry {
+        id: "session.fork",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Fork session"),
+        description: "Fork the current session",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    PaletteCommandEntry {
+        id: "session.compact",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Compact session"),
+        description: "Write a manual context checkpoint",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::CompactSession,
+    },
+    PaletteCommandEntry {
+        id: "session.unshare",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Unshare session"),
+        description: "Remove the share URL from the session",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    PaletteCommandEntry {
+        id: "session.undo",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Undo previous message"),
+        description: "Revert to the previous user message",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    PaletteCommandEntry {
+        id: "session.redo",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Redo"),
+        description: "Redo the last undone message",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    PaletteCommandEntry {
+        id: "session.sidebar.toggle",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::ShowHide {
+            show: "Show sidebar",
+            hide: "Hide sidebar",
+        },
+        description: "Toggle the operator sidebar",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::ToggleOperatorSidebar),
+    },
+    PaletteCommandEntry {
+        id: "session.toggle.conceal",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Toggle {
+            enable: "Enable code concealment",
+            disable: "Disable code concealment",
+        },
+        description: "Toggle code concealment in the transcript",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    PaletteCommandEntry {
+        id: "session.toggle.timestamps",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::ShowHide {
+            show: "Show timestamps",
+            hide: "Hide timestamps",
+        },
+        description: "Toggle user message timestamps",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::ToggleTranscriptTimestamps,
+    },
+    PaletteCommandEntry {
+        id: "session.toggle.thinking",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::ShowHide {
+            show: "Expand thinking",
+            hide: "Collapse thinking",
+        },
+        description: "Toggle inline thinking rows",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::ToggleTranscriptThinking,
+    },
+    PaletteCommandEntry {
+        id: "session.toggle.actions",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::ShowHide {
+            show: "Show tool details",
+            hide: "Hide tool details",
+        },
+        description: "Toggle completed successful tools",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::ToggleToolDetails,
+    },
+    PaletteCommandEntry {
+        id: "session.toggle.scrollbar",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Toggle session scrollbar"),
+        description: "Toggle the session scrollbar",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::ToggleScrollbar),
+    },
+    PaletteCommandEntry {
+        id: "session.toggle.generic_tool_output",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::ShowHide {
+            show: "Show generic tool output",
+            hide: "Hide generic tool output",
+        },
+        description: "Toggle generic tool payload blocks",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::ToggleGenericToolOutput,
+    },
+    PaletteCommandEntry {
+        id: "messages.copy",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Copy last assistant message"),
+        description: "Copy the last assistant message to clipboard",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::CopyMessage),
+    },
+    PaletteCommandEntry {
+        id: "session.copy",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Copy session transcript"),
+        description: "Copy the session transcript to clipboard",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    PaletteCommandEntry {
+        id: "session.export",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Export session transcript"),
+        description: "Export the session transcript to a file",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::ExportSession),
+    },
+    PaletteCommandEntry {
+        id: "session.move",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Move session"),
+        description: "Move to another project directory",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    PaletteCommandEntry {
+        id: "workspace.set",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Warp"),
+        description: "Change the workspace for the session",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    // === Agent ===
+    PaletteCommandEntry {
+        id: "model.list",
+        category: PaletteCategory::Agent,
+        title: DynamicTitle::Static("Switch model"),
+        description: "Browse available provider/model options",
+        suggested: SuggestedRule::Always,
+        harness_only: false,
+        dispatch: PaletteDispatch::OpenModelSwitcher,
+    },
+    PaletteCommandEntry {
+        id: "agent.list",
+        category: PaletteCategory::Agent,
+        title: DynamicTitle::Static("Switch agent"),
+        description: "Switch the active agent profile",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::OpenModelSwitcher,
+    },
+    PaletteCommandEntry {
+        id: "mcp.list",
+        category: PaletteCategory::Agent,
+        title: DynamicTitle::Static("Toggle MCPs"),
+        description: "Toggle MCP server registrations",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::OpenTogglesMenu,
+    },
+    PaletteCommandEntry {
+        id: "variant.cycle",
+        category: PaletteCategory::Agent,
+        title: DynamicTitle::Static("Variant cycle"),
+        description: "Cycle the configured model variant/reasoning preset",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::VariantCycle),
+    },
+    PaletteCommandEntry {
+        id: "variant.list",
+        category: PaletteCategory::Agent,
+        title: DynamicTitle::Static("Switch model variant"),
+        description: "Switch between available model variants",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    // === Workspace ===
+    PaletteCommandEntry {
+        id: "workspace.copy_path",
+        category: PaletteCategory::Workspace,
+        title: DynamicTitle::Static("Copy worktree path"),
+        description: "Copy the current worktree path to clipboard",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    PaletteCommandEntry {
+        id: "workspace.list",
+        category: PaletteCategory::Workspace,
+        title: DynamicTitle::Static("Manage workspaces"),
+        description: "Open the workspace manager",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    // === Provider ===
+    PaletteCommandEntry {
+        id: "provider.connect",
+        category: PaletteCategory::Provider,
+        title: DynamicTitle::Static("Connect provider"),
+        description: "Connect a provider",
+        suggested: SuggestedRule::WhenDisconnected,
+        harness_only: false,
+        dispatch: PaletteDispatch::OpenConnectDialog,
+    },
+    PaletteCommandEntry {
+        id: "console.org.switch",
+        category: PaletteCategory::Provider,
+        title: DynamicTitle::Static("Switch org"),
+        description: "Switch the active organization",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    // === Prompt ===
+    PaletteCommandEntry {
+        id: "prompt.editor_context.clear",
+        category: PaletteCategory::Prompt,
+        title: DynamicTitle::Static("Remove editor context"),
+        description: "Remove the current editor context",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    PaletteCommandEntry {
+        id: "prompt.skills",
+        category: PaletteCategory::Prompt,
+        title: DynamicTitle::Static("Skills"),
+        description: "Open the skill picker",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    PaletteCommandEntry {
+        id: "prompt.stash",
+        category: PaletteCategory::Prompt,
+        title: DynamicTitle::Static("Stash prompt"),
+        description: "Stash the current composer draft",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::PromptStash),
+    },
+    PaletteCommandEntry {
+        id: "prompt.stash.pop",
+        category: PaletteCategory::Prompt,
+        title: DynamicTitle::Static("Stash pop"),
+        description: "Restore the most recently stashed prompt",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::PromptStashPop),
+    },
+    PaletteCommandEntry {
+        id: "prompt.stash.list",
+        category: PaletteCategory::Prompt,
+        title: DynamicTitle::Static("Stash list"),
+        description: "Browse stashed prompts",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::PromptStashList),
+    },
+    // === System ===
+    PaletteCommandEntry {
+        id: "app.exit",
+        category: PaletteCategory::System,
+        title: DynamicTitle::Static("Exit the app"),
+        description: "Quit the application",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::Quit),
+    },
+    PaletteCommandEntry {
+        id: "app.debug",
+        category: PaletteCategory::System,
+        title: DynamicTitle::Static("Toggle debug panel"),
+        description: "Toggle the debug overlay",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    PaletteCommandEntry {
+        id: "app.console",
+        category: PaletteCategory::System,
+        title: DynamicTitle::Static("Toggle console"),
+        description: "Toggle the console overlay",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    PaletteCommandEntry {
+        id: "app.heap_snapshot",
+        category: PaletteCategory::System,
+        title: DynamicTitle::Static("Write heap snapshot"),
+        description: "Write a heap snapshot to disk",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    PaletteCommandEntry {
+        id: "terminal.title.toggle",
+        category: PaletteCategory::System,
+        title: DynamicTitle::Toggle {
+            enable: "Enable terminal title",
+            disable: "Disable terminal title",
+        },
+        description: "Toggle the terminal title",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    PaletteCommandEntry {
+        id: "app.toggle.animations",
+        category: PaletteCategory::System,
+        title: DynamicTitle::Toggle {
+            enable: "Enable animations",
+            disable: "Disable animations",
+        },
+        description: "Toggle UI animations",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    PaletteCommandEntry {
+        id: "app.toggle.file_context",
+        category: PaletteCategory::System,
+        title: DynamicTitle::Toggle {
+            enable: "Enable file context",
+            disable: "Disable file context",
+        },
+        description: "Toggle file context",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    PaletteCommandEntry {
+        id: "app.toggle.diffwrap",
+        category: PaletteCategory::System,
+        title: DynamicTitle::Toggle {
+            enable: "Enable diff wrapping",
+            disable: "Disable diff wrapping",
+        },
+        description: "Toggle diff wrapping mode",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    PaletteCommandEntry {
+        id: "app.toggle.paste_summary",
+        category: PaletteCategory::System,
+        title: DynamicTitle::Toggle {
+            enable: "Enable paste summary",
+            disable: "Disable paste summary",
+        },
+        description: "Toggle paste summary",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    PaletteCommandEntry {
+        id: "app.toggle.session_directory_filter",
+        category: PaletteCategory::System,
+        title: DynamicTitle::Toggle {
+            enable: "Enable session directory filtering",
+            disable: "Disable session directory filtering",
+        },
+        description: "Toggle session directory filtering",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    PaletteCommandEntry {
+        id: "tips.toggle",
+        category: PaletteCategory::System,
+        title: DynamicTitle::ShowHide {
+            show: "Show tips",
+            hide: "Hide tips",
+        },
+        description: "Toggle tips display",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Placeholder,
+    },
+    // === Harness-only commands (no Opencode equivalent) ===
+    PaletteCommandEntry {
+        id: "harness.close_review_surface",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Session shell"),
+        description: "Return to the transcript-first session shell",
+        suggested: SuggestedRule::Never,
+        harness_only: true,
+        dispatch: PaletteDispatch::Action(Action::CloseReviewSurface),
+    },
+    PaletteCommandEntry {
+        id: "harness.toggle_terminal_panel",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Toggle terminal panel"),
+        description: "Show or hide shell command output",
+        suggested: SuggestedRule::Never,
+        harness_only: true,
+        dispatch: PaletteDispatch::Action(Action::ToggleTerminalPanel),
+    },
+    PaletteCommandEntry {
+        id: "harness.toggle_follow",
+        category: PaletteCategory::Agent,
+        title: DynamicTitle::Static("Toggle follow"),
+        description: "Toggle follow mode",
+        suggested: SuggestedRule::Never,
+        harness_only: true,
+        dispatch: PaletteDispatch::Action(Action::ToggleFollow),
+    },
+    PaletteCommandEntry {
+        id: "harness.revert_workspace",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Revert workspace"),
+        description: "Revert workspace to the most recent snapshot",
+        suggested: SuggestedRule::Never,
+        harness_only: true,
+        dispatch: PaletteDispatch::Action(Action::RevertWorkspace),
+    },
+    PaletteCommandEntry {
+        id: "harness.open_lineage_browser",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Session tree"),
+        description: "Open the Harness session lineage browser",
+        suggested: SuggestedRule::Never,
+        harness_only: true,
+        dispatch: PaletteDispatch::Action(Action::OpenLineageBrowser),
+    },
+    PaletteCommandEntry {
+        id: "harness.session_child_first",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("First child session"),
+        description: "Open the first child session",
+        suggested: SuggestedRule::Never,
+        harness_only: true,
+        dispatch: PaletteDispatch::Action(Action::SessionChildFirst),
+    },
+    PaletteCommandEntry {
+        id: "harness.session_child_cycle",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Next child session"),
+        description: "Cycle to the next sibling child session",
+        suggested: SuggestedRule::Never,
+        harness_only: true,
+        dispatch: PaletteDispatch::Action(Action::SessionChildCycle),
+    },
+    PaletteCommandEntry {
+        id: "harness.session_child_cycle_reverse",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Previous child session"),
+        description: "Cycle to the previous sibling child session",
+        suggested: SuggestedRule::Never,
+        harness_only: true,
+        dispatch: PaletteDispatch::Action(Action::SessionChildCycleReverse),
+    },
+    PaletteCommandEntry {
+        id: "harness.session_parent",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Parent session"),
+        description: "Return to the parent session",
+        suggested: SuggestedRule::Never,
+        harness_only: true,
+        dispatch: PaletteDispatch::Action(Action::SessionParent),
+    },
+    PaletteCommandEntry {
+        id: "harness.stack_transcript_diffs",
+        category: PaletteCategory::Agent,
+        title: DynamicTitle::Static("Use stacked diffs"),
+        description: "Force unified stacked transcript diffs",
+        suggested: SuggestedRule::Never,
+        harness_only: true,
+        dispatch: PaletteDispatch::ToggleStackedDiffs,
+    },
+    PaletteCommandEntry {
+        id: "harness.split_transcript_diffs",
+        category: PaletteCategory::Agent,
+        title: DynamicTitle::Static("Use split diffs"),
+        description: "Allow side-by-side transcript diffs when wide",
+        suggested: SuggestedRule::Never,
+        harness_only: true,
+        dispatch: PaletteDispatch::ToggleStackedDiffs,
+    },
+    PaletteCommandEntry {
+        id: "harness.expand_turn_results",
+        category: PaletteCategory::Agent,
+        title: DynamicTitle::Static("Expand turn results"),
+        description: "Expand overflow tool output in the selected turn",
+        suggested: SuggestedRule::Never,
+        harness_only: true,
+        dispatch: PaletteDispatch::ExpandTurnResults,
+    },
+    PaletteCommandEntry {
+        id: "harness.collapse_turn_results",
+        category: PaletteCategory::Agent,
+        title: DynamicTitle::Static("Collapse turn results"),
+        description: "Collapse overflow tool output in the selected turn",
+        suggested: SuggestedRule::Never,
+        harness_only: true,
+        dispatch: PaletteDispatch::CollapseTurnResults,
+    },
+];
+
+/// Get all palette command entries.
+pub fn entries() -> &'static [PaletteCommandEntry] {
+    PALETTE_COMMAND_ENTRIES
+}
+
+/// Find an entry by command ID.
+pub fn find(id: &str) -> Option<&'static PaletteCommandEntry> {
+    PALETTE_COMMAND_ENTRIES.iter().find(|entry| entry.id == id)
+}
+
+/// Get all command IDs (including harness-only).
+pub fn all_ids() -> Vec<&'static str> {
+    PALETTE_COMMAND_ENTRIES.iter().map(|e| e.id).collect()
+}
+
+/// Get all Opencode-parity command IDs (excluding harness-only).
+pub fn parity_ids() -> Vec<&'static str> {
+    PALETTE_COMMAND_ENTRIES
+        .iter()
+        .filter(|e| !e.harness_only)
+        .map(|e| e.id)
+        .collect()
+}
+
+/// Get all harness-only command IDs.
+pub fn harness_only_ids() -> Vec<&'static str> {
+    PALETTE_COMMAND_ENTRIES
+        .iter()
+        .filter(|e| e.harness_only)
+        .map(|e| e.id)
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn entries_have_no_duplicate_ids() {
+        let ids: HashSet<&str> = PALETTE_COMMAND_ENTRIES.iter().map(|e| e.id).collect();
+        assert_eq!(
+            ids.len(),
+            PALETTE_COMMAND_ENTRIES.len(),
+            "palette command entries have duplicate IDs"
+        );
+    }
+
+    #[test]
+    fn all_parity_matrix_included_ids_have_entries() {
+        let entry_ids: HashSet<&str> = all_ids().into_iter().collect();
+        for id in crate::keybindings::parity_matrix::included_ids() {
+            assert!(
+                entry_ids.contains(id),
+                "palette registry missing included command ID from parity matrix: {id}"
+            );
+        }
+    }
+
+    #[test]
+    fn no_excluded_ids_in_registry() {
+        let entry_ids: HashSet<&str> = all_ids().into_iter().collect();
+        for id in crate::keybindings::parity_matrix::excluded_ids() {
+            assert!(
+                !entry_ids.contains(id),
+                "palette registry contains excluded command ID: {id}"
+            );
+        }
+    }
+
+    #[test]
+    fn no_hidden_non_target_ids_in_registry() {
+        let entry_ids: HashSet<&str> = all_ids().into_iter().collect();
+        for id in crate::keybindings::parity_matrix::hidden_non_target_ids() {
+            assert!(
+                !entry_ids.contains(id),
+                "palette registry contains hidden non-target command ID: {id}"
+            );
+        }
+    }
+
+    #[test]
+    fn harness_only_ids_are_prefixed() {
+        for id in harness_only_ids() {
+            assert!(
+                id.starts_with("harness."),
+                "harness-only command ID must be prefixed with 'harness.': {id}"
+            );
+        }
+    }
+}

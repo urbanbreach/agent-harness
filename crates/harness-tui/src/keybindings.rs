@@ -7,6 +7,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 
 mod command_registry;
+pub mod palette_model;
+pub mod parity_matrix;
 
 use command_registry::command_metadata;
 pub use command_registry::{
@@ -42,7 +44,6 @@ pub enum Action {
     ScrollDown,
     /// Return to the transcript-first session shell
     CloseReviewSurface,
-    /// Open the event log review surface
     OpenEventLog,
     /// Move down in the list
     MoveDown,
@@ -564,10 +565,6 @@ impl KeyMap {
         keymap.bind(
             KeyBinding::new(KeyCode::Char('2'), KeyModifiers::NONE),
             Action::ToggleOperatorSidebar,
-        );
-        keymap.bind(
-            KeyBinding::new(KeyCode::Char('3'), KeyModifiers::NONE),
-            Action::OpenEventLog,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('4'), KeyModifiers::NONE),
