@@ -396,7 +396,7 @@ transferable ideas.
 | `harness run --mock "Hello from PRD audit"` | FAIL (exit 1): `mock fixture missing for request_digest=…` | Spawned DX task T-BE-05 (actionable mock-miss error) |
 | `harness run --mock "Hello from PTY"` | PASS ("Hello world") | Confirms README path accurate as written |
 | `harness run --scenario golden_path --deterministic` + `harness replay` | PASS; 26 events; replay summary with next_steps and resume-block reason | Confirms replay surfaces; informed §7 |
-| PTY capture of `harness tui --replay <golden_path run>` (script(1), 120×40) | Renders header `Replay · read-only · run … · 26 ev`, tool rows with durations, sidebar (MCP/LSP/Modified Files `demo.txt +1 -1`), footer `Replay is read-only. ? shortcuts · ctrl+tab focus · r reload · q quit` | Confirms replay shell quality; informed §6.1/§7 |
+| PTY capture of `harness tui --replay <golden_path run>` (script(1), 120×40) | Historical capture rendered header `Replay · read-only · run … · 26 ev`, tool rows with durations, sidebar (MCP/LSP/Modified Files `demo.txt +1 -1`), and footer `Replay is read-only. ? shortcuts · ctrl+tab focus · r reload · q quit`; superseded by the 2026-06-27 TUI event-log removal, where replay footer omits `r reload`. | Confirms replay shell quality at the time; current TUI removes event-log reload affordances. |
 | PTY capture of `harness tui` startup + `Ctrl+p` | Renders HARNESS logo, composer-first home with placeholder, agent/model/variant row inside composer, hints `ctrl+t variants · tab agents · ctrl+p commands`, footer with cwd; palette shows Suggested/Sessions/Agents/System categories with per-row keybinding hints | Start-screen skeleton parity already achieved; §6.1 scopes the remaining vocabulary/finish gaps; flagged stale parity screenshot |
 | `cargo test -p harness-tui --test deterministic_render_test` | **FAIL on clean tree**: 7 passed, 2 failed (`command_palette_renders_without_pty` — committed snapshot lacks the live composer placeholder line `Type a prompt for the next turn…`; `tool_lifecycle_rows_stay_ordered_without_pty`) | Created P0 task T-TEST-01 (Phase 1); `.snap.new` artifacts deleted to leave tree clean |
 | Negative greps in harness-tui (`shell_mode`, `stash`, `leader`, `pin`, `favorite`, queue-in-composer, diff in `ui_permission_dock.rs`) | No hits | Established the §6.1 gap matrix |
@@ -1108,7 +1108,7 @@ table governs the **UI workstream only**.
 | Share/unshare, `/connect`, console-org, workspace dialogs | **excluded** | §6.4 cloud exclusion |
 | Message undo/redo | **excluded** (this PRD) | §6.4 snapshot dependency |
 | Image/SVG paste | **excluded** (this PRD) | §6.4 multimodal post-V1 |
-| Debug panel / heap snapshot / console | **excluded** | OpenCode dev tooling; Harness has the event-log review surface |
+| Debug panel / heap snapshot / console | **excluded** | OpenCode dev tooling; Harness keeps replay/session inspection outside the TUI event-log review surface |
 
 ---
 
