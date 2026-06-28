@@ -694,10 +694,13 @@ pub(crate) fn palette_overlay_rows(app: &AppState) -> Vec<PaletteOverlayRow> {
             entry
                 .and_then(|e| match e.dispatch {
                     PaletteDispatch::Action(action) => Some(app.keymap.get_binding_str(action)),
+                    PaletteDispatch::OpenModelSwitcher => {
+                        Some(app.keymap.get_binding_str(Action::OpenModelSwitcher))
+                    }
                     _ => None,
                 })
                 .filter(|s| s != "-")
-                .unwrap_or_else(|| row.category.label().to_string())
+                .unwrap_or_default()
         };
 
         overlay_rows.push(PaletteOverlayRow::Command {

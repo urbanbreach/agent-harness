@@ -442,27 +442,47 @@ const COMMAND_METADATA: &[CommandMetadata] = &[
         label: "Parent session",
         description: "Return to the parent session",
     },
+    CommandMetadata {
+        id: "variant_cycle",
+        label: "Cycle variant",
+        description: "Cycle to the next model variant",
+    },
+    CommandMetadata {
+        id: "slash_copy",
+        label: "Copy transcript",
+        description: "Copy the session transcript to clipboard",
+    },
+    CommandMetadata {
+        id: "slash_export",
+        label: "Export transcript",
+        description: "Export the session transcript to a file",
+    },
+    CommandMetadata {
+        id: "slash_timestamps",
+        label: "Toggle timestamps",
+        description: "Toggle user message timestamps",
+    },
+    CommandMetadata {
+        id: "slash_thinking",
+        label: "Toggle thinking",
+        description: "Toggle inline thinking rows",
+    },
 ];
 
 pub(super) fn command_metadata(id: &str) -> Option<&'static CommandMetadata> {
     COMMAND_METADATA.iter().find(|entry| entry.id == id)
 }
 
-const SLASH_COMMANDS: [SlashCommand; 16] = [
+const SLASH_COMMANDS: [SlashCommand; 21] = [
     SlashCommand {
         id: "new",
         metadata_id: "slash_new",
-        aliases: &["new-session", "session"],
+        aliases: &["clear"],
     },
     SlashCommand {
         id: "sessions",
         metadata_id: "slash_sessions",
-        aliases: &[],
-    },
-    SlashCommand {
-        id: "resume",
-        metadata_id: "slash_resume",
-        aliases: &["continue"],
+        aliases: &["resume", "continue"],
     },
     SlashCommand {
         id: "fork",
@@ -480,9 +500,19 @@ const SLASH_COMMANDS: [SlashCommand; 16] = [
         aliases: &[],
     },
     SlashCommand {
-        id: "model",
+        id: "models",
         metadata_id: "switch_model",
-        aliases: &["models"],
+        aliases: &["mo"],
+    },
+    SlashCommand {
+        id: "agents",
+        metadata_id: "switch_model",
+        aliases: &[],
+    },
+    SlashCommand {
+        id: "mcps",
+        metadata_id: "toggles",
+        aliases: &[],
     },
     SlashCommand {
         id: "toggles",
@@ -517,7 +547,7 @@ const SLASH_COMMANDS: [SlashCommand; 16] = [
     SlashCommand {
         id: "compact",
         metadata_id: "slash_compact",
-        aliases: &["summarize", "summary"],
+        aliases: &["summarize"],
     },
     SlashCommand {
         id: "exit",
@@ -527,7 +557,27 @@ const SLASH_COMMANDS: [SlashCommand; 16] = [
     SlashCommand {
         id: "rename",
         metadata_id: "slash_rename",
-        aliases: &["title"],
+        aliases: &[],
+    },
+    SlashCommand {
+        id: "copy",
+        metadata_id: "slash_copy",
+        aliases: &[],
+    },
+    SlashCommand {
+        id: "export",
+        metadata_id: "slash_export",
+        aliases: &[],
+    },
+    SlashCommand {
+        id: "timestamps",
+        metadata_id: "slash_timestamps",
+        aliases: &["toggle-timestamps"],
+    },
+    SlashCommand {
+        id: "thinking",
+        metadata_id: "slash_thinking",
+        aliases: &["toggle-thinking"],
     },
 ];
 
@@ -573,7 +623,7 @@ const PALETTE_COMMANDS: &[PaletteCommand] = &[
     PaletteCommand {
         id: "switch_model",
         metadata_id: "switch_model",
-        shortcut: "model",
+        shortcut: "models",
         section: PaletteCommandSection::Agent,
     },
     PaletteCommand {

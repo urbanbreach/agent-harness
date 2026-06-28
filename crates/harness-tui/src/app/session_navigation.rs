@@ -203,17 +203,19 @@ impl AppState {
 
     fn slash_command_available(&self, command: &str) -> bool {
         match command {
-            "new" | "status" | "toggles" | "auth" | "connect" | "help" | "exit" => true,
-            "resume" | "replay" => !self.replay_mode,
+            "new" | "status" | "toggles" | "auth" | "connect" | "help" | "exit" | "mcps"
+            | "timestamps" | "thinking" => true,
+            "sessions" | "replay" => !self.replay_mode,
             "fork" => !self.startup_mode && !self.replay_mode,
             "clone" => !self.startup_mode && self.lineage_write_blocked_reason().is_none(),
             "tree" => !self.startup_mode,
-            "model" => self.model_switcher_supported(),
+            "models" | "agents" => self.model_switcher_supported(),
             "events" => !self.startup_mode,
             "shell" => self.active_review_surface.is_some(),
             "follow" => !self.replay_mode && !self.startup_mode,
             "compact" => self.compact_session_supported,
             "rename" => !self.replay_mode && !self.startup_mode,
+            "copy" | "export" => !self.startup_mode,
             _ => false,
         }
     }
@@ -282,17 +284,21 @@ impl AppState {
                 self.restore_slash_draft(preserved_draft);
                 self.begin_session_history_picker(StartupLauncherAction::ContinueSession);
             }
-            "resume" => {
-                self.restore_slash_draft(preserved_draft);
-                self.begin_session_history_picker(StartupLauncherAction::ContinueSession);
-            }
             "replay" => {
                 self.restore_slash_draft(preserved_draft);
                 self.begin_session_history_picker(StartupLauncherAction::ReplaySession);
             }
-            "model" => {
+            "models" => {
                 self.restore_slash_draft(preserved_draft);
                 self.open_model_switcher();
+            }
+            "agents" => {
+                self.restore_slash_draft(preserved_draft);
+                self.open_model_switcher();
+            }
+            "mcps" => {
+                self.restore_slash_draft(preserved_draft);
+                self.open_toggles_menu();
             }
             "toggles" => {
                 self.restore_slash_draft(preserved_draft);
@@ -352,6 +358,34 @@ impl AppState {
                 .execute_passive_lineage_slash_command(preserved_draft, LineageSlashCommand::Tree),
             "clone" => self
                 .execute_passive_lineage_slash_command(preserved_draft, LineageSlashCommand::Clone),
+            "copy" => {
+                self.restore_slash_draft(preserved_draft);
+                let text: String = self
+                    .activities
+                    .iter()
+                    .map(|a| a.transcript_text.as_str())
+                    .filter(|t| !t.is_empty())
+                    .collect::<Vec<_>>()
+                    .join("\n\n");
+                if !text.is_empty() {
+                    let _ = crate::clipboard::copy(&text);
+                    self.show_toast("Copied session transcript", crate::app::ToastVariant::Info);
+                }
+            }
+            "export" => {
+                self.restore_slash_draft(preserved_draft);
+                self.execute_action(Action::ExportSession);
+            }
+            "timestamps" => {
+                self.restore_slash_draft(preserved_draft);
+                self.transcript_view.show_transcript_timestamps =
+                    !self.transcript_view.show_transcript_timestamps;
+            }
+            "thinking" => {
+                self.restore_slash_draft(preserved_draft);
+                self.transcript_view.show_transcript_thinking =
+                    !self.transcript_view.show_transcript_thinking;
+            }
             "exit" => self.execute_action(Action::Quit),
             _ => {}
         }
@@ -516,6 +550,8 @@ impl AppState {
                 self.execute_palette_command();
                 true
             }
+            KeyCode::Tab => true,
+            KeyCode::BackTab => true,
             KeyCode::PageUp => {
                 self.move_palette_selection(-10);
                 true
@@ -570,9 +606,23 @@ impl AppState {
     }
 
     fn update_palette_filter(&mut self) {
+        let filter_length = self.palette_input.len();
         let rows = super::palette_controller::compute_palette_rows(self, &self.palette_input);
         self.palette_filtered = rows.into_iter().map(|row| row.value).collect();
         self.palette_selected = 0;
+        self.palette_log
+            .push(super::palette_controller::PaletteLogEntry {
+                command_id: String::new(),
+                dialog_state: super::palette_controller::PaletteDialogState::Filtered,
+                dispatch_target: "lifecycle",
+                status: super::palette_controller::PaletteLogStatus::Success,
+                availability_reason: None,
+                filter_length,
+                error_kind: None,
+                session_id_redacted: super::palette_controller::redacted_session_id(self),
+                provider_id_redacted: super::palette_controller::redacted_provider_id(self),
+                model_id_redacted: super::palette_controller::redacted_model_id(self),
+            });
     }
 
     fn move_palette_selection(&mut self, delta: isize) {
@@ -582,23 +632,26 @@ impl AppState {
             return;
         }
 
-        if delta == -1 {
-            self.palette_selected = if self.palette_selected == 0 {
-                len - 1
-            } else {
-                self.palette_selected - 1
-            };
-            return;
+        let current = self.palette_selected as isize;
+        let mut next = current + delta;
+        while next < 0 {
+            next += len as isize;
         }
-
-        if delta == 1 {
-            self.palette_selected = (self.palette_selected + 1) % len;
-            return;
-        }
-
-        let current = self.palette_selected.min(len.saturating_sub(1)) as isize;
-        let next = (current + delta).clamp(0, len.saturating_sub(1) as isize);
-        self.palette_selected = usize::try_from(next).unwrap_or(0);
+        next %= len as isize;
+        self.palette_selected = next as usize;
+        self.palette_log
+            .push(super::palette_controller::PaletteLogEntry {
+                command_id: String::new(),
+                dialog_state: super::palette_controller::PaletteDialogState::Selected,
+                dispatch_target: "lifecycle",
+                status: super::palette_controller::PaletteLogStatus::Success,
+                availability_reason: None,
+                filter_length: self.palette_input.len(),
+                error_kind: None,
+                session_id_redacted: super::palette_controller::redacted_session_id(self),
+                provider_id_redacted: super::palette_controller::redacted_provider_id(self),
+                model_id_redacted: super::palette_controller::redacted_model_id(self),
+            });
     }
 
     fn execute_palette_command(&mut self) {
@@ -608,19 +661,47 @@ impl AppState {
         };
 
         let cmd = cmd.clone();
+        let filter_length = self.palette_input.len();
+        self.palette_input.clear();
+        self.palette_cursor = 0;
+        self.palette_filtered.clear();
+        self.palette_selected = 0;
+        self.palette_visible = false;
+
+        let log_len_before = self.palette_log.len();
         super::palette_controller::dispatch_palette_command(self, &cmd);
 
-        if !self.session_history_visible
-            && !self.model_switcher_visible
-            && !self.toggles_menu_visible
-            && !self.lineage_browser_visible
-            && !self.fork_selector_visible
+        for entry in self.palette_log.iter_mut().skip(log_len_before) {
+            entry.filter_length = filter_length;
+        }
+
+        if self.session_history_visible
+            || self.model_switcher_visible
+            || self.toggles_menu_visible
+            || self.lineage_browser_visible
+            || self.fork_selector_visible
+            || self.session_rename_visible
         {
+            self.palette_visible = true;
+        } else {
             self.close_palette();
         }
     }
 
     pub(in crate::app) fn close_palette(&mut self) {
+        self.palette_log
+            .push(super::palette_controller::PaletteLogEntry {
+                command_id: String::new(),
+                dialog_state: super::palette_controller::PaletteDialogState::Closed,
+                dispatch_target: "lifecycle",
+                status: super::palette_controller::PaletteLogStatus::Success,
+                availability_reason: None,
+                filter_length: self.palette_input.len(),
+                error_kind: None,
+                session_id_redacted: super::palette_controller::redacted_session_id(self),
+                provider_id_redacted: super::palette_controller::redacted_provider_id(self),
+                model_id_redacted: super::palette_controller::redacted_model_id(self),
+            });
         self.palette_visible = false;
         self.session_history_visible = false;
         self.model_switcher_visible = false;
@@ -662,6 +743,19 @@ impl AppState {
         self.session_history_filtered.clear();
         self.model_filtered.clear();
         self.palette_selected = 0;
+        self.palette_log
+            .push(super::palette_controller::PaletteLogEntry {
+                command_id: String::new(),
+                dialog_state: super::palette_controller::PaletteDialogState::Opened,
+                dispatch_target: "lifecycle",
+                status: super::palette_controller::PaletteLogStatus::Success,
+                availability_reason: None,
+                filter_length: 0,
+                error_kind: None,
+                session_id_redacted: super::palette_controller::redacted_session_id(self),
+                provider_id_redacted: super::palette_controller::redacted_provider_id(self),
+                model_id_redacted: super::palette_controller::redacted_model_id(self),
+            });
         self.sync_slash_overlay();
         self.sync_file_mention_overlay();
     }
