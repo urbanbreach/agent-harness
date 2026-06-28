@@ -170,7 +170,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     ParityEntry {
         id: "workspace.copy_path",
         origin: "app.tsx:586",
-        status: ParityStatus::Included,
+        status: ParityStatus::Excluded, // Harness has no workspace feature
         category: "Workspace",
         title: TitleRule::Static("Copy worktree path"),
         suggested: SuggestedRule::Never,
@@ -181,7 +181,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     ParityEntry {
         id: "workspace.list",
         origin: "app.tsx:601",
-        status: ParityStatus::Included,
+        status: ParityStatus::Excluded, // Harness has no workspace feature
         category: "Workspace",
         title: TitleRule::Static("Manage workspaces"),
         suggested: SuggestedRule::Never,
@@ -236,7 +236,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     ParityEntry {
         id: "variant.list",
         origin: "app.tsx:703",
-        status: ParityStatus::Included,
+        status: ParityStatus::Excluded, // Harness has no variant picker; variant.cycle covers cycling
         category: "Agent",
         title: TitleRule::Static("Switch model variant"),
         suggested: SuggestedRule::Never,
@@ -258,7 +258,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     ParityEntry {
         id: "console.org.switch",
         origin: "app.tsx:741",
-        status: ParityStatus::Included,
+        status: ParityStatus::Excluded, // Harness has no org switching feature
         category: "Provider",
         title: TitleRule::Static("Switch org"),
         suggested: SuggestedRule::Never,
@@ -346,7 +346,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     ParityEntry {
         id: "app.debug",
         origin: "app.tsx:817",
-        status: ParityStatus::Included,
+        status: ParityStatus::Excluded, // Harness has no debug panel overlay
         category: "System",
         title: TitleRule::Static("Toggle debug panel"),
         suggested: SuggestedRule::Never,
@@ -357,7 +357,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     ParityEntry {
         id: "app.console",
         origin: "app.tsx:826",
-        status: ParityStatus::Included,
+        status: ParityStatus::Excluded, // Harness has no console overlay
         category: "System",
         title: TitleRule::Static("Toggle console"),
         suggested: SuggestedRule::Never,
@@ -368,7 +368,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     ParityEntry {
         id: "app.heap_snapshot",
         origin: "app.tsx:835",
-        status: ParityStatus::Included,
+        status: ParityStatus::Excluded, // Harness has no heap snapshot feature
         category: "System",
         title: TitleRule::Static("Write heap snapshot"),
         suggested: SuggestedRule::Never,
@@ -390,7 +390,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     ParityEntry {
         id: "terminal.title.toggle",
         origin: "app.tsx:861",
-        status: ParityStatus::Included,
+        status: ParityStatus::Excluded, // Harness has no terminal title feature
         category: "System",
         title: TitleRule::Toggle {
             enable: "Enable terminal title",
@@ -404,7 +404,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     ParityEntry {
         id: "app.toggle.animations",
         origin: "app.tsx:875",
-        status: ParityStatus::Included,
+        status: ParityStatus::Excluded, // Harness has no animations toggle
         category: "System",
         title: TitleRule::Toggle {
             enable: "Enable animations",
@@ -418,7 +418,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     ParityEntry {
         id: "app.toggle.file_context",
         origin: "app.tsx:884",
-        status: ParityStatus::Included,
+        status: ParityStatus::Excluded, // Harness has no file context toggle
         category: "System",
         title: TitleRule::Toggle {
             enable: "Enable file context",
@@ -432,7 +432,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     ParityEntry {
         id: "app.toggle.diffwrap",
         origin: "app.tsx:893",
-        status: ParityStatus::Included,
+        status: ParityStatus::Excluded, // Harness has no diff wrap toggle
         category: "System",
         title: TitleRule::Toggle {
             enable: "Enable diff wrapping",
@@ -446,7 +446,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     ParityEntry {
         id: "app.toggle.paste_summary",
         origin: "app.tsx:903",
-        status: ParityStatus::Included,
+        status: ParityStatus::Excluded, // Harness has no paste summary toggle
         category: "System",
         title: TitleRule::Toggle {
             enable: "Enable paste summary",
@@ -460,7 +460,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     ParityEntry {
         id: "app.toggle.session_directory_filter",
         origin: "app.tsx:916",
-        status: ParityStatus::Included,
+        status: ParityStatus::Excluded, // Harness has no session directory filter toggle
         category: "System",
         title: TitleRule::Toggle {
             enable: "Enable session directory filtering",
@@ -663,7 +663,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     ParityEntry {
         id: "prompt.editor_context.clear",
         origin: "prompt/index.tsx:357",
-        status: ParityStatus::Included,
+        status: ParityStatus::Excluded, // Harness has no editor context feature
         category: "Prompt",
         title: TitleRule::Static("Remove editor context"),
         suggested: SuggestedRule::Never,
@@ -707,7 +707,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     ParityEntry {
         id: "prompt.skills",
         origin: "prompt/index.tsx:511",
-        status: ParityStatus::Included,
+        status: ParityStatus::Excluded, // Harness has no skills dialog feature
         category: "Prompt",
         title: TitleRule::Static("Skills"),
         suggested: SuggestedRule::Never,
@@ -718,7 +718,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     ParityEntry {
         id: "workspace.set",
         origin: "prompt/index.tsx:533",
-        status: ParityStatus::Included,
+        status: ParityStatus::Excluded, // Harness has no workspace feature
         category: "Session",
         title: TitleRule::Static("Warp"),
         suggested: SuggestedRule::Never,
@@ -729,7 +729,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     ParityEntry {
         id: "session.move",
         origin: "prompt/index.tsx:542",
-        status: ParityStatus::Included,
+        status: ParityStatus::Excluded, // Harness has no workspace move feature
         category: "Session",
         title: TitleRule::Static("Move session"),
         suggested: SuggestedRule::Never,
@@ -790,13 +790,13 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
         title: TitleRule::Static("Rename session"),
         suggested: SuggestedRule::Never,
         availability: AvailabilityRule::LiveSession,
-        dispatch: DispatchPath::Placeholder,
+        dispatch: DispatchPath::Dialog,
         harness_equivalent: "slash_rename",
     },
     ParityEntry {
         id: "session.timeline",
         origin: "session/index.tsx:511",
-        status: ParityStatus::Included,
+        status: ParityStatus::Excluded, // Harness has no jump-to-message timeline UI
         category: "Session",
         title: TitleRule::Static("Jump to message"),
         suggested: SuggestedRule::Never,
@@ -812,7 +812,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
         title: TitleRule::Static("Fork session"),
         suggested: SuggestedRule::Never,
         availability: AvailabilityRule::LiveSession,
-        dispatch: DispatchPath::Placeholder,
+        dispatch: DispatchPath::Dialog,
         harness_equivalent: "slash_fork",
     },
     ParityEntry {
@@ -829,7 +829,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     ParityEntry {
         id: "session.unshare",
         origin: "session/index.tsx:581",
-        status: ParityStatus::Included,
+        status: ParityStatus::Excluded, // Harness has no share URL feature
         category: "Session",
         title: TitleRule::Static("Unshare session"),
         suggested: SuggestedRule::Never,
@@ -840,7 +840,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     ParityEntry {
         id: "session.undo",
         origin: "session/index.tsx:604",
-        status: ParityStatus::Included,
+        status: ParityStatus::Excluded, // Harness has no revert message feature
         category: "Session",
         title: TitleRule::Static("Undo previous message"),
         suggested: SuggestedRule::Never,
@@ -851,7 +851,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     ParityEntry {
         id: "session.redo",
         origin: "session/index.tsx:641",
-        status: ParityStatus::Included,
+        status: ParityStatus::Excluded, // Harness has no revert/redo feature
         category: "Session",
         title: TitleRule::Static("Redo"),
         suggested: SuggestedRule::Never,
@@ -876,7 +876,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     ParityEntry {
         id: "session.toggle.conceal",
         origin: "session/index.tsx:680",
-        status: ParityStatus::Included,
+        status: ParityStatus::Excluded, // Harness has no code concealment feature
         category: "Session",
         title: TitleRule::Toggle {
             enable: "Enable code concealment",
@@ -1095,8 +1095,8 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
         title: TitleRule::Static("Copy session transcript"),
         suggested: SuggestedRule::Never,
         availability: AvailabilityRule::LiveSession,
-        dispatch: DispatchPath::Placeholder,
-        harness_equivalent: "missing",
+        dispatch: DispatchPath::Action,
+        harness_equivalent: "copy_session_transcript",
     },
     ParityEntry {
         id: "session.export",
@@ -1134,7 +1134,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     ParityEntry {
         id: "tips.toggle",
         origin: "tips.tsx:10",
-        status: ParityStatus::Included,
+        status: ParityStatus::Excluded, // Harness has no tips overlay
         category: "System",
         title: TitleRule::ShowHide {
             show: "Show tips",
@@ -1406,6 +1406,104 @@ pub fn static_title(entry: &ParityEntry) -> Option<&'static str> {
     }
 }
 
+/// Exclusion rationale for a command, if it is excluded.
+pub fn exclusion_rationale(id: &str) -> Option<&'static str> {
+    let rationales: &[(&str, &str)] = &[
+        ("workspace.copy_path", "Harness has no workspace feature"),
+        ("workspace.list", "Harness has no workspace feature"),
+        (
+            "variant.list",
+            "Harness has no variant picker; variant.cycle covers cycling",
+        ),
+        ("console.org.switch", "Harness has no org switching feature"),
+        ("app.debug", "Harness has no debug panel overlay"),
+        ("app.console", "Harness has no console overlay"),
+        ("app.heap_snapshot", "Harness has no heap snapshot feature"),
+        (
+            "terminal.title.toggle",
+            "Harness has no terminal title feature",
+        ),
+        ("app.toggle.animations", "Harness has no animations toggle"),
+        (
+            "app.toggle.file_context",
+            "Harness has no file context toggle",
+        ),
+        ("app.toggle.diffwrap", "Harness has no diff wrap toggle"),
+        (
+            "app.toggle.paste_summary",
+            "Harness has no paste summary toggle",
+        ),
+        (
+            "app.toggle.session_directory_filter",
+            "Harness has no session directory filter toggle",
+        ),
+        (
+            "prompt.editor_context.clear",
+            "Harness has no editor context feature",
+        ),
+        ("prompt.skills", "Harness has no skills dialog feature"),
+        ("workspace.set", "Harness has no workspace feature"),
+        ("session.move", "Harness has no workspace move feature"),
+        (
+            "session.timeline",
+            "Harness has no jump-to-message timeline UI",
+        ),
+        ("session.unshare", "Harness has no share URL feature"),
+        ("session.undo", "Harness has no revert message feature"),
+        ("session.redo", "Harness has no revert/redo feature"),
+        (
+            "session.toggle.conceal",
+            "Harness has no code concealment feature",
+        ),
+        ("tips.toggle", "Harness has no tips overlay"),
+        (
+            "opencode.status",
+            "Harness has no status command; doctor covers readiness checks",
+        ),
+        (
+            "theme.switch",
+            "Harness has no theme switching feature; TUI theme is config-driven",
+        ),
+        (
+            "theme.switch_mode",
+            "Harness has no theme mode switching feature",
+        ),
+        (
+            "theme.mode.lock",
+            "Harness has no theme mode locking feature",
+        ),
+        (
+            "help.show",
+            "Harness has no help overlay; keybindings are in palette and status dialog",
+        ),
+        (
+            "docs.open",
+            "Harness has no in-app docs viewer; docs are file-based",
+        ),
+        ("session.share", "Harness has no session sharing feature"),
+        (
+            "plugins.list",
+            "Harness has no plugin system; extensions are descriptor-only",
+        ),
+        (
+            "plugins.install",
+            "Harness has no plugin system; extensions are descriptor-only",
+        ),
+        (
+            "diff.open",
+            "Harness has no standalone diff viewer; diffs render inline in transcript",
+        ),
+        (
+            "prompt.editor",
+            "Harness has no external editor integration; composer is in-TUI",
+        ),
+    ];
+    rationales
+        .iter()
+        .find(|(rid, _)| *rid == id)
+        .map(|(_, r)| *r)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1427,41 +1525,19 @@ mod tests {
         let required = [
             "session.list",
             "session.new",
-            "workspace.copy_path",
-            "workspace.list",
             "model.list",
             "agent.list",
             "mcp.list",
             "variant.cycle",
-            "variant.list",
             "provider.connect",
-            "console.org.switch",
             "app.exit",
-            "app.debug",
-            "app.console",
-            "app.heap_snapshot",
-            "terminal.title.toggle",
-            "app.toggle.animations",
-            "app.toggle.file_context",
-            "app.toggle.diffwrap",
-            "app.toggle.paste_summary",
-            "app.toggle.session_directory_filter",
-            "prompt.editor_context.clear",
-            "prompt.skills",
-            "workspace.set",
-            "session.move",
             "prompt.stash",
             "prompt.stash.pop",
             "prompt.stash.list",
             "session.rename",
-            "session.timeline",
             "session.fork",
             "session.compact",
-            "session.unshare",
-            "session.undo",
-            "session.redo",
             "session.sidebar.toggle",
-            "session.toggle.conceal",
             "session.toggle.timestamps",
             "session.toggle.thinking",
             "session.toggle.actions",
@@ -1470,7 +1546,6 @@ mod tests {
             "messages.copy",
             "session.copy",
             "session.export",
-            "tips.toggle",
         ];
         for id in required {
             assert!(
@@ -1495,6 +1570,30 @@ mod tests {
             "opencode.status",
             "plugins.list",
             "plugins.install",
+            // Excluded with source-backed rationale (PRD Milestone 2):
+            "workspace.copy_path",
+            "workspace.list",
+            "variant.list",
+            "console.org.switch",
+            "app.debug",
+            "app.console",
+            "app.heap_snapshot",
+            "terminal.title.toggle",
+            "app.toggle.animations",
+            "app.toggle.file_context",
+            "app.toggle.diffwrap",
+            "app.toggle.paste_summary",
+            "app.toggle.session_directory_filter",
+            "prompt.editor_context.clear",
+            "prompt.skills",
+            "workspace.set",
+            "session.move",
+            "session.timeline",
+            "session.unshare",
+            "session.undo",
+            "session.redo",
+            "session.toggle.conceal",
+            "tips.toggle",
         ];
         for id in required {
             assert!(
