@@ -794,9 +794,6 @@ pub(super) fn replay_read_only_shortcut_hints(app: &AppState) -> String {
             .get_binding_label(Action::FocusNext, "focus")
             .to_ascii_lowercase(),
         app.keymap
-            .get_binding_label(Action::Reload, "reload")
-            .to_ascii_lowercase(),
-        app.keymap
             .get_binding_label(Action::Quit, "quit")
             .to_ascii_lowercase(),
     ]
