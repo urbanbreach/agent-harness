@@ -8,7 +8,6 @@ The operator CLI remains available:
 
 - `harness sessions list`
 - `harness sessions inspect <run-id-or-path>`
-- `harness sessions replay <run-id-or-path>`
 - `harness sessions continue <run-id-or-path>` when invoked through the interactive resume surface
 - `harness sessions export <run-id-or-path>`
 - `harness sessions tree|fork|clone`

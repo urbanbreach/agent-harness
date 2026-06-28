@@ -37,7 +37,7 @@
         "scripts/test-lanes.sh simulation",
         "cargo test -p harness-testkit --test simulation_validator_test"
       ],
-      "replay_command": "harness replay --session <simulation-run-dir> --json",
+      "replay_command": "read-only replay summary generation for <simulation-run-dir>",
       "expected_artifacts": [
         "simulation-matrix.json",
         "simulation-events.jsonl",

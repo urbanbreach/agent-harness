@@ -10,7 +10,7 @@ The CLI entry point. Contains subcommand implementations:
 
 - `harness run` - Headless scenario execution
 - `harness tui` - Interactive terminal UI
-- `harness replay` - Session replay and inspection
+- `harness sessions inspect/export` - Replay-derived session inspection and support export
 - `harness schema` - JSON Schema output
 - `harness config validate` - Config validation
 - `harness sessions list` - List recorded sessions

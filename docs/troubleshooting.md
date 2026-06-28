@@ -11,7 +11,7 @@ for execution proof.
 | Base URL or local proxy mismatch | Compare provider `baseURL` with the local proxy endpoint. | Config path, doctor JSON, prompt transport error. |
 | Missing MCP/LSP/tool prerequisites | Check doctor MCP rows and persisted tool failures. Unsupported LSP probes should be recoverable tool messages. | Tool event rows and artifact index. |
 | Missing MCP server | Confirm the `mcp` entry is enabled, the command exists, and doctor reports the server as ready. | Doctor JSON and MCP stderr artifact if any. |
-| Unsupported tool call | Replay the session read-only and inspect the failed tool output. | `harness replay --session <run> --json`. |
+| Unsupported tool call | Inspect the session read-only and review the failed tool output. | `harness sessions inspect <run> --json`. |
 | Malformed provider stream | Keep the provider error event and sanitized context; do not share raw provider payloads. | Redacted support bundle. |
 | Session resume failure | Run `harness sessions inspect <run>` and check `resume_disabled_reason`. | Inspect JSON and session path. |
 | Replay failure | Confirm `events.jsonl` exists and has contiguous sequence numbers. Replay never executes tools, providers, hooks, or MCP. | Replay stderr/JSON. |
