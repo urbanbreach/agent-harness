@@ -227,9 +227,9 @@ fn resolve_live_settings_with_deps(
     }
     let launch_metadata = if live_config.is_some() && !no_provider_connected {
         if let Some(path) = deps.model_selection_path {
-            apply_persisted_model_selection_from_path(launch_metadata, path)
+            apply_persisted_model_selection_from_path(launch_metadata, path, &config_digest)
         } else {
-            apply_persisted_model_selection(launch_metadata)
+            apply_persisted_model_selection(launch_metadata, &config_digest)
         }
     } else {
         launch_metadata

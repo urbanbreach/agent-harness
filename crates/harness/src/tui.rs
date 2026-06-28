@@ -138,8 +138,9 @@ use self::workflow::{
 
 #[cfg(test)]
 use self::model_selection::{
-    apply_model_selection_to_launch_metadata, load_persisted_model_selection_from_path,
-    save_persisted_model_selection_to_path, PersistedModelSelection,
+    apply_model_selection_to_launch_metadata, apply_persisted_model_selection_from_path,
+    load_persisted_model_selection_from_path, save_persisted_model_selection_to_path,
+    PersistedModelSelection,
 };
 
 #[cfg(test)]
@@ -433,7 +434,10 @@ async fn run_interactive_mode(
     .await;
 
     if persist_model_selection {
-        persist_launch_selection_for_exit(&recover_mutex_lock(&launch_selection));
+        persist_launch_selection_for_exit(
+            &recover_mutex_lock(&launch_selection),
+            &settings.config_digest,
+        );
     }
     close_preserved_terminal_session().map_err(|err| err.to_string())?;
     result
@@ -528,7 +532,10 @@ async fn run_direct_continue_mode(
     .await;
 
     if persist_model_selection {
-        persist_launch_selection_for_exit(&recover_mutex_lock(&launch_selection));
+        persist_launch_selection_for_exit(
+            &recover_mutex_lock(&launch_selection),
+            &settings.config_digest,
+        );
     }
     close_preserved_terminal_session().map_err(|err| err.to_string())?;
     result
@@ -549,7 +556,12 @@ async fn run_startup_launcher(
     let auth_update_tx = live_update_tx.clone();
     let startup_auth_backend = auth_backend.clone();
     let on_ui_intent = Arc::new(move |intent: UiIntent| {
-        if handle_model_switch_intent(&intent, &launch_selection, persist_model_selection) {
+        if handle_model_switch_intent(
+            &intent,
+            &launch_selection,
+            persist_model_selection,
+            &auth_backend.config_digest,
+        ) {
             return;
         }
 
@@ -731,6 +743,7 @@ async fn run_continue_session_bootstrap(
         intent_tx.clone(),
         Arc::clone(&launch_selection),
         settings.config.is_some() && !demo_mode,
+        settings.config_digest.clone(),
     );
 
     let exit_on_finish = cmd.exit_on_finish;

@@ -78,6 +78,7 @@ pub(super) async fn run_new_live_session(
         intent_tx.clone(),
         Arc::clone(&launch_selection),
         settings.config.is_some() && !demo_mode,
+        settings.config_digest.clone(),
     );
 
     let exit_on_finish = cmd.exit_on_finish;
