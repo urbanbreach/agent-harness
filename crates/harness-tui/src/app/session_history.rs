@@ -640,16 +640,22 @@ impl AppState {
         }
     }
 
-    fn open_session_rename_dialog(&mut self) {
-        let Some(entry) = self.selected_session_history_entry() else {
+    pub(in crate::app) fn open_session_rename_dialog(&mut self) {
+        if let Some(entry) = self.selected_session_history_entry() {
+            let run_id = entry.catalog.run_id.clone();
+            let title = session_history_display_title(entry).to_string();
+            self.session_rename_target_run_id = Some(run_id);
+            self.session_rename_input = title;
+            self.session_rename_cursor = self.session_rename_input.chars().count();
+            self.session_rename_visible = true;
             return;
-        };
-        let run_id = entry.catalog.run_id.clone();
-        let title = session_history_display_title(entry).to_string();
-        self.session_rename_target_run_id = Some(run_id);
-        self.session_rename_input = title;
-        self.session_rename_cursor = self.session_rename_input.chars().count();
-        self.session_rename_visible = true;
+        }
+        if let Some(run_id) = self.run_id().map(str::to_string) {
+            self.session_rename_target_run_id = Some(run_id.clone());
+            self.session_rename_input = run_id;
+            self.session_rename_cursor = self.session_rename_input.chars().count();
+            self.session_rename_visible = true;
+        }
     }
 
     fn handle_session_rename_key(&mut self, key: &KeyEvent) -> bool {

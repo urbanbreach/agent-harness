@@ -8,6 +8,7 @@ version.workspace = true
 anyhow = "1.0"
 ratatui.workspace = true
 crossterm = { workspace = true, features = ["event-stream"] }
+fuzzy-matcher = "0.3"
 harness-core = { path = "../harness-core" }
 imara-diff = "0.2"
 serde.workspace = true

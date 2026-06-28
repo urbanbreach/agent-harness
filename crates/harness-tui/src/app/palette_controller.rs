@@ -9,10 +9,97 @@
 //! - Non-empty filter has no suggested duplicates
 //! - No-result text is exactly "No results found"
 
+use std::sync::LazyLock;
+
+use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzy_matcher::FuzzyMatcher;
+
 use crate::app::AppState;
 use crate::keybindings::palette_model::{
     entries, find, DynamicTitle, PaletteCategory, PaletteCommandEntry, SuggestedRule,
 };
+
+static FUZZY_MATCHER: LazyLock<SkimMatcherV2> = LazyLock::new(SkimMatcherV2::default);
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PaletteLogEntry {
+    pub command_id: String,
+    pub dialog_state: PaletteDialogState,
+    pub dispatch_target: &'static str,
+    pub status: PaletteLogStatus,
+    pub availability_reason: Option<&'static str>,
+    pub filter_length: usize,
+    pub error_kind: Option<&'static str>,
+    pub session_id_redacted: Option<String>,
+    pub provider_id_redacted: Option<String>,
+    pub model_id_redacted: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PaletteDialogState {
+    Opened,
+    Filtered,
+    Selected,
+    Closed,
+    DispatchStarted,
+    DispatchSucceeded,
+    DispatchFailed,
+    Rejected,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PaletteLogStatus {
+    Success,
+    Failure,
+    Rejected,
+}
+
+fn dispatch_target_label(entry: &PaletteCommandEntry) -> &'static str {
+    use crate::keybindings::palette_model::PaletteDispatch;
+    match entry.dispatch {
+        PaletteDispatch::Action(_) => "action",
+        PaletteDispatch::ToggleTranscriptThinking
+        | PaletteDispatch::ToggleTranscriptTimestamps
+        | PaletteDispatch::ToggleToolDetails
+        | PaletteDispatch::ToggleGenericToolOutput
+        | PaletteDispatch::ToggleStackedDiffs
+        | PaletteDispatch::ExpandTurnResults
+        | PaletteDispatch::CollapseTurnResults => "local_toggle",
+        PaletteDispatch::OpenSessionHistory
+        | PaletteDispatch::OpenSessionRename
+        | PaletteDispatch::OpenForkSelector
+        | PaletteDispatch::OpenModelSwitcher
+        | PaletteDispatch::OpenTogglesMenu
+        | PaletteDispatch::OpenAuth
+        | PaletteDispatch::OpenEventLog
+        | PaletteDispatch::OpenConnectDialog => "dialog",
+        PaletteDispatch::NewSession | PaletteDispatch::CompactSession => "intent",
+        PaletteDispatch::CopySessionTranscript => "action",
+        PaletteDispatch::Placeholder => "failure",
+    }
+}
+
+pub(crate) fn redacted_session_id(app: &AppState) -> Option<String> {
+    app.run_id()
+        .map(|id| format!("session:{}", &id[..id.len().min(8)]))
+}
+
+pub(crate) fn redacted_provider_id(app: &AppState) -> Option<String> {
+    if app.launch_metadata.has_provider() {
+        Some(format!(
+            "provider:{}",
+            &app.launch_metadata.provider()[..app.launch_metadata.provider().len().min(8)]
+        ))
+    } else {
+        None
+    }
+}
+
+pub(crate) fn redacted_model_id(app: &AppState) -> Option<String> {
+    app.launch_metadata
+        .model()
+        .map(|id| format!("model:{}", &id[..id.len().min(8)]))
+}
 
 /// A resolved palette row after filtering and grouping.
 #[derive(Debug, Clone)]
@@ -179,6 +266,7 @@ pub fn compute_palette_rows(app: &AppState, filter: &str) -> Vec<PaletteRow> {
     let needle = filter.to_lowercase();
     let mut available: Vec<&PaletteCommandEntry> = entries()
         .iter()
+        .filter(|entry| !entry.harness_only)
         .filter(|entry| is_available(app, entry))
         .collect();
 
@@ -224,7 +312,7 @@ pub fn compute_palette_rows(app: &AppState, filter: &str) -> Vec<PaletteRow> {
 
         rows
     } else {
-        let mut scored: Vec<(usize, usize, &PaletteCommandEntry)> = Vec::new();
+        let mut scored: Vec<(i64, usize, &PaletteCommandEntry)> = Vec::new();
 
         for (index, entry) in available.iter().enumerate() {
             let title = resolve_title(app, entry).to_lowercase();
@@ -233,24 +321,20 @@ pub fn compute_palette_rows(app: &AppState, filter: &str) -> Vec<PaletteRow> {
             let title_score = fuzzy_subsequence_score(&title, &needle);
             let category_score = fuzzy_subsequence_score(&category, &needle);
 
-            // Title weighted higher: category score is doubled (penalized)
-            // so title matches produce lower (better) overall scores.
-            // This mirrors Opencode's scoreFn: r[0].score * 2 + r[1].score
-            // where fuzzysort scores are negative (lower = better).
             let score = match (title_score, category_score) {
-                (Some(t), Some(c)) => t.saturating_add(c.saturating_mul(2)),
-                (Some(t), None) => t,
-                (None, Some(c)) => c.saturating_mul(2),
+                (Some(t), Some(c)) => t.saturating_mul(2).saturating_add(c),
+                (Some(t), None) => t.saturating_mul(2),
+                (None, Some(c)) => c,
                 (None, None) => continue,
             };
 
             scored.push((score, index, entry));
         }
 
-        let mut grouped: Vec<(&PaletteCommandEntry, usize)> = Vec::new();
+        let mut grouped: Vec<(&PaletteCommandEntry, i64)> = Vec::new();
         let mut category_buckets: std::collections::BTreeMap<
             usize,
-            Vec<(usize, usize, &PaletteCommandEntry)>,
+            Vec<(i64, usize, &PaletteCommandEntry)>,
         > = std::collections::BTreeMap::new();
 
         for (score, index, entry) in &scored {
@@ -286,39 +370,13 @@ pub fn compute_palette_rows(app: &AppState, filter: &str) -> Vec<PaletteRow> {
     }
 }
 
-/// Fuzzy subsequence match: returns Some(score) if needle is a subsequence of haystack.
-/// Lower score = better match. Score is the number of characters between matches.
-pub(crate) fn fuzzy_subsequence_score(haystack: &str, needle: &str) -> Option<usize> {
+pub(crate) fn fuzzy_subsequence_score(haystack: &str, needle: &str) -> Option<i64> {
     if needle.is_empty() {
         return Some(0);
     }
-
-    let haystack_chars: Vec<char> = haystack.chars().collect();
-    let needle_chars: Vec<char> = needle.chars().collect();
-
-    let mut haystack_idx = 0;
-    let mut total_gap = 0;
-    let mut last_match = 0;
-
-    for needle_char in &needle_chars {
-        let mut found = false;
-        while haystack_idx < haystack_chars.len() {
-            if haystack_chars[haystack_idx] == *needle_char {
-                total_gap += haystack_idx - last_match;
-                last_match = haystack_idx + 1;
-                haystack_idx += 1;
-                found = true;
-                break;
-            }
-            haystack_idx += 1;
-        }
-        if !found {
-            return None;
-        }
-    }
-
-    // Prefer prefix matches (lower gap = better)
-    Some(total_gap)
+    FUZZY_MATCHER
+        .fuzzy_match(haystack, needle)
+        .map(|score| -score)
 }
 
 /// Dispatch a palette command by its value (which may be `suggested:<id>`).
@@ -331,8 +389,34 @@ pub fn dispatch_palette_command(app: &mut AppState, value: &str) {
     };
 
     if !is_available(app, entry) {
+        app.palette_log.push(PaletteLogEntry {
+            command_id: entry.id.to_string(),
+            dialog_state: PaletteDialogState::Rejected,
+            dispatch_target: dispatch_target_label(entry),
+            status: PaletteLogStatus::Rejected,
+            availability_reason: Some("unavailable"),
+            filter_length: app.palette_input.len(),
+            error_kind: None,
+            session_id_redacted: redacted_session_id(app),
+            provider_id_redacted: redacted_provider_id(app),
+            model_id_redacted: redacted_model_id(app),
+        });
         return;
     }
+
+    let target = dispatch_target_label(entry);
+    app.palette_log.push(PaletteLogEntry {
+        command_id: entry.id.to_string(),
+        dialog_state: PaletteDialogState::DispatchStarted,
+        dispatch_target: target,
+        status: PaletteLogStatus::Success,
+        availability_reason: None,
+        filter_length: app.palette_input.len(),
+        error_kind: None,
+        session_id_redacted: redacted_session_id(app),
+        provider_id_redacted: redacted_provider_id(app),
+        model_id_redacted: redacted_model_id(app),
+    });
 
     use crate::keybindings::palette_model::PaletteDispatch;
     match entry.dispatch {
@@ -367,6 +451,12 @@ pub fn dispatch_palette_command(app: &mut AppState, value: &str) {
         PaletteDispatch::OpenSessionHistory => {
             app.begin_session_history_picker(crate::app::StartupLauncherAction::ContinueSession);
         }
+        PaletteDispatch::OpenSessionRename => {
+            app.open_session_rename_dialog();
+        }
+        PaletteDispatch::OpenForkSelector => {
+            app.open_fork_selector();
+        }
         PaletteDispatch::OpenModelSwitcher => {
             app.open_model_switcher();
         }
@@ -394,13 +484,52 @@ pub fn dispatch_palette_command(app: &mut AppState, value: &str) {
         PaletteDispatch::CompactSession => {
             app.emit_ui_intent(crate::app::UiIntent::CompactSession);
         }
+        PaletteDispatch::CopySessionTranscript => {
+            let text: String = app
+                .activities
+                .iter()
+                .map(|a| a.transcript_text.as_str())
+                .filter(|t| !t.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            if !text.is_empty() {
+                let _ = crate::clipboard::copy(&text);
+                app.show_toast("Copied session transcript", crate::app::ToastVariant::Info);
+            }
+        }
         PaletteDispatch::Placeholder => {
             app.status_banner = Some(format!(
                 "{} is not yet available in Harness",
                 resolve_title(app, entry)
             ));
+            app.palette_log.push(PaletteLogEntry {
+                command_id: entry.id.to_string(),
+                dialog_state: PaletteDialogState::DispatchFailed,
+                dispatch_target: "failure",
+                status: PaletteLogStatus::Failure,
+                availability_reason: None,
+                filter_length: app.palette_input.len(),
+                error_kind: Some("placeholder"),
+                session_id_redacted: redacted_session_id(app),
+                provider_id_redacted: redacted_provider_id(app),
+                model_id_redacted: redacted_model_id(app),
+            });
+            return;
         }
     }
+
+    app.palette_log.push(PaletteLogEntry {
+        command_id: entry.id.to_string(),
+        dialog_state: PaletteDialogState::DispatchSucceeded,
+        dispatch_target: target,
+        status: PaletteLogStatus::Success,
+        availability_reason: None,
+        filter_length: app.palette_input.len(),
+        error_kind: None,
+        session_id_redacted: redacted_session_id(app),
+        provider_id_redacted: redacted_provider_id(app),
+        model_id_redacted: redacted_model_id(app),
+    });
 }
 
 #[cfg(test)]
@@ -408,30 +537,40 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fuzzy_subsequence_matches_title() {
-        assert!(fuzzy_subsequence_score("switch model", "swi").is_some());
-        assert!(fuzzy_subsequence_score("switch model", "swi").is_some());
+    fn compute_palette_rows_matches_title() {
+        let app = AppState::new_live(None, false, None);
+        let rows = compute_palette_rows(&app, "swi");
+        assert!(
+            !rows.is_empty(),
+            "query 'swi' must match 'Switch model' title"
+        );
     }
 
     #[test]
-    fn fuzzy_subsequence_returns_none_for_no_match() {
-        assert!(fuzzy_subsequence_score("switch model", "xyz").is_none());
+    fn compute_palette_rows_returns_empty_for_no_match() {
+        let app = AppState::new_live(None, false, None);
+        let rows = compute_palette_rows(&app, "xyz");
+        assert!(rows.is_empty(), "query 'xyz' must produce no results");
     }
 
     #[test]
-    fn fuzzy_subsequence_empty_needle_matches() {
-        assert_eq!(fuzzy_subsequence_score("anything", ""), Some(0));
+    fn compute_palette_rows_empty_filter_returns_all() {
+        let app = AppState::new_live(None, false, None);
+        let rows = compute_palette_rows(&app, "");
+        assert!(
+            !rows.is_empty(),
+            "empty filter must return all available commands"
+        );
     }
 
     #[test]
-    fn title_score_weighted_higher_than_category() {
-        // "session" appears in both title and category for session commands
-        // Title match should produce a lower (better) score than category-only match
-        let title_score = fuzzy_subsequence_score("switch session", "session");
-        let category_score = fuzzy_subsequence_score("session", "session");
-        assert!(title_score.is_some());
-        assert!(category_score.is_some());
-        // Title weighted 2x, category weighted 1x - title should still be better or equal
-        // because the needle is found earlier in the title
+    fn compute_palette_rows_title_weighted_higher_than_category() {
+        let app = AppState::new_live(None, false, None);
+        let rows = compute_palette_rows(&app, "session");
+        assert!(!rows.is_empty());
+        assert!(
+            rows[0].title.to_lowercase().contains("session"),
+            "title match must rank first for query 'session'"
+        );
     }
 }
