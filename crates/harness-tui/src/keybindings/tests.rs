@@ -50,7 +50,7 @@ fn command_metadata_covers_palette_and_slash_commands() {
 fn slash_and_palette_shared_commands_use_same_metadata() {
     // arrange
     let shared_commands = [
-        ("model", "switch_model"),
+        ("models", "switch_model"),
         ("toggles", "toggles"),
         ("help", "help"),
         ("shell", "close_review_surface"),

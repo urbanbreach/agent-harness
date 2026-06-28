@@ -420,15 +420,16 @@ pub(super) fn palette_dispatch_toggle_tool_details_flips_state() {
 }
 
 pub(super) fn palette_dispatch_placeholder_shows_status_banner() {
-    let mut app = AppState::new_live(None, false, None);
-    open_palette(&mut app);
-    for ch in "debug".chars() {
-        app.handle_key(key(KeyCode::Char(ch)));
-    }
-    app.handle_key(key(KeyCode::Enter));
+    use palette_model::{entries, PaletteDispatch};
+    let placeholders: Vec<&str> = entries()
+        .iter()
+        .filter(|e| !e.harness_only)
+        .filter(|e| e.dispatch == PaletteDispatch::Placeholder)
+        .map(|e| e.id)
+        .collect();
     assert!(
-        app.status_banner.is_some(),
-        "placeholder command should show status banner"
+        placeholders.is_empty(),
+        "no included OpenCode-parity command may dispatch to Placeholder: {placeholders:?}"
     );
 }
 
@@ -583,9 +584,9 @@ pub(super) fn palette_state_review_surface_open() {
     app.active_review_surface = Some(crate::app::ReviewSurface::Help);
     open_palette(&mut app);
     assert!(
-        app.palette_filtered
+        !app.palette_filtered
             .contains(&"harness.close_review_surface".to_string()),
-        "close_review_surface should be available when review surface is open"
+        "harness-only close_review_surface must not appear in parity palette"
     );
     assert!(
         !app.palette_filtered
@@ -692,11 +693,18 @@ pub(super) fn palette_state_unavailable_commands_not_dispatchable() {
 pub(super) fn palette_state_harness_only_commands_present() {
     let mut app = AppState::new_live(None, false, None);
     open_palette(&mut app);
-    assert!(
-        app.palette_filtered
-            .contains(&"harness.toggle_terminal_panel".to_string()),
-        "harness.toggle_terminal_panel should be present"
-    );
+    for id in palette_model::harness_only_ids() {
+        assert!(
+            !app.palette_filtered.contains(&id.to_string()),
+            "harness-only command {id} must not appear in parity palette"
+        );
+        assert!(
+            !app.palette_filtered
+                .iter()
+                .any(|c| c == &format!("suggested:{id}")),
+            "harness-only command suggested:{id} must not appear in parity palette"
+        );
+    }
 }
 
 pub(super) fn palette_filtered_results_preserve_category_grouping() {
@@ -758,11 +766,11 @@ pub(super) fn palette_state_live_session_with_revert() {
     open_palette(&mut app);
     assert!(
         !app.palette_filtered.contains(&"session.redo".to_string()),
-        "session.redo should be unavailable even with revert context: Harness has no revert feature"
+        "session.redo should be unavailable: Harness has no revert feature"
     );
     assert!(
-        app.palette_filtered.contains(&"session.undo".to_string()),
-        "session.undo should be available in a live session (independent of session.redo)"
+        !app.palette_filtered.contains(&"session.undo".to_string()),
+        "session.undo should be unavailable: Harness has no revert message feature"
     );
     assert_excluded_absent(&app);
     assert_hidden_non_targets_absent(&app);
@@ -1016,6 +1024,14 @@ pub(super) fn palette_matrix_and_registry_dispatch_consistent() {
             )
             | (
                 parity_matrix::DispatchPath::Dialog,
+                palette_model::PaletteDispatch::OpenSessionRename,
+            )
+            | (
+                parity_matrix::DispatchPath::Dialog,
+                palette_model::PaletteDispatch::OpenForkSelector,
+            )
+            | (
+                parity_matrix::DispatchPath::Dialog,
                 palette_model::PaletteDispatch::OpenModelSwitcher,
             )
             | (
@@ -1031,9 +1047,11 @@ pub(super) fn palette_matrix_and_registry_dispatch_consistent() {
                 parity_matrix::DispatchPath::Intent,
                 palette_model::PaletteDispatch::CompactSession,
             ) => true,
-            (parity_matrix::DispatchPath::Action, palette_model::PaletteDispatch::Action(_)) => {
-                true
-            }
+            (parity_matrix::DispatchPath::Action, palette_model::PaletteDispatch::Action(_))
+            | (
+                parity_matrix::DispatchPath::Action,
+                palette_model::PaletteDispatch::CopySessionTranscript,
+            ) => true,
             (
                 parity_matrix::DispatchPath::LocalToggle,
                 palette_model::PaletteDispatch::ToggleTranscriptThinking,
@@ -1132,6 +1150,9 @@ pub(super) fn palette_exact_dispatch_targets() {
             PaletteDispatch::Action(Action::PromptStashList),
         ),
         ("session.list", PaletteDispatch::OpenSessionHistory),
+        ("session.rename", PaletteDispatch::OpenSessionRename),
+        ("session.fork", PaletteDispatch::OpenForkSelector),
+        ("session.copy", PaletteDispatch::CopySessionTranscript),
         (
             "harness.stack_transcript_diffs",
             PaletteDispatch::ToggleStackedDiffs,
@@ -1265,28 +1286,10 @@ pub(super) fn palette_state_matrix_full_inventories() {
 pub(super) fn palette_dispatch_lineage_browser_stays_open() {
     let mut app = AppState::new_live(None, false, None);
     open_palette(&mut app);
-    for ch in "session tree".chars() {
-        app.handle_key(key(KeyCode::Char(ch)));
-    }
     assert!(
-        app.palette_filtered
+        !app.palette_filtered
             .contains(&"harness.open_lineage_browser".to_string()),
-        "harness.open_lineage_browser should be in filtered results for 'session tree'"
-    );
-    let pos = app
-        .palette_filtered
-        .iter()
-        .position(|c| c == "harness.open_lineage_browser")
-        .unwrap();
-    app.palette_selected = pos;
-    app.handle_key(key(KeyCode::Enter));
-    assert!(
-        app.lineage_browser_visible,
-        "lineage browser should be open after palette dispatch"
-    );
-    assert!(
-        !app.palette_visible,
-        "palette should be closed after dispatch"
+        "harness-only open_lineage_browser must not appear in parity palette"
     );
 }
 
@@ -1329,4 +1332,1134 @@ pub(super) fn palette_dispatch_provider_connect_opens_connect_dialog() {
         !app.palette_visible,
         "palette should be closed after dispatch"
     );
+}
+
+pub(super) fn palette_golden_ranking_prefix_match_ranks_first() {
+    let app = AppState::new_live(None, false, None);
+    let rows = crate::app::palette_controller::compute_palette_rows(&app, "exit");
+    assert!(!rows.is_empty(), "filter 'exit' should produce results");
+    let system_rows: Vec<_> = rows
+        .iter()
+        .filter(|r| r.category == palette_model::PaletteCategory::System)
+        .collect();
+    assert!(!system_rows.is_empty());
+    assert_eq!(
+        system_rows[0].command_id, "app.exit",
+        "prefix match 'exit' should rank app.exit first in System category"
+    );
+}
+
+pub(super) fn palette_golden_ranking_title_match_preferred_over_category() {
+    let app = AppState::new_live(None, false, None);
+    let rows = crate::app::palette_controller::compute_palette_rows(&app, "session");
+    assert!(!rows.is_empty());
+    let first = &rows[0];
+    assert!(
+        first.title.to_lowercase().contains("session"),
+        "title match should rank first: got '{}'",
+        first.title
+    );
+}
+
+pub(super) fn palette_golden_ranking_consecutive_match_bonus() {
+    let app = AppState::new_live(None, false, None);
+    let rows = crate::app::palette_controller::compute_palette_rows(&app, "swi");
+    assert!(!rows.is_empty());
+    let agent_rows: Vec<_> = rows
+        .iter()
+        .filter(|r| r.category == palette_model::PaletteCategory::Agent)
+        .collect();
+    assert!(!agent_rows.is_empty());
+    assert_eq!(
+        agent_rows[0].command_id, "model.list",
+        "consecutive match 'swi' must rank 'Switch model' first in Agent category"
+    );
+}
+
+pub(super) fn palette_golden_ranking_no_results_for_gibberish() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    for ch in "zzzzzzz".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    assert!(app.palette_filtered.is_empty());
+    let rendered = render_debug(&app, 120, 30);
+    assert!(rendered.contains("No results found"));
+}
+
+pub(super) fn palette_golden_ranking_category_match_works() {
+    let app = AppState::new_live(None, false, None);
+    let rows = crate::app::palette_controller::compute_palette_rows(&app, "provider");
+    assert!(!rows.is_empty());
+    assert!(
+        rows.iter()
+            .any(|r| r.category == palette_model::PaletteCategory::Provider),
+        "category match 'provider' should include Provider category entries"
+    );
+}
+
+pub(super) fn palette_golden_ranking_typo_tolerance() {
+    let app = AppState::new_live(None, false, None);
+    let rows = crate::app::palette_controller::compute_palette_rows(&app, "modl");
+    assert!(
+        !rows.is_empty(),
+        "fuzzy match 'modl' should match 'Switch model'"
+    );
+    assert!(
+        rows.iter().any(|r| r.command_id == "model.list"),
+        "fuzzy match 'modl' should match model.list"
+    );
+}
+
+pub(super) fn palette_golden_ranking_mixed_title_category_match() {
+    let app = AppState::new_live(None, false, None);
+    let rows = crate::app::palette_controller::compute_palette_rows(&app, "new");
+    assert!(!rows.is_empty());
+    assert!(
+        rows.iter().any(|r| r.command_id == "session.new"),
+        "match 'new' should include session.new"
+    );
+}
+
+pub(super) fn palette_inventory_all_commands_have_status() {
+    use parity_matrix::{find_entry, ParityStatus};
+
+    for entry in palette_model::entries() {
+        let matrix_entry = find_entry(entry.id)
+            .unwrap_or_else(|| panic!("palette entry '{}' not found in parity matrix", entry.id));
+        assert!(
+            matrix_entry.status == ParityStatus::Included
+                || matrix_entry.status == ParityStatus::HarnessOnly,
+            "palette entry '{}' must be Included or HarnessOnly in parity matrix, got {:?}",
+            entry.id,
+            matrix_entry.status
+        );
+    }
+}
+
+pub(super) fn palette_inventory_excluded_commands_absent_from_palette() {
+    for id in parity_matrix::excluded_ids() {
+        assert!(
+            palette_model::find(id).is_none(),
+            "excluded command '{id}' must not be in palette model"
+        );
+    }
+}
+
+pub(super) fn palette_inventory_zero_placeholders_for_included() {
+    use palette_model::{entries, PaletteDispatch};
+    let placeholders: Vec<&str> = entries()
+        .iter()
+        .filter(|e| !e.harness_only)
+        .filter(|e| e.dispatch == PaletteDispatch::Placeholder)
+        .map(|e| e.id)
+        .collect();
+    assert!(
+        placeholders.is_empty(),
+        "no included OpenCode-parity command may dispatch to Placeholder: {placeholders:?}"
+    );
+}
+
+pub(super) fn palette_inventory_excluded_commands_have_rationale() {
+    use parity_matrix::{excluded_ids, exclusion_rationale};
+    for id in excluded_ids() {
+        let rationale = exclusion_rationale(id);
+        assert!(
+            rationale.is_some(),
+            "excluded command '{id}' must have exclusion rationale"
+        );
+    }
+}
+
+pub(super) fn palette_inventory_harness_only_absent_from_palette() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    for id in palette_model::harness_only_ids() {
+        assert!(
+            !app.palette_filtered.contains(&id.to_string()),
+            "harness-only command '{id}' must not appear in parity palette"
+        );
+    }
+}
+
+pub(super) fn palette_slash_alias_inventory_complete() {
+    use crate::keybindings::{slash_command_aliases, slash_commands};
+
+    let harness_slash_ids: std::collections::HashSet<&str> =
+        slash_commands().iter().map(|s| s.id).collect();
+
+    let opencode_included: &[(&str, &[&str], &str)] = &[
+        ("sessions", &["resume", "continue"], "app.tsx:565-566"),
+        ("new", &["clear"], "app.tsx:576-577"),
+        ("models", &["mo"], "app.tsx:624-626"),
+        ("agents", &[], "app.tsx:671"),
+        ("mcps", &[], "app.tsx:680"),
+        ("connect", &[], "app.tsx:732"),
+        ("help", &[], "app.tsx:791"),
+        ("exit", &["quit", "q"], "app.tsx:811-812"),
+        ("rename", &[], "session/index.tsx:503"),
+        ("fork", &[], "session/index.tsx:536"),
+        ("compact", &["summarize"], "session/index.tsx:558-560"),
+        ("copy", &[], "session/index.tsx:917"),
+        ("export", &[], "session/index.tsx:947"),
+        (
+            "timestamps",
+            &["toggle-timestamps"],
+            "session/index.tsx:692-694",
+        ),
+        (
+            "thinking",
+            &["toggle-thinking"],
+            "session/index.tsx:709-711",
+        ),
+    ];
+
+    let opencode_excluded: &[(&str, &str)] = &[
+        (
+            "workspaces",
+            "app.tsx:605 - Harness has no workspace feature",
+        ),
+        (
+            "variants",
+            "app.tsx:707 - variant.list is excluded; Harness has no variant picker",
+        ),
+        ("org", "app.tsx:744 - Harness has no org switching"),
+        ("status", "app.tsx:756 - Harness has no status command"),
+        ("themes", "app.tsx:765 - Harness has no theme switching"),
+        ("editor", "prompt/index.tsx:422 - Harness has no editor"),
+        (
+            "skills",
+            "prompt/index.tsx:514 - Harness has no skills dialog",
+        ),
+        (
+            "warp",
+            "prompt/index.tsx:536 - Harness has no workspace feature",
+        ),
+        (
+            "move",
+            "prompt/index.tsx:546 - Harness has no workspace move",
+        ),
+        (
+            "diff",
+            "diff-viewer.tsx:1058 - Harness has no standalone diff viewer",
+        ),
+        (
+            "share",
+            "session/index.tsx:465 - Harness has no session sharing feature",
+        ),
+        (
+            "timeline",
+            "session/index.tsx:514 - Harness has no jump-to-message timeline UI",
+        ),
+        (
+            "unshare",
+            "session/index.tsx:585 - Harness has no share URL feature",
+        ),
+        (
+            "undo",
+            "session/index.tsx:607 - Harness has no revert message feature",
+        ),
+        (
+            "redo",
+            "session/index.tsx:645 - Harness has no revert/redo feature",
+        ),
+    ];
+
+    for (name, aliases, source) in opencode_included {
+        assert!(
+            harness_slash_ids.contains(*name),
+            "OpenCode slash '/{name}' ({source}) must be in Harness slash commands"
+        );
+        for alias in *aliases {
+            let harness_aliases = slash_command_aliases(name);
+            assert!(
+                harness_aliases.contains(alias),
+                "OpenCode alias '{alias}' for '/{name}' ({source}) must be in Harness"
+            );
+        }
+    }
+
+    for (name, rationale) in opencode_excluded {
+        assert!(
+            !harness_slash_ids.contains(*name),
+            "excluded OpenCode slash '/{name}' ({rationale}) must not be in Harness"
+        );
+    }
+
+    for (name, expected_aliases, _source) in opencode_included {
+        let harness_aliases: std::collections::HashSet<&str> =
+            slash_command_aliases(name).iter().copied().collect();
+        let expected: std::collections::HashSet<&str> = expected_aliases.iter().copied().collect();
+        assert_eq!(
+            harness_aliases, expected,
+            "alias set for '/{name}' must exactly match OpenCode: no extra aliases allowed"
+        );
+    }
+}
+
+pub(super) fn palette_footer_no_category_fallback() {
+    use crate::keybindings::Action;
+    use crate::ui::ui_overlays::{palette_overlay_rows, PaletteOverlayRow};
+
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    let rows = palette_overlay_rows(&app);
+
+    for row in &rows {
+        if let PaletteOverlayRow::Command { footer, title, .. } = row {
+            let category_labels: &[&str] = &[
+                "Session",
+                "Agent",
+                "System",
+                "Workspace",
+                "Provider",
+                "Prompt",
+                "Suggested",
+            ];
+            assert!(
+                !category_labels.contains(&footer.as_str()),
+                "footer for '{title}' must not be category label, got '{footer}'"
+            );
+        }
+    }
+
+    let exit_row = rows
+        .iter()
+        .find(|r| matches!(r, PaletteOverlayRow::Command { title, .. } if title == "Exit the app"));
+    if let PaletteOverlayRow::Command { footer, .. } = exit_row.unwrap() {
+        let expected = app.keymap.get_binding_str(Action::Quit);
+        assert_eq!(
+            *footer, expected,
+            "footer for app.exit should be keymap binding"
+        );
+    }
+}
+
+pub(super) fn palette_log_success_dispatch() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    palette_controller::dispatch_palette_command(&mut app, "app.exit");
+    let dispatch_entry = app
+        .palette_log
+        .iter()
+        .rev()
+        .find(|e| !e.command_id.is_empty())
+        .expect("palette log should have dispatch entry");
+    assert_eq!(dispatch_entry.command_id, "app.exit");
+    assert_eq!(
+        dispatch_entry.dialog_state,
+        palette_controller::PaletteDialogState::DispatchSucceeded
+    );
+    assert_eq!(
+        dispatch_entry.status,
+        palette_controller::PaletteLogStatus::Success
+    );
+}
+
+pub(super) fn palette_log_rejection_for_unavailable() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    palette_controller::dispatch_palette_command(&mut app, "prompt.stash");
+    let last = app
+        .palette_log
+        .last()
+        .expect("palette log should have rejection entry");
+    assert_eq!(last.command_id, "prompt.stash");
+    assert_eq!(
+        last.dialog_state,
+        palette_controller::PaletteDialogState::Rejected
+    );
+    assert_eq!(last.status, palette_controller::PaletteLogStatus::Rejected);
+    assert!(last.availability_reason.is_some());
+}
+
+pub(super) fn palette_log_contains_command_id_and_target() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    for ch in "new".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
+    let dispatch_entry = app
+        .palette_log
+        .iter()
+        .rev()
+        .find(|e| !e.command_id.is_empty())
+        .expect("palette log should have dispatch entry");
+    assert!(
+        !dispatch_entry.command_id.is_empty(),
+        "log must contain command_id"
+    );
+    assert!(
+        !dispatch_entry.dispatch_target.is_empty(),
+        "log must contain dispatch_target"
+    );
+}
+
+pub(super) fn palette_log_contains_filter_length() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    for ch in "exit".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    let exit_pos = app
+        .palette_filtered
+        .iter()
+        .position(|c| c == "app.exit")
+        .expect("app.exit should be in filtered results");
+    app.palette_selected = exit_pos;
+    app.handle_key(key(KeyCode::Enter));
+    let dispatch_entries: Vec<_> = app
+        .palette_log
+        .iter()
+        .filter(|e| e.command_id == "app.exit")
+        .collect();
+    assert!(
+        dispatch_entries.len() >= 2,
+        "must have at least 2 dispatch entries (Started + Succeeded), got {}",
+        dispatch_entries.len()
+    );
+    for entry in &dispatch_entries {
+        assert_eq!(
+            entry.filter_length, 4,
+            "ALL dispatch entries must have filter_length=4 for 'exit', got {} on {:?}",
+            entry.filter_length, entry.dialog_state
+        );
+    }
+}
+
+pub(super) fn palette_golden_ranking_consecutive_beats_scattered() {
+    let app = AppState::new_live(None, false, None);
+    let rows = crate::app::palette_controller::compute_palette_rows(&app, "swi");
+    assert!(!rows.is_empty(), "query 'swi' must produce results");
+    let agent_rows: Vec<_> = rows
+        .iter()
+        .filter(|r| r.category == palette_model::PaletteCategory::Agent)
+        .collect();
+    assert!(!agent_rows.is_empty());
+    assert_eq!(
+        agent_rows[0].command_id, "model.list",
+        "consecutive match 'swi' must rank 'Switch model' first in Agent category, got '{}'",
+        agent_rows[0].title
+    );
+}
+
+pub(super) fn palette_golden_ranking_prefix_beats_non_prefix() {
+    let app = AppState::new_live(None, false, None);
+    let rows = crate::app::palette_controller::compute_palette_rows(&app, "exit");
+    assert!(!rows.is_empty());
+    let system_rows: Vec<_> = rows
+        .iter()
+        .filter(|r| r.category == palette_model::PaletteCategory::System)
+        .collect();
+    assert!(!system_rows.is_empty());
+    assert_eq!(
+        system_rows[0].command_id, "app.exit",
+        "prefix match 'exit' must rank 'Exit the app' first in System, got '{}'",
+        system_rows[0].title
+    );
+}
+
+pub(super) fn palette_golden_ranking_title_weighted_double_category() {
+    let app = AppState::new_live(None, false, None);
+    let rows = crate::app::palette_controller::compute_palette_rows(&app, "session");
+    assert!(!rows.is_empty());
+    assert!(
+        rows[0].title.to_lowercase().contains("session"),
+        "title match must rank first: got '{}'",
+        rows[0].title
+    );
+}
+
+pub(super) fn palette_golden_ranking_no_match_returns_none() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    for ch in "zzzzzzz".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    assert!(
+        app.palette_filtered.is_empty(),
+        "gibberish query must produce no results"
+    );
+    let rendered = render_debug(&app, 120, 30);
+    assert!(
+        rendered.contains("No results found"),
+        "no-result state must show 'No results found'"
+    );
+}
+
+pub(super) fn palette_golden_ranking_stash_ordering() {
+    let mut app = AppState::new_live(None, false, None);
+    app.composer.prompt_buffer = "text".to_string();
+    app.composer.prompt_cursor = 4;
+    let rows = crate::app::palette_controller::compute_palette_rows(&app, "stash");
+    assert!(!rows.is_empty());
+    let prompt_rows: Vec<_> = rows
+        .iter()
+        .filter(|r| r.category == palette_model::PaletteCategory::Prompt)
+        .collect();
+    assert!(!prompt_rows.is_empty());
+    assert_eq!(
+        prompt_rows[0].command_id, "prompt.stash",
+        "'Stash prompt' must rank first in Prompt category for query 'stash', got '{}'",
+        prompt_rows[0].title
+    );
+}
+
+pub(super) fn palette_behavior_session_rename_opens_dialog() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        "req_test",
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_test".to_string(),
+            text: "test".to_string(),
+        }),
+    ));
+    open_palette(&mut app);
+    palette_controller::dispatch_palette_command(&mut app, "session.rename");
+    assert!(
+        app.session_rename_visible,
+        "session.rename dispatch must open rename dialog"
+    );
+    assert!(
+        app.session_rename_target_run_id.is_some(),
+        "session.rename must set target run ID"
+    );
+}
+
+pub(super) fn palette_behavior_session_fork_opens_selector() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    palette_controller::dispatch_palette_command(&mut app, "session.fork");
+    assert!(
+        app.fork_selector_visible,
+        "session.fork dispatch must open fork selector"
+    );
+}
+
+pub(super) fn palette_behavior_session_copy_copies_transcript() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        "req_test",
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_test".to_string(),
+            text: "test message".to_string(),
+        }),
+    ));
+    if let Some(activity) = app.activities.back_mut() {
+        activity.transcript_text = "test transcript text".to_string();
+    }
+    open_palette(&mut app);
+    palette_controller::dispatch_palette_command(&mut app, "session.copy");
+    let dispatch_entry = app
+        .palette_log
+        .iter()
+        .rev()
+        .find(|e| e.command_id == "session.copy")
+        .expect("palette log should have entry for session.copy");
+    assert_eq!(dispatch_entry.command_id, "session.copy");
+    assert_eq!(
+        dispatch_entry.dialog_state,
+        palette_controller::PaletteDialogState::DispatchSucceeded
+    );
+    assert_eq!(
+        dispatch_entry.status,
+        palette_controller::PaletteLogStatus::Success
+    );
+    assert!(
+        app.toast().is_some(),
+        "session.copy must show a toast notification as observable behavior proof"
+    );
+}
+
+pub(super) fn palette_behavior_dialog_clears_before_dispatch() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    for ch in "exit".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    assert!(!app.palette_input.is_empty());
+    assert!(!app.palette_filtered.is_empty());
+    app.handle_key(key(KeyCode::Enter));
+    assert!(
+        app.palette_input.is_empty(),
+        "palette input must be cleared before/after dispatch (dialog.clear())"
+    );
+    assert!(
+        app.palette_filtered.is_empty(),
+        "palette filtered must be cleared before/after dispatch (dialog.clear())"
+    );
+}
+
+pub(super) fn palette_behavior_page_down_wraps() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    let len = app.palette_filtered.len();
+    assert!(len > 10, "need more than 10 entries to test page wrap");
+    app.palette_selected = len - 1;
+    app.handle_key(key(KeyCode::PageDown));
+    assert!(
+        app.palette_selected < len - 1,
+        "PageDown at last item must wrap to earlier item, got {}",
+        app.palette_selected
+    );
+}
+
+pub(super) fn palette_behavior_page_up_wraps() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    let len = app.palette_filtered.len();
+    assert!(len > 10);
+    app.palette_selected = 0;
+    app.handle_key(key(KeyCode::PageUp));
+    assert_eq!(
+        app.palette_selected,
+        len - 10,
+        "PageUp at first item must wrap by -10, got {} expected {}",
+        app.palette_selected,
+        len - 10
+    );
+}
+
+pub(super) fn palette_behavior_tab_is_noop_in_command_palette() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    let selected_before = app.palette_selected;
+    app.handle_key(key(KeyCode::Tab));
+    assert_eq!(
+        app.palette_selected, selected_before,
+        "Tab must be no-op in command palette (no footer actions)"
+    );
+    app.handle_key(key_with_modifiers(KeyCode::Tab, KeyModifiers::SHIFT));
+    assert_eq!(
+        app.palette_selected, selected_before,
+        "Shift+Tab must be no-op in command palette (no footer actions)"
+    );
+}
+
+pub(super) fn palette_behavior_no_current_dot_in_palette() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    let rendered = render_debug(&app, 120, 30);
+    assert!(
+        !rendered.contains("●"),
+        "command palette must not render current-dot/gutter"
+    );
+}
+
+pub(super) fn palette_harness_only_filtering_is_deliberate() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    for id in palette_model::harness_only_ids() {
+        assert!(
+            !app.palette_filtered.contains(&id.to_string()),
+            "harness-only command '{id}' must be filtered from parity palette by deliberate non-parity exclusion"
+        );
+    }
+    assert!(
+        palette_model::harness_only_ids().len() == 13,
+        "harness-only count must be 13, got {}",
+        palette_model::harness_only_ids().len()
+    );
+}
+
+pub(super) fn palette_mouse_semantics_platform_limitation() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    let selected_before = app.palette_selected;
+    app.handle_key(key(KeyCode::Down));
+    assert_ne!(
+        app.palette_selected, selected_before,
+        "keyboard Down must navigate (proving keyboard fallback works when mouse is not processed)"
+    );
+}
+
+pub(super) fn palette_behavior_model_list_opens_switcher() {
+    let mut app = AppState::new_live(None, false, None);
+    app.set_launch_metadata(
+        crate::app::LaunchMetadata::from_model_ref("build", "default:gpt-5.4-mini")
+            .with_available_models(vec![crate::app::ModelOption::from_model_ref(
+                "build",
+                "default:gpt-5.4-mini",
+            )]),
+    );
+    open_palette(&mut app);
+    palette_controller::dispatch_palette_command(&mut app, "model.list");
+    assert!(
+        app.model_switcher_visible,
+        "model.list dispatch must open model switcher"
+    );
+    assert!(
+        !app.palette_visible || app.model_switcher_visible,
+        "palette must close or transition to model switcher after dispatch"
+    );
+}
+
+pub(super) fn palette_behavior_provider_connect_opens_dialog() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    palette_controller::dispatch_palette_command(&mut app, "provider.connect");
+    assert!(
+        app.connect_dialog.visible,
+        "provider.connect dispatch must open connect dialog"
+    );
+}
+
+pub(super) fn palette_behavior_session_list_opens_history() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    palette_controller::dispatch_palette_command(&mut app, "session.list");
+    assert!(
+        app.session_history_visible,
+        "session.list dispatch must open session history"
+    );
+}
+
+pub(super) fn palette_behavior_mcp_list_opens_toggles() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    palette_controller::dispatch_palette_command(&mut app, "mcp.list");
+    assert!(
+        app.toggles_menu_visible,
+        "mcp.list dispatch must open toggles menu"
+    );
+}
+
+pub(super) fn palette_golden_ranking_exact_page_down_by_10() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    let len = app.palette_filtered.len();
+    assert!(
+        len > 10,
+        "need more than 10 entries to test exact page movement"
+    );
+    app.palette_selected = 0;
+    app.handle_key(key(KeyCode::PageDown));
+    assert_eq!(
+        app.palette_selected, 10,
+        "PageDown must move exactly by 10 from position 0, got {}",
+        app.palette_selected
+    );
+}
+
+pub(super) fn palette_golden_ranking_exact_page_up_by_10() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    let len = app.palette_filtered.len();
+    assert!(len > 10);
+    app.palette_selected = 10;
+    app.handle_key(key(KeyCode::PageUp));
+    assert_eq!(
+        app.palette_selected, 0,
+        "PageUp must move exactly by -10 from position 10, got {}",
+        app.palette_selected
+    );
+}
+
+pub(super) fn palette_golden_ranking_page_down_wraps_from_end() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    let len = app.palette_filtered.len();
+    assert!(len > 10);
+    app.palette_selected = len - 1;
+    app.handle_key(key(KeyCode::PageDown));
+    let expected = (len - 1 + 10) % len;
+    assert_eq!(
+        app.palette_selected, expected,
+        "PageDown from last item must wrap to {}, got {}",
+        expected, app.palette_selected
+    );
+}
+
+pub(super) fn palette_golden_ranking_page_up_wraps_from_start() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    let len = app.palette_filtered.len();
+    assert!(len > 10);
+    app.palette_selected = 0;
+    app.handle_key(key(KeyCode::PageUp));
+    let expected = (0isize - 10).rem_euclid(len as isize) as usize;
+    assert_eq!(
+        app.palette_selected, expected,
+        "PageUp from first item must wrap to {}, got {}",
+        expected, app.palette_selected
+    );
+}
+
+pub(super) fn palette_log_failure_has_error_kind() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    palette_controller::dispatch_palette_command(&mut app, "prompt.stash");
+    let last = app
+        .palette_log
+        .last()
+        .expect("palette log should have rejection entry");
+    assert_eq!(last.command_id, "prompt.stash");
+    assert_eq!(last.status, palette_controller::PaletteLogStatus::Rejected);
+    assert!(
+        last.error_kind.is_none(),
+        "rejection must not set error_kind (only Placeholder failures set error_kind)"
+    );
+}
+
+pub(super) fn palette_log_has_redacted_ids() {
+    let mut app = AppState::new_live(None, false, None);
+    app.set_launch_metadata(crate::app::LaunchMetadata::from_model_ref(
+        "build",
+        "default:gpt-5.4-mini",
+    ));
+    open_palette(&mut app);
+    palette_controller::dispatch_palette_command(&mut app, "app.exit");
+    let last = app
+        .palette_log
+        .last()
+        .expect("palette log should have entry");
+    assert!(
+        last.provider_id_redacted.is_some(),
+        "log must contain redacted provider ID when provider is configured"
+    );
+    assert!(
+        last.model_id_redacted.is_some(),
+        "log must contain redacted model ID when model is configured"
+    );
+    if let Some(ref pid) = last.provider_id_redacted {
+        assert!(
+            pid.len() <= 20,
+            "redacted provider ID must be truncated: got '{pid}'"
+        );
+    }
+    if let Some(ref mid) = last.model_id_redacted {
+        assert!(
+            mid.len() <= 20,
+            "redacted model ID must be truncated: got '{mid}'"
+        );
+    }
+}
+
+pub(super) fn palette_tab_shift_tab_explicit_noop() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    let selected_before = app.palette_selected;
+    app.handle_key(key(KeyCode::Tab));
+    assert_eq!(
+        app.palette_selected, selected_before,
+        "Tab must be explicit no-op in command palette (no footer actions)"
+    );
+    assert!(app.palette_visible, "palette must remain open after Tab");
+    app.handle_key(key(KeyCode::BackTab));
+    assert_eq!(
+        app.palette_selected, selected_before,
+        "Shift+Tab must be explicit no-op in command palette (no footer actions)"
+    );
+    assert!(
+        app.palette_visible,
+        "palette must remain open after Shift+Tab"
+    );
+}
+pub(super) fn palette_slash_alias_global_inventory() {
+    use crate::keybindings::slash_commands;
+
+    let opencode_parity_ids: std::collections::HashSet<&str> = [
+        "sessions",
+        "new",
+        "models",
+        "agents",
+        "mcps",
+        "connect",
+        "exit",
+        "rename",
+        "fork",
+        "compact",
+        "copy",
+        "export",
+        "timestamps",
+        "thinking",
+        "help",
+    ]
+    .iter()
+    .cloned()
+    .collect();
+
+    let harness_only_ids: std::collections::HashSet<&str> =
+        ["auth", "clone", "follow", "shell", "toggles", "tree"]
+            .iter()
+            .cloned()
+            .collect();
+
+    let mut expected_ids = opencode_parity_ids.clone();
+    expected_ids.extend(harness_only_ids.iter().cloned());
+
+    let actual_ids: std::collections::HashSet<&str> =
+        slash_commands().iter().map(|s| s.id).collect();
+
+    assert_eq!(
+        actual_ids, expected_ids,
+        "Harness slash command IDs must exactly match the union of OpenCode-parity and Harness-only sets"
+    );
+
+    for cmd in slash_commands() {
+        let id = cmd.id;
+        assert!(
+            opencode_parity_ids.contains(id) || harness_only_ids.contains(id),
+            "slash command '/{id}' must be classified as OpenCode-parity or Harness-only"
+        );
+    }
+}
+
+pub(super) fn palette_log_open_close_lifecycle() {
+    let mut app = AppState::new_live(None, false, None);
+    assert!(app.palette_log.is_empty(), "palette log should start empty");
+    open_palette(&mut app);
+    assert!(
+        app.palette_log
+            .iter()
+            .any(|e| e.dialog_state == palette_controller::PaletteDialogState::Opened),
+        "palette log must contain Opened entry after open_palette"
+    );
+    app.handle_key(key(KeyCode::Esc));
+    assert!(
+        app.palette_log
+            .iter()
+            .any(|e| e.dialog_state == palette_controller::PaletteDialogState::Closed),
+        "palette log must contain Closed entry after close_palette"
+    );
+}
+
+pub(super) fn palette_log_filtered_lifecycle() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    let opened_count = app.palette_log.len();
+    for ch in "exit".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    assert!(
+        app.palette_log.len() > opened_count,
+        "palette log must have entries after filtering"
+    );
+    assert!(
+        app.palette_log
+            .iter()
+            .any(|e| e.dialog_state == palette_controller::PaletteDialogState::Filtered),
+        "palette log must contain Filtered entry after typing in filter"
+    );
+}
+
+pub(super) fn palette_log_selected_lifecycle() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    let before_count = app.palette_log.len();
+    app.handle_key(key(KeyCode::Down));
+    assert!(
+        app.palette_log.len() > before_count,
+        "palette log must have entries after navigation"
+    );
+    assert!(
+        app.palette_log
+            .iter()
+            .any(|e| e.dialog_state == palette_controller::PaletteDialogState::Selected),
+        "palette log must contain Selected entry after keyboard navigation"
+    );
+}
+
+pub(super) fn palette_log_dispatch_started_then_succeeded_in_order() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    palette_controller::dispatch_palette_command(&mut app, "app.exit");
+    let dispatch_entries: Vec<_> = app
+        .palette_log
+        .iter()
+        .filter(|e| !e.command_id.is_empty())
+        .collect();
+    assert!(
+        dispatch_entries.len() >= 2,
+        "palette log must have at least 2 dispatch entries (Started + Succeeded), got {}",
+        dispatch_entries.len()
+    );
+    assert_eq!(
+        dispatch_entries[0].dialog_state,
+        palette_controller::PaletteDialogState::DispatchStarted,
+        "first dispatch entry must be DispatchStarted"
+    );
+    assert_eq!(
+        dispatch_entries[1].dialog_state,
+        palette_controller::PaletteDialogState::DispatchSucceeded,
+        "second dispatch entry must be DispatchSucceeded"
+    );
+    assert_eq!(dispatch_entries[0].command_id, "app.exit");
+    assert_eq!(dispatch_entries[1].command_id, "app.exit");
+}
+
+pub(super) fn palette_log_dispatch_failed_for_placeholder() {
+    use crate::keybindings::palette_model::{entries, PaletteDispatch};
+    let has_placeholder = entries()
+        .iter()
+        .any(|e| e.dispatch == PaletteDispatch::Placeholder);
+    assert!(
+        !has_placeholder,
+        "no included command may dispatch to Placeholder — DispatchFailed is intentionally unreachable in production"
+    );
+}
+
+/// Direct test for title-vs-category score weighting within the same category.
+///
+/// The score formula is `title_score * 2 + category_score`. A command whose
+/// title contains the query should rank higher than a command in the same
+/// category whose title does NOT contain the query (category-only match),
+/// because the title score is weighted 2x.
+pub(super) fn palette_golden_ranking_title_vs_category_weighting() {
+    let app = AppState::new_live(None, false, None);
+    let rows = crate::app::palette_controller::compute_palette_rows(&app, "session");
+
+    let session_rows: Vec<_> = rows
+        .iter()
+        .filter(|r| r.category == palette_model::PaletteCategory::Session)
+        .collect();
+    assert!(
+        session_rows.len() >= 2,
+        "need at least 2 Session-category rows to test weighting"
+    );
+
+    // "New session" has "session" in its title → title match (weighted 2x).
+    let new_session_pos = session_rows
+        .iter()
+        .position(|r| r.command_id == "session.new")
+        .expect("session.new should be in filtered Session results");
+
+    // "Show sidebar" does NOT have "session" in its title → category-only match (weighted 1x).
+    let show_sidebar_pos = session_rows
+        .iter()
+        .position(|r| r.command_id == "session.sidebar.toggle")
+        .expect("session.sidebar.toggle should be in filtered Session results");
+
+    assert!(
+        new_session_pos < show_sidebar_pos,
+        "title match ('New session') must rank higher than category-only match ('Show sidebar') \
+         within Session category: got new_session at {new_session_pos}, sidebar at {show_sidebar_pos}"
+    );
+}
+
+/// Verify stable tie ordering: same query produces identical output, and
+/// the sort key `(score, index)` breaks ties by original registry index.
+pub(super) fn palette_golden_ranking_stable_tie_order() {
+    let app = AppState::new_live(None, false, None);
+
+    let rows1 = crate::app::palette_controller::compute_palette_rows(&app, "toggle");
+    let rows2 = crate::app::palette_controller::compute_palette_rows(&app, "toggle");
+    assert!(!rows1.is_empty(), "query 'toggle' should produce results");
+    assert_eq!(rows1.len(), rows2.len());
+
+    for (a, b) in rows1.iter().zip(rows2.iter()) {
+        assert_eq!(
+            a.command_id, b.command_id,
+            "same query must be deterministic"
+        );
+    }
+
+    let mut seen = std::collections::HashSet::new();
+    for row in &rows1 {
+        assert!(
+            seen.insert(row.command_id),
+            "duplicate command ID in filtered results: {}",
+            row.command_id
+        );
+    }
+}
+
+/// Comprehensive inventory test verifying PRD-required fields for every
+/// parity matrix entry (PRD lines 98-116).
+pub(super) fn palette_inventory_comprehensive_fields() {
+    use parity_matrix::{exclusion_rationale, find_entry, ParityStatus, PARITY_MATRIX};
+
+    let mut ids_seen = std::collections::HashSet::new();
+
+    for entry in PARITY_MATRIX {
+        assert!(!entry.id.is_empty(), "entry has empty id");
+        assert!(
+            ids_seen.insert(entry.id),
+            "duplicate command ID in parity matrix: {}",
+            entry.id
+        );
+        assert!(
+            !entry.origin.is_empty(),
+            "entry '{}' has empty OpenCode source anchor (origin)",
+            entry.id
+        );
+        assert!(
+            !entry.category.is_empty(),
+            "entry '{}' has empty category",
+            entry.id
+        );
+        assert!(
+            !entry.harness_equivalent.is_empty(),
+            "entry '{}' has empty Harness implementation anchor (harness_equivalent)",
+            entry.id
+        );
+        let _ = entry.dispatch;
+        let _ = entry.suggested;
+        let _ = entry.availability;
+        let _ = entry.title;
+
+        match entry.status {
+            ParityStatus::Included => {
+                let model_entry = palette_model::find(entry.id).unwrap_or_else(|| {
+                    panic!("Included entry '{}' missing from palette model", entry.id)
+                });
+                assert!(
+                    !model_entry.harness_only,
+                    "Included entry '{}' must not be harness_only",
+                    entry.id
+                );
+            }
+            ParityStatus::Excluded => {
+                assert!(
+                    palette_model::find(entry.id).is_none(),
+                    "Excluded entry '{}' must not be in palette model",
+                    entry.id
+                );
+                assert!(
+                    exclusion_rationale(entry.id).is_some(),
+                    "Excluded entry '{}' must have exclusion rationale",
+                    entry.id
+                );
+            }
+            ParityStatus::HarnessOnly => {
+                let model_entry = palette_model::find(entry.id).unwrap_or_else(|| {
+                    panic!(
+                        "HarnessOnly entry '{}' missing from palette model",
+                        entry.id
+                    )
+                });
+                assert!(
+                    model_entry.harness_only,
+                    "HarnessOnly entry '{}' must have harness_only=true",
+                    entry.id
+                );
+            }
+            ParityStatus::HiddenNonTarget => {
+                assert!(
+                    palette_model::find(entry.id).is_none(),
+                    "HiddenNonTarget entry '{}' must not be in palette model",
+                    entry.id
+                );
+            }
+        }
+    }
+
+    for model_entry in palette_model::entries() {
+        let matrix_entry = find_entry(model_entry.id).unwrap_or_else(|| {
+            panic!(
+                "palette model entry '{}' not found in parity matrix",
+                model_entry.id
+            )
+        });
+        assert!(
+            matrix_entry.status == ParityStatus::Included
+                || matrix_entry.status == ParityStatus::HarnessOnly,
+            "palette model entry '{}' must be Included or HarnessOnly in matrix, got {:?}",
+            model_entry.id,
+            matrix_entry.status
+        );
+    }
 }

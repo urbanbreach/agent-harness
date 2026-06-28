@@ -11,14 +11,16 @@ pub(crate) fn exact_test_startup_slash_commands_execute_without_menu() {
     assert_eq!(
         app.slash_filtered,
         vec![
+            "agents".to_string(),
             "auth".to_string(),
             "connect".to_string(),
             "exit".to_string(),
             "help".to_string(),
-            "model".to_string(),
+            "mcps".to_string(),
+            "models".to_string(),
             "new".to_string(),
-            "resume".to_string(),
-            "toggles".to_string(),
+            "sessions".to_string(),
+            "thinking".to_string(),
         ]
     );
 }

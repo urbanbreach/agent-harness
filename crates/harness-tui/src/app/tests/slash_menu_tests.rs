@@ -24,20 +24,20 @@ pub(super) fn slash_menu_resets_selection_when_filter_changes() {
     app.handle_key(key(KeyCode::Char('e')));
     app.handle_key(key(KeyCode::Char('s')));
 
-    assert_eq!(app.slash_filtered, vec!["resume".to_string()]);
+    assert_eq!(app.slash_filtered, vec!["sessions".to_string()]);
     assert_eq!(app.slash_selected, 0);
 }
 
 pub(super) fn slash_menu_matches_descriptions_and_boosts_prefixes() {
     let mut app = AppState::new_startup(Vec::new(), None);
 
-    for ch in "/saved".chars() {
+    for ch in "/ses".chars() {
         app.handle_key(key(KeyCode::Char(ch)));
     }
 
     assert_eq!(
         app.slash_filtered.first().map(String::as_str),
-        Some("resume")
+        Some("sessions")
     );
 
     app.clear_prompt_input();
@@ -47,7 +47,7 @@ pub(super) fn slash_menu_matches_descriptions_and_boosts_prefixes() {
 
     assert_eq!(
         app.slash_filtered.first().map(String::as_str),
-        Some("resume")
+        Some("sessions")
     );
     assert!(app.slash_filtered.iter().any(|command| command == "new"));
 
@@ -65,7 +65,7 @@ pub(super) fn slash_menu_matches_descriptions_and_boosts_prefixes() {
 
     assert_eq!(
         app.slash_filtered.first().map(String::as_str),
-        Some("resume")
+        Some("sessions")
     );
 }
 
@@ -281,7 +281,7 @@ pub(super) fn slash_menu_exposes_model_switcher_when_models_are_configured() {
 
     app.handle_key(key(KeyCode::Char('/')));
 
-    assert!(app.slash_filtered.iter().any(|command| command == "model"));
+    assert!(app.slash_filtered.iter().any(|command| command == "models"));
 }
 
 pub(super) fn rename_slash_command_availability_matches_mode() {
@@ -333,15 +333,6 @@ pub(super) fn rename_slash_command_emits_update_session_title_intent() {
             title: "New Title".to_string(),
         }]
     );
-}
-
-pub(super) fn rename_slash_title_alias_resolves() {
-    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
-    app.composer.prompt_buffer = "/title Alias Title".to_string();
-    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
-    app.sync_slash_overlay();
-
-    assert_eq!(app.typed_slash_command(), Some("rename"));
 }
 
 pub(super) fn rename_slash_empty_title_emits_error_toast() {
