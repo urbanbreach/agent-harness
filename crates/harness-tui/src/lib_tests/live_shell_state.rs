@@ -25,10 +25,7 @@ pub(super) fn live_shell_footer_is_shortcuts_only() {
     let replay_footer_row = find_last_line_containing(&replay_lines, "q quit")
         .map(|row| replay_lines[row].trim_end().to_string())
         .expect("replay footer row");
-    assert_markers_in_order(
-        &replay_footer_row,
-        &["? shortcuts", "tab focus", "r reload", "q quit"],
-    );
+    assert_markers_in_order(&replay_footer_row, &["? shortcuts", "tab focus", "q quit"]);
     assert!(!replay_footer_row.contains("Replay"));
     assert!(!replay_footer_row.contains("run_fixture"));
     assert!(!replay_footer_row.contains("/tmp/replay-session"));
@@ -74,7 +71,7 @@ pub(super) fn completed_shell_bottom_rows_do_not_duplicate_command_help_footers(
         false,
         None,
     );
-    app.active_review_surface = Some(app::ReviewSurface::Events);
+    app.active_review_surface = Some(app::ReviewSurface::Help);
     app.focus = app::Focus::Prompt;
     app.composer.prompt_buffer = "keep this draft".to_string();
     app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();

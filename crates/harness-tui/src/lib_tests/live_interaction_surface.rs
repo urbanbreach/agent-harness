@@ -65,7 +65,7 @@ pub(super) fn continue_disabled_session_shows_reason_banner() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "resume".chars() {
+    for ch in "switch".chars() {
         app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
@@ -109,20 +109,13 @@ pub(super) fn replay_session_intent_never_enables_prompt_submission() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "replay".chars() {
+    for ch in "new".chars() {
         app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
-    app.handle_key(key(crossterm::event::KeyCode::Enter));
 
     let intents = intents.lock().expect("lock intents");
-    assert_eq!(
-        intents.as_slice(),
-        &[UiIntent::ReplaySession {
-            run_id: "run_replay".to_string(),
-            run_dir: PathBuf::from("/tmp/sessions/run_replay"),
-        }]
-    );
+    assert_eq!(intents.as_slice(), &[UiIntent::NewSession]);
     drop(intents);
     assert_eq!(app.composer.prompt_buffer, "do not submit");
     assert!(app.composer.prompt_history.is_empty());
@@ -220,10 +213,14 @@ pub(super) fn replay_secondary_surfaces_remain_reachable_after_live_shell_refact
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    replay.palette_filtered = vec!["open_event_log".to_string()];
-    replay.palette_selected = 0;
-    replay.handle_key(key(crossterm::event::KeyCode::Enter));
-    assert_eq!(replay.review_surface(), Some(app::ReviewSurface::Events));
+    for ch in "event log".chars() {
+        replay.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    assert!(!replay
+        .palette_filtered
+        .iter()
+        .any(|c| c == "harness.open_event_log"));
+    replay.handle_key(key(crossterm::event::KeyCode::Esc));
 
     replay.handle_key(key(crossterm::event::KeyCode::Char('?')));
     assert_eq!(replay.review_surface(), Some(app::ReviewSurface::Help));
@@ -471,12 +468,13 @@ pub(super) fn replay_mode_does_not_render_orchestration_summary() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    replay.palette_filtered = vec!["open_event_log".to_string()];
-    replay.palette_selected = 0;
-    replay.handle_key(key(crossterm::event::KeyCode::Enter));
-    let replay_events = render_live_lines(&replay, 120, 30);
-    assert!(!replay_events.contains("Orchestration"));
-    assert!(!replay_events.contains("agents "));
+    for ch in "event log".chars() {
+        replay.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    assert!(!replay
+        .palette_filtered
+        .iter()
+        .any(|c| c == "harness.open_event_log"));
 
     replay.handle_key(key(crossterm::event::KeyCode::Char('?')));
     let replay_help = render_live_lines(&replay, 120, 30);

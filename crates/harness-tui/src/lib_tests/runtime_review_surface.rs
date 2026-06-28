@@ -251,14 +251,14 @@ pub(super) fn review_surfaces_are_command_driven_without_tab_contract() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    live.palette_filtered = vec!["open_event_log".to_string()];
-    live.palette_selected = 0;
-    live.handle_key(key(crossterm::event::KeyCode::Enter));
-    assert_eq!(live.review_surface(), Some(app::ReviewSurface::Events));
-    assert!(!live.details_drawer_open());
-    let live_events_debug = render_live_buffer(&live, 80, 24);
-    assert!(live_events_debug.contains("Event log"));
-    assert!(live_events_debug.contains("Event details"));
+    for ch in "event log".chars() {
+        live.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    assert!(!live
+        .palette_filtered
+        .iter()
+        .any(|c| c == "harness.open_event_log"));
+    live.handle_key(key(crossterm::event::KeyCode::Esc));
 
     live.handle_key(key(crossterm::event::KeyCode::Char('?')));
     assert_eq!(live.review_surface(), Some(app::ReviewSurface::Help));
@@ -278,13 +278,14 @@ pub(super) fn review_surfaces_are_command_driven_without_tab_contract() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    replay.palette_filtered = vec!["open_event_log".to_string()];
-    replay.palette_selected = 0;
-    replay.handle_key(key(crossterm::event::KeyCode::Enter));
-    assert_eq!(replay.review_surface(), Some(app::ReviewSurface::Events));
-    let replay_events_debug = render_live_buffer(&replay, 80, 24);
-    assert!(!replay_events_debug.contains("Tabs"));
-    assert!(replay_events_debug.contains("Selected event"));
+    for ch in "event log".chars() {
+        replay.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    assert!(!replay
+        .palette_filtered
+        .iter()
+        .any(|c| c == "harness.open_event_log"));
+    replay.handle_key(key(crossterm::event::KeyCode::Esc));
 
     replay.handle_key(key(crossterm::event::KeyCode::Char('?')));
     assert_eq!(replay.review_surface(), Some(app::ReviewSurface::Help));
@@ -303,12 +304,6 @@ pub(super) fn review_surfaces_restore_panel_chrome() {
         live.ingest_event(event);
     }
     live.focus = app::Focus::List;
-
-    run_palette_command(&mut live, "open_event_log");
-    let events_rendered = render_live_lines(&live, 100, 30);
-    assert!(!events_rendered.contains('│'));
-    assert!(!events_rendered.contains('┌'));
-    assert!(events_rendered.contains("Event details"));
 
     live.handle_key(key(crossterm::event::KeyCode::Char('?')));
     let help_rendered = render_live_lines(&live, 100, 30);
