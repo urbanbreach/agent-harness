@@ -591,7 +591,6 @@ fn help_surface_lists_active_bindings() {
     app.active_review_surface = Some(ReviewSurface::Help);
     app.apply_keybindings(
         [
-            ("open_event_log".to_string(), "e".to_string()),
             ("help".to_string(), "g".to_string()),
             ("toggle_follow".to_string(), "z".to_string()),
             ("submit_prompt".to_string(), "ctrl+s".to_string()),

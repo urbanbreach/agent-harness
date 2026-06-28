@@ -223,18 +223,19 @@ pub(super) fn slash_overlay_uses_input_width_aligned_rows_and_accent_selection()
 
     let rendered = render_live_lines(&app, 100, 24);
     let lines = rendered.lines().collect::<Vec<_>>();
-    let row = find_line_containing_all(&lines, &["/events", "Open the review event log surface"])
-        .unwrap_or_else(|| panic!("slash /events row\n{rendered}"));
-    let events_description = lines[row]
-        .find("Open the review event log surface")
-        .expect("events description column");
+    assert!(!rendered.contains("/events"));
+    let row = find_line_containing_all(&lines, &["/help", "Show shortcuts and TUI controls"])
+        .unwrap_or_else(|| panic!("slash /help row\n{rendered}"));
+    let help_description = lines[row]
+        .find("Show shortcuts and TUI controls")
+        .expect("help description column");
     let new_row = find_line_containing_all(&lines, &["/new", "Return to the home shell"])
         .unwrap_or_else(|| panic!("slash /new row\n{rendered}"));
     let new_description = lines[new_row]
         .find("Return to the home shell")
         .expect("new description column");
 
-    assert_eq!(events_description, new_description);
+    assert_eq!(help_description, new_description);
     assert!(!lines[row].contains('┃'));
     assert!(!rendered.contains('╭') && !rendered.contains('╰') && !rendered.contains('│'));
 
@@ -306,7 +307,7 @@ pub(super) fn command_driven_session_switch_emits_correct_ui_intent() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "resume".chars() {
+    for ch in "switch".chars() {
         app.handle_key(exact_test_key(crossterm::event::KeyCode::Char(ch)));
     }
     app.handle_key(exact_test_key(crossterm::event::KeyCode::Enter));
@@ -339,7 +340,7 @@ pub(super) fn overlays_share_elevated_card_language() {
         &palette,
         width,
         height,
-        "New session",
+        "Switch session",
         ratatui::style::Color::Rgb(0xF5, 0xA7, 0x42),
     );
 
@@ -354,7 +355,7 @@ pub(super) fn overlays_share_elevated_card_language() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "resume".chars() {
+    for ch in "switch".chars() {
         sessions.handle_key(exact_test_key(crossterm::event::KeyCode::Char(ch)));
     }
     sessions.handle_key(exact_test_key(crossterm::event::KeyCode::Enter));
@@ -398,7 +399,7 @@ pub(super) fn quiet_overlay_helper_rows_use_semantic_chrome_palette() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "resume".chars() {
+    for ch in "switch".chars() {
         sessions.handle_key(exact_test_key(crossterm::event::KeyCode::Char(ch)));
     }
     sessions.handle_key(exact_test_key(crossterm::event::KeyCode::Enter));
