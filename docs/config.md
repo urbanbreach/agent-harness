@@ -442,9 +442,7 @@ bindings, and `<leader>` expands to the configured leader key, for example
 | `toggle_operator_sidebar` | `Ctrl+x b` | Show or hide the operator sidebar/drawer. |
 | `toggle_terminal_panel` | `4` | Show or hide terminal output. |
 | `toggle_follow` | ` ` | Toggle transcript follow mode. |
-| `reload` | `r` | Reload replay/session state. |
 | `close_review_surface` | `1` | Return to the transcript-first session shell. |
-| `open_event_log` | `3` | Open the event log review surface. |
 | `session_child_first` | `Ctrl+]` | Jump to the first child session. |
 | `session_child_cycle` | `]` | Cycle to the next child session. |
 | `session_child_cycle_reverse` | `[` | Cycle to the previous child session. |
