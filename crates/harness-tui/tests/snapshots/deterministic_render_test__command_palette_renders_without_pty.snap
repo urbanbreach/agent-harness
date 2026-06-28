@@ -1,6 +1,5 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
-assertion_line: 110
 expression: snapshot.as_str()
 ---
 
@@ -19,19 +18,19 @@ expression: snapshot.as_str()
                                   █ Search
 
                                   Suggested
-                                  New session Start a fresh live session           new
+                                  New session Start a fresh live session     Suggested
+                                  Switch model Browse available provider/mo… Suggested
+                           “in    Connect provider Connect a provider        Suggested    test
 
-                           “in    Sessions                                                test
-                                  Continue session Continue a prior session wh… resume
-                                  Replay session Replay a previous session as … replay
-
-                                  Agents
-                                  Switch model Browse available provider/model … model
-                                  Next agent Cycle to the next primary agent       tab
-                                  Previous agent Cycle to the previous prim… shift+tab
-                                  Cycle reasoning preset Cycle the configured … ctrl+t
-                                  Toggles Toggle profiles, tools, hooks, MCP,… toggles
-
+                                  Session
+                                  Switch session Continue a prior session whe… Session
+                                  New session Start a fresh live session       Session
+                                  Rename session Rename the current session    Session
+                                  Jump to message Jump to a specific message … Session
+                                  Fork session Fork the current session        Session
+                                  Compact session Write a manual context chec… Session
+                                  Undo previous message Revert to the previou… Session
+                                  Show sidebar Toggle the operator sidebar           2
 
 
 
