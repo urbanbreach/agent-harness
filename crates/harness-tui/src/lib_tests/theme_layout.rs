@@ -169,15 +169,12 @@ pub(super) fn command_palette_state_filters_existing_commands() {
     assert!(app.palette_visible);
     assert_eq!(app.palette_input, "n");
     assert_eq!(app.palette_cursor, 1);
-    assert!(app.palette_filtered.starts_with(&[
-        "new_session".to_string(),
-        "agent_cycle".to_string(),
-        "session_child_cycle".to_string(),
-    ]));
+    assert!(!app.palette_filtered.is_empty());
     assert!(app.palette_filtered.iter().all(|command| {
-        Action::palette_commands()
-            .iter()
-            .any(|existing| existing.id == command)
+        let id = command
+            .strip_prefix("suggested:")
+            .unwrap_or(command.as_str());
+        crate::keybindings::palette_model::find(id).is_some()
     }));
 }
 

@@ -455,10 +455,6 @@ pub(crate) fn footer_hints_view_model(input: FooterHintsInput) -> FooterHintsVie
                 label: "focus",
             },
             FooterHint {
-                action: Action::Reload,
-                label: "reload",
-            },
-            FooterHint {
                 action: Action::Quit,
                 label: "quit",
             },
@@ -969,7 +965,7 @@ pub(crate) fn exact_test_control_dock_view_model_preserves_replay_read_only_vari
         ),
         primary_summary: "12 events loaded".to_string(),
         composer_body: "Replay is read-only.".to_string(),
-        composer_disclosure: "? shortcuts  ·  tab focus  ·  r reload  ·  q quit".to_string(),
+        composer_disclosure: "? shortcuts  ·  tab focus  ·  q quit".to_string(),
         composer_focused: false,
     });
 
@@ -982,7 +978,7 @@ pub(crate) fn exact_test_control_dock_view_model_preserves_replay_read_only_vari
     assert_eq!(replay.composer_body, "Replay is read-only.");
     assert_eq!(
         replay.composer_disclosure,
-        "? shortcuts  ·  tab focus  ·  r reload  ·  q quit"
+        "? shortcuts  ·  tab focus  ·  q quit"
     );
     assert!(!replay.composer_focused);
     assert!(replay.composer_disabled);

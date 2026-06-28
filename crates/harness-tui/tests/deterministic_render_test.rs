@@ -111,8 +111,7 @@ fn command_palette_renders_without_pty() {
 
     assert!(rendered.contains("Commands"));
     assert!(rendered.contains("New session"));
-    assert!(rendered.contains("Continue session"));
-    assert!(rendered.contains("Next agent"));
+    assert!(rendered.contains("Switch session"));
 }
 
 #[test]
@@ -192,7 +191,7 @@ fn replay_shell_is_read_only_without_pty() {
     // assert
     assert!(rendered.contains("Replay · read-only"));
     assert!(rendered.contains("Replay is read-only"));
-    assert!(rendered.contains("r reload"));
+    assert!(!rendered.contains("r reload"));
     assert!(rendered.contains("q quit"));
     assert!(!rendered.contains("Type a prompt for the next turn"));
 
