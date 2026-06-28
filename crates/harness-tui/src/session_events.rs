@@ -1,24 +1,9 @@
 use std::fs;
 use std::path::Path;
 
-use anyhow::{Context, Result};
 use harness_core::event::EventEnvelopeV1;
 
 const EVENTS_FILE_NAME: &str = "events.jsonl";
-
-pub(crate) fn load_events_from_run_dir(run_dir: &Path) -> Result<Vec<EventEnvelopeV1>> {
-    let events_path = run_dir.join(EVENTS_FILE_NAME);
-    let body = fs::read_to_string(&events_path)
-        .with_context(|| format!("failed to read events file {}", events_path.display()))?;
-
-    body.lines()
-        .map(|line| {
-            serde_json::from_str::<EventEnvelopeV1>(line).with_context(|| {
-                format!("failed to parse JSONL event from {}", events_path.display())
-            })
-        })
-        .collect()
-}
 
 pub(crate) fn load_session_events(session_path: &Path) -> Result<Vec<EventEnvelopeV1>, String> {
     let events_path = session_path.join(EVENTS_FILE_NAME);
@@ -93,17 +78,5 @@ mod tests {
         let events = load_session_events(run_dir.path()).expect("load session events");
 
         assert_eq!(run_started_count(&events), 2);
-    }
-
-    #[test]
-    fn replay_event_loader_preserves_strict_blank_line_parsing() {
-        let run_dir = tempfile::tempdir().expect("create run dir");
-        write_events(run_dir.path(), &[event(1), event(2)], "\n\n");
-
-        let error = load_events_from_run_dir(run_dir.path()).expect_err("blank line should fail");
-
-        assert!(error
-            .to_string()
-            .contains("failed to parse JSONL event from"));
     }
 }

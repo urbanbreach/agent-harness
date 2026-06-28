@@ -7,7 +7,6 @@
 pub mod app;
 mod clipboard;
 pub mod event;
-mod event_log;
 pub mod keybindings;
 pub mod layout;
 #[cfg(test)]
@@ -15,6 +14,7 @@ mod lib_tests;
 pub mod overlay;
 pub mod render_test;
 mod runtime;
+mod session_events;
 #[cfg(test)]
 mod tests;
 mod text;
