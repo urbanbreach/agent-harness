@@ -10,7 +10,7 @@ pub(super) fn replay_read_only_copy_matches_operator_shell_contract() {
     assert!(rendered.contains("Replay is read-only"));
     assert!(rendered.contains("▼ MCP"));
     assert!(rendered.contains("▶ Modified Files"));
-    assert!(rendered.contains("r reload"));
+    assert!(!rendered.contains("r reload"));
     assert!(rendered.contains("q quit"));
     assert!(!rendered.contains("Tab nav"));
     assert!(
@@ -39,7 +39,7 @@ pub(super) fn command_palette_groups_commands_for_shell() {
 
     let rendered = render_live_lines(&app, 120, 30);
     assert!(rendered.contains("Commands"));
-    assert!(rendered.contains("Continue session"));
+    assert!(rendered.contains("Switch session"));
 
     let mut live_app = app::AppState::new_live(None, false, None);
     live_app.handle_key(key_with_modifiers(
@@ -58,24 +58,12 @@ pub(super) fn command_palette_groups_commands_for_shell() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "quit".chars() {
+    for ch in "exit".chars() {
         system_app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
     let system_render = render_live_lines(&system_app, 120, 30);
     assert!(system_render.contains("Commands"));
-    assert!(system_render.contains("Quit"));
-
-    let mut help_app = app::AppState::new_startup(Vec::new(), None);
-    help_app.handle_key(key_with_modifiers(
-        crossterm::event::KeyCode::Char('p'),
-        crossterm::event::KeyModifiers::CONTROL,
-    ));
-    for ch in "help".chars() {
-        help_app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
-    }
-    let help_render = render_live_lines(&help_app, 120, 30);
-    assert!(help_render.contains("Commands"));
-    assert!(help_render.contains("Help"));
+    assert!(system_render.contains("Exit the app"));
 }
 
 pub(super) fn session_switcher_groups_entries_by_recency() {
@@ -120,7 +108,7 @@ pub(super) fn session_switcher_groups_entries_by_recency() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "resume".chars() {
+    for ch in "switch".chars() {
         app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
     app.handle_key(key(crossterm::event::KeyCode::Enter));

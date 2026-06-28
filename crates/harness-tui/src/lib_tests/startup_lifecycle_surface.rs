@@ -76,10 +76,10 @@ pub(super) fn startup_palette_remains_secondary_and_draft_safe() {
     ));
 
     assert!(app.palette_visible);
-    let overlay_render = render_live_lines(&app, 100, 24);
+    let overlay_render = render_live_lines(&app, 120, 30);
     assert!(overlay_render.contains("Commands"));
     assert!(overlay_render.contains("New session"));
-    assert!(overlay_render.contains("Continue session"));
+    assert!(overlay_render.contains("Switch session"));
 
     app.handle_key(key(crossterm::event::KeyCode::Esc));
 
@@ -98,7 +98,7 @@ pub(super) fn post_run_handoff_renders_next_actions() {
         false,
         None,
     );
-    app.active_review_surface = Some(app::ReviewSurface::Events);
+    app.active_review_surface = Some(app::ReviewSurface::Help);
     app.focus = app::Focus::Prompt;
     app.composer.prompt_buffer = "keep this draft".to_string();
     app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
@@ -491,7 +491,7 @@ pub(super) fn lifecycle_shell_snapshots_preserve_startup_and_handoff_contracts()
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "resume".chars() {
+    for ch in "switch".chars() {
         picker.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
     picker.handle_key(key(crossterm::event::KeyCode::Enter));
@@ -505,30 +505,12 @@ pub(super) fn lifecycle_shell_snapshots_preserve_startup_and_handoff_contracts()
     assert!(!continue_render.contains("beta-prompt"));
     assert!(continue_render.contains("Harness") || continue_render.contains("Continue session"));
 
-    picker.handle_key(key(crossterm::event::KeyCode::Esc));
-    picker.handle_key(key_with_modifiers(
-        crossterm::event::KeyCode::Char('p'),
-        crossterm::event::KeyModifiers::CONTROL,
-    ));
-    for ch in "replay".chars() {
-        picker.handle_key(key(crossterm::event::KeyCode::Char(ch)));
-    }
-    picker.handle_key(key(crossterm::event::KeyCode::Enter));
-
-    let replay_render = render_live_lines(&picker, 120, 30);
-    assert!(picker.session_history_visible);
-    assert_eq!(picker.composer.prompt_buffer, "keep this draft");
-    assert!(replay_render.contains("Replay session"));
-    assert!(replay_render.contains("beta-prompt"));
-    assert!(replay_render.contains("replay ready"));
-    assert!(replay_render.contains("Harness") || replay_render.contains("Replay session"));
-
     let mut completed_shell = app::AppState::new_live(
         Some(PathBuf::from("/tmp/sessions/run_fixture")),
         false,
         None,
     );
-    completed_shell.active_review_surface = Some(app::ReviewSurface::Events);
+    completed_shell.active_review_surface = Some(app::ReviewSurface::Help);
     completed_shell.focus = app::Focus::Prompt;
     completed_shell.composer.prompt_buffer = "keep this draft".to_string();
     completed_shell.composer.prompt_cursor = completed_shell.composer.prompt_buffer.chars().count();
@@ -600,7 +582,7 @@ pub(super) fn session_history_browse_preserves_draft() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "resume".chars() {
+    for ch in "switch".chars() {
         app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
@@ -652,6 +634,9 @@ pub(super) fn new_session_resets_transcript_but_keeps_unsent_draft() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
+    for ch in "new".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
 
     assert!(app.events.is_empty());

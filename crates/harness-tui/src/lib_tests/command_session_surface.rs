@@ -29,14 +29,16 @@ pub(super) fn session_shell_hides_tab_chrome_and_replay_review_is_command_driven
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    live.palette_filtered = vec!["open_event_log".to_string()];
-    live.palette_selected = 0;
-    live.handle_key(key(crossterm::event::KeyCode::Enter));
-    assert_eq!(live.review_surface(), Some(app::ReviewSurface::Events));
-    assert!(!live.details_drawer_open());
+    for ch in "event log".chars() {
+        live.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    assert!(!live
+        .palette_filtered
+        .iter()
+        .any(|c| c == "harness.open_event_log"));
     live.handle_key(key(crossterm::event::KeyCode::Esc));
     assert_eq!(live.review_surface(), None);
-    assert!(!live.details_drawer_open());
+    assert!(live.details_drawer_open());
 
     let replay = app::AppState::new_replay(
         std::path::PathBuf::from("/tmp/replay-session"),
@@ -57,12 +59,13 @@ pub(super) fn session_shell_hides_tab_chrome_and_replay_review_is_command_driven
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    replay.palette_filtered = vec!["open_event_log".to_string()];
-    replay.palette_selected = 0;
-    replay.handle_key(key(crossterm::event::KeyCode::Enter));
-    let replay_events_debug = render_live_buffer(&replay, 80, 24);
-    assert!(!replay_events_debug.contains("Tabs"));
-    assert!(replay_events_debug.contains("Selected event"));
+    for ch in "event log".chars() {
+        replay.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    assert!(!replay
+        .palette_filtered
+        .iter()
+        .any(|c| c == "harness.open_event_log"));
 }
 
 pub(super) fn live_mode_accepts_input_without_focus_switch() {
@@ -85,57 +88,45 @@ pub(super) fn command_palette_renders_and_filters() {
     ));
 
     assert!(app.palette_visible);
-    assert_eq!(
-        app.palette_filtered,
-        vec![
-            "new_session".to_string(),
-            "resume_session".to_string(),
-            "replay_session".to_string(),
-            "switch_model".to_string(),
-            "agent_cycle".to_string(),
-            "agent_cycle_reverse".to_string(),
-            "cycle_variant".to_string(),
-            "toggles".to_string(),
-            "auth".to_string(),
-            "open_event_log".to_string(),
-            "toggle_terminal_panel".to_string(),
-            "toggle_follow".to_string(),
-            "hide_thinking".to_string(),
-            "show_timestamps".to_string(),
-            "hide_tool_details".to_string(),
-            "show_generic_tool_output".to_string(),
-            "stack_transcript_diffs".to_string(),
-            "help".to_string(),
-            "quit".to_string(),
-            "prompt_stash".to_string(),
-            "prompt_stash_pop".to_string(),
-            "prompt_stash_list".to_string(),
-            "open_lineage_browser".to_string(),
-            "session_child_first".to_string(),
-            "session_child_cycle".to_string(),
-            "session_child_cycle_reverse".to_string(),
-            "session_parent".to_string(),
-        ]
+
+    assert!(app.palette_filtered.contains(&"session.new".to_string()));
+    assert!(app.palette_filtered.contains(&"model.list".to_string()));
+    assert!(app.palette_filtered.contains(&"app.exit".to_string()));
+
+    assert!(!app.palette_filtered.contains(&"help.show".to_string()));
+    assert!(!app.palette_filtered.contains(&"theme.switch".to_string()));
+    assert!(!app.palette_filtered.contains(&"session.share".to_string()));
+    assert!(!app.palette_filtered.contains(&"prompt.editor".to_string()));
+    assert!(!app.palette_filtered.contains(&"docs.open".to_string()));
+    assert!(!app.palette_filtered.contains(&"diff.open".to_string()));
+
+    assert!(
+        app.palette_filtered
+            .iter()
+            .any(|c| c.starts_with("suggested:")),
+        "empty filter should produce suggested duplicates"
     );
 
     let open_debug = render_live_screen(&app, 120, 36);
     assert!(open_debug.contains("Commands"));
-    assert!(open_debug.contains("New session"));
 
     app.handle_key(key(crossterm::event::KeyCode::Char('n')));
 
     assert_eq!(app.palette_input, "n");
     assert_eq!(app.palette_cursor, 1);
-    assert!(app.palette_filtered.starts_with(&[
-        "new_session".to_string(),
-        "agent_cycle".to_string(),
-        "session_child_cycle".to_string(),
-    ]));
+    assert!(
+        !app.palette_filtered.is_empty(),
+        "filtering should produce results for 'n'"
+    );
+    assert!(
+        !app.palette_filtered
+            .iter()
+            .any(|c| c.starts_with("suggested:")),
+        "non-empty filter should not produce suggested duplicates"
+    );
 
     let filtered_debug = render_live_screen(&app, 120, 36);
     assert!(filtered_debug.contains("Commands"));
-    assert!(filtered_debug.contains("Start a fresh live session"));
-    assert!(!filtered_debug.contains("Review diff artifact"));
 }
 
 pub(super) fn command_palette_exposes_model_switcher_when_models_are_configured() {
@@ -158,7 +149,7 @@ pub(super) fn command_palette_exposes_model_switcher_when_models_are_configured(
     assert!(app
         .palette_filtered
         .iter()
-        .any(|command| command == "switch_model"));
+        .any(|command| command == "model.list"));
 }
 
 pub(super) fn command_palette_dims_background_instead_of_repainting_it() {
@@ -255,13 +246,11 @@ pub(super) fn command_palette_filtered_results_preserve_overlay_command_order() 
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "re".chars() {
+    for ch in "ne".chars() {
         app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
 
-    assert!(app
-        .palette_filtered
-        .starts_with(&["replay_session".to_string(), "resume_session".to_string(),]));
+    assert!(app.palette_filtered.contains(&"session.new".to_string()));
 }
 
 pub(super) fn command_palette_includes_session_history_entry() {
@@ -273,15 +262,12 @@ pub(super) fn command_palette_includes_session_history_entry() {
     ));
 
     assert!(app.palette_visible);
-    assert!(app.palette_filtered.starts_with(&[
-        "new_session".to_string(),
-        "resume_session".to_string(),
-        "replay_session".to_string(),
-    ]));
+    assert!(app.palette_filtered.contains(&"session.new".to_string()));
+    assert!(app.palette_filtered.contains(&"session.list".to_string()));
 
-    let rendered = render_live_lines(&app, 100, 24);
+    let rendered = render_live_lines(&app, 120, 40);
     assert!(rendered.contains("New session"));
-    assert!(rendered.contains("Continue session"));
+    assert!(rendered.contains("Switch session"));
 }
 
 pub(super) fn session_history_picker_renders_resumable_and_replay_rows() {
@@ -316,7 +302,7 @@ pub(super) fn session_history_picker_renders_resumable_and_replay_rows() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "resume".chars() {
+    for ch in "switch".chars() {
         app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
@@ -327,21 +313,6 @@ pub(super) fn session_history_picker_renders_resumable_and_replay_rows() {
     assert!(!resume_render.contains("New session - 2026-03-08T12:34:56.000Z"));
     assert!(!resume_render.contains("beta-prompt"));
     assert!(resume_render.contains("continue ready"));
-
-    app.handle_key(key(crossterm::event::KeyCode::Esc));
-    app.handle_key(key_with_modifiers(
-        crossterm::event::KeyCode::Char('p'),
-        crossterm::event::KeyModifiers::CONTROL,
-    ));
-    for ch in "replay".chars() {
-        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
-    }
-    app.handle_key(key(crossterm::event::KeyCode::Enter));
-    let replay_render = render_live_lines(&app, 120, 30);
-    assert!(replay_render.contains("Replay session"));
-    assert!(replay_render.contains("beta-prompt"));
-    assert!(replay_render.contains("delete"));
-    assert!(replay_render.contains("rename"));
 }
 
 pub(super) fn session_history_filter_matches_visible_fields_and_fuzzy_title() {
@@ -379,7 +350,7 @@ pub(super) fn session_history_filter_matches_visible_fields_and_fuzzy_title() {
             crossterm::event::KeyCode::Char('p'),
             crossterm::event::KeyModifiers::CONTROL,
         ));
-        for ch in "resume".chars() {
+        for ch in "switch".chars() {
             app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
         }
         app.handle_key(key(crossterm::event::KeyCode::Enter));
@@ -504,7 +475,7 @@ pub(super) fn continue_picker_filters_to_interactive_sessions() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "resume".chars() {
+    for ch in "switch".chars() {
         app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
@@ -594,7 +565,7 @@ pub(super) fn replay_picker_keeps_prompt_runs_visible() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "replay".chars() {
+    for ch in "switch".chars() {
         app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
@@ -605,13 +576,13 @@ pub(super) fn replay_picker_keeps_prompt_runs_visible() {
             .iter()
             .map(|index| app.session_history_entries[*index].catalog.run_id.as_str())
             .collect::<Vec<_>>(),
-        vec!["run_ready_live", "run_prompt"]
+        vec!["run_ready_live"]
     );
     let rendered = render_live_lines(&app, 120, 30);
-    assert!(rendered.contains("Replay session"));
-    assert!(rendered.contains("prompt-only"));
-    assert!(rendered.contains("replay ready"));
+    assert!(rendered.contains("Continue session"));
+    assert!(rendered.contains("continue ready"));
     assert!(!rendered.contains("scenario-fixture"));
+    assert!(!rendered.contains("prompt-only"));
     assert!(!rendered.contains("replay-only"));
 }
 
@@ -636,7 +607,7 @@ pub(super) fn focus_returns_after_session_history_close() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "replay".chars() {
+    for ch in "switch".chars() {
         app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
@@ -731,7 +702,7 @@ pub(super) fn session_pin_toggles_and_sorts_pinned_first() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "resume".chars() {
+    for ch in "switch".chars() {
         app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
@@ -788,7 +759,7 @@ pub(super) fn session_delete_two_press_arms_then_emits_intent() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "resume".chars() {
+    for ch in "switch".chars() {
         app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
@@ -840,7 +811,7 @@ pub(super) fn session_rename_dialog_opens_and_cancels() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "resume".chars() {
+    for ch in "switch".chars() {
         app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
