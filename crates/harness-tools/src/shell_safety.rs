@@ -365,11 +365,29 @@ fn validate_shell_path_arguments(
     workspace_root: &Path,
 ) -> Result<(), ToolError> {
     for token in &command.args {
-        let candidate = if token.starts_with('-') {
+        let candidate = if token.starts_with("--") {
             if let Some((_, value)) = token.split_once('=') {
                 value
             } else {
                 continue;
+            }
+        } else if token.starts_with('-') && token.len() > 1 {
+            if let Some((prefix, value)) = token.split_once('=') {
+                if prefix.len() == 2 {
+                    value
+                } else {
+                    &token[2..]
+                }
+            } else {
+                let mut chars = token.chars();
+                chars.next(); // -
+                chars.next(); // flag
+                let rest = chars.as_str();
+                if rest.is_empty() {
+                    continue;
+                } else {
+                    rest
+                }
             }
         } else {
             token
@@ -564,6 +582,29 @@ mod tests {
             .validate_bash_command("ls foo/../../../etc/pas*", tempdir.path(), tempdir.path())
             .expect_err("external relative path with glob should be blocked");
         assert!(matches!(err4, ToolError::PathEscapesWorkspace { .. }));
+    }
+
+    #[test]
+    fn validate_bash_command_rejects_short_option_path_escapes() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: vec!["gcc".to_string()],
+            cwd_roots: vec![".".to_string()],
+        });
+
+        let err = safety
+            .validate_bash_command("gcc -I/etc/passwd", tempdir.path(), tempdir.path())
+            .expect_err("external path in short option should be blocked");
+        assert!(matches!(err, ToolError::PathEscapesWorkspace { .. }));
+
+        let err2 = safety
+            .validate_bash_command(
+                "gcc -Ifoo/../../../etc/passwd",
+                tempdir.path(),
+                tempdir.path(),
+            )
+            .expect_err("external relative path in short option should be blocked");
+        assert!(matches!(err2, ToolError::PathEscapesWorkspace { .. }));
     }
 
     #[test]
