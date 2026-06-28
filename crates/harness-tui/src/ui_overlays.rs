@@ -601,11 +601,10 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
     let selected = app
         .palette_selected
         .min(app.palette_filtered.len().saturating_sub(1));
-    let flatten = !app.palette_input.is_empty();
-    let rows = palette_overlay_rows(app, flatten);
+    let rows = palette_overlay_rows(app);
     let selected_row = rows
         .iter()
-        .position(|row| matches!(row, PaletteOverlayRow::Command { command, .. } if *command == app.palette_filtered[selected]))
+        .position(|row| matches!(row, PaletteOverlayRow::Command { is_selected, .. } if *is_selected == selected))
         .unwrap_or(0);
     let scroll = selected_row.saturating_sub(visible_rows.saturating_sub(1));
 
@@ -622,10 +621,10 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
                     row_area,
                 );
             }
-            PaletteOverlayRow::Section(section) => {
+            PaletteOverlayRow::Section(category) => {
                 frame.render_widget(
                     Paragraph::new(command_palette_section_row(
-                        section.label(),
+                        category.label(),
                         theme,
                         row_area.width,
                     )),
@@ -633,10 +632,12 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
                 );
             }
             PaletteOverlayRow::Command {
-                command,
-                selected_index,
+                title,
+                description,
+                footer,
+                is_selected,
             } => {
-                let is_selected = *selected_index == selected;
+                let is_selected = *is_selected == selected;
                 if is_selected {
                     frame.render_widget(
                         Block::default().style(ui_chrome::overlay_focus_row_style(theme)),
@@ -646,9 +647,9 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
 
                 frame.render_widget(
                     Paragraph::new(command_palette_row(
-                        Action::palette_command_label(command),
-                        palette_command_description(command),
-                        palette_command_footer(command, flatten),
+                        title,
+                        description,
+                        footer,
                         is_selected,
                         theme,
                         row_area.width,
@@ -660,46 +661,54 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
     }
 }
 
-enum PaletteOverlayRow<'a> {
+pub(crate) enum PaletteOverlayRow {
     Spacer,
-    Section(crate::keybindings::PaletteCommandSection),
+    Section(crate::keybindings::palette_model::PaletteCategory),
     Command {
-        command: &'a str,
-        selected_index: usize,
+        title: String,
+        description: String,
+        footer: String,
+        is_selected: usize,
     },
 }
 
-fn palette_overlay_rows(app: &AppState, flatten: bool) -> Vec<PaletteOverlayRow<'_>> {
-    let mut rows = Vec::new();
-    let mut last_section = None;
+pub(crate) fn palette_overlay_rows(app: &AppState) -> Vec<PaletteOverlayRow> {
+    use crate::app::palette_controller::compute_palette_rows;
+    use crate::keybindings::palette_model::{find, PaletteDispatch};
 
-    for (selected_index, command) in app.palette_filtered.iter().enumerate() {
-        let section = Action::palette_command_section(command.as_str());
-        if !flatten && section != last_section {
-            if let Some(section) = section {
-                if last_section.is_some() {
-                    rows.push(PaletteOverlayRow::Spacer);
-                }
-                rows.push(PaletteOverlayRow::Section(section));
+    let rows = compute_palette_rows(app, &app.palette_input);
+    let mut overlay_rows = Vec::new();
+    let mut last_category: Option<crate::keybindings::palette_model::PaletteCategory> = None;
+
+    for (selected_index, row) in rows.iter().enumerate() {
+        if Some(row.category) != last_category {
+            if last_category.is_some() {
+                overlay_rows.push(PaletteOverlayRow::Spacer);
             }
-            last_section = section;
+            overlay_rows.push(PaletteOverlayRow::Section(row.category));
+            last_category = Some(row.category);
         }
-        rows.push(PaletteOverlayRow::Command {
-            command,
-            selected_index,
+
+        let footer = {
+            let entry = find(row.command_id);
+            entry
+                .and_then(|e| match e.dispatch {
+                    PaletteDispatch::Action(action) => Some(app.keymap.get_binding_str(action)),
+                    _ => None,
+                })
+                .filter(|s| s != "-")
+                .unwrap_or_else(|| row.category.label().to_string())
+        };
+
+        overlay_rows.push(PaletteOverlayRow::Command {
+            title: row.title.clone(),
+            description: row.description.to_string(),
+            footer,
+            is_selected: selected_index,
         });
     }
 
-    rows
-}
-
-fn palette_command_footer(command: &str, flatten: bool) -> &'static str {
-    if flatten {
-        return Action::palette_command_section(command)
-            .map(|section| section.label())
-            .unwrap_or_else(|| Action::palette_command_shortcut(command));
-    }
-    Action::palette_command_shortcut(command)
+    overlay_rows
 }
 
 fn command_palette_row(
@@ -799,10 +808,6 @@ fn command_palette_section_row(label: &str, theme: &Theme, width: u16) -> Line<'
         ));
     }
     Line::from(spans)
-}
-
-fn palette_command_description(command: &str) -> &'static str {
-    Action::palette_command_description(command)
 }
 
 fn render_overlay_dim_backdrop(frame: &mut Frame, area: Rect) {

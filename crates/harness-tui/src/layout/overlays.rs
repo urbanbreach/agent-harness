@@ -220,10 +220,13 @@ fn command_palette_visible_rows(app: &AppState) -> usize {
 
     app.palette_filtered
         .iter()
-        .fold((0usize, None), |(rows, last_section), command| {
-            let section = crate::Action::palette_command_section(command.as_str());
-            let section_rows = if section.is_some() && section != last_section {
-                if last_section.is_some() {
+        .fold((0usize, None), |(rows, last_category), command| {
+            let id = command
+                .strip_prefix("suggested:")
+                .unwrap_or(command.as_str());
+            let category = crate::keybindings::palette_model::find(id).map(|entry| entry.category);
+            let section_rows = if category.is_some() && category != last_category {
+                if last_category.is_some() {
                     2
                 } else {
                     1
@@ -231,7 +234,10 @@ fn command_palette_visible_rows(app: &AppState) -> usize {
             } else {
                 0
             };
-            (rows.saturating_add(section_rows).saturating_add(1), section)
+            (
+                rows.saturating_add(section_rows).saturating_add(1),
+                category,
+            )
         })
         .0
 }

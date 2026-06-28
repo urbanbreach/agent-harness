@@ -3,7 +3,9 @@ use ratatui::layout::Rect;
 use crate::theme::{LifecycleCardTokens, ShellGeometryTarget, Theme};
 
 const LIVE_EMPTY_STATE_MIN_HEIGHT: u16 = 9;
+#[cfg(test)]
 const SECONDARY_STACK_MAX_WIDTH: u16 = 72;
+#[cfg(test)]
 const SECONDARY_STACK_MIN_HEIGHT: u16 = 18;
 const RUNTIME_STATE_SURFACE_HORIZONTAL_INSET: u16 = 6;
 const RUNTIME_STATE_SURFACE_MAX_WIDTH: u16 = 68;
@@ -136,6 +138,7 @@ pub(crate) fn secondary_surface_layout(area: Rect, theme: &Theme) -> SecondarySu
     }
 }
 
+#[cfg(test)]
 pub(crate) fn split_secondary_surface(area: Rect, left_percent: u16, gap: u16) -> [Rect; 2] {
     if area.width == 0 || area.height == 0 {
         return [area, Rect::new(area.x, area.y, 0, area.height)];
@@ -167,6 +170,7 @@ pub(crate) fn split_secondary_surface(area: Rect, left_percent: u16, gap: u16) -
     ]
 }
 
+#[cfg(test)]
 fn split_secondary_surface_vertically(area: Rect, top_percent: u16, gap: u16) -> [Rect; 2] {
     if area.height <= 1 {
         return [
