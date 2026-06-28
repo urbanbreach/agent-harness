@@ -178,7 +178,6 @@ fn redaction_marker_for_sensitive_key(key: &str) -> Option<&'static str> {
     let segments = key
         .split(|character: char| !character.is_ascii_alphanumeric())
         .filter(|segment| !segment.is_empty())
-        .map(|segment| segment.to_ascii_lowercase())
         .collect::<Vec<_>>();
 
     if normalized == "apikey"
@@ -209,38 +208,38 @@ fn redaction_marker_for_sensitive_key(key: &str) -> Option<&'static str> {
     None
 }
 
-fn adjacent_segments(segments: &[String], left: &str, right: &str) -> bool {
+fn adjacent_segments(segments: &[&str], left: &str, right: &str) -> bool {
     segments
         .windows(2)
-        .any(|window| window[0] == left && window[1] == right)
+        .any(|window| window[0].eq_ignore_ascii_case(left) && window[1].eq_ignore_ascii_case(right))
 }
 
-fn key_segments_contain(segments: &[String], needle: &str) -> bool {
-    segments.iter().any(|segment| segment == needle)
+fn key_segments_contain(segments: &[&str], needle: &str) -> bool {
+    segments
+        .iter()
+        .any(|segment| segment.eq_ignore_ascii_case(needle))
 }
 
-fn credential_key_segments(segments: &[String]) -> bool {
+fn credential_key_segments(segments: &[&str]) -> bool {
     if !key_segments_contain(segments, "key") {
         return false;
     }
+
     segments.iter().any(|segment| {
-        matches!(
-            segment.as_str(),
-            "access"
-                | "api"
-                | "auth"
-                | "bearer"
-                | "client"
-                | "credential"
-                | "github"
-                | "google"
-                | "openai"
-                | "private"
-                | "provider"
-                | "secret"
-                | "token"
-                | "aws"
-        )
+        segment.eq_ignore_ascii_case("access")
+            || segment.eq_ignore_ascii_case("api")
+            || segment.eq_ignore_ascii_case("auth")
+            || segment.eq_ignore_ascii_case("bearer")
+            || segment.eq_ignore_ascii_case("client")
+            || segment.eq_ignore_ascii_case("credential")
+            || segment.eq_ignore_ascii_case("github")
+            || segment.eq_ignore_ascii_case("google")
+            || segment.eq_ignore_ascii_case("openai")
+            || segment.eq_ignore_ascii_case("private")
+            || segment.eq_ignore_ascii_case("provider")
+            || segment.eq_ignore_ascii_case("secret")
+            || segment.eq_ignore_ascii_case("token")
+            || segment.eq_ignore_ascii_case("aws")
     })
 }
 
