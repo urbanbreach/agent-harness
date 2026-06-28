@@ -99,8 +99,8 @@ RUST_TEST_THREADS=1 cargo test -p harness-testkit --test pty_e2e
 - `AGENTS.md` files are project guidance; `.agent-harness/agents/*.md` and `.agent-harness/prompt-families/*.md` are runtime prompt assets. Do not mix those layers.
 
 ## MANDATORY CODING SKILLS
-- For any coding work in this repository, load `karpathy-guidelines` before the first edit. Coding work includes implementation, bug fixes, refactors, tests, build scripts, schemas, generated-code maintenance, and AGENTS guidance edits.
-- Delegated coding tasks must include the skill in `load_skills`; omit it only for pure read-only exploration, documentation-only lookup, or non-coding QA.
+- For any coding work in this repository, load `karpathy-guidelines` and `programming` before the first edit. Coding work includes implementation, bug fixes, refactors, tests, build scripts, schemas, generated-code maintenance, and AGENTS guidance edits.
+- Delegated coding tasks must include the skills in `load_skills`; omit it only for pure read-only exploration, documentation-only lookup, or non-coding QA.
 
 ## UPDATE TOGETHER
 | Change | Also update |
