@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
-const DEFAULT_PROVIDER: &str = "default";
-const DEFAULT_MODEL: &str = "gpt-5.4-mini";
+const DEFAULT_PROVIDER: &str = "umans-ai-coding-plan";
+const DEFAULT_MODEL: &str = "umans-kimi-k2.7";
 
 #[test]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
@@ -36,8 +36,8 @@ fn live_proxy_defaults_match_documented_signoff_model() {
 }
 
 #[test]
-fn live_proxy_config_path_defaults_to_shipped_example() {
-    assert!(default_config_path().ends_with(Path::new("configs/harness.example.jsonc")));
+fn live_proxy_config_path_defaults_to_workspace_config() {
+    assert!(default_config_path().ends_with(Path::new("harness.jsonc")));
 }
 
 fn assert_live_proxy_env() -> Result<(), String> {
@@ -45,7 +45,7 @@ fn assert_live_proxy_env() -> Result<(), String> {
         return Err("HARNESS_LIVE_PROXY=1 is required".to_string());
     }
     let config = std::env::var("HARNESS_LIVE_PROXY_CONFIG")
-        .map(PathBuf::from)
+        .map(resolve_config_path)
         .unwrap_or_else(|_| default_config_path());
     if !config.exists() {
         return Err(format!(
@@ -65,7 +65,15 @@ fn default_model() -> &'static str {
 }
 
 fn default_config_path() -> PathBuf {
-    repo_root().join("configs").join("harness.example.jsonc")
+    repo_root().join("harness.jsonc")
+}
+
+fn resolve_config_path(path: String) -> PathBuf {
+    let path = PathBuf::from(path);
+    if path.is_absolute() {
+        return path;
+    }
+    repo_root().join(path)
 }
 
 fn repo_root() -> PathBuf {

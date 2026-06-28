@@ -54,7 +54,7 @@ tests/
 ## COMMANDS
 ```bash
 RUST_TEST_THREADS=1 cargo test -p harness-testkit --test pty_e2e
-HARNESS_LIVE_PROXY=1 HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc HARNESS_LIVE_PROXY_PROVIDER=default HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini cargo test -p harness-testkit live_proxy_preflight_requires_live_env -- --ignored --exact
+HARNESS_LIVE_PROXY=1 HARNESS_LIVE_PROXY_CONFIG=harness.jsonc HARNESS_LIVE_PROXY_PROVIDER=umans-ai-coding-plan HARNESS_LIVE_PROXY_MODEL=umans-kimi-k2.7 cargo test -p harness-testkit live_proxy_preflight_requires_live_env -- --ignored --exact
 HARNESS_NATIVE_VISUAL=1 cargo test -p harness-testkit --test native_visual_e2e -- --ignored --test-threads=1
 cargo test -p harness-testkit --test simulation_validator_test
 ```

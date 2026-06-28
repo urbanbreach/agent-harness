@@ -11,9 +11,9 @@ Run this first when validating local setup:
 
 ```bash
 HARNESS_LIVE_PROXY=1 \
-HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
-HARNESS_LIVE_PROXY_PROVIDER=default \
-HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini \
+HARNESS_LIVE_PROXY_CONFIG=harness.jsonc \
+HARNESS_LIVE_PROXY_PROVIDER=umans-ai-coding-plan \
+HARNESS_LIVE_PROXY_MODEL=umans-kimi-k2.7 \
 cargo test -p harness-testkit live_proxy_preflight_requires_live_env -- --ignored --exact
 ```
 
@@ -27,16 +27,15 @@ The live proxy smoke lane does **not** require KDE, `konsole`, `spectacle`, a de
 local POSIX shell. `live_proxy_preflight_requires_live_env` and the retained prompt/TUI signoff
 names verify only the slim env/config prerequisites now retained in T5.
 
-When `configs/harness.example.jsonc` is the active live config, the interactive `build` profile
-defaults `gpt-5.4-mini` to the `high` variant so live TUI runs can surface visible `Thinking:`
-traces. The signoff helpers still force `gpt-5.4-mini` onto the `low` variant so the Batch 1 parity
-lanes stay on the documented low-reasoning path. Set `HARNESS_LIVE_PROXY_VARIANT` to override the
-helper default.
+When the workspace `harness.jsonc` is the active live config, the interactive `build` profile
+defaults to `umans-ai-coding-plan/umans-kimi-k2.7` so live TUI runs dogfood the Umans coding model.
+The signoff helpers use the documented Umans provider/model tuple unless `HARNESS_LIVE_PROXY_PROVIDER`,
+`HARNESS_LIVE_PROXY_MODEL`, or `HARNESS_LIVE_PROXY_VARIANT` override it.
 
 Minimal portable baseline:
 
 - a reachable configured live proxy/provider
-- the shipped `configs/harness.example.jsonc` provider/model tuple, unless overridden by env
+- the workspace `harness.jsonc` provider/model tuple, unless overridden by env
 
 ## Batch 1 parity signoff
 
@@ -45,15 +44,15 @@ Batch 1 parity wrappers first:
 
 ```bash
 HARNESS_LIVE_PROXY=1 \
-HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
-HARNESS_LIVE_PROXY_PROVIDER=default \
-HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini \
+HARNESS_LIVE_PROXY_CONFIG=harness.jsonc \
+HARNESS_LIVE_PROXY_PROVIDER=umans-ai-coding-plan \
+HARNESS_LIVE_PROXY_MODEL=umans-kimi-k2.7 \
 cargo test -p harness-testkit live_proxy_prompt_parity_signoff -- --ignored --exact
 
 HARNESS_LIVE_PROXY=1 \
-HARNESS_LIVE_PROXY_CONFIG=configs/harness.example.jsonc \
-HARNESS_LIVE_PROXY_PROVIDER=default \
-HARNESS_LIVE_PROXY_MODEL=gpt-5.4-mini \
+HARNESS_LIVE_PROXY_CONFIG=harness.jsonc \
+HARNESS_LIVE_PROXY_PROVIDER=umans-ai-coding-plan \
+HARNESS_LIVE_PROXY_MODEL=umans-kimi-k2.7 \
 HARNESS_VISUAL_ARTIFACT_DIR=target/pty-visual-artifacts \
 cargo test -p harness-testkit live_proxy_e2e_tui_parity_signoff -- --ignored --exact
 ```
