@@ -61,7 +61,7 @@ fn model_switcher_status_line(app: &AppState, theme: &Theme) -> Line<'static> {
     let text = if app.launch_metadata().available_models().is_empty()
         && app.launch_metadata().model().is_none()
     {
-        "Connect a provider with /connect or /auth to list models"
+        "Connect a provider with /connect to list models"
     } else {
         "No automatic model fallback; provider errors stay visible"
     };
