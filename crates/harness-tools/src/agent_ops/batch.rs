@@ -103,13 +103,10 @@ pub(super) async fn execute_batch(
         .into_iter()
         .map(batch_detail_json)
         .collect::<Vec<_>>();
+    let display_text = format_batch_display(successful, failed, &details);
 
     Ok(text_json_tool_result(
-        if failed == 0 {
-            format!("All {successful} tools executed successfully.")
-        } else {
-            format!("Executed {successful} tools successfully. {failed} failed.")
-        },
+        display_text,
         json!({
             "successful": successful,
             "failed": failed,
@@ -132,6 +129,36 @@ pub(super) async fn execute_batch(
             "details": details,
         }),
     ))
+}
+
+fn format_batch_display(successful: usize, failed: usize, details: &[Value]) -> String {
+    let mut lines = Vec::with_capacity(details.len() + 4);
+    lines.push(if failed == 0 {
+        format!("All {successful} tools executed successfully.")
+    } else {
+        format!("Executed {successful} tools successfully. {failed} failed.")
+    });
+    lines.push("Batch results (input order):".to_string());
+    for detail in details {
+        let index = detail
+            .get("index")
+            .and_then(Value::as_u64)
+            .unwrap_or_default();
+        let tool_id = detail
+            .get("tool_id")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        let status = detail
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        lines.push(format!("[{index}] {tool_id}: {status}"));
+    }
+    lines.push(
+        "Permission attribution: each child tool call uses its own coordinator permission check."
+            .to_string(),
+    );
+    lines.join("\n")
 }
 
 fn batch_detail_json(outcome: BatchCallOutcome) -> Value {
