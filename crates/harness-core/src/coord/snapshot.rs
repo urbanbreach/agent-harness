@@ -14,6 +14,7 @@ use super::{
 
 const SNAPSHOTS_DIR: &str = "snapshots";
 const DEFAULT_IGNORED_DIRS: &[&str] = &[".git", ".agent-harness", "target"];
+const DEFAULT_IGNORED_FILES: &[&str] = &[".envrc"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct SnapshotEntry {
@@ -127,6 +128,15 @@ fn should_ignore_path(relative: &str) -> bool {
     let segments: Vec<&str> = normalized.split('/').filter(|s| !s.is_empty()).collect();
     for ignored in DEFAULT_IGNORED_DIRS {
         if segments.iter().any(|segment| segment == ignored) {
+            return true;
+        }
+    }
+    if let Some(file_name) = segments.last() {
+        if DEFAULT_IGNORED_FILES.contains(file_name)
+            || *file_name == ".env"
+            || file_name.starts_with(".env.")
+            || file_name.ends_with(".env")
+        {
             return true;
         }
     }

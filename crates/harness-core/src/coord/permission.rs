@@ -9,6 +9,7 @@ use crate::config::HookLifecycleEvent;
 use crate::digest::digest12;
 use crate::event::PermissionDecision as EventPermissionDecision;
 use crate::path_selector::workspace_relative_path_from_maybe_absolute;
+use crate::perm::shell::{direct_shell_command_request, scan_shell_command, ShellCommandRequest};
 use crate::perm::{
     PermissionDecision, PermissionGrant, PermissionGrantMatcher, PermissionGrantRequest,
     PermissionGrantScope, PermissionKind, PermissionPolicy, PermissionRuleRequest,
@@ -45,6 +46,27 @@ pub(super) fn permission_summary(
     tool_id: &str,
     args_json: &Value,
 ) -> String {
+    if let Some(shell_request) = shell_request_from_args(args_json) {
+        let command = redactor.redact_text(&shell_request.original);
+        let patterns = shell_request
+            .patterns
+            .iter()
+            .map(|pattern| redactor.redact_text(pattern))
+            .collect::<Vec<_>>();
+        let always_patterns = shell_request
+            .always_patterns
+            .iter()
+            .map(|pattern| redactor.redact_text(pattern))
+            .collect::<Vec<_>>();
+        let patterns = serde_json::to_string(&patterns).unwrap_or_else(|_| "[]".to_string());
+        let always_patterns =
+            serde_json::to_string(&always_patterns).unwrap_or_else(|_| "[]".to_string());
+        return format!(
+            "tool={tool_id} command={} patterns={patterns} always_patterns={always_patterns}",
+            command
+        );
+    }
+
     let redacted_args = crate::redact::redact_value(redactor, args_json);
     let args = serde_json::to_string(&redacted_args).unwrap_or_else(|_| "null".to_string());
     format!("tool={tool_id} args={args}")
@@ -147,7 +169,7 @@ pub(super) fn permission_rule_request_selectors(
     args_json: &Value,
 ) -> Vec<PermissionRuleRequest> {
     match kind {
-        PermissionKind::Shell => shell_command_rule_selector(args_json).into_iter().collect(),
+        PermissionKind::Shell => shell_command_rule_selector(args_json),
         PermissionKind::EditFs => workspace_path_rule_selectors(workspace_root, args_json),
         PermissionKind::Task => task_agent_rule_selectors(args_json),
         PermissionKind::Network
@@ -371,7 +393,7 @@ fn task_agent_rule_selectors(args_json: &Value) -> Vec<PermissionRuleRequest> {
 
 fn permission_rule_request_key(selector: &PermissionRuleRequest) -> &str {
     match selector {
-        PermissionRuleRequest::ShellCommand(value)
+        PermissionRuleRequest::ShellCommand { pattern: value }
         | PermissionRuleRequest::WorkspacePath(value)
         | PermissionRuleRequest::TaskAgent(value) => value,
     }
@@ -386,12 +408,29 @@ fn trimmed_arg(args_json: &Value, key: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-fn shell_command_rule_selector(args_json: &Value) -> Option<PermissionRuleRequest> {
-    args_json
+fn shell_command_rule_selector(args_json: &Value) -> Vec<PermissionRuleRequest> {
+    let Some(command) = args_json
         .get("command")
         .or_else(|| args_json.get("cmd"))
         .and_then(Value::as_str)
-        .map(|command| PermissionRuleRequest::ShellCommand(command.to_string()))
+    else {
+        return Vec::new();
+    };
+    shell_request_from_args(args_json)
+        .map(|request| {
+            request
+                .commands
+                .into_iter()
+                .map(|command| PermissionRuleRequest::ShellCommand {
+                    pattern: command.pattern,
+                })
+                .collect()
+        })
+        .unwrap_or_else(|| {
+            vec![PermissionRuleRequest::ShellCommand {
+                pattern: command.to_string(),
+            }]
+        })
 }
 
 fn workspace_path_rule_selectors(
@@ -424,10 +463,32 @@ fn shell_command_selector(
         command_identity.push(0x1f);
         command_identity.extend_from_slice(&serde_json::to_vec(args).ok()?);
     }
+    let shell_request = shell_request_from_args(args_json);
+    let (patterns, always_patterns) = shell_request
+        .map(|request| (request.patterns, request.always_patterns))
+        .unwrap_or_else(|| (Vec::new(), Vec::new()));
     Some(PermissionGrantMatcher::ShellCommand {
         command_digest: digest12(&command_identity),
         request_digest: request_digest.to_string(),
+        patterns,
+        always_patterns,
     })
+}
+
+fn shell_request_from_args(args_json: &Value) -> Option<ShellCommandRequest> {
+    if let Some(command) = args_json.get("command").and_then(Value::as_str) {
+        return scan_shell_command(command).ok();
+    }
+    let cmd = args_json.get("cmd").and_then(Value::as_str)?;
+    let Some(args) = args_json.get("args").and_then(Value::as_array) else {
+        return scan_shell_command(cmd).ok();
+    };
+    let args = args
+        .iter()
+        .filter_map(Value::as_str)
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    Some(direct_shell_command_request(cmd, &args))
 }
 
 fn workspace_path_selector_paths(workspace_root: &Path, args_json: &Value) -> Vec<String> {
@@ -435,10 +496,12 @@ fn workspace_path_selector_paths(workspace_root: &Path, args_json: &Value) -> Ve
     for key in WORKSPACE_PATH_SELECTOR_KEYS {
         collect_workspace_path_selector(workspace_root, args_json.get(key), &mut paths);
     }
+    collect_apply_patch_path_selectors(workspace_root, args_json, &mut paths);
     paths.into_iter().collect()
 }
 
 const WORKSPACE_PATH_SELECTOR_KEYS: &[&str] = &[
+    "file",
     "path",
     "paths",
     "filePath",
@@ -478,6 +541,35 @@ fn insert_workspace_path_selector(
         paths.insert(path);
     }
 }
+
+fn collect_apply_patch_path_selectors(
+    workspace_root: &Path,
+    args_json: &Value,
+    paths: &mut BTreeSet<String>,
+) {
+    let Some(patch_text) = args_json
+        .get("patchText")
+        .or_else(|| args_json.get("patch_text"))
+        .and_then(Value::as_str)
+    else {
+        return;
+    };
+
+    for line in patch_text.lines() {
+        for prefix in APPLY_PATCH_PATH_PREFIXES {
+            if let Some(path) = line.strip_prefix(prefix) {
+                insert_workspace_path_selector(workspace_root, path.trim(), paths);
+            }
+        }
+    }
+}
+
+const APPLY_PATCH_PATH_PREFIXES: &[&str] = &[
+    "*** Add File:",
+    "*** Delete File:",
+    "*** Update File:",
+    "*** Move to:",
+];
 
 impl super::Coordinator {
     pub(in crate::coord) async fn resolve_permission_internal(

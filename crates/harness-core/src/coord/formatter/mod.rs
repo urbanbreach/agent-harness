@@ -24,8 +24,7 @@ pub(crate) use caching::CachingFormatterDiscovery;
 #[cfg(test)]
 pub(in crate::coord) use discovery::FakeFormatterDiscovery;
 
-#[cfg(test)]
-pub(in crate::coord) use runner::run_formatter_for_path;
+pub use runner::run_formatter_for_path;
 pub(in crate::coord) use runner::run_formatter_for_path_with_discovery;
 
 pub use resolver::{formatter_status, FormatterStatus};

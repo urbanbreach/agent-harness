@@ -11,10 +11,10 @@ use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 
 use crate::agent::{
-    build_provider_context_messages, build_provider_tool_defs, default_model_settings_for_profile,
-    default_provider, stream_assistant_response_once, tool_result_to_message_content,
-    AgentModelRef, AgentModelSettings, AgentProfile, AgentRequest, AgentRuntimeEvent,
-    AgentTurnFailure, AgentTurnOutcome, AssistantResponse, AssistantToolIntent,
+    build_provider_context_messages, build_provider_tool_defs_for_model,
+    default_model_settings_for_profile, default_provider, stream_assistant_response_once,
+    tool_result_to_message_content, AgentModelRef, AgentModelSettings, AgentProfile, AgentRequest,
+    AgentRuntimeEvent, AgentTurnFailure, AgentTurnOutcome, AssistantResponse, AssistantToolIntent,
     ProviderBoundaryContext, ProviderContext, ProviderConversationTurn,
     ProviderConversationTurnStatus, StreamAssistantResponseOnceRequest, MAX_TOOL_CALLS_TOTAL,
 };
@@ -78,7 +78,9 @@ mod formatter;
 mod handle;
 mod hooks;
 
-pub use formatter::{formatter_status, FormatterStatus, RealFormatterDiscovery};
+pub use formatter::{
+    formatter_status, run_formatter_for_path, FormatterStatus, RealFormatterDiscovery,
+};
 mod permission;
 mod provider_context;
 mod provider_lifecycle;

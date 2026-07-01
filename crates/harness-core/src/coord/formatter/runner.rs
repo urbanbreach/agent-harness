@@ -17,8 +17,7 @@ const FILE_PLACEHOLDER: &str = "$FILE";
 ///
 /// Failures are non-fatal and are returned as a human-readable warning string.
 /// A successful run (including when no formatter is configured) returns `Ok(())`.
-#[cfg(test)]
-pub(in crate::coord) async fn run_formatter_for_path(
+pub async fn run_formatter_for_path(
     config: &FormatterConfig,
     workspace_root: &Path,
     path: &str,

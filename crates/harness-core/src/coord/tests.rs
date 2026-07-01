@@ -159,6 +159,7 @@ async fn lifecycle_hooks_use_injected_executor_without_spawning() {
         shell_allowlist: ShellAllowlist {
             executables: vec!["fake-hook-bin".to_string()],
             cwd_roots: Vec::new(),
+            ..ShellAllowlist::default()
         },
         suppress_execution: false,
     };
@@ -306,6 +307,27 @@ fn plan_mode_shell_boundary_allows_only_read_only_inspection_commands() {
         .unwrap_or_else(|| panic!("command `{command}` should be denied"));
         assert!(denied.contains("read-only inspection commands"));
     }
+}
+
+#[test]
+fn permission_rule_request_selectors_extract_edit_file_alias() {
+    // arrange
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+
+    // act
+    let selectors = permission_rule_request_selectors(
+        temp_dir.path(),
+        PermissionKind::EditFs,
+        &json!({ "file": "src/lib.rs" }),
+    );
+
+    // assert
+    assert_eq!(
+        selectors,
+        vec![PermissionRuleRequest::WorkspacePath(
+            "src/lib.rs".to_string()
+        )]
+    );
 }
 
 #[async_trait]
@@ -782,11 +804,16 @@ delegate_test!(run_state_turn_queue_methods_own_agent_turn_lifecycle_state => ru
 delegate_test!(run_state_permission_methods_own_pending_and_grant_state => run_state_method_tests::run_state_permission_methods_own_pending_and_grant_state);
 delegate_test!(run_state_compaction_methods_own_overflow_retry_attempt_state => run_state_method_tests::run_state_compaction_methods_own_overflow_retry_attempt_state);
 
+mod workspace_snapshot_secret_tests;
+
 #[cfg(test)]
 #[path = "tests/workspace_snapshot_tests.rs"]
 mod workspace_snapshot_tests;
 
 delegate_tokio_test!(snapshot_captures_workspace_and_emits_event => workspace_snapshot_tests::snapshot_captures_workspace_and_emits_event);
+delegate_tokio_test!(snapshot_omits_dotenv_files_from_artifacts => workspace_snapshot_secret_tests::snapshot_omits_dotenv_files_from_artifacts);
+delegate_tokio_test!(revert_ignores_dotenv_files_missing_from_snapshot => workspace_snapshot_secret_tests::revert_ignores_dotenv_files_missing_from_snapshot);
+delegate_tokio_test!(revert_ignores_dotenv_files_already_in_snapshot_artifact => workspace_snapshot_secret_tests::revert_ignores_dotenv_files_already_in_snapshot_artifact);
 delegate_tokio_test!(revert_restores_workspace_from_snapshot => workspace_snapshot_tests::revert_restores_workspace_from_snapshot);
 delegate_tokio_test!(replay_of_reverted_session_does_not_restore_files => workspace_snapshot_tests::replay_of_reverted_session_does_not_restore_files);
 delegate_tokio_test!(formatter_runs_configured_command_on_edited_file => workspace_snapshot_tests::formatter_runs_configured_command_on_edited_file);

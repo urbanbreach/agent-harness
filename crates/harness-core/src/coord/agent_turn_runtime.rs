@@ -90,6 +90,17 @@ impl Coordinator {
                 .unwrap_or_else(|| default_model_settings_for_profile(&profile.name)),
         };
 
+        if child_task.is_none()
+            && actor.kind == ActorKind::User
+            && run_state.next_provider_request_id == 2
+        {
+            run_state.recorded_runtime_context = Some(RecordedRuntimeContext::from_profile_model(
+                &profile.name,
+                &request.model_ref,
+            ));
+            write_run_metadata(run_state, &self.config, self.clock.as_ref())?;
+        }
+
         append_payload_event_with_correlation(
             self.clock.as_ref(),
             self.redactor.as_ref(),

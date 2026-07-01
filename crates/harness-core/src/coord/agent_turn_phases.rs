@@ -255,7 +255,7 @@ fn prepare_provider_transform_phase(
     tool_registry: &ToolRegistry,
 ) -> Result<AgentProviderTurnState, String> {
     let model = AgentModelRef::parse(&request.model_ref);
-    let tool_defs = build_provider_tool_defs(profile, tool_registry)?;
+    let tool_defs = build_provider_tool_defs_for_model(profile, tool_registry, &request.model_ref)?;
     let provider_prompt = request.provider_prompt();
     let messages = build_provider_context_messages(profile, prior_context, &provider_prompt);
 
@@ -750,6 +750,7 @@ pub(in crate::coord) fn completion_messages_to_conversation_messages(
             }
             MessageRole::Tool => {
                 let tool_call_id = message.tool_call_id.clone().unwrap_or_default();
+                let content = provider_tool_result_display_content(&message.content);
                 let tool_id = message
                     .name
                     .as_deref()
@@ -762,11 +763,9 @@ pub(in crate::coord) fn completion_messages_to_conversation_messages(
                         request_id: request_id.to_string(),
                         tool_call_id,
                         tool_id,
-                        status: provider_tool_message_status(&message.content),
-                        output_summary: non_empty_trimmed(&message.content)
-                            .map(|_| message.content.clone()),
-                        output_digest: (!message.content.is_empty())
-                            .then(|| digest12(message.content.as_bytes())),
+                        status: provider_tool_message_status(&content),
+                        output_summary: non_empty_trimmed(&content).map(|_| content.clone()),
+                        output_digest: (!content.is_empty()).then(|| digest12(content.as_bytes())),
                         output_json: None,
                         seq: None,
                         metadata: None,
@@ -777,6 +776,19 @@ pub(in crate::coord) fn completion_messages_to_conversation_messages(
     }
 
     conversation_messages
+}
+
+fn provider_tool_result_display_content(content: &str) -> String {
+    serde_json::from_str::<Value>(content)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("_harness_tool_result")
+                .and_then(|payload| payload.get("text"))
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| content.to_string())
 }
 
 pub(in crate::coord) fn provider_tool_message_status(content: &str) -> ToolCallStatus {

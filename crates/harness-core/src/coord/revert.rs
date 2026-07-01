@@ -13,6 +13,7 @@ use super::{
 };
 
 const SNAPSHOTS_DIR: &str = "snapshots";
+const DEFAULT_IGNORED_FILES: &[&str] = &[".envrc"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct SnapshotEntry {
@@ -56,7 +57,11 @@ impl Coordinator {
             .await
             .map_err(|err| CoordinatorError::RevertFailed(format!("scan workspace: {err}")))?;
 
-        let snapshot_paths: BTreeSet<&str> = snapshot.keys().map(String::as_str).collect();
+        let snapshot_paths: BTreeSet<&str> = snapshot
+            .keys()
+            .map(String::as_str)
+            .filter(|path| !should_ignore_path(path))
+            .collect();
         let current_paths: BTreeSet<&str> = current_entries.keys().map(String::as_str).collect();
 
         // Paths present in the snapshot must be restored to their captured state.
@@ -210,6 +215,15 @@ fn should_ignore_path(relative: &str) -> bool {
     let segments: Vec<&str> = normalized.split('/').filter(|s| !s.is_empty()).collect();
     for ignored in [".git", ".agent-harness", "target"] {
         if segments.contains(&ignored) {
+            return true;
+        }
+    }
+    if let Some(file_name) = segments.last() {
+        if DEFAULT_IGNORED_FILES.contains(file_name)
+            || *file_name == ".env"
+            || file_name.starts_with(".env.")
+            || file_name.ends_with(".env")
+        {
             return true;
         }
     }
