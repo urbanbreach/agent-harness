@@ -4,7 +4,8 @@ mod common;
 
 use async_trait::async_trait;
 use common::{
-    expect_execution_error, setup_workspace_fixture, test_context as common_test_context,
+    expect_execution_error, expect_invalid_arguments, setup_workspace_fixture,
+    test_context as common_test_context,
 };
 use harness_core::config::ShellAllowlist;
 use harness_core::tool::ToolError;
@@ -57,6 +58,84 @@ fn search_registry(
 ) -> harness_core::tool::ToolRegistry {
     coordinator_registry_with_remote_search_transport(ShellAllowlist::default(), config, transport)
         .expect("remote search test registry")
+}
+
+#[tokio::test]
+async fn native_web_search_rejects_non_baseline_control_values_before_network() {
+    // arrange
+    let workspace = setup_workspace_fixture();
+    let transport = ScriptedRemoteSearchTransport::new(Vec::new());
+    let registry = search_registry(
+        Arc::clone(&transport),
+        RemoteSearchTestConfig {
+            auth_token: None,
+            require_auth: false,
+            max_retries: 0,
+            retry_backoff_ms: 1,
+            timeout_secs: 1,
+            ..RemoteSearchTestConfig::default()
+        },
+    );
+    let websearch = registry.get("websearch").expect("websearch tool");
+
+    let schema = websearch.parameters_json_schema().to_string();
+    assert!(schema.contains("fallback"));
+    assert!(schema.contains("preferred"));
+    assert!(schema.contains("deep"));
+    assert!(schema.contains("50000"));
+
+    // act
+    let invalid_livecrawl = websearch
+        .call(
+            test_context(workspace.workspace(), "invalid-livecrawl"),
+            json!({
+                "query": "tokio runtime",
+                "livecrawl": "always"
+            }),
+        )
+        .await
+        .expect_err("invalid livecrawl should fail before network call");
+
+    // assert
+    expect_invalid_arguments(invalid_livecrawl, "fallback");
+
+    let invalid_type = websearch
+        .call(
+            test_context(workspace.workspace(), "invalid-type"),
+            json!({
+                "query": "tokio runtime",
+                "type": "exhaustive"
+            }),
+        )
+        .await
+        .expect_err("invalid search type should fail before network call");
+    expect_invalid_arguments(invalid_type, "deep");
+
+    let invalid_count = websearch
+        .call(
+            test_context(workspace.workspace(), "invalid-count"),
+            json!({
+                "query": "tokio runtime",
+                "numResults": 0
+            }),
+        )
+        .await
+        .expect_err("invalid numResults should fail before network call");
+    expect_invalid_arguments(invalid_count, "numResults");
+
+    let invalid_context = websearch
+        .call(
+            test_context(workspace.workspace(), "invalid-context"),
+            json!({
+                "query": "tokio runtime",
+                "contextMaxCharacters": 50_001
+            }),
+        )
+        .await
+        .expect_err("invalid contextMaxCharacters should fail before network call");
+    expect_invalid_arguments(invalid_context, "contextMaxCharacters");
+
+    assert!(transport.requests().is_empty());
 }
 
 #[tokio::test]

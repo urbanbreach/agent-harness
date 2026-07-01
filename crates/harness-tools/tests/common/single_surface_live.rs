@@ -36,7 +36,7 @@ impl ShellCommandRunner for SingleSurfaceShellRunner {
             .get(1)
             .map(String::as_str)
             .unwrap_or_default();
-        let stdout = if command.contains("{1..10000}") {
+        let stdout = if command.contains("yes surface") && command.contains("head -c 70000") {
             "surface".repeat(10_000)
         } else if command.contains("cargo surface") {
             "cargo surface\n".to_string()

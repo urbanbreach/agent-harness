@@ -273,9 +273,10 @@ async fn single_surface_tools_execute_under_example_config() {
         )
         .await
         .expect("grep tool");
+    assert!(grepped.display_text.contains("written.txt:"));
     assert!(grepped
         .display_text
-        .contains("written.txt:1: hello from surface"));
+        .contains("  Line 1: hello from surface"));
 
     let bashed = handle
         .execute_agent_tool_call(
@@ -297,7 +298,7 @@ async fn single_surface_tools_execute_under_example_config() {
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "bash",
             serde_json::json!({
-                "command": "printf 'surface%.0s' {1..10000}",
+                "command": "yes surface | tr -d '\\n' | head -c 70000",
                 "description": "Emit many surface lines",
             }),
         )

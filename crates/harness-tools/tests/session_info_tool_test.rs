@@ -13,6 +13,64 @@ mod common;
 
 use common::{setup_workspace_fixture, test_context};
 
+const SESSION_TOOL_IDS: [&str; 4] = [
+    "session_list",
+    "session_read",
+    "session_search",
+    "session_info",
+];
+
+#[test]
+fn sessions_replay_docs_name_session_tools_and_no_side_effect_contract() {
+    // arrange
+    let docs = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/sessions-and-replay.md"),
+    )
+    .expect("sessions docs");
+
+    // act
+    let undoc_tools: Vec<_> = SESSION_TOOL_IDS
+        .iter()
+        .filter(|tool_id| !docs.contains(*tool_id))
+        .copied()
+        .collect();
+    let side_effects_doced =
+        docs.contains("do not execute providers, tools, hooks, MCP, network, or CLI");
+
+    // assert
+    assert!(
+        undoc_tools.is_empty(),
+        "sessions docs missing tools {undoc_tools:?}"
+    );
+    assert!(
+        side_effects_doced,
+        "sessions docs should state replay inspection has no provider/tool/hook/MCP/network/CLI side effects"
+    );
+}
+
+#[test]
+fn session_tools_describe_replay_source_in_model_visible_surface() {
+    // arrange
+    let registry = coordinator_registry(ShellAllowlist::default());
+
+    // act
+    let offenders: Vec<_> = SESSION_TOOL_IDS
+        .iter()
+        .filter_map(|tool_id| {
+            let tool = registry.get(tool_id).expect("session tool");
+            let description = tool.description();
+            (!description.contains("replay-derived") && !description.contains("replay-safe"))
+                .then_some((*tool_id, description.to_string()))
+        })
+        .collect();
+
+    // assert
+    assert!(
+        offenders.is_empty(),
+        "session tools should identify replay-only source: {offenders:?}"
+    );
+}
+
 fn envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
     EventEnvelopeV1 {
         schema_version: SCHEMA_VERSION,

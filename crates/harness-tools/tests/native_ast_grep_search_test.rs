@@ -90,7 +90,7 @@ async fn ast_grep_search_is_read_only_workspace_safe_and_structured() {
             json!({
                 "language": "rust",
                 "pattern": "fn $NAME",
-                "paths": ["src/lib.rs"],
+                "path": "src/lib.rs",
                 "limit": 5
             }),
         )

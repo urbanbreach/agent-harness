@@ -200,35 +200,32 @@ async fn native_todowrite_rejects_unknown_status_values() {
     assert!(error.contains("doing"));
 }
 #[tokio::test]
-async fn native_public_edit_uses_hashline_surface_and_reports_success() {
+async fn native_public_edit_schema_uses_exact_surface_and_runtime_accepts_hashline_compat() {
+    // arrange
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
     let edit = registry.get("edit").expect("edit in registry");
     let edit_description = edit.description();
 
-    assert!(edit_description.contains("one edit call per file snapshot"));
-    assert!(edit_description.contains("do not overlap ranges"));
-    assert!(edit_description.contains("do not insert inside a replaced range"));
-    assert!(edit_description.contains("merge touching changes into one replace"));
+    assert!(edit_description.contains("oldString"));
+    assert!(edit_description.contains("newString"));
+    assert!(edit_description.contains("replaceAll"));
+    assert!(!edit_description.contains("LINE#HASH"));
+    assert!(!edit_description.contains("delete=true"));
 
     let schema = edit.parameters_json_schema();
-    assert!(schema["properties"]["edits"]["description"]
-        .as_str()
-        .is_some_and(|value| value.contains("same original file snapshot")));
-    assert!(
-        schema["properties"]["edits"]["items"]["properties"]["end"]["description"]
-            .as_str()
-            .is_some_and(|value| value.contains("must not overlap"))
-    );
-    assert!(
-        schema["properties"]["edits"]["items"]["properties"]["lines"]["description"]
-            .as_str()
-            .is_some_and(|value| value.contains("no unchanged boundary lines"))
-    );
+    assert_eq!(schema["required"], json!(["path", "oldString", "newString"]));
+    assert_eq!(schema["properties"]["path"]["type"], json!("string"));
+    assert_eq!(schema["properties"]["oldString"]["type"], json!("string"));
+    assert_eq!(schema["properties"]["newString"]["type"], json!("string"));
+    assert_eq!(schema["properties"]["replaceAll"]["type"], json!("boolean"));
+    assert!(schema["properties"].get("filePath").is_none());
+    assert!(schema["properties"].get("edits").is_none());
 
     fs::write(workspace.join("surface.txt"), "before\n").expect("seed existing file");
 
+    // act
     let result = edit
         .call(
             test_context(workspace, "edit"),
@@ -246,6 +243,7 @@ async fn native_public_edit_uses_hashline_surface_and_reports_success() {
         .await
         .expect("hashline edit");
 
+    // assert
     assert!(result.display_text.contains("Edit applied successfully"));
     assert_eq!(
         fs::read_to_string(workspace.join("surface.txt")).expect("read edited file"),
@@ -324,11 +322,11 @@ async fn native_public_edit_rejects_delete_flag_with_edit_payload() {
     let schema = edit.parameters_json_schema();
 
     assert_eq!(schema["type"], json!("object"));
-    assert_eq!(schema["required"], json!(["filePath"]));
-    assert_eq!(schema["properties"]["edits"]["minItems"], json!(1));
-    assert!(schema["properties"]["delete"]["description"]
-        .as_str()
-        .is_some_and(|value| value.contains("remove the whole file by path")));
+    assert_eq!(schema["required"], json!(["path", "oldString", "newString"]));
+    assert_eq!(schema["properties"]["path"]["type"], json!("string"));
+    assert!(schema["properties"].get("filePath").is_none());
+    assert!(schema["properties"].get("edits").is_none());
+    assert!(schema["properties"].get("delete").is_none());
 
     let file_path = workspace.join("surface.txt");
     fs::write(&file_path, "before\n").expect("seed existing file");
@@ -359,30 +357,6 @@ async fn native_public_edit_rejects_delete_flag_with_edit_payload() {
         file_path.exists(),
         "delete should not run when edit payload is invalid"
     );
-}
-#[test]
-fn native_provider_tool_defs_accept_edit_and_question_export_schemas() {
-    let registry = coordinator_registry(ShellAllowlist::default());
-    let profile = AgentProfile {
-        name: "provider-safe-native-schemas".to_string(),
-        category: "test".to_string(),
-        model_ref: "mock:model".to_string(),
-        model_ref_explicit: true,
-        system_prompt: "test".to_string(),
-        cache_retention: Default::default(),
-        max_iters: Some(4),
-        temperature: Some(0.0),
-        tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
-        toolset: vec!["edit".to_string(), "question".to_string()],
-    };
-
-    let defs = build_provider_tool_defs(&profile, &registry)
-        .expect("native edit/question schemas should be provider-safe");
-
-    assert_eq!(defs.len(), 2);
-    for def in defs {
-        assert_eq!(def.parameters["type"], json!("object"));
-    }
 }
 #[tokio::test]
 async fn native_public_edit_rejects_opless_anchored_non_delete_shape() {
@@ -474,4 +448,129 @@ async fn native_public_edit_accepts_quoted_refresh_snippet_anchor() {
         fs::read_to_string(workspace.join("surface.txt")).expect("read edited file"),
         "after\nnext\n"
     );
+}
+
+#[tokio::test]
+async fn native_bash_allows_redirection_and_cat() {
+    // arrange
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let bash = registry.get("bash").expect("bash in registry");
+
+    // act
+    let result = bash
+        .call(
+            test_context(workspace, "bash-redirection-cat"),
+            json!({
+                "command": "echo hello > tmp.txt && cat tmp.txt",
+                "description": "write and read with redirection",
+            }),
+        )
+        .await
+        .expect("bash redirection and cat should succeed");
+
+    // assert
+    assert!(result.display_text.contains("hello"));
+    assert!(workspace.join("tmp.txt").exists());
+}
+
+#[tokio::test]
+async fn native_bash_allows_pipeline_grep() {
+    // arrange
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let bash = registry.get("bash").expect("bash in registry");
+
+    // act
+    let result = bash
+        .call(
+            test_context(workspace, "bash-pipeline-grep"),
+            json!({
+                "command": "echo a; echo b | grep b",
+                "description": "pipe shell output through grep",
+            }),
+        )
+        .await
+        .expect("bash pipeline with grep should succeed");
+
+    // assert
+    assert!(result.display_text.contains('b'));
+}
+
+#[tokio::test]
+async fn native_bash_allows_touch_and_rm() {
+    // arrange
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let bash = registry.get("bash").expect("bash in registry");
+
+    // act
+    bash
+        .call(
+            test_context(workspace, "bash-touch-rm"),
+            json!({
+                "command": "touch tmp.txt && rm tmp.txt",
+                "description": "touch then remove a workspace file",
+            }),
+        )
+        .await
+        .expect("bash touch and rm should succeed");
+
+    // assert
+    assert!(!workspace.join("tmp.txt").exists());
+}
+
+#[tokio::test]
+async fn native_bash_rejects_python3_c() {
+    // arrange
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let bash = registry.get("bash").expect("bash in registry");
+
+    // act
+    let error = bash
+        .call(
+            test_context(workspace, "bash-python3-c"),
+            json!({
+                "command": "python3 -c \"print('ok')\"",
+                "description": "run python3 inline script",
+            }),
+        )
+        .await
+        .expect_err("bash python3 -c should be blocked");
+
+    // assert
+    assert!(error.to_string().contains("interpreter command-eval flags"));
+}
+
+#[tokio::test]
+async fn native_bash_records_permission_patterns_in_metadata() {
+    // arrange
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let bash = registry.get("bash").expect("bash in registry");
+
+    // act
+    let result = bash
+        .call(
+            test_context(workspace, "bash-patterns-metadata"),
+            json!({
+                "command": "cargo test -p harness-core",
+                "description": "record permission patterns",
+            }),
+        )
+        .await
+        .expect("bash should record permission patterns");
+
+    // assert
+    let metadata = result.structured_json.expect("structured json");
+    let always = metadata["permission_always_patterns"]
+        .as_array()
+        .expect("always patterns array");
+    assert!(always.iter().any(|value| value == "cargo test *"));
 }

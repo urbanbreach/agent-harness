@@ -3,6 +3,9 @@ use harness_tools::{canonical_tool_id_for, coordinator_registry, native_tool_cat
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+#[path = "support/baseline_tools_parity_inventory_support.rs"]
+mod baseline_tools_parity_inventory;
+
 #[derive(Debug)]
 struct DocumentedToolRow {
     permission: String,
@@ -46,6 +49,8 @@ fn coordinator_registry_exposes_single_native_tool_surface() {
         "todowrite",
         "webfetch",
         "websearch",
+        "write",
+        "apply_patch",
     ] {
         assert!(
             registry.get(tool_id).is_some(),
@@ -58,8 +63,6 @@ fn coordinator_registry_exposes_single_native_tool_surface() {
     assert!(registry.get("edit.hashline_apply").is_none());
     assert!(registry.get("edit.hashline_scan").is_none());
     assert!(registry.get("fs.write").is_none());
-    assert!(registry.get("write").is_none());
-    assert!(registry.get("apply_patch").is_none());
     assert!(registry.get("patch").is_none());
 
     for legacy_tool_id in [
@@ -209,7 +212,7 @@ fn bash_safety_guidance_and_ast_grep_replace_catalog_match_runtime_sources() {
         for command in ["find", "grep", "rg", "cat", "head", "tail", "sed", "awk"] {
             assert!(
                 text.contains(command),
-                "bash guidance is missing blocked command `{command}` in:\n{text}"
+                "bash guidance is missing command reference `{command}` in:\n{text}"
             );
         }
     }

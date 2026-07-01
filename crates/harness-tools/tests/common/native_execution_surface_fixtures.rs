@@ -1,6 +1,6 @@
 use std::fs;
 
-use harness_core::agent::{build_provider_tool_defs, AgentProfile};
+use harness_core::agent::{build_provider_tool_defs, build_provider_tool_defs_for_model, AgentProfile};
 use harness_core::config::ShellAllowlist;
 use harness_core::edit::hashline::compute_line_hash;
 use harness_core::tool::ToolRunState;

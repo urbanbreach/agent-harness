@@ -30,6 +30,11 @@ mod part_04_native_batch_and_agent_spawn_preserve_test {
     include!("native_agent_spawn_and_batch_preserve_lineage_permissions_and_order/04_native_batch_and_agent_spawn_preserve_test.rs");
 }
 
+mod part_04b_batch_display_guidance_test {
+    use super::*;
+    include!("native_agent_spawn_and_batch_preserve_lineage_permissions_and_order/04b_batch_display_guidance_test.rs");
+}
+
 mod part_05_task_tool_rejects_missing_loaded_skill_test {
     use super::*;
     include!("native_agent_spawn_and_batch_preserve_lineage_permissions_and_order/05_task_tool_rejects_missing_loaded_skill_test.rs");

@@ -94,6 +94,81 @@ async fn native_edit_create_routes_through_hashline_and_emits_edit_events() {
     }));
 }
 
+#[tokio::test]
+async fn native_edit_create_accepts_bof_and_eof_boundary_positions() {
+    let workspace = setup_workspace_fixture();
+
+    let handle = test_coordinator(
+        workspace.temp_dir(),
+        edit_only_permission_policy(),
+        vec!["edit".to_string()],
+    );
+
+    let _run = handle
+        .start_run(
+            "native_edit_create_boundary_positions",
+            workspace.workspace(),
+        )
+        .await
+        .expect("start run");
+    let worker_agent_id = handle
+        .spawn_agent(supervisor_actor(), "worker", None)
+        .await
+        .expect("spawn worker");
+
+    handle
+        .execute_agent_tool_call(
+            worker_actor(&worker_agent_id),
+            Some("deep".to_string()),
+            "edit",
+            serde_json::json!({
+                "filePath": "append-boundary.txt",
+                "editId": "append-eof-create",
+                "edits": [
+                    {
+                        "op": "append",
+                        "pos": "eof",
+                        "lines": ["append ok"],
+                    }
+                ],
+            }),
+        )
+        .await
+        .expect("append eof should create missing file");
+
+    handle
+        .execute_agent_tool_call(
+            worker_actor(&worker_agent_id),
+            Some("deep".to_string()),
+            "edit",
+            serde_json::json!({
+                "filePath": "prepend-boundary.txt",
+                "editId": "prepend-bof-create",
+                "edits": [
+                    {
+                        "op": "prepend",
+                        "pos": "bof",
+                        "lines": ["prepend ok"],
+                    }
+                ],
+            }),
+        )
+        .await
+        .expect("prepend bof should create missing file");
+    handle.stop_run().await.expect("stop run");
+
+    assert_eq!(
+        fs::read_to_string(workspace.workspace().join("append-boundary.txt"))
+            .expect("read append boundary file"),
+        "append ok\n"
+    );
+    assert_eq!(
+        fs::read_to_string(workspace.workspace().join("prepend-boundary.txt"))
+            .expect("read prepend boundary file"),
+        "prepend ok\n"
+    );
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn native_edit_create_rejects_symlink_parent_escape() {

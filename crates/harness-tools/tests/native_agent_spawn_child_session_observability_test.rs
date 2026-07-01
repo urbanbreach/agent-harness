@@ -48,6 +48,7 @@ fn pwd_allowlist() -> ShellAllowlist {
     ShellAllowlist {
         executables: vec!["pwd".to_string()],
         cwd_roots: vec![".".to_string()],
+        ..ShellAllowlist::default()
     }
 }
 

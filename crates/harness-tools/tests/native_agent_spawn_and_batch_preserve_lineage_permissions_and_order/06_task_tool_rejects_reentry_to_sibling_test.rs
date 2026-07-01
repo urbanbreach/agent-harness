@@ -107,9 +107,14 @@ async fn plan_task_reentry_rejects_non_explore_existing_child_profile() {
 }
 #[tokio::test]
 async fn batch_rejects_more_than_25_calls_preserving_input_order() {
+    // arrange
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
-    fs::write(workspace.join("fixture.txt"), "alpha\nbeta\n").expect("fixture file");
+    let fixture = (1..=25)
+        .map(|line| format!("line {line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(workspace.join("fixture.txt"), format!("{fixture}\n")).expect("fixture file");
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
     let tool_calls = (0..26)
@@ -125,6 +130,7 @@ async fn batch_rejects_more_than_25_calls_preserving_input_order() {
         })
         .collect::<Vec<_>>();
 
+    // act
     let batch_tool_call_id = handle
         .request_tool_call(
             worker_actor(&worker_id),
@@ -139,6 +145,8 @@ async fn batch_rejects_more_than_25_calls_preserving_input_order() {
     handle.stop_run().await.expect("stop run");
     let events = read_events(&run.events_path);
     let finished = find_finished(&events, &batch_tool_call_id);
+
+    // assert
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
     let output = finished.output_json.as_ref().expect("batch output json");
     assert_eq!(output.get("requested_call_count"), Some(&json!(26)));
