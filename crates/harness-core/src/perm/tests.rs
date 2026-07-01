@@ -1,6 +1,7 @@
 use super::{
-    permission_kind_for_capability, permission_kind_for_tool, PermissionDecision, PermissionKind,
-    PermissionPolicy, PermissionRuleRequest, PolicyDecision,
+    permission_kind_for_capability, permission_kind_for_tool, PermissionDecision,
+    PermissionGrantMatcher, PermissionGrantRequest, PermissionGrantSet, PermissionKind,
+    PermissionPolicy, PermissionRuleRequest, PermissionToolSelector, PolicyDecision,
 };
 use crate::config::{
     CategoryPermissions, PermissionMode, PermissionRuleSet, PermissionSelector,
@@ -165,9 +166,9 @@ fn permission_rule_precedence_for_bash_exact_prefix_and_catch_all() {
         policy.evaluate_request(
             Some("build"),
             PermissionKind::Shell,
-            Some(&PermissionRuleRequest::ShellCommand(
-                "cargo test -p harness-core".to_string()
-            ))
+            Some(&PermissionRuleRequest::ShellCommand {
+                pattern: "cargo test -p harness-core".to_string(),
+            })
         ),
         PolicyDecision::Allow
     );
@@ -175,9 +176,9 @@ fn permission_rule_precedence_for_bash_exact_prefix_and_catch_all() {
         policy.evaluate_request(
             Some("build"),
             PermissionKind::Shell,
-            Some(&PermissionRuleRequest::ShellCommand(
-                "cargo test -p harness-core --lib".to_string()
-            ))
+            Some(&PermissionRuleRequest::ShellCommand {
+                pattern: "cargo test -p harness-core --lib".to_string(),
+            })
         ),
         ask_decision(0)
     );
@@ -185,9 +186,9 @@ fn permission_rule_precedence_for_bash_exact_prefix_and_catch_all() {
         policy.evaluate_request(
             Some("build"),
             PermissionKind::Shell,
-            Some(&PermissionRuleRequest::ShellCommand(
-                "git status".to_string()
-            ))
+            Some(&PermissionRuleRequest::ShellCommand {
+                pattern: "git status".to_string(),
+            })
         ),
         PolicyDecision::Deny
     );
@@ -302,9 +303,9 @@ fn config_permission_rule_precedence_for_bash_and_edit_exact_prefix_and_catch_al
         policy.evaluate_request(
             Some("build"),
             PermissionKind::Shell,
-            Some(&PermissionRuleRequest::ShellCommand(
-                "cargo test -p harness-core".to_string()
-            ))
+            Some(&PermissionRuleRequest::ShellCommand {
+                pattern: "cargo test -p harness-core".to_string(),
+            })
         ),
         PolicyDecision::Allow
     );
@@ -312,9 +313,9 @@ fn config_permission_rule_precedence_for_bash_and_edit_exact_prefix_and_catch_al
         policy.evaluate_request(
             Some("build"),
             PermissionKind::Shell,
-            Some(&PermissionRuleRequest::ShellCommand(
-                "cargo test -p harness-core --lib".to_string()
-            ))
+            Some(&PermissionRuleRequest::ShellCommand {
+                pattern: "cargo test -p harness-core --lib".to_string(),
+            })
         ),
         ask_decision(0)
     );
@@ -322,9 +323,9 @@ fn config_permission_rule_precedence_for_bash_and_edit_exact_prefix_and_catch_al
         policy.evaluate_request(
             Some("build"),
             PermissionKind::Shell,
-            Some(&PermissionRuleRequest::ShellCommand(
-                "git status".to_string()
-            ))
+            Some(&PermissionRuleRequest::ShellCommand {
+                pattern: "git status".to_string(),
+            })
         ),
         PolicyDecision::Deny
     );
@@ -358,6 +359,81 @@ fn config_permission_rule_precedence_for_bash_and_edit_exact_prefix_and_catch_al
         ),
         PolicyDecision::Deny
     );
+}
+
+#[test]
+fn permission_grant_matcher_authorizes_shell_always_pattern() {
+    let granted = PermissionGrantMatcher::ShellCommand {
+        command_digest: "grant-command".to_string(),
+        request_digest: "grant-request".to_string(),
+        patterns: vec!["cargo test -p harness-core".to_string()],
+        always_patterns: vec!["cargo test *".to_string()],
+    };
+    let requested = PermissionGrantMatcher::ShellCommand {
+        command_digest: "request-command".to_string(),
+        request_digest: "request-digest".to_string(),
+        patterns: vec!["cargo test -p harness-core --lib".to_string()],
+        always_patterns: vec!["cargo test *".to_string()],
+    };
+
+    assert!(granted.matches(&requested));
+}
+
+#[test]
+fn permission_grant_matcher_requires_all_shell_patterns() {
+    let granted = PermissionGrantMatcher::ShellCommand {
+        command_digest: "grant-command".to_string(),
+        request_digest: "grant-request".to_string(),
+        patterns: vec!["cargo test -p harness-core".to_string()],
+        always_patterns: vec!["cargo test *".to_string()],
+    };
+    let requested = PermissionGrantMatcher::ShellCommand {
+        command_digest: "request-command".to_string(),
+        request_digest: "request-digest".to_string(),
+        patterns: vec![
+            "cargo test -p harness-core --lib".to_string(),
+            "git status --short".to_string(),
+        ],
+        always_patterns: vec!["cargo test *".to_string(), "git status *".to_string()],
+    };
+
+    assert!(!granted.matches(&requested));
+}
+
+#[test]
+fn permission_grant_matcher_preserves_legacy_command_digest_match() {
+    let grants = PermissionGrantSet::from_grants([super::PermissionGrant {
+        grant_id: "grant-1".to_string(),
+        permission_id: "perm-1".to_string(),
+        scope: super::PermissionGrantScope::Run,
+        expires_at: None,
+        kind: PermissionKind::Shell,
+        tool: PermissionToolSelector {
+            effective_tool_id: "shell.run".to_string(),
+            canonical_tool_id: Some("shell.run".to_string()),
+        },
+        matcher: PermissionGrantMatcher::ShellCommand {
+            command_digest: "same-command".to_string(),
+            request_digest: "old-request".to_string(),
+            patterns: Vec::new(),
+            always_patterns: Vec::new(),
+        },
+    }]);
+    let request = PermissionGrantRequest {
+        kind: PermissionKind::Shell,
+        tool: PermissionToolSelector {
+            effective_tool_id: "shell.run".to_string(),
+            canonical_tool_id: Some("shell.run".to_string()),
+        },
+        matcher: PermissionGrantMatcher::ShellCommand {
+            command_digest: "same-command".to_string(),
+            request_digest: "new-request".to_string(),
+            patterns: Vec::new(),
+            always_patterns: Vec::new(),
+        },
+    };
+
+    assert!(grants.authorizes(&request));
 }
 
 #[test]

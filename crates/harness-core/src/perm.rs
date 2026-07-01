@@ -8,6 +8,8 @@ use crate::config::{
 };
 use crate::tool::{canonical_tool_id_for, ToolCapability};
 
+pub mod shell;
+
 const DEFAULT_ASK_TIMEOUT_MS: u64 = 0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -58,6 +60,10 @@ pub enum PermissionGrantMatcher {
     ShellCommand {
         command_digest: String,
         request_digest: String,
+        #[serde(default, skip_serializing)]
+        patterns: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        always_patterns: Vec<String>,
     },
     WorkspacePath {
         path: String,
@@ -72,12 +78,23 @@ impl PermissionGrantMatcher {
                 Self::ShellCommand {
                     command_digest: granted,
                     request_digest: granted_request,
+                    always_patterns: granted_always_patterns,
+                    ..
                 },
                 Self::ShellCommand {
                     command_digest: requested,
                     request_digest,
+                    always_patterns: requested_always_patterns,
+                    ..
                 },
-            ) => granted == requested || granted_request == request_digest,
+            ) => {
+                granted == requested
+                    || granted_request == request_digest
+                    || shell_always_patterns_authorize(
+                        granted_always_patterns,
+                        requested_always_patterns,
+                    )
+            }
             (
                 Self::WorkspacePath {
                     path: granted,
@@ -108,6 +125,15 @@ impl PermissionGrantMatcher {
             | Self::WorkspacePath { request_digest, .. } => request_digest,
         }
     }
+}
+
+fn shell_always_patterns_authorize(granted: &[String], requested: &[String]) -> bool {
+    !requested.is_empty()
+        && requested.iter().all(|requested_pattern| {
+            granted.iter().any(|granted_pattern| {
+                shell::shell_permission_pattern_matches(granted_pattern, requested_pattern)
+            })
+        })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -201,7 +227,7 @@ pub enum PolicyDecision {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PermissionRuleRequest {
-    ShellCommand(String),
+    ShellCommand { pattern: String },
     WorkspacePath(String),
     TaskAgent(String),
 }
@@ -391,7 +417,7 @@ fn rule_mode_for_kind<'a>(
         PermissionKind::Shell => selector_rule_mode(
             &rules.shell,
             selector.and_then(|selector| match selector {
-                PermissionRuleRequest::ShellCommand(command) => Some(command.as_str()),
+                PermissionRuleRequest::ShellCommand { pattern } => Some(pattern.as_str()),
                 PermissionRuleRequest::WorkspacePath(_) | PermissionRuleRequest::TaskAgent(_) => {
                     None
                 }
@@ -401,16 +427,15 @@ fn rule_mode_for_kind<'a>(
             &rules.edit,
             selector.and_then(|selector| match selector {
                 PermissionRuleRequest::WorkspacePath(path) => Some(path.as_str()),
-                PermissionRuleRequest::ShellCommand(_) | PermissionRuleRequest::TaskAgent(_) => {
-                    None
-                }
+                PermissionRuleRequest::ShellCommand { .. }
+                | PermissionRuleRequest::TaskAgent(_) => None,
             }),
         ),
         PermissionKind::Task => selector_rule_mode(
             &rules.task,
             selector.and_then(|selector| match selector {
                 PermissionRuleRequest::TaskAgent(agent) => Some(agent.as_str()),
-                PermissionRuleRequest::ShellCommand(_)
+                PermissionRuleRequest::ShellCommand { .. }
                 | PermissionRuleRequest::WorkspacePath(_) => None,
             }),
         ),
