@@ -222,6 +222,129 @@ pub(super) fn build_transcript_tool_call_section(
             TranscriptToolCallVisualStyle::Inline,
             false,
         ),
+        "background_cancel" => (
+            background_cancel_tool_title(tool_call),
+            Some("✕"),
+            TranscriptToolCallVisualStyle::Inline,
+            false,
+        ),
+        "plan_enter" => (
+            plan_enter_tool_title(tool_call),
+            Some("⊕"),
+            TranscriptToolCallVisualStyle::Inline,
+            false,
+        ),
+        "plan_exit" => (
+            plan_exit_tool_title(tool_call),
+            Some("⊖"),
+            TranscriptToolCallVisualStyle::Inline,
+            false,
+        ),
+        "invalid" => (
+            invalid_tool_title(tool_call),
+            Some("!"),
+            generic_tool_visual_style(tool_call, generic_output_visible),
+            true,
+        ),
+        "session_list" => (
+            session_tool_title(tool_call, "List"),
+            Some("≡"),
+            generic_tool_visual_style(tool_call, generic_output_visible),
+            true,
+        ),
+        "session_read" => (
+            session_tool_title(tool_call, "Read"),
+            Some("→"),
+            generic_tool_visual_style(tool_call, generic_output_visible),
+            true,
+        ),
+        "session_search" => (
+            session_tool_title(tool_call, "Search"),
+            Some("✱"),
+            generic_tool_visual_style(tool_call, generic_output_visible),
+            true,
+        ),
+        "session_info" => (
+            session_tool_title(tool_call, "Inspect"),
+            Some("ⓘ"),
+            generic_tool_visual_style(tool_call, generic_output_visible),
+            true,
+        ),
+        "ast_grep_search" => (
+            ast_grep_tool_title(tool_call, "AST Search"),
+            Some("✱"),
+            generic_tool_visual_style(tool_call, generic_output_visible),
+            true,
+        ),
+        "ast_grep_replace" => {
+            let rendered_diff = push_tool_call_diff_blocks(
+                &mut detail_blocks,
+                tool_call,
+                app,
+                session_path,
+                stacked_diffs,
+            );
+            (
+                ast_grep_tool_title(tool_call, "AST Replace"),
+                Some("←"),
+                if rendered_diff {
+                    TranscriptToolCallVisualStyle::Block
+                } else {
+                    generic_tool_visual_style(tool_call, generic_output_visible)
+                },
+                true,
+            )
+        }
+        "lsp" => (
+            lsp_tool_title(tool_call),
+            Some("⌘"),
+            generic_tool_visual_style(tool_call, generic_output_visible),
+            true,
+        ),
+        "lsp.rename" => {
+            let rendered_diff = push_tool_call_diff_blocks(
+                &mut detail_blocks,
+                tool_call,
+                app,
+                session_path,
+                stacked_diffs,
+            );
+            (
+                lsp_tool_title(tool_call),
+                Some("⌘"),
+                if rendered_diff {
+                    TranscriptToolCallVisualStyle::Block
+                } else {
+                    generic_tool_visual_style(tool_call, generic_output_visible)
+                },
+                true,
+            )
+        }
+        "skill" | "skill.load" => (
+            skill_tool_title(tool_call),
+            Some("✦"),
+            TranscriptToolCallVisualStyle::Inline,
+            false,
+        ),
+        "todo.read" | "todoread" => (
+            "Read todos".to_string(),
+            Some("☑"),
+            TranscriptToolCallVisualStyle::Inline,
+            false,
+        ),
+        "todo.write" | "todowrite" => {
+            if !todo_items.is_empty() {
+                detail_blocks.push(TranscriptToolCallDetailBlock::TodoList {
+                    items: todo_items.clone(),
+                });
+            }
+            (
+                todo_tool_title(&todo_items),
+                None,
+                TranscriptToolCallVisualStyle::Block,
+                false,
+            )
+        }
         "fs.write" => {
             let rendered_diff = push_tool_call_diff_blocks(
                 &mut detail_blocks,
@@ -318,35 +441,6 @@ pub(super) fn build_transcript_tool_call_section(
             TranscriptToolCallVisualStyle::Inline,
             true,
         ),
-        "todo.write" | "todowrite" => {
-            if !todo_items.is_empty() {
-                detail_blocks.push(TranscriptToolCallDetailBlock::TodoList {
-                    items: todo_items.clone(),
-                });
-            }
-            (
-                todo_tool_title(&todo_items),
-                None,
-                TranscriptToolCallVisualStyle::Block,
-                false,
-            )
-        }
-        "todo.read" | "todoread" => (
-            "Read todos".to_string(),
-            Some("☑"),
-            TranscriptToolCallVisualStyle::Inline,
-            false,
-        ),
-        "skill.load" => (
-            format!(
-                "Load skill {}",
-                tool_summary_string(&tool_call.args_summary, &["name"])
-                    .unwrap_or_else(|| "skill".to_string())
-            ),
-            Some("✦"),
-            TranscriptToolCallVisualStyle::Inline,
-            false,
-        ),
         "user.question" => {
             if question_answers.is_empty() {
                 (
@@ -365,7 +459,7 @@ pub(super) fn build_transcript_tool_call_section(
                 )
             }
         }
-        "tool.batch" => (
+        "tool.batch" | "batch" => (
             batch_tool_title(tool_call),
             Some("≋"),
             generic_tool_visual_style(tool_call, generic_output_visible),
@@ -459,6 +553,7 @@ pub(super) fn build_transcript_tool_call_section(
 
     push_tool_identity_block(&mut detail_blocks, tool_call);
     push_failed_tool_error_block(&mut detail_blocks, tool_call);
+    push_truncated_output_artifact_block(&mut detail_blocks, tool_call);
 
     let disclosure_state = if matches!(display_tool_id, "agent.spawn" | "task")
         || uses_generic_output_visibility
@@ -803,6 +898,35 @@ fn push_tool_identity_block(
     }
     detail_blocks.push(TranscriptToolCallDetailBlock::Message {
         text: format!("Compat alias · {alias_source} → {effective}"),
+        tone: TranscriptToolCallDetailTone::Secondary,
+    });
+}
+
+fn push_truncated_output_artifact_block(
+    detail_blocks: &mut Vec<TranscriptToolCallDetailBlock>,
+    tool_call: &crate::app::ToolCallEntry,
+) {
+    if tool_call.truncated_output.is_none() || tool_call.artifact_refs.is_empty() {
+        return;
+    }
+    if !detail_blocks.iter().any(|block| {
+        matches!(
+            block,
+            TranscriptToolCallDetailBlock::Message {
+                tone: TranscriptToolCallDetailTone::Primary,
+                ..
+            } | TranscriptToolCallDetailBlock::BashPanel { .. }
+        )
+    }) {
+        return;
+    }
+    let artifact = &tool_call.artifact_refs[0];
+    let text = format!(
+        "Output truncated · full output at {artifact}",
+        artifact = artifact.path
+    );
+    detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+        text,
         tone: TranscriptToolCallDetailTone::Secondary,
     });
 }

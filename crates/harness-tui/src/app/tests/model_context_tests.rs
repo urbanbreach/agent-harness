@@ -98,7 +98,7 @@ pub(super) fn runtime_context_labels_distinguish_live_continue_and_replay() {
     let continued_dock = continued.control_dock_view_model();
     assert_eq!(
         continued_dock.primary_summary,
-        "Continued runtime: deep · GPT-5.4 Mini · Deterministic"
+        "Context: deep · GPT-5.4 Mini · Deterministic"
     );
     assert_eq!(continued_dock.summary_segment, None);
     assert_eq!(continued_dock.runtime_context.as_deref(), Some("default"));

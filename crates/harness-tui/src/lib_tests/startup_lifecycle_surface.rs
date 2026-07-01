@@ -16,7 +16,7 @@ pub(super) fn startup_surface_renders_primary_actions() {
 
     let rendered = render_live_lines(&app, 100, 24);
     assert_eq!(app.focus, app::Focus::List);
-    assert!(rendered.contains("╻ ╻  ┏━┓  ┏━┓  ┏┓╻"));
+    assert!(rendered.contains("██╗  ██╗"));
     assert!(!rendered.contains("Launch: worker · model-1"));
     assert!(!rendered.contains("Provider mock"));
     assert!(rendered.contains("Worker model-1 mock"));
@@ -433,7 +433,7 @@ pub(super) fn lifecycle_shell_snapshots_preserve_startup_and_handoff_contracts()
     );
 
     let startup_render = render_live_lines(&startup, 100, 24);
-    assert!(startup_render.contains("╻ ╻  ┏━┓  ┏━┓  ┏┓╻") || startup_render.contains("Harness"));
+    assert!(startup_render.contains("██╗  ██╗") || startup_render.contains("Harness"));
     assert!(startup_render.contains("ctrl+p commands"));
     assert!(!startup_render.contains("Enter select"));
     assert!(startup_render.contains("Ask anything... \"What is the tech stack of this project?\""));

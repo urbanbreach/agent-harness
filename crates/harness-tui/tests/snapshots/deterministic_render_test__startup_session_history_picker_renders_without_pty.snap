@@ -1,28 +1,28 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
-expression: rendered.as_str()
+expression: trim_trailing_snapshot_whitespace(&rendered)
 ---
-                                                                                                    
-                                                                                                    
-                                                                                                    
-                                                                                                    
-                                                                                                    
-                                                                                                    
-                                                                                                    
-                                                                                                    
-                Continue session                                                 esc                
-                                                                                                    
-                █ Search                                                                            
-                                                                                                    
-                Sun Mar 08 2026                                                                     
-                   alpha-run                                             continue ready             
-                                                                                                    
-                pin ctrl+f  delete ctrl+d  rename ctrl+r                                            
-                                                                                                    
-            ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀             
-                                           ctrl+t variants  tab agents  ctrl+p commands             
-                                                                                                    
-                                                                                                    
-                                                                                                    
-                                                                                                    
+
+
+
+
+
+
+
+
+                Continue session                                                 esc
+
+                █ Search
+
+                Sun Mar 08 2026
+                   alpha-run                                             continue ready
+
+                pin ctrl+f  delete ctrl+d  rename ctrl+r
+
+            ┃
+            ┃  Worker model-1 mock · Demo
+            ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                           ctrl+t variants  tab agents  ctrl+p commands
+
+
             ~/Projects/agent-harness/crates/harness-tui:dev          Ctrl+p open  q quit

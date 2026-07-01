@@ -1,0 +1,44 @@
+---
+source: crates/harness-tui/tests/deterministic_render_test.rs
+expression: rendered.as_str()
+---
+                                                                                                                                                                                    
+  ┃                                                                                                                                         Inspect P2.1 tool display descriptors   
+  ┃  Inspect P2.1 tool display descriptors                                                                                                                                          
+  ┃                                                                                                                                         ▼ MCP                                   
+                                                                                                                                            • No MCP servers configured             
+     ≡ List session                                                                                                                                                                 
+     ⌘ LSP diagnostics · src/main.rs                                                                                                        ▼ LSP                                   
+     ┃ ✱ AST Search "foo" · Failed                                                                                                          • rust                                  
+     ┃ ast-grep binary not found                                                                                                                                                    
+     ✦ Load skill denied-skill · Denied                                                                                                     ▶ Modified Files                        
+      Operator denied skill load                                                                                                                                                    
+     → Read session · run-123                                                                                                                                                       
+     ✕ Cancelled background task · req-bg-child                                                                                                                                     
+     ↻ Checked background output · req-bg-late · late_result · 3 child tool calls · 2ms                                                                                             
+     ⊕ Plan mode · Plan the refactor                                                                                                                                                
+                                                                                                                                                                                    
+     P2.1 tool display descriptors cover all state families.                                                                                                                        
+                                                                                                                                                                                    
+     ▪ Assistant · model-1 · 27ms                                                                                                                                                   
+                                                                                                                                                                                    
+                                                                                                                                                                                    
+                                                                                                                                                                                    
+                                                                                                                                                                                    
+                                                                                                                                                                                    
+                                                                                                                                                                                    
+                                                                                                                                                                                    
+                                                                                                                                                                                    
+                                                                                                                                                                                    
+                                                                                                                                                                                    
+                                                                                                                                                                                    
+                                                                                                                                                                                    
+                                                                                                                                                                                    
+                                                                                                                                                                                    
+                                                                                                                                                                                    
+┃                                                                                                                                                                                   
+┃                                                                                                                                                                                   
+┃                                                                                                                                                                                   
+┃  model-1 mock                                                                                                                                                                     
+╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    HARNESS 0.1.0                           
+                                                                                                                 live 0  Ctrl+p commands

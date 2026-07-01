@@ -40,6 +40,10 @@ use super::ui_tool_titles::{
     background_output_tool_subtitle, background_output_tool_title, batch_tool_title,
     format_duration_ms, generic_tool_title, is_mcp_tool_id, mcp_tool_title,
 };
+use super::ui_tool_titles_harness::{
+    ast_grep_tool_title, background_cancel_tool_title, invalid_tool_title, lsp_tool_title,
+    plan_enter_tool_title, plan_exit_tool_title, session_tool_title, skill_tool_title,
+};
 use super::ui_tool_visibility::{
     tool_call_should_remain_visible_without_tool_details, tool_disclosure_state,
     tool_header_disclosure_glyph, tool_hidden_from_transcript, TranscriptToolCallDisclosureState,

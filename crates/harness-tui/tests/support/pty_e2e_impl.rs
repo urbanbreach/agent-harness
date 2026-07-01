@@ -50,12 +50,13 @@ pub(crate) fn pty_smoke_starts_accepts_input_resizes_and_exits() {
     helper.wait_for("Commands");
     helper
         .writer
-        .write_all(b"quit")
-        .expect("filter smoke command palette to quit");
+        .write_all(b"exit the app")
+        .expect("filter smoke command palette to exit");
     helper
         .writer
         .flush()
         .expect("flush smoke command palette filter");
+    helper.wait_for("Exit the app");
     send_key(helper.writer.as_mut(), b'\r').expect("submit smoke quit command");
     let status = helper.child.wait().expect("wait for helper tui child exit");
     assert!(status.success(), "helper tui child exited with {status:?}");

@@ -564,7 +564,7 @@ fn startup_shell_shows_profile_provider_and_model_chrome() {
     );
 
     let debug = render_debug(&app, 100, 24);
-    assert!(debug.contains("╻ ╻  ┏━┓  ┏━┓  ┏┓╻") || debug.contains("Harness"));
+    assert!(debug.contains("██╗  ██╗") || debug.contains("Harness"));
     assert!(!debug.contains("Launch: deep · gpt-5.4"));
     assert!(!debug.contains("Provider proxy"));
     assert!(debug.contains("Deep gpt-5.4 proxy · Demo"));

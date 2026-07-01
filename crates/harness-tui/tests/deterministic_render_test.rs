@@ -3,6 +3,9 @@ use std::path::PathBuf;
 #[path = "support/deterministic_render_fixtures.rs"]
 mod deterministic_render_fixtures;
 
+#[path = "support/p21_tool_display_fixtures.rs"]
+mod p21_tool_display_fixtures;
+
 use harness_core::event::{
     ActorKind, EditAppliedEvent, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent,
     ProviderRequestFinishedEvent, ProviderRequestStartedEvent, ProviderStreamDeltaEvent,
@@ -26,7 +29,7 @@ fn startup_shell_is_compose_first_without_pty() {
 
     let rendered = render_text(&app, 100, 24);
 
-    insta::assert_snapshot!(rendered.as_str());
+    insta::assert_snapshot!(trim_trailing_snapshot_whitespace(&rendered));
 
     assert!(rendered.contains("Explain deterministic TUI tests"));
     assert!(rendered.contains("Worker model-1 mock"));
@@ -94,6 +97,40 @@ fn tool_lifecycle_rows_stay_ordered_without_pty() {
 }
 
 #[test]
+fn p21_tool_display_descriptors_cover_state_families_without_pty() {
+    // arrange
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/run_p21_display")), false, None);
+
+    // act
+    for event in p21_tool_display_fixtures::p21_tool_display_events() {
+        app.ingest_event(event);
+    }
+    let rendered = render_text(&app, 180, 40);
+
+    // assert
+    insta::assert_snapshot!(rendered.as_str());
+    // S1: completed — session_list Harness-only tool has intentional title
+    assert_markers_in_order(&rendered, &["List session"]);
+    // S2: running — lsp tool shows operation and path
+    assert_markers_in_order(&rendered, &["LSP diagnostics", "src/main.rs"]);
+    // S3: failed — ast_grep_search shows intentional title
+    assert!(rendered.contains("AST Search"));
+    assert!(rendered.contains("ast-grep binary not found"));
+    // S4: denied — skill tool shows denied state
+    assert_markers_in_order(&rendered, &["Load skill denied-skill", "Denied"]);
+    assert!(rendered.contains("Operator denied skill load"));
+    // S5: truncated — session_read has artifact ref (link visible when output expanded)
+    assert_markers_in_order(&rendered, &["Read session"]);
+    // S6: cancelled — background_cancel shows intentional title
+    assert_markers_in_order(&rendered, &["Cancelled background task", "req-bg-child"]);
+    // S7: late-result — background_output shows late result status
+    assert_markers_in_order(&rendered, &["Checked background output", "late_result"]);
+    // S8: plan_enter — Harness-only control plane tool
+    assert_markers_in_order(&rendered, &["Plan mode", "Plan the refactor"]);
+    assert!(rendered.contains("P2.1 tool display descriptors cover all state families."));
+}
+
+#[test]
 fn command_palette_renders_without_pty() {
     // arrange
     let mut app = AppState::new_live(None, false, None);
@@ -147,7 +184,7 @@ fn startup_session_history_picker_renders_without_pty() {
 
     let rendered = render_text(&app, 100, 24);
 
-    insta::assert_snapshot!(rendered.as_str());
+    insta::assert_snapshot!(trim_trailing_snapshot_whitespace(&rendered));
 
     assert!(rendered.contains("Continue session"));
     assert!(rendered.contains("Search"));

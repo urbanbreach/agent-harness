@@ -1,10 +1,32 @@
 use super::*;
 
 const LIFECYCLE_COPY_INSET_X: u16 = 3;
-const STARTUP_LOGO_LINES: [(&str, &str); 3] = [
-    ("╻ ╻  ┏━┓  ┏━┓  ┏┓╻", "┏━╸  ┏━┓  ┏━┓"),
-    ("┣━┫  ┣━┫  ┣┳┛  ┃┗┫", "┣╸   ┗━┓  ┗━┓"),
-    ("╹ ╹  ╹ ╹  ╹┗╸  ╹ ╹", "┗━╸  ┗━┛  ┗━┛"),
+const STARTUP_LOGO_MIN_WIDTH: u16 = 62;
+const STARTUP_LOGO_LINES: [(&str, &str); 6] = [
+    (
+        "██╗  ██╗ █████╗ ██████╗ ",
+        "███╗   ██╗███████╗███████╗███████╗",
+    ),
+    (
+        "██║  ██║██╔══██╗██╔══██║",
+        "████╗  ██║██╔════╝██╔════╝██╔════╝",
+    ),
+    (
+        "███████║███████║██████╔╝",
+        "██╔██╗ ██║█████╗  ███████╗███████╗",
+    ),
+    (
+        "██╔══██║██╔══██║██╔══██║",
+        "██║╚██╗██║██╔══╝  ╚════██║╚════██║",
+    ),
+    (
+        "██║  ██║██║  ██║██║  ██║",
+        "██║ ╚████║███████╗███████╗███████║",
+    ),
+    (
+        "╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝",
+        "╚═╝  ╚═══╝╚══════╝╚══════╝╚══════╝",
+    ),
 ];
 
 #[derive(Debug, Clone)]
@@ -57,7 +79,7 @@ fn render_lifecycle_copy_line(
 }
 
 fn startup_logo_lines(content_area: Rect, theme: &Theme) -> Vec<Line<'static>> {
-    if content_area.width < 40 {
+    if content_area.width < STARTUP_LOGO_MIN_WIDTH {
         return vec![Line::from(Span::styled(
             theme.live_shell.startup.title,
             Style::default()
@@ -71,7 +93,6 @@ fn startup_logo_lines(content_area: Rect, theme: &Theme) -> Vec<Line<'static>> {
         .map(|(left, right)| {
             Line::from(vec![
                 Span::styled(*left, Style::default().fg(theme.text.secondary)),
-                Span::raw("  "),
                 Span::styled(
                     *right,
                     Style::default()
@@ -84,7 +105,7 @@ fn startup_logo_lines(content_area: Rect, theme: &Theme) -> Vec<Line<'static>> {
 }
 
 fn startup_logo_height(content_area: Rect) -> u16 {
-    if content_area.width < 40 {
+    if content_area.width < STARTUP_LOGO_MIN_WIDTH {
         1
     } else {
         STARTUP_LOGO_LINES.len() as u16

@@ -790,10 +790,10 @@ fn centered_startup_dock_layout(
         .x
         .saturating_add(dock.shell.width.saturating_sub(width) / 2);
     let shell_height = dock.shell.height;
-    let logo_height = if startup_shell_area(transcript, theme).width < 40 {
+    let logo_height = if startup_shell_area(transcript, theme).width < 62 {
         1
     } else {
-        3
+        6
     };
     let fixed_stack_height = OPENCODE_HOME_TOP_SPACER
         .saturating_add(logo_height)
@@ -906,7 +906,7 @@ mod tests {
         let dock = plan.dock.expect("startup dock layout");
 
         assert_eq!(dock.shell.width, plan.shell.width);
-        assert_eq!(dock.shell.y, 13);
+        assert_eq!(dock.shell.y, 15);
         assert!(
             dock.shell.y < plan.shell.y + plan.shell.height.saturating_sub(dock.shell.height),
             "uncapped startup prompt should not stay bottom-docked"

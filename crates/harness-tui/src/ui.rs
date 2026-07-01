@@ -63,6 +63,8 @@ mod ui_tool_question_todo;
 mod ui_tool_style;
 #[path = "ui_tool_titles.rs"]
 mod ui_tool_titles;
+#[path = "ui_tool_titles_harness.rs"]
+mod ui_tool_titles_harness;
 #[path = "ui_tool_visibility.rs"]
 mod ui_tool_visibility;
 #[path = "ui_transcript.rs"]

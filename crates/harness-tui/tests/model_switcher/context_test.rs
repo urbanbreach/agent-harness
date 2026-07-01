@@ -38,7 +38,7 @@ fn runtime_context_labels_distinguish_live_continue_and_replay() {
     continued.set_launch_metadata(launch_metadata.clone().with_mode_label("Continued"));
     assert_eq!(
         continued.runtime_context_primary_summary(),
-        "Continued runtime: deep · GPT-5.4 Mini · Deterministic"
+        "Context: deep · GPT-5.4 Mini · Deterministic"
     );
     assert_eq!(continued.runtime_context_summary_segment_text(), None);
 

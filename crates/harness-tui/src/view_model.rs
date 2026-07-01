@@ -162,7 +162,7 @@ impl RuntimeContextLabel {
         match self {
             Self::Launch => "Launch",
             Self::CurrentRuntime => "Context",
-            Self::ContinuedRuntime => "Continued runtime",
+            Self::ContinuedRuntime => "Context",
             Self::RecordedRuntimeReadOnly => "Recorded runtime · read-only",
         }
     }

@@ -12,7 +12,7 @@ pub(super) fn startup_home_screen_renders_compose_first_shell() {
     );
 
     let rendered = render_live_lines(&app, 160, 48);
-    assert!(rendered.contains("╻ ╻  ┏━┓  ┏━┓  ┏┓╻"));
+    assert!(rendered.contains("██╗  ██╗"));
     assert!(!rendered.contains("Launch: deep · gpt-5.4"));
     assert!(!rendered.contains("Provider proxy"));
     assert!(rendered.contains("Deep gpt-5.4 proxy · Demo"));
@@ -28,7 +28,7 @@ pub(super) fn startup_home_screen_uses_minimal_compat_shell() {
     let app = app::AppState::new_startup(Vec::new(), None);
 
     let rendered = render_live_lines(&app, 100, 24);
-    assert!(rendered.contains("╻ ╻  ┏━┓  ┏━┓  ┏┓╻") || rendered.contains("Harness"));
+    assert!(rendered.contains("██╗  ██╗") || rendered.contains("Harness"));
     assert!(rendered.contains("Ask anything... \"What is the tech stack of this project?\""));
     assert!(!rendered.contains("Dispatch a new run, reopen live work, or inspect saved history."));
     assert!(!rendered.contains("New session"));

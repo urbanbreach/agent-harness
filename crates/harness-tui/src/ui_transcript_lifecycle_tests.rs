@@ -323,7 +323,7 @@ fn startup_lifecycle_text_participates_in_selection_copy() {
     let row = snapshot
         .rows
         .iter()
-        .position(|line| line.contains("┏━╸"))
+        .position(|line| line.contains("███████╗"))
         .expect("startup logo row is selectable");
 
     let hit = transcript_selection_cell(
@@ -347,7 +347,7 @@ fn startup_lifecycle_text_participates_in_selection_copy() {
         },
     )
     .expect("startup text copies from selection");
-    assert!(copied.contains("┏━╸"));
+    assert!(copied.contains("███████╗"));
 }
 
 #[test]

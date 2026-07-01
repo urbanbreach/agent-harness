@@ -7,7 +7,7 @@ pub(super) fn startup_shell_shows_profile_provider_and_model_chrome() {
     );
 
     let rendered = render_live_lines(&app, 100, 24);
-    assert!(rendered.contains("╻ ╻  ┏━┓  ┏━┓  ┏┓╻"));
+    assert!(rendered.contains("██╗  ██╗"));
     assert!(!rendered.contains("Launch: deep · gpt-5.4"));
     assert!(!rendered.contains("Provider proxy"));
     assert!(rendered.contains("Deep gpt-5.4 proxy · Demo"));
@@ -30,7 +30,7 @@ pub(super) fn lifecycle_shell_narrow_layout_renders_primary_cta() {
     assert_live_shell_frame_invariants(&rendered, 80, 24);
 
     let lines = rendered.lines().collect::<Vec<_>>();
-    let title_row = find_line_containing(&lines, "╻ ╻  ┏━┓  ┏━┓  ┏┓╻").expect("startup logo row");
+    let title_row = find_line_containing(&lines, "██╗  ██╗").expect("startup logo row");
     let prompt_row = find_line_containing(
         &lines,
         "Ask anything... \"What is the tech stack of this project?\"",
@@ -232,7 +232,7 @@ pub(super) fn startup_home_matches_live_empty_shell_language() {
     let live_render = render_live_lines(&live, 100, 24);
 
     for marker in [
-        "╻ ╻  ┏━┓  ┏━┓  ┏┓╻",
+        "██╗  ██╗",
         "Ask anything... \"What is the tech stack of this project?\"",
     ] {
         assert!(
@@ -314,8 +314,7 @@ pub(super) fn startup_and_live_empty_share_spacing_contract() {
 
     let startup_render = render_live_lines(&startup, 100, 24);
     let startup_lines = startup_render.lines().collect::<Vec<_>>();
-    let startup_title =
-        find_line_containing(&startup_lines, "╻ ╻  ┏━┓  ┏━┓  ┏┓╻").expect("startup logo");
+    let startup_title = find_line_containing(&startup_lines, "██╗  ██╗").expect("startup logo");
     let startup_prompt = find_line_containing(
         &startup_lines,
         "Ask anything... \"What is the tech stack of this project?\"",
