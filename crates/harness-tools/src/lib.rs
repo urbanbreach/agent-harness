@@ -6,14 +6,25 @@
 
 use harness_core::config::{McpConfig, ShellAllowlist};
 use harness_core::event::ActorKind;
-use harness_core::tool::{ArtifactRef, Tool, ToolError, ToolRegistry, ToolResult};
+use harness_core::tool::{ArtifactRef, Tool, ToolRegistry, ToolResult};
 use schemars::JsonSchema;
-use serde::de::DeserializeOwned;
 use serde_json::json;
 use std::sync::Arc;
 
+mod arg_parse;
+pub(crate) use arg_parse::parse_tool_args;
+
 mod hashline_apply;
 use hashline_apply::HashlineApplyTool;
+
+mod apply_patch_tool;
+use apply_patch_tool::ApplyPatchTool;
+
+mod exact_edit;
+mod exact_edit_match;
+
+mod file_write;
+use file_write::WriteTool;
 
 mod hashline_edit;
 use hashline_edit::HashlineEditTool;
@@ -27,9 +38,6 @@ mod http_client;
 
 mod fs_glob;
 use fs_glob::FsGlobTool;
-
-mod fs_ls;
-use fs_ls::FsLsTool;
 
 mod fs_grep;
 use fs_grep::FsGrepTool;
@@ -214,12 +222,6 @@ pub fn coordinator_registry_with_mcp_editing_and_executors(
     );
     mcp::register_mcp_tools(&mut registry, mcp_config);
     registry
-}
-
-pub(crate) fn parse_tool_args<T: DeserializeOwned>(
-    args_json: serde_json::Value,
-) -> Result<T, ToolError> {
-    serde_json::from_value(args_json).map_err(|err| ToolError::InvalidArguments(err.to_string()))
 }
 
 pub(crate) fn text_json_tool_result(
@@ -438,6 +440,8 @@ fn coordinator_native_tool_surface(
         boxed_tool(PlanEnterTool::new(question_answer_source.clone())),
         boxed_tool(PlanExitTool::new(question_answer_source.clone())),
         boxed_tool(HashlineEditTool),
+        boxed_tool(WriteTool),
+        boxed_tool(ApplyPatchTool),
         boxed_tool(ShellRunTool::with_runner(
             shell_allowlist.clone(),
             shell_command_runner.clone(),
@@ -727,8 +731,8 @@ mod tests {
 
         assert_eq!(properties["offset"]["minimum"], json!(1));
         assert_eq!(properties["limit"]["minimum"], json!(1));
-        assert_eq!(properties["hashlineAnchors"]["default"], json!(true));
-        assert_eq!(schema["required"], json!(["filePath"]));
+        assert!(properties.get("hashlineAnchors").is_none());
+        assert_eq!(schema["required"], json!(["path"]));
     }
 
     #[test]
@@ -737,9 +741,10 @@ mod tests {
         let bash = registry.get("bash").expect("bash tool");
         let description = bash.description();
 
-        assert!(description.contains("find"));
         assert!(description.contains("glob"));
         assert!(description.contains("grep"));
         assert!(description.contains("read"));
+        assert!(description.contains("permission patterns"));
+        assert!(description.contains("workspace path safety"));
     }
 }

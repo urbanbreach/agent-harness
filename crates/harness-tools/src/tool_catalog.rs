@@ -3,6 +3,8 @@ use harness_core::perm::{permission_kind_for_tool_call, PermissionKind};
 use harness_core::tool::{ToolCapability, ToolRegistry};
 use serde::Serialize;
 
+mod baseline_parity;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct NativeToolCatalogEntry {
     pub canonical_id: String,
@@ -19,6 +21,8 @@ pub struct NativeToolCatalogEntry {
     pub artifact_behavior: String,
     pub docs_status: String,
     pub built_in: bool,
+    pub baseline_mapping_status: String,
+    pub baseline_equivalent_id: Option<String>,
 }
 
 pub fn native_tool_catalog_entries(registry: &ToolRegistry) -> Vec<NativeToolCatalogEntry> {
@@ -60,6 +64,9 @@ pub fn native_tool_catalog_entries(registry: &ToolRegistry) -> Vec<NativeToolCat
                 artifact_behavior: artifact_behavior(&tool_id).to_string(),
                 docs_status: "documented".to_string(),
                 built_in: !tool_id.starts_with("mcp."),
+                baseline_mapping_status: baseline_parity::mapping_status(&tool_id).to_string(),
+                baseline_equivalent_id: baseline_parity::equivalent_id(&tool_id)
+                    .map(str::to_string),
                 canonical_id: tool_id,
             })
         })
@@ -159,7 +166,9 @@ fn artifact_behavior(tool_id: &str) -> &'static str {
     match tool_id {
         "read" | "glob" | "grep" | "session_read" | "session_search" | "session_info"
         | "ast_grep_search" | "ast_grep_replace" => "spills_large_output",
-        "edit" | "shell.run" | "bash" => "records_artifacts_when_large_or_applicable",
+        "edit" | "write" | "apply_patch" | "shell.run" | "bash" => {
+            "records_artifacts_when_large_or_applicable"
+        }
         _ => "summary_only",
     }
 }
@@ -228,5 +237,14 @@ mod tests {
             .expect("todowrite");
         assert_eq!(todo_write.permission_kind.as_deref(), Some("task"));
         assert_eq!(todo_write.mutation, "mutating");
+        assert_eq!(todo_write.baseline_mapping_status, "harness_adapted");
+        assert_eq!(todo_write.baseline_equivalent_id.as_deref(), Some("todo"));
+
+        let session_list = catalog
+            .iter()
+            .find(|entry| entry.canonical_id == "session_list")
+            .expect("session_list");
+        assert_eq!(session_list.baseline_mapping_status, "harness_only");
+        assert_eq!(session_list.baseline_equivalent_id, None);
     }
 }

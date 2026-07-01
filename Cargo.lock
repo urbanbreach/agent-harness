@@ -1216,8 +1216,11 @@ name = "harness-providers"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64",
  "blake3",
+ "harness-core",
  "harness-testkit",
+ "harness-tools",
  "json5",
  "reqwest",
  "schemars",
@@ -1258,12 +1261,14 @@ name = "harness-tools"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64",
  "blake3",
  "globset",
  "harness-core",
  "harness-providers",
  "regex",
  "reqwest",
+ "rustix",
  "schemars",
  "serde",
  "serde_json",

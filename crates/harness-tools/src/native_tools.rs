@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::Arc;
 
 use crate::agent_ops::{
@@ -16,8 +17,8 @@ use crate::read_window::{
 };
 use crate::workspace_paths::resolve_existing_path;
 use crate::{
-    parse_tool_args, text_json_tool_result, FsGlobTool, FsGrepTool, FsLsTool, FsReadTool,
-    ShellCommandRunner, ShellRunTool,
+    parse_tool_args, text_json_tool_result, FsGlobTool, FsGrepTool, FsReadTool, ShellCommandRunner,
+    ShellRunTool,
 };
 use async_trait::async_trait;
 use harness_core::config::ShellAllowlist;
@@ -30,9 +31,11 @@ mod tests;
 mod tree;
 
 use self::args::{
-    read_parameters_json_schema, BackgroundCancelArgs, BackgroundOutputArgs, BashArgs, BatchArgs,
-    CodeSearchArgs, GlobArgs, GrepArgs, InvalidArgs, ListArgs, QuestionArgs, ReadArgs, SkillArgs,
-    TaskArgs, TodoWriteArgs, WebFetchArgs, WebSearchArgs,
+    bash_parameters_json_schema, glob_parameters_json_schema, grep_parameters_json_schema,
+    read_parameters_json_schema, web_search_parameters_json_schema, BackgroundCancelArgs,
+    BackgroundOutputArgs, BashArgs, BatchArgs, CodeSearchArgs, GlobArgs, GrepArgs, InvalidArgs,
+    ListArgs, QuestionArgs, ReadArgs, SkillArgs, TaskArgs, TodoWriteArgs, WebFetchArgs,
+    WebSearchArgs,
 };
 use self::tree::{build_recursive_tree, resolve_directory_path};
 
@@ -195,11 +198,7 @@ impl Tool for ReadTool {
     }
 
     fn description(&self) -> &str {
-        if self.default_hashline_anchors {
-            "Reads a file or directory using the canonical harness tool contract. Hashline anchor mode is on by default, so each line is returned as LINE#HASH|text for robust edits; set hashlineAnchors=false if you need plain numbered output."
-        } else {
-            "Reads a file or directory using the canonical harness tool contract. For robust edits, set hashlineAnchors=true to get LINE#HASH|text anchors you can feed into the hashline edit workflow."
-        }
+        "Reads a file or directory. Provide path, and use offset/limit to continue through large text files. Directories are listed; file output is bounded for model readability."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -220,15 +219,12 @@ impl Tool for ReadTool {
 
         let resolved = resolve_existing_path(&ctx, &args.file_path)?;
         if resolved.is_dir() {
-            return FsLsTool
-                .call(
-                    ctx,
-                    json!({
-                        "path": args.file_path,
-                        "limit": limit,
-                    }),
-                )
-                .await;
+            return build_directory_read_result(
+                &args.file_path,
+                &resolved,
+                offset as usize,
+                limit as usize,
+            );
         }
 
         FsReadTool::new(self.default_hashline_anchors)
@@ -244,6 +240,87 @@ impl Tool for ReadTool {
             )
             .await
     }
+}
+
+fn build_directory_read_result(
+    request_path: &str,
+    resolved: &Path,
+    offset: usize,
+    limit: usize,
+) -> Result<ToolResult, ToolError> {
+    let all_entries = read_directory_entries(resolved)?;
+    let total_entries = all_entries.len();
+    let start = offset.saturating_sub(1);
+    let entries = all_entries
+        .into_iter()
+        .skip(start)
+        .take(limit)
+        .collect::<Vec<_>>();
+    let truncated = start + entries.len() < total_entries;
+    let summary = if truncated {
+        format!(
+            "\n(Showing {} of {total_entries} entries. Use 'offset' parameter to read beyond entry {})",
+            entries.len(),
+            offset + entries.len()
+        )
+    } else {
+        format!("\n({total_entries} entries)")
+    };
+    let display_text = format!(
+        "<path>{}</path>\n<type>directory</type>\n<entries>\n{}{}\n</entries>",
+        resolved.display(),
+        entries.join("\n"),
+        summary
+    );
+    let structured = json!({
+        "title": request_path,
+        "path": request_path,
+        "resolved_path": resolved.display().to_string(),
+        "entries": entries,
+        "total_count": total_entries,
+        "returned_count": entries.len(),
+        "truncated_count": total_entries.saturating_sub(start + entries.len()),
+        "truncated": truncated,
+        "metadata": {
+            "preview": entries.iter().take(20).cloned().collect::<Vec<_>>().join("\n"),
+            "truncated": truncated,
+            "loaded": [],
+            "display": {
+                "type": "directory",
+                "path": resolved.display().to_string(),
+                "entries": entries,
+                "offset": offset,
+                "totalEntries": total_entries,
+                "truncated": truncated,
+            }
+        }
+    });
+    Ok(text_json_tool_result(display_text, structured))
+}
+
+fn read_directory_entries(directory: &Path) -> Result<Vec<String>, ToolError> {
+    let mut entries = std::fs::read_dir(directory)
+        .map_err(|err| ToolError::Execution(format!("failed to list directory: {err}")))?
+        .map(directory_entry_display_name)
+        .collect::<Result<Vec<_>, _>>()?;
+    entries.sort();
+    Ok(entries)
+}
+
+fn directory_entry_display_name(
+    entry: std::io::Result<std::fs::DirEntry>,
+) -> Result<String, ToolError> {
+    let entry = entry
+        .map_err(|err| ToolError::Execution(format!("failed to read directory entry: {err}")))?;
+    let file_type = entry.file_type().map_err(|err| {
+        ToolError::Execution(format!("failed to read directory entry type: {err}"))
+    })?;
+
+    let mut name = entry.file_name().to_string_lossy().to_string();
+    if file_type.is_dir() {
+        name.push('/');
+    }
+    Ok(name)
 }
 
 #[async_trait]
@@ -291,7 +368,7 @@ impl Tool for GlobTool {
     }
 
     fn parameters_json_schema(&self) -> Value {
-        super::json_schema_for::<GlobArgs>()
+        glob_parameters_json_schema()
     }
 
     fn capability(&self) -> ToolCapability {
@@ -306,7 +383,7 @@ impl Tool for GlobTool {
                 json!({
                     "pattern": args.pattern,
                     "path": args.path,
-                    "limit": DEFAULT_GLOB_LIMIT,
+                    "limit": args.limit.unwrap_or(DEFAULT_GLOB_LIMIT as u32),
                 }),
             )
             .await
@@ -320,11 +397,11 @@ impl Tool for GrepTool {
     }
 
     fn description(&self) -> &str {
-        "Searches file or directory contents by regex using canonical harness arguments. Set `literal: true` to search for the pattern as plain text."
+        "Searches file or directory contents by regex. Use path, include, and limit to narrow results."
     }
 
     fn parameters_json_schema(&self) -> Value {
-        super::json_schema_for::<GrepArgs>()
+        grep_parameters_json_schema()
     }
 
     fn capability(&self) -> ToolCapability {
@@ -341,7 +418,7 @@ impl Tool for GrepTool {
                     "path": args.path,
                     "include": args.include,
                     "literal": args.literal,
-                    "limit": DEFAULT_GREP_LIMIT,
+                    "limit": args.limit.unwrap_or(DEFAULT_GREP_LIMIT as u32),
                     "context": DEFAULT_GREP_CONTEXT,
                 }),
             )
@@ -356,11 +433,11 @@ impl Tool for BashTool {
     }
 
     fn description(&self) -> &str {
-        "Executes a shell command using the canonical bash arguments. Use bash for real shell work like git, cargo, or npm-not for file discovery, content search, reading files, or editing. Commands such as find, grep/rg, cat, head, tail, sed, and awk are blocked; use glob, grep, list, read, or edit instead."
+        "Executes a shell command using the canonical bash arguments. Use bash for real shell work like git, cargo, or npm—not for file discovery, content search, reading files, or editing. Native `read`, `glob`, `grep`, `list`, and `edit` tools are preferred for file IO, search, and edits. Shell file/search/edit utilities are controlled by permission patterns and workspace path safety, not a static executable allowlist."
     }
 
     fn parameters_json_schema(&self) -> Value {
-        super::json_schema_for::<BashArgs>()
+        bash_parameters_json_schema()
     }
 
     fn capability(&self) -> ToolCapability {
@@ -475,7 +552,7 @@ impl Tool for TaskTool {
     }
 
     fn description(&self) -> &str {
-        "Delegates work to another configured harness profile/category. `run_in_background` is required: run_in_background=false waits and returns the child result synchronously; sync child tasks do not emit background wakeup notifications. run_in_background=true returns task_id/request_id immediately and is required when testing or exercising background scheduling, completion reminders, or background_output retrieval. `load_skills` is required, even when empty; listed skills are resolved before spawning and injected into the child prompt. For non-trivial delegation, make `prompt` a structured body with sections: context, goal, downstream use, request, required tools, must-do, must-not-do. Use background_output with the returned request_id whenever you need status, result, or cancellation. The coordinator may also send a completion reminder later for background tasks, but do not wait for that reminder when the result is needed. `command` is prepended to the child prompt as explicit delegation context."
+        "Delegates work to another configured harness profile/category. Exactly one of `category` or `subagent_type` is required for new child tasks; use task_id/session_id only when continuing a prior task. `run_in_background` is required: run_in_background=false waits and returns the child result synchronously; sync child tasks do not emit background wakeup notifications. run_in_background=true returns task_id/request_id immediately and is required when testing or exercising background scheduling, completion reminders, or background_output retrieval. `load_skills` is required, even when empty; listed skills are resolved before spawning and injected into the child prompt. For non-trivial delegation, make `prompt` a structured body with sections: context, goal, downstream use, request, required tools, must-do, must-not-do. Use background_output with the returned request_id whenever you need status, result, or cancellation. The coordinator may also send a completion reminder later for background tasks, but do not wait for that reminder when the result is needed. `command` is prepended to the child prompt as explicit delegation context."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -661,7 +738,7 @@ impl Tool for WebSearchTool {
     }
 
     fn parameters_json_schema(&self) -> Value {
-        super::json_schema_for::<WebSearchArgs>()
+        web_search_parameters_json_schema()
     }
 
     fn capability(&self) -> ToolCapability {
@@ -674,8 +751,8 @@ impl Tool for WebSearchTool {
             .web_search(WebSearchRequest {
                 query: args.query,
                 num_results: args.num_results,
-                livecrawl: args.livecrawl,
-                search_type: args.r#type,
+                livecrawl: args.livecrawl.map(|value| value.as_str().to_string()),
+                search_type: args.r#type.map(|value| value.as_str().to_string()),
                 context_max_characters: args.context_max_characters,
             })
             .await
@@ -689,7 +766,7 @@ impl Tool for CodeSearchTool {
     }
 
     fn description(&self) -> &str {
-        "Searches code context via the configured backend."
+        "Searches remote/public code context via the configured backend. This is not local workspace symbol search. Use grep, ast_grep_search, or lsp for local workspace code and first-party symbols."
     }
 
     fn parameters_json_schema(&self) -> Value {
