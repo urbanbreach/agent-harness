@@ -1,4 +1,5 @@
-use serde::Serialize;
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+use serde::{Deserialize, Serialize};
 
 use super::non_empty_string;
 use crate::{
@@ -7,6 +8,8 @@ use crate::{
 };
 
 const OPENAI_PROMPT_CACHE_KEY_MAX_LENGTH: usize = 64;
+const MAX_MEDIA_ENCODED_BYTES: usize = 28 * 1024 * 1024;
+const MAX_MEDIA_DECODED_BYTES: usize = 20 * 1024 * 1024;
 
 #[derive(Debug, Serialize)]
 pub(super) struct OpenAiChatCompletionsRequest {
@@ -64,7 +67,7 @@ impl OpenAiChatCompletionsRequest {
 
         Self {
             model: model_id,
-            messages: messages.into_iter().map(Into::into).collect(),
+            messages: serialize_chat_messages(messages),
             prompt_cache_key: cache.key,
             prompt_cache_retention: cache.retention,
             temperature,
@@ -82,7 +85,7 @@ impl OpenAiChatCompletionsRequest {
 #[derive(Debug, Serialize)]
 struct OpenAiChatMessage {
     role: String,
-    content: String,
+    content: OpenAiChatMessageContent,
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -119,12 +122,91 @@ impl From<CompletionMessage> for OpenAiChatMessage {
 
         Self {
             role: role_to_openai(&role).to_string(),
-            content,
+            content: OpenAiChatMessageContent::Text(content),
             name,
             tool_call_id,
             tool_calls,
         }
     }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum OpenAiChatMessageContent {
+    Text(String),
+    Parts(Vec<OpenAiChatUserContent>),
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "type")]
+enum OpenAiChatUserContent {
+    #[serde(rename = "image_url")]
+    ImageUrl { image_url: OpenAiImageUrl },
+}
+
+#[derive(Debug, Serialize)]
+struct OpenAiImageUrl {
+    url: String,
+}
+
+fn serialize_chat_messages(messages: Vec<CompletionMessage>) -> Vec<OpenAiChatMessage> {
+    let mut serialized = Vec::new();
+    let mut pending_images = Vec::new();
+    for message in messages {
+        if matches!(message.role, MessageRole::Tool) {
+            let (tool_message, images) = chat_message_and_images_from_tool_message(message);
+            serialized.push(tool_message);
+            pending_images.extend(images);
+            continue;
+        }
+
+        if !pending_images.is_empty() {
+            serialized.push(OpenAiChatMessage {
+                role: "user".to_string(),
+                content: OpenAiChatMessageContent::Parts(std::mem::take(&mut pending_images)),
+                name: None,
+                tool_call_id: None,
+                tool_calls: None,
+            });
+        }
+        serialized.push(message.into());
+    }
+
+    if !pending_images.is_empty() {
+        serialized.push(OpenAiChatMessage {
+            role: "user".to_string(),
+            content: OpenAiChatMessageContent::Parts(pending_images),
+            name: None,
+            tool_call_id: None,
+            tool_calls: None,
+        });
+    }
+
+    serialized
+}
+
+fn chat_message_and_images_from_tool_message(
+    message: CompletionMessage,
+) -> (OpenAiChatMessage, Vec<OpenAiChatUserContent>) {
+    let tool_call_id = message.tool_call_id.clone();
+    let payload = parse_harness_tool_result(&message.content);
+    let text = payload
+        .as_ref()
+        .map(|payload| provider_tool_result_text(payload))
+        .unwrap_or_else(|| message.content.clone());
+    let tool_message = OpenAiChatMessage {
+        role: role_to_openai(&message.role).to_string(),
+        content: OpenAiChatMessageContent::Text(text),
+        name: message.name,
+        tool_call_id,
+        tool_calls: None,
+    };
+
+    let images = payload
+        .as_ref()
+        .map(provider_tool_result_images)
+        .unwrap_or_default();
+    (tool_message, images)
 }
 
 #[derive(Debug, Serialize)]
@@ -298,7 +380,7 @@ enum OpenAiResponsesInputItem {
         #[serde(rename = "type")]
         item_type: &'static str,
         call_id: String,
-        output: String,
+        output: OpenAiResponsesFunctionCallOutput,
     },
 }
 
@@ -316,7 +398,7 @@ impl OpenAiResponsesInputItem {
             return vec![Self::FunctionCallOutput {
                 item_type: "function_call_output",
                 call_id: tool_call_id.unwrap_or_default(),
-                output: content,
+                output: responses_tool_result_output(&content),
             }];
         }
 
@@ -362,10 +444,155 @@ impl OpenAiResponsesInputItem {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum OpenAiResponsesFunctionCallOutput {
+    Text(String),
+    Content(Vec<OpenAiResponsesFunctionCallOutputContent>),
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "type")]
+enum OpenAiResponsesFunctionCallOutputContent {
+    #[serde(rename = "input_text")]
+    Text { text: String },
+    #[serde(rename = "input_image")]
+    Image { image_url: String },
+}
+
+#[derive(Debug, Serialize)]
 struct OpenAiResponsesContentItem {
     #[serde(rename = "type")]
     item_type: String,
     text: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct HarnessToolResultEnvelope {
+    #[serde(rename = "_harness_tool_result")]
+    result: HarnessToolResultPayload,
+}
+
+#[derive(Debug, Deserialize)]
+struct HarnessToolResultPayload {
+    text: String,
+    content: Vec<HarnessToolResultContent>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum HarnessToolResultContent {
+    Text { text: String },
+    File { uri: String, mime: String },
+}
+
+fn parse_harness_tool_result(content: &str) -> Option<HarnessToolResultPayload> {
+    serde_json::from_str::<HarnessToolResultEnvelope>(content)
+        .ok()
+        .map(|envelope| envelope.result)
+}
+
+fn provider_tool_result_text(payload: &HarnessToolResultPayload) -> String {
+    payload
+        .content
+        .iter()
+        .filter_map(|item| match item {
+            HarnessToolResultContent::Text { text } => Some(text.as_str()),
+            HarnessToolResultContent::File { .. } => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+        .if_empty_then(|| payload.text.clone())
+}
+
+fn provider_tool_result_images(payload: &HarnessToolResultPayload) -> Vec<OpenAiChatUserContent> {
+    payload
+        .content
+        .iter()
+        .filter_map(|item| match item {
+            HarnessToolResultContent::File { uri, mime } => validated_openai_image_url(uri, mime)
+                .map(|url| OpenAiChatUserContent::ImageUrl {
+                    image_url: OpenAiImageUrl { url },
+                }),
+            HarnessToolResultContent::Text { .. } => None,
+        })
+        .collect()
+}
+
+fn responses_tool_result_output(content: &str) -> OpenAiResponsesFunctionCallOutput {
+    let Some(payload) = parse_harness_tool_result(content) else {
+        return OpenAiResponsesFunctionCallOutput::Text(content.to_string());
+    };
+
+    OpenAiResponsesFunctionCallOutput::Content(
+        payload
+            .content
+            .into_iter()
+            .filter_map(|item| match item {
+                HarnessToolResultContent::Text { text } => {
+                    Some(OpenAiResponsesFunctionCallOutputContent::Text { text })
+                }
+                HarnessToolResultContent::File { uri, mime } => {
+                    validated_openai_image_url(&uri, &mime).map(|image_url| {
+                        OpenAiResponsesFunctionCallOutputContent::Image { image_url }
+                    })
+                }
+            })
+            .collect(),
+    )
+}
+
+fn is_openai_image_mime(mime: &str) -> bool {
+    matches!(
+        mime,
+        "image/png" | "image/jpeg" | "image/gif" | "image/webp"
+    )
+}
+
+fn validated_openai_image_url(uri: &str, mime: &str) -> Option<String> {
+    let normalized_mime = mime.to_ascii_lowercase();
+    if !is_openai_image_mime(&normalized_mime) {
+        return None;
+    }
+
+    let base64 = if let Some(data_url) = uri.strip_prefix("data:") {
+        let (data_url_mime, base64) = data_url.split_once(";base64,")?;
+        if data_url_mime.is_empty()
+            || data_url_mime.contains([';', ','])
+            || data_url_mime.to_ascii_lowercase() != normalized_mime
+        {
+            return None;
+        }
+        base64
+    } else {
+        uri
+    };
+
+    if base64.is_empty() || base64.len() % 4 != 0 || base64.len() > MAX_MEDIA_ENCODED_BYTES {
+        return None;
+    }
+
+    let bytes = STANDARD.decode(base64).ok()?;
+    if bytes.len() > MAX_MEDIA_DECODED_BYTES || STANDARD.encode(&bytes) != base64 {
+        return None;
+    }
+
+    Some(format!("data:{normalized_mime};base64,{base64}"))
+}
+
+trait EmptyStringExt {
+    fn if_empty_then(self, fallback: impl FnOnce() -> String) -> String;
+}
+
+impl EmptyStringExt for String {
+    fn if_empty_then(self, fallback: impl FnOnce() -> String) -> String {
+        if self.is_empty() {
+            fallback()
+        } else {
+            self
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]

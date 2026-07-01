@@ -272,7 +272,7 @@ impl RecordedOpenAiHttpTransport {
         let exists = path.exists();
         let cassette = match mode {
             CassetteMode::Replay if !exists => {
-                return Err(CassetteError::MissingReplayCassette { path })
+                return Err(CassetteError::MissingReplayCassette { path });
             }
             CassetteMode::Replay => OpenAiHttpCassette::read_from(&path)?,
             CassetteMode::Auto if exists => OpenAiHttpCassette::read_from(&path)?,
@@ -392,7 +392,7 @@ impl<P> RecordedProvider<P> {
         let exists = path.exists();
         let cassette = match mode {
             CassetteMode::Replay if !exists => {
-                return Err(CassetteError::MissingReplayCassette { path })
+                return Err(CassetteError::MissingReplayCassette { path });
             }
             CassetteMode::Replay => ProviderCassette::read_from(&path)?,
             CassetteMode::Auto if exists => ProviderCassette::read_from(&path)?,

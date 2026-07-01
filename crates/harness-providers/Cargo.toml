@@ -6,6 +6,7 @@ version.workspace = true
 
 [dependencies]
 async-trait = "0.1"
+base64 = "0.22"
 blake3 = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 serde.workspace = true
@@ -17,6 +18,8 @@ tokio-stream.workspace = true
 tracing = "0.1"
 
 [dev-dependencies]
+harness-core = { path = "../harness-core" }
+harness-tools = { path = "../harness-tools" }
 harness-testkit = { path = "../harness-testkit" }
 json5.workspace = true
 tempfile.workspace = true

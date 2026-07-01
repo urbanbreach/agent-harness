@@ -101,7 +101,9 @@ impl MockProvider {
             Some(fixture_path) => format!(
                 "; fixture_path={fixture_path}; add a fixture JSON whose normalized request hashes to this digest"
             ),
-            None => "; add a fixture JSON whose normalized request hashes to this digest".to_string(),
+            None => {
+                "; add a fixture JSON whose normalized request hashes to this digest".to_string()
+            }
         };
         format!(
             "mock fixture missing for request_digest={digest}{fixture_hint}\n\

@@ -18,6 +18,7 @@ use tokio_stream::{self, Stream};
 pub mod cassette;
 pub mod mock;
 pub mod openai;
+pub mod schema_compat;
 
 pub type ProviderId = String;
 pub type ModelId = String;
@@ -246,14 +247,30 @@ impl ProviderErrorCategory {
 
     pub fn remediation(self) -> &'static str {
         match self {
-            Self::MissingCredentials => "Configure the provider API key or apiKeyEnv value, then retry.",
-            Self::InvalidCredentials => "Check that the provider credential is valid for the selected provider and model.",
-            Self::RateLimited => "Wait for the provider rate limit to reset or switch to a less constrained model/provider.",
-            Self::ContextWindowExceeded => "Reduce prompt context, enable compaction, or choose a model with a larger context window.",
-            Self::UnsupportedToolCall => "Inspect the tool schema and provider support matrix, then retry with a supported tool shape.",
-            Self::MalformedStream => "Retry the request; if it repeats, capture a support bundle because the provider stream was malformed.",
-            Self::TransportFailure => "Check provider base URL/network reachability and retry the request.",
-            Self::Other => "Inspect the provider message and support bundle for the provider-specific failure detail.",
+            Self::MissingCredentials => {
+                "Configure the provider API key or apiKeyEnv value, then retry."
+            }
+            Self::InvalidCredentials => {
+                "Check that the provider credential is valid for the selected provider and model."
+            }
+            Self::RateLimited => {
+                "Wait for the provider rate limit to reset or switch to a less constrained model/provider."
+            }
+            Self::ContextWindowExceeded => {
+                "Reduce prompt context, enable compaction, or choose a model with a larger context window."
+            }
+            Self::UnsupportedToolCall => {
+                "Inspect the tool schema and provider support matrix, then retry with a supported tool shape."
+            }
+            Self::MalformedStream => {
+                "Retry the request; if it repeats, capture a support bundle because the provider stream was malformed."
+            }
+            Self::TransportFailure => {
+                "Check provider base URL/network reachability and retry the request."
+            }
+            Self::Other => {
+                "Inspect the provider message and support bundle for the provider-specific failure detail."
+            }
         }
     }
 }

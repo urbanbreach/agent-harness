@@ -433,6 +433,7 @@ struct LiveProviderConfig {
 
 mod auth_profiles_test;
 mod live_smoke_test;
+mod request_media_serialization_test;
 mod request_serialization_test;
 mod responses_cache_test;
 mod tool_errors_test;

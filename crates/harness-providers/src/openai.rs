@@ -420,6 +420,15 @@ impl Provider for OpenAiCompatibleProvider {
             Ok(credential) => credential,
             Err(event) => return Box::pin(stream::iter(vec![event])),
         };
+        let req = match crate::schema_compat::prepare_request_tools(req) {
+            Ok(req) => req,
+            Err(err) => {
+                return Box::pin(stream::iter(vec![ProviderStreamEvent::categorized_error(
+                    err.to_string(),
+                    ProviderErrorCategory::UnsupportedToolCall,
+                )]));
+            }
+        };
         let context = req.context.clone();
         let supports_long_cache_retention = self.supports_long_prompt_cache_retention();
         let responses_system_as_instructions =
