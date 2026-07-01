@@ -1391,9 +1391,24 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ShellAllowlistMode"
+            }
+          ],
+          "default": "permission_patterns"
         }
       },
       "type": "object"
+    },
+    "ShellAllowlistMode": {
+      "enum": [
+        "permission_patterns",
+        "legacy_executables"
+      ],
+      "type": "string"
     },
     "SkillsConfig": {
       "additionalProperties": false,

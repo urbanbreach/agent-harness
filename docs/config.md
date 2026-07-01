@@ -816,9 +816,15 @@ workspace-relative path, a trailing `/**` path prefix such as `docs/**`, or the
 they accept exact names, `*` catch-all, and simple `*` glob patterns such as
 `review-*`. Regex is not supported.
 
-`shell_allowlist` remains supported inside `permission` for the existing shell
-allowlist checks. Permission decisions improve operator UX by deciding whether a
-tool call runs, asks, or is denied. They are not a sandbox or security boundary.
+`shell_allowlist` remains supported inside `permission` for shell policy inputs.
+It accepts `mode` values `permission_patterns` (the default) and
+`legacy_executables`, plus the compatibility aliases `policy_mode` and
+`policyMode`. Existing `executables` and `cwd_roots` entries still load, and
+`cwdRoots` remains accepted as an alias for `cwd_roots`. In
+`permission_patterns` mode, Harness still blocks environment-dump commands and
+interpreter eval flags such as `python3 -c` before execution. Permission
+decisions improve operator UX by deciding whether a tool call runs, asks, or is
+denied. They are not a sandbox or security boundary.
 
 ## Deprecated compatibility behavior
 

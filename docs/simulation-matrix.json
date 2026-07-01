@@ -96,7 +96,7 @@
       "expected_predicates": {
         "event_kind_counts": {
           "agent_spawned": 2,
-          "artifact_written": 1,
+          "artifact_written": 2,
           "assistant_message_finished": 2,
           "edit_applied": 1,
           "edit_proposed": 1,
@@ -114,8 +114,8 @@
           "tool_call_started": 1
         },
         "provider_request_digests": [
-          "1cfa33b6fe6a",
-          "b99a116ac75e"
+          "dfb50b246393",
+          "7a919f295090"
         ],
         "edit_artifact_links": {
           "artifact_digest": "5a0337d1b44806cc0ae095412f6d42e5fe725124c445f279db0f85f08a4adff6",
@@ -135,15 +135,19 @@
           "status": "finished",
           "mode_source": "scenario_fixture",
           "is_resumable": false,
-          "artifact_count": 1,
+          "artifact_count": 2,
           "pending_permissions": 0,
           "tasks_in_flight": 0,
-          "total_events": 26
+          "total_events": 27
         },
         "tool_artifacts": [
           {
             "path": "artifacts/edit-edit-golden-path.diff",
             "digest": "5a0337d1b44806cc0ae095412f6d42e5fe725124c445f279db0f85f08a4adff6"
+          },
+          {
+            "path": "artifacts/edit-edit-golden-path.before",
+            "digest": "ed8b7a779a4acecd8265c7b2b70a2e74e7c63b9d39e5050601c6c80af194e5c0"
           }
         ],
         "tool_lifecycle": {

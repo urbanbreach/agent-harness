@@ -175,8 +175,20 @@
   "default_agent": "build",
 
   // One scalar applies to all supported tool permissions; switch to an object
-  // when a project needs per-tool rules.
+  // when a project needs per-tool rules. For shell, you can use command patterns
+  // such as "cargo test*" and "git status" plus a shell_allowlist mode.
   "permission": "ask",
+  // "permission": {
+  //   "bash": {
+  //     "git status": "allow",
+  //     "cargo test*": "ask",
+  //     "*": "deny"
+  //   },
+  //   "shell_allowlist": {
+  //     "mode": "permission_patterns",
+  //     "cwd_roots": ["."]
+  //   }
+  // },
 
   // Optional auto-formatters applied after successful file edits.
   // Use `formatter: false` to disable; omit the key to enable all 26 built-in

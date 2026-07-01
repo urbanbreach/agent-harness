@@ -218,7 +218,7 @@ Field decisions:
 | Retry attempt counter and policy | Optional start `metadata.retry` with `{ attempt, max_attempts, delay_ms, category }` | Additive, serde-defaulted counter used for bounded retry before the final provider response is committed. Absent on old logs; the coordinator treats missing retry metadata as the first attempt. |
 | Transient error server hint | Optional `retry_after_ms` in Error event metadata (provider-lifecycle finish events) | Records provider Retry-After header values in milliseconds when present. Advisory; scheduling falls back to exponential backoff when absent. Old logs without the field replay identically. |
 | Thinking or reasoning signatures | Optional finish `metadata.thinking` | Store only summaries, digests, or signature ids. Never store raw hidden thinking text. |
-| Provider payloads and secrets | Never durable | Raw requests, raw responses, auth headers, and unredacted reasoning are excluded from event logs. |
+| Provider payloads and secrets | Never durable | Raw requests, raw responses, auth headers, cookies, keys, and PEM blocks are excluded from event logs. Live event logs may include provider reasoning delta events as local session evidence; provider reasoning metadata stores only summaries, digests, or signature ids. |
 
 **Tool Execution**
 - `ToolCallRequested`
@@ -240,7 +240,7 @@ Field decisions:
 - `PolicyViolationDetected` - Security rule triggered
 
 **Workspace Snapshots**
-- `WorkspaceSnapshot` - Captured working-tree state before a tool batch; stores a redacted map of relative paths to content digests in the artifact store.
+- `WorkspaceSnapshot` - Captured working-tree state before a tool batch; stores a redacted map of relative paths to file contents and content digests in the artifact store. Dotenv-style secret files are omitted from snapshot artifacts.
 - `WorkspaceReverted` - Restored the workspace from a prior snapshot; records restored paths, removed paths, and any failures without rewriting the event log.
 
 **Team Membership**

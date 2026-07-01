@@ -23,7 +23,7 @@ Legacy internal names such as shell/network may appear in compatibility code, bu
 
 ## Mutable surfaces
 
-Approving `edit` can change workspace files. Approving `bash` can run host commands inside the configured workspace and can indirectly mutate files. Approving `task` can spawn child agents or control background work. Network permissions (`webfetch`, `websearch`, `codesearch`) can send request data to configured services. `question` can interrupt the operator flow. `lsp` can inspect code and, through rename-capable routes, may require edit permission for mutations.
+Approving `edit` can change workspace files. Approving `bash` can run host commands inside the configured workspace and can indirectly mutate files; bash approvals may be scoped to reusable command patterns such as `cargo test *`. Approving `task` can spawn child agents or control background work. Network permissions (`webfetch`, `websearch`, `codesearch`) can send request data to configured services. `question` can interrupt the operator flow. `lsp` can inspect code and, through rename-capable routes, may require edit permission for mutations.
 
 ## Runtime-enforced vs behavioral promises
 
