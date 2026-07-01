@@ -8,8 +8,9 @@ mod streaming;
 pub(in crate::agent) use provider_boundary::project_provider_context_for_prompt;
 pub(crate) use provider_boundary::tool_result_to_message_content;
 pub use provider_boundary::{
-    build_provider_context_messages, build_provider_tool_defs, transform_context_for_provider,
-    ProviderBoundaryContext, ProviderBoundaryInput, ProviderBoundaryOutput,
+    build_provider_context_messages, build_provider_tool_defs, build_provider_tool_defs_for_model,
+    transform_context_for_provider, ProviderBoundaryContext, ProviderBoundaryInput,
+    ProviderBoundaryOutput,
 };
 pub(in crate::agent) use provider_context::{
     is_allowed_provider_turn_failure_stage, PROVIDER_TURN_FAILURE_REASON_MAX_CHARS,
@@ -130,7 +131,9 @@ mod tests {
     };
     use crate::config::ToolFailureMode;
     use crate::conversation::{ConversationMessage, ConversationUserMessage};
-    use crate::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
+    use crate::tool::{
+        Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult, ToolResultContent,
+    };
 
     #[tokio::test]
     async fn multi_turn_runner_returns_single_provider_response_without_tools() {
@@ -326,6 +329,41 @@ mod tests {
                 }]
             })
             .to_string()
+        );
+    }
+
+    #[test]
+    fn tool_result_message_content_wraps_provider_content() {
+        // arrange
+        let result = ToolResult::text("Image read successfully").with_provider_content(vec![
+            ToolResultContent::text("Image read successfully"),
+            ToolResultContent::file(
+                "data:image/png;base64,AAAA",
+                "image/png",
+                Some("pixel.png".to_string()),
+            ),
+        ]);
+
+        // act
+        let content = tool_result_to_message_content(&result);
+
+        // assert
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&content).expect("provider content json"),
+            json!({
+                "_harness_tool_result": {
+                    "text": "Image read successfully",
+                    "content": [
+                        { "type": "text", "text": "Image read successfully" },
+                        {
+                            "type": "file",
+                            "uri": "data:image/png;base64,AAAA",
+                            "mime": "image/png",
+                            "name": "pixel.png",
+                        },
+                    ],
+                },
+            })
         );
     }
 

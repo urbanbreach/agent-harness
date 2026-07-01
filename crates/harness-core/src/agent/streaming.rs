@@ -13,8 +13,9 @@ use serde_json::Value;
 use tokio_stream::StreamExt;
 
 use super::provider_boundary::{
-    apply_provider_request_context, build_provider_tool_defs, project_provider_context_for_prompt,
-    transform_context_for_provider, ProviderBoundaryContext, ProviderBoundaryInput,
+    apply_provider_request_context, build_provider_tool_defs_for_model,
+    project_provider_context_for_prompt, transform_context_for_provider, ProviderBoundaryContext,
+    ProviderBoundaryInput,
 };
 use super::{
     AgentModelSettings, AgentProfile, AgentRequest, ProviderContext, ProviderConversationTurnStatus,
@@ -678,7 +679,11 @@ where
     } = request;
 
     let model = AgentModelRef::parse(&request.model_ref);
-    let tool_defs = match build_provider_tool_defs(profile, tool_registry.as_ref()) {
+    let tool_defs = match build_provider_tool_defs_for_model(
+        profile,
+        tool_registry.as_ref(),
+        &request.model_ref,
+    ) {
         Ok(tool_defs) => tool_defs,
         Err(reason) => return AgentTurnOutcome::failed(reason),
     };

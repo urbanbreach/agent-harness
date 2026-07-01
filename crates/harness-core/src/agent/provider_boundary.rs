@@ -3,7 +3,7 @@ use harness_providers::{
     ProviderRequestContext, ProviderRequestInitiator, ToolChoice, ToolDef,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::conversation::{
     ConversationAssistantMessage, ConversationCheckpointMessage, ConversationMessage,
@@ -344,7 +344,16 @@ pub fn build_provider_tool_defs(
     profile: &AgentProfile,
     tool_registry: &ToolRegistry,
 ) -> Result<Vec<ToolDef>, String> {
-    let mapping = build_tool_function_name_mapping(profile.toolset.iter().map(String::as_str));
+    build_provider_tool_defs_for_model(profile, tool_registry, &profile.model_ref)
+}
+
+pub fn build_provider_tool_defs_for_model(
+    profile: &AgentProfile,
+    tool_registry: &ToolRegistry,
+    model_ref: &str,
+) -> Result<Vec<ToolDef>, String> {
+    let visible_tool_ids = provider_visible_tool_ids(profile, model_ref);
+    let mapping = build_tool_function_name_mapping(visible_tool_ids);
     let mut tools = Vec::new();
 
     for (tool_id, function_name) in mapping.tool_id_to_function_name() {
@@ -377,6 +386,25 @@ pub fn build_provider_tool_defs(
     Ok(tools)
 }
 
+fn provider_visible_tool_ids<'a>(profile: &'a AgentProfile, model_ref: &str) -> Vec<&'a str> {
+    let model = AgentModelRef::parse(model_ref);
+    let use_patch = model_uses_apply_patch_tool(&model.model_id);
+    profile
+        .toolset
+        .iter()
+        .map(String::as_str)
+        .filter(|tool_id| match *tool_id {
+            "apply_patch" => use_patch,
+            "edit" | "write" => !use_patch,
+            _ => true,
+        })
+        .collect()
+}
+
+fn model_uses_apply_patch_tool(model_id: &str) -> bool {
+    model_id.contains("gpt-") && !model_id.contains("oss") && !model_id.contains("gpt-4")
+}
+
 fn validate_provider_parameters_schema(parameters: &serde_json::Value) -> Result<(), &'static str> {
     if parameters.get("type").and_then(serde_json::Value::as_str) != Some("object") {
         return Err("expected top-level `type: object`");
@@ -394,6 +422,16 @@ fn validate_provider_parameters_schema(parameters: &serde_json::Value) -> Result
 }
 
 pub(crate) fn tool_result_to_message_content(result: &ToolResult) -> String {
+    if !result.provider_content.is_empty() {
+        return json!({
+            "_harness_tool_result": {
+                "text": result.display_text,
+                "content": result.provider_content,
+            }
+        })
+        .to_string();
+    }
+
     if non_empty_trimmed(&result.display_text).is_some() {
         return result.display_text.clone();
     }
