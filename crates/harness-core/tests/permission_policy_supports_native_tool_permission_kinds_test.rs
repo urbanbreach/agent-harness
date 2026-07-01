@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{fs, path::PathBuf};
 
 use harness_core::config::load_config_from_str;
 use harness_core::perm::{
@@ -168,4 +168,26 @@ fn permission_policy_supports_native_tool_permission_kinds() {
         permission_kind_for_capability(ToolCapability::SpawnAgent),
         Some(PermissionKind::Task)
     );
+}
+
+#[test]
+fn permissions_docs_state_file_workspace_and_network_implications() {
+    // arrange
+    let docs = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/permissions.md"),
+    )
+    .expect("permissions docs");
+
+    // act
+    let edit_implication = docs.contains("Approving `edit` can change workspace files");
+    let bash_implication =
+        docs.contains("Approving `bash` can run host commands inside the configured workspace");
+    let network_implication = docs.contains(
+        "Network permissions (`webfetch`, `websearch`, `codesearch`) can send request data to configured services",
+    );
+
+    // assert
+    assert!(edit_implication);
+    assert!(bash_implication);
+    assert!(network_implication);
 }

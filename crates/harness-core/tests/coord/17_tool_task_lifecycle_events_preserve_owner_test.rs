@@ -246,6 +246,7 @@ async fn critical_hook_failure_fails_closed_and_records_metadata() {
         shell_allowlist: ShellAllowlist {
             executables: vec!["bash".to_string()],
             cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
         },
         suppress_execution: false,
     };
@@ -382,6 +383,7 @@ async fn noncritical_hook_failure_records_metadata_without_cancelling_task() {
         shell_allowlist: ShellAllowlist {
             executables: vec!["bash".to_string()],
             cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
         },
         suppress_execution: false,
     };

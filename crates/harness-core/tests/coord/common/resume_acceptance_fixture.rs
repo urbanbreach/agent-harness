@@ -30,6 +30,8 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
         matcher: harness_core::perm::PermissionGrantMatcher::ShellCommand {
             command_digest: test_digest12(b"printf resume acceptance"),
             request_digest: shell_request_digest.clone(),
+            patterns: Vec::new(),
+            always_patterns: Vec::new(),
         },
     };
     let worker = EventActor::new(ActorKind::Worker, Some("agent_000001".to_string()));

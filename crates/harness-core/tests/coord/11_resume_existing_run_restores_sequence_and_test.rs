@@ -276,6 +276,7 @@ async fn resume_existing_run_restores_subagent_parent_lineage_for_hooks_and_repl
         shell_allowlist: ShellAllowlist {
             executables: vec!["bash".to_string()],
             cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
         },
         suppress_execution: false,
     };

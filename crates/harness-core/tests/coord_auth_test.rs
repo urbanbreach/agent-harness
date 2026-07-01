@@ -13,7 +13,7 @@ use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle,
 };
 use harness_core::event::{ActorKind, EventActor, EventV1, PermissionDecision, ToolCallStatus};
-use harness_core::perm::PermissionPolicy;
+use harness_core::perm::{PermissionDecision as PolicyPermissionDecision, PermissionPolicy};
 use harness_core::redact::DefaultRedactor;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
 use serde_json::json;
@@ -216,6 +216,79 @@ async fn worker_toolset_enforcement_blocks_non_allowlisted_tool() {
             EventV1::PolicyViolationDetected(data) if data.policy == "tool_not_in_toolset"
         )
     }));
+}
+
+#[tokio::test]
+async fn shell_permission_summary_redacts_command_secrets() {
+    // arrange
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let policy = PermissionPolicy::new(
+        PermissionMode::Allow,
+        PermissionMode::Ask,
+        PermissionMode::Allow,
+    )
+    .with_ask_timeout_ms(1);
+    let coordinator = test_coordinator(
+        temp_dir.path(),
+        worker_profile("worker-allow", vec![SHELL_RUN_TOOL_ID.to_string()]),
+        policy,
+    );
+    let run = coordinator
+        .start_run(
+            "shell_permission_redaction",
+            temp_dir.path().join("workspace"),
+        )
+        .await
+        .expect("start run");
+    let command = "curl -H 'Authorization: Bearer sk-secret1234567890' https://example.test";
+
+    // act
+    let tool_call_id = coordinator
+        .request_tool_call(
+            supervisor_actor(),
+            Some("worker-allow".to_string()),
+            SHELL_RUN_TOOL_ID,
+            json!({"command": command}),
+        )
+        .await
+        .expect("ask-mode shell request should be recorded before timeout");
+    let permission_id = load_events(&run.events_path)
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::PermissionRequested(data)
+                if data.tool_call_id.as_deref() == Some(tool_call_id.as_str()) =>
+            {
+                Some(data.permission_id.clone())
+            }
+            _ => None,
+        })
+        .expect("permission request should be recorded");
+    coordinator
+        .resolve_permission(
+            permission_id,
+            PolicyPermissionDecision::Deny,
+            Some("test denied".to_string()),
+        )
+        .await
+        .expect("deny ask-mode shell permission");
+    wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
+    coordinator.stop_run().await.expect("stop run");
+
+    // assert
+    let events = load_events(&run.events_path);
+    let summary = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::PermissionRequested(data)
+                if data.tool_call_id.as_deref() == Some(tool_call_id.as_str()) =>
+            {
+                Some(data.summary.as_str())
+            }
+            _ => None,
+        })
+        .expect("permission request summary");
+    assert!(!summary.contains("sk-secret1234567890"));
+    assert!(summary.contains("Bearer [REDACTED]"));
 }
 
 #[tokio::test]

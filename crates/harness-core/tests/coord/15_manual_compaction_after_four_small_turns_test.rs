@@ -376,6 +376,7 @@ async fn hook_summary_override_takes_precedence_over_model_backed_compaction() {
         shell_allowlist: ShellAllowlist {
             executables: vec!["bash".to_string()],
             cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
         },
         suppress_execution: false,
     };

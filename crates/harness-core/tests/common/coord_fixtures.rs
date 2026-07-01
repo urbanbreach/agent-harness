@@ -79,6 +79,7 @@ async fn deterministic_runs_suppress_live_hook_execution() {
         shell_allowlist: ShellAllowlist {
             executables: vec!["bash".to_string()],
             cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
         },
         suppress_execution: true,
     };

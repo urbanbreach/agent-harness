@@ -51,6 +51,8 @@ let provider = CapturingProvider::new(vec!["post-resume answer"]);
             matcher: harness_core::perm::PermissionGrantMatcher::ShellCommand {
                 command_digest: test_digest12(b"printf resume acceptance"),
                 request_digest: test_permission_request_digest("shell.run", &shell_args),
+                patterns: Vec::new(),
+                always_patterns: Vec::new(),
             },
         }));
 

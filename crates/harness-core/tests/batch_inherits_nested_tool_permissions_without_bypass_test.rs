@@ -3,8 +3,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use harness_core::clock::FakeClock;
+use harness_core::config::PermissionMode;
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, CoordinatorHandle};
 use harness_core::event::{EventV1, PermissionDecision};
+use harness_core::perm::{PermissionDecision as RuntimePermissionDecision, PermissionPolicy};
 use harness_core::redact::DefaultRedactor;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
 use serde::Deserialize;
@@ -12,9 +14,7 @@ use serde_json::{json, Value};
 
 mod common;
 
-use common::{
-    load_events, shell_denied_permission_policy, supervisor_actor, wait_for_tool_call_finish,
-};
+use common::{load_events, supervisor_actor, wait_for_tool_call_finish};
 
 struct TestShellTool;
 
@@ -107,7 +107,6 @@ async fn batch_inherits_nested_tool_permissions_without_bypass() {
         .expect("batch tool call should be accepted for execution");
 
     wait_for_tool_call_finish(&run.events_path, &batch_tool_call_id).await;
-    coordinator.stop_run().await.expect("stop run");
 
     let events = load_events(&run.events_path);
     let nested_tool_call_id = events
@@ -122,6 +121,34 @@ async fn batch_inherits_nested_tool_permissions_without_bypass() {
         })
         .expect("nested shell call should be requested through the coordinator");
 
+    let (nested_permission_id, nested_permission_summary) = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::PermissionRequested(data)
+                if data.tool_call_id.as_deref() == Some(nested_tool_call_id.as_str()) =>
+            {
+                Some((data.permission_id.clone(), data.summary.clone()))
+            }
+            _ => None,
+        })
+        .expect("nested shell permission should be requested");
+    assert!(
+        nested_permission_summary.contains("tool=shell.run"),
+        "nested permission prompt should name effective child tool: {nested_permission_summary}"
+    );
+
+    coordinator
+        .resolve_permission(
+            nested_permission_id,
+            RuntimePermissionDecision::Deny,
+            Some("nested batch denial".to_string()),
+        )
+        .await
+        .expect("resolve nested permission");
+    coordinator.stop_run().await.expect("stop run");
+
+    let events = load_events(&run.events_path);
+
     assert!(events.iter().any(|event| {
         matches!(
             &event.payload,
@@ -133,7 +160,7 @@ async fn batch_inherits_nested_tool_permissions_without_bypass() {
             &event.payload,
             EventV1::PermissionResolved(data)
                 if data.decision == PermissionDecision::Deny
-                    && data.reason.as_deref() == Some("policy denied request (shell)")
+                    && data.reason.as_deref() == Some("nested batch denial")
         )
     }));
     assert!(!events.iter().any(|event| {
@@ -148,7 +175,12 @@ fn test_coordinator(session_dir: &Path) -> CoordinatorHandle {
     let mut config = CoordinatorConfig::new(session_dir.to_path_buf());
     config.deterministic_store = true;
     config.command_buffer = 64;
-    config.permission_policy = shell_denied_permission_policy();
+    config.permission_policy = PermissionPolicy::new(
+        PermissionMode::Allow,
+        PermissionMode::Ask,
+        PermissionMode::Allow,
+    )
+    .with_ask_timeout_ms(5_000);
     config.tool_registry = test_tool_registry();
 
     let clock = Arc::new(FakeClock::new());

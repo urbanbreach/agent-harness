@@ -93,6 +93,7 @@ async fn lifecycle_hooks_cover_provider_subagent_and_permission_events() {
         shell_allowlist: ShellAllowlist {
             executables: vec!["bash".to_string()],
             cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
         },
         suppress_execution: false,
     };

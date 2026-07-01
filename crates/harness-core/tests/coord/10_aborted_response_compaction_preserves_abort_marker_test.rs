@@ -287,6 +287,7 @@ async fn critical_compaction_requested_hook_failure_records_compaction_failed() 
         shell_allowlist: ShellAllowlist {
             executables: vec!["bash".to_string()],
             cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
         },
         suppress_execution: false,
     };
