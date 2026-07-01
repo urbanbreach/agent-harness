@@ -3,7 +3,7 @@ use std::path::Path;
 
 use async_trait::async_trait;
 use globset::{Glob, GlobMatcher};
-use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResult};
+use harness_core::tool::{ArtifactRef, Tool, ToolCapability, ToolContext, ToolError, ToolResult};
 use regex::Regex;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -17,6 +17,7 @@ use crate::limit_summary::summarize_limit;
 
 pub(crate) const DEFAULT_GREP_LIMIT: usize = 100;
 pub(crate) const DEFAULT_GREP_CONTEXT: usize = 0;
+pub(crate) const MAX_GREP_RENDER_BYTES: usize = 50 * 1024;
 
 pub(crate) struct FsGrepTool;
 
@@ -55,10 +56,18 @@ impl FsGrepArgs {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct GrepMatches {
     lines: Vec<String>,
+    display_text: String,
     total_count: usize,
     returned_count: usize,
     truncated_count: usize,
     is_truncated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GrepOutputEntry {
+    path: String,
+    line_number: usize,
+    text: String,
 }
 
 struct FileMatchSelection {
@@ -113,41 +122,108 @@ impl Tool for FsGrepTool {
         }
 
         let search = args.search();
+        let full_output_search = GrepSearch {
+            pattern: search.pattern,
+            literal: search.literal,
+            include: search.include,
+            limit: usize::MAX,
+            context: search.context,
+        };
         let limit = search.limit;
         let context = search.context;
-        let matches = collect_grep_matches(&workspace_root, &resolved_base, search)?;
+        let matches = collect_grep_matches(
+            &workspace_root,
+            &resolved_base,
+            search,
+            MAX_GREP_RENDER_BYTES,
+        )?;
+        let output_artifact = if matches.is_truncated {
+            let full_output = collect_grep_matches(
+                &workspace_root,
+                &resolved_base,
+                full_output_search,
+                usize::MAX,
+            )?
+            .lines
+            .join("\n");
 
-        Ok(crate::text_json_tool_result(
-            matches.lines.join("\n"),
-            json!({
-                "pattern": args.pattern,
-                "path": display_path,
-                "resolved_path": resolved_base.display().to_string(),
-                "include": args.include,
-                "literal": args.literal,
-                "limit": limit,
-                "context": context,
-                "matches": matches.lines,
-                "total_count": matches.total_count,
-                "returned_count": matches.returned_count,
-                "truncated_count": matches.truncated_count,
-                "truncated": matches.is_truncated,
-                "skipped_dirs": SKIPPED_WORKSPACE_DIRS,
-            }),
+            Some(
+                ctx.artifact_store()
+                    .map_err(|err| {
+                        ToolError::Execution(format!("failed to access artifact store: {err}"))
+                    })?
+                    .write_text(
+                        &format!("toolcalls/{}/fs.grep.full.txt", ctx.tool_call_id),
+                        &full_output,
+                    )
+                    .map_err(|err| {
+                        ToolError::Execution(format!("failed to write fs.grep artifact: {err}"))
+                    })?,
+            )
+        } else {
+            None
+        };
+        let artifacts = output_artifact.iter().cloned().collect::<Vec<_>>();
+        let guidance = output_artifact
+            .as_ref()
+            .map(|artifact| grep_truncation_guidance(&matches, artifact));
+        let mut display_text = matches.display_text.clone();
+        if let Some(guidance) = guidance.as_ref() {
+            if !display_text.is_empty() {
+                display_text.push('\n');
+            }
+            display_text.push_str(guidance);
+        }
+        let mut structured_json = json!({
+            "pattern": args.pattern,
+            "path": display_path,
+            "resolved_path": resolved_base.display().to_string(),
+            "include": args.include,
+            "literal": args.literal,
+            "limit": limit,
+            "context": context,
+            "matches": matches.lines,
+            "total_count": matches.total_count,
+            "returned_count": matches.returned_count,
+            "truncated_count": matches.truncated_count,
+            "truncated": matches.is_truncated,
+            "skipped_dirs": SKIPPED_WORKSPACE_DIRS,
+        });
+
+        if let Some(artifact) = output_artifact.as_ref() {
+            structured_json["output_artifact"] = json!({
+                "path": artifact.path,
+                "digest": artifact.digest,
+            });
+            structured_json["guidance"] = json!(guidance);
+        }
+
+        Ok(crate::text_json_artifacts_tool_result(
+            display_text,
+            structured_json,
+            artifacts,
         ))
     }
+}
+
+fn grep_truncation_guidance(matches: &GrepMatches, artifact: &ArtifactRef) -> String {
+    format!(
+        "... [truncated: showing {} of {} matches ({} hidden); full output artifact: {}; narrow by path/include/pattern or rerun grep with a more specific query]",
+        matches.returned_count, matches.total_count, matches.truncated_count, artifact.path
+    )
 }
 
 fn collect_grep_matches(
     workspace_root: &Path,
     search_path: &Path,
     search: GrepSearch<'_>,
+    inline_max_bytes: usize,
 ) -> Result<GrepMatches, ToolError> {
     let regex = compile_grep_regex(search.pattern, search.literal)?;
     let include_matcher = compile_include_matcher(search.include)?;
     let files = collect_sorted_grep_files(workspace_root, search_path, include_matcher.as_ref())?;
 
-    let mut rendered_lines = Vec::new();
+    let mut entries = Vec::new();
     let mut total_count = 0usize;
     let mut selected_count = 0usize;
 
@@ -169,8 +245,9 @@ fn collect_grep_matches(
             continue;
         }
 
-        append_rendered_lines(
-            &mut rendered_lines,
+        append_grep_entries(
+            &mut entries,
+            workspace_root,
             &file.relative_path,
             &lines,
             &file_matches.selected_line_indexes,
@@ -179,13 +256,48 @@ fn collect_grep_matches(
     }
 
     let limit_summary = summarize_limit(total_count, search.limit);
+    let untruncated_display =
+        render_grep_display(&entries, total_count, limit_summary.is_truncated);
+    let (display_text, byte_truncated) =
+        truncate_display_text_by_bytes(&untruncated_display, inline_max_bytes);
+    let returned_count = limit_summary.returned_count;
+    let is_truncated = limit_summary.is_truncated || byte_truncated;
+    let truncated_count = total_count.saturating_sub(returned_count);
+    let lines = entries
+        .iter()
+        .map(render_grep_match_line)
+        .collect::<Vec<_>>();
+
     Ok(GrepMatches {
-        lines: rendered_lines,
+        lines,
+        display_text,
         total_count,
-        returned_count: limit_summary.returned_count,
-        truncated_count: limit_summary.truncated_count,
-        is_truncated: limit_summary.is_truncated,
+        returned_count,
+        truncated_count,
+        is_truncated,
     })
+}
+
+fn truncate_display_text_by_bytes(text: &str, max_bytes: usize) -> (String, bool) {
+    if text.len() <= max_bytes {
+        return (text.to_string(), false);
+    }
+
+    (
+        truncate_str_to_byte_boundary(text, max_bytes).to_string(),
+        true,
+    )
+}
+
+fn truncate_str_to_byte_boundary(value: &str, max_bytes: usize) -> &str {
+    if value.len() <= max_bytes {
+        return value;
+    }
+    let mut cut = max_bytes;
+    while cut > 0 && !value.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    &value[..cut]
 }
 
 fn collect_sorted_grep_files(
@@ -242,7 +354,7 @@ fn compile_grep_regex(pattern: &str, literal: bool) -> Result<Regex, ToolError> 
 
 fn format_invalid_regex_pattern_error(pattern: &str, err: regex::Error) -> String {
     format!(
-        "invalid regex pattern: {err}\nHint: grep patterns are regular expressions. Escape regex metacharacters (for example, `{}`) or set `literal: true` to search for this text exactly.",
+        "invalid regex pattern: {err}\nHint: grep patterns are regular expressions. Escape regex metacharacters before retrying (for example, `{}`).",
         regex::escape(pattern)
     )
 }
@@ -276,22 +388,24 @@ fn collect_candidate_files(
     collect_workspace_files(workspace_root, search_path)
 }
 
-fn append_rendered_lines(
-    output: &mut Vec<String>,
+fn append_grep_entries(
+    output: &mut Vec<GrepOutputEntry>,
+    workspace_root: &Path,
     relative_path: &str,
     lines: &[String],
     match_line_indexes: &[usize],
     context: usize,
 ) {
+    let display_path = workspace_root.join(relative_path).display().to_string();
     if context == 0 {
         for &line_idx in match_line_indexes {
-            output.push(render_grep_line(relative_path, lines, line_idx));
+            output.push(grep_output_entry(&display_path, lines, line_idx));
         }
         return;
     }
 
     for line_idx in context_line_indexes(lines.len(), match_line_indexes, context) {
-        output.push(render_grep_line(relative_path, lines, line_idx));
+        output.push(grep_output_entry(&display_path, lines, line_idx));
     }
 }
 
@@ -312,8 +426,55 @@ fn context_line_indexes(
     line_indexes
 }
 
-fn render_grep_line(relative_path: &str, lines: &[String], line_idx: usize) -> String {
-    format!("{relative_path}:{}: {}", line_idx + 1, lines[line_idx])
+fn grep_output_entry(path: &str, lines: &[String], line_idx: usize) -> GrepOutputEntry {
+    GrepOutputEntry {
+        path: path.to_string(),
+        line_number: line_idx + 1,
+        text: lines[line_idx].clone(),
+    }
+}
+
+fn render_grep_match_line(entry: &GrepOutputEntry) -> String {
+    format!("{}:{}: {}", entry.path, entry.line_number, entry.text)
+}
+
+fn render_grep_display(
+    entries: &[GrepOutputEntry],
+    total_count: usize,
+    is_truncated: bool,
+) -> String {
+    if entries.is_empty() {
+        return "No files found".to_string();
+    }
+
+    let mut output = vec![format!(
+        "Found {total_count} matches{}",
+        if is_truncated {
+            " (more matches available)"
+        } else {
+            ""
+        }
+    )];
+    let mut current = "";
+    for entry in entries {
+        if current != entry.path {
+            if !current.is_empty() {
+                output.push(String::new());
+            }
+            current = &entry.path;
+            output.push(format!("{}:", entry.path));
+        }
+        output.push(format!("  Line {}: {}", entry.line_number, entry.text));
+    }
+
+    if is_truncated {
+        output.push(String::new());
+        output.push(
+            "(Results truncated. Consider using a more specific path or pattern.)".to_string(),
+        );
+    }
+
+    output.join("\n")
 }
 
 fn read_utf8_lines(path: &Path) -> Result<Utf8FileLines, ToolError> {
@@ -343,7 +504,7 @@ mod tests {
     use harness_core::tool::{Tool, ToolContext, ToolRunState};
     use serde_json::json;
 
-    use super::{collect_grep_matches, FsGrepTool, GrepSearch};
+    use super::{collect_grep_matches, FsGrepTool, GrepSearch, MAX_GREP_RENDER_BYTES};
 
     fn grep_search(pattern: &str) -> GrepSearch<'_> {
         GrepSearch {
@@ -416,6 +577,7 @@ mod tests {
                 context: 1,
                 ..grep_search("TODO")
             },
+            MAX_GREP_RENDER_BYTES,
         )
         .expect("collect matches");
 
@@ -423,18 +585,17 @@ mod tests {
         assert_eq!(result.returned_count, 3);
         assert_eq!(result.truncated_count, 0);
         assert!(!result.is_truncated);
-        assert_eq!(
-            result.lines,
-            vec![
-                "docs/todo.md:1: TODO docs",
-                "docs/todo.md:2: note",
-                "src/main.txt:1: alpha",
-                "src/main.txt:2: TODO first",
-                "src/main.txt:3: beta",
-                "src/main.txt:4: TODO second",
-                "src/main.txt:5: gamma",
-            ]
-        );
+        assert_eq!(result.lines.len(), 7);
+        assert!(result.lines[0].ends_with("docs/todo.md:1: TODO docs"));
+        assert!(result.lines[1].ends_with("docs/todo.md:2: note"));
+        assert!(result.lines[2].ends_with("src/main.txt:1: alpha"));
+        assert!(result.lines[3].ends_with("src/main.txt:2: TODO first"));
+        assert!(result.lines[4].ends_with("src/main.txt:3: beta"));
+        assert!(result.lines[5].ends_with("src/main.txt:4: TODO second"));
+        assert!(result.lines[6].ends_with("src/main.txt:5: gamma"));
+        assert!(result.display_text.contains("Found 3 matches"));
+        assert!(result.display_text.contains("docs/todo.md:"));
+        assert!(result.display_text.contains("  Line 1: TODO docs"));
     }
 
     #[test]
@@ -454,6 +615,7 @@ mod tests {
                 limit: 1,
                 ..grep_search("TODO")
             },
+            MAX_GREP_RENDER_BYTES,
         )
         .expect("collect");
 
@@ -461,7 +623,12 @@ mod tests {
         assert_eq!(result.returned_count, 1);
         assert_eq!(result.truncated_count, 1);
         assert!(result.is_truncated);
-        assert_eq!(result.lines, vec!["a.txt:1: TODO a"]);
+        assert_eq!(result.lines.len(), 1);
+        assert!(result.lines[0].ends_with("a.txt:1: TODO a"));
+        assert!(result
+            .display_text
+            .contains("Found 2 matches (more matches available)"));
+        assert!(result.display_text.contains("  Line 1: TODO a"));
     }
 
     #[tokio::test]
@@ -484,10 +651,9 @@ mod tests {
             .await
             .expect("grep should accept exact file paths");
 
-        assert_eq!(
-            result.display_text,
-            "src/session_lineage.rs:1: fn fork_point() {}"
-        );
+        assert!(result.display_text.contains("Found 1 matches"));
+        assert!(result.display_text.contains("src/session_lineage.rs:"));
+        assert!(result.display_text.contains("  Line 1: fn fork_point() {}"));
         let structured = result.structured_json.expect("structured result");
         assert_eq!(
             structured.get("path"),
@@ -497,18 +663,27 @@ mod tests {
     }
 
     #[test]
-    fn collect_grep_matches_invalid_regex_suggests_literal_search() {
+    fn collect_grep_matches_invalid_regex_suggests_escaping_regex_metacharacters() {
+        // arrange
         let tempdir = tempfile::tempdir().expect("tempdir");
         let root = tempdir.path();
         write_file(root, "notes.txt", "task(run_in_background\n");
 
-        let err = collect_grep_matches(root, root, grep_search("task(run_in_background"))
-            .expect_err("unescaped regex group should fail");
+        // act
+        let err = collect_grep_matches(
+            root,
+            root,
+            grep_search("task(run_in_background"),
+            MAX_GREP_RENDER_BYTES,
+        )
+        .expect_err("unescaped regex group should fail");
 
+        // assert
         let message = err.to_string();
         assert!(message.contains("invalid regex pattern"));
         assert!(message.contains("task\\(run_in_background"));
-        assert!(message.contains("literal: true"));
+        assert!(!message.contains("literal"));
+        assert!(!message.contains("context"));
     }
 
     #[test]
@@ -524,11 +699,13 @@ mod tests {
                 literal: true,
                 ..grep_search("task(run_in_background")
             },
+            MAX_GREP_RENDER_BYTES,
         )
         .expect("literal search should escape pattern");
 
         assert_eq!(result.total_count, 1);
-        assert_eq!(result.lines, vec!["notes.txt:1: task(run_in_background"]);
+        assert_eq!(result.lines.len(), 1);
+        assert!(result.lines[0].ends_with("notes.txt:1: task(run_in_background"));
     }
 
     #[tokio::test]
@@ -549,7 +726,8 @@ mod tests {
             .await
             .expect("grep with absolute workspace path should succeed");
 
-        assert!(result.display_text.contains("main.rs:1: #[tokio::main]"));
+        assert!(result.display_text.contains("main.rs:"));
+        assert!(result.display_text.contains("  Line 1: #[tokio::main]"));
         let structured = result.structured_json.expect("structured result");
         assert_eq!(structured.get("path"), Some(&json!(".")));
     }

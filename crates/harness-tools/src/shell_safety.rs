@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use harness_core::config::ShellAllowlist;
+use harness_core::config::{ShellAllowlist, ShellAllowlistMode};
+use harness_core::perm::shell::{scan_shell_command, ScannedShellCommand, ShellPathPattern};
 use harness_core::tool::{ToolContext, ToolError};
 
 use crate::workspace_paths::normalize_workspace_target_path;
@@ -16,6 +17,10 @@ impl ShellSafety {
     }
 
     pub(crate) fn ensure_executable_allowed(&self, executable: &str) -> Result<(), ToolError> {
+        if self.allowlist.mode != ShellAllowlistMode::LegacyExecutables {
+            return Ok(());
+        }
+
         if self
             .allowlist
             .executables
@@ -37,6 +42,9 @@ impl ShellSafety {
         cwd: &Path,
         workspace_root: &Path,
     ) -> Result<(), ToolError> {
+        validate_shell_executable_position(executable, cwd, workspace_root)?;
+        reject_shell_wrapper_builtin(executable)?;
+        reject_secret_dump_command(executable)?;
         reject_shell_interpreter_command_mode(executable, args)?;
         validate_shell_path_arguments(
             &ShellSegmentCommand {
@@ -88,6 +96,19 @@ impl ShellSafety {
         cwd: &Path,
         workspace_root: &Path,
     ) -> Result<(), ToolError> {
+        if self.allowlist.mode == ShellAllowlistMode::LegacyExecutables {
+            return self.validate_bash_command_legacy(command, cwd, workspace_root);
+        }
+
+        self.validate_bash_command_permission_patterns(command, cwd, workspace_root)
+    }
+
+    fn validate_bash_command_legacy(
+        &self,
+        command: &str,
+        cwd: &Path,
+        workspace_root: &Path,
+    ) -> Result<(), ToolError> {
         reject_unsupported_bash_constructs(command)?;
         let segments = split_shell_segments(command)?;
         if segments.is_empty() {
@@ -102,6 +123,7 @@ impl ShellSafety {
                 continue;
             };
             let executable = command.executable.as_str();
+            validate_shell_executable_position(executable, &virtual_cwd, workspace_root)?;
             if executable == "cd" {
                 virtual_cwd = resolve_shell_cd_target(
                     &command,
@@ -116,14 +138,85 @@ impl ShellSafety {
                     "source and . are not allowed in bash".to_string(),
                 ));
             }
+            reject_shell_reserved_word(executable)?;
+            reject_shell_wrapper_builtin(executable)?;
+            reject_secret_dump_command(executable)?;
             if is_shell_builtin_allowed(executable) {
                 if is_path_sensitive_shell_builtin(executable) {
                     validate_shell_path_arguments(&command, &virtual_cwd, workspace_root)?;
                 }
                 continue;
             }
+            reject_shell_interpreter_command_mode(executable, &command.args)?;
             self.ensure_executable_allowed(executable)?;
             validate_shell_path_arguments(&command, &virtual_cwd, workspace_root)?;
+        }
+
+        Ok(())
+    }
+
+    fn validate_bash_command_permission_patterns(
+        &self,
+        command: &str,
+        cwd: &Path,
+        workspace_root: &Path,
+    ) -> Result<(), ToolError> {
+        reject_unsupported_bash_constructs(command)?;
+        reject_background_execution(command)?;
+        if command.trim().is_empty() {
+            return Err(ToolError::InvalidArguments(
+                "command must not be empty".to_string(),
+            ));
+        }
+
+        let scanned = scan_shell_command(command).map_err(|err| {
+            ToolError::InvalidArguments(format!("failed to parse command string: {err}"))
+        })?;
+
+        let mut virtual_cwd = cwd.to_path_buf();
+        for command in &scanned.commands {
+            reject_scanned_env_assignments(command)?;
+
+            let executable = command.executable.as_str();
+            validate_shell_executable_position(executable, &virtual_cwd, workspace_root)?;
+            if executable == "cd" {
+                virtual_cwd = resolve_shell_cd_target(
+                    &scanned_to_segment_command(command),
+                    &virtual_cwd,
+                    workspace_root,
+                    &self.allowlist,
+                )?;
+                continue;
+            }
+            if matches!(executable, "source" | ".") {
+                return Err(ToolError::CommandBlocked(
+                    "source and . are not allowed in bash".to_string(),
+                ));
+            }
+            reject_shell_reserved_word(executable)?;
+            reject_shell_wrapper_builtin(executable)?;
+            reject_secret_dump_command(executable)?;
+
+            reject_scanned_interpreter_input_redirection(command)?;
+            validate_scanned_command_paths(command, &virtual_cwd, workspace_root)?;
+
+            if is_shell_builtin_allowed(executable) {
+                if is_path_sensitive_shell_builtin(executable) {
+                    validate_shell_path_arguments(
+                        &scanned_to_segment_command(command),
+                        &virtual_cwd,
+                        workspace_root,
+                    )?;
+                }
+                continue;
+            }
+
+            let segment_command = scanned_to_segment_command(command);
+            reject_shell_interpreter_command_mode(
+                &segment_command.executable,
+                &segment_command.args,
+            )?;
+            validate_shell_path_arguments(&segment_command, &virtual_cwd, workspace_root)?;
         }
 
         Ok(())
@@ -157,6 +250,170 @@ fn reject_unsupported_bash_constructs(command: &str) -> Result<(), ToolError> {
         ));
     }
 
+    if contains_unquoted_parameter_expansion(command) {
+        return Err(ToolError::CommandBlocked(
+            "shell parameter expansion is not allowed in bash".to_string(),
+        ));
+    }
+
+    if contains_unquoted_brace_expansion(command) {
+        return Err(ToolError::CommandBlocked(
+            "brace expansion is not allowed in bash".to_string(),
+        ));
+    }
+
+    if contains_unquoted_compound_shell_syntax(command) {
+        return Err(ToolError::CommandBlocked(
+            "compound shell syntax is not allowed in bash".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn contains_unquoted_parameter_expansion(command: &str) -> bool {
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut escaped = false;
+
+    for ch in command.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+
+        match ch {
+            '\\' if !in_single => escaped = true,
+            '\'' if !in_double => in_single = !in_single,
+            '"' if !in_single => in_double = !in_double,
+            '$' if !in_single => return true,
+            _ => {}
+        }
+    }
+
+    false
+}
+
+fn contains_unquoted_compound_shell_syntax(command: &str) -> bool {
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut escaped = false;
+
+    for ch in command.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+
+        match ch {
+            '\\' if !in_single => escaped = true,
+            '\'' if !in_double => in_single = !in_single,
+            '"' if !in_single => in_double = !in_double,
+            '(' | ')' | '{' | '}' if !in_single && !in_double => return true,
+            _ => {}
+        }
+    }
+
+    false
+}
+
+fn contains_unquoted_brace_expansion(command: &str) -> bool {
+    let mut chars = command.chars().peekable();
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut escaped = false;
+
+    while let Some(ch) = chars.next() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+
+        match ch {
+            '\\' if !in_single => escaped = true,
+            '\'' if !in_double => in_single = !in_single,
+            '"' if !in_single => in_double = !in_double,
+            '{' if !in_single && !in_double => {
+                if unquoted_brace_body_is_expansion(&mut chars) {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    false
+}
+
+fn unquoted_brace_body_is_expansion(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> bool {
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut escaped = false;
+    let mut has_comma = false;
+    let mut previous_was_dot = false;
+
+    for ch in chars.by_ref() {
+        if escaped {
+            escaped = false;
+            previous_was_dot = false;
+            continue;
+        }
+
+        match ch {
+            '\\' if !in_single => {
+                escaped = true;
+                previous_was_dot = false;
+            }
+            '\'' if !in_double => {
+                in_single = !in_single;
+                previous_was_dot = false;
+            }
+            '"' if !in_single => {
+                in_double = !in_double;
+                previous_was_dot = false;
+            }
+            '}' if !in_single && !in_double => return has_comma,
+            ',' if !in_single && !in_double => {
+                has_comma = true;
+                previous_was_dot = false;
+            }
+            '.' if !in_single && !in_double && previous_was_dot => return true,
+            '.' if !in_single && !in_double => previous_was_dot = true,
+            _ => previous_was_dot = false,
+        }
+    }
+
+    false
+}
+
+fn reject_background_execution(command: &str) -> Result<(), ToolError> {
+    let mut chars = command.chars().peekable();
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut escaped = false;
+
+    while let Some(ch) = chars.next() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+
+        match ch {
+            '\\' if !in_single => escaped = true,
+            '\'' if !in_double => in_single = !in_single,
+            '"' if !in_single => in_double = !in_double,
+            '&' if !in_single && !in_double && chars.peek() == Some(&'&') => {
+                chars.next();
+            }
+            '&' if !in_single && !in_double => {
+                return Err(ToolError::CommandBlocked(
+                    "background execution is not allowed in bash".to_string(),
+                ));
+            }
+            _ => {}
+        }
+    }
+
     Ok(())
 }
 
@@ -168,22 +425,189 @@ fn reject_shell_interpreter_command_mode(
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or(executable);
-    if !matches!(executable_name, "bash" | "sh" | "zsh" | "fish") {
+    if !is_interpreter_command_mode_executable(executable_name) {
         return Ok(());
     }
 
-    if args.iter().any(|arg| is_shell_command_option(arg)) {
-        Err(ToolError::CommandBlocked(
-            "shell interpreters with -c are not allowed in direct shell.run; use the bash command wrapper so shell safety validation applies"
+    if args
+        .iter()
+        .any(|arg| is_interpreter_command_option(executable_name, arg))
+    {
+        return Err(ToolError::CommandBlocked(
+            "interpreter command-eval flags such as -c and -e are not allowed in bash; write a workspace script and run it only when the script path is intentionally allowed"
                 .to_string(),
+        ));
+    }
+
+    if args.iter().any(|arg| is_interpreter_stdin_arg(arg)) {
+        return Err(ToolError::CommandBlocked(
+            "interpreter stdin script mode is not allowed in bash; write a workspace script and run it only when the script path is intentionally allowed"
+                .to_string(),
+        ));
+    }
+
+    if args
+        .iter()
+        .any(|arg| is_interpreter_module_option(executable_name, arg))
+    {
+        return Err(ToolError::CommandBlocked(
+            "interpreter module execution is not allowed in bash; write a workspace script and run it only when the script path is intentionally allowed"
+                .to_string(),
+        ));
+    }
+
+    if interpreter_script_operand(args).is_none() {
+        return Err(ToolError::CommandBlocked(
+            "interpreter script path is required in bash; stdin and interactive interpreter modes are not allowed"
+                .to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn validate_shell_executable_position(
+    executable: &str,
+    cwd: &Path,
+    workspace_root: &Path,
+) -> Result<(), ToolError> {
+    if executable.contains('$') || executable.starts_with('~') {
+        return Err(ToolError::CommandBlocked(
+            "shell executable expansion is not allowed in bash".to_string(),
+        ));
+    }
+
+    if executable.starts_with('/')
+        || executable.starts_with("./")
+        || executable.starts_with("../")
+        || executable.contains('/')
+    {
+        let _ = normalize_shell_workspace_path(executable, cwd, workspace_root)?;
+    }
+
+    Ok(())
+}
+
+fn reject_shell_wrapper_builtin(executable: &str) -> Result<(), ToolError> {
+    let executable_name = Path::new(executable)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(executable);
+    if matches!(executable_name, "builtin" | "command" | "eval" | "exec") {
+        Err(ToolError::CommandBlocked(
+            "shell wrapper builtins are not allowed in bash".to_string(),
         ))
     } else {
         Ok(())
     }
 }
 
-fn is_shell_command_option(arg: &str) -> bool {
-    arg == "-c" || (arg.starts_with('-') && !arg.starts_with("--") && arg[1..].contains('c'))
+fn is_interpreter_command_mode_executable(executable: &str) -> bool {
+    matches!(
+        executable,
+        "bash" | "sh" | "zsh" | "fish" | "python" | "python3" | "node" | "ruby" | "perl"
+    )
+}
+
+fn is_interpreter_command_option(executable: &str, arg: &str) -> bool {
+    arg == "-c"
+        || arg == "-e"
+        || (arg.starts_with('-') && !arg.starts_with("--") && arg[1..].contains('c'))
+        || (arg.starts_with('-') && !arg.starts_with("--") && arg[1..].contains('e'))
+        || (executable == "node" && (arg == "-p" || arg.starts_with("-p")))
+        || matches!(arg, "--eval" | "--print")
+        || arg.starts_with("--eval=")
+        || arg.starts_with("--print=")
+}
+
+fn is_interpreter_stdin_arg(arg: &str) -> bool {
+    arg == "-" || arg.starts_with('<')
+}
+
+fn is_interpreter_module_option(executable: &str, arg: &str) -> bool {
+    matches!(executable, "python" | "python3") && (arg == "-m" || arg.starts_with("-m"))
+}
+
+fn interpreter_script_operand(args: &[String]) -> Option<&str> {
+    args.iter()
+        .filter(|arg| !is_shell_redirection_token(arg))
+        .find(|arg| !arg.starts_with('-'))
+        .map(String::as_str)
+}
+
+fn reject_scanned_interpreter_input_redirection(
+    command: &ScannedShellCommand,
+) -> Result<(), ToolError> {
+    let executable_name = Path::new(&command.executable)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(&command.executable);
+    if !is_interpreter_command_mode_executable(executable_name) {
+        return Ok(());
+    }
+
+    if command
+        .tokens
+        .iter()
+        .skip(1)
+        .any(|token| token.starts_with('<'))
+    {
+        return Err(ToolError::CommandBlocked(
+            "interpreter stdin script mode is not allowed in bash; write a workspace script and run it only when the script path is intentionally allowed"
+                .to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn reject_secret_dump_command(executable: &str) -> Result<(), ToolError> {
+    let executable_name = Path::new(executable)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(executable);
+    if matches!(
+        executable_name,
+        "env" | "printenv" | "export" | "set" | "declare" | "typeset"
+    ) {
+        Err(ToolError::CommandBlocked(
+            "environment dumping commands are not allowed in bash".to_string(),
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn reject_shell_reserved_word(executable: &str) -> Result<(), ToolError> {
+    if matches!(
+        executable,
+        "!" | "case"
+            | "coproc"
+            | "do"
+            | "done"
+            | "elif"
+            | "else"
+            | "esac"
+            | "fi"
+            | "for"
+            | "function"
+            | "if"
+            | "in"
+            | "select"
+            | "then"
+            | "time"
+            | "until"
+            | "while"
+            | "{"
+            | "}"
+            | "[["
+    ) {
+        Err(ToolError::CommandBlocked(
+            "reserved shell syntax is not allowed in bash".to_string(),
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 fn split_shell_segments(command: &str) -> Result<Vec<String>, ToolError> {
@@ -294,6 +718,37 @@ fn is_shell_env_assignment(token: &str) -> bool {
             .is_some_and(|ch| ch == '_' || ch.is_ascii_alphabetic())
 }
 
+fn reject_scanned_env_assignments(command: &ScannedShellCommand) -> Result<(), ToolError> {
+    if command
+        .tokens
+        .iter()
+        .any(|token| is_shell_env_assignment(token.as_str()))
+    {
+        return Err(ToolError::CommandBlocked(
+            "environment assignments are not allowed in bash".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn scanned_to_segment_command(command: &ScannedShellCommand) -> ShellSegmentCommand {
+    ShellSegmentCommand {
+        executable: command.executable.clone(),
+        args: command
+            .tokens
+            .iter()
+            .skip(1)
+            .filter(|token| !is_shell_redirection_token(token))
+            .cloned()
+            .collect(),
+    }
+}
+
+fn is_shell_redirection_token(token: &str) -> bool {
+    token.contains('<') || token.contains('>')
+}
+
 const ALLOWED_SHELL_BUILTINS: &[&str] = &["echo", "false", "printf", "pwd", "test", "true", "["];
 
 fn is_shell_builtin_allowed(executable: &str) -> bool {
@@ -364,7 +819,7 @@ fn validate_shell_path_arguments(
     cwd: &Path,
     workspace_root: &Path,
 ) -> Result<(), ToolError> {
-    for token in &command.args {
+    for (index, token) in command.args.iter().enumerate() {
         let candidate = if token.starts_with('-') {
             if let Some((_, value)) = token.split_once('=') {
                 value
@@ -378,6 +833,15 @@ fn validate_shell_path_arguments(
         if candidate.contains('$') || candidate.starts_with('~') {
             return Err(ToolError::CommandBlocked(
                 "shell path expansion is not allowed in bash".to_string(),
+            ));
+        }
+
+        if contains_shell_glob_metachar(candidate)
+            && should_block_glob_path_argument(command, index, candidate, cwd)
+        {
+            return Err(ToolError::CommandBlocked(
+                "shell glob path expansion is not allowed in bash; use the glob tool instead"
+                    .to_string(),
             ));
         }
 
@@ -395,12 +859,122 @@ fn validate_shell_path_arguments(
             || extracted_path == "."
             || extracted_path == ".."
             || extracted_path.contains('/')
+            || should_validate_bare_path_argument(command, index, extracted_path, cwd)
         {
             let _ = normalize_shell_workspace_path(extracted_path, cwd, workspace_root)?;
         }
     }
 
     Ok(())
+}
+
+fn should_validate_bare_path_argument(
+    command: &ShellSegmentCommand,
+    index: usize,
+    path: &str,
+    cwd: &Path,
+) -> bool {
+    if !tracks_shell_bare_path_arguments(&command.executable) {
+        return false;
+    }
+    if is_grep_pattern_argument(&command.executable, &command.args, index) {
+        return false;
+    }
+    cwd.join(path).exists()
+}
+
+fn should_block_glob_path_argument(
+    command: &ShellSegmentCommand,
+    index: usize,
+    candidate: &str,
+    cwd: &Path,
+) -> bool {
+    if is_grep_pattern_argument(&command.executable, &command.args, index) {
+        return false;
+    }
+    candidate.starts_with('/')
+        || candidate.starts_with("./")
+        || candidate.starts_with("../")
+        || candidate.contains('/')
+        || tracks_shell_bare_path_arguments(&command.executable)
+        || cwd.join(candidate).exists()
+}
+
+fn tracks_shell_bare_path_arguments(executable: &str) -> bool {
+    matches!(
+        executable,
+        "cat"
+            | "bash"
+            | "cp"
+            | "find"
+            | "fish"
+            | "grep"
+            | "head"
+            | "ls"
+            | "mv"
+            | "node"
+            | "perl"
+            | "python"
+            | "python3"
+            | "rg"
+            | "rm"
+            | "ruby"
+            | "sed"
+            | "sh"
+            | "tail"
+            | "touch"
+            | "zsh"
+    )
+}
+
+fn is_grep_pattern_argument(executable: &str, args: &[String], index: usize) -> bool {
+    if !matches!(executable, "grep" | "rg") {
+        return false;
+    }
+
+    args.iter()
+        .enumerate()
+        .filter(|(_, token)| !token.starts_with('-'))
+        .next()
+        .is_some_and(|(pattern_index, _)| pattern_index == index)
+}
+
+fn validate_scanned_command_paths(
+    command: &ScannedShellCommand,
+    cwd: &Path,
+    workspace_root: &Path,
+) -> Result<(), ToolError> {
+    for pattern in &command.path_patterns {
+        validate_scanned_path_pattern(pattern, cwd, workspace_root)?;
+    }
+
+    Ok(())
+}
+
+fn validate_scanned_path_pattern(
+    pattern: &ShellPathPattern,
+    cwd: &Path,
+    workspace_root: &Path,
+) -> Result<(), ToolError> {
+    if pattern.path.contains('$') || pattern.path.starts_with('~') {
+        return Err(ToolError::CommandBlocked(
+            "shell path expansion is not allowed in bash".to_string(),
+        ));
+    }
+
+    if contains_shell_glob_metachar(&pattern.path) {
+        return Err(ToolError::CommandBlocked(
+            "shell glob path expansion is not allowed in bash; use the glob tool instead"
+                .to_string(),
+        ));
+    }
+
+    let _ = normalize_shell_workspace_path(&pattern.path, cwd, workspace_root)?;
+    Ok(())
+}
+
+fn contains_shell_glob_metachar(path: &str) -> bool {
+    path.contains('*') || path.contains('?') || path.contains('[')
 }
 
 fn normalize_shell_workspace_path(
@@ -461,9 +1035,9 @@ fn parse_shell_segment_tokens(segment: &str) -> Result<Vec<String>, ToolError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{blocked_shell_command_message, ShellSafety};
+    use super::ShellSafety;
 
-    use harness_core::config::ShellAllowlist;
+    use harness_core::config::{ShellAllowlist, ShellAllowlistMode};
     use harness_core::tool::ToolError;
 
     use crate::test_support::tool_context;
@@ -471,8 +1045,10 @@ mod tests {
     #[test]
     fn ensure_executable_allowed_returns_recovery_hints_for_blocked_commands() {
         let safety = ShellSafety::new(ShellAllowlist {
+            mode: ShellAllowlistMode::LegacyExecutables,
             executables: vec!["git".to_string()],
             cwd_roots: Vec::new(),
+            ..ShellAllowlist::default()
         });
 
         for (executable, expected_message) in [
@@ -504,6 +1080,7 @@ mod tests {
         let safety = ShellSafety::new(ShellAllowlist {
             executables: Vec::new(),
             cwd_roots: vec!["allowed".to_string()],
+            ..ShellAllowlist::default()
         });
         let ctx = tool_context(tempdir.path(), "shell-safety-cwd");
 
@@ -527,6 +1104,7 @@ mod tests {
         let safety = ShellSafety::new(ShellAllowlist {
             executables: vec!["ls".to_string()],
             cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
         });
         let err = safety
             .validate_bash_command("ls $(pwd)", tempdir.path(), tempdir.path())
@@ -540,6 +1118,7 @@ mod tests {
         let safety = ShellSafety::new(ShellAllowlist {
             executables: vec!["ls".to_string()],
             cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
         });
         let err = safety
             .validate_bash_command("ls /tmp", tempdir.path(), tempdir.path())
@@ -563,31 +1142,24 @@ mod tests {
         let err4 = safety
             .validate_bash_command("ls foo/../../../etc/pas*", tempdir.path(), tempdir.path())
             .expect_err("external relative path with glob should be blocked");
-        assert!(matches!(err4, ToolError::PathEscapesWorkspace { .. }));
+        assert!(matches!(err4, ToolError::CommandBlocked(_)));
     }
 
     #[test]
-    fn validate_bash_command_returns_recovery_hint_for_find() {
+    fn validate_bash_command_allows_find_in_permission_patterns() {
         let tempdir = tempfile::tempdir().expect("tempdir");
         let safety = ShellSafety::new(ShellAllowlist {
             executables: vec!["git".to_string(), "ls".to_string()],
             cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
         });
-        let err = safety
+        safety
             .validate_bash_command(
                 "find docs -maxdepth 1 -type f | sort",
                 tempdir.path(),
                 tempdir.path(),
             )
-            .expect_err("find should be blocked with a recovery hint");
-        match err {
-            ToolError::CommandBlocked(message) => {
-                assert_eq!(message, blocked_shell_command_message("find"));
-                assert!(message.contains("glob"));
-                assert!(message.contains("git status"));
-            }
-            other => panic!("expected command blocked error, got {other:?}"),
-        }
+            .expect("find should be allowed by permission-pattern validation");
     }
 
     #[test]
@@ -596,6 +1168,7 @@ mod tests {
         let safety = ShellSafety::new(ShellAllowlist {
             executables: vec!["ls".to_string()],
             cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
         });
 
         for command in ["source env.sh", ". env.sh"] {
@@ -609,19 +1182,452 @@ mod tests {
     }
 
     #[test]
-    fn validate_bash_command_rejects_redirection_and_background_execution() {
+    fn validate_bash_command_allows_redirection_and_cat() {
         let tempdir = tempfile::tempdir().expect("tempdir");
         let safety = ShellSafety::new(ShellAllowlist {
             executables: vec!["ls".to_string()],
             cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
         });
 
-        for command in ["printf hi >/tmp/out", "ls . & python -c pass"] {
+        safety
+            .validate_bash_command(
+                "printf hi > out.txt && cat out.txt",
+                tempdir.path(),
+                tempdir.path(),
+            )
+            .expect("redirection and cat should be allowed when paths stay in workspace");
+    }
+
+    #[test]
+    fn validate_bash_command_rejects_background_execution() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: vec!["ls".to_string()],
+            cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
+        });
+
+        let err = safety
+            .validate_bash_command("ls . & python -c pass", tempdir.path(), tempdir.path())
+            .expect_err("background execution should be blocked");
+        assert!(matches!(err, ToolError::CommandBlocked(_)));
+    }
+
+    #[test]
+    fn validate_bash_command_allows_pipeline_with_grep() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: Vec::new(),
+            cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
+        });
+
+        safety
+            .validate_bash_command("printf 'a\\nb\\n' | grep b", tempdir.path(), tempdir.path())
+            .expect("pipeline with grep should be allowed");
+    }
+
+    #[test]
+    fn validate_bash_command_allows_touch_and_rm() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: Vec::new(),
+            cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
+        });
+
+        safety
+            .validate_bash_command(
+                "touch tmp.txt && rm tmp.txt",
+                tempdir.path(),
+                tempdir.path(),
+            )
+            .expect("touch and rm should be allowed by permission-pattern validation");
+    }
+
+    #[test]
+    fn validate_bash_command_rejects_python3_c() {
+        // arrange
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: Vec::new(),
+            cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
+        });
+
+        // act
+        let err = safety
+            .validate_bash_command("python3 -c \"print('ok')\"", tempdir.path(), tempdir.path())
+            .expect_err("python3 -c should be blocked by shell safety");
+
+        // assert
+        assert!(matches!(err, ToolError::CommandBlocked(_)));
+    }
+
+    #[test]
+    fn validate_bash_command_rejects_node_long_eval_modes() {
+        // arrange
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: Vec::new(),
+            cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
+        });
+
+        // act
+        for command in [
+            "node --eval \"console.log('ok')\"",
+            "node --eval=console.log('ok')",
+            "node --print \"1 + 1\"",
+            "node -p \"1 + 1\"",
+        ] {
             let err = safety
                 .validate_bash_command(command, tempdir.path(), tempdir.path())
-                .expect_err("redirection and background execution should be blocked");
+                .expect_err("node eval/print modes should be blocked");
+
+            // assert
             assert!(matches!(err, ToolError::CommandBlocked(_)));
         }
+    }
+
+    #[test]
+    fn validate_bash_command_rejects_python3_stdin_script_mode() {
+        // arrange
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: Vec::new(),
+            cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
+        });
+
+        // act
+        let heredoc_err = safety
+            .validate_bash_command(
+                "python3 - <<'PY'\nprint('ok')\nPY",
+                tempdir.path(),
+                tempdir.path(),
+            )
+            .expect_err("python3 stdin heredoc should be blocked by shell safety");
+        let heredoc_without_dash_err = safety
+            .validate_bash_command(
+                "python3 <<'PY'\nprint('ok')\nPY",
+                tempdir.path(),
+                tempdir.path(),
+            )
+            .expect_err("python3 heredoc without dash should be blocked by shell safety");
+        let stdin_arg_err = safety
+            .validate_direct_args(
+                "python3",
+                &["-".to_string()],
+                tempdir.path(),
+                tempdir.path(),
+            )
+            .expect_err("direct python3 stdin mode should be blocked by shell safety");
+
+        // assert
+        assert!(matches!(heredoc_err, ToolError::CommandBlocked(_)));
+        assert!(matches!(
+            heredoc_without_dash_err,
+            ToolError::CommandBlocked(_)
+        ));
+        assert!(matches!(stdin_arg_err, ToolError::CommandBlocked(_)));
+    }
+
+    #[test]
+    fn validate_bash_command_rejects_interpreter_input_redirection() {
+        // arrange
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(tempdir.path().join("script.sh"), "printf ok\n").expect("seed script");
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: Vec::new(),
+            cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
+        });
+
+        // act
+        let err = safety
+            .validate_bash_command("bash < script.sh", tempdir.path(), tempdir.path())
+            .expect_err("interpreter input redirection should be blocked");
+
+        // assert
+        assert!(matches!(err, ToolError::CommandBlocked(_)));
+    }
+
+    #[test]
+    fn validate_bash_command_allows_interpreter_script_output_redirection() {
+        // arrange
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(tempdir.path().join("script.py"), "print('ok')\n").expect("seed script");
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: Vec::new(),
+            cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
+        });
+
+        // act
+        let result = safety.validate_bash_command(
+            "python3 script.py > out.txt",
+            tempdir.path(),
+            tempdir.path(),
+        );
+
+        // assert
+        result.expect("workspace script with output redirection should be allowed");
+    }
+
+    #[test]
+    fn validate_bash_command_rejects_secret_dump_commands_in_permission_patterns() {
+        // arrange
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: Vec::new(),
+            cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
+        });
+
+        // act
+        for command in ["env", "printenv"] {
+            let err = safety
+                .validate_bash_command(command, tempdir.path(), tempdir.path())
+                .expect_err("environment dump command should be blocked");
+
+            // assert
+            assert!(matches!(err, ToolError::CommandBlocked(_)));
+        }
+    }
+
+    #[test]
+    fn validate_bash_command_rejects_environment_inspection_builtins() {
+        // arrange
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist::default());
+
+        // act
+        for command in ["export", "set", "declare -px", "typeset -px"] {
+            let err = safety
+                .validate_bash_command(command, tempdir.path(), tempdir.path())
+                .expect_err("environment inspection builtins should be blocked");
+
+            // assert
+            assert!(matches!(err, ToolError::CommandBlocked(_)));
+        }
+    }
+
+    #[test]
+    fn validate_bash_command_rejects_shell_wrapper_bypasses() {
+        // arrange
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: Vec::new(),
+            cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
+        });
+
+        // act
+        for command in [
+            "command bash -c 'printf bypass'",
+            "eval \"python3 -c 'print(1)'\"",
+            "command printenv",
+        ] {
+            let err = safety
+                .validate_bash_command(command, tempdir.path(), tempdir.path())
+                .expect_err("shell wrapper builtins must not bypass safety checks");
+
+            // assert
+            assert!(matches!(err, ToolError::CommandBlocked(_)));
+        }
+    }
+
+    #[test]
+    fn validate_bash_command_rejects_brace_expansion_bypasses() {
+        // arrange
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: Vec::new(),
+            cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
+        });
+
+        // act
+        for command in [
+            "{/bin/printf,%s\\n,ok}",
+            "{python3,-c,print(1)}",
+            "{printenv,PATH}",
+            "ls {~/secret,}",
+        ] {
+            let err = safety
+                .validate_bash_command(command, tempdir.path(), tempdir.path())
+                .expect_err("brace expansion must not bypass shell safety");
+
+            // assert
+            assert!(matches!(err, ToolError::CommandBlocked(_)));
+        }
+    }
+
+    #[test]
+    fn validate_bash_command_rejects_executable_path_escapes() {
+        // arrange
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: Vec::new(),
+            cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
+        });
+
+        // act
+        for command in ["/tmp/evil", "../outside/tool", "$SHELL -c 'printf bypass'"] {
+            let err = safety
+                .validate_bash_command(command, tempdir.path(), tempdir.path())
+                .expect_err(
+                    "executable-position paths and expansions must stay inside safety checks",
+                );
+
+            // assert
+            assert!(matches!(
+                err,
+                ToolError::CommandBlocked(_) | ToolError::PathEscapesWorkspace { .. }
+            ));
+        }
+    }
+
+    #[test]
+    fn validate_bash_command_rejects_parameter_expanded_executables() {
+        // arrange
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: Vec::new(),
+            cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
+        });
+
+        // act
+        for command in [
+            "p${UNSET}ython3 -c 'print(1)'",
+            "py${UNSET}thon3 -c 'print(1)'",
+        ] {
+            let err = safety
+                .validate_bash_command(command, tempdir.path(), tempdir.path())
+                .expect_err("expanded executable words must not bypass shell safety");
+
+            // assert
+            assert!(matches!(err, ToolError::CommandBlocked(_)));
+        }
+    }
+
+    #[test]
+    fn validate_bash_command_rejects_parameter_expansion_secret_reads() {
+        // arrange
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist::default());
+
+        // act
+        let err = safety
+            .validate_bash_command("printf ${OPENAI_API_KEY}", tempdir.path(), tempdir.path())
+            .expect_err("parameter expansion must not expose secrets");
+
+        // assert
+        assert!(matches!(err, ToolError::CommandBlocked(_)));
+    }
+
+    #[test]
+    fn validate_bash_command_rejects_compound_and_reserved_shell_syntax() {
+        // arrange
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist::default());
+
+        // act
+        for command in ["if true; then pwd; fi", "while true; do pwd; done"] {
+            let err = safety
+                .validate_bash_command(command, tempdir.path(), tempdir.path())
+                .expect_err("reserved compound shell syntax should be blocked");
+
+            // assert
+            assert!(matches!(err, ToolError::CommandBlocked(_)));
+        }
+    }
+
+    #[test]
+    fn validate_bash_command_rejects_interpreter_pipeline_stdin_and_no_script() {
+        // arrange
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist::default());
+
+        // act
+        for command in ["printf 'print(1)' | python3", "python3"] {
+            let err = safety
+                .validate_bash_command(command, tempdir.path(), tempdir.path())
+                .expect_err("interpreter stdin and no-script modes should be blocked");
+
+            // assert
+            assert!(matches!(err, ToolError::CommandBlocked(_)));
+        }
+    }
+
+    #[test]
+    fn validate_bash_command_legacy_mode_rejects_glob_path_operands() {
+        // arrange
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist {
+            mode: ShellAllowlistMode::LegacyExecutables,
+            executables: vec!["ls".to_string()],
+            cwd_roots: vec![".".to_string()],
+        });
+
+        // act
+        let err = safety
+            .validate_bash_command("ls le*", tempdir.path(), tempdir.path())
+            .expect_err("legacy glob path operands should be blocked");
+
+        // assert
+        assert!(matches!(err, ToolError::CommandBlocked(_)));
+    }
+
+    #[test]
+    fn validate_direct_args_rejects_secret_dump_commands() {
+        // arrange
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist::default());
+
+        // act
+        for command in ["env", "printenv"] {
+            let err = safety
+                .validate_direct_args(command, &[], tempdir.path(), tempdir.path())
+                .expect_err("direct environment dump command should be blocked");
+
+            // assert
+            assert!(matches!(err, ToolError::CommandBlocked(_)));
+        }
+    }
+
+    #[test]
+    fn validate_bash_command_rejects_redirection_workspace_escape() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: Vec::new(),
+            cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
+        });
+
+        let err = safety
+            .validate_bash_command("printf hi > ../outside.txt", tempdir.path(), tempdir.path())
+            .expect_err("redirection outside workspace should be blocked");
+        assert!(matches!(err, ToolError::PathEscapesWorkspace { .. }));
+    }
+
+    #[test]
+    fn validate_bash_command_rejects_env_assignment_in_permission_patterns() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: Vec::new(),
+            cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
+        });
+
+        let err = safety
+            .validate_bash_command("PATH=. git status", tempdir.path(), tempdir.path())
+            .expect_err("environment assignment should be blocked");
+        assert!(matches!(err, ToolError::CommandBlocked(_)));
     }
 
     #[test]
@@ -630,6 +1636,7 @@ mod tests {
         let safety = ShellSafety::new(ShellAllowlist {
             executables: vec!["git".to_string(), "ls".to_string()],
             cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
         });
 
         for command in [
@@ -653,6 +1660,7 @@ mod tests {
         let safety = ShellSafety::new(ShellAllowlist {
             executables: Vec::new(),
             cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
         });
 
         for command in ["test -e /tmp/outside", "[ -e /tmp/outside ]"] {
@@ -669,6 +1677,7 @@ mod tests {
         let safety = ShellSafety::new(ShellAllowlist {
             executables: vec!["bash".to_string(), "ls".to_string()],
             cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
         });
 
         let external_path_err = safety
@@ -697,6 +1706,7 @@ mod tests {
         let safety = ShellSafety::new(ShellAllowlist {
             executables: vec!["ls".to_string()],
             cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
         });
 
         safety
@@ -710,6 +1720,7 @@ mod tests {
         let safety = ShellSafety::new(ShellAllowlist {
             executables: vec!["ls".to_string()],
             cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
         });
 
         for command in ["cd -P /tmp && pwd", "cd missing && ls ../sibling"] {
@@ -731,6 +1742,7 @@ mod tests {
         let safety = ShellSafety::new(ShellAllowlist {
             executables: vec!["ls".to_string()],
             cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
         });
 
         let path_arg_err = safety
@@ -745,5 +1757,55 @@ mod tests {
             .validate_bash_command("cd outside && ls .", tempdir.path(), tempdir.path())
             .expect_err("cd through symlink must not escape workspace");
         assert!(matches!(cd_err, ToolError::PathEscapesWorkspace { .. }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn validate_bash_command_rejects_bare_symlink_path_escapes() {
+        // arrange
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let external = tempfile::tempdir().expect("external tempdir");
+        std::os::unix::fs::symlink(external.path(), tempdir.path().join("leak"))
+            .expect("symlink outside workspace");
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: Vec::new(),
+            cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
+        });
+
+        // act
+        for command in ["cat leak", "bash leak", "node leak"] {
+            let err = safety
+                .validate_bash_command(command, tempdir.path(), tempdir.path())
+                .expect_err("bare symlink file operands must not escape workspace");
+
+            // assert
+            assert!(matches!(err, ToolError::PathEscapesWorkspace { .. }));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn validate_bash_command_rejects_glob_symlink_path_escapes() {
+        // arrange
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let external = tempfile::tempdir().expect("external tempdir");
+        std::os::unix::fs::symlink(external.path(), tempdir.path().join("leak"))
+            .expect("symlink outside workspace");
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: Vec::new(),
+            cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
+        });
+
+        // act
+        for command in ["cat l*", "ls le*", "bash le*"] {
+            let err = safety
+                .validate_bash_command(command, tempdir.path(), tempdir.path())
+                .expect_err("glob-expanded symlink operands must not escape workspace");
+
+            // assert
+            assert!(matches!(err, ToolError::CommandBlocked(_)));
+        }
     }
 }

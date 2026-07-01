@@ -6,6 +6,7 @@ use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResul
 use serde::{Deserialize, Deserializer};
 use serde_json::{json, Value};
 
+use crate::exact_edit::{execute_exact_edit, ExactEditRequest};
 use crate::hashline_apply::{
     apply_hashline_patch_to_workspace, apply_hashline_workspace_op_to_workspace,
     resolve_workspace_target_path, validate_workspace_move_target,
@@ -17,7 +18,7 @@ pub(crate) struct HashlineEditTool;
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct HashlineEditArgs {
-    #[serde(rename = "filePath", alias = "file", alias = "path")]
+    #[serde(rename = "path", alias = "filePath", alias = "file")]
     file_path: String,
     #[serde(default, rename = "editId", alias = "edit_id")]
     edit_id: Option<String>,
@@ -27,6 +28,12 @@ struct HashlineEditArgs {
     delete: bool,
     #[serde(default)]
     rename: Option<String>,
+    #[serde(default, rename = "oldString", alias = "old_string")]
+    old_string: Option<String>,
+    #[serde(default, rename = "newString", alias = "new_string")]
+    new_string: Option<String>,
+    #[serde(default, rename = "replaceAll", alias = "replace_all")]
+    replace_all: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -77,62 +84,30 @@ impl Tool for HashlineEditTool {
     }
 
     fn description(&self) -> &str {
-        "Edit files using LINE#HASH anchors for precise, safe modifications. Workflow: read the target file first, copy exact LINE#HASH tags from read output, make the smallest operation per logical mutation site, submit one edit call per file snapshot, and re-read before editing the same file again. All operations in one call target the original read snapshot: do not adjust later line numbers for earlier operations, do not overlap ranges, do not insert inside a replaced range, and do not make two inserts at the same anchor. Use replace with pos/end for one consumed range, append/prepend to insert outside replaced ranges, merge touching changes into one replace, or split conflicting changes into separate edit calls with a re-read between calls. Replacement lines must contain only the new content for the consumed range, without LINE#HASH prefixes or diff markers. Use delete=true by itself when you want to remove a file by path."
+        "Edit one file by replacing oldString with newString. Provide the exact text to replace, set replaceAll=true only when every occurrence should change, and use oldString=\"\" only to create a missing file."
     }
 
     fn parameters_json_schema(&self) -> Value {
-        let edit_item_schema = json!({
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["op"],
-            "properties": {
-                "op": {
-                    "type": "string",
-                    "enum": ["replace", "append", "prepend"]
-                },
-                "pos": {
-                    "type": "string",
-                    "description": "Primary LINE#HASH anchor copied from the latest read output. Required for replace on existing files; optional for append/prepend, where omission means EOF/BOF."
-                },
-                "end": {
-                    "type": "string",
-                    "description": "Inclusive range end LINE#HASH anchor for replace. Must be on or after pos, and replace ranges in the same call must not overlap any other operation."
-                },
-                "lines": {
-                    "oneOf": [
-                        { "type": "string" },
-                        {
-                            "type": "array",
-                            "items": { "type": "string" }
-                        },
-                        { "type": "null" }
-                    ],
-                    "description": "Plain replacement or inserted text only: no LINE#HASH prefixes, no diff markers, and no unchanged boundary lines outside the consumed pos..end range. null or [] with replace deletes the targeted range."
-                }
-            }
-        });
-
         json!({
             "type": "object",
             "additionalProperties": false,
-            "required": ["filePath"],
+            "required": ["path", "oldString", "newString"],
             "properties": {
-                "filePath": { "type": "string" },
-                "editId": { "type": "string" },
-                "delete": {
-                    "type": "boolean",
-                    "default": false,
-                    "description": "When true, remove the whole file by path. Do not combine delete=true with edits or rename."
-                },
-                "rename": {
+                "path": {
                     "type": "string",
-                    "description": "Rename the file after applying edits, or rename an existing file when edits is omitted. Cannot be combined with delete=true."
+                    "description": "The absolute path to the file to modify"
                 },
-                "edits": {
-                    "type": "array",
-                    "minItems": 1,
-                    "items": edit_item_schema,
-                    "description": "Required for non-delete edit requests. Batch means multiple small, non-overlapping operations against the same original file snapshot, not one oversized rewrite. Omit edits only when delete=true removes the whole file by path."
+                "oldString": {
+                    "type": "string",
+                    "description": "The text to replace"
+                },
+                "newString": {
+                    "type": "string",
+                    "description": "The text to replace it with (must be different from oldString)"
+                },
+                "replaceAll": {
+                    "type": "boolean",
+                    "description": "Replace all exact occurrences of oldString. Defaults to false."
                 }
             }
         })
@@ -144,11 +119,11 @@ impl Tool for HashlineEditTool {
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: HashlineEditArgs = crate::parse_tool_args(args_json)?;
-        execute_hashline_edit(&ctx, args)
+        execute_hashline_edit(&ctx, args).await
     }
 }
 
-fn execute_hashline_edit(
+async fn execute_hashline_edit(
     ctx: &ToolContext,
     args: HashlineEditArgs,
 ) -> Result<ToolResult, ToolError> {
@@ -156,6 +131,32 @@ fn execute_hashline_edit(
         .edit_id
         .clone()
         .unwrap_or_else(|| format!("edit-{}", ctx.tool_call_id));
+
+    if args.old_string.is_some() || args.new_string.is_some() || args.replace_all.is_some() {
+        if args.delete || args.rename.is_some() || !args.edits.is_empty() {
+            return Err(ToolError::InvalidArguments(
+                "oldString/newString exact edits cannot be combined with hashline edits, delete, or rename"
+                    .to_string(),
+            ));
+        }
+        let old_string = args.old_string.ok_or_else(|| {
+            ToolError::InvalidArguments("oldString is required for exact edit".to_string())
+        })?;
+        let new_string = args.new_string.ok_or_else(|| {
+            ToolError::InvalidArguments("newString is required for exact edit".to_string())
+        })?;
+        return execute_exact_edit(
+            ctx,
+            ExactEditRequest {
+                edit_id,
+                file_path: args.file_path,
+                old_string,
+                new_string,
+                replace_all: args.replace_all.unwrap_or(false),
+            },
+        )
+        .await;
+    }
 
     if args.delete {
         if !args.edits.is_empty() {
@@ -285,15 +286,14 @@ fn translate_hashline_edits_for_missing_file(
     let mut lines = Vec::new();
     for (index, edit) in edits.iter().enumerate() {
         let op = normalize_edit_op(index, edit)?;
-        if edit.pos.is_some() || edit.end.is_some() {
-            return Err(ToolError::Execution(format!(
-                "file {path} does not exist; only anchorless append/prepend edits can create new files"
-            )));
-        }
         let next_lines = normalize_edit_lines(edit, index)?;
         match op.as_str() {
-            "append" => lines.extend(next_lines),
+            "append" => {
+                validate_missing_file_boundary(path, edit, index, "append", "eof")?;
+                lines.extend(next_lines);
+            }
             "prepend" => {
+                validate_missing_file_boundary(path, edit, index, "prepend", "bof")?;
                 let mut combined = next_lines;
                 combined.extend(lines);
                 lines = combined;
@@ -310,6 +310,27 @@ fn translate_hashline_edits_for_missing_file(
     Ok(TranslatedHashlinePlan::RewriteFile {
         content: join_lines_with_trailing_newline(&lines),
     })
+}
+
+fn validate_missing_file_boundary(
+    path: &str,
+    edit: &RawHashlineEdit,
+    index: usize,
+    op: &str,
+    boundary: &str,
+) -> Result<(), ToolError> {
+    for value in [edit.pos.as_deref(), edit.end.as_deref()]
+        .into_iter()
+        .flatten()
+    {
+        if !is_boundary_reference(value, boundary) {
+            return Err(ToolError::Execution(format!(
+                "file {path} does not exist; only anchorless or {boundary}-targeted {op} edits can create new files (edit {index})"
+            )));
+        }
+    }
+
+    Ok(())
 }
 
 fn translate_hashline_edit(
@@ -368,6 +389,9 @@ fn translate_append_edit(
         )));
     }
     let anchor = match edit.pos.as_deref().or(edit.end.as_deref()) {
+        Some(anchor) if is_boundary_reference(anchor, "eof") => {
+            anchor_for_line(source_lines, source_lines.len() as u32, index, "append")?
+        }
         Some(anchor) => {
             parse_anchor_reference(Some(anchor), index, "append", source_lines, recent_anchors)?
         }
@@ -389,12 +413,19 @@ fn translate_prepend_edit(
         )));
     }
     let anchor = match edit.pos.as_deref().or(edit.end.as_deref()) {
+        Some(anchor) if is_boundary_reference(anchor, "bof") => {
+            anchor_for_line(source_lines, 1, index, "prepend")?
+        }
         Some(anchor) => {
             parse_anchor_reference(Some(anchor), index, "prepend", source_lines, recent_anchors)?
         }
         None => anchor_for_line(source_lines, 1, index, "prepend")?,
     };
     Ok(HashlineOp::InsertBefore { anchor, lines })
+}
+
+fn is_boundary_reference(value: &str, boundary: &str) -> bool {
+    value.trim().eq_ignore_ascii_case(boundary)
 }
 
 fn normalize_edit_op(index: usize, edit: &RawHashlineEdit) -> Result<String, ToolError> {
@@ -483,23 +514,28 @@ fn split_multiline_argument(text: &str) -> Vec<String> {
 }
 
 fn strip_model_prefixes(line: &str) -> String {
-    let trimmed = line.trim_start_matches(">>>").trim_start();
-    let without_hashline = match trimmed.split_once('|') {
-        Some((prefix, rest))
-            if prefix.contains('#')
-                && prefix
-                    .chars()
-                    .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '#')) =>
-        {
-            rest
+    if let Some(quoted) = line.strip_prefix(">>>") {
+        let quoted = quoted.trim_start();
+        if let Some(content) = strip_hashline_prefix(quoted) {
+            return content.to_string();
         }
-        _ => trimmed,
-    };
-    without_hashline
-        .strip_prefix('+')
-        .or_else(|| without_hashline.strip_prefix('-'))
-        .unwrap_or(without_hashline)
-        .to_string()
+    }
+
+    strip_hashline_prefix(line).unwrap_or(line).to_string()
+}
+
+fn strip_hashline_prefix(line: &str) -> Option<&str> {
+    let (prefix, content) = line.split_once('|')?;
+    let (line_number, hash) = prefix.split_once('#')?;
+    if !line_number.is_empty()
+        && !hash.is_empty()
+        && line_number.chars().all(|ch| ch.is_ascii_digit())
+        && hash.chars().all(|ch| ch.is_ascii_hexdigit())
+    {
+        Some(content)
+    } else {
+        None
+    }
 }
 
 fn parse_anchor_reference(

@@ -4,6 +4,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use harness_core::config::ShellAllowlist;
+use harness_core::perm::shell::{
+    direct_shell_command_request, scan_shell_command, ShellCommandRequest,
+};
 use harness_core::tool::{ArtifactRef, Tool, ToolCapability, ToolContext, ToolError, ToolResult};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -21,6 +24,9 @@ const SHELL_OUTPUT_PREVIEW_LIMITS: ShellOutputPreviewLimits = ShellOutputPreview
     max_lines: SHELL_OUTPUT_INLINE_LINE_LIMIT,
     max_bytes: SHELL_OUTPUT_INLINE_BYTE_LIMIT,
 };
+const SAFE_SHELL_ENV_KEYS: &[&str] = &[
+    "PATH", "TERM", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL", "LC_CTYPE",
+];
 
 #[derive(Debug, Clone)]
 struct ShellOutputPreview {
@@ -245,9 +251,58 @@ impl ShellCommandRunner for TokioShellCommandRunner {
         invocation: ShellCommandInvocation,
         timeout_ms: u64,
     ) -> Result<ShellProcessOutput, ToolError> {
-        let mut command = tokio::process::Command::new(&invocation.program);
-        command.args(&invocation.args).current_dir(invocation.cwd);
+        #[cfg(target_os = "linux")]
+        prevent_parent_process_environment_disclosure()?;
+        let mut command = shell_process_command(invocation);
+        apply_sanitized_shell_environment(&mut command);
         run_shell_process(command, timeout_ms).await
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn prevent_parent_process_environment_disclosure() -> Result<(), ToolError> {
+    rustix::process::set_dumpable_behavior(rustix::process::DumpableBehavior::NotDumpable)
+        .map_err(|err| ToolError::Execution(format!("failed to harden shell process: {err}")))
+}
+
+fn shell_process_command(invocation: ShellCommandInvocation) -> tokio::process::Command {
+    if cfg!(unix) {
+        let mut command = tokio::process::Command::new("/bin/sh");
+        command
+            .arg("-c")
+            .arg(r#"("$@")"#)
+            .arg("harness-shell-run")
+            .arg(invocation.program)
+            .args(invocation.args)
+            .current_dir(invocation.cwd);
+        return command;
+    }
+
+    let mut command = tokio::process::Command::new(&invocation.program);
+    command.args(&invocation.args).current_dir(invocation.cwd);
+    command
+}
+
+fn apply_sanitized_shell_environment(command: &mut tokio::process::Command) {
+    command.env_clear();
+    for key in SAFE_SHELL_ENV_KEYS {
+        if let Some(value) = std::env::var_os(key) {
+            command.env(key, value);
+        }
+    }
+    if std::env::var_os("PATH").is_none() {
+        command.env("PATH", default_shell_path());
+    }
+    if std::env::var_os("TERM").is_none() {
+        command.env("TERM", "dumb");
+    }
+}
+
+fn default_shell_path() -> &'static str {
+    if cfg!(windows) {
+        r"C:\Windows\System32;C:\Windows"
+    } else {
+        "/usr/local/bin:/usr/bin:/bin"
     }
 }
 
@@ -443,10 +498,12 @@ impl DirectShellInvocation {
         self,
         output: &ShellProcessOutput,
     ) -> serde_json::Map<String, serde_json::Value> {
+        let permission_request = direct_shell_command_request(&self.cmd, &self.args);
         let mut metadata = serde_json::Map::new();
         metadata.insert("cmd".to_string(), json!(self.cmd));
         metadata.insert("args".to_string(), json!(self.args));
         metadata.insert("cwd".to_string(), json!(self.cwd));
+        insert_permission_pattern_metadata(&mut metadata, &permission_request);
         output.insert_execution_status(&mut metadata);
         metadata
     }
@@ -457,12 +514,41 @@ impl WrapperShellInvocation {
         self,
         output: &ShellProcessOutput,
     ) -> serde_json::Map<String, serde_json::Value> {
+        let permission_request = scan_shell_command(&self.command).ok();
         let mut metadata = serde_json::Map::new();
         metadata.insert("description".to_string(), json!(self.description));
         metadata.insert("command".to_string(), json!(self.command));
         metadata.insert("workdir".to_string(), json!(self.workdir));
+        insert_optional_permission_pattern_metadata(&mut metadata, permission_request.as_ref());
         output.insert_execution_status(&mut metadata);
         metadata
+    }
+}
+
+fn insert_permission_pattern_metadata(
+    metadata: &mut serde_json::Map<String, serde_json::Value>,
+    permission_request: &ShellCommandRequest,
+) {
+    metadata.insert(
+        "permission_patterns".to_string(),
+        json!(permission_request.patterns),
+    );
+    metadata.insert(
+        "permission_always_patterns".to_string(),
+        json!(permission_request.always_patterns),
+    );
+}
+
+fn insert_optional_permission_pattern_metadata(
+    metadata: &mut serde_json::Map<String, serde_json::Value>,
+    permission_request: Option<&ShellCommandRequest>,
+) {
+    match permission_request {
+        Some(request) => insert_permission_pattern_metadata(metadata, request),
+        None => {
+            metadata.insert("permission_patterns".to_string(), json!([]));
+            metadata.insert("permission_always_patterns".to_string(), json!([]));
+        }
     }
 }
 
@@ -577,7 +663,7 @@ impl ShellRunTool {
             .runner
             .run(
                 ShellCommandInvocation::new(shell, cwd)
-                    .args(["-lc".to_string(), invocation.command.clone()]),
+                    .args(["-c".to_string(), invocation.command.clone()]),
                 timeout_ms,
             )
             .await?;
@@ -597,7 +683,7 @@ impl Tool for ShellRunTool {
     }
 
     fn description(&self) -> &str {
-        "Runs an allowlisted shell command inside the workspace and returns stdout/stderr. Use bash for real shell work like git, cargo, or npm—not for file discovery, file search, reading, or editing. Commands such as find, grep/rg, cat, head, tail, sed, and awk are blocked; use glob, grep, list, read, or edit instead."
+        "Runs a shell command inside the workspace and returns stdout/stderr. Use bash for real shell work like git, cargo, or npm—not for file discovery, file search, reading, or editing. Commands such as find, grep/rg, cat, head, tail, sed, and awk are discouraged; use glob, grep, list, read, or edit instead when possible. Shell commands are controlled by permission patterns and workspace path safety."
     }
 
     fn parameters_json_schema(&self) -> serde_json::Value {
@@ -759,7 +845,7 @@ mod tests {
             .call(
                 context.clone(),
                 json!({
-                    "command": "printf 'alpha%.0s' {1..11000}",
+                    "command": "yes alpha | tr -d '\\n' | head -c 55000",
                     "description": "emit many lines"
                 }),
             )
@@ -780,30 +866,27 @@ mod tests {
         assert!(spilled.starts_with("alphaalphaalpha"));
     }
     #[tokio::test]
-    async fn bash_direct_exec_returns_recovery_hint_for_blocked_find() {
+    async fn bash_direct_exec_allows_find_in_permission_patterns() {
         let temp = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(temp.path().join("docs")).expect("docs dir");
+        std::fs::write(temp.path().join("docs/example.txt"), "hello\n").expect("fixture file");
         let bash =
             ShellRunTool::with_runner(ShellAllowlist::default(), ShellRunTool::default_runner());
 
-        let error = bash
+        let result = bash
             .call(
-                shell_test_context(temp.path(), "toolcall-bash-find-blocked"),
+                shell_test_context(temp.path(), "toolcall-bash-find-allowed"),
                 json!({
                     "cmd": "find",
                     "args": ["docs", "-maxdepth", "1", "-type", "f"],
                 }),
             )
             .await
-            .expect_err("find should be blocked with recovery guidance");
+            .expect("find should be allowed in permission-pattern mode");
 
-        match error {
-            ToolError::CommandBlocked(message) => {
-                assert!(message.contains("find is blocked"));
-                assert!(message.contains("glob"));
-                assert!(message.contains("git status"));
-            }
-            other => panic!("unexpected error variant: {other}"),
-        }
+        assert!(result.display_text.contains("docs/example.txt"));
+        let structured = result.structured_json.expect("structured shell output");
+        assert_eq!(structured.get("status"), Some(&json!(0)));
     }
 
     #[tokio::test]
@@ -813,6 +896,7 @@ mod tests {
             ShellAllowlist {
                 executables: vec!["printf".to_string()],
                 cwd_roots: Vec::new(),
+                ..ShellAllowlist::default()
             },
             ShellRunTool::default_runner(),
         );
@@ -846,6 +930,7 @@ mod tests {
             ShellAllowlist {
                 executables: vec!["printf".to_string()],
                 cwd_roots: Vec::new(),
+                ..ShellAllowlist::default()
             },
             runner.clone(),
         );
@@ -896,10 +981,34 @@ mod tests {
         assert!(calls[0].0.program.ends_with("bash"));
         assert_eq!(
             calls[0].0.args,
-            vec!["-lc".to_string(), "printf wrapper-ok".to_string()]
+            vec!["-c".to_string(), "printf wrapper-ok".to_string()]
         );
         assert_eq!(calls[0].0.cwd, temp.path());
         assert_eq!(calls[0].1, 4321);
+    }
+
+    #[tokio::test]
+    async fn shell_run_wrapper_records_permission_patterns_in_metadata() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let runner = FakeShellCommandRunner::success("hello");
+        let shell = ShellRunTool::with_runner(ShellAllowlist::default(), runner);
+
+        let result = shell
+            .call(
+                shell_test_context(temp.path(), "toolcall-shell-run-pattern-metadata"),
+                json!({
+                    "command": "printf hello",
+                    "workdir": ".",
+                }),
+            )
+            .await
+            .expect("fake wrapper shell run");
+
+        let structured = result.structured_json.expect("structured shell output");
+        assert_eq!(
+            structured.get("permission_always_patterns"),
+            Some(&json!(["printf *"]))
+        );
     }
 
     #[tokio::test]
@@ -909,6 +1018,7 @@ mod tests {
             ShellAllowlist {
                 executables: vec!["bash".to_string()],
                 cwd_roots: Vec::new(),
+                ..ShellAllowlist::default()
             },
             ShellRunTool::default_runner(),
         );
@@ -927,10 +1037,302 @@ mod tests {
 
         match error {
             ToolError::CommandBlocked(message) => {
-                assert!(message.contains("shell safety validation"));
+                assert!(message.contains("interpreter command-eval flags"));
             }
             other => panic!("unexpected error variant: {other}"),
         }
+    }
+
+    #[tokio::test]
+    async fn shell_run_rejects_direct_secret_dump_command() {
+        // arrange
+        let temp = tempfile::tempdir().expect("tempdir");
+        let shell =
+            ShellRunTool::with_runner(ShellAllowlist::default(), ShellRunTool::default_runner());
+
+        // act
+        let error = shell
+            .call(
+                shell_test_context(temp.path(), "toolcall-shell-run-env-blocked"),
+                json!({
+                    "cmd": "env",
+                    "cwd": ".",
+                }),
+            )
+            .await
+            .expect_err("direct env should be blocked");
+
+        // assert
+        assert!(matches!(error, ToolError::CommandBlocked(_)));
+    }
+
+    #[tokio::test]
+    async fn shell_run_rejects_wrapper_environment_inspection_before_secret_output() {
+        // arrange
+        let temp = tempfile::tempdir().expect("tempdir");
+        let fake_secret = "SECRET_TOKEN=redacted-test-secret";
+
+        // act
+        for command in ["export", "set", "declare -px", "typeset -px"] {
+            let runner = FakeShellCommandRunner::success(fake_secret);
+            let shell = ShellRunTool::with_runner(ShellAllowlist::default(), runner.clone());
+            let result = shell
+                .call(
+                    shell_test_context(temp.path(), "toolcall-shell-run-env-inspect-blocked"),
+                    json!({
+                        "command": command,
+                        "workdir": ".",
+                    }),
+                )
+                .await;
+
+            // assert
+            assert_shell_result_blocks_fake_secret(result, fake_secret);
+            assert!(runner.calls().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn shell_run_rejects_direct_environment_inspection_before_secret_output() {
+        // arrange
+        let temp = tempfile::tempdir().expect("tempdir");
+        let fake_secret = "SECRET_TOKEN=redacted-test-secret";
+
+        // act
+        for (cmd, args) in [
+            ("export", Vec::<String>::new()),
+            ("set", Vec::<String>::new()),
+            ("declare", vec!["-px".to_string()]),
+            ("typeset", vec!["-px".to_string()]),
+        ] {
+            let runner = FakeShellCommandRunner::success(fake_secret);
+            let shell = ShellRunTool::with_runner(ShellAllowlist::default(), runner.clone());
+            let result = shell
+                .call(
+                    shell_test_context(
+                        temp.path(),
+                        "toolcall-shell-run-direct-env-inspect-blocked",
+                    ),
+                    json!({
+                        "cmd": cmd,
+                        "args": args,
+                        "cwd": ".",
+                    }),
+                )
+                .await;
+
+            // assert
+            assert_shell_result_blocks_fake_secret(result, fake_secret);
+            assert!(runner.calls().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn shell_run_direct_invocation_scrubs_inherited_environment() {
+        // arrange
+        let temp = tempfile::tempdir().expect("tempdir");
+        let shell =
+            ShellRunTool::with_runner(ShellAllowlist::default(), ShellRunTool::default_runner());
+
+        // act
+        let result = shell
+            .call(
+                shell_test_context(temp.path(), "toolcall-shell-run-direct-env-scrubbed"),
+                json!({
+                    "cmd": "awk",
+                    "args": [awk_environ_program()],
+                    "cwd": ".",
+                }),
+            )
+            .await
+            .expect("direct awk env inspection should execute with sanitized env");
+
+        // assert
+        assert_shell_result_scrubs_inherited_environment(&result);
+    }
+
+    #[tokio::test]
+    async fn shell_run_wrapper_invocation_scrubs_inherited_environment() {
+        // arrange
+        let temp = tempfile::tempdir().expect("tempdir");
+        let shell =
+            ShellRunTool::with_runner(ShellAllowlist::default(), ShellRunTool::default_runner());
+
+        // act
+        let result = shell
+            .call(
+                shell_test_context(temp.path(), "toolcall-shell-run-wrapper-env-scrubbed"),
+                json!({
+                    "command": format!("awk '{}'", awk_environ_program()),
+                    "workdir": ".",
+                }),
+            )
+            .await
+            .expect("wrapper awk env inspection should execute with sanitized env");
+
+        // assert
+        assert_shell_result_scrubs_inherited_environment(&result);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn shell_run_direct_invocation_hides_parent_environment() {
+        // arrange
+        let temp = tempfile::tempdir().expect("tempdir");
+        let shell =
+            ShellRunTool::with_runner(ShellAllowlist::default(), ShellRunTool::default_runner());
+
+        // act
+        let result = shell
+            .call(
+                shell_test_context(temp.path(), "toolcall-shell-run-direct-parent-env-hidden"),
+                json!({
+                    "cmd": "awk",
+                    "args": [awk_parent_environ_program()],
+                    "cwd": ".",
+                }),
+            )
+            .await
+            .expect("direct awk parent env inspection should execute without inherited secrets");
+
+        // assert
+        assert_shell_result_hides_parent_environment(&result);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn shell_run_wrapper_invocation_hides_parent_environment() {
+        // arrange
+        let temp = tempfile::tempdir().expect("tempdir");
+        let shell =
+            ShellRunTool::with_runner(ShellAllowlist::default(), ShellRunTool::default_runner());
+
+        // act
+        let result = shell
+            .call(
+                shell_test_context(temp.path(), "toolcall-shell-run-wrapper-parent-env-hidden"),
+                json!({
+                    "command": format!("awk '{}'", awk_parent_environ_program()),
+                    "workdir": ".",
+                }),
+            )
+            .await
+            .expect("wrapper awk parent env inspection should execute without inherited secrets");
+
+        // assert
+        assert_shell_result_hides_parent_environment(&result);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn shell_run_direct_invocation_hides_grandparent_environment() {
+        // arrange
+        let temp = tempfile::tempdir().expect("tempdir");
+        let shell =
+            ShellRunTool::with_runner(ShellAllowlist::default(), ShellRunTool::default_runner());
+
+        // act
+        let result = shell
+            .call(
+                shell_test_context(
+                    temp.path(),
+                    "toolcall-shell-run-direct-grandparent-env-hidden",
+                ),
+                json!({
+                    "cmd": "awk",
+                    "args": [awk_grandparent_environ_program()],
+                    "cwd": ".",
+                }),
+            )
+            .await
+            .expect(
+                "direct awk grandparent env inspection should execute without inherited secrets",
+            );
+
+        // assert
+        assert_shell_result_hides_parent_environment(&result);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn shell_run_wrapper_invocation_hides_grandparent_environment() {
+        // arrange
+        let temp = tempfile::tempdir().expect("tempdir");
+        let shell =
+            ShellRunTool::with_runner(ShellAllowlist::default(), ShellRunTool::default_runner());
+
+        // act
+        let result = shell
+            .call(
+                shell_test_context(
+                    temp.path(),
+                    "toolcall-shell-run-wrapper-grandparent-env-hidden",
+                ),
+                json!({
+                    "command": format!("awk '{}'", awk_grandparent_environ_program()),
+                    "workdir": ".",
+                }),
+            )
+            .await
+            .expect(
+                "wrapper awk grandparent env inspection should execute without inherited secrets",
+            );
+
+        // assert
+        assert_shell_result_hides_parent_environment(&result);
+    }
+
+    fn assert_shell_result_blocks_fake_secret(
+        result: Result<harness_core::tool::ToolResult, ToolError>,
+        fake_secret: &str,
+    ) {
+        match result {
+            Ok(result) => {
+                assert!(!result.display_text.contains(fake_secret));
+                if let Some(structured) = &result.structured_json {
+                    assert!(!structured.to_string().contains(fake_secret));
+                }
+                assert!(result.artifacts.is_empty());
+                panic!("environment inspection command should be blocked before execution");
+            }
+            Err(error) => {
+                assert!(matches!(error, ToolError::CommandBlocked(_)));
+                assert!(!error.to_string().contains(fake_secret));
+            }
+        }
+    }
+
+    fn awk_environ_program() -> &'static str {
+        r#"BEGIN { for (k in ENVIRON) print k "=" ENVIRON[k] }"#
+    }
+
+    fn awk_parent_environ_program() -> &'static str {
+        r#"BEGIN { RS="\0"; slash=sprintf("%c",47); path=slash "proc" slash PROCINFO["ppid"] slash "environ"; while ((getline line < path) > 0) print line }"#
+    }
+
+    fn awk_grandparent_environ_program() -> &'static str {
+        r#"BEGIN { slash=sprintf("%c",47); status=slash "proc" slash PROCINFO["ppid"] slash "status"; while ((getline line < status) > 0) if (index(line,"PPid:")==1) { sub("^PPid:[ \t]*","",line); gppid=line } close(status); RS="\0"; env=slash "proc" slash gppid slash "environ"; while ((getline line < env) > 0) print line }"#
+    }
+
+    fn assert_shell_result_scrubs_inherited_environment(result: &harness_core::tool::ToolResult) {
+        for leaked in ["HOME=", "SECRET_TOKEN="] {
+            assert!(!result.display_text.contains(leaked));
+            if let Some(structured) = &result.structured_json {
+                assert!(!structured.to_string().contains(leaked));
+            }
+        }
+        assert!(result.artifacts.is_empty());
+    }
+
+    #[cfg(target_os = "linux")]
+    fn assert_shell_result_hides_parent_environment(result: &harness_core::tool::ToolResult) {
+        for leaked in ["HOME=", "SECRET_TOKEN="] {
+            assert!(!result.display_text.contains(leaked));
+            if let Some(structured) = &result.structured_json {
+                assert!(!structured.to_string().contains(leaked));
+            }
+        }
+        assert!(result.artifacts.is_empty());
     }
 
     #[tokio::test]

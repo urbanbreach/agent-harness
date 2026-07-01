@@ -8,7 +8,10 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::fs_walk::{collect_workspace_files, resolve_search_base, SKIPPED_WORKSPACE_DIRS};
+use crate::fs_walk::{
+    collect_workspace_files, normalize_base_relative_path, resolve_search_base,
+    SKIPPED_WORKSPACE_DIRS,
+};
 use crate::limit_summary::summarize_limit;
 
 pub(crate) const DEFAULT_GLOB_LIMIT: usize = 100;
@@ -85,7 +88,7 @@ impl Tool for FsGlobTool {
         let matches = collect_glob_matches(&workspace_root, &resolved_base, args.search())?;
 
         Ok(crate::text_json_tool_result(
-            matches.paths.join("\n"),
+            render_glob_display(&workspace_root, &matches),
             json!({
                 "pattern": args.pattern,
                 "path": display_path,
@@ -119,7 +122,8 @@ fn collect_matching_glob_paths(
 ) -> Result<BTreeSet<String>, ToolError> {
     let mut matched_paths = BTreeSet::new();
     for file in collect_workspace_files(workspace_root, base_dir)? {
-        if matcher.is_match(&file.relative_path) {
+        let path_relative_to_base = normalize_base_relative_path(base_dir, &file.path);
+        if matcher.is_match(path_relative_to_base) {
             matched_paths.insert(file.relative_path);
         }
     }
@@ -141,6 +145,28 @@ fn limit_glob_matches(matched_paths: BTreeSet<String>, limit: usize) -> GlobMatc
         total_count,
         truncated_count: limit_summary.truncated_count,
     }
+}
+
+fn render_glob_display(workspace_root: &Path, matches: &GlobMatches) -> String {
+    if matches.paths.is_empty() {
+        return "No files found".to_string();
+    }
+
+    let mut output = matches
+        .paths
+        .iter()
+        .map(|path| workspace_root.join(path).display().to_string())
+        .collect::<Vec<_>>();
+
+    if matches.is_truncated {
+        output.push(String::new());
+        output.push(format!(
+            "(Results are truncated: showing first {} results. Consider using a more specific path or pattern.)",
+            matches.returned_count
+        ));
+    }
+
+    output.join("\n")
 }
 
 fn compile_glob_matcher(pattern: &str) -> Result<GlobMatcher, ToolError> {
@@ -246,6 +272,24 @@ mod tests {
         assert_eq!(result.returned_count, 2);
         assert_eq!(result.truncated_count, 1);
         assert!(result.is_truncated);
+    }
+
+    #[test]
+    fn collect_glob_matches_applies_slash_pattern_relative_to_search_base() {
+        // arrange
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let root = tempdir.path();
+
+        create_dir(root, "src/nested");
+        write_file(root, "src/lib.rs", "pub fn lib() {}\n");
+        write_file(root, "src/nested/mod.rs", "pub fn nested() {}\n");
+
+        // act
+        let result = collect_glob_matches(root, &root.join("src"), glob_search("nested/*.rs", 100))
+            .expect("collect matches");
+
+        // assert
+        assert_eq!(result.paths, vec!["src/nested/mod.rs"]);
     }
 
     #[tokio::test]

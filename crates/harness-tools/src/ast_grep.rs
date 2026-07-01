@@ -70,6 +70,8 @@ struct AstGrepSearchArgs {
     #[serde(default)]
     language: Option<String>,
     #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
     paths: Vec<String>,
     #[serde(default)]
     include: Vec<String>,
@@ -88,6 +90,8 @@ struct AstGrepReplaceArgs {
     rewrite: String,
     #[serde(default)]
     language: Option<String>,
+    #[serde(default)]
+    path: Option<String>,
     #[serde(default)]
     paths: Vec<String>,
     #[serde(default)]
@@ -192,7 +196,8 @@ impl Tool for AstGrepSearchTool {
         let workspace = canonical_workspace_root(&ctx)?;
         let include = compile_glob_set(&args.include, "include")?;
         let exclude = compile_glob_set(&args.exclude, "exclude")?;
-        let search_roots = search_roots(&workspace, &args.paths)?;
+        let paths = requested_paths(args.path.as_deref(), &args.paths);
+        let search_roots = search_roots(&workspace, &paths)?;
         let limit = clamp_limit(args.limit, DEFAULT_AST_GREP_LIMIT, MAX_AST_GREP_LIMIT, 1);
         let context = clamp_limit(args.context, 0, MAX_AST_GREP_CONTEXT, 0);
         let explicit_language = args
@@ -267,7 +272,7 @@ impl Tool for AstGrepSearchTool {
             "pattern": args.pattern,
             "language": language,
             "language_inference": if explicit_language.is_some() { "explicit" } else { "single_language_from_paths" },
-            "paths": args.paths,
+            "paths": paths,
             "include": args.include,
             "exclude": args.exclude,
             "context": context.effective,
@@ -327,7 +332,8 @@ impl Tool for AstGrepReplaceTool {
         let workspace = canonical_workspace_root(&ctx)?;
         let include = compile_glob_set(&args.include, "include")?;
         let exclude = compile_glob_set(&args.exclude, "exclude")?;
-        let search_roots = search_roots(&workspace, &args.paths)?;
+        let paths = requested_paths(args.path.as_deref(), &args.paths);
+        let search_roots = search_roots(&workspace, &paths)?;
         let limit = clamp_limit(args.limit, DEFAULT_AST_GREP_LIMIT, MAX_AST_GREP_LIMIT, 1);
         let explicit_language = args
             .language
@@ -432,7 +438,7 @@ impl Tool for AstGrepReplaceTool {
             "language_inference": if explicit_language.is_some() { "explicit" } else { "single_language_from_paths" },
             "mode": args.mode.as_str(),
             "applied": args.mode == AstGrepReplaceMode::Apply,
-            "paths": args.paths,
+            "paths": paths,
             "include": args.include,
             "exclude": args.exclude,
             "limit": limit.effective,
@@ -525,6 +531,15 @@ fn ast_grep_command(command: String) -> String {
     } else {
         trimmed.to_string()
     }
+}
+
+fn requested_paths(path: Option<&str>, paths: &[String]) -> Vec<String> {
+    let mut requested = Vec::with_capacity(paths.len() + usize::from(path.is_some()));
+    if let Some(path) = path.filter(|path| !path.trim().is_empty()) {
+        requested.push(path.to_string());
+    }
+    requested.extend(paths.iter().cloned());
+    requested
 }
 
 fn search_roots(workspace: &Path, paths: &[String]) -> Result<Vec<SearchRoot>, ToolError> {
