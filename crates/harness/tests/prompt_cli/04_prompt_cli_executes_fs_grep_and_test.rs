@@ -28,7 +28,8 @@ async fn prompt_cli_executes_fs_grep_and_completes_turn() {
 
     let events_body = fs::read_to_string(temp.path().join("events.jsonl")).expect("read events");
     assert_successful_tool_roundtrip(&output, &events_body, "grep");
-    assert!(events_body.contains("fixtures/notes.md:2: BETA match"));
+    assert!(events_body.contains("fixtures/notes.md:"));
+    assert!(events_body.contains("Line 2: BETA match"));
 }
 #[tokio::test]
 async fn prompt_cli_reads_absolute_workspace_path_and_completes_turn() {

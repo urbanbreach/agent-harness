@@ -9,7 +9,7 @@ use harness_core::agent_catalog::{
 use harness_core::auth::{CredentialStore, StoredCredentialKind};
 use harness_core::config::{
     resolve_model_selection, AgentMode, HarnessConfig, McpServerConfig, PermissionMode,
-    ProviderConfig,
+    ProviderConfig, ShellAllowlistMode,
 };
 use harness_core::coord::{formatter_status, FormatterStatus, RealFormatterDiscovery};
 use harness_core::extension_manifest::EXTENSION_MANIFEST_V1_SCHEMA_VERSION;
@@ -318,11 +318,28 @@ fn check_native_tool_catalog(config: &HarnessConfig) -> DoctorCheck {
             (!catalog.iter().any(|entry| entry.canonical_id == **tool_id)).then_some(*tool_id)
         })
         .collect::<Vec<_>>();
+    let profile_description_overrides = profile_description_overrides_by_tool(config);
+    let tools = catalog
+        .iter()
+        .map(|entry| {
+            let mut value = serde_json::to_value(entry).unwrap_or_else(|_| json!({}));
+            if let Some(object) = value.as_object_mut() {
+                object.insert(
+                    "profile_description_overrides".to_string(),
+                    json!(profile_description_overrides
+                        .get(&entry.canonical_id)
+                        .cloned()
+                        .unwrap_or_default()),
+                );
+            }
+            value
+        })
+        .collect::<Vec<_>>();
     let details = json!({
         "catalog_source": "harness_tools::tool_catalog",
         "tool_count": catalog.len(),
         "required_v1_tools": required,
-        "tools": catalog,
+        "tools": tools,
         "readiness": {
             "session_tools": catalog.iter().filter(|entry| entry.canonical_id.starts_with("session_")).count(),
             "background_cancel": catalog.iter().any(|entry| entry.canonical_id == "background_cancel"),
@@ -350,6 +367,24 @@ fn check_native_tool_catalog(config: &HarnessConfig) -> DoctorCheck {
         ),
         details,
     )
+}
+
+fn profile_description_overrides_by_tool(config: &HarnessConfig) -> BTreeMap<String, Vec<String>> {
+    let mut overrides = BTreeMap::new();
+    overrides.insert(
+        "task".to_string(),
+        config.agents.keys().cloned().collect::<Vec<_>>(),
+    );
+    overrides.insert(
+        "skill".to_string(),
+        config
+            .agents
+            .iter()
+            .filter(|(_, profile)| profile.tools.iter().any(|tool| tool == "skill"))
+            .map(|(profile_name, _)| profile_name.clone())
+            .collect::<Vec<_>>(),
+    );
+    overrides
 }
 
 fn check_extension_roadmap_readiness(config: &HarnessConfig) -> DoctorCheck {
@@ -799,12 +834,17 @@ fn check_permissions(config: &HarnessConfig) -> DoctorCheck {
         );
     }
 
-    let shell_roots = config.permissions.shell_allowlist.cwd_roots.len();
-    let executables = config.permissions.shell_allowlist.executables.len();
+    let shell_allowlist = &config.permissions.shell_allowlist;
+    let shell_roots = shell_allowlist.cwd_roots.len();
+    let executables = shell_allowlist.executables.len();
+    let mode_label = match shell_allowlist.mode {
+        ShellAllowlistMode::PermissionPatterns => "permission_patterns",
+        ShellAllowlistMode::LegacyExecutables => "legacy_executables",
+    };
     pass(
         "permissions",
         format!(
-            "default permissions loaded; shell allowlist has {executables} executable(s) and {shell_roots} cwd root(s)"
+            "default permissions loaded; shell allowlist mode is {mode_label}, with {executables} legacy executable(s) and {shell_roots} cwd root(s)"
         ),
     )
 }

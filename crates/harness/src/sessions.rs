@@ -777,6 +777,65 @@ mod tests {
     }
 
     #[test]
+    fn support_export_omits_provider_reasoning_delta_events() {
+        // arrange
+        let raw_reasoning = "raw hidden reasoning text must not leave local events";
+        let mut export = minimal_export_bundle_with_secret("non-secret-placeholder");
+        export.support.doctor_json = json!({});
+        export.replay.total_events = 1;
+        export
+            .replay
+            .counts_by_type
+            .insert("provider_reasoning_delta".to_string(), 1);
+        export.events.push(harness_core::event::EventEnvelopeV1 {
+            schema_version: harness_core::event::SCHEMA_VERSION,
+            event_id: "event-reasoning".to_string(),
+            seq: 1,
+            run_id: "run-secret-export".to_string(),
+            mono_ms: 1,
+            ts: None,
+            actor: harness_core::event::EventActor::new(
+                harness_core::event::ActorKind::System,
+                None,
+            ),
+            correlation_id: None,
+            causation_id: None,
+            stream_key: None,
+            payload: harness_core::event::EventV1::ProviderReasoningDelta(
+                harness_core::event::ProviderReasoningDeltaEvent {
+                    request_id: "provider-request-1".to_string(),
+                    delta: raw_reasoning.to_string(),
+                },
+            ),
+        });
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        // act
+        let code = write_redacted_export_output_with_redactor(
+            &export,
+            None,
+            &mut stdout,
+            &mut stderr,
+            &NoopRedactor,
+            &DefaultRedactor::default(),
+            &[],
+        );
+
+        // assert
+        assert_eq!(code, 0, "stderr: {}", String::from_utf8_lossy(&stderr));
+        assert!(stderr.is_empty());
+        let rendered = String::from_utf8(stdout).expect("support export should be UTF-8 JSON");
+        assert!(!rendered.contains(raw_reasoning));
+        assert!(!rendered.contains("provider_reasoning_delta"));
+        let parsed: serde_json::Value =
+            serde_json::from_str(&rendered).expect("parse support export JSON");
+        assert_eq!(parsed["events"].as_array().map(Vec::len), Some(0));
+        assert_eq!(parsed["replay"]["total_events"], 0);
+        assert_eq!(parsed["replay"]["counts_by_type"], json!({}));
+    }
+
+    #[test]
     fn collect_list_entries_applies_filters_and_hides_non_operator_modes() {
         let entries = vec![
             sample_entry(

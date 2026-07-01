@@ -71,7 +71,9 @@ pub(super) fn prompt_auth_provider(
                 label: plugin
                     .map(|plugin| plugin.label().to_string())
                     .unwrap_or_else(|| entry.name.clone()),
-                value: provider_id,
+                value: plugin
+                    .map(|plugin| plugin.provider_id().clone())
+                    .unwrap_or(provider_id),
                 hint: plugin
                     .map(|plugin| plugin.description().to_string())
                     .or_else(|| Some("API key".to_string())),

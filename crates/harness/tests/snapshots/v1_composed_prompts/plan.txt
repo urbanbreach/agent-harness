@@ -22,7 +22,7 @@ Keep the plan focused on the requested outcome. Do not convert planning into hid
 
 The coordinator enforces Plan's tool policy. Plan may inspect the workspace, may write only the active `.agent-harness/plans/<run>.md` plan file when permitted, has a runtime read-only shell guard for `bash`, and may delegate only to Explore under the shipped policy.
 
-When using `bash`, the runtime default timeout is 120000 ms, inline output is capped at 2000 lines or 51200 bytes before artifact spill, and shell search/read/edit shortcuts (`find`, `grep`/`rg`, `cat`, `head`, `tail`, `sed`, `awk`) are blocked in favor of native tools.
+When using `bash`, the runtime default timeout is 120000 ms, inline output is capped at 2000 lines or 51200 bytes before artifact spill, and shell search/read/edit shortcuts (`find`, `grep`/`rg`, `cat`, `head`, `tail`, `sed`, `awk`) are discouraged. They are controlled by permission patterns and workspace path safety, not a static executable allowlist; prefer native tools.
 
 ## Intent Gate
 

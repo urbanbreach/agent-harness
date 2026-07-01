@@ -42,6 +42,114 @@ async fn prompt_cli_model_variant_and_thinking_flags_stream_reasoning_output() {
     assert_eq!(requests[0].text_verbosity.as_deref(), Some("low"));
 }
 #[tokio::test]
+async fn prompt_cli_model_override_records_selected_model_in_run_metadata() {
+    // arrange
+    let provider = ScriptedPromptProvider::fixed(text_events("Hello"));
+
+    let temp = tempdir().expect("tempdir");
+    let config_path = temp.path().join("harness.model-override.jsonc");
+    let session_dir = temp.path().join("sessions");
+
+    fs::write(
+        &config_path,
+        serde_json::json!({
+            "providers": {
+                "default": {
+                    "type": "openai_compatible",
+                    "base_url": "https://fixture.test/v1",
+                    "api_key": "DUMMY",
+                    "api_mode": "responses",
+                    "timeout_ms": 60000,
+                    "models": {
+                        "gpt-4o-mini": {
+                            "display_name": "GPT-4o mini"
+                        },
+                        "gpt-4.1": {
+                            "display_name": "GPT-4.1"
+                        }
+                    }
+                }
+            },
+            "agents": {
+                "deep": {
+                    "description": "Deep profile",
+                    "system_prompt": "You are the deep profile.",
+                    "model_ref": "default:gpt-4o-mini",
+                    "tools": []
+                }
+            },
+            "permissions": {
+                "defaults": {
+                    "edit": "allow",
+                    "shell": "allow",
+                    "network": "allow"
+                }
+            },
+            "runtime": {
+                "background_tasks": {
+                    "default_concurrency": 2,
+                    "provider_concurrency": 2,
+                    "model_concurrency": 2,
+                    "stale_timeout_ms": 30000,
+                    "message_staleness_timeout_ms": 10000
+                },
+                "session_dir": session_dir,
+                "deterministic": {
+                    "enabled": false,
+                    "seed": 42
+                }
+            },
+            "ui": {
+                "default_profile": "deep"
+            }
+        })
+        .to_string(),
+    )
+    .expect("write config");
+
+    // act
+    let output = run_harness_in_blocking_with_provider(
+        temp.path(),
+        [
+            "--config",
+            config_path.to_str().expect("config path utf-8"),
+            "prompt",
+            "--text",
+            "Hello",
+            "--model",
+            "default:gpt-4.1",
+            "--print-run-dir",
+        ],
+        provider.clone(),
+    )
+    .await;
+
+    // assert
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let run_dir = stdout
+        .lines()
+        .last()
+        .expect("run dir line from --print-run-dir");
+    let metadata_body = fs::read_to_string(std::path::Path::new(run_dir).join("meta.json"))
+        .expect("read run metadata");
+    let metadata: serde_json::Value =
+        serde_json::from_str(&metadata_body).expect("parse run metadata");
+    assert_eq!(
+        metadata["recorded_runtime_context"]["model"].as_str(),
+        Some("gpt-4.1")
+    );
+
+    let requests = provider.requests();
+    assert_eq!(requests[0].model_id, "gpt-4.1");
+}
+#[tokio::test]
 async fn prompt_cli_thinking_prints_late_reasoning_before_one_assistant_body() {
     let provider = ScriptedPromptProvider::fixed(late_reasoning_duplicate_body_events());
 

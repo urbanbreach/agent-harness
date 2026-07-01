@@ -173,8 +173,8 @@ fn record_resume_picker_and_quit(session_dir: &Path) -> serde_json::Value {
     let mut screens = Vec::new();
     screens.push(helper.wait_for("ctrl+p commands", "resume startup"));
     helper.write_text("/");
-    screens.push(helper.wait_for("Continue a saved session", "slash commands"));
-    helper.write_text("resume");
+    screens.push(helper.wait_for("Switch session", "slash commands"));
+    helper.write_text("sessions");
     helper.send_key(b'\r');
     screens.push(helper.wait_for("Continue session", "resume picker"));
     helper.send_key(0x1b);
@@ -192,7 +192,8 @@ fn record_resume_picker_and_quit(session_dir: &Path) -> serde_json::Value {
 fn quit_helper(helper: &mut SpawnedHarness, screens: &mut Vec<serde_json::Value>) {
     helper.send_ctrl(b'p');
     screens.push(helper.wait_for("Commands", "quit palette"));
-    helper.write_text("quit");
+    helper.write_text("exit the app");
+    screens.push(helper.wait_for("Exit the app", "quit command"));
     helper.send_key(b'\r');
 }
 
