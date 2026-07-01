@@ -926,9 +926,19 @@ pub enum PermissionSelector {
     CatchAll,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellAllowlistMode {
+    #[default]
+    PermissionPatterns,
+    LegacyExecutables,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
 #[serde(deny_unknown_fields)]
 pub struct ShellAllowlist {
+    #[serde(default, alias = "policy_mode", alias = "policyMode")]
+    pub mode: ShellAllowlistMode,
     #[serde(default)]
     pub executables: Vec<String>,
     #[serde(rename = "cwd_roots", alias = "cwdRoots", default)]

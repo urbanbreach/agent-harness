@@ -54,11 +54,13 @@ pub struct RecordedRuntimeContext {
 
 impl RecordedRuntimeContext {
     pub fn from_profile_model(profile: &str, model_ref: &str) -> Self {
+        let model_ref = AgentModelRef::parse(model_ref);
         if let Some(metadata) = registered_profile_model_metadata(profile) {
-            return Self::from(metadata);
+            if metadata.provider == model_ref.provider_id && metadata.model == model_ref.model_id {
+                return Self::from(metadata);
+            }
         }
 
-        let model_ref = AgentModelRef::parse(model_ref);
         let display_label = model_ref.model_id.clone();
 
         Self {

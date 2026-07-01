@@ -108,6 +108,81 @@ fn permission_rule_object_preserves_shell_allowlist_and_rules() {
 }
 
 #[test]
+fn shell_allowlist_loads_legacy_flat_shape_with_default_mode() {
+    let cfg = public_minimal_config_with_permission(
+        r#"{
+                bash: "allow",
+                shell_allowlist: {
+                  executables: ["git"],
+                  cwd_roots: ["."]
+                }
+            }"#,
+    );
+
+    let parsed = load_config_from_str(&cfg).expect("legacy shell allowlist should parse");
+
+    assert_eq!(
+        parsed.permissions.shell_allowlist.mode,
+        ShellAllowlistMode::PermissionPatterns
+    );
+    assert_eq!(parsed.permissions.shell_allowlist.executables, vec!["git"]);
+    assert_eq!(parsed.permissions.shell_allowlist.cwd_roots, vec!["."]);
+}
+
+#[test]
+fn shell_allowlist_accepts_camel_case_cwd_roots_and_policy_mode() {
+    let cfg = public_minimal_config_with_permission(
+        r#"{
+                bash: "allow",
+                shellAllowlist: {
+                  executables: ["cargo"],
+                  cwdRoots: ["crates"],
+                  policy_mode: "legacy_executables"
+                }
+            }"#,
+    );
+
+    let parsed = load_config_from_str(&cfg).expect("camelCase shell allowlist should parse");
+
+    assert_eq!(
+        parsed.permissions.shell_allowlist.mode,
+        ShellAllowlistMode::LegacyExecutables
+    );
+    assert_eq!(
+        parsed.permissions.shell_allowlist.executables,
+        vec!["cargo"]
+    );
+    assert_eq!(parsed.permissions.shell_allowlist.cwd_roots, vec!["crates"]);
+}
+
+#[test]
+fn shell_allowlist_mode_round_trips_through_json() {
+    let allowlist = ShellAllowlist {
+        mode: ShellAllowlistMode::LegacyExecutables,
+        executables: vec!["git".to_string()],
+        cwd_roots: vec![".".to_string()],
+    };
+
+    let json = serde_json::to_value(&allowlist).expect("shell allowlist should serialize");
+    assert_eq!(
+        json.get("mode"),
+        Some(&serde_json::json!("legacy_executables"))
+    );
+
+    let parsed: ShellAllowlist =
+        serde_json::from_value(json).expect("shell allowlist should deserialize");
+    assert_eq!(parsed.mode, ShellAllowlistMode::LegacyExecutables);
+    assert_eq!(parsed.executables, vec!["git"]);
+    assert_eq!(parsed.cwd_roots, vec!["."]);
+
+    let camel_case_alias: ShellAllowlist = serde_json::from_value(serde_json::json!({
+        "policyMode": "legacy_executables",
+    }))
+    .expect("camelCase shell allowlist mode alias should deserialize");
+    assert_eq!(camel_case_alias.mode, ShellAllowlistMode::LegacyExecutables);
+}
+
+#[test]
 fn permission_rule_rejects_invalid_selector_forms() {
     for permission in [
         r#"{ bash: { "/^git/": "allow" } }"#,

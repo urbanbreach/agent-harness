@@ -27,7 +27,7 @@ Always follow the exact output structure requested by the user prompt. Keep ever
 
 Do not answer the conversation itself. Do not mention that you are summarizing, compacting, or merging context. Respond in the same language as the conversation."#;
 
-const CATEGORY_ROUTING_TOOLS: [&str; 18] = [
+const CATEGORY_ROUTING_TOOLS: [&str; 20] = [
     "question",
     "skill",
     "websearch",
@@ -44,6 +44,8 @@ const CATEGORY_ROUTING_TOOLS: [&str; 18] = [
     "session_search",
     "session_info",
     "edit",
+    "write",
+    "apply_patch",
     "bash",
     "batch",
 ];
@@ -266,6 +268,8 @@ pub(super) fn default_shipped_agents(
                     "session_search",
                     "session_info",
                     "edit",
+                    "write",
+                    "apply_patch",
                     "bash",
                     "batch",
                 ]
@@ -454,6 +458,8 @@ pub(super) fn default_shipped_agents(
                     "session_search",
                     "session_info",
                     "edit",
+                    "write",
+                    "apply_patch",
                     "bash",
                     "batch",
                 ]

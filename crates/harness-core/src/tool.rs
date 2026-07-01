@@ -43,6 +43,34 @@ pub struct ArtifactRef {
     pub digest: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ToolResultContent {
+    Text {
+        text: String,
+    },
+    File {
+        uri: String,
+        mime: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    },
+}
+
+impl ToolResultContent {
+    pub fn text(text: impl Into<String>) -> Self {
+        Self::Text { text: text.into() }
+    }
+
+    pub fn file(uri: impl Into<String>, mime: impl Into<String>, name: Option<String>) -> Self {
+        Self::File {
+            uri: uri.into(),
+            mime: mime.into(),
+            name,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolResult {
     pub display_text: String,
@@ -50,6 +78,8 @@ pub struct ToolResult {
     pub structured_json: Option<Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub artifacts: Vec<ArtifactRef>,
+    #[serde(skip)]
+    pub provider_content: Vec<ToolResultContent>,
 }
 
 impl ToolResult {
@@ -58,6 +88,7 @@ impl ToolResult {
             display_text: display_text.into(),
             structured_json: None,
             artifacts: Vec::new(),
+            provider_content: Vec::new(),
         }
     }
 
@@ -70,6 +101,7 @@ impl ToolResult {
             display_text: display_text.into(),
             structured_json: None,
             artifacts,
+            provider_content: Vec::new(),
         }
     }
 
@@ -82,7 +114,13 @@ impl ToolResult {
             display_text: display_text.into(),
             structured_json: Some(structured_json),
             artifacts,
+            provider_content: Vec::new(),
         }
+    }
+
+    pub fn with_provider_content(mut self, provider_content: Vec<ToolResultContent>) -> Self {
+        self.provider_content = provider_content;
+        self
     }
 }
 
