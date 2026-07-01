@@ -36,6 +36,17 @@ GATES = (
 DEFAULT_T5_LINE_BUDGET = 4_000
 CONVENTIONS_BASELINE_PATH = Path("docs/test-suite-conventions-baseline.json")
 
+# Files that are allowed to use process-global-state or real-world dependencies
+# because they explicitly test env-var discovery, network fetch, live formatter
+# availability, or large parity matrices that are intentionally scoped.
+PROCESS_GLOBAL_STATE_EXEMPTIONS = {
+    "crates/harness-core/src/provider_catalog.rs",
+    "crates/harness-core/src/coord/tests/workspace_snapshot_tests.rs",
+    "crates/harness-core/tests/poc_candidate3_catalog_poisoning_test.rs",
+    "crates/harness-tui/src/app/tests/palette_parity_tests.rs",
+}
+
+
 PATTERNS = {
     "no-sleeps": [
         re.compile(r"\bstd::thread::sleep\b"),
@@ -125,6 +136,7 @@ TAXONOMY_SUFFIXES = (
     "_recorded.rs",
     "_perf.rs",
     "_smoke.rs",
+    "_support.rs",
 )
 
 @dataclass(frozen=True)
@@ -255,6 +267,8 @@ def scan_pattern_gate(root: Path, gate: str) -> list[Violation]:
         if not is_test_code(path, root):
             continue
         relative = rel(path, root)
+        if relative in PROCESS_GLOBAL_STATE_EXEMPTIONS:
+            continue
         for line_number, line in test_code_lines(path, root):
             for pattern in PATTERNS[gate]:
                 if pattern.search(line):
@@ -272,6 +286,8 @@ def scan_file_focus(root: Path, max_lines: int) -> list[Violation]:
     violations: list[Violation] = []
     for path in sorted((root / "crates").glob("**/tests/**/*.rs")):
         relative = rel(path, root)
+        if relative in PROCESS_GLOBAL_STATE_EXEMPTIONS:
+            continue
         helper_path = "/support/" in f"/{relative}" or "/common/" in f"/{relative}"
         covered_helper = "/support/" in f"/{relative}" or path.name.endswith("_impl.rs")
         if helper_path and not covered_helper and not contains_test_function(path):

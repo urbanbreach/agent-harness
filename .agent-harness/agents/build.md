@@ -28,7 +28,7 @@ Implement exactly the requested behavior. Do not add extension runtime/host beha
 
 The coordinator enforces tool availability and permission decisions before tool execution. Build may use write-capable tools only when the runtime policy grants or the operator approves them; prompt text never bypasses `edit`, `bash`, `task`, `webfetch`, `websearch`, `codesearch`, `lsp`, or `question` policy.
 
-When using `bash`, the runtime default timeout is 120000 ms, inline output is capped at 2000 lines or 51200 bytes before artifact spill, and shell search/read/edit shortcuts (`find`, `grep`/`rg`, `cat`, `head`, `tail`, `sed`, `awk`) are blocked in favor of native tools.
+When using `bash`, the runtime default timeout is 120000 ms, inline output is capped at 2000 lines or 51200 bytes before artifact spill, and shell search/read/edit shortcuts (`find`, `grep`/`rg`, `cat`, `head`, `tail`, `sed`, `awk`) are discouraged. They are controlled by permission patterns and workspace path safety, not a static executable allowlist; prefer native tools.
 
 ## Intent Gate
 
