@@ -77,22 +77,20 @@ fn tool_lifecycle_rows_stay_ordered_without_pty() {
 
     let rendered = render_text(&app, 180, 36);
 
-    insta::assert_snapshot!(rendered.as_str());
+    insta::assert_snapshot!(trim_trailing_snapshot_whitespace(&rendered));
 
     let tool_markers: &[&str] = &[
         "Inspect tool activity",
         "Read src/ui.rs",
-        "Loaded src/ui.rs",
         "Remove diff review surface",
-        "Researcher Task",
-        "audit tool lifecycle parity",
-        "2 toolcalls",
+        "audit tool lifecycle parity · Researcher Agent",
         "cargo test -p harness-tui",
         "snapshot mismatch",
         "Tool summaries are now easier to scan, and edits stay inline.",
     ];
     assert_markers_in_order(&rendered, tool_markers);
-    assert!(rendered.contains("Compat alias · read → fs.read"));
+    assert!(!rendered.contains("Compat alias ·"));
+    assert!(!rendered.contains("↳ Loaded src/ui.rs"));
     assert!(rendered.contains("artifacts/tool-lifecycle-inline.diff"));
 }
 
@@ -108,7 +106,7 @@ fn p21_tool_display_descriptors_cover_state_families_without_pty() {
     let rendered = render_text(&app, 180, 40);
 
     // assert
-    insta::assert_snapshot!(rendered.as_str());
+    insta::assert_snapshot!(trim_trailing_snapshot_whitespace(&rendered));
     // S1: completed — session_list Harness-only tool has intentional title
     assert_markers_in_order(&rendered, &["List session"]);
     // S2: running — lsp tool shows operation and path
@@ -117,7 +115,7 @@ fn p21_tool_display_descriptors_cover_state_families_without_pty() {
     assert!(rendered.contains("AST Search"));
     assert!(rendered.contains("ast-grep binary not found"));
     // S4: denied — skill tool shows denied state
-    assert_markers_in_order(&rendered, &["Load skill denied-skill", "Denied"]);
+    assert_markers_in_order(&rendered, &["Skill \"denied-skill\"", "Denied"]);
     assert!(rendered.contains("Operator denied skill load"));
     // S5: truncated — session_read has artifact ref (link visible when output expanded)
     assert_markers_in_order(&rendered, &["Read session"]);
