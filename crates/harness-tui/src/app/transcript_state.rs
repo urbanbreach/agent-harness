@@ -39,10 +39,6 @@ impl AppState {
         self.transcript_view.hovered_transcript_target.as_ref()
     }
 
-    pub(crate) fn hovered_subagent_footer_target(&self) -> Option<SubagentFooterTarget> {
-        self.hovered_subagent_footer_target
-    }
-
     pub(crate) fn transcript_cache_instance_id(&self) -> u64 {
         self.transcript_view.transcript_cache.instance_id()
     }
@@ -439,9 +435,6 @@ impl AppState {
         target: TranscriptMouseTarget,
     ) {
         match target {
-            TranscriptMouseTarget::FirstSubagentSession => {
-                self.navigate_to_first_child_session();
-            }
             TranscriptMouseTarget::SubagentSession { session_id } => {
                 self.navigate_to_child_session_id(session_id);
             }
@@ -476,14 +469,6 @@ impl AppState {
             } => {
                 self.toggle_patch_file_output(&tool_call_id, &file_path);
             }
-        }
-    }
-
-    pub(in crate::app) fn activate_subagent_footer_target(&mut self, target: SubagentFooterTarget) {
-        match target {
-            SubagentFooterTarget::Parent => self.navigate_to_parent_session(),
-            SubagentFooterTarget::Previous => self.navigate_to_child_sibling(true),
-            SubagentFooterTarget::Next => self.navigate_to_child_sibling(false),
         }
     }
 

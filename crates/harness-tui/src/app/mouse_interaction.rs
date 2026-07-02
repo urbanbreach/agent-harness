@@ -230,12 +230,10 @@ impl AppState {
         if self.overlay_stack().blocks_pointer_interaction() {
             let changed = self.transcript_view.transcript_scrollbar_drag.is_some()
                 || self.transcript_view.hovered_transcript_target.is_some()
-                || self.hovered_subagent_footer_target.is_some()
                 || self.transcript_view.transcript_selection.is_some()
                 || self.operator_sidebar.selection.is_some();
             self.transcript_view.transcript_scrollbar_drag = None;
             self.transcript_view.hovered_transcript_target = None;
-            self.hovered_subagent_footer_target = None;
             self.clear_transcript_selection();
             self.clear_operator_sidebar_selection();
             return changed;
@@ -247,13 +245,9 @@ impl AppState {
             MouseEventKind::Moved => {
                 let hovered_transcript_target =
                     ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row);
-                let hovered_subagent_footer_target =
-                    ui::subagent_footer_mouse_target(self, frame_area, mouse.column, mouse.row);
-                let changed = self.transcript_view.hovered_transcript_target
-                    != hovered_transcript_target
-                    || self.hovered_subagent_footer_target != hovered_subagent_footer_target;
+                let changed =
+                    self.transcript_view.hovered_transcript_target != hovered_transcript_target;
                 self.transcript_view.hovered_transcript_target = hovered_transcript_target;
-                self.hovered_subagent_footer_target = hovered_subagent_footer_target;
                 changed
             }
             MouseEventKind::Down(MouseButton::Right) => {
@@ -268,8 +262,6 @@ impl AppState {
                 self.transcript_view.transcript_click_activated_on_down = false;
                 self.transcript_view.hovered_transcript_target =
                     ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row);
-                self.hovered_subagent_footer_target =
-                    ui::subagent_footer_mouse_target(self, frame_area, mouse.column, mouse.row);
                 if let Some(scrollbar) = transcript_scrollbar_hit
                     .filter(|scrollbar| rect_contains(scrollbar.thumb, mouse.column, mouse.row))
                 {
@@ -280,13 +272,6 @@ impl AppState {
                 }
 
                 self.transcript_view.transcript_scrollbar_drag = None;
-                if let Some(target) = self.hovered_subagent_footer_target {
-                    self.activate_subagent_footer_target(target);
-                    self.transcript_view.transcript_click_activated_on_down = true;
-                    self.clear_transcript_selection();
-                    self.clear_operator_sidebar_selection();
-                    return true;
-                }
                 if let Some(target) =
                     ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row)
                 {

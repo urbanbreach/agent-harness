@@ -169,13 +169,6 @@ pub(crate) struct SubagentSessionInfo {
     pub usage: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SubagentFooterTarget {
-    Parent,
-    Previous,
-    Next,
-}
-
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct TranscriptScrollbarDragState {
     track: Rect,
@@ -217,7 +210,6 @@ pub struct AppState {
     pub details_scroll: u16,
     pub(crate) terminal_panel: TerminalPanelState,
     last_frame_area: Option<Rect>,
-    hovered_subagent_footer_target: Option<SubagentFooterTarget>,
     pub(crate) operator_sidebar: OperatorSidebarState,
     pub(crate) transcript_view: TranscriptViewState,
     pub auto_exit_on_finish: bool,
@@ -320,7 +312,6 @@ impl Default for AppState {
             details_scroll: 0,
             terminal_panel: TerminalPanelState::default(),
             last_frame_area: None,
-            hovered_subagent_footer_target: None,
             operator_sidebar: OperatorSidebarState::default(),
             transcript_view: TranscriptViewState::default(),
             auto_exit_on_finish: false,
