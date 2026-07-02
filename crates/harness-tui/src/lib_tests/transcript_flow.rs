@@ -134,7 +134,14 @@ pub(super) fn transcript_scrollbar_matches_session_shape() {
     app.transcript_view.transcript_scroll = 18;
 
     insta::with_settings!({ prepend_module_to_snapshot => false, snapshot_path => "../snapshots" }, {
-        insta::assert_snapshot!("harness_tui__live_transcript_scrollbar", render_live_lines(&app, 80, 24));
+        insta::assert_snapshot!(
+            "harness_tui__live_transcript_scrollbar",
+            render_live_lines(&app, 80, 24)
+                .lines()
+                .map(str::trim_end)
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
     });
 }
 

@@ -204,6 +204,14 @@ fn assistant_markdown_renders_headings_lists_and_quotes() {
 }
 
 #[test]
+fn assistant_markdown_tables_match_reference_top_level_columns() {
+    // arrange
+    // act
+    transcript_render_tests::assistant_markdown_tables_match_reference_top_level_columns();
+    // assert
+}
+
+#[test]
 fn block_style_tool_rows_render_titles_and_argument_blocks() {
     transcript_render_tests::block_style_tool_rows_render_titles_and_argument_blocks();
 }

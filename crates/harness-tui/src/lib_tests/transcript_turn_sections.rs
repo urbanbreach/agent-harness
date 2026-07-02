@@ -57,6 +57,11 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
             && !lines[user_body - 1].contains("You"),
         "user message should use the shell top padding without a synthetic header label\n{rendered}"
     );
+    assert!(!lines[user_body].contains('›'));
+    assert!(
+        user_body == 0 || !lines[user_body - 1].contains("Group these turns"),
+        "user message should not duplicate the body above the boxed row\n{rendered}"
+    );
     let (user_body_row, user_body_fgs, user_body_bgs) =
         row_at(&buffer, 80, user_body).expect("user body palette row");
     let (assistant_footer_row, assistant_footer_fgs, assistant_footer_bgs) =
