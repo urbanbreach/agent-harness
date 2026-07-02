@@ -91,6 +91,10 @@ fn append_task_inline_tool_section_lines(
         spans.push(Span::raw(" "));
     }
     spans.push(Span::styled(tool_call.header.title.clone(), style));
+    if let Some(subtitle) = tool_call.header.subtitle.as_deref() {
+        spans.push(Span::styled(" · ", muted_meta_style(theme)));
+        spans.push(Span::styled(subtitle.to_string(), muted_meta_style(theme)));
+    }
 
     append_surface_row_with_bounded_target(
         &mut render.lines,
@@ -127,6 +131,18 @@ fn append_task_inline_tool_section_lines(
                     );
                 }
             }
+            TranscriptToolCallDetailBlock::Markdown { text } => {
+                let start = render.lines.len();
+                append_rich_text_block(
+                    &mut render.lines,
+                    text,
+                    theme.text.primary,
+                    TRANSCRIPT_OPCODE_EDIT_INDENT,
+                    theme,
+                    transcript_surface_content_width(width, false),
+                );
+                append_noninteractive_rows(&render.lines, &mut render.interaction_rows, start);
+            }
             _ => {
                 append_tool_call_detail_blocks(
                     render,
@@ -155,8 +171,8 @@ fn append_block_tool_section_lines(
     width: u16,
     base_surface: Color,
 ) {
-    if shell_tool_uses_harness_bash_card(tool_call) {
-        append_shell_tool_harness_card(render, tool_call, theme, width);
+    if shell_tool_uses_reference_bash_block(tool_call) {
+        append_shell_tool_reference_block(render, tool_call, theme, width);
         return;
     }
 
@@ -250,7 +266,7 @@ fn append_block_tool_section_lines(
     append_tool_call_detail_blocks(render, tool_call, theme, width, base_surface, card_shell);
 }
 
-pub(super) fn shell_tool_uses_harness_bash_card(tool_call: &TranscriptToolCallSection) -> bool {
+pub(super) fn shell_tool_uses_reference_bash_block(tool_call: &TranscriptToolCallSection) -> bool {
     matches!(tool_call.header.tool_id.as_str(), "shell.run" | "bash")
         && tool_call.detail_blocks.iter().any(|detail_block| {
             matches!(
@@ -260,7 +276,7 @@ pub(super) fn shell_tool_uses_harness_bash_card(tool_call: &TranscriptToolCallSe
         })
 }
 
-fn append_shell_tool_harness_card(
+fn append_shell_tool_reference_block(
     render: &mut ToolSectionRender,
     tool_call: &TranscriptToolCallSection,
     theme: &Theme,
@@ -276,9 +292,9 @@ fn append_shell_tool_harness_card(
                 expand_hint,
                 tone,
             } => {
-                append_harness_bash_panel(
+                append_reference_bash_panel(
                     &mut render.lines,
-                    HarnessBashPanel {
+                    ReferenceBashPanel {
                         command,
                         output,
                         description: description.as_deref(),
@@ -357,6 +373,17 @@ fn append_tool_call_detail_blocks(
                 );
                 append_noninteractive_rows(&render.lines, &mut render.interaction_rows, start);
             }
+            TranscriptToolCallDetailBlock::Markdown { text } => {
+                append_rich_text_block(
+                    &mut render.lines,
+                    text,
+                    theme.text.primary,
+                    TRANSCRIPT_OPCODE_EDIT_INDENT,
+                    theme,
+                    transcript_surface_content_width(width, false),
+                );
+                append_noninteractive_rows(&render.lines, &mut render.interaction_rows, start);
+            }
             TranscriptToolCallDetailBlock::TodoList { items } => {
                 append_tool_call_todo_list(
                     &mut render.lines,
@@ -375,9 +402,9 @@ fn append_tool_call_detail_blocks(
                 expand_hint,
                 tone,
             } => {
-                append_harness_bash_panel(
+                append_reference_bash_panel(
                     &mut render.lines,
-                    HarnessBashPanel {
+                    ReferenceBashPanel {
                         command,
                         output,
                         description: description.as_deref(),

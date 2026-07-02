@@ -28,12 +28,6 @@ pub(super) fn transcript_surface_leading_gap(
             0
         }
         Some(previous)
-            if previous == TranscriptRenderSurfaceKind::AssistantBody
-                && transcript_surface_is_assistant_tool_like(current) =>
-        {
-            0
-        }
-        Some(previous)
             if previous == TranscriptRenderSurfaceKind::AssistantReasoning
                 && current == TranscriptRenderSurfaceKind::AssistantBody =>
         {
@@ -84,6 +78,7 @@ pub(super) fn render_transcript_surface(
         frame.render_widget(
             Paragraph::new(transcript_surface_rail_lines(
                 usize::from(area.height),
+                surface.rail_glyph,
                 surface.rail_color,
                 surface.surface,
             ))
@@ -131,14 +126,24 @@ pub(super) fn render_transcript_surface_lines(
     surfaces: &[TranscriptRenderSurface],
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
+    let mut previous_surface_kind = None;
     for surface in surfaces {
+        for _ in 0..transcript_surface_leading_gap(previous_surface_kind, surface.kind) {
+            lines.push(Line::default());
+        }
         if surface.show_outer_rail {
             lines.extend(surface.lines.iter().cloned().map(|line| {
-                prepend_transcript_surface_rail(line, surface.rail_color, surface.surface)
+                prepend_transcript_surface_rail(
+                    line,
+                    surface.rail_glyph,
+                    surface.rail_color,
+                    surface.surface,
+                )
             }));
         } else {
             lines.extend(surface.lines.iter().cloned());
         }
+        previous_surface_kind = Some(surface.kind);
     }
     lines
 }
@@ -539,6 +544,7 @@ fn surface_wrap_tokens(span: Span<'static>) -> Vec<Span<'static>> {
 
 fn transcript_surface_rail_lines(
     height: usize,
+    rail_glyph: &'static str,
     rail_color: Color,
     surface: Color,
 ) -> Text<'static> {
@@ -546,7 +552,7 @@ fn transcript_surface_rail_lines(
         (0..height)
             .map(|_| {
                 Line::from(Span::styled(
-                    TRANSCRIPT_RAIL_GLYPH,
+                    rail_glyph,
                     Style::default().fg(rail_color).bg(surface),
                 ))
             })
@@ -556,11 +562,12 @@ fn transcript_surface_rail_lines(
 
 fn prepend_transcript_surface_rail(
     line: Line<'static>,
+    rail_glyph: &'static str,
     rail_color: Color,
     surface: Color,
 ) -> Line<'static> {
     let mut spans = vec![Span::styled(
-        TRANSCRIPT_RAIL_GLYPH,
+        rail_glyph,
         Style::default().fg(rail_color).bg(surface),
     )];
     spans.extend(line.spans);
