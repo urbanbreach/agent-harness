@@ -2,7 +2,11 @@ use crate::app::ActivityEntry;
 use crate::text::has_trimmed_content;
 
 pub(super) fn activity_has_thinking_text(activity: &ActivityEntry) -> bool {
-    has_trimmed_content(&activity.thinking_text)
+    has_renderable_thinking_text(&activity.thinking_text)
+}
+
+pub(super) fn has_renderable_thinking_text(text: &str) -> bool {
+    has_trimmed_content(&text.replace("[REDACTED]", ""))
 }
 
 pub(super) fn turn_event_matches_activity(

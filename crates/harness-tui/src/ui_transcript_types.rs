@@ -23,6 +23,7 @@ pub(super) struct TranscriptLayoutCacheEntry {
 pub(in crate::ui) struct TranscriptRenderSurface {
     pub(in crate::ui) kind: TranscriptRenderSurfaceKind,
     pub(in crate::ui) show_outer_rail: bool,
+    pub(in crate::ui) rail_glyph: &'static str,
     pub(in crate::ui) rail_color: Color,
     pub(in crate::ui) surface: Color,
     pub(in crate::ui) lines: Vec<Line<'static>>,
@@ -83,7 +84,6 @@ pub(super) struct TranscriptTurnSection {
     pub(super) thinking: Option<TranscriptLabeledTextSection>,
     pub(super) error: Option<TranscriptErrorSection>,
     pub(super) assistant_parts: Vec<TranscriptAssistantPart>,
-    pub(super) subagent_hint_key: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -141,6 +141,9 @@ pub(in crate::ui) enum TranscriptToolCallDetailBlock {
         text: String,
         tone: TranscriptToolCallDetailTone,
     },
+    Markdown {
+        text: String,
+    },
     TodoList {
         items: Vec<TranscriptTodoItem>,
     },
@@ -187,12 +190,11 @@ pub(super) enum TranscriptAssistantPart {
     Reasoning(TranscriptLabeledTextSection),
     Body(TranscriptBodyBlock),
     ToolCall(Box<TranscriptToolCallSection>),
-    SubagentHint,
     Error(TranscriptErrorSection),
 }
 
-pub(super) const TRANSCRIPT_USER_BODY_PREFIX: &str = "  ";
 pub(super) const TRANSCRIPT_ASSISTANT_BODY_PREFIX: &str = "   ";
+pub(super) const TRANSCRIPT_USER_BODY_PREFIX: &str = "  ";
 pub(super) const TRANSCRIPT_REASONING_BODY_PREFIX: &str = "  ";
 pub(super) const TRANSCRIPT_NESTED_INDENT: &str = "  ";
 pub(super) const TRANSCRIPT_OPCODE_EDIT_INDENT: &str = "    ";
