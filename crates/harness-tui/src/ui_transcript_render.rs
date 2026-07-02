@@ -1,5 +1,6 @@
 use super::ui_transcript_tool_render::{
-    append_assistant_error_box, append_tool_call_section_lines, shell_tool_uses_harness_bash_card,
+    append_assistant_error_box, append_tool_call_section_lines,
+    shell_tool_uses_reference_bash_block,
 };
 use super::*;
 
@@ -86,6 +87,7 @@ fn build_user_render_surface(
     TranscriptRenderSurface {
         kind: TranscriptRenderSurfaceKind::User,
         show_outer_rail: true,
+        rail_glyph: TRANSCRIPT_RAIL_GLYPH,
         rail_color: theme.agent_accent(&turn.header.profile_label),
         surface,
         lines,
@@ -319,7 +321,7 @@ fn build_assistant_part_render_surface(
             )
         }
         TranscriptAssistantPart::ToolCall(tool_call) => {
-            let kind = if shell_tool_uses_harness_bash_card(tool_call) {
+            let kind = if shell_tool_uses_reference_bash_block(tool_call) {
                 TranscriptRenderSurfaceKind::AssistantCommandTool
             } else {
                 TranscriptRenderSurfaceKind::AssistantTool
@@ -336,24 +338,6 @@ fn build_assistant_part_render_surface(
                 Some(render.interaction_rows),
                 None,
                 render.diff_hunk_offsets,
-            )
-        }
-        TranscriptAssistantPart::SubagentHint => {
-            let hint_line_count =
-                append_subagent_hint_line(&mut lines, turn, theme, width, base_surface);
-            (
-                TranscriptRenderSurfaceKind::AssistantTool,
-                false,
-                transcript_nested_rail_color(theme),
-                base_surface,
-                Some(vec![
-                    Some(full_width_interaction_row(
-                        TranscriptMouseTarget::FirstSubagentSession
-                    ));
-                    hint_line_count
-                ]),
-                None,
-                Vec::new(),
             )
         }
         TranscriptAssistantPart::Error(error) => {
@@ -414,6 +398,7 @@ fn build_assistant_part_render_surface(
     TranscriptRenderSurface {
         kind,
         show_outer_rail,
+        rail_glyph: TRANSCRIPT_RAIL_GLYPH,
         rail_color,
         surface,
         lines,
@@ -421,29 +406,6 @@ fn build_assistant_part_render_surface(
         selection_rows,
         diff_hunk_offsets,
     }
-}
-
-fn append_subagent_hint_line(
-    lines: &mut Vec<Line<'static>>,
-    turn: &TranscriptTurnSection,
-    theme: &Theme,
-    width: u16,
-    base_surface: Color,
-) -> usize {
-    let start = lines.len();
-    let keybind = turn.subagent_hint_key.as_str();
-    let spans = vec![
-        Span::styled(keybind.to_string(), Style::default().fg(theme.text.primary)),
-        Span::styled(" view subagents", muted_meta_style(theme)),
-    ];
-    append_surface_row(
-        lines,
-        TRANSCRIPT_ASSISTANT_BODY_PREFIX,
-        base_surface,
-        spans,
-        transcript_surface_content_width(width, false),
-    );
-    lines.len().saturating_sub(start)
 }
 
 fn build_footer_only_render_surface(
@@ -457,6 +419,7 @@ fn build_footer_only_render_surface(
     TranscriptRenderSurface {
         kind: TranscriptRenderSurfaceKind::AssistantFooter,
         show_outer_rail: false,
+        rail_glyph: TRANSCRIPT_RAIL_GLYPH,
         rail_color: assistant_primary_rail_color(
             turn.header.status,
             &turn.header.profile_label,
@@ -476,7 +439,7 @@ fn build_footer_only_render_surface(
     }
 }
 
-fn append_reasoning_block(
+pub(super) fn append_reasoning_block(
     lines: &mut Vec<Line<'static>>,
     thinking: &TranscriptLabeledTextSection,
     theme: &Theme,
@@ -490,15 +453,10 @@ fn append_reasoning_block(
         .fg(theme.text.secondary)
         .add_modifier(Modifier::DIM);
     let mut rendered_any_line = false;
+    let text = reference_reasoning_body_text(&thinking.text);
 
-    for (index, row) in thinking.text.lines().enumerate() {
+    for row in text.lines() {
         let mut spans = Vec::new();
-        if index == 0 {
-            spans.push(Span::styled(thinking.label.to_string(), label_style));
-            if !row.is_empty() {
-                spans.push(Span::styled(" ".to_string(), reasoning_style));
-            }
-        }
         if !row.is_empty() {
             spans.extend(parse_inline_markdown_spans(
                 row,
@@ -526,6 +484,21 @@ fn append_reasoning_block(
             width,
         );
     }
+}
+
+fn reference_reasoning_body_text(raw: &str) -> String {
+    let clean = raw.replace("[REDACTED]", "");
+    if clean.is_empty() {
+        return clean;
+    }
+
+    let lead_len = clean.bytes().take_while(|byte| *byte == b'\n').count();
+    let (lead, body) = clean.split_at(lead_len);
+    if let Some(rest) = body.strip_prefix(THINKING_TRACE_LABEL) {
+        return format!("{lead}_Thinking:_ {}", rest.trim_start());
+    }
+
+    clean
 }
 
 #[expect(
@@ -658,6 +631,7 @@ fn build_context_tool_group_render_surface(
     TranscriptRenderSurface {
         kind: TranscriptRenderSurfaceKind::AssistantTool,
         show_outer_rail: false,
+        rail_glyph: TRANSCRIPT_RAIL_GLYPH,
         rail_color: transcript_nested_rail_color(theme),
         surface,
         lines,

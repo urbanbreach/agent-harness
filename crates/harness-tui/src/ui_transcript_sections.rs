@@ -155,7 +155,6 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
         thinking,
         error,
         assistant_parts,
-        subagent_hint_key: app.keymap.get_binding_str(Action::SessionChildFirst),
     }
 }
 
@@ -185,7 +184,6 @@ fn build_ordered_assistant_parts(
                 .into_iter()
                 .map(|tool_call| TranscriptAssistantPart::ToolCall(Box::new(tool_call.section))),
         );
-        insert_subagent_hint_after_task_tools(&mut fallback_parts);
         if let Some(error) = error {
             fallback_parts.push(TranscriptAssistantPart::Error(error));
         }
@@ -193,36 +191,10 @@ fn build_ordered_assistant_parts(
     }
 
     sync_reasoning_parts_with_activity(&mut event_parts, activity, thinking_visible);
-    insert_subagent_hint_after_task_tools(&mut event_parts);
-
     if let Some(error) = error {
         event_parts.push(TranscriptAssistantPart::Error(error));
     }
     event_parts
-}
-
-fn insert_subagent_hint_after_task_tools(parts: &mut Vec<TranscriptAssistantPart>) {
-    if parts
-        .iter()
-        .any(|part| matches!(part, TranscriptAssistantPart::SubagentHint))
-    {
-        return;
-    }
-    let has_task_tool = parts.iter().any(|part| {
-        matches!(
-            part,
-            TranscriptAssistantPart::ToolCall(tool_call)
-                if matches!(tool_call.header.tool_id.as_str(), "agent.spawn" | "task")
-        )
-    });
-    if !has_task_tool {
-        return;
-    }
-    let insert_at = parts
-        .iter()
-        .position(|part| matches!(part, TranscriptAssistantPart::Error(_)))
-        .unwrap_or(parts.len());
-    parts.insert(insert_at, TranscriptAssistantPart::SubagentHint);
 }
 
 fn sync_reasoning_parts_with_activity(

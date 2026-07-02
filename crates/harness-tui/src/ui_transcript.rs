@@ -10,11 +10,11 @@ use crate::time_format::short_time_or_trimmed;
 use super::ui_diff::{render_structured_diff_lines_with_hunk_offsets, StructuredDiffRenderOptions};
 use super::ui_markdown::{append_rich_text_block, parse_inline_markdown_spans};
 use super::ui_tool_delegation::{
-    agent_spawn_context_line, agent_spawn_description, agent_spawn_title,
+    agent_spawn_description, agent_spawn_subtitle, agent_spawn_title,
     hidden_delegated_child_request_ids, task_tool_child_session_id,
 };
 use super::ui_tool_diffs::{
-    apply_patch_tool_header_metadata, collect_apply_patch_file_render_entries,
+    apply_patch_tool_title, collect_apply_patch_file_render_entries,
     tool_call_apply_patch_file_rows, tool_call_diff_artifacts, tool_call_has_diff_preview,
     tool_call_inline_diff_block, ApplyPatchFileRenderEntry,
 };
@@ -25,12 +25,12 @@ use super::ui_tool_metadata::tool_summary_string;
 use super::ui_tool_output::{collapsible_bash_panel_preview, collapsible_output_preview};
 use super::ui_tool_paths::{
     context_group_tool_id, join_tool_subtitles, read_tool_input_suffix, search_result_count_suffix,
-    tool_call_path_metadata, tool_in_path_suffix, tool_match_count_suffix, tool_path_display,
-    TranscriptPathMetadata,
+    tool_call_path_metadata, tool_in_path_description, tool_match_count_description,
+    tool_path_display, TranscriptPathMetadata,
 };
 use super::ui_tool_question_todo::{
-    ordered_todo_items, question_tool_subtitle, resolved_question_answer_items,
-    todo_items_from_tool_call, todo_tool_title, TranscriptQuestionAnswerItem, TranscriptTodoItem,
+    ordered_todo_items, question_tool_title, resolved_question_answer_items,
+    todo_items_from_tool_call, todo_tool_title, TranscriptTodoItem,
 };
 use super::ui_tool_style::{
     block_tool_color, block_tool_rail_color, generic_tool_visual_style, inline_tool_color,
@@ -38,7 +38,8 @@ use super::ui_tool_style::{
 };
 use super::ui_tool_titles::{
     background_output_tool_subtitle, background_output_tool_title, batch_tool_title,
-    format_duration_ms, generic_tool_title, is_mcp_tool_id, mcp_tool_title,
+    edit_tool_title, format_duration_ms, generic_tool_title, is_mcp_tool_id, mcp_tool_title,
+    write_tool_title,
 };
 use super::ui_tool_titles_harness::{
     ast_grep_tool_title, background_cancel_tool_title, invalid_tool_title, lsp_tool_title,
@@ -49,8 +50,8 @@ use super::ui_tool_visibility::{
     tool_header_disclosure_glyph, tool_hidden_from_transcript, TranscriptToolCallDisclosureState,
 };
 use super::ui_transcript_bash::{
-    append_harness_bash_panel, shell_tool_command, shell_tool_output, shell_tool_subtitle,
-    shell_tool_title_description, HarnessBashPanel, HARNESS_BASH_OUTPUT_LINE_CLAMP,
+    append_reference_bash_panel, shell_tool_command, shell_tool_output,
+    shell_tool_title_description, ReferenceBashPanel,
 };
 use super::ui_transcript_events::{
     activity_has_thinking_text, provider_event_matches_activity, turn_event_matches_activity,
@@ -108,9 +109,8 @@ mod ui_transcript_tool_sections;
 #[path = "ui_transcript_sections.rs"]
 mod ui_transcript_sections;
 
-use ui_transcript_render::build_transcript_render_surfaces;
+use ui_transcript_render::{append_reasoning_block, build_transcript_render_surfaces};
 use ui_transcript_sections::build_transcript_sections;
-#[cfg(test)]
 use ui_transcript_tool_render::append_tool_call_section_lines;
 #[cfg(test)]
 use ui_transcript_tool_sections::{
@@ -136,9 +136,6 @@ use super::ui_transcript_selection::{
     reset_transcript_selection_cache_metrics_for_test,
     transcript_selection_cache_build_count_for_test, TranscriptSelectionDebugSnapshot,
 };
-
-#[cfg(test)]
-use super::ui_transcript_bash::{HARNESS_SPLIT_RAIL_GLYPH, TRANSCRIPT_COMMAND_TOOL_INDENT};
 
 #[cfg(test)]
 use super::ui_tool_delegation::subagent_profile_label;
@@ -555,7 +552,7 @@ fn transcript_surface_selection_rows(
         if surface.show_outer_rail {
             rows.extend(content_rows.into_iter().enumerate().map(|(idx, mut row)| {
                 let mut full = Vec::with_capacity(surface_width);
-                full.push(TRANSCRIPT_RAIL_GLYPH.to_string());
+                full.push(surface.rail_glyph.to_string());
                 full.append(&mut row);
                 full.truncate(surface_width);
                 if full.len() < surface_width {
@@ -598,7 +595,7 @@ pub(crate) fn build_transcript_lines(app: &AppState, theme: &Theme) -> Vec<Line<
     build_transcript_lines_for_width(app, theme, DIFF_SIDE_BY_SIDE_MIN_WIDTH.saturating_sub(1))
 }
 
-fn build_transcript_lines_for_width(
+pub(crate) fn build_transcript_lines_for_width(
     app: &AppState,
     theme: &Theme,
     width: u16,
@@ -610,6 +607,70 @@ fn build_transcript_lines_for_width(
         theme.surface.shell,
         |layout| transcript_layout_lines(layout, theme),
     )
+}
+
+pub(crate) fn build_subagent_footer_lines_for_width(
+    app: &AppState,
+    theme: &Theme,
+    width: u16,
+    surface: Color,
+) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    for turn in build_transcript_sections(app) {
+        if let Some(user_message) = turn.user_message.as_ref() {
+            append_subagent_user_message_lines(&mut lines, &user_message.text, theme, width);
+        }
+        for part in &turn.assistant_parts {
+            match part {
+                TranscriptAssistantPart::Reasoning(reasoning) => append_reasoning_block(
+                    &mut lines,
+                    reasoning,
+                    theme,
+                    transcript_surface_content_width(width, false),
+                ),
+                TranscriptAssistantPart::Body(TranscriptBodyBlock::RichText(text)) => {
+                    append_rich_text_block(&mut lines, text, theme.text.primary, "", theme, width);
+                }
+                TranscriptAssistantPart::ToolCall(tool_call) => {
+                    let render = append_tool_call_section_lines(tool_call, theme, width, surface);
+                    lines.extend(render.lines);
+                }
+                TranscriptAssistantPart::Error(error) => lines.push(Line::from(Span::styled(
+                    error.text.clone(),
+                    Style::default().fg(theme.status.error).bg(surface),
+                ))),
+            }
+        }
+    }
+    lines
+}
+
+fn append_subagent_user_message_lines(
+    lines: &mut Vec<Line<'static>>,
+    text: &str,
+    theme: &Theme,
+    width: u16,
+) {
+    let style = Style::default().fg(theme.text.primary);
+    let text = subagent_user_body_text(text);
+    for row in text.lines() {
+        let spans = if row.is_empty() {
+            Vec::new()
+        } else {
+            vec![Span::styled(row.to_string(), style)]
+        };
+        append_prefixed_wrapped_spans_line(lines, "", style, spans, width);
+    }
+}
+
+fn subagent_user_body_text(raw: &str) -> std::borrow::Cow<'_, str> {
+    if raw.trim().is_empty() {
+        return std::borrow::Cow::Borrowed(raw);
+    }
+
+    let lead_len = raw.bytes().take_while(|byte| *byte == b'\n').count();
+    let (lead, body) = raw.split_at(lead_len);
+    std::borrow::Cow::Owned(format!("{lead}› {body}"))
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
