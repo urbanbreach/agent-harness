@@ -323,17 +323,16 @@ pub(super) fn narrow_transcript_wrapped_top_level_turns_keep_alignment() {
     let lines = rendered.lines().collect::<Vec<_>>();
 
     let user_first = find_line_containing(&lines, "alpha bravo").expect("wrapped user first row");
+    let assistant_first =
+        find_line_containing_from(&lines, user_first + 1, "assistant reply wraps")
+            .expect("wrapped assistant first row");
     let user_continuation = lines
         .iter()
         .enumerate()
         .skip(user_first + 1)
-        .find_map(|(index, line)| {
-            (line.contains('┃') && line.chars().any(char::is_alphanumeric)).then_some(index)
-        })
+        .take(assistant_first.saturating_sub(user_first + 1))
+        .find_map(|(index, line)| line.chars().any(char::is_alphanumeric).then_some(index))
         .expect("wrapped user continuation row");
-    let assistant_first =
-        find_line_containing_from(&lines, user_continuation + 1, "assistant reply wraps")
-            .expect("wrapped assistant first row");
     let assistant_footer = find_line_containing_from(&lines, assistant_first + 1, "Assistant")
         .expect("assistant footer row");
     let assistant_continuation = lines
@@ -345,12 +344,13 @@ pub(super) fn narrow_transcript_wrapped_top_level_turns_keep_alignment() {
         .expect("wrapped assistant continuation row");
 
     assert_eq!(
-        first_alphanumeric_column(lines[user_first]),
         first_alphanumeric_column(lines[user_continuation]),
-        "wrapped user continuations should keep the same text column in narrow layouts\n{rendered}"
+        first_alphanumeric_column(lines[user_first]),
+        "wrapped user continuations should align with the boxed user text column\n{rendered}"
     );
     assert!(lines[user_first].contains('┃'));
     assert!(lines[user_continuation].contains('┃'));
+    assert!(!lines[user_first].contains('›'));
     assert_eq!(
         first_alphanumeric_column(lines[assistant_first]),
         first_alphanumeric_column(lines[assistant_continuation]),

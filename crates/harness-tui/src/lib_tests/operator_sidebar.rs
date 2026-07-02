@@ -116,3 +116,12 @@ pub(super) fn operator_sidebar_width_stays_fixed_when_todo_or_modified_files_exi
         replay_empty_width,
     );
 }
+
+pub(super) fn replay_narrow_layout_does_not_overlay_operator_rail() {
+    let app = app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), Vec::new());
+    let plan = layout::FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, 60, 40));
+
+    assert_eq!(plan.operator_sidebar, None);
+    assert_eq!(plan.details_overlay, None);
+    assert_eq!(plan.transcript.expect("transcript area").width, 60);
+}
