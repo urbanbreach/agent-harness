@@ -2,6 +2,7 @@ target/
 target.bak/
 sessions/
 artifacts/
+docs/
 .agent-harness/*
 !.agent-harness/agents/
 !.agent-harness/agents/**
@@ -13,7 +14,7 @@ artifacts/
 *.pending-snap
 
 # Local scratch / research material
-#inspiration/
+inspirations/
 .omx/
 .codex/*
 !.codex/agents/
@@ -26,8 +27,9 @@ artifacts/
 
 # Local IDE workspace state
 .cate/
+.agent-harness/
+.gnhf/
 
 # Local environment secrets / credentials
 .env
 *.env
-

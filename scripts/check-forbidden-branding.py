@@ -28,6 +28,7 @@ ALLOWED_PARITY_PATHS = {
     Path("crates/harness-tui/src/keybindings/palette_model.rs"),
     Path("crates/harness-tui/src/keybindings/parity_matrix.rs"),
     Path("crates/harness-tui/src/layout.rs"),
+    Path("docs/chat-rendering-parity.md"),
     Path("docs/ctrl-p-command-palette-parity-plan.md"),
     Path("docs/onboarding-terminal-migration-prd.md"),
 }
