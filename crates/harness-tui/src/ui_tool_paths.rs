@@ -29,11 +29,10 @@ pub(super) fn tool_path_display(tool_call: &ToolCallEntry) -> Option<String> {
         .map(|path| collapse_inline_whitespace(&path))
 }
 
-pub(super) fn tool_in_path_suffix(tool_call: &ToolCallEntry) -> String {
+pub(super) fn tool_in_path_description(tool_call: &ToolCallEntry) -> Option<String> {
     tool_path_display(tool_call)
         .filter(|path| path != ".")
-        .map(|path| format!(" in {path}"))
-        .unwrap_or_default()
+        .map(|path| format!("in {path}"))
 }
 
 pub(super) fn read_tool_input_suffix(tool_call: &ToolCallEntry) -> String {
@@ -63,11 +62,16 @@ pub(super) fn read_tool_input_suffix(tool_call: &ToolCallEntry) -> String {
     }
 }
 
-pub(super) fn tool_match_count_suffix(tool_call: &ToolCallEntry) -> String {
-    let count = tool_call
+pub(super) fn tool_match_count_description(tool_call: &ToolCallEntry) -> Option<String> {
+    tool_match_count(tool_call)
+        .map(|count| format!("{count} match{}", if count == 1 { "" } else { "es" }))
+}
+
+fn tool_match_count(tool_call: &ToolCallEntry) -> Option<u64> {
+    tool_call
         .output_json
         .as_ref()
-        .and_then(|value| value.get("total_count"))
+        .and_then(|value| value.get("total_count").or_else(|| value.get("count")))
         .and_then(serde_json::Value::as_u64)
         .or_else(|| {
             tool_call.output_summary.as_deref().map(|output| {
@@ -76,11 +80,7 @@ pub(super) fn tool_match_count_suffix(tool_call: &ToolCallEntry) -> String {
                     .filter(|line| has_trimmed_content(line))
                     .count() as u64
             })
-        });
-
-    count
-        .map(|count| format!(" ({count} match{})", if count == 1 { "" } else { "es" }))
-        .unwrap_or_default()
+        })
 }
 
 pub(super) fn search_result_count_suffix(

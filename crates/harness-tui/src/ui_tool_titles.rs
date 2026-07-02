@@ -74,10 +74,23 @@ pub(super) fn background_output_tool_subtitle(tool_call: &ToolCallEntry) -> Opti
 
 pub(super) fn batch_tool_title(tool_call: &ToolCallEntry) -> String {
     let count = tool_call
-        .output_json
-        .as_ref()
-        .and_then(|value| value.get("requested_call_count"))
-        .and_then(serde_json::Value::as_u64)
+        .args_summary
+        .parse::<serde_json::Value>()
+        .ok()
+        .and_then(|value| {
+            value
+                .get("tool_calls")
+                .and_then(serde_json::Value::as_array)
+                .map(Vec::len)
+        })
+        .map(|count| count as u64)
+        .or_else(|| {
+            tool_call
+                .output_json
+                .as_ref()
+                .and_then(|value| value.get("requested_call_count"))
+                .and_then(serde_json::Value::as_u64)
+        })
         .or_else(|| {
             tool_call
                 .output_json
@@ -87,13 +100,20 @@ pub(super) fn batch_tool_title(tool_call: &ToolCallEntry) -> String {
         });
 
     count
-        .map(|count| {
-            format!(
-                "Run batch · {count} tool{}",
-                if count == 1 { "" } else { "s" }
-            )
-        })
-        .unwrap_or_else(|| "Run batch".to_string())
+        .map(|count| format!("Batch {count} tool{}", if count == 1 { "" } else { "s" }))
+        .unwrap_or_else(|| "Batch".to_string())
+}
+
+pub(super) fn write_tool_title(tool_call: &ToolCallEntry) -> String {
+    tool_summary_string(&tool_call.args_summary, &["filePath", "path"])
+        .map(|path| format!("Write {path}"))
+        .unwrap_or_else(|| "Write".to_string())
+}
+
+pub(super) fn edit_tool_title(tool_call: &ToolCallEntry) -> String {
+    tool_summary_string(&tool_call.args_summary, &["filePath", "path"])
+        .map(|path| format!("Edit {path}"))
+        .unwrap_or_else(|| "Edit".to_string())
 }
 
 pub(super) fn mcp_tool_title(tool_call: &ToolCallEntry, display_tool_id: &str) -> String {

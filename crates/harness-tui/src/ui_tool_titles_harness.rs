@@ -1,6 +1,6 @@
 use crate::app::{ToolCallDisplayStatus, ToolCallEntry};
 
-use super::ui_tool_metadata::{tool_json_string, tool_summary_string};
+use super::ui_tool_metadata::{tool_json_string, tool_summary_number, tool_summary_string};
 
 pub(super) fn background_cancel_tool_title(tool_call: &ToolCallEntry) -> String {
     let request_id = tool_json_string(tool_call.output_json.as_ref(), &["request_id"])
@@ -85,17 +85,20 @@ pub(super) fn ast_grep_tool_title(tool_call: &ToolCallEntry, verb: &str) -> Stri
 
 pub(super) fn lsp_tool_title(tool_call: &ToolCallEntry) -> String {
     let operation = tool_summary_string(&tool_call.args_summary, &["operation", "command"])
-        .unwrap_or_else(|| "lsp".to_string());
-    let path = tool_summary_string(&tool_call.args_summary, &["path"]);
-    let suffix = path
-        .as_deref()
-        .map(|p| format!(" · {p}"))
-        .unwrap_or_default();
-    format!("LSP {operation}{suffix}")
+        .unwrap_or_else(|| "request".to_string());
+    let path = tool_summary_string(&tool_call.args_summary, &["filePath", "path"]);
+    let position = match (
+        tool_summary_number(&tool_call.args_summary, &["line"]),
+        tool_summary_number(&tool_call.args_summary, &["character"]),
+    ) {
+        (Some(line), Some(character)) => format!(":{line}:{character}"),
+        _ => String::new(),
+    };
+    path.map(|p| format!("LSP {operation} {p}{position}"))
+        .unwrap_or_else(|| format!("LSP {operation}"))
 }
 
 pub(super) fn skill_tool_title(tool_call: &ToolCallEntry) -> String {
-    let name = tool_summary_string(&tool_call.args_summary, &["name"])
-        .unwrap_or_else(|| "skill".to_string());
-    format!("Load skill {name}")
+    let name = tool_summary_string(&tool_call.args_summary, &["name"]).unwrap_or_default();
+    format!("Skill \"{name}\"")
 }
