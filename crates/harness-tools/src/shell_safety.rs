@@ -823,6 +823,12 @@ fn validate_shell_path_arguments(
         let candidate = if token.starts_with('-') {
             if let Some((_, value)) = token.split_once('=') {
                 value
+            } else if !token.starts_with("--") && token.len() > 2 {
+                // Handle short options with embedded paths (e.g. -I/etc/passwd)
+                let mut chars = token.chars();
+                chars.next(); // skip '-'
+                chars.next(); // skip flag char
+                chars.as_str()
             } else {
                 continue;
             }
@@ -1782,6 +1788,21 @@ mod tests {
             // assert
             assert!(matches!(err, ToolError::PathEscapesWorkspace { .. }));
         }
+    }
+
+    #[test]
+    fn validate_bash_command_rejects_embedded_short_option_path_escapes() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: vec!["ls".to_string()],
+            cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
+        });
+
+        let err = safety
+            .validate_bash_command("ls -I/tmp/outside", tempdir.path(), tempdir.path())
+            .expect_err("embedded short option path escapes must be blocked");
+        assert!(matches!(err, ToolError::PathEscapesWorkspace { .. }));
     }
 
     #[cfg(unix)]
