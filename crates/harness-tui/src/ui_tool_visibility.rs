@@ -51,7 +51,7 @@ pub(super) fn tool_call_has_transcript_disclosure(tool_call: &ToolCallEntry) -> 
         tool_call.effective_tool_id(),
         "fs.read" | "read" | "fs.glob" | "glob" | "fs.grep" | "grep" | "fs.ls" | "list"
     ) {
-        return true;
+        return false;
     }
 
     if tool_output_hidden_behind_disclosure_by_default(tool_call) {
@@ -67,7 +67,7 @@ pub(super) fn tool_call_has_transcript_disclosure(tool_call: &ToolCallEntry) -> 
                 .as_deref()
                 .or(tool_call.output_summary.as_deref())
                 .is_some_and(has_trimmed_content),
-            "edit.hashline_apply" | "fs.write" | "edit" => tool_call_has_preview_content(tool_call),
+            "edit.hashline_apply" => tool_call_has_preview_content(tool_call),
             "agent.spawn" | "task" => true,
             _ => has_trimmed_content(output) && output_line_count > 3,
         }

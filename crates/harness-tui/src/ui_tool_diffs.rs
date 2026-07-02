@@ -3,8 +3,6 @@ use std::collections::BTreeSet;
 use crate::app::ToolCallEntry;
 use crate::text::non_empty_trimmed;
 
-use super::ui_tool_paths::{tool_call_path_metadata, TranscriptPathMetadata};
-
 #[derive(Debug, Clone)]
 pub(super) struct ApplyPatchFileRenderEntry {
     pub(super) file_path: String,
@@ -21,25 +19,11 @@ pub(super) fn tool_call_has_preview_content(tool_call: &ToolCallEntry) -> bool {
         || tool_call_apply_patch_file_rows(tool_call).is_some_and(|rows| !rows.is_empty())
 }
 
-pub(super) fn apply_patch_tool_header_metadata(
-    tool_call: &ToolCallEntry,
-) -> Option<TranscriptPathMetadata> {
-    let count = apply_patch_file_count(tool_call)?;
-    if count == 1 {
-        return tool_call_path_metadata(first_apply_patch_path(tool_call).as_deref()).or_else(
-            || {
-                Some(TranscriptPathMetadata {
-                    leaf: "1 file".to_string(),
-                    parent: None,
-                })
-            },
-        );
+pub(super) fn apply_patch_tool_title(tool_call: &ToolCallEntry) -> String {
+    match apply_patch_file_count(tool_call) {
+        Some(0) | None => "Patch".to_string(),
+        Some(count) => format!("Patch {count} file{}", if count == 1 { "" } else { "s" }),
     }
-
-    Some(TranscriptPathMetadata {
-        leaf: format!("{count} files"),
-        parent: None,
-    })
 }
 
 pub(super) fn collect_apply_patch_file_render_entries(
@@ -133,13 +117,6 @@ fn apply_patch_file_count(tool_call: &ToolCallEntry) -> Option<usize> {
             let count = collect_apply_patch_file_render_entries(tool_call).len();
             (count > 0).then_some(count)
         })
-}
-
-fn first_apply_patch_path(tool_call: &ToolCallEntry) -> Option<String> {
-    collect_apply_patch_file_render_entries(tool_call)
-        .into_iter()
-        .next()
-        .map(|entry| entry.file_path)
 }
 
 fn normalize_apply_patch_file_row(row: &str) -> Option<String> {
