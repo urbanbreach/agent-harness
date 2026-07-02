@@ -16,6 +16,7 @@ use super::ui_lifecycle::LifecycleSelectionSurface;
 use super::ui_markdown::{
     markdown_heading_text, markdown_list_prefix, markdown_rule, parse_inline_markdown_spans,
 };
+use super::ui_markdown_table::try_render_markdown_table_block;
 use super::ui_transcript_surface::wrap_surface_spans;
 
 const TRANSCRIPT_SELECTION_RAIL_GLYPH: &str = "┃";
@@ -395,12 +396,27 @@ pub(super) fn selection_rows_for_markdownish_text_block(
     width: u16,
 ) -> Vec<TranscriptSelectionRow> {
     let base_style = Style::default().fg(color);
+    let source_rows = text.lines().collect::<Vec<_>>();
     let mut rows = Vec::new();
+    let mut index = 0;
 
-    for line in text.lines() {
+    while let Some(line) = source_rows.get(index).copied() {
+        if let Some((table_lines, consumed)) =
+            try_render_markdown_table_block(&source_rows[index..], color, prefix, theme, width)
+        {
+            rows.extend(selection_rows_for_rendered_table_lines(
+                table_lines,
+                width,
+                display_width(prefix),
+            ));
+            index += consumed;
+            continue;
+        }
+
         rows.extend(selection_rows_for_markdownish_line(
             line, color, prefix, base_style, theme, width,
         ));
+        index += 1;
     }
 
     if text.is_empty() {
@@ -414,6 +430,26 @@ pub(super) fn selection_rows_for_markdownish_text_block(
     }
 
     rows
+}
+
+fn selection_rows_for_rendered_table_lines(
+    lines: Vec<Line<'static>>,
+    width: u16,
+    copy_offset: usize,
+) -> Vec<TranscriptSelectionRow> {
+    lines
+        .into_iter()
+        .flat_map(|line| {
+            transcript_selection_line_rows(&line, usize::from(width.max(1)))
+                .into_iter()
+                .enumerate()
+                .map(move |(idx, cells)| TranscriptSelectionRow {
+                    cells,
+                    continues_previous: idx > 0,
+                    copy_offset,
+                })
+        })
+        .collect()
 }
 
 fn selection_rows_for_markdownish_line(

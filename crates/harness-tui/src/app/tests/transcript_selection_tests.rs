@@ -36,12 +36,7 @@ pub(super) fn mouse_drag_copy_on_select_copies_shell_card_text() {
     })));
 
     let mut app = shell_card_selection_test_app();
-    let (column, row, width) = transcript_selection_text_bounds(&app, "copy target output");
-    drag_transcript_selection_range(
-        &mut app,
-        (column.saturating_sub(2), row),
-        (column + width.saturating_sub(1), row),
-    );
+    drag_transcript_selection(&mut app, "copy target output");
 
     assert_eq!(
         copied.lock().expect("lock copied text").clone(),
@@ -295,6 +290,27 @@ pub(super) fn transcript_selection_hit_testing_reuses_cached_snapshot_during_dra
     }
 
     assert_eq!(transcript_selection_cache_build_count_for_test(), 1);
+}
+
+pub(super) fn transcript_selection_snapshot_uses_transcript_rail_for_user_rows() {
+    let app = transcript_selection_test_app();
+    let snapshot = transcript_selection_debug_snapshot(&app, TEST_FRAME_AREA)
+        .expect("transcript selection snapshot");
+    let user_row = snapshot
+        .rows
+        .iter()
+        .find(|row| row.contains("Select this"))
+        .expect("user prompt selection row");
+
+    assert!(
+        user_row.trim_start().starts_with("┃  Select this"),
+        "user selection row should preserve the transcript rail and padding\n{:#?}",
+        snapshot.rows
+    );
+    assert!(
+        !user_row.contains("█Select this"),
+        "user selection row must not use the downgraded prompt rail block\n{user_row}"
+    );
 }
 
 pub(super) fn mouse_wheel_does_not_build_transcript_selection_snapshot() {

@@ -14,7 +14,6 @@ use super::WheelTarget;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum TranscriptMouseTarget {
-    FirstSubagentSession,
     SubagentSession {
         session_id: String,
     },
