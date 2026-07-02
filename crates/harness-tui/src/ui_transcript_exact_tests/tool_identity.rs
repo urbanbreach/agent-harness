@@ -1,8 +1,7 @@
 use super::super::*;
 
 #[cfg(test)]
-pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_and_task_metadata()
-{
+pub(crate) fn exact_test_native_tool_transcript_rows_show_reference_timestamps_and_task_metadata() {
     let theme = Theme::default();
 
     let mut native_read = transcript_section_model_test_tool_call("tc-native-read", "fs.read");
@@ -69,17 +68,14 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
     );
     assert_eq!(native_read_section.header.subtitle, None);
     assert_eq!(alias_read_section.header.subtitle, None);
-    assert_eq!(
-        alias_read_section.header.disclosure_state,
-        Some(TranscriptToolCallDisclosureState::Collapsed)
-    );
+    assert_eq!(alias_read_section.header.disclosure_state, None);
     assert!(alias_read_section
         .detail_blocks
         .iter()
-        .any(|block| matches!(
+        .all(|block| !matches!(
             block,
             TranscriptToolCallDetailBlock::Message { text, .. }
-                if text.contains("Compat alias · read → fs.read")
+                if text.contains("Compat alias ·")
         )));
 
     let mut task_call = transcript_section_model_test_tool_call("tc-task", "task");
@@ -130,7 +126,7 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
         task_section.child_session_id.as_deref(),
         Some("agent_worker")
     );
-    assert_eq!(task_section.header.icon, Some("│"));
+    assert_eq!(task_section.header.icon, Some("✓"));
     assert_eq!(
         task_section.header.visual_style,
         TranscriptToolCallVisualStyle::TaskInline
@@ -174,6 +170,7 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
                 height: task_render.lines.len(),
                 width: 120,
                 show_outer_rail: false,
+                rail_glyph: TRANSCRIPT_RAIL_GLYPH,
                 rail_color: theme.border.subtle,
                 surface: theme.surface.panel,
                 lines: task_render.lines.clone(),
@@ -229,11 +226,11 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
     );
     let task_lines = task_render.lines;
     let task_text = transcript_test_line_texts(task_lines).join("\n");
-    assert!(task_text.contains("│ Researcher Task — audit transcript parity"));
-    assert!(task_text.contains("Researcher Task — audit transcript parity"));
-    assert!(task_text.contains("3 toolcalls · 1.6s"));
+    assert!(task_text.contains("✓ audit transcript parity · Researcher Agent"));
+    assert!(!task_text.contains("Researcher Task — audit transcript parity"));
+    assert!(!task_text.contains("3 toolcalls · 1.6s"));
     assert!(!task_text.contains("Found the inline transcript path."));
-    assert!(!task_text.contains("Compat alias · task → agent.spawn"));
+    assert!(!task_text.contains("Compat alias ·"));
     assert!(!task_text.contains("Task audit transcript parity"));
 
     let expanded_task_section = build_transcript_tool_call_section(
@@ -297,7 +294,55 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_disclosure_timestamps_
     assert!(!fetch_text.contains("Click to expand"));
     assert!(!fetch_text.contains("Attachment ·"));
     assert!(!fetch_text.contains("web.fetch.pdf"));
-    assert!(fetch_text.contains("Compat alias · webfetch → web.fetch"));
+    assert!(!fetch_text.contains("Compat alias ·"));
+
+    let mut web_search_call =
+        transcript_section_model_test_tool_call("tc-web-search", "search.web");
+    web_search_call.args_summary = r#"{"query":"rust tui parity"}"#.to_string();
+    web_search_call.status = ToolCallDisplayStatus::Succeeded;
+    web_search_call.output_json = Some(serde_json::json!({
+        "provider": "parallel",
+        "numResults": 4,
+    }));
+    let web_search_section = build_transcript_tool_call_section(
+        &web_search_call,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(web_search_section.header.icon, Some("◈"));
+    let web_search_render =
+        append_tool_call_section_lines(&web_search_section, &theme, 120, theme.surface.panel);
+    let web_search_text = transcript_test_line_texts(web_search_render.lines).join("\n");
+    assert!(web_search_text.contains("◈ Parallel Web Search \"rust tui parity\" (4 results)"));
+    assert!(!web_search_text.contains("Exa Web Search \"rust tui parity\""));
+
+    let mut code_search_call =
+        transcript_section_model_test_tool_call("tc-code-search", "search.code");
+    code_search_call.args_summary = r#"{"query":"append_reasoning_block"}"#.to_string();
+    code_search_call.status = ToolCallDisplayStatus::Succeeded;
+    code_search_call.output_json = Some(serde_json::json!({
+        "results": 2,
+    }));
+    let code_search_section = build_transcript_tool_call_section(
+        &code_search_call,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(code_search_section.header.icon, Some("◇"));
+    let code_search_render =
+        append_tool_call_section_lines(&code_search_section, &theme, 120, theme.surface.panel);
+    let code_search_text = transcript_test_line_texts(code_search_render.lines).join("\n");
+    assert!(code_search_text.contains("◇ Exa Code Search \"append_reasoning_block\" (2 results)"));
 
     let mut generic_call = transcript_section_model_test_tool_call("tc-generic", "vendor.magic");
     generic_call.resolved_tool_identity = Some(harness_core::event::ResolvedToolIdentity {
@@ -562,9 +607,9 @@ pub(crate) fn exact_test_generic_tool_successful_output_prefers_inline_backgroun
     let visible_text = visible_rendered.join("\n");
     assert!(visible_text.contains("line 1"));
     assert!(visible_text.contains("line 3"));
-    assert!(!visible_text.contains("line 4"));
-    assert!(visible_text.contains("Click to expand"));
-    assert!(visible_text.contains('…'));
+    assert!(visible_text.contains("line 4"));
+    assert!(!visible_text.contains("Click to expand"));
+    assert!(!visible_text.contains('…'));
 
     let expanded = build_transcript_tool_call_section(
         &tool_call,
@@ -624,9 +669,9 @@ pub(crate) fn exact_test_lsp_tool_successful_output_stays_hidden_until_generic_o
         lines
     })
     .join("\n");
-    assert!(hidden_text.contains("lsp"));
-    assert!(hidden_text.contains("src/main.rs"));
-    assert!(hidden_text.contains("[operation=goto_definition]"));
+    assert!(hidden_text.contains("→ LSP goto_definition src/main.rs:12:4"));
+    assert!(!hidden_text.contains("⌘"));
+    assert!(!hidden_text.contains("[operation=goto_definition]"));
     assert!(!hidden_text.contains("result 1"));
 
     let visible = build_transcript_tool_call_section(
@@ -654,9 +699,143 @@ pub(crate) fn exact_test_lsp_tool_successful_output_stays_hidden_until_generic_o
     })
     .join("\n");
     assert!(visible_text.contains("result 1"));
-    assert!(visible_text.contains("Click to expand"));
-    assert!(visible_text.contains('…'));
-    assert!(!visible_text.contains("result 4"));
+    assert!(!visible_text.contains("Click to expand"));
+    assert!(!visible_text.contains('…'));
+    assert!(visible_text.contains("result 4"));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_skill_tool_rows_match_reference_title_and_icon() {
+    let theme = Theme::default();
+    let mut tool_call = transcript_section_model_test_tool_call("tc-skill", "skill");
+    tool_call.args_summary = r#"{"name":"rust-best-practices"}"#.to_string();
+    tool_call.status = ToolCallDisplayStatus::Succeeded;
+    tool_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    tool_call.output_summary = Some("skill loaded".to_string());
+
+    let section = build_transcript_tool_call_section(
+        &tool_call,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(section.header.icon, Some("→"));
+    assert_eq!(section.header.title, "Skill \"rust-best-practices\"");
+    assert_eq!(section.header.subtitle, None);
+    assert_eq!(
+        section.header.visual_style,
+        TranscriptToolCallVisualStyle::Inline
+    );
+    assert_eq!(section.header.disclosure_state, None);
+
+    let rendered = transcript_test_line_texts({
+        let render = append_tool_call_section_lines(&section, &theme, 96, theme.surface.panel);
+        render.lines
+    })
+    .join("\n");
+    assert!(rendered.contains("→ Skill \"rust-best-practices\""));
+    assert!(!rendered.contains("Load skill"));
+    assert!(!rendered.contains('✦'));
+    assert!(!rendered.contains("skill loaded"));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_file_search_rows_match_reference_title_description_shape() {
+    let theme = Theme::default();
+
+    let mut glob_call = transcript_section_model_test_tool_call("tc-glob", "fs.glob");
+    glob_call.args_summary = r#"{"pattern":"**/*.rs","path":"crates/harness-tui"}"#.to_string();
+    glob_call.status = ToolCallDisplayStatus::Succeeded;
+    glob_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    glob_call.output_json = Some(serde_json::json!({ "count": 3 }));
+
+    let mut grep_call = transcript_section_model_test_tool_call("tc-grep", "fs.grep");
+    grep_call.args_summary =
+        r#"{"pattern":"HARNESS_SPLIT_RAIL_GLYPH","path":"crates/harness-tui/src"}"#.to_string();
+    grep_call.status = ToolCallDisplayStatus::Succeeded;
+    grep_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    grep_call.output_json = Some(serde_json::json!({ "total_count": 2 }));
+
+    let mut list_call = transcript_section_model_test_tool_call("tc-list", "list");
+    list_call.args_summary = r#"{"path":"crates/harness-tui/src"}"#.to_string();
+    list_call.status = ToolCallDisplayStatus::Succeeded;
+    list_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+
+    let glob_section = build_transcript_tool_call_section(
+        &glob_call,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    let grep_section = build_transcript_tool_call_section(
+        &grep_call,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    let list_section = build_transcript_tool_call_section(
+        &list_call,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+
+    assert_eq!(glob_section.header.icon, Some("✱"));
+    assert_eq!(glob_section.header.title, "Glob \"**/*.rs\"");
+    assert_eq!(
+        glob_section.header.subtitle.as_deref(),
+        Some("in crates/harness-tui · 3 matches")
+    );
+    assert_eq!(grep_section.header.icon, Some("✱"));
+    assert_eq!(
+        grep_section.header.title,
+        "Grep \"HARNESS_SPLIT_RAIL_GLYPH\""
+    );
+    assert_eq!(
+        grep_section.header.subtitle.as_deref(),
+        Some("in crates/harness-tui/src · 2 matches")
+    );
+    assert_eq!(list_section.header.icon, Some("→"));
+    assert_eq!(list_section.header.title, "List crates/harness-tui/src");
+    assert_eq!(list_section.header.subtitle, None);
+
+    let rendered = transcript_test_line_texts({
+        let mut lines = Vec::new();
+        lines.extend(
+            append_tool_call_section_lines(&glob_section, &theme, 96, theme.surface.panel).lines,
+        );
+        lines.extend(
+            append_tool_call_section_lines(&grep_section, &theme, 96, theme.surface.panel).lines,
+        );
+        lines.extend(
+            append_tool_call_section_lines(&list_section, &theme, 96, theme.surface.panel).lines,
+        );
+        lines
+    })
+    .join("\n");
+    assert!(rendered.contains("✱ Glob \"**/*.rs\" · in crates/harness-tui · 3 matches"));
+    assert!(rendered
+        .contains("✱ Grep \"HARNESS_SPLIT_RAIL_GLYPH\" · in crates/harness-tui/src · 2 matches"));
+    assert!(rendered.contains("→ List crates/harness-tui/src"));
+    assert!(!rendered.contains("Glob \"**/*.rs\" in crates/harness-tui"));
+    assert!(!rendered.contains("(3 matches)"));
+    assert!(!rendered.contains("(2 matches)"));
 }
 
 #[cfg(test)]
@@ -693,16 +872,22 @@ pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
         write_section.header.visual_style,
         TranscriptToolCallVisualStyle::Block
     );
-    assert_eq!(write_section.header.title, "1 of 3 todos completed");
+    assert_eq!(
+        (
+            write_section.header.icon,
+            write_section.header.title.as_str()
+        ),
+        (Some("#"), "Todos")
+    );
     assert_eq!(write_section.header.disclosure_state, None);
 
-    let rendered = transcript_test_line_texts({
+    let todo_lines = {
         let render =
             append_tool_call_section_lines(&write_section, &theme, 96, theme.surface.panel);
         render.lines
-    })
-    .join("\n");
-    assert!(rendered.contains("1 of 3 todos completed"));
+    };
+    let rendered = transcript_test_line_texts(todo_lines.clone()).join("\n");
+    assert!(rendered.contains("Todos"));
     assert!(rendered.contains("[•] Implement UI"));
     assert!(rendered.contains("[✓] Plan work"));
     assert!(rendered.contains("[ ] Verify tests"));
@@ -733,7 +918,7 @@ pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
         None,
     )
     .expect("compat todo write should render bare-array output");
-    let cancelled_then_pending_rendered = transcript_test_line_texts({
+    let cancelled_then_pending_lines = {
         let render = append_tool_call_section_lines(
             &cancelled_then_pending_section,
             &theme,
@@ -741,10 +926,11 @@ pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
             theme.surface.panel,
         );
         render.lines
-    })
-    .join("\n");
+    };
+    let cancelled_then_pending_rendered =
+        transcript_test_line_texts(cancelled_then_pending_lines.clone()).join("\n");
     let cancelled = cancelled_then_pending_rendered
-        .find("[✓] Skip stale path")
+        .find("[ ] Skip stale path")
         .expect("cancelled todo row");
     let pending = cancelled_then_pending_rendered
         .find("[ ] Pick next path")
@@ -753,6 +939,42 @@ pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
         cancelled < pending,
         "todo rows should preserve cancelled/pending order\n{cancelled_then_pending_rendered}"
     );
+    let cancelled_line = cancelled_then_pending_lines
+        .iter()
+        .find(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+                .contains("Skip stale path")
+        })
+        .expect("cancelled todo line should render");
+    assert!(
+        cancelled_line
+            .spans
+            .iter()
+            .any(|span| (span.content == "[" || span.content == "]")
+                && span
+                    .style
+                    .add_modifier
+                    .contains(ratatui::style::Modifier::CROSSED_OUT)),
+        "cancelled todo marker should be crossed out"
+    );
+    assert!(
+        cancelled_line
+            .spans
+            .iter()
+            .any(|span| span.content.contains("Skip")
+                && span
+                    .style
+                    .add_modifier
+                    .contains(ratatui::style::Modifier::CROSSED_OUT)),
+        "cancelled todo content should be crossed out"
+    );
+
+    if std::env::var_os("HARNESS_TUI_TODO_RENDER_CAPTURE").is_some() {
+        println!("# Todo render\n{rendered}\n\n# Cancelled todo render\n{cancelled_then_pending_rendered}");
+    }
 
     let mut structured_output =
         transcript_section_model_test_tool_call("tc-todo-structured-output", "todo.write");

@@ -141,7 +141,7 @@ pub(crate) fn exact_test_transcript_native_edit_renders_inline_diff_from_artifac
         .collect::<Vec<_>>()
         .join("\n");
 
-    assert!(rendered.contains("Edit · rust.md"));
+    assert!(rendered.contains("← Edit docs/rust.md"));
     assert!(rendered.contains("docs"));
     assert!(rendered.contains("Ownership"));
     assert!(rendered
@@ -265,8 +265,8 @@ pub(crate) fn exact_test_transcript_apply_patch_multifile_uses_output_edit_paths
     )
     .join("\n");
 
-    assert!(rendered.contains("Patch · 2 files"));
-    assert!(!rendered.contains("Patch · 2 files  ▸"));
+    assert!(rendered.contains("% Patch 2 files"));
+    assert!(!rendered.contains("Patch 2 files  ▸"));
     assert!(rendered.contains("a.md · notes"));
     assert!(rendered.contains("b.md · notes"));
     assert!(
@@ -384,8 +384,8 @@ pub(crate) fn exact_test_transcript_apply_patch_surfaces_rename_and_wrapped_inli
         rename_header.contains("session_diff.rs"),
         "rename header: {rename_header}"
     );
-    assert!(rendered.contains("Patch · 2 files"));
-    assert!(!rendered.contains("Patch · 2 files  ▸"));
+    assert!(rendered.contains("% Patch 2 files"));
+    assert!(!rendered.contains("Patch 2 files  ▸"));
     assert!(
         lines.iter().any(|line| {
             line.contains("session turn diff view keeps the tool row spacing perfectly aligne")
@@ -546,7 +546,7 @@ pub(crate) fn exact_test_transcript_inline_diff_stays_compact_between_tool_rows(
         .expect("read-before row");
     let patch_header = lines
         .iter()
-        .position(|line| line.contains("Patch · spacing.md"))
+        .position(|line| line.contains("Patch 1 file"))
         .expect("patch header row");
     let diff_tail = lines
         .iter()
@@ -738,12 +738,8 @@ pub(crate) fn exact_test_transcript_harness_tool_progress_indicators() {
     assert!(initial_lines
         .iter()
         .any(|line| line.contains("⠋ Read src/lib.rs [offset=3, limit=8]")));
-    assert!(initial_lines
-        .iter()
-        .any(|line| line.contains("~ Preparing edit...")));
-    assert!(initial_lines
-        .iter()
-        .any(|line| line.contains("~ Preparing patch...")));
+    assert!(initial_lines.iter().any(|line| line.contains("← Edit")));
+    assert!(initial_lines.iter().any(|line| line.contains("% Patch")));
 
     app.advance_transcript_animation_phase();
 
@@ -785,7 +781,7 @@ pub(crate) fn exact_test_transcript_harness_tool_progress_indicators() {
         "active context tools should stay as per-tool indicators\n{mixed_context_rendered}"
     );
     assert!(mixed_context_rendered.contains("→ Read src/lib.rs"));
-    assert!(mixed_context_rendered.contains("✱ Glob \"*.rs\" in src"));
+    assert!(mixed_context_rendered.contains("✱ Glob \"*.rs\" · in src"));
 }
 
 #[cfg(test)]

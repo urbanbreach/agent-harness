@@ -307,33 +307,102 @@ fn question_tool_cards_render_answered_question_details() {
         None,
     );
 
-    assert_eq!(section.header.title, "Questions");
+    assert_eq!(section.header.icon, Some("→"));
+    assert_eq!(section.header.title, "Asked 2 questions");
+    assert_eq!(section.header.subtitle, None);
     assert_eq!(
-        section.header.subtitle,
-        Some("answered 2 questions".to_string())
+        section.header.visual_style,
+        TranscriptToolCallVisualStyle::Inline
     );
-    assert!(section.detail_blocks.iter().any(|block| {
-        matches!(
-            block,
-            TranscriptToolCallDetailBlock::Message { text, tone }
-                if *tone == TranscriptToolCallDetailTone::Primary && text == "Pick one"
-        )
+    assert!(section.detail_blocks.is_empty());
+}
+
+#[cfg(test)]
+#[test]
+fn batch_write_edit_and_patch_rows_match_reference_headers() {
+    // arrange
+    let mut batch_call = transcript_section_model_test_tool_call("tc-batch-row", "tool.batch");
+    batch_call.status = ToolCallDisplayStatus::Succeeded;
+    batch_call.args_summary = serde_json::json!({
+        "tool_calls": [
+            {"tool_id": "fs.read"},
+            {"tool_id": "fs.grep"}
+        ]
+    })
+    .to_string();
+    // act
+    let batch_section = build_transcript_tool_call_section(
+        &batch_call,
+        &AppState::default(),
+        None,
+        false,
+        false,
+        false,
+        false,
+        None,
+    );
+    // assert
+    assert_eq!(batch_section.header.icon, Some("#"));
+    assert_eq!(batch_section.header.title, "Batch 2 tools");
+    assert_eq!(batch_section.header.subtitle, None);
+    assert_eq!(
+        batch_section.header.visual_style,
+        TranscriptToolCallVisualStyle::Block
+    );
+
+    let mut write_call = transcript_section_model_test_tool_call("tc-write-row", "fs.write");
+    write_call.status = ToolCallDisplayStatus::Succeeded;
+    write_call.args_summary = r#"{"filePath":"src/main.rs","content":"fn main() {}"}"#.to_string();
+    let write_section = build_transcript_tool_call_section(
+        &write_call,
+        &AppState::default(),
+        None,
+        false,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(write_section.header.icon, Some("←"));
+    assert_eq!(write_section.header.title, "Write src/main.rs");
+    assert_eq!(write_section.header.subtitle, None);
+
+    let mut edit_call = transcript_section_model_test_tool_call("tc-edit-row", "edit");
+    edit_call.status = ToolCallDisplayStatus::Succeeded;
+    edit_call.args_summary =
+        r#"{"filePath":"src/main.rs","oldString":"old","newString":"new"}"#.to_string();
+    let edit_section = build_transcript_tool_call_section(
+        &edit_call,
+        &AppState::default(),
+        None,
+        false,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(edit_section.header.icon, Some("←"));
+    assert_eq!(edit_section.header.title, "Edit src/main.rs");
+    assert_eq!(edit_section.header.subtitle, None);
+
+    let mut patch_call = transcript_section_model_test_tool_call("tc-patch-row", "apply_patch");
+    patch_call.status = ToolCallDisplayStatus::Succeeded;
+    patch_call.output_json = Some(serde_json::json!({
+        "files": ["M src/main.rs", "M src/lib.rs"]
     }));
-    assert!(section.detail_blocks.iter().any(|block| {
-        matches!(
-            block,
-            TranscriptToolCallDetailBlock::Message { text, tone }
-                if *tone == TranscriptToolCallDetailTone::Secondary && text == "↳ A"
-        )
-    }));
-    assert!(section.detail_blocks.iter().any(|block| {
-        matches!(
-            block,
-            TranscriptToolCallDetailBlock::Message { text, tone }
-                if *tone == TranscriptToolCallDetailTone::Secondary
-                    && text == "↳ (no answer)"
-        )
-    }));
+    let patch_section = build_transcript_tool_call_section(
+        &patch_call,
+        &AppState::default(),
+        None,
+        false,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert_eq!(patch_section.header.icon, Some("%"));
+    assert_eq!(patch_section.header.title, "Patch 2 files");
+    assert_eq!(patch_section.header.subtitle, None);
 }
 
 #[test]
@@ -378,7 +447,7 @@ fn consecutive_tool_rows_do_not_insert_terminal_blank_rows() {
             surface.lines.iter().any(|line| {
                 line.spans
                     .iter()
-                    .any(|span| span.content.as_ref().contains("lsp"))
+                    .any(|span| span.content.as_ref().contains("LSP"))
             })
         })
         .expect("lsp surface");
@@ -441,7 +510,8 @@ fn block_tool_cards_render_subtitle_inline_with_title() {
 }
 
 #[test]
-fn shell_tool_cards_use_harness_bash_styling_values() {
+fn shell_tool_cards_use_reference_dollar_block_without_harness_chrome() {
+    // arrange
     let theme = Theme::default();
     let mut tool_call = transcript_section_model_test_tool_call("tc-shell-harness", "shell.run");
     tool_call.args_summary = r#"{"command":"echo hi","description":"list files"}"#.to_string();
@@ -453,6 +523,7 @@ fn shell_tool_cards_use_harness_bash_styling_values() {
             .join("\n"),
     );
 
+    // act
     let section = build_transcript_tool_call_section(
         &tool_call,
         &AppState::default(),
@@ -463,15 +534,16 @@ fn shell_tool_cards_use_harness_bash_styling_values() {
         false,
         None,
     );
+    // assert
     assert_eq!(
         section.detail_blocks[0],
         TranscriptToolCallDetailBlock::BashPanel {
             command: "echo hi".to_string(),
             output:
-                "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\n…"
+                "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11"
                     .to_string(),
-            description: Some("list files".to_string()),
-            expand_hint: Some("Click to expand".to_string()),
+            description: None,
+            expand_hint: None,
             tone: TranscriptToolCallDetailTone::Primary,
         }
     );
@@ -484,27 +556,29 @@ fn shell_tool_cards_use_harness_bash_styling_values() {
     });
     let rendered = text_lines.join("\n");
 
-    assert!(rendered.contains('┃'));
+    assert!(!rendered.contains('┃'));
     assert!(!rendered.contains("● ● ●"));
-    assert!(rendered.contains("# list files"));
+    assert!(!rendered.contains("# list files"));
     assert!(!rendered.contains('╭'));
     assert!(!rendered.contains('├'));
     assert!(rendered.contains("$ echo hi"));
     assert!(!rendered.contains("stdout>"));
     assert!(rendered.contains("line 10"));
-    assert!(!rendered.contains("line 11"));
-    assert!(rendered.contains("Click to expand"));
+    assert!(rendered.contains("line 11"));
+    assert!(!rendered.contains("Click to expand"));
     assert!(!rendered.contains('╰'));
 }
 
 #[test]
-fn shell_tool_cards_render_workdir_in_harness_title() {
+fn shell_tool_cards_render_workdir_as_reference_running_prefix() {
+    // arrange
     let mut tool_call = transcript_section_model_test_tool_call("tc-shell-workdir", "bash");
     tool_call.args_summary =
         r#"{"command":"pwd","description":"show cwd","workdir":"crates/harness-tui"}"#.to_string();
     tool_call.status = ToolCallDisplayStatus::Succeeded;
     tool_call.output_summary = Some("/workspace/crates/harness-tui".to_string());
 
+    // act
     let section = build_transcript_tool_call_section(
         &tool_call,
         &AppState::default(),
@@ -516,10 +590,11 @@ fn shell_tool_cards_render_workdir_in_harness_title() {
         Some(Path::new("/workspace")),
     );
 
+    // assert
     assert!(matches!(
         &section.detail_blocks[0],
         TranscriptToolCallDetailBlock::BashPanel { description, .. }
-            if description.as_deref() == Some("show cwd in /workspace/crates/harness-tui")
+            if description.as_deref() == Some("# Running in /workspace/crates/harness-tui")
     ));
     let rendered = transcript_test_line_texts({
         let render = append_tool_call_section_lines(
@@ -531,7 +606,9 @@ fn shell_tool_cards_render_workdir_in_harness_title() {
         render.lines
     })
     .join("\n");
-    assert!(rendered.contains("# show cwd in /workspace/crates/harness-tui"));
+    assert!(rendered.contains("# Running in /workspace/crates/harness-tui"));
+    assert!(rendered.contains("$ pwd"));
+    assert!(!rendered.contains("# show cwd"));
 }
 
 #[test]
@@ -729,7 +806,8 @@ fn running_shell_without_output_metadata_uses_inline_fallback_until_output_event
 }
 
 #[test]
-fn shell_tool_cards_toggle_overflow_expand_and_collapse_hints() {
+fn shell_tool_cards_render_full_overflow_without_expand_hints() {
+    // arrange
     let mut tool_call = transcript_section_model_test_tool_call("tc-shell-overflow", "bash");
     tool_call.args_summary = r#"{"command":"seq 12"}"#.to_string();
     tool_call.status = ToolCallDisplayStatus::Succeeded;
@@ -740,6 +818,7 @@ fn shell_tool_cards_toggle_overflow_expand_and_collapse_hints() {
             .join("\n"),
     );
 
+    // act
     let collapsed = build_transcript_tool_call_section(
         &tool_call,
         &AppState::default(),
@@ -750,29 +829,11 @@ fn shell_tool_cards_toggle_overflow_expand_and_collapse_hints() {
         false,
         None,
     );
-    let expanded = build_transcript_tool_call_section(
-        &tool_call,
-        &AppState::default(),
-        None,
-        false,
-        false,
-        true,
-        false,
-        None,
-    );
-
+    // assert
     assert!(matches!(
         &collapsed.detail_blocks[0],
         TranscriptToolCallDetailBlock::BashPanel { output, expand_hint, .. }
-            if output.ends_with("line 10\n…")
-                && !output.contains("line 11")
-                && expand_hint.as_deref() == Some("Click to expand")
-    ));
-    assert!(matches!(
-        &expanded.detail_blocks[0],
-        TranscriptToolCallDetailBlock::BashPanel { output, expand_hint, .. }
-            if output.contains("line 12")
-                && expand_hint.as_deref() == Some("Click to collapse")
+            if output.contains("line 12") && expand_hint.is_none()
     ));
 }
 
