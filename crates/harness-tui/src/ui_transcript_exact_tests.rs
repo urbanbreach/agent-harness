@@ -6,6 +6,7 @@ fn task_detail_blocks_text(blocks: &[TranscriptToolCallDetailBlock]) -> String {
         .iter()
         .filter_map(|block| match block {
             TranscriptToolCallDetailBlock::Message { text, .. } => Some(text.as_str()),
+            TranscriptToolCallDetailBlock::Markdown { text } => Some(text.as_str()),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -20,6 +21,8 @@ mod edit_diffs;
 mod failure_shell;
 #[path = "ui_transcript_exact_tests/layout_permissions.rs"]
 mod layout_permissions;
+#[path = "ui_transcript_exact_tests/markdown_tables.rs"]
+mod markdown_tables;
 #[path = "ui_transcript_exact_tests/task_rows.rs"]
 mod task_rows;
 #[path = "ui_transcript_exact_tests/tool_identity.rs"]
@@ -29,5 +32,6 @@ pub(crate) use activity_flow::*;
 pub(crate) use edit_diffs::*;
 pub(crate) use failure_shell::*;
 pub(crate) use layout_permissions::*;
+pub(crate) use markdown_tables::*;
 pub(crate) use task_rows::*;
 pub(crate) use tool_identity::*;

@@ -176,6 +176,63 @@ pub(crate) fn exact_test_transcript_reasoning_precedes_answer_and_tool_rows() {
 }
 
 #[cfg(test)]
+pub(crate) fn exact_test_transcript_user_and_reasoning_match_reference_entry_body() {
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-entry-body",
+        ActivityStatus::Done,
+        "assistant answer",
+    );
+    entry.user_message = Some(harness_core::event::UserMessageSubmittedEvent {
+        request_id: "request-entry-body".to_string(),
+        text: "Explain transcript parity".to_string(),
+    });
+    entry.thinking_text = "Thinking: comparing reference entry body".to_string();
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+
+    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        96,
+    ));
+    let rendered = lines.join("\n");
+
+    assert!(rendered.contains("┃  Explain transcript parity"));
+    assert!(!rendered.contains("█Explain transcript parity"));
+    assert!(!rendered.contains("› Explain transcript parity"));
+    assert!(rendered.contains("Thinking: comparing reference entry body"));
+    assert!(
+        !rendered.contains("Thinking: Thinking:"),
+        "reasoning should rewrite the reference leading Thinking: marker instead of adding a second label\n{rendered}"
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_redacted_only_reasoning_matches_reference_empty_body() {
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-redacted-reasoning",
+        ActivityStatus::Done,
+        "assistant answer",
+    );
+    entry.thinking_text = "[REDACTED]".to_string();
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+
+    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        96,
+    ));
+    let rendered = lines.join("\n");
+
+    assert!(rendered.contains("assistant answer"));
+    assert!(
+        !rendered.contains("Thinking:"),
+        "reference behavior suppresses reasoning entries whose body is empty after [REDACTED] removal\n{rendered}"
+    );
+}
+
+#[cfg(test)]
 pub(crate) fn exact_test_latest_assistant_footer_stays_after_trailing_tool_rows() {
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
@@ -222,6 +279,17 @@ pub(crate) fn exact_test_latest_assistant_footer_stays_after_trailing_tool_rows(
         tool_row < footer_row,
         "assistant footer should stay pinned after trailing tool rows\n{lines:#?}"
     );
+    assert!(
+        lines[tool_row.saturating_sub(1)].trim().is_empty()
+            || lines[tool_row.saturating_sub(1)].trim() == "┃",
+        "reference separator rows insert one blank row for assistant block text followed by inline tool rows\n{lines:#?}"
+    );
+    if std::env::var_os("HARNESS_TUI_SPACING_RENDER_CAPTURE").is_some() {
+        println!(
+            "# Assistant body to inline tool spacing\n{}",
+            lines.join("\n")
+        );
+    }
 }
 
 #[cfg(test)]
@@ -766,7 +834,8 @@ fn tool_task_completion_summary_does_not_render_as_assistant_body() {
 }
 
 #[test]
-fn task_row_hides_raw_task_result_payload_until_expanded() {
+fn task_row_renders_task_result_markdown_without_wrappers() {
+    // arrange
     let tool_call = crate::app::ToolCallEntry {
         tool_call_id: "tc_noisy_task".to_string(),
         tool_id: "task".to_string(),
@@ -801,17 +870,21 @@ fn task_row_hides_raw_task_result_payload_until_expanded() {
     };
 
     let mut detail_blocks = Vec::new();
+    // act
     let (title, icon, visual_style, _) =
         build_agent_spawn_tool_row(&tool_call, None, &mut detail_blocks, 0);
-    assert_eq!(title, "Explore Task — review streaming states");
-    assert_eq!(icon, Some("│"));
+    // assert
+    assert_eq!(title, "review streaming states");
+    assert_eq!(icon, Some("✓"));
     assert_eq!(visual_style, TranscriptToolCallVisualStyle::TaskInline);
     let detail_text = task_detail_blocks_text(&detail_blocks);
-    assert!(detail_text.contains("└ 0 toolcalls · 4.0s"));
+    assert!(detail_text.contains(".sisyphus/evidence/task-7-streaming-states-review.json"));
+    assert!(!detail_text
+        .split_whitespace()
+        .any(|token| token.starts_with("sk-") && token.len() > 12));
     assert!(!detail_text.contains("task_id:"));
     assert!(!detail_text.contains("request_id:"));
     assert!(!detail_text.contains("<task_result>"));
-    assert!(!detail_text.contains(".sisyphus/evidence"));
 }
 
 #[test]
@@ -846,12 +919,9 @@ fn task_row_title_uses_partial_args_or_child_prompt_before_terminal_output() {
 
     let mut detail_blocks = Vec::new();
     let (title, icon, _, _) = build_agent_spawn_tool_row(&tool_call, None, &mut detail_blocks, 0);
-    assert_eq!(
-        title,
-        "Explore Task — review queued background completion wakeups"
-    );
+    assert_eq!(title, "review queued background completion wakeups");
     assert_ne!(title, "Delegating...");
-    assert!(icon.is_some_and(|value| value != "~"));
+    assert_eq!(icon, Some("•"));
 
     tool_call.args_summary = "{}".to_string();
     let task_row = crate::app::OrchestrationTaskRow {
@@ -879,7 +949,16 @@ fn task_row_title_uses_partial_args_or_child_prompt_before_terminal_output() {
     };
     let (title, _, _, _) =
         build_agent_spawn_tool_row(&tool_call, Some(&task_row), &mut Vec::new(), 0);
-    assert_eq!(title, "General Task — inspect task behavior");
+    assert_eq!(title, "inspect task behavior");
+
+    let fallback_task_row = crate::app::OrchestrationTaskRow {
+        result_summary: None,
+        ..task_row
+    };
+    let (title, icon, _, _) =
+        build_agent_spawn_tool_row(&tool_call, Some(&fallback_task_row), &mut Vec::new(), 0);
+    assert_eq!(title, "General Task");
+    assert_eq!(icon, Some("•"));
 }
 
 #[test]

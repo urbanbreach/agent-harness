@@ -158,10 +158,10 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         running_lines.extend(render.lines);
     }
     let running_text = transcript_test_line_texts(running_lines).join("\n");
-    assert!(running_text.contains("Researcher Task — audit transcript parity"));
+    assert!(running_text.contains("• audit transcript parity · Researcher Agent"));
     assert!(
-        running_text.contains("↳ Read src/ui.rs"),
-        "running task row should keep child-session context inline\n{running_text}"
+        !running_text.contains("↳ Read src/ui.rs"),
+        "running task row should stay to the reference inline title/subtitle shape\n{running_text}"
     );
     assert!(!running_text.contains("↳ 1 toolcalls"));
     assert!(!running_text.contains("1 toolcalls · 100ms"));
@@ -275,15 +275,12 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         completed_lines.extend(render.lines);
     }
     let completed_text = transcript_test_line_texts(completed_lines).join("\n");
-    assert!(completed_text.contains("Researcher Task — audit transcript parity"));
-    assert!(
-        completed_text.contains("2 toolcalls · 1.6s"),
-        "completed task row should keep child-session context inline\n{completed_text}"
-    );
-    assert!(completed_text.contains("details background_output(request_id=\"req_child\")"));
-    assert!(completed_text.contains("task(session_id=\"agent_worker\")"));
+    assert!(completed_text.contains("✓ audit transcript parity · Researcher Agent"));
+    assert!(!completed_text.contains("2 toolcalls · 1.6s"));
+    assert!(!completed_text.contains("background_output("));
+    assert!(!completed_text.contains("task(task_id=\"agent_worker\")"));
     assert!(!completed_text.contains("Found the inline transcript path."));
-    assert!(!completed_text.contains("child session finished"));
+    assert!(completed_text.contains("child session finished"));
 
     let expanded_completed_section = build_transcript_tool_call_section(
         completed_tool,
@@ -304,7 +301,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
     let expanded_completed_text =
         transcript_test_line_texts(expanded_completed_render.lines).join("\n");
     assert!(!expanded_completed_text.contains("Found the inline transcript path."));
-    assert!(!expanded_completed_text.contains("child session finished"));
+    assert!(expanded_completed_text.contains("child session finished"));
 
     let parent_transcript_text = transcript_test_line_texts(build_transcript_lines_for_width(
         &app,
@@ -312,17 +309,53 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         120,
     ))
     .join("\n");
-    assert!(parent_transcript_text.contains("Researcher Task — audit transcript parity"));
-    assert!(parent_transcript_text.contains("2 toolcalls · 1.6s"));
-    assert!(parent_transcript_text.contains("details background_output(request_id=\"req_child\")"));
-    assert!(parent_transcript_text.contains("task(session_id=\"agent_worker\")"));
-    let subagent_hint = format!(
-        "{} view subagents",
-        app.keymap.get_binding_str(Action::SessionChildFirst)
-    );
-    assert!(parent_transcript_text.contains(&subagent_hint));
+    assert!(parent_transcript_text.contains("✓ audit transcript parity · Researcher Agent"));
+    assert!(!parent_transcript_text.contains("2 toolcalls · 1.6s"));
+    assert!(!parent_transcript_text.contains("background_output("));
+    assert!(!parent_transcript_text.contains("task(task_id=\"agent_worker\")"));
+    assert!(!parent_transcript_text.contains("view subagents"));
     assert!(
         !parent_transcript_text.contains("CHILD SUBAGENT DETAILS SHOULD STAY OUT OF PARENT"),
         "parent transcript should keep delegated child turns behind the task row\n{parent_transcript_text}"
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_transcript_task_rows_match_reference_inline_title_and_no_hint() {
+    let mut app = AppState::default();
+    let mut entry =
+        transcript_section_model_test_activity("request-task", ActivityStatus::Streaming, "");
+    let mut tool_call = transcript_section_model_test_tool_call("call-task", "task");
+    tool_call.args_summary =
+        r#"{"description":"audit transcript parity","subagent_type":"researcher"}"#.to_string();
+    tool_call.status = ToolCallDisplayStatus::Running;
+    tool_call.lineage = Some(crate::app::TaskLineageEntry {
+        parent_tool_call_id: Some("call-task".to_string()),
+        parent_task_id: Some("task-parent".to_string()),
+        parent_request_id: Some("request-task".to_string()),
+        child_session_id: Some("session-child".to_string()),
+        child_request_id: Some("request-child".to_string()),
+    });
+    entry.tool_calls.push(tool_call);
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+
+    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        96,
+    ));
+    let rendered = lines.join("\n");
+
+    assert!(
+        rendered.contains("• audit transcript parity · Researcher Agent"),
+        "task row should use reference inline task title/subtitle shape\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("Researcher Task — audit transcript parity"),
+        "task row should not duplicate the agent kind in the title\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("view subagents"),
+        "subagent inspection belongs to the footer surface, not an extra transcript hint row\n{rendered}"
     );
 }
