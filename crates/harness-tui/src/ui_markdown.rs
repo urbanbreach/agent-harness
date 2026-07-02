@@ -8,6 +8,7 @@ use crate::theme::Theme;
 use super::ui_chrome::display_width;
 use super::ui_diff::render_structured_diff_lines;
 use super::ui_fenced_text::{parse_fenced_text_blocks, ParsedTextBlock};
+use super::ui_markdown_table::try_render_markdown_table_block;
 use super::ui_syntax_highlight::render_highlighted_code_block;
 use super::ui_transcript_surface::{
     append_prebuilt_plain_lines, append_prefixed_wrapped_spans_line,
@@ -271,8 +272,19 @@ fn append_markdownish_text_block(
     width: u16,
 ) {
     let base_style = Style::default().fg(color);
-    for line in text.lines() {
+    let rows = text.lines().collect::<Vec<_>>();
+    let mut index = 0;
+    while let Some(line) = rows.get(index).copied() {
+        if let Some((table_lines, consumed)) =
+            try_render_markdown_table_block(&rows[index..], color, prefix, theme, width)
+        {
+            lines.extend(table_lines);
+            index += consumed;
+            continue;
+        }
+
         append_markdownish_line(lines, line, color, prefix, base_style, theme, width);
+        index += 1;
     }
 
     if text.is_empty() {

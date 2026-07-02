@@ -30,6 +30,8 @@ mod ui_lifecycle;
 mod ui_lsp;
 #[path = "ui_markdown.rs"]
 mod ui_markdown;
+#[path = "ui_markdown_table.rs"]
+mod ui_markdown_table;
 #[path = "ui_overlays.rs"]
 pub(crate) mod ui_overlays;
 #[path = "ui_secondary.rs"]
@@ -89,7 +91,6 @@ mod ui_transcript_surface;
 #[path = "ui_transcript_test_helpers.rs"]
 mod ui_transcript_test_helpers;
 
-pub(crate) use ui_chrome::subagent_footer_mouse_target;
 use ui_chrome::{
     compact_inline_payload, display_width, elevated_card_surface, interruptive_modal_block,
     live_transcript_shell_section, muted_meta_style, panel_block, panel_style, render_footer,
@@ -98,7 +99,9 @@ use ui_chrome::{
 };
 #[cfg(test)]
 pub(crate) use ui_chrome::{
+    exact_test_subagent_footer_body_keeps_ordered_transcript_tool_rows,
     exact_test_subagent_footer_matches_harness_layout,
+    exact_test_subagent_footer_status_uses_running_and_cancelled_icons,
     exact_test_subagent_replay_suppresses_parent_replay_dock,
 };
 pub(super) use ui_lifecycle::render_startup_lifecycle_surface;
@@ -196,12 +199,19 @@ use ui_transcript::build_transcript_lines;
 #[cfg(test)]
 pub(crate) use ui_transcript::{
     exact_test_block_tool_cards_skip_empty_subtitle_rows,
+    exact_test_file_search_rows_match_reference_title_description_shape,
     exact_test_generic_tool_successful_output_prefers_inline_background_rows,
     exact_test_inline_tool_rows_wrap_long_subtitles_cleanly,
     exact_test_latest_assistant_footer_stays_after_trailing_tool_rows,
     exact_test_lsp_tool_successful_output_stays_hidden_until_generic_output_enabled,
+    exact_test_markdown_table_rich_selection_matches_rendered_rows,
+    exact_test_markdown_table_selection_matches_rendered_rows,
+    exact_test_markdown_tables_match_reference_top_level_columns,
+    exact_test_markdown_tables_render_inline_links_code_alignment_and_cjk_width,
     exact_test_mcp_tool_transcript_rows_use_effective_identity_without_generic_fallback,
-    exact_test_native_tool_transcript_rows_show_disclosure_timestamps_and_task_metadata,
+    exact_test_native_tool_transcript_rows_show_reference_timestamps_and_task_metadata,
+    exact_test_redacted_only_reasoning_matches_reference_empty_body,
+    exact_test_skill_tool_rows_match_reference_title_and_icon,
     exact_test_todo_write_rows_render_open_checklist,
     exact_test_transcript_applied_edit_missing_diff_surfaces_fallback,
     exact_test_transcript_apply_patch_multifile_uses_output_edit_paths,
@@ -218,8 +228,10 @@ pub(crate) use ui_transcript::{
     exact_test_transcript_scroll_offset_preserves_large_overflow,
     exact_test_transcript_section_model_keeps_nested_tool_and_error_blocks,
     exact_test_transcript_section_model_preserves_activity_order,
+    exact_test_transcript_task_rows_match_reference_inline_title_and_no_hint,
     exact_test_transcript_task_rows_show_child_status_duration_and_counts,
     exact_test_transcript_tool_rows_follow_chronological_turn_order,
+    exact_test_transcript_user_and_reasoning_match_reference_entry_body,
     exact_test_visible_surface_lines_support_large_offsets,
 };
 
