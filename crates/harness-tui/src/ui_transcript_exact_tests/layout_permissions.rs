@@ -92,6 +92,7 @@ pub(crate) fn exact_test_visible_surface_lines_support_large_offsets() {
         height: usize::from(u16::MAX) + 1024,
         width: 24,
         show_outer_rail: false,
+        rail_glyph: TRANSCRIPT_RAIL_GLYPH,
         rail_color: Color::Reset,
         surface: Color::Reset,
         lines: (0..(usize::from(u16::MAX) + 1024))

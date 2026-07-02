@@ -781,10 +781,6 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
 
     let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 80);
     let surfaces = &layout.sections[0].surfaces;
-    let user_surface = surfaces
-        .iter()
-        .find(|surface| surface.show_outer_rail)
-        .expect("user surface");
     let tool_surface = surfaces
         .iter()
         .find(|surface| {
@@ -799,12 +795,7 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
         .as_ref()
         .expect("tool surface interaction rows");
 
-    assert_eq!(user_surface.width, 78);
-    assert_eq!(tool_surface.width, user_surface.width);
-    let title_row = tool_lines
-        .iter()
-        .position(|line| line.contains("# Run harmless shell smoke test"))
-        .expect("title line");
+    assert_eq!(tool_surface.width, 78);
     let command_row = tool_lines
         .iter()
         .position(|line| line.contains("$ printf 'bash smoke test ok"))
@@ -816,25 +807,18 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
             (!line.contains("$ printf") && line.contains("bash smoke test ok")).then_some(index)
         })
         .expect("output line");
-    let title_column = tool_lines[title_row]
-        .find("# Run harmless shell smoke test")
-        .expect("title column");
     let command_column = tool_lines[command_row]
         .find("$ printf 'bash smoke test ok")
         .expect("command column");
     let output_column = tool_lines[output_row]
         .find("bash smoke test ok")
         .expect("output column");
-    assert_eq!(title_column, command_column);
     assert_eq!(output_column, command_column);
-    assert_eq!(tool_interactions[title_row], None);
     assert_eq!(tool_interactions[command_row], None);
     assert_eq!(tool_interactions[output_row], None);
     assert!(
-        tool_lines.iter().any(|line| line.starts_with(&format!(
-            "{TRANSCRIPT_COMMAND_TOOL_INDENT}{HARNESS_SPLIT_RAIL_GLYPH}"
-        )) && line.contains("bash smoke test ok")),
-        "command card rail should align with transcript text box edge\n{tool_lines:#?}"
+        tool_lines.iter().all(|line| !line.contains('┃')),
+        "reference shell blocks should not render the old Harness rail\n{tool_lines:#?}"
     );
     assert!(
         tool_surface
@@ -847,11 +831,11 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
     let area = Rect::new(0, 0, 100, 30);
     let snapshot = transcript_selection_debug_snapshot(&app, area)
         .expect("shell command card selection snapshot");
-    let title_row = snapshot
+    let command_row = snapshot
         .rows
         .iter()
-        .position(|line| line.contains("# Run harmless shell smoke test"))
-        .expect("selectable title row");
+        .position(|line| line.contains("$ printf 'bash smoke test ok"))
+        .expect("selectable command row");
     let output_row = snapshot
         .rows
         .iter()
@@ -862,7 +846,7 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
         area,
         TranscriptSelection {
             anchor: TranscriptSelectionCell {
-                row: title_row,
+                row: command_row,
                 column: 0,
             },
             focus: TranscriptSelectionCell {
@@ -873,12 +857,12 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
     )
     .expect("shell command card selection copies text");
     assert!(
-        copied.starts_with("# Run harmless shell smoke test"),
+        copied.starts_with("$ printf 'bash smoke test ok"),
         "copied shell card text should skip visual rail/padding: {copied:?}"
     );
     assert!(copied.contains("$ printf 'bash smoke test ok"));
     assert!(copied.contains("bash smoke test ok"));
-    assert!(!copied.contains(HARNESS_SPLIT_RAIL_GLYPH));
+    assert!(!copied.contains('┃'));
 }
 
 #[test]
@@ -888,8 +872,8 @@ fn assistant_tool_surface_spacing_matches_shell_rhythm() {
             Some(TranscriptRenderSurfaceKind::AssistantBody),
             TranscriptRenderSurfaceKind::AssistantTool,
         ),
-        0,
-        "assistant text should hand off to tool rows without an extra blank terminal row"
+        1,
+        "assistant text should leave the reference section break before tool rows"
     );
     assert_eq!(
         transcript_surface_leading_gap(
