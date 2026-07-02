@@ -55,7 +55,8 @@ fn detail_blocks_surface_error(blocks: &[TranscriptToolCallDetailBlock], error: 
         TranscriptToolCallDetailBlock::FileSection(section) => {
             detail_blocks_surface_error(&section.detail_blocks, error)
         }
-        TranscriptToolCallDetailBlock::TodoList { .. }
+        TranscriptToolCallDetailBlock::Markdown { .. }
+        | TranscriptToolCallDetailBlock::TodoList { .. }
         | TranscriptToolCallDetailBlock::StructuredDiff { .. } => false,
     })
 }

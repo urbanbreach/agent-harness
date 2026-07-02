@@ -26,29 +26,19 @@ pub(super) enum TranscriptTodoStatus {
     Cancelled,
 }
 
-pub(super) fn question_tool_subtitle(
+pub(super) fn question_tool_title(
+    tool_call: &ToolCallEntry,
     question_answers: &[TranscriptQuestionAnswerItem],
-) -> Option<String> {
-    let count = question_answers.len();
-    if count == 0 {
-        return None;
-    }
-    Some(if count == 1 {
-        "answered 1 question".to_string()
-    } else {
-        format!("answered {count} questions")
-    })
+) -> String {
+    let count = question_count_from_args(&tool_call.args_summary).unwrap_or(question_answers.len());
+    format!(
+        "Asked {count} question{}",
+        if count == 1 { "" } else { "s" }
+    )
 }
 
-pub(super) fn todo_tool_title(items: &[TranscriptTodoItem]) -> String {
-    if items.is_empty() {
-        return "Todos".to_string();
-    }
-    let done = items
-        .iter()
-        .filter(|item| item.status == TranscriptTodoStatus::Completed)
-        .count();
-    format!("{done} of {} todos completed", items.len())
+pub(super) fn todo_tool_title(_items: &[TranscriptTodoItem]) -> String {
+    "Todos".to_string()
 }
 
 pub(super) fn todo_items_from_tool_call(
@@ -152,24 +142,25 @@ impl TranscriptTodoStatus {
 
     pub(super) fn checkbox_glyph(self) -> &'static str {
         match self {
-            Self::Completed | Self::Cancelled => "[✓]",
+            Self::Completed => "[✓]",
             Self::InProgress => "[•]",
-            Self::Pending => "[ ]",
+            Self::Cancelled | Self::Pending => "[ ]",
         }
     }
 
     pub(super) fn style(self, theme: &Theme) -> Style {
         match self {
             Self::InProgress => Style::default().fg(theme.status.warning),
-            Self::Completed | Self::Cancelled | Self::Pending => {
-                Style::default().fg(theme.text.secondary)
-            }
+            Self::Cancelled => Style::default()
+                .fg(theme.text.secondary)
+                .add_modifier(Modifier::CROSSED_OUT),
+            Self::Completed | Self::Pending => Style::default().fg(theme.text.secondary),
         }
     }
 
     pub(super) fn content_style(self, theme: &Theme) -> Style {
         let style = self.style(theme);
-        if matches!(self, Self::Completed | Self::Cancelled) {
+        if matches!(self, Self::Cancelled) {
             style.add_modifier(Modifier::CROSSED_OUT)
         } else {
             style
@@ -232,6 +223,14 @@ fn question_permission_kind(kind: &str) -> bool {
     kind.eq_ignore_ascii_case("question")
         || kind.eq_ignore_ascii_case("ask")
         || kind.eq_ignore_ascii_case("ask_user")
+}
+
+fn question_count_from_args(args_summary: &str) -> Option<usize> {
+    serde_json::from_str::<serde_json::Value>(args_summary)
+        .ok()?
+        .get("questions")?
+        .as_array()
+        .map(Vec::len)
 }
 
 fn question_prompt_texts(summary: &str) -> Vec<String> {
