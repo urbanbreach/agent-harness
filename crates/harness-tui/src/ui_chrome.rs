@@ -10,6 +10,12 @@ use crate::theme::{ChromeMode, DividerIntensity};
 #[path = "ui_chrome_exact_tests.rs"]
 mod ui_chrome_exact_tests;
 #[cfg(test)]
+#[path = "ui_subagent_footer_entry_body_tests.rs"]
+mod ui_subagent_footer_entry_body_tests;
+#[cfg(test)]
+#[path = "ui_subagent_footer_exact_tests.rs"]
+mod ui_subagent_footer_exact_tests;
+#[cfg(test)]
 pub(crate) use ui_chrome_exact_tests::{
     exact_test_composer_viewport_wraps_at_word_boundaries,
     exact_test_composer_viewport_wraps_by_display_width,
@@ -26,11 +32,15 @@ pub(crate) use ui_chrome_exact_tests::{
     exact_test_subagent_replay_suppresses_parent_replay_dock,
     exact_test_tool_status_summary_uses_effective_tool_identity,
 };
+#[cfg(test)]
+pub(crate) use ui_subagent_footer_exact_tests::{
+    exact_test_subagent_footer_body_keeps_ordered_transcript_tool_rows,
+    exact_test_subagent_footer_status_uses_running_and_cancelled_icons,
+};
 
 #[path = "ui_subagent_footer.rs"]
 mod ui_subagent_footer;
 use self::ui_subagent_footer::render_subagent_footer;
-pub(crate) use self::ui_subagent_footer::subagent_footer_mouse_target;
 #[path = "ui_permission_dock.rs"]
 mod ui_permission_dock;
 use self::ui_permission_dock::render_inline_permission_dock;

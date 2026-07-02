@@ -50,6 +50,7 @@ const STARTUP_COMPOSER_MAX_WIDTH: u16 = 75;
 const STARTUP_LOGO_TO_COMPOSER_GAP: u16 = 1;
 const OPENCODE_HOME_TOP_SPACER: u16 = 4;
 const OPENCODE_HOME_PROMPT_PADDING_TOP: u16 = 1;
+const SUBAGENT_INSPECTOR_ROWS: u16 = 14;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SessionResponsiveMode {
@@ -146,7 +147,7 @@ impl FrameLayoutPlan {
         };
         let subagent_footer_visible = subagent_footer_visible(app);
         let footer_height = if subagent_footer_visible {
-            shell_tokens.spacing.heights.footer.saturating_add(2)
+            SUBAGENT_INSPECTOR_ROWS
         } else if app.startup_shell_visible() || app.replay_mode {
             shell_tokens.spacing.heights.footer
         } else {
@@ -477,9 +478,7 @@ pub(crate) fn session_shell_layout(
     let (transcript, terminal_panel) = terminal_panel_split(app, body, gap);
     let operator_overlay = if operator_sidebar.is_some() {
         None
-    } else if (app.replay_mode && !app.current_subagent_session_present())
-        || app.details_drawer_open()
-    {
+    } else if app.details_drawer_open() {
         session_operator_overlay(body, contract)
     } else {
         None
