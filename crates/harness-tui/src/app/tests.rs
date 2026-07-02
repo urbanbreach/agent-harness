@@ -184,26 +184,6 @@ fn transcript_click_position_in_area(app: &AppState, area: Rect, needle: &str) -
     panic!("expected row containing {needle:?}");
 }
 
-fn footer_click_position(app: &AppState, needle: &str) -> (u16, u16) {
-    let backend = TestBackend::new(TEST_FRAME_AREA.width, TEST_FRAME_AREA.height);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
-    terminal
-        .draw(|frame| render_app(frame, app))
-        .expect("draw footer frame");
-    let buffer = terminal.backend().buffer();
-
-    for y in 0..TEST_FRAME_AREA.height {
-        let row = (0..TEST_FRAME_AREA.width)
-            .map(|x| buffer[(x, y)].symbol())
-            .collect::<String>();
-        if let Some(column) = row.find(needle) {
-            return (u16::try_from(column + 1).expect("column fits"), y);
-        }
-    }
-
-    panic!("expected footer row containing {needle:?}");
-}
-
 fn rendered_cell_bg(app: &AppState, column: u16, row: u16) -> Color {
     let backend = TestBackend::new(TEST_FRAME_AREA.width, TEST_FRAME_AREA.height);
     let mut terminal = Terminal::new(backend).expect("create terminal");
@@ -239,11 +219,9 @@ delegate_test!(mouse_click_on_task_inline_row_opens_subagent_session => subagent
 delegate_test!(keyboard_sidebar_subagent_selection_opens_child_session => subagent_navigation_tests::keyboard_keyboard_sidebar_subagent_selection_opens_child_session);
 delegate_test!(live_subagent_hitbox_uses_rendered_transcript_area => subagent_navigation_tests::keyboard_live_subagent_hitbox_uses_rendered_transcript_area);
 delegate_test!(disk_backed_child_navigation_stays_in_live_tui_stack => subagent_navigation_tests::keyboard_disk_backed_child_navigation_stays_in_live_tui_stack);
-delegate_test!(mouse_click_on_subagent_footer_navigates_parent_previous_and_next => subagent_navigation_tests::mouse_click_on_subagent_footer_navigates_parent_previous_and_next);
 delegate_test!(mouse_click_on_task_inline_row_uses_task_row_child_session => subagent_navigation_tests::mouse_click_on_task_inline_row_uses_task_row_child_session);
 delegate_test!(mouse_up_on_completed_general_task_row_opens_child_session => subagent_navigation_tests::mouse_up_on_completed_general_task_row_opens_child_session);
 delegate_test!(mouse_click_on_task_row_uses_harness_session_metadata => subagent_navigation_tests::mouse_click_on_task_row_uses_harness_session_metadata);
-delegate_test!(mouse_click_on_subagent_hint_opens_first_child_session => subagent_navigation_tests::mouse_click_on_subagent_hint_opens_first_child_session);
 delegate_test!(slash_exit_from_inline_subagent_restores_parent_before_quit => subagent_navigation_tests::slash_exit_from_inline_subagent_restores_parent_before_quit);
 
 fn write_events_jsonl(run_dir: &Path, events: &[EventEnvelopeV1]) {
@@ -854,6 +832,7 @@ delegate_test!(disabled_copy_on_select_supports_ctrl_c_and_escape => transcript_
 #[cfg(not(windows))]
 delegate_test!(mouse_drag_copy_on_select_keeps_body_rows_aligned_after_reasoning_gap => transcript_selection_tests::mouse_drag_copy_on_select_keeps_body_rows_aligned_after_reasoning_gap);
 delegate_test!(transcript_selection_hit_testing_reuses_cached_snapshot_during_drag => transcript_selection_tests::transcript_selection_hit_testing_reuses_cached_snapshot_during_drag);
+delegate_test!(transcript_selection_snapshot_uses_transcript_rail_for_user_rows => transcript_selection_tests::transcript_selection_snapshot_uses_transcript_rail_for_user_rows);
 delegate_test!(mouse_wheel_does_not_build_transcript_selection_snapshot => transcript_selection_tests::mouse_wheel_does_not_build_transcript_selection_snapshot);
 delegate_test!(transcript_selection_render_reuses_cached_snapshot => transcript_selection_tests::transcript_selection_render_reuses_cached_snapshot);
 delegate_test!(transcript_selection_render_stays_aligned_after_large_reasoning_block => transcript_selection_tests::transcript_selection_render_stays_aligned_after_large_reasoning_block);

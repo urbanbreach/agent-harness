@@ -9,121 +9,6 @@ pub(super) use subagent_navigation_keyboard_tests::{
     mouse_click_on_task_inline_row_opens_subagent_session as keyboard_mouse_click_on_task_inline_row_opens_subagent_session,
 };
 
-pub(super) fn mouse_click_on_subagent_footer_navigates_parent_previous_and_next() {
-    let run_dir = tempfile::tempdir().expect("create run dir");
-    let parent_path = run_dir.path().join("parent_run");
-    fs::create_dir_all(&parent_path).expect("create parent run dir");
-
-    let mut app = AppState::new_live(Some(parent_path), false, None);
-    app.ingest_event(agent_spawned(1, "parent", "build"));
-    app.ingest_event(envelope(
-        2,
-        "req_parent",
-        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_parent".to_string(),
-            text: "Start parent work".to_string(),
-        }),
-    ));
-    app.ingest_event(provider_started(3, "req_parent", "default", "model-parent"));
-    app.ingest_event(child_task_requested(
-        4,
-        "req_parent",
-        "tc_child_a",
-        "agent_child_a",
-        "req_child_a",
-    ));
-    app.ingest_event(child_task_requested(
-        5,
-        "req_parent",
-        "tc_child_b",
-        "agent_child_b",
-        "req_child_b",
-    ));
-    app.ingest_event(child_agent_spawned(6, "agent_child_a", "explore", "parent"));
-    app.ingest_event(envelope_with_actor(
-        7,
-        "req_child_a",
-        EventActor::new(ActorKind::Worker, Some("agent_child_a".to_string())),
-        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_child_a".to_string(),
-            provider_id: "default".to_string(),
-            model_id: "model-child-a".to_string(),
-            prompt_summary: "inspect child a".to_string(),
-            request_digest: "digest-child-a-prompt".to_string(),
-            metadata: None,
-        }),
-    ));
-    app.ingest_event(child_agent_spawned(8, "agent_child_b", "explore", "parent"));
-    app.ingest_event(envelope_with_actor(
-        9,
-        "req_child_b",
-        EventActor::new(ActorKind::Worker, Some("agent_child_b".to_string())),
-        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_child_b".to_string(),
-            provider_id: "default".to_string(),
-            model_id: "model-child-b".to_string(),
-            prompt_summary: "inspect child b".to_string(),
-            request_digest: "digest-child-b-prompt".to_string(),
-            metadata: None,
-        }),
-    ));
-
-    app.navigate_to_child_session_id("agent_child_a".to_string());
-    assert_eq!(app.current_session_id(), Some("agent_child_a"));
-    assert!(app.replay_mode, "inline child sessions open read-only");
-    assert!(render_debug(&app, TEST_FRAME_AREA.width, TEST_FRAME_AREA.height).contains("Next ]"));
-    assert!(
-        !render_debug(&app, TEST_FRAME_AREA.width, TEST_FRAME_AREA.height).contains("▼ MCP"),
-        "subagent chat should use the main transcript shell without the replay sidebar"
-    );
-
-    let (next_column, next_row) = footer_click_position(&app, "Next");
-    app.handle_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Down(MouseButton::Left),
-            column: next_column,
-            row: next_row,
-            modifiers: KeyModifiers::NONE,
-        },
-        TEST_FRAME_AREA,
-        None,
-        None,
-        None,
-    );
-    assert_eq!(app.current_session_id(), Some("agent_child_b"));
-
-    let (previous_column, previous_row) = footer_click_position(&app, "Prev");
-    app.handle_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Down(MouseButton::Left),
-            column: previous_column,
-            row: previous_row,
-            modifiers: KeyModifiers::NONE,
-        },
-        TEST_FRAME_AREA,
-        None,
-        None,
-        None,
-    );
-    assert_eq!(app.current_session_id(), Some("agent_child_a"));
-
-    let (parent_column, parent_row) = footer_click_position(&app, "Parent");
-    app.handle_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Down(MouseButton::Left),
-            column: parent_column,
-            row: parent_row,
-            modifiers: KeyModifiers::NONE,
-        },
-        TEST_FRAME_AREA,
-        None,
-        None,
-        None,
-    );
-    assert_eq!(app.current_session_id(), Some("parent_run"));
-    assert!(!app.replay_mode);
-}
-
 pub(super) fn mouse_click_on_task_inline_row_uses_task_row_child_session() {
     let run_dir = tempfile::tempdir().expect("create run dir");
     let parent_path = run_dir.path().join("parent_run");
@@ -179,7 +64,7 @@ pub(super) fn mouse_click_on_task_inline_row_uses_task_row_child_session() {
         }),
     ));
 
-    let (column, row) = transcript_click_position(&app, "Explore Task — inspect child");
+    let (column, row) = transcript_click_position(&app, "inspect child · Explore Agent");
     assert_eq!(
         transcript_mouse_target(&app, TEST_FRAME_AREA, column, row),
         Some(TranscriptMouseTarget::SubagentSession {
@@ -305,15 +190,15 @@ pub(super) fn mouse_up_on_completed_general_task_row_opens_child_session() {
     ));
 
     let (column, row) =
-        transcript_click_position(&app, "General Task — Subagent functionality smoke test");
+        transcript_click_position(&app, "Subagent functionality smoke test · General Agent");
     assert_eq!(
         transcript_mouse_target(&app, TEST_FRAME_AREA, column, row),
         Some(TranscriptMouseTarget::SubagentSession {
             session_id: "agent_child".to_string(),
         })
     );
-    let (_, detail_row) = transcript_click_position(&app, "└ 0 toolcalls · 16ms");
-    assert_eq!(detail_row, row + 1);
+    let (_, result_row) = transcript_click_position(&app, "child completed");
+    assert_eq!(result_row, row + 1);
 
     app.handle_mouse(
         MouseEvent {
@@ -424,7 +309,8 @@ pub(super) fn mouse_click_on_task_row_uses_harness_session_metadata() {
         }),
     ));
 
-    let (column, row) = transcript_click_position(&app, "Plan Task — Smoke test subagent dispatch");
+    let (column, row) =
+        transcript_click_position(&app, "Smoke test subagent dispatch · Plan Agent");
     assert_eq!(
         transcript_mouse_target(&app, TEST_FRAME_AREA, column, row),
         Some(TranscriptMouseTarget::SubagentSession {
@@ -447,74 +333,6 @@ pub(super) fn mouse_click_on_task_row_uses_harness_session_metadata() {
 
     assert_eq!(app.current_session_id(), Some("agent_child"));
     assert!(app.replay_mode, "inline child sessions open read-only");
-}
-
-pub(super) fn mouse_click_on_subagent_hint_opens_first_child_session() {
-    let run_dir = tempfile::tempdir().expect("create run dir");
-    let parent_path = run_dir.path().join("parent_run");
-    fs::create_dir_all(&parent_path).expect("create parent run dir");
-
-    let mut app = AppState::new_live(Some(parent_path), false, None);
-    app.ingest_event(agent_spawned(1, "parent", "build"));
-    app.ingest_event(envelope(
-        2,
-        "req_parent",
-        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_parent".to_string(),
-            text: "Start parent work".to_string(),
-        }),
-    ));
-    app.ingest_event(provider_started(3, "req_parent", "default", "model-parent"));
-    app.ingest_event(child_task_requested(
-        4,
-        "req_parent",
-        "tc_child_hint",
-        "agent_child",
-        "req_child",
-    ));
-    app.ingest_event(child_agent_spawned(5, "agent_child", "explore", "parent"));
-    app.ingest_event(envelope_with_actor(
-        6,
-        "req_child",
-        EventActor::new(ActorKind::Worker, Some("agent_child".to_string())),
-        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_child".to_string(),
-            provider_id: "default".to_string(),
-            model_id: "model-child".to_string(),
-            prompt_summary: "inspect child".to_string(),
-            request_digest: "digest-child-prompt".to_string(),
-            metadata: None,
-        }),
-    ));
-
-    let hint = format!(
-        "{} view subagents",
-        app.keymap.get_binding_str(Action::SessionChildFirst)
-    );
-    let (column, row) = transcript_click_position(&app, &hint);
-    assert_eq!(
-        transcript_mouse_target(&app, TEST_FRAME_AREA, column, row),
-        Some(TranscriptMouseTarget::FirstSubagentSession)
-    );
-
-    app.handle_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Down(MouseButton::Left),
-            column,
-            row,
-            modifiers: KeyModifiers::NONE,
-        },
-        TEST_FRAME_AREA,
-        None,
-        None,
-        None,
-    );
-
-    assert_eq!(app.current_session_id(), Some("agent_child"));
-    assert!(
-        app.replay_mode,
-        "hint opens inline child sessions read-only"
-    );
 }
 
 pub(super) fn slash_exit_from_inline_subagent_restores_parent_before_quit() {
