@@ -28,7 +28,7 @@ pub(super) fn child_session_navigation_keybinds_follow_default_contract() {
 
     let parent_events = vec![
         run_started(1),
-        agent_spawned(2, "parent", "planner"),
+        agent_spawned(2, "parent", "build"),
         provider_started(3, "req_parent", "mock", "model-parent"),
         child_link_requested(4, "req_parent", "tc_child_a", Some("child_a"), None),
         child_link_requested(5, "req_parent", "tc_child_b", Some("child_b"), None),
@@ -84,20 +84,24 @@ pub(super) fn child_session_navigation_keybinds_follow_default_contract() {
         parent_app.ingest_event(event);
     }
     parent_app.focus = Focus::Prompt;
+    parent_app.handle_key(key(KeyCode::Right));
+    assert_eq!(
+        parent_app.session_path.as_deref(),
+        Some(parent_dir.as_path())
+    );
+    parent_app.focus = Focus::Details;
     parent_app.handle_key(key_with_modifiers(
-        KeyCode::Char(']'),
+        KeyCode::Char('x'),
         KeyModifiers::CONTROL,
     ));
-    assert!(parent_app.composer.prompt_buffer.is_empty());
+    parent_app.handle_key(key(KeyCode::Down));
     assert_eq!(
         parent_app.session_path.as_deref(),
         Some(child_a_dir.as_path())
     );
     assert!(parent_app.replay_mode);
-    parent_app.handle_key(key_with_modifiers(
-        KeyCode::Char('['),
-        KeyModifiers::CONTROL,
-    ));
+    parent_app.focus = Focus::Details;
+    parent_app.handle_key(key(KeyCode::Up));
     assert_eq!(
         parent_app.session_path.as_deref(),
         Some(parent_dir.as_path())
@@ -111,11 +115,14 @@ pub(super) fn child_session_navigation_keybinds_follow_default_contract() {
         child_app.ingest_event(event);
     }
     child_app.focus = Focus::Prompt;
-    child_app.handle_key(key(KeyCode::Char(']')));
+    child_app.handle_key(key(KeyCode::Right));
+    child_app.focus = Focus::Details;
     child_app.handle_key(key_with_modifiers(
-        KeyCode::Char('['),
+        KeyCode::Char('x'),
         KeyModifiers::CONTROL,
     ));
+    child_app.handle_key(key(KeyCode::Down));
+    child_app.handle_key(key(KeyCode::Up));
     assert!(child_app.composer.prompt_buffer.is_empty());
 
     let mut reverse_app = AppState::new_live(Some(child_b_dir.clone()), false, Some(sink));
@@ -124,16 +131,14 @@ pub(super) fn child_session_navigation_keybinds_follow_default_contract() {
         reverse_app.ingest_event(event);
     }
     reverse_app.focus = Focus::Prompt;
-    reverse_app.handle_key(key(KeyCode::Char('[')));
+    reverse_app.handle_key(key(KeyCode::Left));
+    reverse_app.focus = Focus::Details;
+    reverse_app.handle_key(key(KeyCode::Left));
     assert!(reverse_app.composer.prompt_buffer.is_empty());
 
     assert_eq!(
         intents.lock().expect("lock intents").as_slice(),
         &[
-            UiIntent::ReplaySession {
-                run_id: "child_b".to_string(),
-                run_dir: child_b_dir.clone(),
-            },
             UiIntent::ReplaySession {
                 run_id: "parent".to_string(),
                 run_dir: parent_dir.clone(),
@@ -192,29 +197,23 @@ pub(super) fn replay_child_navigation_does_not_emit_live_intents() {
         "mock",
         Some("model-parent".to_string()),
     ));
-    app.focus = Focus::Prompt;
+    app.focus = Focus::Details;
 
-    app.handle_key(key_with_modifiers(
-        KeyCode::Char(']'),
-        KeyModifiers::CONTROL,
-    ));
+    app.handle_key(key(KeyCode::Right));
     assert_eq!(app.session_path.as_deref(), Some(child_a_dir.as_path()));
     assert_eq!(app.active_profile(), "worker-a");
     assert!(app.replay_mode);
     assert!(app.composer.prompt_buffer.is_empty());
 
-    app.handle_key(key(KeyCode::Char(']')));
+    app.handle_key(key(KeyCode::Right));
     assert_eq!(app.session_path.as_deref(), Some(child_b_dir.as_path()));
     assert_eq!(app.active_profile(), "worker-b");
 
-    app.handle_key(key(KeyCode::Char('[')));
+    app.handle_key(key(KeyCode::Left));
     assert_eq!(app.session_path.as_deref(), Some(child_a_dir.as_path()));
     assert_eq!(app.active_profile(), "worker-a");
 
-    app.handle_key(key_with_modifiers(
-        KeyCode::Char('['),
-        KeyModifiers::CONTROL,
-    ));
+    app.handle_key(key(KeyCode::Up));
     assert_eq!(app.session_path.as_deref(), Some(parent_dir.as_path()));
     assert_eq!(app.active_profile(), "planner");
     assert!(intents.lock().expect("lock intents").is_empty());
@@ -275,10 +274,7 @@ pub(super) fn replay_handoff_parent_navigation_continues_resumable_parent_sessio
     app.enable_replay_navigation_handoff(Arc::clone(&sink));
     app.apply_keybindings(default_navigation_keybindings());
 
-    app.handle_key(key_with_modifiers(
-        KeyCode::Char('['),
-        KeyModifiers::CONTROL,
-    ));
+    app.handle_key(key(KeyCode::Up));
 
     assert!(app.should_quit);
     assert_eq!(app.session_path.as_deref(), Some(child_dir.as_path()));
@@ -348,10 +344,8 @@ pub(super) fn task_child_navigation_opens_inline_subagent_view_without_child_run
     assert!(!render_debug(&app, 140, 40)
         .contains("child subagent transcript is visible only in child view"));
 
-    app.handle_key(key_with_modifiers(
-        KeyCode::Char(']'),
-        KeyModifiers::CONTROL,
-    ));
+    app.handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL));
+    app.handle_key(key(KeyCode::Down));
 
     assert_eq!(
         app.session_path.as_deref(),
@@ -368,10 +362,7 @@ pub(super) fn task_child_navigation_opens_inline_subagent_view_without_child_run
         .last()
         .is_some_and(|snapshot| snapshot.session_path == parent_dir && snapshot.replay_mode));
 
-    app.handle_key(key_with_modifiers(
-        KeyCode::Char('['),
-        KeyModifiers::CONTROL,
-    ));
+    app.handle_key(key(KeyCode::Up));
 
     assert_eq!(app.session_path.as_deref(), Some(parent_dir.as_path()));
     assert!(app.replay_mode);
@@ -412,15 +403,13 @@ pub(super) fn parent_child_navigation_ignores_nested_subagents_hidden_from_paren
     let mut app = AppState::new_replay(parent_dir, parent_events);
     app.apply_keybindings(default_navigation_keybindings());
 
-    app.handle_key(key_with_modifiers(
-        KeyCode::Char(']'),
-        KeyModifiers::CONTROL,
-    ));
+    app.handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL));
+    app.handle_key(key(KeyCode::Down));
 
     assert_eq!(
         app.session_path.as_deref(),
         Some(run_dir.path().join("z_child").as_path()),
-        "parent ctrl+] should open the direct child, not a nested grandchild"
+        "parent right arrow should open the direct child, not a nested grandchild"
     );
     assert!(app
         .activities
@@ -477,15 +466,18 @@ pub(super) fn live_inline_child_navigation_restores_live_parent_mode() {
     ];
 
     let mut app = AppState::new_live(Some(parent_dir.clone()), false, None);
+    app.set_launch_metadata(LaunchMetadata::new(
+        "build",
+        "mock",
+        Some("model-parent".to_string()),
+    ));
     app.apply_keybindings(default_navigation_keybindings());
     for event in parent_events {
         app.ingest_event(event);
     }
 
-    app.handle_key(key_with_modifiers(
-        KeyCode::Char(']'),
-        KeyModifiers::CONTROL,
-    ));
+    app.handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL));
+    app.handle_key(key(KeyCode::Down));
 
     assert_eq!(
         app.session_path.as_deref(),
@@ -504,4 +496,85 @@ pub(super) fn live_inline_child_navigation_restores_live_parent_mode() {
     app.focus = Focus::Prompt;
     app.handle_key(key(KeyCode::Char('x')));
     assert_eq!(app.composer.prompt_buffer, "x");
+}
+
+pub(super) fn live_parent_events_update_parent_snapshot_while_inline_child_is_selected() {
+    let run_dir = tempfile::tempdir().expect("create temp run dir");
+    let parent_dir = run_dir.path().join("parent");
+    fs::create_dir_all(&parent_dir).expect("create parent dir");
+
+    let parent_events = vec![
+        run_started(1),
+        agent_spawned(2, "parent", "build"),
+        provider_started(3, "req_parent", "mock", "model-parent"),
+        child_task_requested(4, "req_parent", "tc_child", "agent_child", "req_child"),
+        agent_spawned(5, "agent_child", "explore"),
+        envelope(
+            6,
+            "req_child",
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: "req_child".to_string(),
+                text: "Inspect child".to_string(),
+            }),
+        ),
+        provider_started(7, "req_child", "mock", "model-child"),
+        envelope(
+            8,
+            "req_child",
+            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                request_id: "req_child".to_string(),
+                delta: "child-only transcript".to_string(),
+            }),
+        ),
+    ];
+
+    let mut app = AppState::new_live(Some(parent_dir.clone()), false, None);
+    app.apply_keybindings(default_navigation_keybindings());
+    for event in parent_events {
+        app.ingest_event(event);
+    }
+    app.handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL));
+    app.handle_key(key(KeyCode::Down));
+    assert_eq!(app.current_session_id(), Some("agent_child"));
+    assert!(app.replay_mode);
+
+    app.ingest_event(envelope(
+        9,
+        "req_parent",
+        EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+            request_id: "req_parent".to_string(),
+            delta: "parent response after child opened".to_string(),
+        }),
+    ));
+
+    assert!(render_debug(&app, 140, 40).contains("child-only transcript"));
+    assert!(!render_debug(&app, 140, 40).contains("parent response after child opened"));
+
+    app.ingest_event(envelope(
+        10,
+        "req_child",
+        EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+            request_id: "req_child".to_string(),
+            delta: " and live child update".to_string(),
+        }),
+    ));
+
+    let child_render = render_debug(&app, 140, 40);
+    assert!(child_render.contains("child-only transcript and live child update"));
+    assert!(!child_render.contains("parent response after child opened"));
+
+    app.handle_key(key(KeyCode::Up));
+
+    assert_eq!(app.session_path.as_deref(), Some(parent_dir.as_path()));
+    assert!(!app.replay_mode);
+    let parent_render = render_debug(&app, 140, 40);
+    assert!(parent_render.contains("parent response after child opened"));
+    assert!(
+        parent_render.contains("Build · model-parent · active"),
+        "parent footer should keep the Build agent after returning from child view\n{parent_render}"
+    );
+    assert!(
+        !parent_render.contains("Assistant · model-parent"),
+        "parent footer must not fall back to generic Assistant after returning from child view\n{parent_render}"
+    );
 }
