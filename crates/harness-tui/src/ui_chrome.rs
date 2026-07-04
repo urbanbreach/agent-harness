@@ -40,7 +40,12 @@ pub(crate) use ui_subagent_footer_exact_tests::{
 
 #[path = "ui_subagent_footer.rs"]
 mod ui_subagent_footer;
+#[path = "ui_subagent_footer_navigation.rs"]
+mod ui_subagent_footer_navigation;
 use self::ui_subagent_footer::render_subagent_footer;
+pub(crate) use self::ui_subagent_footer_navigation::{
+    subagent_footer_target_at, SubagentFooterTarget,
+};
 #[path = "ui_permission_dock.rs"]
 mod ui_permission_dock;
 use self::ui_permission_dock::render_inline_permission_dock;

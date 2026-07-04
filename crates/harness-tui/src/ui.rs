@@ -104,6 +104,7 @@ pub(crate) use ui_chrome::{
     exact_test_subagent_footer_status_uses_running_and_cancelled_icons,
     exact_test_subagent_replay_suppresses_parent_replay_dock,
 };
+pub(crate) use ui_chrome::{subagent_footer_target_at, SubagentFooterTarget};
 pub(super) use ui_lifecycle::render_startup_lifecycle_surface;
 use ui_lifecycle::{live_empty_state_visible, render_live_empty_state, startup_shell_visible};
 use ui_overlays::render_overlays;
