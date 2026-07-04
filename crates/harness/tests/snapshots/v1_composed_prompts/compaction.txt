@@ -8,7 +8,7 @@ Always follow the exact output structure requested by the user prompt. Keep ever
 
 Do not answer the conversation itself. Do not mention that you are summarizing, compacting, or merging context. Respond in the same language as the conversation.
 
-Task delegation reminder: if the `task` tool is available, use a structured delegation body with context, goal, downstream use, request, required tools, must-do, and must-not-do. `run_in_background=false` is synchronous; the child result returns directly in the current tool response and no `[BACKGROUND TASK ...]` reminder is emitted. Use `run_in_background=true` when testing background subagents, wakeups, completion reminders, or `background_output`.
+Task delegation reminder: if the `task` tool is available, use a structured delegation body with context, goal, downstream use, request, required tools, must-do, and must-not-do. `run_in_background=false` is synchronous; the child result returns directly in the current tool response and no `[BACKGROUND TASK ...]` reminder is emitted. Use `run_in_background=true` when testing background subagents, wakeups, completion reminders, or `background_output`. For `run_in_background=true`, use `background_output` for interim status checks, user-requested interim updates, or `cancel=true` anytime; for the final background result, wait for the coordinator/system completion notification before retrieving with `background_output`.
 
 Instructions from: /workspace/agent-harness/AGENTS.md
 # PROJECT KNOWLEDGE BASE

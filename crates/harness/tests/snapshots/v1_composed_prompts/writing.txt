@@ -48,7 +48,7 @@ Return changed docs, claim boundaries, verification, and remaining risks.
 
 Completion requires docs to match the verified source of truth.
 
-Task delegation reminder: if the `task` tool is available, use a structured delegation body with context, goal, downstream use, request, required tools, must-do, and must-not-do. `run_in_background=false` is synchronous; the child result returns directly in the current tool response and no `[BACKGROUND TASK ...]` reminder is emitted. Use `run_in_background=true` when testing background subagents, wakeups, completion reminders, or `background_output`.
+Task delegation reminder: if the `task` tool is available, use a structured delegation body with context, goal, downstream use, request, required tools, must-do, and must-not-do. `run_in_background=false` is synchronous; the child result returns directly in the current tool response and no `[BACKGROUND TASK ...]` reminder is emitted. Use `run_in_background=true` when testing background subagents, wakeups, completion reminders, or `background_output`. For `run_in_background=true`, use `background_output` for interim status checks, user-requested interim updates, or `cancel=true` anytime; for the final background result, wait for the coordinator/system completion notification before retrieving with `background_output`.
 
 Instructions from: /workspace/agent-harness/AGENTS.md
 # PROJECT KNOWLEDGE BASE
