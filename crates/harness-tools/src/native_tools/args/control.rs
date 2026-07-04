@@ -43,7 +43,7 @@ pub(in crate::native_tools) struct TaskArgs {
     )]
     pub(in crate::native_tools) session_id: Option<String>,
     #[schemars(
-        description = "Required. false waits synchronously; true returns request_id/task_id immediately for background_output retrieval."
+        description = "Required. false waits synchronously; true returns request_id/task_id immediately. Use background_output for interim status checks, or cancel=true anytime, but wait for the coordinator/system completion notification before final result retrieval."
     )]
     pub(in crate::native_tools) run_in_background: bool,
     #[schemars(
@@ -70,12 +70,12 @@ pub(in crate::native_tools) struct BackgroundOutputArgs {
     #[serde(default)]
     pub(in crate::native_tools) session_id: Option<String>,
     #[schemars(
-        description = "Canonical background request identifier returned by task(run_in_background=true)."
+        description = "Canonical background request identifier returned by task(run_in_background=true); use it for interim status checks and final result retrieval after the coordinator/system completion notification."
     )]
     #[serde(default)]
     pub(in crate::native_tools) request_id: Option<String>,
     #[schemars(
-        description = "When true, wait until the background request reaches a terminal state or timeout expires."
+        description = "When true, wait until the background request reaches a terminal state or timeout expires. Use only for interim status checks unless the coordinator/system completion notification has arrived."
     )]
     #[serde(default)]
     pub(in crate::native_tools) block: bool,
@@ -83,7 +83,7 @@ pub(in crate::native_tools) struct BackgroundOutputArgs {
     #[serde(default = "default_background_output_timeout_ms", alias = "timeout_ms")]
     pub(in crate::native_tools) timeout: u64,
     #[schemars(
-        description = "When true, request cancellation for a non-terminal child before returning status."
+        description = "When true, request cancellation for a non-terminal child before returning status; cancel=true is allowed anytime."
     )]
     #[serde(default)]
     pub(in crate::native_tools) cancel: bool,

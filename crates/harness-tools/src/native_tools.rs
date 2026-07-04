@@ -552,7 +552,7 @@ impl Tool for TaskTool {
     }
 
     fn description(&self) -> &str {
-        "Delegates work to another configured harness profile/category. Exactly one of `category` or `subagent_type` is required for new child tasks; use task_id/session_id only when continuing a prior task. `run_in_background` is required: run_in_background=false waits and returns the child result synchronously; sync child tasks do not emit background wakeup notifications. run_in_background=true returns task_id/request_id immediately and is required when testing or exercising background scheduling, completion reminders, or background_output retrieval. `load_skills` is required, even when empty; listed skills are resolved before spawning and injected into the child prompt. For non-trivial delegation, make `prompt` a structured body with sections: context, goal, downstream use, request, required tools, must-do, must-not-do. Use background_output with the returned request_id whenever you need status, result, or cancellation. The coordinator may also send a completion reminder later for background tasks, but do not wait for that reminder when the result is needed. `command` is prepended to the child prompt as explicit delegation context."
+        "Delegates work to another configured harness profile/category. Exactly one of `category` or `subagent_type` is required for new child tasks; use task_id/session_id only when continuing a prior task. `run_in_background` is required: run_in_background=false waits and returns the child result synchronously; sync child tasks do not emit background wakeup notifications. run_in_background=true returns task_id/request_id immediately and is required when testing or exercising background scheduling, completion reminders, or background_output retrieval. `load_skills` is required, even when empty; listed skills are resolved before spawning and injected into the child prompt. For non-trivial delegation, make `prompt` a structured body with sections: context, goal, downstream use, request, required tools, must-do, and must-not-do. Use background_output with the returned request_id for interim status checks, and with cancel=true anytime for cancellation. For the final result, wait for the coordinator/system completion notification before retrieving with background_output. `command` is prepended to the child prompt as explicit delegation context."
     }
 
     fn parameters_json_schema(&self) -> Value {
@@ -593,7 +593,7 @@ impl Tool for BackgroundOutputTool {
     }
 
     fn description(&self) -> &str {
-        "Provides durable retrieval of the current status or terminal result for a child task scheduled with task(run_in_background=true). Use this tool when you need the background result; completion reminders are notifications only and do not replace explicit retrieval. Prefer request_id from the task result; task_id/session_id resolve to the latest child request for compatibility. Set cancel=true to request coordinator cancellation for a non-terminal child task."
+        "Provides durable retrieval of the current status or terminal result for a child task scheduled with task(run_in_background=true). Use it for interim status checks before completion, and for final result retrieval only after the coordinator/system completion notification. Prefer request_id from the task result; task_id/session_id resolve to the latest child request for compatibility. Set cancel=true anytime to request coordinator cancellation for a non-terminal child task."
     }
 
     fn parameters_json_schema(&self) -> Value {
