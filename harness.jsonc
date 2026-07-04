@@ -489,10 +489,6 @@
       "command": ["/home/ubere/.cargo/bin/cargo-mcp", "serve"],
       "enabled": false,
     },
-    "pty-mcp": {
-      "transport": "stdio",
-      "command": ["bunx", "-y", "pty-mcp"],
-    },
     "playwright": {
       "transport": "stdio",
       "command": ["bunx", "-y", "@playwright/mcp@latest"],
