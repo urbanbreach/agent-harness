@@ -37,15 +37,15 @@ pub(super) fn render_footer_rows(app: &AppState) -> Vec<String> {
 
     let theme = Theme::default();
     let info = subagent_info();
-    let backend = TestBackend::new(100, 18);
+    let backend = TestBackend::new(100, 6);
     let mut terminal = Terminal::new(backend).expect("create subagent footer terminal");
     terminal
         .draw(|frame| {
             render_subagent_footer(
                 frame,
                 app,
-                Rect::new(0, 1, 100, 14),
-                Rect::new(0, 1, 100, 14),
+                Rect::new(0, 1, 100, 3),
+                Rect::new(0, 1, 100, 3),
                 &theme,
                 &info,
             );
@@ -140,23 +140,19 @@ pub(crate) fn exact_test_subagent_footer_body_keeps_ordered_transcript_tool_rows
 
     let rows = render_footer_rows(&app);
     let rendered = rows.join("\n");
-    let first = rendered
-        .find("First markdown answer.")
-        .expect("first assistant markdown body should render through transcript renderer");
-    let tool = rendered
-        .find("Read docs/rust.md")
-        .expect("child tool row should render in the footer body");
-    let second = rendered
-        .find("Second body after tool.")
-        .expect("assistant body after the tool should render");
-
     assert!(
-        first < tool && tool < second,
-        "subagent footer body should keep chronological transcript/tool order\n{rendered}"
+        rendered.contains("Researcher (1 of 1)"),
+        "subagent footer should show the Opencode label/count row\n{rendered}"
     );
     assert!(
-        !rendered.contains("┃"),
-        "reference footer uses a padded scrollbox without Harness rail chrome\n{rendered}"
+        rendered.contains("Parent ↑") && rendered.contains("Prev ←") && rendered.contains("Next →"),
+        "subagent footer should show Opencode navigation controls\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("First markdown answer.")
+            && !rendered.contains("Read docs/rust.md")
+            && !rendered.contains("Second body after tool."),
+        "subagent footer should not embed a Harness transcript inspector body\n{rendered}"
     );
 }
 
@@ -182,8 +178,12 @@ pub(crate) fn exact_test_subagent_footer_status_uses_running_and_cancelled_icons
     );
     let running_rows = render_footer_rows(&running_app).join("\n");
     assert!(
-        running_rows.contains(" ⠋ audit transcript parity"),
-        "running subagent footer should use the reference spinner frame\n{running_rows}"
+        running_rows.contains("Researcher (1 of 1)"),
+        "{running_rows}"
+    );
+    assert!(
+        !running_rows.contains("⠋") && !running_rows.contains("audit transcript parity"),
+        "Opencode subagent footer should omit the old Harness status/title row\n{running_rows}"
     );
 
     let cancelled_app = AppState::new_replay(
@@ -206,7 +206,11 @@ pub(crate) fn exact_test_subagent_footer_status_uses_running_and_cancelled_icons
     );
     let cancelled_rows = render_footer_rows(&cancelled_app).join("\n");
     assert!(
-        cancelled_rows.contains(" ○ audit transcript parity"),
-        "cancelled subagent footer should use the reference cancelled icon\n{cancelled_rows}"
+        cancelled_rows.contains("Researcher (1 of 1)"),
+        "{cancelled_rows}"
+    );
+    assert!(
+        !cancelled_rows.contains("○") && !cancelled_rows.contains("audit transcript parity"),
+        "Opencode subagent footer should omit old Harness cancelled/title row\n{cancelled_rows}"
     );
 }

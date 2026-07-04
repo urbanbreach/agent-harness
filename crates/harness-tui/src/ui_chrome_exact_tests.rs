@@ -15,15 +15,15 @@ pub(crate) fn exact_test_subagent_footer_matches_harness_layout() {
         usage: Some("12,345 (8%) · $0.42".to_string()),
     };
 
-    let backend = TestBackend::new(80, 16);
+    let backend = TestBackend::new(80, 6);
     let mut terminal = Terminal::new(backend).expect("create terminal");
     terminal
         .draw(|frame| {
             render_subagent_footer(
                 frame,
                 &app,
-                Rect::new(0, 1, 80, 14),
-                Rect::new(0, 1, 80, 14),
+                Rect::new(0, 1, 80, 3),
+                Rect::new(0, 1, 80, 3),
                 &theme,
                 &info,
             );
@@ -36,37 +36,21 @@ pub(crate) fn exact_test_subagent_footer_matches_harness_layout() {
         .chunks(80)
         .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
         .collect::<Vec<_>>();
-    for row in &rows[1..15] {
-        assert_ne!(
-            row.chars().next(),
-            Some('┃'),
-            "reference footer uses a padded scrollbox without a Harness rail: {row}"
-        );
-    }
     assert!(
-        rows[2].starts_with(" ● audit transcript parity  Researcher"),
-        "header should render reference-style status, title, and label\n{}",
+        rows[2].contains("Researcher (2 of 3)  12,345 (8%) · $0.42"),
+        "footer should render Opencode label, sibling count, and usage\n{}",
         rows[2]
     );
     assert!(
-        rows[2].contains("2 of 3"),
-        "header should keep the selected subagent count right-aligned\n{}",
+        rows[2].contains("Parent ↑") && rows[2].contains("Prev ←") && rows[2].contains("Next →"),
+        "footer should render Opencode navigation labels and shortcuts\n{}",
         rows[2]
-    );
-    assert!(
-        !rows[2].contains("12,345"),
-        "reference subagent inspector header should not render Harness usage metadata\n{}",
-        rows[2]
-    );
-    assert!(
-        rows[4].starts_with(" No subagent activity yet"),
-        "body should reserve the inspector activity area\n{}",
-        rows[4]
     );
     let rendered = rows.join("\n");
     assert!(
-        !rendered.contains("Parent") && !rendered.contains("Prev") && !rendered.contains("Next"),
-        "footer inspector should not render stale Harness navigation labels\n{rendered}"
+        !rendered.contains("audit transcript parity")
+            && !rendered.contains("No subagent activity yet"),
+        "footer should not render the old Harness title/body inspector\n{rendered}"
     );
 }
 
@@ -179,8 +163,9 @@ pub(crate) fn exact_test_subagent_replay_suppresses_parent_replay_dock() {
         .collect::<Vec<_>>()
         .join("\n");
 
-    assert!(rows.contains(" ● agent_alpha  Researcher"), "{rows}");
-    assert!(rows.contains(" No subagent activity yet"), "{rows}");
+    assert!(rows.contains("Researcher (1 of 1)"), "{rows}");
+    assert!(rows.contains("Parent ↑"), "{rows}");
+    assert!(!rows.contains("No subagent activity yet"), "{rows}");
     assert!(!rows.contains("Replay is read-only"), "{rows}");
     assert!(!rows.contains("Researcher · parent_run"), "{rows}");
 
